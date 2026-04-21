@@ -25,6 +25,11 @@ const ConfigSchema = z.object({
       imageTag: z.string().default('latest'),
     })
     .required(),
+  healthcare: z
+    .object({
+      imageTag: z.string().default('latest'),
+    })
+    .required(),
   storage: z
     .object({
       evidenceBucket: z.string(),

@@ -11,6 +11,9 @@ notificationEmail = "dongkyl@amazon.com"
 [agent]
 imageTag = "latest"
 
+[healthcare]
+imageTag = "latest"
+
 [storage]
 evidenceBucket = "rca-agent-dev-evidence"
 vectorBucket = "rca-agent-dev-vectors"

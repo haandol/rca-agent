@@ -5,6 +5,7 @@ import { EventBusStack } from '../lib/stacks/event-bus-stack';
 import { DatabaseStack } from '../lib/stacks/database-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { RcaAgentServiceStack } from '../lib/stacks/rca-agent-service-stack';
+import { HealthcareServiceStack } from '../lib/stacks/healthcare-service-stack';
 import { Config } from '../config/loader';
 
 const app = new cdk.App({
@@ -58,6 +59,18 @@ rcaAgentServiceStack.addDependency(networkStack);
 rcaAgentServiceStack.addDependency(eventBusStack);
 rcaAgentServiceStack.addDependency(databaseStack);
 rcaAgentServiceStack.addDependency(storageStack);
+
+const healthcareServiceStack = new HealthcareServiceStack(
+  app,
+  `${Config.app.ns}HealthcareServiceStack`,
+  {
+    env,
+    vpc: networkStack.vpc,
+    imageTag: Config.healthcare.imageTag,
+    tracing: Config.tracing.enabled,
+  },
+);
+healthcareServiceStack.addDependency(networkStack);
 
 const tags = cdk.Tags.of(app);
 tags.add('namespace', Config.app.ns);
