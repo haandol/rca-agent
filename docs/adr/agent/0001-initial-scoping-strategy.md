@@ -78,5 +78,4 @@ flowchart TD
 ## Related
 
 - [ADR infra/0001: 알람 수신 아키텍처](../infra/0001-alarm-ingestion-sns-sqs-fargate.md) — 스코핑의 입력인 알람 페이로드가 전달되는 경로
-- PRD Section 7.2: F2 초기 스코핑
-- PRD Section 7.14: F14 플레이북 생성 — S3 Vectors에 플레이북을 저장하는 기능으로, 스코핑의 유사 플레이북 검색에 데이터를 공급
+- [ADR agent/0008: 플레이북 생성](0008-playbook-generation.md) — S3 Vectors에 플레이북을 저장하는 기능으로, 스코핑의 유사 플레이북 검색에 데이터를 공급

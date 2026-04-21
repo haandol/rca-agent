@@ -25,14 +25,27 @@ adr/
 ### Agent
 
 - [ADR 0001: 초기 스코핑 전략 — 얕은 스코핑 + 유사 플레이북 검색](agent/0001-initial-scoping-strategy.md)
+- [ADR 0002: 가설 생성 — 스코핑 기반 초기 가설 트리 구성](agent/0002-hypothesis-generation.md)
+- [ADR 0003: 가설 우선순위 — 신뢰도 기반 검증 순서 결정](agent/0003-hypothesis-prioritization.md)
+- [ADR 0004: 가설 검증/기각 — 증거 기반 가설 상태 전이](agent/0004-hypothesis-validation-pruning.md)
+- [ADR 0005: 가설 분기 — 검증 중 발견된 새 가설 동적 추가](agent/0005-hypothesis-branching.md)
+- [ADR 0006: 종료 조건 — RCA 분석 자동 종료 판단](agent/0006-termination-conditions.md)
+- [ADR 0007: RCA 보고서 생성 — 구조화된 분석 결과 보고](agent/0007-rca-report-generation.md)
+- [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
+- [ADR 0009: 알림 — RCA 진행/완료 알림 전달](agent/0009-notification.md)
 
 ### Tools
 
-(아직 등록된 ADR 없음)
+- [ADR 0001: 메트릭 수집 — CloudWatch 메트릭 기반 증거 수집](tools/0001-metrics-collection.md)
+- [ADR 0002: 로그 검색 — CloudWatch Logs Insights 기반 증거 수집](tools/0002-log-search.md)
+- [ADR 0003: 트레이스 분석 — X-Ray 기반 분산 트레이스 조회](tools/0003-trace-analysis.md)
+- [ADR 0004: 배포 이력 조회 — CloudTrail 기반 배포/변경 이벤트 조회](tools/0004-deploy-history.md)
+- [ADR 0005: 코드 변경 분석 — 배포 코드 diff의 LLM 기반 결함 탐지](tools/0005-code-change-analysis.md)
 
 ### Infra
 
 - [ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate](infra/0001-alarm-ingestion-sns-sqs-fargate.md)
+- [ADR 0002: 증거 저장 — S3 + S3 Vectors + DynamoDB 기반 증거 아카이브](infra/0002-evidence-storage.md)
 
 ### Web
 
