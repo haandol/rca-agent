@@ -54,3 +54,4 @@ Thumbs.db
 .claude/worktrees
 .claude/settings.local.json
 .nx/polygraph
+packages/infra/config/loader.js
