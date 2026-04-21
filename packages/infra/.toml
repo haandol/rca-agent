@@ -1,0 +1,19 @@
+[app]
+ns = "RcaAgent"
+stage = "Dev"
+
+[aws]
+region = "ap-northeast-2"
+
+[alarm]
+notificationEmail = "admin@example.com"
+
+[agent]
+imageTag = "latest"
+
+[table]
+[table.rcaSession]
+name = "RcaAgentDevRcaSession"
+
+[tracing]
+enabled = true

@@ -1,0 +1,185 @@
+import * as cdk from 'aws-cdk-lib'
+import * as ec2 from 'aws-cdk-lib/aws-ec2'
+import * as ecs from 'aws-cdk-lib/aws-ecs'
+import * as iam from 'aws-cdk-lib/aws-iam'
+import * as logs from 'aws-cdk-lib/aws-logs'
+import * as sqs from 'aws-cdk-lib/aws-sqs'
+import * as sns from 'aws-cdk-lib/aws-sns'
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
+import { Construct } from 'constructs'
+
+interface IProps extends cdk.StackProps {
+  readonly vpc: ec2.IVpc
+  readonly alarmQueue: sqs.IQueue
+  readonly alarmTopic: sns.ITopic
+  readonly rcaSessionTable: dynamodb.ITable
+  readonly imageTag: string
+  readonly tracing: boolean
+}
+
+export class RcaAgentServiceStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: IProps) {
+    super(scope, id, props)
+
+    const ns = this.node.tryGetContext('ns') as string
+
+    const cluster = this.newCluster(ns, props.vpc)
+    const taskDefinition = this.newTaskDefinition(ns, props)
+    this.newService(ns, cluster, taskDefinition, props)
+  }
+
+  private newCluster(ns: string, vpc: ec2.IVpc): ecs.Cluster {
+    return new ecs.Cluster(this, 'Cluster', {
+      clusterName: `${ns}RcaAgent`,
+      vpc,
+      containerInsightsV2: ecs.ContainerInsights.ENHANCED,
+    })
+  }
+
+  private newTaskDefinition(ns: string, props: IProps): ecs.FargateTaskDefinition {
+    const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
+      family: `${ns}RcaAgent`,
+      cpu: 1024,
+      memoryLimitMiB: 2048,
+      runtimePlatform: {
+        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+      },
+    })
+
+    const logGroup = new logs.LogGroup(this, 'LogGroup', {
+      logGroupName: `/ecs/${ns}/rca-agent`,
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    })
+
+    taskDef.addContainer('RcaAgent', {
+      containerName: 'rca-agent',
+      image: ecs.ContainerImage.fromRegistry(`${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/rca-agent:${props.imageTag}`),
+      essential: true,
+      environment: {
+        AWS_REGION: cdk.Aws.REGION,
+        SQS_QUEUE_URL: props.alarmQueue.queueUrl,
+        SNS_ALARM_TOPIC_ARN: props.alarmTopic.topicArn,
+        DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
+        OTEL_SERVICE_NAME: 'rca-agent',
+        FAULT_DB_LEAK: 'false',
+        FAULT_SLOW_QUERY_MS: '0',
+        FAULT_ERROR_RATE: '0.0',
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'rca-agent',
+        logGroup,
+      }),
+      healthCheck: {
+        command: ['CMD-SHELL', 'python -c "import urllib.request; urllib.request.urlopen(\'http://localhost:8000/healthz\')" || exit 1'],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        startPeriod: cdk.Duration.seconds(30),
+        retries: 3,
+      },
+      portMappings: [{ containerPort: 8000 }],
+    })
+
+    if (props.tracing) {
+      taskDef.addContainer('OtelCollector', {
+        containerName: 'otel-collector',
+        image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/aws-otel-collector:latest'),
+        essential: false,
+        logging: ecs.LogDrivers.awsLogs({
+          streamPrefix: 'otel-collector',
+          logGroup,
+        }),
+        portMappings: [
+          { containerPort: 4317 },
+          { containerPort: 4318 },
+        ],
+      })
+    }
+
+    this.grantTaskPermissions(taskDef, props)
+
+    return taskDef
+  }
+
+  private grantTaskPermissions(taskDef: ecs.FargateTaskDefinition, props: IProps): void {
+    props.alarmQueue.grantConsumeMessages(taskDef.taskRole)
+
+    props.rcaSessionTable.grantReadWriteData(taskDef.taskRole)
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+        resources: ['*'],
+      })
+    )
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'cloudwatch:GetMetricData',
+          'cloudwatch:ListMetrics',
+          'cloudwatch:DescribeAlarms',
+        ],
+        resources: ['*'],
+      })
+    )
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'logs:StartQuery',
+          'logs:GetQueryResults',
+          'logs:StopQuery',
+          'logs:DescribeLogGroups',
+        ],
+        resources: ['*'],
+      })
+    )
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'xray:BatchGetTraces',
+          'xray:GetTraceSummaries',
+          'xray:PutTraceSegments',
+          'xray:PutTelemetryRecords',
+        ],
+        resources: ['*'],
+      })
+    )
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['cloudtrail:LookupEvents'],
+        resources: ['*'],
+      })
+    )
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['sns:Publish'],
+        resources: [props.alarmTopic.topicArn],
+      })
+    )
+  }
+
+  private newService(
+    ns: string,
+    cluster: ecs.Cluster,
+    taskDefinition: ecs.FargateTaskDefinition,
+    props: IProps
+  ): ecs.FargateService {
+    return new ecs.FargateService(this, 'Service', {
+      serviceName: `${ns}RcaAgent`,
+      cluster,
+      taskDefinition,
+      desiredCount: 1,
+      assignPublicIp: false,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      minHealthyPercent: 100,
+      circuitBreaker: { enable: true, rollback: true },
+      enableExecuteCommand: true,
+    })
+  }
+}

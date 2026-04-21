@@ -1,0 +1,35 @@
+{
+  "name": "@org/infra",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "infra": "bin/infra.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "deploy": "cdk deploy \"*\" --require-approval never --concurrency 4",
+    "destroy": "cdk destroy",
+    "diff": "cdk diff",
+    "test": "jest",
+    "cdk": "cdk",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "aws-cdk": "2.1118.2",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.250.0",
+    "constructs": "^10.6.0",
+    "source-map-support": "^0.5.21",
+    "toml": "^4.1.1",
+    "zod": "^4.3.6"
+  }
+}
