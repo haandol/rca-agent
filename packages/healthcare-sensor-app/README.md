@@ -27,7 +27,8 @@ src/
    |- telemetry.py            # OpenTelemetry setup
    |- main.py                 # FastAPI entrypoint
 tests/                        # pytest tests
-docker-compose.yml            # PostgreSQL + DynamoDB Local
+docker-compose.yml            # PostgreSQL + DynamoDB Local + ADOT Collector
+otel-collector-config.yaml    # ADOT Collector 로컬 설정 (debug exporter)
 ```
 
 ## Getting Started
@@ -69,7 +70,7 @@ docker-compose.yml            # PostgreSQL + DynamoDB Local
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL 연결 문자열 (asyncpg) | `postgresql+asyncpg://postgres:postgres@localhost:5432/test_service` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry OTLP 엔드포인트 | `http://localhost:4317` |
-| `OTEL_SERVICE_NAME` | OpenTelemetry 서비스 이름 | `test-service` |
+| `OTEL_SERVICE_NAME` | OpenTelemetry 서비스 이름 | `healthcare-sensor-app` |
 | `LOG_LEVEL` | 로그 레벨 | `INFO` |
 | `FAULT_INJECTION_ENABLED` | 장애 주입 API 활성화 여부 | `true` |
 | `DB_POOL_SIZE` | DB 커넥션 풀 크기 | `5` |
@@ -81,19 +82,19 @@ docker-compose.yml            # PostgreSQL + DynamoDB Local
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/sensors/readings` | POST | 센서 리딩 배치 수집 |
+| `/sensors/data` | POST | 센서 리딩 배치 수집 |
 
 ### Patient Vitals
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/patients/{patient_id}/vitals` | GET | 환자별 바이탈 사인 조회 (타입/기간 필터) |
+| `/patients/{patient_id}/vitals` | GET | 환자별 바이탈 사인 조회 (타입/기간 필터) |
 
 ### Alerts
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/alerts` | GET | 이상치 알림 목록 조회 (환자/타입/기간 필터) |
+| `/alerts` | GET | 이상치 알림 목록 조회 (환자/타입/기간 필터) |
 
 ### Health Check
 
@@ -105,12 +106,12 @@ docker-compose.yml            # PostgreSQL + DynamoDB Local
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/fault/leak-connections` | POST | DB 커넥션 릭 유발 |
-| `/api/v1/fault/reset-leaked-connections` | POST | 릭된 커넥션 해제 |
-| `/api/v1/fault/high-cpu` | POST | CPU 부하 생성 |
-| `/api/v1/fault/allocate-memory` | POST | 메모리 할당 |
-| `/api/v1/fault/release-memory` | POST | 할당된 메모리 해제 |
-| `/api/v1/fault/slow-query` | POST | 지연 쿼리 실행 |
+| `/fault/db-leak` | POST | DB 커넥션 릭 유발 |
+| `/fault/db-leak/reset` | POST | 릭된 커넥션 해제 |
+| `/fault/high-cpu` | POST | CPU 부하 생성 |
+| `/fault/high-memory` | POST | 메모리 할당 |
+| `/fault/high-memory/reset` | POST | 할당된 메모리 해제 |
+| `/fault/slow-query` | POST | 지연 쿼리 실행 |
 
 Request/response 스키마는 `src/test_service/ports/dto/`와 `src/test_service/adapters/primary/schemas.py`에 정의되어 있다.
 

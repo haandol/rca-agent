@@ -53,11 +53,11 @@ packages/healthcare-sensor-app/
 │   └── test_service/
 │       ├── adapters/
 │       │   ├── primary/                   # FastAPI controllers
-│       │   │   ├── sensors/               # POST /api/v1/sensors/readings
-│       │   │   ├── patients/              # GET /api/v1/patients/{id}/vitals
-│       │   │   ├── alerts/                # GET /api/v1/alerts
+│       │   │   ├── sensors/               # POST /sensors/data
+│       │   │   ├── patients/              # GET /patients/{id}/vitals
+│       │   │   ├── alerts/                # GET /alerts
 │       │   │   ├── health/                # GET /healthz
-│       │   │   ├── fault/                 # POST /api/v1/fault/*
+│       │   │   ├── fault/                 # POST /fault/*
 │       │   │   └── schemas.py             # Pydantic request/response schemas
 │       │   └── secondary/                 # Infrastructure adapters
 │       │       ├── database_adapter.py    # SQLAlchemy async engine
@@ -84,7 +84,8 @@ packages/healthcare-sensor-app/
 │       ├── telemetry.py                  # OpenTelemetry 설정
 │       └── main.py                       # FastAPI entrypoint
 ├── tests/                                # pytest tests
-├── docker-compose.yml                    # PostgreSQL 16 + DynamoDB Local
+├── docker-compose.yml                    # PostgreSQL 16 + DynamoDB Local + ADOT Collector
+├── otel-collector-config.yaml            # ADOT Collector 로컬 설정
 ├── pyproject.toml                        # uv/ruff/pytest 설정
 └── package.json                          # Nx scripts (lint, format, test, dev)
 ```
