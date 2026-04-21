@@ -1,6 +1,6 @@
-# ALPS Project Guide
+# RCA Agent Project Guide
 
-ALPS는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의 Nx 모노레포(pnpm workspace)입니다.
+RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의 Nx 모노레포(pnpm workspace)입니다.
 
 ## Repository Structure
 

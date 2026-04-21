@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADR)
 
-이 디렉토리는 ALPS(AWS 기반 자동 RCA 분석 에이전트) 프로젝트의 주요 아키텍처 결정을 문서화합니다.
+이 디렉토리는 RCA Agent(AWS 기반 자동 RCA 분석 에이전트) 프로젝트의 주요 아키텍처 결정을 문서화합니다.
 
 ## ADR이란?
 

@@ -1,4 +1,4 @@
-# ALPS — AWS 기반 자동 RCA 분석 에이전트
+# RCA Agent — AWS 기반 자동 RCA 분석 에이전트
 
 AWS 환경에서 메트릭 알람 발생 시 가설-트리(Hypothesis Tree) 방식으로 자동 RCA(근본원인분석)를 수행하는 에이전트 시스템의 모노레포입니다. Strands Agents SDK와 MCP 서버를 활용하여 CloudWatch, X-Ray, CloudTrail 등 AWS 데이터 소스를 자동 분석하고, 근본 원인 도출부터 보고서 생성까지 전 과정을 자동화합니다.
 
