@@ -134,3 +134,91 @@ class HypothesisGenerationResult(BaseModel):
     tree_id: str
     hypotheses: list[Hypothesis]
     scoping_result: ScopingResult
+
+
+class ValidationPlan(BaseModel):
+    tools: list[str] = Field(default_factory=list)
+    estimated_seconds: int = 60
+
+
+class PrioritizedHypothesis(BaseModel):
+    hypothesis_id: str
+    priority_rank: int
+    validation_plan: ValidationPlan = Field(default_factory=ValidationPlan)
+    parallel_group: int = 0
+
+
+class PrioritizationResult(BaseModel):
+    tree_id: str
+    prioritized: list[PrioritizedHypothesis]
+
+
+class ValidationJudgment(BaseModel):
+    hypothesis_id: str
+    status: HypothesisStatus
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    reasoning: str = ""
+    evidence_summary: list[str] = Field(default_factory=list)
+
+
+class ValidationResult(BaseModel):
+    tree_id: str
+    judgments: list[ValidationJudgment]
+    all_rejected: bool = False
+
+
+class BranchingResult(BaseModel):
+    tree_id: str
+    parent_id: str
+    children: list[Hypothesis]
+
+
+class TerminationReason(StrEnum):
+    CONFIRMED = "CONFIRMED"
+    TIME_BUDGET = "TIME_BUDGET"
+    TOKEN_BUDGET = "TOKEN_BUDGET"
+    MAX_DEPTH = "MAX_DEPTH"
+    MAX_LOOPS = "MAX_LOOPS"
+    ALL_REJECTED = "ALL_REJECTED"
+
+
+class TerminationDecision(BaseModel):
+    should_terminate: bool
+    reason: TerminationReason | None = None
+    best_hypothesis: Hypothesis | None = None
+
+
+class RcaReport(BaseModel):
+    rca_id: str
+    incident_summary: str
+    root_cause: str
+    root_cause_confirmed: bool = True
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    hypothesis_path: list[str] = Field(default_factory=list)
+    evidence_list: list[str] = Field(default_factory=list)
+    temporary_mitigation: str = ""
+    permanent_remediation: str = ""
+    timeline: list[str] = Field(default_factory=list)
+    rejected_hypotheses: list[str] = Field(default_factory=list)
+
+
+class Playbook(BaseModel):
+    playbook_id: str
+    failure_type: str
+    symptom_pattern: str
+    verification_steps: list[str] = Field(default_factory=list)
+    temporary_mitigation: str = ""
+    permanent_remediation: str = ""
+    prevention_measures: list[str] = Field(default_factory=list)
+    rca_id: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class NotificationMessage(BaseModel):
+    rca_id: str
+    root_cause_summary: str
+    severity: str
+    report_s3_key: str = ""
+    dashboard_url: str = ""
+    elapsed_seconds: int = 0
+    confirmed: bool = True

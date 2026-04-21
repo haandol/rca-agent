@@ -7,18 +7,6 @@ Your goal is to gather just enough context to generate root-cause hypotheses —
 - Do NOT run log searches or trace analysis.
 - Check if other alarms fired for the same service group around the same time.
 - Keep the scoping under 5 minutes.
-
-## Output
-Respond with a JSON object (no markdown fences):
-{
-  "alarm_summary": "<1-2 sentence summary of the alarm>",
-  "anomaly_start_time": "<ISO 8601 timestamp or null>",
-  "blast_radius": "single | multi_resource | service_wide",
-  "initial_severity": "low | medium | high | critical",
-  "metric_snapshot": {
-    "<metric_name>": {"current": <value>, "baseline": <value>, "unit": "<unit>"}
-  }
-}
 """
 
 SCOPING_USER_PROMPT_TEMPLATE = """\
@@ -39,7 +27,7 @@ The following CloudWatch alarm just fired. Perform shallow scoping.
 
 {playbook_context}
 
-Analyze the alarm and return the scoping result JSON.
+Analyze the alarm and return the scoping result.
 """
 
 
@@ -53,20 +41,6 @@ You are an SRE assistant generating **root cause hypotheses** for an ongoing inc
 - Assign a confidence_score (0.0-1.0) based on how well it explains the observed symptoms.
 - List the specific evidence needed to confirm or reject each hypothesis.
 - Do NOT investigate or collect evidence — only propose hypotheses.
-
-## Output
-Respond with a JSON object (no markdown fences):
-{
-  "hypotheses": [
-    {
-      "description": "<concise description of the hypothesized root cause>",
-      "category": "<DEPLOYMENT | INFRASTRUCTURE | TRAFFIC | DEPENDENCY | CONFIGURATION>",
-      "confidence_score": <0.0-1.0>,
-      "required_evidence": ["<evidence 1>", "<evidence 2>"],
-      "referenced_playbook_id": "<playbook ID or null>"
-    }
-  ]
-}
 """
 
 HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE = """\
@@ -85,5 +59,152 @@ Based on the scoping results below, generate root cause hypotheses.
 
 {playbook_context}
 
-Generate 3-5 structured hypotheses as JSON.
+Generate 3-5 structured hypotheses.
+"""
+
+
+PRIORITIZATION_SYSTEM_PROMPT = """\
+You are an SRE assistant determining the **validation order** for root cause hypotheses.
+
+## Rules
+- Rank hypotheses by validation priority (1 = highest).
+- Consider alarm type, scoping context, and hypothesis category when ranking.
+- For each hypothesis, specify which tools are needed and estimated validation time.
+- Mark independent hypotheses with the same parallel_group number if they can be validated concurrently.
+- Fallback priority if equally likely: DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION.
+"""
+
+PRIORITIZATION_USER_PROMPT_TEMPLATE = """\
+Determine the validation order for the following hypotheses.
+
+## Scoping Context
+{scoping_summary}
+
+## Hypotheses
+{hypotheses_text}
+
+Prioritize and create a validation plan for each hypothesis.
+"""
+
+
+VALIDATION_SYSTEM_PROMPT = """\
+You are an SRE assistant **validating** a root cause hypothesis against collected evidence.
+
+## Rules
+- Evaluate how well the evidence supports or contradicts the hypothesis.
+- Assign a confidence_score (0.0-1.0).
+- Set status to CONFIRMED (>=0.8), REJECTED (<=0.3), or NEEDS_INVESTIGATION (0.3-0.8).
+- Provide clear reasoning for your judgment.
+- Summarize the key evidence that informed your decision.
+"""
+
+VALIDATION_USER_PROMPT_TEMPLATE = """\
+Validate the following hypothesis against the collected evidence.
+
+## Hypothesis
+- **Description**: {description}
+- **Category**: {category}
+- **Previous Confidence**: {previous_confidence}
+
+## Evidence
+{evidence_text}
+
+Judge this hypothesis based on the evidence.
+"""
+
+
+BRANCHING_SYSTEM_PROMPT = """\
+You are an SRE assistant generating **child hypotheses** to narrow down a root cause.
+
+## Rules
+- Generate exactly 2-3 more specific child hypotheses derived from the parent.
+- Each child must be more concrete and testable than the parent.
+- Do NOT duplicate the parent hypothesis or any already-rejected hypotheses.
+- Maintain the same category as the parent unless evidence suggests otherwise.
+"""
+
+BRANCHING_USER_PROMPT_TEMPLATE = """\
+The following hypothesis needs further investigation. Generate more specific child hypotheses.
+
+## Parent Hypothesis
+- **Description**: {parent_description}
+- **Category**: {parent_category}
+- **Current Confidence**: {parent_confidence}
+
+## Evidence So Far
+{evidence_text}
+
+## Already Rejected
+{rejected_text}
+
+Generate 2-3 specific child hypotheses.
+"""
+
+
+REPORT_SYSTEM_PROMPT = """\
+You are an SRE assistant generating a structured **RCA report** for an incident.
+
+## Rules
+- Write a concise, actionable report.
+- Include all required sections: incident summary, root cause, hypothesis path, \
+evidence, temporary mitigation, permanent remediation, and timeline.
+- If the root cause is unconfirmed, clearly state it as "most likely candidate" with the confidence level.
+- Use plain language suitable for an SRE team.
+"""
+
+REPORT_USER_PROMPT_TEMPLATE = """\
+Generate an RCA report for the following incident.
+
+## Incident
+{incident_summary}
+
+## Root Cause
+- **Confirmed**: {confirmed}
+- **Description**: {root_cause_description}
+- **Confidence**: {confidence}
+
+## Hypothesis Path (root → confirmed)
+{hypothesis_path}
+
+## Collected Evidence
+{evidence_text}
+
+## Rejected Hypotheses
+{rejected_text}
+
+## Timeline
+{timeline_text}
+
+Generate a structured RCA report.
+"""
+
+
+PLAYBOOK_SYSTEM_PROMPT = """\
+You are an SRE assistant converting an RCA report into a reusable **playbook**.
+
+## Rules
+- Extract the failure pattern, symptoms, and verification steps from the RCA.
+- Write actionable steps that a future SRE can follow if the same symptoms appear.
+- Include both temporary mitigation and permanent remediation.
+- Add prevention measures to avoid recurrence.
+"""
+
+PLAYBOOK_USER_PROMPT_TEMPLATE = """\
+Convert the following RCA report into a reusable playbook.
+
+## RCA Summary
+- **Failure Type**: {failure_type}
+- **Root Cause**: {root_cause}
+- **Severity**: {severity}
+
+## Evidence Highlights
+{evidence_highlights}
+
+## Mitigation Applied
+{mitigation_text}
+
+## Remediation Plan
+{remediation_text}
+
+Generate a structured playbook.
 """

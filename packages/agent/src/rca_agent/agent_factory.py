@@ -8,7 +8,15 @@ from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from rca_agent.config import BEDROCK_MAX_TOKENS, BEDROCK_MODEL_ID, BEDROCK_REGION
-from rca_agent.prompts import HYPOTHESIS_GENERATION_SYSTEM_PROMPT, SCOPING_SYSTEM_PROMPT
+from rca_agent.prompts import (
+    BRANCHING_SYSTEM_PROMPT,
+    HYPOTHESIS_GENERATION_SYSTEM_PROMPT,
+    PLAYBOOK_SYSTEM_PROMPT,
+    PRIORITIZATION_SYSTEM_PROMPT,
+    REPORT_SYSTEM_PROMPT,
+    SCOPING_SYSTEM_PROMPT,
+    VALIDATION_SYSTEM_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +32,7 @@ def create_bedrock_model(
         region_name=region,
         max_tokens=max_tokens,
         temperature=0.3,
+        streaming=False,
     )
 
 
@@ -73,3 +82,33 @@ def create_hypothesis_generation_agent(
         model=model,
         system_prompt=HYPOTHESIS_GENERATION_SYSTEM_PROMPT,
     )
+
+
+def create_prioritization_agent(*, model: BedrockModel | None = None) -> Agent:
+    if model is None:
+        model = create_bedrock_model()
+    return Agent(model=model, system_prompt=PRIORITIZATION_SYSTEM_PROMPT)
+
+
+def create_validation_agent(*, model: BedrockModel | None = None) -> Agent:
+    if model is None:
+        model = create_bedrock_model()
+    return Agent(model=model, system_prompt=VALIDATION_SYSTEM_PROMPT)
+
+
+def create_branching_agent(*, model: BedrockModel | None = None) -> Agent:
+    if model is None:
+        model = create_bedrock_model()
+    return Agent(model=model, system_prompt=BRANCHING_SYSTEM_PROMPT)
+
+
+def create_report_agent(*, model: BedrockModel | None = None) -> Agent:
+    if model is None:
+        model = create_bedrock_model()
+    return Agent(model=model, system_prompt=REPORT_SYSTEM_PROMPT)
+
+
+def create_playbook_agent(*, model: BedrockModel | None = None) -> Agent:
+    if model is None:
+        model = create_bedrock_model()
+    return Agent(model=model, system_prompt=PLAYBOOK_SYSTEM_PROMPT)
