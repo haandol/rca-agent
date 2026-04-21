@@ -21,6 +21,6 @@ class SensorReadingRow(Base):
     reading_type: Mapped[str] = mapped_column(String(32))
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(16))
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     is_abnormal: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
