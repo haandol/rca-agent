@@ -1,5 +1,5 @@
 {
-  "name": "test-service",
+  "name": "healthcare-sensor-app",
   "version": "0.0.0",
   "private": true,
   "scripts": {

@@ -19,7 +19,7 @@ def get_settings() -> AppSettings:
     return AppSettings(
         database_url=environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/test_service"),
         otel_exporter_otlp_endpoint=environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
-        otel_service_name=environ.get("OTEL_SERVICE_NAME", "test-service"),
+        otel_service_name=environ.get("OTEL_SERVICE_NAME", "healthcare-sensor-app"),
         log_level=environ.get("LOG_LEVEL", "INFO"),
         fault_injection_enabled=environ.get("FAULT_INJECTION_ENABLED", "true").lower() == "true",
         db_pool_size=int(environ.get("DB_POOL_SIZE", "5")),

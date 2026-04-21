@@ -3,7 +3,7 @@ requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "test-service"
+name = "healthcare-sensor-app"
 version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [

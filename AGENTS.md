@@ -10,7 +10,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | [`packages/tools`](./packages/tools/) | MCP 도구 및 @tool 구현체 — CloudWatch, Logs, X-Ray, CloudTrail, GitHub, S3 Vectors | Python, MCP |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, DynamoDB, S3, VPC | TypeScript, CDK |
 | [`packages/web`](./packages/web/) | RCA 대시보드 웹 프론트엔드 — RCA 목록, 가설 트리, 증거 패널, 보고서 뷰 | TypeScript, Nuxt 4, TailwindCSS, DaisyUI |
-| [`packages/test-service`](./packages/test-service/) | 헬스케어 센서 데이터 수집/조회 테스트 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
+| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
 
 ## Quick Start
 
@@ -56,7 +56,7 @@ pnpm nx run-many -t test
 | **Tools** | `packages/tools/` | Python | `ruff check`, `pytest` |
 | **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **Web** | `packages/web/` | TypeScript (Nuxt) | `pnpm lint`, `pnpm build` |
-| **Test Service** | `packages/test-service/` | Python (FastAPI) | `ruff check`, `pytest` |
+| **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `ruff check`, `pytest` |
 
 #### Orchestrator Responsibilities
 
