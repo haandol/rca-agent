@@ -110,6 +110,7 @@ CloudWatch Alarm → SNS → SQS → ECS Fargate (RCA Agent)
 | 임베딩 | Amazon Bedrock Cohere Embed v4 |
 | 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 (`awslabs/cloudwatch-mcp-server`) |
 | 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 (`awslabs/cloudtrail-mcp-server`) |
+| 코드 변경 분석 도구 | GitHub MCP 서버 (`github/github-mcp-server`) |
 | 분산 트레이스 | ADOT + AWS X-Ray (MVP 이후) |
 | 증거/보고서 저장 | Amazon S3 |
 | 벡터 검색 | Amazon S3 Vectors |

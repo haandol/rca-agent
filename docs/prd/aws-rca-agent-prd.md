@@ -197,6 +197,7 @@ flowchart LR
 | 임베딩 | Amazon Bedrock Cohere Embed v4 | 플레이북·증거 벡터화, S3 Vectors 유사도 검색에 활용 |
 | 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 | 메트릭 조회·분석, Logs Insights 쿼리, 알람 조회를 MCP 프로토콜로 제공. 커스텀 도구 구현 불필요 |
 | 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 | CloudTrail 이벤트 조회 및 Lake SQL 분석을 MCP 프로토콜로 제공. 커스텀 도구 구현 불필요 |
+| 코드 변경 분석 도구 | GitHub MCP 서버 (`github/github-mcp-server`) | 커밋 diff, PR diff, 파일 내용 조회를 MCP 프로토콜로 제공. 커스텀 도구 구현 불필요 |
 | 분산 트레이스 | ADOT + AWS X-Ray | OTel 표준 기반 계측, ADOT Collector로 X-Ray 백엔드 연동 |
 | 증거 저장 | Amazon S3 | 로그/메트릭 스냅샷, RCA 보고서, 증거 아카이브 |
 | 벡터 검색 | Amazon S3 Vectors | 플레이북·증거 임베딩 저장 및 유사도 검색, 과거 장애 경험 재활용 |
@@ -666,16 +667,17 @@ graph TD
 
 #### 7.9.3 Technical Description
 
-- **MCP 도구 / @tool**: GitHub MCP 서버(`github/github-mcp-server`) 또는 커스텀 @tool로 구현 — MVP 이후 v2에서 검토
+- **MCP 서버**: GitHub 공식 MCP 서버(`github/github-mcp-server`)를 Strands 에이전트에 등록. `get_commit`으로 커밋 diff 조회, `list_commits`로 배포 전후 커밋 탐색, `pull_request_read`로 PR diff 및 변경 파일 조회, `get_file_contents`로 diff 주변 컨텍스트 파악
 - **LLM 분석**: diff를 Bedrock에 전달하여 "이 코드 변경에서 장애를 유발할 수 있는 패턴이 있는가?" 판단
 - **탐지 패턴**: 리소스 미반환(커넥션/파일/스레드), 예외 처리 누락, 설정값 변경, 타임아웃 변경, 쿼리 변경 등
 - **크기 제한**: diff가 LLM 컨텍스트 윈도우를 초과할 경우 변경된 파일을 우선순위로 분할 분석
+- **인증**: `GITHUB_PERSONAL_ACCESS_TOKEN` 환경변수로 PAT를 전달. ECS Fargate에서는 Secrets Manager에서 주입
 
 #### 7.9.4 Edge Cases / Error Handling
 
-- 코드 저장소 접근 권한 부재 시 "수집 불가"로 표시, 다른 증거에 의존
+- GitHub PAT 미설정 또는 접근 권한 부재 시 "수집 불가"로 표시, 다른 증거에 의존
 - diff가 너무 큰 경우 (수천 줄) 변경 파일 목록만 요약하고, 핵심 파일만 상세 분석
-- 코드 저장소가 CodeCommit/GitHub 외 시스템인 경우 MVP에서는 미지원으로 표시
+- GitHub 외 코드 저장소(GitLab, Bitbucket 등)는 MVP에서 미지원으로 표시
 
 #### 7.9.5 Acceptance Criteria
 
