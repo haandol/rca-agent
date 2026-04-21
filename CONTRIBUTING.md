@@ -1,6 +1,6 @@
 # Contributing Guide
 
-이 문서는 ui-workshop 프로젝트에 기여할 때 따라야 하는 규칙을 정의합니다.
+이 문서는 ALPS(AWS 기반 자동 RCA 분석 에이전트) 프로젝트에 기여할 때 따라야 하는 규칙을 정의합니다.
 
 ## 목차
 
@@ -45,15 +45,15 @@
 
 변경 대상 모듈을 괄호 안에 명시합니다. 이 프로젝트의 주요 scope:
 
-| Scope             | 대상                                                  |
-| ----------------- | ----------------------------------------------------- |
-| `web`             | 웹 프론트엔드 (`packages/web/`)                       |
-| `prd-writer`      | PRD 문서 작성 MCP 서버 (`packages/prd-writer/`)       |
-| `asset-generator` | 에셋 생성 MCP 서버 (`packages/asset-generator/`)      |
-| `workshop`        | 워크숍 자료 및 문서 (`packages/workshop/`)            |
-| `workspace`       | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등) |
-| `deps`            | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)        |
-| `scripts`         | 스크립트 (`scripts/`)                                 |
+| Scope       | 대상                                                  |
+| ----------- | ----------------------------------------------------- |
+| `agent`     | RCA 에이전트 코어 (`packages/agent/`)                 |
+| `tools`     | MCP 도구 및 @tool 구현체 (`packages/tools/`)          |
+| `infra`     | AWS CDK 인프라 (`packages/infra/`)                    |
+| `web`       | RCA 대시보드 웹 프론트엔드 (`packages/web/`)          |
+| `workspace` | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등) |
+| `deps`      | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)        |
+| `docs`      | 문서 (`docs/`, PRD, ADR)                              |
 
 ### Subject (필수)
 

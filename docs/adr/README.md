@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADR)
 
-이 디렉토리는 UI PoC Workshop 프로젝트의 주요 아키텍처 결정을 문서화합니다.
+이 디렉토리는 ALPS(AWS 기반 자동 RCA 분석 에이전트) 프로젝트의 주요 아키텍처 결정을 문서화합니다.
 
 ## ADR이란?
 
@@ -14,32 +14,27 @@ Architecture Decision Record (ADR)는 소프트웨어 개발 과정에서 내린
 
 ```
 adr/
-├── web/              # 웹 프론트엔드 관련 결정
-├── prd-writer/       # PRD Writer MCP 서버 관련 결정
-├── asset-generator/  # Asset Generator MCP 서버 관련 결정
-├── workshop/         # 워크숍 운영/콘텐츠 관련 결정
-└── infra/            # 인프라/빌드/배포 관련 결정
+├── agent/        # RCA 에이전트 코어 관련 결정 (가설-트리, 상태 머신, 프롬프트 등)
+├── tools/        # MCP 도구 관련 결정 (CloudWatch, Logs, X-Ray, CloudTrail 등)
+├── infra/        # 인프라 관련 결정 (ECS Fargate, SNS/SQS, DynamoDB, S3, VPC 등)
+└── web/          # RCA 대시보드 웹 프론트엔드 관련 결정
 ```
 
 ## 카테고리별 ADR 목록
 
-### Web
+### Agent
 
 (아직 등록된 ADR 없음)
 
-### PRD Writer
-
-(아직 등록된 ADR 없음)
-
-### Asset Generator
-
-(아직 등록된 ADR 없음)
-
-### Workshop
+### Tools
 
 (아직 등록된 ADR 없음)
 
 ### Infra
+
+(아직 등록된 ADR 없음)
+
+### Web
 
 (아직 등록된 ADR 없음)
 
