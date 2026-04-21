@@ -1,0 +1,12 @@
+{
+  "name": "test-service",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "uv run ruff check src/ tests/",
+    "format": "uv run ruff format src/ tests/",
+    "format:check": "uv run ruff format --check src/ tests/",
+    "test": "uv run pytest",
+    "dev": "uv run uvicorn test_service.main:app --reload --host 0.0.0.0 --port 8000"
+  }
+}

@@ -34,6 +34,14 @@ yarn-error.log
 testem.log
 /typings
 
+# Python
+.venv
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache
+
 # System Files
 .DS_Store
 Thumbs.db

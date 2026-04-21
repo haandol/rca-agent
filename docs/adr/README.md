@@ -24,7 +24,7 @@ adr/
 
 ### Agent
 
-(아직 등록된 ADR 없음)
+- [ADR 0001: 초기 스코핑 전략 — 얕은 스코핑 + 유사 플레이북 검색](agent/0001-initial-scoping-strategy.md)
 
 ### Tools
 
@@ -32,7 +32,7 @@ adr/
 
 ### Infra
 
-(아직 등록된 ADR 없음)
+- [ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate](infra/0001-alarm-ingestion-sns-sqs-fargate.md)
 
 ### Web
 
