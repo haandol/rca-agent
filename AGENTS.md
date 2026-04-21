@@ -7,7 +7,6 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | Package | Description | Tech |
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 가설 생성기(Orchestrator) + 툴-콜러(Tool-Caller) | Python, Strands Agents SDK, Amazon Bedrock |
-| [`packages/tools`](./packages/tools/) | MCP 도구 및 @tool 구현체 — CloudWatch, Logs, X-Ray, CloudTrail, GitHub, S3 Vectors | Python, MCP |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, DynamoDB, S3, VPC | TypeScript, CDK |
 | [`packages/web`](./packages/web/) | RCA 대시보드 웹 프론트엔드 — RCA 목록, 가설 트리, 증거 패널, 보고서 뷰 | TypeScript, Nuxt 4, TailwindCSS, DaisyUI |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
@@ -53,7 +52,6 @@ pnpm nx run-many -t test
 | Sub-Agent | Directory | Language | Lint/Build |
 |-----------|-----------|----------|------------|
 | **Agent** | `packages/agent/` | Python | `ruff check`, `pytest` |
-| **Tools** | `packages/tools/` | Python | `ruff check`, `pytest` |
 | **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **Web** | `packages/web/` | TypeScript (Nuxt) | `pnpm lint`, `pnpm build` |
 | **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `ruff check`, `pytest` |
@@ -67,7 +65,7 @@ pnpm nx run-many -t test
 
 #### Cross-Package Development
 
-기본 순서: **Infra → Tools → Agent → Web** (의존성 하향). 각 패키지를 완료하고 검증한 후 다음으로 진행합니다. API 계약을 컨텍스트로 전달하여 서브 에이전트가 호환 가능한 인터페이스를 독립적으로 구현합니다.
+기본 순서: **Infra → Agent → Web** (의존성 하향). 각 패키지를 완료하고 검증한 후 다음으로 진행합니다. API 계약을 컨텍스트로 전달하여 서브 에이전트가 호환 가능한 인터페이스를 독립적으로 구현합니다.
 
 ## Architecture Overview
 
@@ -110,8 +108,9 @@ CloudWatch Alarm → SNS → SQS → ECS Fargate (RCA Agent)
 | 이벤트 라우팅 | Amazon SNS + SQS |
 | LLM 추론 | Amazon Bedrock (Claude) |
 | 임베딩 | Amazon Bedrock Cohere Embed v4 |
-| 로그 검색 | CloudWatch Logs Insights |
-| 분산 트레이스 | ADOT + AWS X-Ray |
+| 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 (`awslabs/cloudwatch-mcp-server`) |
+| 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 (`awslabs/cloudtrail-mcp-server`) |
+| 분산 트레이스 | ADOT + AWS X-Ray (MVP 이후) |
 | 증거/보고서 저장 | Amazon S3 |
 | 벡터 검색 | Amazon S3 Vectors |
 | 가설 트리 상태 | Amazon DynamoDB |
@@ -188,7 +187,6 @@ pnpm nx run-many -t test
 
 # 특정 패키지 테스트
 pnpm nx test agent
-pnpm nx test tools
 pnpm nx test infra
 
 # 영향받은 프로젝트만 테스트

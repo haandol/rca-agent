@@ -195,7 +195,8 @@ flowchart LR
 | 이벤트 라우팅 | Amazon SNS + SQS | CloudWatch Alarm → SNS → SQS, Fargate가 SQS를 폴링하여 알람 수신 |
 | LLM 추론 | Amazon Bedrock (Claude) | 관리형 LLM 서비스, CoT 지원, VPC 내 접근 가능 |
 | 임베딩 | Amazon Bedrock Cohere Embed v4 | 플레이북·증거 벡터화, S3 Vectors 유사도 검색에 활용 |
-| 로그 검색 | CloudWatch Logs Insights | 구조화된 로그 쿼리, 별도 클러스터 관리 불필요 |
+| 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 | 메트릭 조회·분석, Logs Insights 쿼리, 알람 조회를 MCP 프로토콜로 제공. 커스텀 도구 구현 불필요 |
+| 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 | CloudTrail 이벤트 조회 및 Lake SQL 분석을 MCP 프로토콜로 제공. 커스텀 도구 구현 불필요 |
 | 분산 트레이스 | ADOT + AWS X-Ray | OTel 표준 기반 계측, ADOT Collector로 X-Ray 백엔드 연동 |
 | 증거 저장 | Amazon S3 | 로그/메트릭 스냅샷, RCA 보고서, 증거 아카이브 |
 | 벡터 검색 | Amazon S3 Vectors | 플레이북·증거 임베딩 저장 및 유사도 검색, 과거 장애 경험 재활용 |
@@ -528,7 +529,7 @@ graph TD
 
 #### 7.5.3 Technical Description
 
-- **MCP 도구 / @tool**: CloudWatch Metrics 조회 전용 도구 — `query_metrics(namespace, metric_name, dimensions, start_time, end_time, period)`
+- **MCP 도구**: AWS Labs CloudWatch MCP 서버의 `get_metric_data`, `get_metric_metadata`, `analyze_metric` 도구를 사용한다
 - **조회 범위**: 알람 발생 전후 1시간, 기본 1분 간격(Period=60)
 - **비교 분석**: 장애 시점 메트릭과 직전 24시간 동일 시간대 메트릭을 비교하여 이상 탐지
 
@@ -560,7 +561,7 @@ graph TD
 
 #### 7.6.3 Technical Description
 
-- **MCP 도구 / @tool**: `query_logs(log_group, query_string, start_time, end_time)` — CloudWatch Logs Insights
+- **MCP 도구**: AWS Labs CloudWatch MCP 서버의 `execute_log_insights_query`, `get_logs_insight_query_results`, `describe_log_groups`, `analyze_log_group` 도구를 사용한다
 - **쿼리 생성**: LLM이 가설에 맞는 검색 쿼리를 자동 생성 (예: 가설이 "DB 커넥션 누수"면 `fields @timestamp, @message | filter @message like /connection|Too many/`)
 - **로그 요약**: 대량 로그 반환 시 LLM이 핵심 로그만 추출하여 요약
 
@@ -595,7 +596,7 @@ graph TD
 
 #### 7.7.3 Technical Description
 
-- **MCP 도구 / @tool**: `query_traces(service_name, start_time, end_time, filter_expression)` — X-Ray API 래핑
+- **MCP 도구 / @tool**: X-Ray 전용 MCP 서버 미제공 — MVP에서 트레이스 분석 생략, v2에서 커스텀 @tool 또는 MCP 서버 채택 시 구현
 - **계측 기반**: ADOT(AWS Distro for OpenTelemetry)로 계측된 서비스의 트레이스를 X-Ray 백엔드에서 조회
 - **분석 포인트**: 응답 시간 이상치, 에러/폴트 세그먼트, 서비스 간 호출 지연 패턴 식별
 
@@ -628,7 +629,7 @@ graph TD
 
 #### 7.8.3 Technical Description
 
-- **MCP 도구 / @tool**: `query_deploy_history(service_name, limit_count)` — CloudTrail LookupEvents API 래핑
+- **MCP 도구**: AWS Labs CloudTrail MCP 서버의 `lookup_events` 도구를 사용한다. CloudTrail Lake 활성화 시 `lake_query`로 SQL 기반 고급 분석도 가능하다
 - **조회 방식**: 알람 대상 서비스의 **직전 N개(기본 5개) 배포 이벤트**를 시간 제한 없이 조회하고, 각 배포 시점과 장애 발생 시점의 시간 상관관계를 분석. 24시간 이상 전 배포도 커넥션 누수, 메모리 릭 등 점진적 장애의 원인일 수 있으므로 시간 기반 컷오프를 두지 않음
 - **조회 대상 이벤트**: CodeDeploy 배포, ECS 태스크 정의 변경, Lambda 함수 업데이트, CloudFormation 스택 변경 등
 - **상관관계 분석**: 각 배포 시각과 메트릭 이상 시작 시각의 시간차를 계산하여 가장 상관성 높은 배포를 식별
@@ -665,7 +666,7 @@ graph TD
 
 #### 7.9.3 Technical Description
 
-- **MCP 도구 / @tool**: `get_code_diff(repo, commit_id_before, commit_id_after)` — CodeCommit GetDifferences / GitHub Compare API 래핑
+- **MCP 도구 / @tool**: GitHub MCP 서버(`github/github-mcp-server`) 또는 커스텀 @tool로 구현 — MVP 이후 v2에서 검토
 - **LLM 분석**: diff를 Bedrock에 전달하여 "이 코드 변경에서 장애를 유발할 수 있는 패턴이 있는가?" 판단
 - **탐지 패턴**: 리소스 미반환(커넥션/파일/스레드), 예외 처리 누락, 설정값 변경, 타임아웃 변경, 쿼리 변경 등
 - **크기 제한**: diff가 LLM 컨텍스트 윈도우를 초과할 경우 변경된 파일을 우선순위로 분할 분석

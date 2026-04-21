@@ -1,10 +1,10 @@
-# ADR 0002: 로그 검색 — CloudWatch Logs Insights 기반 증거 수집
+# ADR 0002: 로그 검색 — CloudWatch MCP 서버 기반 증거 수집
 
 Date: 2026-04-21
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -12,17 +12,17 @@ Proposed
 
 ## Decision
 
-**CloudWatch Logs Insights 기반 MCP 도구 + LLM 쿼리 자동 생성** 전략을 채택한다.
+**AWS Labs CloudWatch MCP 서버(`awslabs/cloudwatch-mcp-server`)**의 로그 관련 도구를 사용한다. 커스텀 @tool을 직접 구현하지 않는다.
 
 ### 핵심 결정사항
 
-1. **MCP 도구 인터페이스**: `query_logs(log_group, query_string, start_time, end_time)` 형태의 도구를 제공한다.
+1. **MCP 서버**: 메트릭 수집(ADR 0001)과 동일한 `awslabs/cloudwatch-mcp-server`를 사용한다. 로그 관련 도구 `describe_log_groups`, `execute_log_insights_query`, `get_logs_insight_query_results`, `cancel_logs_insight_query`, `analyze_log_group`을 활용한다.
 
-2. **LLM 쿼리 생성**: LLM이 가설에 맞는 Logs Insights 쿼리를 자동 생성한다. 예를 들어 가설이 "DB 커넥션 누수"면 `fields @timestamp, @message | filter @message like /connection|Too many/` 형태의 쿼리를 생성한다.
+2. **LLM 쿼리 생성**: Strands 에이전트가 가설에 맞는 Logs Insights 쿼리를 생성하고 `execute_log_insights_query`로 실행한다.
 
-3. **로그 요약**: 대량 로그 반환 시 LLM이 핵심 로그만 추출하여 요약한다.
+3. **비동기 쿼리**: Logs Insights는 2단계(쿼리 실행 → 결과 조회)로 동작한다. 에이전트가 `execute_log_insights_query` 후 `get_logs_insight_query_results`로 결과를 폴링한다.
 
-4. **재시도 전략**: 쿼리 타임아웃(60초) 시 시간 범위를 줄여 재시도한다. 쿼리 결과 0건 시 LLM이 키워드를 변경하여 1회 재시도한다.
+4. **이상 패턴 분석**: `analyze_log_group` 도구로 로그 그룹의 이상 탐지, 메시지 패턴, 에러 패턴을 자동 분석한다.
 
 5. **MVP 범위**: CloudWatch Logs Insights만 사용한다. OpenSearch 기반 대용량 로그 검색은 v2에서 검토한다.
 
@@ -30,13 +30,14 @@ Proposed
 
 ### Positive
 
-- LLM이 가설에 적합한 쿼리를 자동 생성하여 SRE의 쿼리 작성 부담 제거
-- 핵심 로그 자동 추출로 대량 로그에서 증거 식별 시간 단축
+- 하나의 MCP 서버로 메트릭 + 로그를 모두 커버하여 관리 포인트 최소화
+- 로그 이상 탐지(`analyze_log_group`)를 추가 구현 없이 활용 가능
+- LLM이 쿼리를 자동 생성하여 SRE의 쿼리 작성 부담 제거
 
 ### Negative
 
+- MCP 서버가 쿼리 타임아웃 시 자동 재시도를 제공하지 않음 — 에이전트 프롬프트로 제어 필요
 - LLM이 생성한 쿼리가 비효율적이거나 부정확할 수 있음
-- CloudWatch Logs Insights의 쿼리 문법 제약으로 복잡한 검색이 어려울 수 있음
 
 ### Risks
 
@@ -44,4 +45,4 @@ Proposed
 
 ## Related
 
-- [ADR tools/0001: 메트릭 수집](0001-metrics-collection.md) — 동일 가설의 다른 유형 증거 수집
+- [ADR tools/0001: 메트릭 수집](0001-metrics-collection.md) — 동일 MCP 서버의 메트릭 도구

@@ -36,10 +36,10 @@ adr/
 
 ### Tools
 
-- [ADR 0001: 메트릭 수집 — CloudWatch 메트릭 기반 증거 수집](tools/0001-metrics-collection.md)
-- [ADR 0002: 로그 검색 — CloudWatch Logs Insights 기반 증거 수집](tools/0002-log-search.md)
+- [ADR 0001: 메트릭 수집 — CloudWatch MCP 서버 기반 증거 수집](tools/0001-metrics-collection.md)
+- [ADR 0002: 로그 검색 — CloudWatch MCP 서버 기반 증거 수집](tools/0002-log-search.md)
 - [ADR 0003: 트레이스 분석 — X-Ray 기반 분산 트레이스 조회](tools/0003-trace-analysis.md)
-- [ADR 0004: 배포 이력 조회 — CloudTrail 기반 배포/변경 이벤트 조회](tools/0004-deploy-history.md)
+- [ADR 0004: 배포 이력 조회 — CloudTrail MCP 서버 기반 배포/변경 이벤트 조회](tools/0004-deploy-history.md)
 - [ADR 0005: 코드 변경 분석 — 배포 코드 diff의 LLM 기반 결함 탐지](tools/0005-code-change-analysis.md)
 
 ### Infra
