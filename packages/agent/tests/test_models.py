@@ -54,6 +54,56 @@ class TestAlarmPayload:
         assert alarm.trigger.metric_name == "Latency"
 
 
+class TestAlarmPayloadFromCloudwatchSns:
+    def test_parses_full_payload(self):
+        raw = {
+            "AlarmName": "HighCPU",
+            "AlarmArn": "arn:aws:cloudwatch:ap-northeast-2:123456789012:alarm:HighCPU",
+            "NewStateValue": "ALARM",
+            "NewStateReason": "Threshold crossed",
+            "StateChangeTime": "2026-04-22T10:30:00.000+0000",
+            "Trigger": {
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/ECS",
+                "Dimensions": [
+                    {"name": "ServiceName", "value": "web-service"},
+                    {"name": "ClusterName", "value": "prod"},
+                ],
+                "Statistic": "Average",
+                "Period": 300,
+                "Threshold": 80.0,
+                "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+            },
+        }
+        alarm = AlarmPayload.from_cloudwatch_sns(raw)
+        assert alarm.alarm_name == "HighCPU"
+        assert alarm.region == "ap-northeast-2"
+        assert alarm.trigger is not None
+        assert alarm.trigger.metric_name == "CPUUtilization"
+        assert alarm.trigger.dimensions == {"ServiceName": "web-service", "ClusterName": "prod"}
+        assert alarm.trigger.threshold == 80.0
+
+    def test_parses_minimal_payload(self):
+        raw = {"AlarmName": "SimpleAlarm", "NewStateReason": "something broke"}
+        alarm = AlarmPayload.from_cloudwatch_sns(raw)
+        assert alarm.alarm_name == "SimpleAlarm"
+        assert alarm.trigger is None
+        assert alarm.region == "us-east-1"
+
+    def test_extracts_region_from_arn(self):
+        raw = {
+            "AlarmName": "test",
+            "AlarmArn": "arn:aws:cloudwatch:eu-west-1:111111111111:alarm:test",
+        }
+        alarm = AlarmPayload.from_cloudwatch_sns(raw)
+        assert alarm.region == "eu-west-1"
+
+    def test_handles_empty_trigger(self):
+        raw = {"AlarmName": "test", "Trigger": {}}
+        alarm = AlarmPayload.from_cloudwatch_sns(raw)
+        assert alarm.trigger is None
+
+
 class TestScopingResult:
     def test_minimal(self):
         result = ScopingResult(alarm_summary="CPU spike on web service")

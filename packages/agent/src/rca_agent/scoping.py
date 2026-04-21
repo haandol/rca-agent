@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import UTC
 from typing import TYPE_CHECKING
 
@@ -12,6 +15,7 @@ from rca_agent.config import (
     PLAYBOOK_TOP_K,
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
+    SCOPING_TIMEOUT_SECONDS,
 )
 from rca_agent.models import AlarmPayload, PlaybookMatch, ScopingResult
 from rca_agent.prompts import SCOPING_USER_PROMPT_TEMPLATE
@@ -20,6 +24,9 @@ if TYPE_CHECKING:
     from strands import Agent
 
 logger = logging.getLogger(__name__)
+
+_PLAYBOOK_SEARCH_MAX_RETRIES = 3
+_PLAYBOOK_SEARCH_BASE_DELAY = 1.0
 
 
 class ScopingOutput(BaseModel):
@@ -65,23 +72,35 @@ def search_similar_playbooks(
     alarm: AlarmPayload,
     *,
     s3_vectors_client=None,
+    max_retries: int = _PLAYBOOK_SEARCH_MAX_RETRIES,
+    base_delay: float = _PLAYBOOK_SEARCH_BASE_DELAY,
 ) -> list[PlaybookMatch]:
-    """Search S3 Vectors for similar playbooks based on alarm context."""
+    """Search S3 Vectors for similar playbooks based on alarm context.
+
+    Retries with exponential backoff on transient failures.
+    """
     if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
         logger.info("S3 Vectors not configured, skipping playbook search")
         return []
 
     query_text = f"{alarm.service_name} {alarm.alarm_name} {alarm.new_state_reason}"
-    try:
-        response = s3_vectors_client.query_vectors(
-            vectorBucketName=S3_VECTOR_BUCKET_NAME,
-            indexName=S3_VECTOR_PLAYBOOK_INDEX,
-            queryText=query_text,
-            topK=PLAYBOOK_TOP_K,
-        )
-    except Exception:
-        logger.exception("Failed to search playbooks from S3 Vectors")
-        return []
+
+    for attempt in range(max_retries):
+        try:
+            response = s3_vectors_client.query_vectors(
+                vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                indexName=S3_VECTOR_PLAYBOOK_INDEX,
+                queryText=query_text,
+                topK=PLAYBOOK_TOP_K,
+            )
+            break
+        except Exception:
+            if attempt == max_retries - 1:
+                logger.exception("Failed to search playbooks after %d attempts", max_retries)
+                return []
+            delay = base_delay * (2**attempt)
+            logger.warning("Playbook search attempt %d failed, retrying in %.1fs", attempt + 1, delay)
+            time.sleep(delay)
 
     matches = []
     for item in response.get("vectors", []):
@@ -100,25 +119,56 @@ def search_similar_playbooks(
     return matches
 
 
+def _invoke_scoping_agent(
+    agent: Agent,
+    user_prompt: str,
+) -> ScopingOutput:
+    result = agent(user_prompt, structured_output_model=ScopingOutput)
+    return result.structured_output
+
+
 def run_scoping(
     alarm: AlarmPayload,
     agent: Agent,
     *,
     s3_vectors_client=None,
+    timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
 ) -> ScopingResult:
     """Run the initial scoping phase for an alarm.
 
     1. Search S3 Vectors for similar playbooks
     2. Build the prompt with alarm context + playbook references
-    3. Invoke the Strands agent with CloudWatch MCP tools
+    3. Invoke the Strands agent with CloudWatch MCP tools (with timeout)
     4. Parse structured output into ScopingResult
+
+    If the agent exceeds timeout_seconds, returns a fallback ScopingResult
+    built from the alarm payload alone.
     """
     playbooks = search_similar_playbooks(alarm, s3_vectors_client=s3_vectors_client)
     user_prompt = _build_user_prompt(alarm, playbooks)
 
-    logger.info("Running scoping agent for alarm: %s", alarm.alarm_name)
-    result = agent(user_prompt, structured_output_model=ScopingOutput)
-    output: ScopingOutput = result.structured_output
+    logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)
+
+    output: ScopingOutput | None = None
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_invoke_scoping_agent, agent, user_prompt)
+        try:
+            output = future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError:
+            logger.warning("Scoping agent timed out after %ds, using alarm payload as fallback", timeout_seconds)
+            future.cancel()
+        except Exception:
+            logger.exception("Scoping agent failed")
+
+    if output is None:
+        return ScopingResult(
+            alarm_summary=f"[Timeout] {alarm.alarm_name}: {alarm.new_state_reason}",
+            blast_radius="single",
+            initial_severity="medium",
+            similar_playbooks=playbooks,
+            raw_alarm=alarm,
+        )
+
     logger.info("Scoping complete: severity=%s, blast_radius=%s", output.initial_severity, output.blast_radius)
 
     anomaly_time = None

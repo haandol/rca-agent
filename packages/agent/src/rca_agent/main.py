@@ -9,7 +9,11 @@ import time
 
 import boto3
 
+from rca_agent.agent_factory import create_cloudwatch_mcp_client, create_scoping_agent
+from rca_agent.config import S3_VECTOR_BUCKET_NAME
 from rca_agent.healthz import start_health_server
+from rca_agent.models import AlarmPayload
+from rca_agent.scoping import run_scoping
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +33,44 @@ def _handle_signal(signum, _frame):
     _running = False
 
 
+def _parse_sns_envelope(body: dict) -> dict:
+    """Extract the CloudWatch alarm payload from an SNS envelope.
+
+    SQS messages from an SNS subscription wrap the actual payload inside a
+    top-level "Message" field (JSON-encoded string). If the body is already
+    a raw CloudWatch alarm payload (e.g. in tests), return it as-is.
+    """
+    if "Message" in body and isinstance(body["Message"], str):
+        return json.loads(body["Message"])
+    return body
+
+
+def _create_s3_vectors_client():
+    if not S3_VECTOR_BUCKET_NAME:
+        return None
+    return boto3.client("s3vectors")
+
+
+def _process_alarm(body: dict, agent, s3_vectors_client) -> None:
+    alarm_data = _parse_sns_envelope(body)
+    alarm = AlarmPayload.from_cloudwatch_sns(alarm_data)
+    logger.info(
+        "Parsed alarm: name=%s, resource=%s, service=%s",
+        alarm.alarm_name,
+        alarm.resource_id,
+        alarm.service_name,
+    )
+
+    scoping_result = run_scoping(alarm, agent, s3_vectors_client=s3_vectors_client)
+    logger.info(
+        "Scoping result: severity=%s, blast_radius=%s, playbooks=%d",
+        scoping_result.initial_severity,
+        scoping_result.blast_radius,
+        len(scoping_result.similar_playbooks),
+    )
+    # TODO: pass scoping_result to hypothesis generation (ADR 0002)
+
+
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -39,6 +81,11 @@ def main() -> None:
 
     start_health_server()
     logger.info("Health server started on port 8000")
+
+    mcp_client = create_cloudwatch_mcp_client()
+    agent = create_scoping_agent(mcp_clients=[mcp_client])
+    s3_vectors_client = _create_s3_vectors_client()
+    logger.info("Scoping agent initialized")
 
     sqs = boto3.client("sqs")
     logger.info("Starting SQS long polling: %s", QUEUE_URL)
@@ -62,8 +109,8 @@ def main() -> None:
         for msg in messages:
             try:
                 body = json.loads(msg["Body"])
-                logger.info("Received alarm message: %s", body.get("AlarmName", "unknown"))
-                # TODO: parse AlarmPayload, run scoping, hypothesis loop
+                logger.info("Received alarm message: %s", body.get("AlarmName", body.get("Message", "unknown")[:80]))
+                _process_alarm(body, agent, s3_vectors_client)
             except Exception:
                 logger.exception("Failed to process message")
             finally:

@@ -35,8 +35,28 @@ class TestSearchSimilarPlaybooks:
     def test_handles_api_error_gracefully(self, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("S3 Vectors unavailable")
-        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client)
+        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
         assert result == []
+
+    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    def test_retries_with_exponential_backoff(self, sample_alarm: AlarmPayload):
+        mock_client = MagicMock()
+        mock_client.query_vectors.side_effect = [
+            RuntimeError("transient error"),
+            {"vectors": [{"key": "pb-1", "distance": 0.9, "metadata": {"title": "Found it"}}]},
+        ]
+        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
+        assert len(result) == 1
+        assert result[0].playbook_id == "pb-1"
+        assert mock_client.query_vectors.call_count == 2
+
+    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    def test_exhausts_all_retries(self, sample_alarm: AlarmPayload):
+        mock_client = MagicMock()
+        mock_client.query_vectors.side_effect = RuntimeError("persistent failure")
+        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, max_retries=2, base_delay=0.01)
+        assert result == []
+        assert mock_client.query_vectors.call_count == 2
 
 
 class TestRunScoping:
@@ -122,3 +142,28 @@ class TestRunScoping:
         assert "HighCPU-web-service" in prompt
         assert "CPUUtilization" in prompt
         assert "AWS/ECS" in prompt
+
+    def test_timeout_returns_fallback_result(self, sample_alarm: AlarmPayload):
+        import time as _time
+
+        def slow_agent(prompt, **kwargs):
+            _time.sleep(5)
+            return MagicMock(structured_output=ScopingOutput(alarm_summary="too late"))
+
+        mock_agent = MagicMock(side_effect=slow_agent)
+
+        result = run_scoping(sample_alarm, mock_agent, timeout_seconds=1)
+
+        assert isinstance(result, ScopingResult)
+        assert result.alarm_summary.startswith("[Timeout]")
+        assert "HighCPU-web-service" in result.alarm_summary
+        assert result.raw_alarm == sample_alarm
+
+    def test_agent_exception_returns_fallback_result(self, sample_alarm: AlarmPayload):
+        mock_agent = MagicMock(side_effect=RuntimeError("LLM error"))
+
+        result = run_scoping(sample_alarm, mock_agent)
+
+        assert isinstance(result, ScopingResult)
+        assert result.alarm_summary.startswith("[Timeout]")
+        assert result.raw_alarm == sample_alarm

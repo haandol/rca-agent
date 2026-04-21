@@ -49,6 +49,41 @@ class AlarmPayload(BaseModel):
             return self.trigger.namespace
         return "Unknown"
 
+    @classmethod
+    def from_cloudwatch_sns(cls, raw: dict) -> AlarmPayload:
+        """Parse a CloudWatch alarm SNS notification into AlarmPayload."""
+        trigger_raw = raw.get("Trigger") or {}
+        dimensions = {d["name"]: d["value"] for d in trigger_raw.get("Dimensions", [])}
+
+        trigger = None
+        if trigger_raw.get("MetricName"):
+            trigger = AlarmTrigger(
+                metric_name=trigger_raw["MetricName"],
+                namespace=trigger_raw.get("Namespace", ""),
+                dimensions=dimensions,
+                statistic=trigger_raw.get("Statistic", "Average"),
+                period=trigger_raw.get("Period", 300),
+                threshold=trigger_raw.get("Threshold"),
+                comparison_operator=trigger_raw.get("ComparisonOperator"),
+            )
+
+        alarm_arn = raw.get("AlarmArn") or None
+        region = "us-east-1"
+        if alarm_arn:
+            arn_parts = alarm_arn.split(":")
+            if len(arn_parts) >= 4:
+                region = arn_parts[3]
+
+        return cls(
+            alarm_name=raw.get("AlarmName", ""),
+            alarm_arn=alarm_arn,
+            new_state=raw.get("NewStateValue", "ALARM"),
+            new_state_reason=raw.get("NewStateReason", ""),
+            state_change_time=raw.get("StateChangeTime"),
+            trigger=trigger,
+            region=region,
+        )
+
 
 class PlaybookMatch(BaseModel):
     playbook_id: str
