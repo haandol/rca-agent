@@ -1,18 +1,18 @@
-import * as cdk from 'aws-cdk-lib'
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
-import { Construct } from 'constructs'
+import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import { Construct } from 'constructs';
 
 interface IProps extends cdk.StackProps {
-  readonly rcaSessionTableName: string
+  readonly rcaSessionTableName: string;
 }
 
 export class DatabaseStack extends cdk.Stack {
-  readonly rcaSessionTable: dynamodb.ITable
+  readonly rcaSessionTable: dynamodb.ITable;
 
   constructor(scope: Construct, id: string, props: IProps) {
-    super(scope, id, props)
+    super(scope, id, props);
 
-    this.rcaSessionTable = this.newRcaSessionTable(props.rcaSessionTableName)
+    this.rcaSessionTable = this.newRcaSessionTable(props.rcaSessionTableName);
   }
 
   private newRcaSessionTable(tableName: string): dynamodb.Table {
@@ -26,6 +26,6 @@ export class DatabaseStack extends cdk.Stack {
         pointInTimeRecoveryEnabled: true,
       },
       timeToLiveAttribute: 'ttl',
-    })
+    });
   }
 }

@@ -1,29 +1,33 @@
-import * as cdk from 'aws-cdk-lib'
-import * as sqs from 'aws-cdk-lib/aws-sqs'
-import * as sns from 'aws-cdk-lib/aws-sns'
-import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions'
-import { Construct } from 'constructs'
-import { AlarmTopic } from '../constructs/alarm-topic'
+import * as cdk from 'aws-cdk-lib';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import { Construct } from 'constructs';
+import { AlarmTopic } from '../constructs/alarm-topic';
 
 interface IProps extends cdk.StackProps {
-  readonly notificationEmail: string
+  readonly notificationEmail: string;
 }
 
 export class EventBusStack extends cdk.Stack {
-  readonly alarmTopic: sns.ITopic
-  readonly alarmQueue: sqs.IQueue
-  readonly deadLetterQueue: sqs.IQueue
+  readonly alarmTopic: sns.ITopic;
+  readonly alarmQueue: sqs.IQueue;
+  readonly deadLetterQueue: sqs.IQueue;
 
   constructor(scope: Construct, id: string, props: IProps) {
-    super(scope, id, props)
+    super(scope, id, props);
 
-    const ns = this.node.tryGetContext('ns') as string
+    const ns = this.node.tryGetContext('ns') as string;
 
-    const alarmTopicConstruct = new AlarmTopic(this, 'AlarmTopicConstruct', props)
-    this.alarmTopic = alarmTopicConstruct.topic
+    const alarmTopicConstruct = new AlarmTopic(
+      this,
+      'AlarmTopicConstruct',
+      props,
+    );
+    this.alarmTopic = alarmTopicConstruct.topic;
 
-    this.deadLetterQueue = this.newDeadLetterQueue(ns)
-    this.alarmQueue = this.newAlarmQueue(ns)
+    this.deadLetterQueue = this.newDeadLetterQueue(ns);
+    this.alarmQueue = this.newAlarmQueue(ns);
   }
 
   private newDeadLetterQueue(ns: string): sqs.Queue {
@@ -31,7 +35,7 @@ export class EventBusStack extends cdk.Stack {
       queueName: `${ns}DeadLetterQueue`,
       visibilityTimeout: cdk.Duration.minutes(10),
       retentionPeriod: cdk.Duration.days(14),
-    })
+    });
   }
 
   private newAlarmQueue(ns: string): sqs.Queue {
@@ -43,14 +47,14 @@ export class EventBusStack extends cdk.Stack {
         queue: this.deadLetterQueue,
         maxReceiveCount: 3,
       },
-    })
+    });
 
     this.alarmTopic.addSubscription(
       new snsSubscriptions.SqsSubscription(queue, {
         rawMessageDelivery: true,
-      })
-    )
+      }),
+    );
 
-    return queue
+    return queue;
   }
 }

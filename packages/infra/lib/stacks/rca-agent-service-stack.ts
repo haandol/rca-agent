@@ -1,34 +1,34 @@
-import * as cdk from 'aws-cdk-lib'
-import * as ec2 from 'aws-cdk-lib/aws-ec2'
-import * as ecs from 'aws-cdk-lib/aws-ecs'
-import * as iam from 'aws-cdk-lib/aws-iam'
-import * as s3 from 'aws-cdk-lib/aws-s3'
-import * as logs from 'aws-cdk-lib/aws-logs'
-import * as sqs from 'aws-cdk-lib/aws-sqs'
-import * as sns from 'aws-cdk-lib/aws-sns'
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
-import { Construct } from 'constructs'
+import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import { Construct } from 'constructs';
 
 interface IProps extends cdk.StackProps {
-  readonly vpc: ec2.IVpc
-  readonly alarmQueue: sqs.IQueue
-  readonly alarmTopic: sns.ITopic
-  readonly rcaSessionTable: dynamodb.ITable
-  readonly evidenceBucket: s3.IBucket
-  readonly vectorBucketName: string
-  readonly imageTag: string
-  readonly tracing: boolean
+  readonly vpc: ec2.IVpc;
+  readonly alarmQueue: sqs.IQueue;
+  readonly alarmTopic: sns.ITopic;
+  readonly rcaSessionTable: dynamodb.ITable;
+  readonly evidenceBucket: s3.IBucket;
+  readonly vectorBucketName: string;
+  readonly imageTag: string;
+  readonly tracing: boolean;
 }
 
 export class RcaAgentServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: IProps) {
-    super(scope, id, props)
+    super(scope, id, props);
 
-    const ns = this.node.tryGetContext('ns') as string
+    const ns = this.node.tryGetContext('ns') as string;
 
-    const cluster = this.newCluster(ns, props.vpc)
-    const taskDefinition = this.newTaskDefinition(ns, props)
-    this.newService(ns, cluster, taskDefinition, props)
+    const cluster = this.newCluster(ns, props.vpc);
+    const taskDefinition = this.newTaskDefinition(ns, props);
+    this.newService(ns, cluster, taskDefinition);
   }
 
   private newCluster(ns: string, vpc: ec2.IVpc): ecs.Cluster {
@@ -36,10 +36,13 @@ export class RcaAgentServiceStack extends cdk.Stack {
       clusterName: `${ns}RcaAgent`,
       vpc,
       containerInsightsV2: ecs.ContainerInsights.ENHANCED,
-    })
+    });
   }
 
-  private newTaskDefinition(ns: string, props: IProps): ecs.FargateTaskDefinition {
+  private newTaskDefinition(
+    ns: string,
+    props: IProps,
+  ): ecs.FargateTaskDefinition {
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       family: `${ns}RcaAgent`,
       cpu: 1024,
@@ -48,17 +51,19 @@ export class RcaAgentServiceStack extends cdk.Stack {
         cpuArchitecture: ecs.CpuArchitecture.ARM64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
-    })
+    });
 
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: `/ecs/${ns}/rca-agent`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-    })
+    });
 
     taskDef.addContainer('RcaAgent', {
       containerName: 'rca-agent',
-      image: ecs.ContainerImage.fromRegistry(`${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/rca-agent:${props.imageTag}`),
+      image: ecs.ContainerImage.fromRegistry(
+        `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/rca-agent:${props.imageTag}`,
+      ),
       essential: true,
       environment: {
         AWS_REGION: cdk.Aws.REGION,
@@ -77,42 +82,47 @@ export class RcaAgentServiceStack extends cdk.Stack {
         logGroup,
       }),
       healthCheck: {
-        command: ['CMD-SHELL', 'python -c "import urllib.request; urllib.request.urlopen(\'http://localhost:8000/healthz\')" || exit 1'],
+        command: [
+          'CMD-SHELL',
+          'python -c "import urllib.request; urllib.request.urlopen(\'http://localhost:8000/healthz\')" || exit 1',
+        ],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         startPeriod: cdk.Duration.seconds(30),
         retries: 3,
       },
       portMappings: [{ containerPort: 8000 }],
-    })
+    });
 
     if (props.tracing) {
       taskDef.addContainer('OtelCollector', {
         containerName: 'otel-collector',
-        image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/aws-otel-collector:latest'),
+        image: ecs.ContainerImage.fromRegistry(
+          'public.ecr.aws/aws-observability/aws-otel-collector:latest',
+        ),
         essential: false,
         logging: ecs.LogDrivers.awsLogs({
           streamPrefix: 'otel-collector',
           logGroup,
         }),
-        portMappings: [
-          { containerPort: 4317 },
-          { containerPort: 4318 },
-        ],
-      })
+        portMappings: [{ containerPort: 4317 }, { containerPort: 4318 }],
+      });
     }
 
-    this.grantTaskPermissions(taskDef, props)
+    this.grantTaskPermissions(taskDef, props);
 
-    return taskDef
+    return taskDef;
   }
 
-  private grantTaskPermissions(taskDef: ecs.FargateTaskDefinition, props: IProps): void {
-    props.alarmQueue.grantConsumeMessages(taskDef.taskRole)
+  private grantTaskPermissions(
+    taskDef: ecs.FargateTaskDefinition,
+    props: IProps,
+  ): void {
+    props.alarmQueue.grantConsumeMessages(taskDef.taskRole);
 
-    props.rcaSessionTable.grantReadWriteData(taskDef.taskRole)
+    props.rcaSessionTable.grantReadWriteData(taskDef.taskRole);
 
-    props.evidenceBucket.grantReadWrite(taskDef.taskRole)
+    props.evidenceBucket.grantReadWrite(taskDef.taskRole);
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -130,15 +140,18 @@ export class RcaAgentServiceStack extends cdk.Stack {
           `arn:aws:s3vectors:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:bucket/${props.vectorBucketName}`,
           `arn:aws:s3vectors:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:bucket/${props.vectorBucketName}/*`,
         ],
-      })
-    )
+      }),
+    );
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
-        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+        actions: [
+          'bedrock:InvokeModel',
+          'bedrock:InvokeModelWithResponseStream',
+        ],
         resources: ['*'],
-      })
-    )
+      }),
+    );
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -148,8 +161,8 @@ export class RcaAgentServiceStack extends cdk.Stack {
           'cloudwatch:DescribeAlarms',
         ],
         resources: ['*'],
-      })
-    )
+      }),
+    );
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -160,8 +173,8 @@ export class RcaAgentServiceStack extends cdk.Stack {
           'logs:DescribeLogGroups',
         ],
         resources: ['*'],
-      })
-    )
+      }),
+    );
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -172,29 +185,28 @@ export class RcaAgentServiceStack extends cdk.Stack {
           'xray:PutTelemetryRecords',
         ],
         resources: ['*'],
-      })
-    )
+      }),
+    );
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['cloudtrail:LookupEvents'],
         resources: ['*'],
-      })
-    )
+      }),
+    );
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['sns:Publish'],
         resources: [props.alarmTopic.topicArn],
-      })
-    )
+      }),
+    );
   }
 
   private newService(
     ns: string,
     cluster: ecs.Cluster,
     taskDefinition: ecs.FargateTaskDefinition,
-    props: IProps
   ): ecs.FargateService {
     return new ecs.FargateService(this, 'Service', {
       serviceName: `${ns}RcaAgent`,
@@ -206,6 +218,6 @@ export class RcaAgentServiceStack extends cdk.Stack {
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
       enableExecuteCommand: true,
-    })
+    });
   }
 }

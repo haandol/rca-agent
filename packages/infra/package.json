@@ -14,13 +14,19 @@
     "test": "jest",
     "cdk": "cdk",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"lib/**/*.ts\" \"bin/**/*.ts\" \"config/**/*.ts\""
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
     "aws-cdk": "2.1118.2",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
     "jest": "^30.3.0",
+    "prettier": "^3.8.3",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.2"

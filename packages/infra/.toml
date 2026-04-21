@@ -6,7 +6,7 @@ stage = "Dev"
 region = "ap-northeast-2"
 
 [alarm]
-notificationEmail = "admin@example.com"
+notificationEmail = "dongkyl@amazon.com"
 
 [agent]
 imageTag = "latest"
