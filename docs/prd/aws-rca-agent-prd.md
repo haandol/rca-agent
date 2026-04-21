@@ -1,0 +1,1019 @@
+# AWS 기반 자동 RCA 분석 에이전트 ALPS
+
+## Section 1. Overview
+
+### 1.1. Purpose
+
+AWS 환경에서 메트릭 알람 발생 시 Strands Agents SDK와 MCP 서버를 활용하여 가설-트리(Hypothesis Tree) 방식으로 자동 RCA(근본원인분석)를 수행하는 에이전트 시스템의 제품 요구사항을 정의한다. 수동 장애 분석의 비효율을 줄이고 MTTR(평균 복구 시간)을 획기적으로 단축하는 것이 목표이다.
+
+### 1.2. Document Name
+
+AWS 기반 자동 RCA 분석 에이전트 PRD
+
+### 1.3. Author
+
+이동균
+
+### 1.4. Target Users
+
+- **SRE(Site Reliability Engineer)**: 장애 대응 및 근본 원인 분석 주 담당자
+- **DevOps 엔지니어**: 인프라 운영 및 배포 파이프라인 관리자
+- **운영팀(Ops)**: 알람 모니터링 및 초기 대응 담당자
+
+### 1.5. Core Problem
+
+- 장애 발생 시 CloudWatch 메트릭, 로그, X-Ray 트레이스 등 다양한 데이터 소스를 수동으로 교차 분석해야 하며, 이 과정이 시간 소모적이고 전문성에 의존적이다
+- 알람 발생 시점에는 정보가 불완전하여 초반 가정이 틀리면 잘못된 방향으로 오래 조사하게 된다
+- 반복적인 장애 패턴에도 매번 처음부터 분석을 시작해야 하며, 분석 경험이 체계적으로 축적되지 않는다
+
+### 1.6. Solution Strategy
+
+- **2단계 계획 구조**: 고정된 상위 상태머신(알람 수신→초기 스코핑→가설 생성→우선순위 검증→반증/확증→최종 보고)으로 운영 제어를 확보하고, 하위는 트리형으로 동적 확장하여 가설별 점진적 검증을 수행한다
+- **Strands Agents SDK + MCP**: LLM 기반 에이전트가 CloudWatch, OpenSearch, X-Ray 등 AWS 서비스를 MCP 도구로 호출하며 가설을 자동 검증한다
+- **이벤트 드리븐 아키텍처**: CloudWatch Alarm → EventBridge → Step Functions → Lambda/Strands 에이전트로 이어지는 자동화 파이프라인을 구성한다
+
+### 1.7. Key Differentiators
+
+- **가설-트리 기반 점진적 추론**: 전체 계획을 고정하지 않고, 증거에 따라 가지치기·확장하는 트리형 탐색으로 불완전한 초기 정보에서도 정확한 원인 도출 가능
+- **Supervisor-Orchestrator 패턴**: 가설 생성기(Orchestrator)가 전문 툴 에이전트(Tool-Caller)에게 작업을 위임하여 병렬 검증 및 효율적 자원 활용
+- **신뢰도·비용·깊이 기반 중단 조건**: 무한 분기를 방지하고 운영 통제를 확보하는 제어된 오케스트레이션
+- **Datadog Bits AI SRE, BMW Bedrock RCA 등 검증된 접근법을 AWS 네이티브 서비스로 구현**
+
+---
+
+## Section 2. MVP Goals and Key Metrics
+
+### 2.1. Purpose
+
+다음 핵심 가설을 검증한다:
+
+1. **가설-트리 방식의 자동 RCA가 수동 분석 대비 MTTR을 유의미하게 단축할 수 있다**
+2. **사람의 개입 없이도 에이전트가 자율적으로 근본 원인을 정확하게 도출할 수 있다**
+
+즉, 알람 발생부터 RCA 보고서 생성까지 전 과정을 에이전트가 자동으로 수행하며, 운영자가 직접 로그·메트릭을 분석하지 않아도 신뢰할 수 있는 결과를 제공하는지 검증한다.
+
+### 2.2. Key Performance Indicators (KPIs)
+
+| KPI | 현재(Baseline) | MVP 목표(Target) | 비고 |
+|-----|-------------|-----------------|------|
+| RCA 완료 시간(알람→근본 원인 도출) | 수동 분석 30분~수시간 | **20분 이내** | 여유 시간 기준 설계 |
+| RCA 보고서 및 플레이북 생성 시간 | 수동 작성 수시간 | **1시간 이내** | 근본 원인 도출 후 보고서·플레이북 자동 생성까지 |
+| 사람 개입 없는 자동 완료율 | 0% (모두 수동) | **90% 이상** | 에이전트가 개입 없이 RCA 보고서까지 자동 생성하는 비율 |
+| 근본 원인 정확도(Precision) | - | **90% 이상** | 에이전트가 제시한 근본 원인이 실제 원인과 일치하는 비율 |
+| 가설 검출율(Recall) | - | **90% 이상** | 실제 원인이 에이전트의 가설 목록에 포함되는 비율 |
+| 오탐율(False Positive) | - | **20% 이하** | 정상 상태에서 에이전트가 경보 없이 정상 리포트를 내는 비율 |
+
+---
+
+## Section 3. Demo Scenario
+
+### 3.1. 시나리오 개요
+
+**"DB 커넥션 누수로 인한 DB 장애 → 가설-트리 자동 RCA → 코드 변경 원인 특정 → 서비스 롤백 권고"**
+
+운영 중인 서비스에서 최근 배포된 코드가 DB 커넥션을 세션마다 열기만 하고 정리하지 않아 커넥션이 누적된다. RDS의 커넥션 수가 한계에 도달하면서 DB가 응답 불능 상태에 빠지고, 연쇄적으로 서비스 전체에 장애가 전파된다. 에이전트가 사람 개입 없이 자동으로 근본 원인을 분석하고, 최근 배포의 커넥션 누수 코드가 원인임을 밝혀내어 서비스 롤백을 권고하는 보고서를 생성한다.
+
+### 3.2. 데모 흐름
+
+**Phase 0. 알람 수신**
+- CloudWatch Alarm: "RDS DatabaseConnections 임계치 초과" 및 "서비스 응답 지연(Latency) 급증" 복합 알람 발생
+- EventBridge가 이벤트를 수신하여 Step Functions 워크플로우 트리거
+
+**Phase 1. 초기 스코핑**
+- 에이전트가 알람 컨텍스트(RDS 인스턴스 ID, 관련 서비스명, 알람 시각) 파악
+- 영향 범위 확인: CloudWatch 메트릭으로 DB 커넥션 수 추이, 서비스 에러율/지연시간 조회
+
+**Phase 2. 가설 생성 (Top 3)**
+- 가설 A: 최근 배포로 인한 코드 결함 (커넥션 누수 등)
+- 가설 B: 트래픽 급증으로 인한 DB 과부하
+- 가설 C: RDS 인스턴스 자체 문제 (스토리지 부족, 파라미터 변경 등)
+
+**Phase 3. 우선순위 검증**
+- 가설 A 검증:
+  - CloudTrail에서 최근 배포 이력 조회 → 장애 발생 2시간 전 배포 확인
+  - 배포 시점과 DB 커넥션 증가 시작 시점 일치 확인
+  - CloudWatch Logs에서 `ERROR` / `connection` 키워드 검색 → "Too many connections" 에러 다수 발견
+- 가설 B 검증:
+  - 요청 수(RequestCount) 메트릭 조회 → 트래픽은 평소 수준, 가설 기각
+- 가설 C 검증:
+  - RDS 인스턴스 메트릭(FreeStorageSpace, CPUUtilization) 정상 범위, 가설 기각
+
+**Phase 4. 하위 가설 분기 (가설 A 확장)**
+- 가설 A-1: 커넥션 풀 설정 변경
+  - 배포 diff에서 커넥션 풀 설정 변경 없음 → 기각
+- 가설 A-2: 코드에서 커넥션 미반환 (누수)
+  - 배포된 코드 변경 내역 분석 → 새 엔드포인트에서 DB 세션을 `open()` 후 `close()` 없이 리턴하는 패턴 발견
+  - DB 커넥션 수가 배포 시점부터 선형 증가하는 메트릭과 일치 → **확정**
+
+**Phase 5. 최종 보고서 생성**
+- **근본 원인**: 최근 배포의 신규 엔드포인트에서 DB 커넥션 미반환(누수)
+- **영향 범위**: 해당 RDS를 사용하는 전체 서비스 응답 불능
+- **임시 조치**: 해당 서비스 이전 버전으로 롤백 권고
+- **영구 조치**: 커넥션 close 로직 추가, 커넥션 풀 타임아웃 설정 강화
+- **증거 첨부**: DB 커넥션 추이 메트릭, 에러 로그, 배포 이력, 코드 diff
+
+### 3.3. 검증 목표 매핑
+
+| MVP 목표 (Section 2) | 데모에서 검증하는 방법 |
+|---------------------|----------------|
+| RCA 완료 20분 이내 | Phase 0~4까지 소요 시간 측정 |
+| 보고서·플레이북 1시간 이내 | Phase 5 보고서 자동 생성 시간 측정 |
+| 사람 개입 없는 자동 완료율 90%+ | 전체 흐름에서 사람 개입 없이 완료되는지 확인 |
+| Precision 90%+ | 에이전트가 제시한 근본 원인(커넥션 누수)이 실제 원인과 일치하는지 확인 |
+| Recall 90%+ | 실제 원인이 가설 목록(Phase 2)에 포함되었는지 확인 |
+
+---
+
+## Section 4. High-Level Architecture
+
+### 4.1. System Diagram
+
+**Context Diagram**
+
+```mermaid
+flowchart TB
+    Alarm["CloudWatch Alarm"] -->|알람 이벤트| EB["Amazon EventBridge"]
+    EB -->|Fargate Task 실행| Agent["RCA Agent\n(ECS Fargate + Strands SDK)"]
+    Agent -->|메트릭 조회| CW["CloudWatch Metrics/Logs"]
+    Agent -->|트레이스 조회| XRay["ADOT + AWS X-Ray"]
+    Agent -->|로그 검색| OS["Amazon OpenSearch"]
+    Agent -->|배포 이력 조회| CT["AWS CloudTrail"]
+    Agent -->|코드 변경 분석| CR["CodeCommit / GitHub"]
+    Agent -->|LLM 추론| Bedrock["Amazon Bedrock\n(Claude)"]
+    Agent -->|증거 저장| S3["Amazon S3"]
+    Agent -->|가설 트리 상태| DDB["Amazon DynamoDB"]
+    Agent -->|시크릿 조회| SM["AWS Secrets Manager"]
+    Agent -->|보고서 전송| SNS["Amazon SNS"]
+    SNS -->|알림| SRE["SRE / DevOps 엔지니어"]
+```
+
+**Container Diagram**
+
+```mermaid
+flowchart LR
+    subgraph Agent["에이전트 레이어 (ECS Fargate)"]
+        HG["가설 생성기\n(Orchestrator Agent)"]
+        TC1["툴-콜러: 메트릭 수집"]
+        TC2["툴-콜러: 로그 검색"]
+        TC3["툴-콜러: 트레이스 분석"]
+        TC4["툴-콜러: 배포/코드 분석"]
+    end
+
+    subgraph Data["데이터 레이어"]
+        CW["CloudWatch"]
+        OS["OpenSearch"]
+        XRay["ADOT + X-Ray"]
+        CT["CloudTrail"]
+        CR["CodeCommit/GitHub"]
+    end
+
+    subgraph Storage["저장 레이어"]
+        S3["S3\n(증거/보고서)"]
+        DDB["DynamoDB\n(가설 트리 상태)"]
+    end
+
+    subgraph LLM["추론 레이어"]
+        Bedrock["Amazon Bedrock\n(Claude)"]
+    end
+
+    HG --> TC1 & TC2 & TC3 & TC4
+    TC1 --> CW
+    TC2 --> OS
+    TC3 --> XRay
+    TC4 --> CT & CR
+    HG --> Bedrock
+    TC1 & TC2 & TC3 & TC4 --> S3
+    HG --> DDB
+```
+
+### 4.2. Technology Stack
+
+| 컴포넌트 | 기술 | 선정 이유 |
+|---------|------|---------|
+| 에이전트 프레임워크 | Strands Agents SDK | LLM 모델 독립적, MCP 지원, A2A 통신, 자체 오케스트레이션 루프 |
+| 에이전트 실행 환경 | AWS ECS Fargate | 장시간 실행 지원, 서버리스 컨테이너, 타임아웃 제약 없음 |
+| 이벤트 라우팅 | Amazon SNS + SQS | CloudWatch Alarm → SNS → SQS, Fargate가 SQS를 폴링하여 알람 수신 |
+| LLM 추론 | Amazon Bedrock (Claude) | 관리형 LLM 서비스, CoT 지원, VPC 내 접근 가능 |
+| 임베딩 | Amazon Bedrock Cohere Embed v4 | 플레이북·증거 벡터화, S3 Vectors 유사도 검색에 활용 |
+| 로그 검색 | CloudWatch Logs Insights | 구조화된 로그 쿼리, 별도 클러스터 관리 불필요 |
+| 분산 트레이스 | ADOT + AWS X-Ray | OTel 표준 기반 계측, ADOT Collector로 X-Ray 백엔드 연동 |
+| 증거 저장 | Amazon S3 | 로그/메트릭 스냅샷, RCA 보고서, 증거 아카이브 |
+| 벡터 검색 | Amazon S3 Vectors | 플레이북·증거 임베딩 저장 및 유사도 검색, 과거 장애 경험 재활용 |
+| 가설 트리 상태 | Amazon DynamoDB | 가설별 수집 데이터 키-값 저장, 에이전트 자체 상태 관리 |
+| 시크릿 관리 | AWS Secrets Manager | API 키, DB 자격 증명 안전한 관리 |
+| 알림 | Amazon SNS | RCA 보고서 완료 시 SRE 팀 알림 전송 |
+| 네트워크 보안 | VPC + PrivateLink | 모든 AWS 서비스 접근을 VPC 엔드포인트 경유 |
+
+---
+
+## Section 5. Design Specification
+
+### 5.1. Key Screens
+
+| 화면 | 설명 | 관련 기능 |
+|------|------|---------|
+| **RCA 대시보드 (메인)** | 진행 중/완료된 RCA 목록 조회, 상태(진행중/완료/실패) 필터링 | F1, F15 |
+| **RCA 상세 뷰** | 개별 RCA의 가설 트리 시각화, 각 가설별 상태(검증중/확정/기각) 표시, 증거 데이터 열람 | F3, F4, F10, F11, F12, F16 |
+| **증거 상세 패널** | 특정 가설에 연결된 메트릭 차트, 로그 스니펫, 트레이스 정보, 코드 diff 표시 | F5, F6, F7, F8, F9 |
+| **보고서 뷰** | 최종 RCA 보고서 및 플레이북 열람, 다운로드(Markdown/PDF) | F13, F14 |
+
+### 5.2. User Flow
+
+```mermaid
+sequenceDiagram
+    participant CW as CloudWatch Alarm
+    participant EB as EventBridge
+    participant Agent as RCA Agent (Fargate)
+    participant Bedrock as Amazon Bedrock
+    participant Data as AWS 데이터 소스
+    participant DB as DynamoDB
+    participant S3 as S3
+    participant SNS as SNS
+    participant SRE as SRE (웹 대시보드)
+
+    CW->>EB: 알람 이벤트 발생
+    EB->>Agent: Fargate Task 실행 (F1)
+    Agent->>Data: 초기 스코핑 - 메트릭 조회 (F2)
+    Agent->>Bedrock: 가설 생성 요청 (F3)
+    Bedrock-->>Agent: Top 3~5 가설 반환
+    Agent->>DB: 가설 트리 상태 저장 (F16)
+
+    loop 가설별 검증 루프
+        Agent->>Bedrock: 우선순위 결정 (F4)
+        Agent->>Data: 증거 수집 - 메트릭/로그/트레이스/배포이력 (F5~F9)
+        Agent->>S3: 증거 데이터 아카이브 (F16)
+        Agent->>Bedrock: 가설 검증 판단 (F10)
+        alt 가설 기각
+            Agent->>Bedrock: 하위 가설 생성 (F11)
+            Agent->>DB: 트리 확장 상태 저장
+        else 가설 확정
+            Agent->>DB: 근본 원인 확정 저장
+        end
+        Agent->>Agent: 중단 조건 확인 (F12)
+    end
+
+    Agent->>Bedrock: RCA 보고서 작성 (F13)
+    Agent->>Bedrock: 플레이북 생성 (F14)
+    Agent->>S3: 보고서/플레이북 저장
+    Agent->>SNS: 완료 알림 전송 (F15)
+    SNS-->>SRE: 알림 수신 (보고서 링크)
+    SRE->>SRE: 대시보드에서 가설 트리 및 보고서 확인
+```
+
+### 5.3. 화면 네비게이션
+
+```mermaid
+flowchart LR
+    Dashboard["RCA 대시보드\n(메인)"]
+    Detail["RCA 상세 뷰\n(가설 트리)"]
+    Evidence["증거 상세 패널"]
+    Report["보고서 뷰"]
+
+    Dashboard -->|RCA 건 선택| Detail
+    Detail -->|가설 노드 클릭| Evidence
+    Detail -->|보고서 보기| Report
+    Report -->|목록으로| Dashboard
+    Evidence -->|닫기| Detail
+```
+
+---
+
+## Section 6. Requirements Summary
+
+### 6.1. Core Features (Functional Requirements)
+
+| ID | 기능 | 설명 | 우선순위 |
+|----|------|------|---------|
+| F1 | 알람 수신 및 이벤트 트리거 | CloudWatch Alarm 이벤트를 EventBridge가 수신하여 Fargate Task(RCA 에이전트)를 자동 실행 | Must-Have |
+| F2 | 초기 스코핑 | 알람 컨텍스트(리소스 ID, 서비스명, 알람 시각) 파악 및 영향 범위 확인 (관련 메트릭 조회) | Must-Have |
+| F3 | 가설 생성 | LLM 기반으로 알람 정보와 초기 스코핑 결과를 바탕으로 Top 3~5 가설을 트리 형태로 생성 | Must-Have |
+| F4 | 가설 우선순위 결정 | 생성된 가설에 우선순위를 매기고, 각 가설별 검증 방법(툴 호출 목록) 결정 | Must-Have |
+| F5 | 메트릭 수집 | CloudWatch Metrics에서 CPU, Memory, 커넥션 수, Latency 등 관련 메트릭 조회 | Must-Have |
+| F6 | 로그 검색 | CloudWatch Logs Insights 및 OpenSearch에서 에러 로그, 키워드 검색 수행 | Must-Have |
+| F7 | 트레이스 분석 | ADOT/X-Ray에서 분산 트레이스를 조회하여 서비스 간 호출 흐름 및 병목 탐지 | Should-Have |
+| F8 | 배포 이력 조회 | CloudTrail에서 최근 배포/변경 이력을 조회하여 장애 시점과 상관관계 분석 | Must-Have |
+| F9 | 코드 변경 분석 | CodeCommit/GitHub에서 배포된 코드 diff를 분석하여 결함 패턴(커넥션 누수 등) 탐지 | Should-Have |
+| F10 | 가설 검증 및 가지치기 | 수집된 증거를 바탕으로 가설을 확정/기각하고, 기각 시 트리에서 가지치기 | Must-Have |
+| F11 | 하위 가설 분기 | 기각된 가설이나 부족한 증거에 대해 하위 가설을 동적으로 생성하여 트리 확장 | Must-Have |
+| F12 | 중단 조건 판단 | 신뢰도 임계치 도달, 비용 예산 초과, 최대 깊이 도달 시 탐색 중단 | Must-Have |
+| F13 | RCA 보고서 생성 | 근본 원인, 영향 범위, 임시/영구 조치 방안, 증거를 포함한 최종 보고서 자동 작성 | Must-Have |
+| F14 | 플레이북 생성 | 동일 유형 장애 재발 시 활용할 수 있는 대응 플레이북 자동 생성 | Should-Have |
+| F15 | 알림 전송 | RCA 완료 시 SNS를 통해 SRE 팀에 보고서 링크 포함 알림 전송 | Must-Have |
+| F16 | 증거 저장 | 가설별 수집된 메트릭/로그/트레이스 데이터를 S3에 아카이브, 가설 트리 상태를 DynamoDB에 저장 | Must-Have |
+
+### 6.2. Non-Functional Requirements
+
+| ID | 요구사항 | 기준 | 비고 |
+|----|---------|------|------|
+| NF1 | 성능 | RCA 완료 20분 이내, 보고서·플레이북 생성 1시간 이내 | 여유 시간(수분) 기준, CoT 추론 포함 |
+| NF2 | 보안 | VPC 엔드포인트 경유, IAM 최소 권한, Secrets Manager로 시크릿 관리, PII 마스킹 | GDPR/정보보호법 준수 |
+| NF3 | 가용성/오류 처리 | 에이전트 실패 시 자동 재시도(최대 3회), DLQ로 실패 이벤트 보존, 감사 로그 기록 | CloudTrail + CloudWatch Logs 기반 모니터링 |
+
+### 6.3. Feature Dependency Diagram
+
+```mermaid
+graph TD
+    F1["F1: 알람 수신 및 이벤트 트리거"]
+    F2["F2: 초기 스코핑"]
+    F3["F3: 가설 생성"]
+    F4["F4: 가설 우선순위 결정"]
+    F5["F5: 메트릭 수집"]
+    F6["F6: 로그 검색"]
+    F7["F7: 트레이스 분석"]
+    F8["F8: 배포 이력 조회"]
+    F9["F9: 코드 변경 분석"]
+    F10["F10: 가설 검증 및 가지치기"]
+    F11["F11: 하위 가설 분기"]
+    F12["F12: 중단 조건 판단"]
+    F13["F13: RCA 보고서 생성"]
+    F14["F14: 플레이북 생성"]
+    F15["F15: 알림 전송"]
+    F16["F16: 증거 저장"]
+
+    F2 -->|depends on| F1
+    F3 -->|depends on| F2
+    F4 -->|depends on| F3
+    F5 -->|depends on| F4
+    F6 -->|depends on| F4
+    F7 -->|depends on| F4
+    F8 -->|depends on| F4
+    F9 -->|depends on| F8
+    F10 -->|depends on| F5
+    F10 -->|depends on| F6
+    F10 -->|depends on| F7
+    F10 -->|depends on| F8
+    F10 -->|depends on| F9
+    F10 -->|depends on| F16
+    F11 -->|depends on| F10
+    F12 -->|depends on| F10
+    F13 -->|depends on| F12
+    F14 -->|depends on| F13
+    F15 -->|depends on| F13
+    F16 -->|depends on| F5
+    F16 -->|depends on| F6
+```
+
+---
+
+## Section 7. Feature-Level Specification
+
+### 7.1. F1: 알람 수신 및 이벤트 트리거
+
+#### 7.1.1 User Story
+
+- SRE로서, CloudWatch Alarm이 발생하면 자동으로 RCA 에이전트가 실행되어, 수동 개입 없이 즉시 분석이 시작되기를 원한다.
+
+#### 7.1.2 Flow
+
+1. CloudWatch Alarm이 특정 SNS Topic으로 알람 메시지 전송
+2. SNS → SQS 큐로 메시지 적재
+3. ECS Fargate에서 상시 실행 중인 에이전트가 SQS를 폴링하여 알람 메시지 수신
+4. 알람 페이로드(알람 이름, 리소스 ID, 메트릭명, 임계치, 알람 시각 등) 파싱 후 RCA 분석 시작
+5. **DynamoDB에 RCA 세션 생성 및 상태를 `ALARM_RECEIVED`로 기록**
+
+#### 7.1.3 Technical Description
+
+- **알람 수신**: CloudWatch Alarm → SNS Topic → SQS Queue
+- **에이전트 구독**: Fargate 인스턴스가 SQS를 Long Polling으로 구독, 메시지 수신 시 RCA 워크플로우 시작
+- **페이로드 파싱**: SNS 메시지에서 AlarmName, NewStateReason, Trigger(MetricName, Namespace, Dimensions) 추출
+- **상태 관리**: 알람 수신 즉시 DynamoDB에 RCA 세션 생성 — `{ rca_id, status: "ALARM_RECEIVED", alarm_payload, created_at }`
+- **중복 방지**: SQS Visibility Timeout + DynamoDB에 알람 ID + 타임스탬프로 멱등성 체크
+- **MVP 지원 범위**: 단일 메트릭 알람 및 Composite Alarm 모두 수신 가능 (SNS 메시지 포맷 동일)
+
+> **공통 규칙: DynamoDB 상태 관리**
+> 모든 단계(F1~F16)는 시작/완료 시 DynamoDB에 상태를 업데이트한다. 상태 전이 흐름:
+> `ALARM_RECEIVED` → `SCOPING` → `HYPOTHESIS_GENERATION` → `HYPOTHESIS_PRIORITIZATION` → `EVIDENCE_COLLECTION` → `HYPOTHESIS_VALIDATION` → `REPORT_GENERATION` → `COMPLETED` (또는 `FAILED`)
+> 이를 통해 대시보드에서 실시간 진행 상태를 확인할 수 있다.
+
+#### 7.1.4 Edge Cases / Error Handling
+
+- SNS 메시지 파싱 실패 시 SQS DLQ로 이동, CloudWatch Logs에 에러 기록
+- SQS 메시지 처리 실패 시 Visibility Timeout 후 재처리 (최대 3회 후 DLQ)
+- 동일 알람 중복 수신 시 멱등성 체크로 기존 진행 중인 RCA가 있으면 스킵
+
+#### 7.1.5 Acceptance Criteria
+
+- [ ] CloudWatch Alarm 발생 시 SQS에 메시지가 적재되고, Fargate 에이전트가 60초 이내에 수신한다
+- [ ] 알람 페이로드(리소스 ID, 메트릭명, 알람 시각)가 에이전트에 정상 전달된다
+- [ ] 알람 수신 시 DynamoDB에 `ALARM_RECEIVED` 상태가 즉시 기록된다
+- [ ] 동일 알람 중복 수신 시 중복 RCA가 실행되지 않는다
+- [ ] 메시지 처리 실패 시 DLQ에 메시지가 보존된다
+
+### 7.2. F2: 초기 스코핑
+
+#### 7.2.1 User Story
+
+- SRE로서, 알람 수신 직후 에이전트가 가설 수립에 필요한 최소한의 컨텍스트를 빠르게 파악하고, 과거 유사 장애의 플레이북을 자동으로 찾아 참고하여, 불필요한 깊은 조사 없이 즉시 가설 생성 단계로 진입하기를 원한다.
+
+#### 7.2.2 Flow
+
+1. 알람 페이로드에서 리소스 ID, 서비스명, 알람 시각 추출
+2. **DynamoDB에 RCA 상태를 `SCOPING`으로 업데이트**
+3. 해당 리소스의 핵심 메트릭(알람 대상 메트릭 + 1~2개 연관 메트릭)만 최근 30분 추이 조회
+4. 동일 서비스 그룹에서 동시 발생한 알람이 있는지 간단히 확인 (blast radius 개략 파악)
+5. **S3 Vectors MCP 도구를 통해 알람 컨텍스트(알람 유형, 서비스명, 증상)로 유사 플레이북 검색**
+6. 스코핑 결과 + 유사 플레이북(있는 경우)을 경량 요약으로 구조화하여 가설 생성 단계에 전달
+7. **DynamoDB 상태를 `HYPOTHESIS_GENERATION`으로 전이**
+
+#### 7.2.3 Technical Description
+
+- **상태 관리**: 스코핑 시작 즉시 DynamoDB에 `{ status: "SCOPING", started_at: timestamp }` 기록, 완료 시 다음 상태로 전이
+- **메트릭 조회**: CloudWatch GetMetricData API로 알람 대상 메트릭 + 핵심 연관 메트릭만 최소 조회 (깊은 분석은 가설 검증 단계에서 수행)
+- **영향 범위 개략 파악**: 동일 SNS Topic으로 최근 수신된 다른 알람 메시지 확인, 또는 리소스 태그 기반 동일 서비스 그룹의 알람 상태만 확인
+- **유사 플레이북 검색**: S3 Vectors MCP 도구(`search_playbooks`)로 알람 컨텍스트를 벡터 검색하여 유사도 상위 3개 플레이북 조회. 유사도 임계치(0.7 이상) 충족 시 가설 생성에 참고 자료로 전달
+- **스코핑 결과 구조**: 알람 요약, 이상 시점, 영향 범위 추정(단일/다수 리소스), 초기 심각도, 유사 플레이북 참조를 경량 JSON으로 구성
+- **원칙**: 스코핑은 "가설을 세울 수 있는 정도"로만 얕게 수행. 상세 데이터 수집은 가설 검증(F5~F9) 단계에서 수행
+
+#### 7.2.4 Edge Cases / Error Handling
+
+- CloudWatch API 호출 실패 시 재시도 (exponential backoff)
+- 리소스 태그가 없어 서비스 그룹 식별 불가 시 알람 대상 리소스만으로 스코핑 진행
+- 메트릭 데이터 부재 시 알람 페이로드 정보만으로 스코핑 완료 후 가설 생성 진입
+- 5분 타임아웃 초과 시 수집된 데이터만으로 스코핑 강제 완료 후 가설 생성 진입
+- S3 Vectors 검색 실패 또는 유사 플레이북 없음 시 플레이북 없이 진행 (기존 흐름과 동일)
+
+#### 7.2.5 Acceptance Criteria
+
+- [ ] 스코핑 시작 시 DynamoDB에 `SCOPING` 상태가 즉시 기록된다
+- [ ] 알람 수신 후 5분 이내에 초기 스코핑이 완료된다
+- [ ] 알람 대상 메트릭 + 핵심 연관 메트릭만 조회하며, 불필요한 깊은 조사를 하지 않는다
+- [ ] 영향 범위가 단일/다수 리소스인지 개략적으로 식별된다
+- [ ] S3 Vectors에서 유사 플레이북이 검색되고, 유사도 상위 결과가 가설 생성에 전달된다
+- [ ] 스코핑 결과가 가설 생성에 충분한 경량 JSON으로 전달된다
+
+### 7.3. F3: 가설 생성
+
+#### 7.3.1 User Story
+
+- SRE로서, 에이전트가 스코핑 결과와 과거 유사 플레이북을 바탕으로 가능한 원인 가설을 자동으로 생성하여, 과거 경험을 반영한 정확한 원인 후보가 빠르게 도출되기를 원한다.
+
+#### 7.3.2 Flow
+
+1. **DynamoDB 상태를 `HYPOTHESIS_GENERATION`으로 업데이트**
+2. 스코핑 결과(알람 요약, 이상 시점, 영향 범위) + **유사 플레이북(있는 경우)**을 LLM 프롬프트에 전달
+3. Bedrock(Claude)이 가능한 원인을 Top 3~5 가설 형태로 생성 — 유사 플레이북이 있으면 해당 장애 유형의 근본 원인을 우선 가설로 반영
+4. 각 가설을 트리 루트 노드로 DynamoDB에 저장
+5. **DynamoDB 상태를 `HYPOTHESIS_PRIORITIZATION`으로 전이**
+
+#### 7.3.3 Technical Description
+
+- **프롬프트 설계**: ReAct 패턴 기반 — 스코핑 결과 + 유사 플레이북 + "가능한 원인을 3~5개 가설 형태로 제시하라. 유사 플레이북이 있으면 해당 장애 패턴을 우선 고려하라" 지시
+- **가설 구조**: 각 가설은 `{ hypothesis_id, description, category(배포/인프라/트래픽/의존서비스/설정변경), confidence_score, required_evidence, playbook_ref(참조한 플레이북 ID, 있는 경우) }` 형태
+- **트리 저장**: DynamoDB에 가설 트리 구조 저장 — 루트 노드로 Top 3~5 가설 생성, 이후 검증 결과에 따라 하위 노드 추가
+- **카테고리 분류**: 배포 변경, 리소스 병목, 트래픽 급증, 의존 서비스 장애, 설정/구성 변경 등 사전 정의된 카테고리로 분류
+- **플레이북 활용**: 유사 플레이북의 근본 원인과 검증 경로를 참고하여 가설 우선순위와 검증 전략에 반영
+
+#### 7.3.4 Edge Cases / Error Handling
+
+- Bedrock API 호출 실패 시 재시도 (최대 3회, exponential backoff)
+- LLM이 가설을 1~2개만 생성한 경우 추가 프롬프트로 보완 요청
+- LLM 응답이 지정 포맷에 맞지 않을 경우 파싱 재시도 또는 구조화 프롬프트 재전송
+- 가설 생성 타임아웃(3분) 초과 시 생성된 가설만으로 다음 단계 진행
+- 유사 플레이북이 없는 경우 플레이북 없이 기존 방식으로 가설 생성
+
+#### 7.3.5 Acceptance Criteria
+
+- [ ] 스코핑 완료 후 DynamoDB 상태가 `HYPOTHESIS_GENERATION`으로 업데이트된다
+- [ ] LLM이 3~5개의 구조화된 가설을 생성한다
+- [ ] 유사 플레이북이 있는 경우 해당 장애 패턴이 가설에 우선 반영된다
+- [ ] 각 가설에 카테고리, 초기 신뢰도, 필요 증거 목록, 플레이북 참조(있는 경우)가 포함된다
+- [ ] 가설 트리가 DynamoDB에 루트 노드로 저장된다
+- [ ] 완료 시 DynamoDB 상태가 `HYPOTHESIS_PRIORITIZATION`으로 전이된다
+
+### 7.4. F4: 가설 우선순위 결정
+
+#### 7.4.1 User Story
+
+- SRE로서, 생성된 가설들이 자동으로 우선순위가 매겨져, 가장 가능성 높은 원인부터 효율적으로 검증이 진행되기를 원한다.
+
+#### 7.4.2 Flow
+
+1. **DynamoDB 상태를 `HYPOTHESIS_PRIORITIZATION`으로 업데이트**
+2. 생성된 가설 목록과 스코핑 결과를 LLM에 전달하여 우선순위 결정
+3. 각 가설별 검증 방법(필요한 툴 호출 목록) 결정
+4. 우선순위화된 가설 목록과 검증 계획을 DynamoDB에 저장
+5. **DynamoDB 상태를 `EVIDENCE_COLLECTION`으로 전이**
+
+#### 7.4.3 Technical Description
+
+- **우선순위 기준**: LLM이 알람 유형, 스코핑 결과, 가설 카테고리를 종합하여 검증 순서 결정 (예: 최근 배포가 있으면 배포 관련 가설 우선)
+- **검증 계획**: 각 가설에 대해 `{ priority_rank, tool_calls: [메트릭 조회, 로그 검색, ...], estimated_time }` 구조로 계획 수립
+- **병렬 검증 판단**: 독립적인 가설은 병렬로 검증 가능하도록 플래그 지정
+
+#### 7.4.4 Edge Cases / Error Handling
+
+- LLM이 동일 우선순위를 부여한 경우 카테고리 기본 순서(배포 > 인프라 > 트래픽 > 의존서비스 > 설정) 적용
+- 검증 계획에 사용 불가능한 툴이 포함된 경우 해당 툴 제외 후 대체 방법 제안
+
+#### 7.4.5 Acceptance Criteria
+
+- [ ] DynamoDB 상태가 `HYPOTHESIS_PRIORITIZATION`으로 업데이트된다
+- [ ] 모든 가설에 우선순위 순서가 부여된다
+- [ ] 각 가설별 검증에 필요한 툴 호출 목록이 결정된다
+- [ ] 병렬 검증 가능한 가설이 식별된다
+- [ ] 완료 시 DynamoDB 상태가 `EVIDENCE_COLLECTION`으로 전이된다
+
+### 7.5. F5: 메트릭 수집
+
+#### 7.5.1 User Story
+
+- SRE로서, 에이전트가 가설 검증에 필요한 CloudWatch 메트릭을 자동으로 수집하여, 수동으로 콘솔에서 메트릭을 찾아볼 필요가 없기를 원한다.
+
+#### 7.5.2 Flow
+
+1. **DynamoDB에 해당 가설의 증거 수집 상태를 `COLLECTING_METRICS`로 업데이트**
+2. 가설 검증 계획에서 필요한 메트릭 항목(CPU, Memory, 커넥션 수, Latency, Error Rate 등) 식별
+3. CloudWatch GetMetricData API로 대상 리소스의 메트릭 데이터 조회
+4. 수집된 메트릭을 구조화하여 S3에 증거로 저장, DynamoDB에 증거 메타데이터 기록
+
+#### 7.5.3 Technical Description
+
+- **MCP 도구 / @tool**: CloudWatch Metrics 조회 전용 도구 — `query_metrics(namespace, metric_name, dimensions, start_time, end_time, period)`
+- **조회 범위**: 알람 발생 전후 1시간, 기본 1분 간격(Period=60)
+- **비교 분석**: 장애 시점 메트릭과 직전 24시간 동일 시간대 메트릭을 비교하여 이상 탐지
+
+#### 7.5.4 Edge Cases / Error Handling
+
+- CloudWatch API 쓰로틀링 시 exponential backoff 재시도
+- 메트릭이 존재하지 않는 경우 (커스텀 메트릭 미설정 등) 해당 증거 항목을 "수집 불가"로 표시
+- 데이터 포인트가 부족한 경우 조회 Period를 5분으로 확장
+
+#### 7.5.5 Acceptance Criteria
+
+- [ ] DynamoDB에 해당 가설의 증거 수집 상태가 업데이트된다
+- [ ] 가설 검증에 필요한 CloudWatch 메트릭이 정상 수집된다
+- [ ] 수집된 메트릭이 S3에 JSON 형태로 저장된다
+- [ ] 메트릭 수집 실패 시 "수집 불가" 상태가 기록된다
+
+### 7.6. F6: 로그 검색
+
+#### 7.6.1 User Story
+
+- SRE로서, 에이전트가 가설 검증에 필요한 에러 로그와 관련 로그를 자동으로 검색하여, 직접 CloudWatch Logs Insights 쿼리를 작성하지 않아도 핵심 로그 증거가 수집되기를 원한다.
+
+#### 7.6.2 Flow
+
+1. **DynamoDB에 해당 가설의 증거 수집 상태를 `COLLECTING_LOGS`로 업데이트**
+2. 가설 검증 계획에서 필요한 로그 검색 조건(로그 그룹, 키워드, 시간 범위) 식별
+3. CloudWatch Logs Insights 쿼리 실행
+4. 수집된 로그 스니펫을 구조화하여 S3에 증거로 저장, DynamoDB에 증거 메타데이터 기록
+
+#### 7.6.3 Technical Description
+
+- **MCP 도구 / @tool**: `query_logs(log_group, query_string, start_time, end_time)` — CloudWatch Logs Insights
+- **쿼리 생성**: LLM이 가설에 맞는 검색 쿼리를 자동 생성 (예: 가설이 "DB 커넥션 누수"면 `fields @timestamp, @message | filter @message like /connection|Too many/`)
+- **로그 요약**: 대량 로그 반환 시 LLM이 핵심 로그만 추출하여 요약
+
+#### 7.6.4 Edge Cases / Error Handling
+
+- Logs Insights 쿼리 타임아웃(60초) 시 시간 범위를 줄여 재시도
+- 로그 그룹이 존재하지 않는 경우 "수집 불가"로 표시
+- 쿼리 결과가 0건인 경우 LLM이 키워드를 변경하여 1회 재시도
+
+#### 7.6.5 Acceptance Criteria
+
+- [ ] DynamoDB에 해당 가설의 증거 수집 상태가 업데이트된다
+- [ ] LLM이 가설에 적합한 Logs Insights 쿼리를 자동 생성한다
+- [ ] CloudWatch Logs Insights에서 관련 로그가 수집된다
+- [ ] 수집된 로그 스니펫이 S3에 저장된다
+- [ ] 로그 수집 실패 시 "수집 불가" 상태가 기록된다
+
+### 7.7. F7: 트레이스 분석
+
+**(Should-Have)**
+
+#### 7.7.1 User Story
+
+- SRE로서, 에이전트가 분산 트레이스를 자동으로 조회하여, 서비스 간 호출 흐름에서 병목이나 실패 지점을 파악해주기를 원한다.
+
+#### 7.7.2 Flow
+
+1. **DynamoDB에 해당 가설의 증거 수집 상태를 `COLLECTING_TRACES`로 업데이트**
+2. 가설 검증 계획에서 필요한 트레이스 조건(서비스명, 시간 범위, 에러 필터) 식별
+3. X-Ray BatchGetTraces / GetTraceSummaries API로 트레이스 데이터 조회
+4. 수집된 트레이스 정보를 구조화하여 S3에 증거로 저장, DynamoDB에 증거 메타데이터 기록
+
+#### 7.7.3 Technical Description
+
+- **MCP 도구 / @tool**: `query_traces(service_name, start_time, end_time, filter_expression)` — X-Ray API 래핑
+- **계측 기반**: ADOT(AWS Distro for OpenTelemetry)로 계측된 서비스의 트레이스를 X-Ray 백엔드에서 조회
+- **분석 포인트**: 응답 시간 이상치, 에러/폴트 세그먼트, 서비스 간 호출 지연 패턴 식별
+
+#### 7.7.4 Edge Cases / Error Handling
+
+- X-Ray에 트레이스 데이터가 없는 경우 (계측 미설정) "수집 불가"로 표시, 다른 증거에 의존
+- 트레이스 샘플링으로 인해 관련 트레이스가 누락된 경우 시간 범위 확장하여 재시도
+- API 쓰로틀링 시 exponential backoff 재시도
+
+#### 7.7.5 Acceptance Criteria
+
+- [ ] DynamoDB에 해당 가설의 증거 수집 상태가 업데이트된다
+- [ ] X-Ray에서 관련 서비스의 트레이스 데이터가 수집된다
+- [ ] 에러/폴트 세그먼트와 지연 병목이 식별된다
+- [ ] 수집된 트레이스 정보가 S3에 저장된다
+- [ ] 트레이스 데이터 부재 시 "수집 불가" 상태가 기록된다
+
+### 7.8. F8: 배포 이력 조회
+
+#### 7.8.1 User Story
+
+- SRE로서, 에이전트가 최근 배포/변경 이력을 자동으로 조회하여, 장애 시점과 배포 시점의 상관관계를 빠르게 파악해주기를 원한다.
+
+#### 7.8.2 Flow
+
+1. **DynamoDB에 해당 가설의 증거 수집 상태를 `COLLECTING_DEPLOY_HISTORY`로 업데이트**
+2. CloudTrail에서 알람 대상 서비스의 직전 N개(기본 5개) 배포/변경 이벤트 조회
+3. 각 배포 시점과 장애 발생 시점의 시간 상관관계 분석 — 24시간 이상 전 배포도 느린 누수/점진적 리소스 고갈 가능성을 고려
+4. 수집된 배포 이력을 구조화하여 S3에 증거로 저장, DynamoDB에 증거 메타데이터 기록
+
+#### 7.8.3 Technical Description
+
+- **MCP 도구 / @tool**: `query_deploy_history(service_name, limit_count)` — CloudTrail LookupEvents API 래핑
+- **조회 방식**: 알람 대상 서비스의 **직전 N개(기본 5개) 배포 이벤트**를 시간 제한 없이 조회하고, 각 배포 시점과 장애 발생 시점의 시간 상관관계를 분석. 24시간 이상 전 배포도 커넥션 누수, 메모리 릭 등 점진적 장애의 원인일 수 있으므로 시간 기반 컷오프를 두지 않음
+- **조회 대상 이벤트**: CodeDeploy 배포, ECS 태스크 정의 변경, Lambda 함수 업데이트, CloudFormation 스택 변경 등
+- **상관관계 분석**: 각 배포 시각과 메트릭 이상 시작 시각의 시간차를 계산하여 가장 상관성 높은 배포를 식별
+
+#### 7.8.4 Edge Cases / Error Handling
+
+- CloudTrail 이벤트가 최대 15분 지연될 수 있음 — 조회 시간 범위에 여유 반영
+- 조회 기간 내 배포 이벤트가 없는 경우 "배포 없음"으로 기록, 가설 기각 근거로 활용
+- API 쓰로틀링 시 exponential backoff 재시도
+
+#### 7.8.5 Acceptance Criteria
+
+- [ ] DynamoDB에 해당 가설의 증거 수집 상태가 업데이트된다
+- [ ] 알람 대상 서비스의 직전 N개 배포 이벤트가 시간 제한 없이 조회된다
+- [ ] 각 배포 시점과 장애 시점의 시간 상관관계가 분석되어 가장 의심되는 배포가 식별된다
+- [ ] 수집된 배포 이력이 S3에 저장된다
+- [ ] 배포 이벤트 부재 시 "배포 없음"이 기록된다
+
+### 7.9. F9: 코드 변경 분석
+
+**(Should-Have)**
+
+#### 7.9.1 User Story
+
+- SRE로서, 에이전트가 최근 배포된 코드의 변경 내역(diff)을 자동으로 분석하여, 장애를 유발할 수 있는 코드 결함 패턴(커넥션 누수, 무한 루프, 리소스 미반환 등)을 탐지해주기를 원한다.
+
+#### 7.9.2 Flow
+
+1. **DynamoDB에 해당 가설의 증거 수집 상태를 `COLLECTING_CODE_DIFF`로 업데이트**
+2. F8에서 식별된 의심 배포의 커밋/릴리스 정보 추출
+3. CodeCommit 또는 GitHub API를 통해 해당 배포의 코드 diff 조회
+4. LLM에 diff를 전달하여 장애 유발 가능 패턴 분석
+5. 분석 결과를 구조화하여 S3에 증거로 저장, DynamoDB에 증거 메타데이터 기록
+
+#### 7.9.3 Technical Description
+
+- **MCP 도구 / @tool**: `get_code_diff(repo, commit_id_before, commit_id_after)` — CodeCommit GetDifferences / GitHub Compare API 래핑
+- **LLM 분석**: diff를 Bedrock에 전달하여 "이 코드 변경에서 장애를 유발할 수 있는 패턴이 있는가?" 판단
+- **탐지 패턴**: 리소스 미반환(커넥션/파일/스레드), 예외 처리 누락, 설정값 변경, 타임아웃 변경, 쿼리 변경 등
+- **크기 제한**: diff가 LLM 컨텍스트 윈도우를 초과할 경우 변경된 파일을 우선순위로 분할 분석
+
+#### 7.9.4 Edge Cases / Error Handling
+
+- 코드 저장소 접근 권한 부재 시 "수집 불가"로 표시, 다른 증거에 의존
+- diff가 너무 큰 경우 (수천 줄) 변경 파일 목록만 요약하고, 핵심 파일만 상세 분석
+- 코드 저장소가 CodeCommit/GitHub 외 시스템인 경우 MVP에서는 미지원으로 표시
+
+#### 7.9.5 Acceptance Criteria
+
+- [ ] DynamoDB에 해당 가설의 증거 수집 상태가 업데이트된다
+- [ ] F8에서 식별된 의심 배포의 코드 diff가 조회된다
+- [ ] LLM이 diff에서 장애 유발 가능 패턴을 분석하여 결과를 제시한다
+- [ ] 분석 결과가 S3에 저장된다
+- [ ] 코드 저장소 접근 불가 시 "수집 불가" 상태가 기록된다
+
+### 7.10. F10: 가설 검증 및 가지치기
+
+#### 7.10.1 User Story
+
+- SRE로서, 에이전트가 수집된 증거를 바탕으로 각 가설을 자동으로 확정 또는 기각하여, 불필요한 분기를 제거하고 근본 원인으로 빠르게 수렴하기를 원한다.
+
+#### 7.10.2 Flow
+
+1. **DynamoDB 상태를 `HYPOTHESIS_VALIDATION`으로 업데이트**
+2. 해당 가설에 대해 수집된 증거(메트릭, 로그, 트레이스, 배포이력, 코드 diff)를 종합
+3. LLM에 가설 + 증거를 전달하여 확정/기각/추가조사 필요 판단
+4. 확정된 가설: 해당 노드를 `CONFIRMED`로 마킹, 근본 원인 후보로 등록
+5. 기각된 가설: 해당 노드를 `REJECTED`로 마킹 (가지치기)
+6. 추가조사 필요: 하위 가설 생성(F11)으로 분기
+7. **각 가설별 판단 결과를 DynamoDB에 업데이트**
+
+#### 7.10.3 Technical Description
+
+- **판단 기준**: LLM이 증거와 가설 간 일치도를 평가하여 `confidence_score`(0~1.0) 산출
+  - 0.8 이상: 확정 (CONFIRMED)
+  - 0.3 이하: 기각 (REJECTED)
+  - 0.3~0.8: 추가조사 필요 (NEEDS_INVESTIGATION)
+- **증거 종합**: 이전 단계(F5~F9)에서 S3에 저장된 증거 데이터를 가설별로 수집하여 LLM 프롬프트에 포함
+- **프롬프트 패턴**: "다음 가설과 수집된 증거를 비교하여 가설이 맞는지 판단하라. 판단 근거와 신뢰도를 제시하라."
+
+#### 7.10.4 Edge Cases / Error Handling
+
+- 증거가 부족하여 판단 불가 시 `NEEDS_INVESTIGATION`으로 처리, 추가 증거 수집 요청
+- 모든 가설이 기각된 경우 F3로 돌아가 추가 가설 생성
+- LLM 판단이 모호한 경우 (신뢰도 0.4~0.6) 관련 증거를 추가 수집 후 재판단
+
+#### 7.10.5 Acceptance Criteria
+
+- [ ] DynamoDB 상태가 `HYPOTHESIS_VALIDATION`으로 업데이트된다
+- [ ] 각 가설에 대해 CONFIRMED/REJECTED/NEEDS_INVESTIGATION 판단이 내려진다
+- [ ] 판단 근거와 confidence_score가 각 가설 노드에 기록된다
+- [ ] 기각된 가설은 트리에서 가지치기된다
+- [ ] 모든 가설 기각 시 추가 가설 생성(F3)으로 돌아간다
+
+### 7.11. F11: 하위 가설 분기
+
+#### 7.11.1 User Story
+
+- SRE로서, 에이전트가 추가조사가 필요한 가설에 대해 더 구체적인 하위 가설을 자동으로 생성하여, 근본 원인을 점진적으로 좁혀가기를 원한다.
+
+#### 7.11.2 Flow
+
+1. **DynamoDB에 해당 가설의 상태를 `BRANCHING`으로 업데이트**
+2. `NEEDS_INVESTIGATION`으로 판단된 가설과 지금까지 수집된 증거를 LLM에 전달
+3. LLM이 더 구체적인 하위 가설 2~3개를 생성 (예: "DB 커넥션 문제" → "커넥션 풀 설정 변경" / "코드에서 커넥션 미반환")
+4. 하위 가설을 트리의 자식 노드로 DynamoDB에 저장
+5. 하위 가설에 대해 F4(우선순위)→F5~F9(증거 수집)→F10(검증) 루프 재진입
+
+#### 7.11.3 Technical Description
+
+- **트리 확장**: 부모 가설 ID를 참조하는 자식 노드로 DynamoDB에 저장 — `{ hypothesis_id, parent_id, depth, ... }`
+- **프롬프트 설계**: 부모 가설 + 수집된 증거 + "이 가설을 더 구체적으로 분기하여 2~3개 하위 가설을 제시하라"
+- **깊이 제한**: 트리 최대 깊이(기본 3) 초과 시 더 이상 분기하지 않고 현재 증거로 판단 강제
+
+#### 7.11.4 Edge Cases / Error Handling
+
+- 최대 깊이 도달 시 분기 중단, 현재 수집된 증거로 F10 재판단
+- LLM이 부모 가설과 동일한 하위 가설을 생성한 경우 중복 제거 후 재생성 요청
+- 하위 가설이 이미 기각된 다른 가설과 중복되는 경우 자동 스킵
+
+#### 7.11.5 Acceptance Criteria
+
+- [ ] DynamoDB에 해당 가설의 상태가 `BRANCHING`으로 업데이트된다
+- [ ] `NEEDS_INVESTIGATION` 가설에 대해 2~3개 하위 가설이 생성된다
+- [ ] 하위 가설이 부모 가설의 자식 노드로 트리에 저장된다
+- [ ] 하위 가설에 대해 증거 수집→검증 루프가 재진입된다
+- [ ] 최대 깊이 초과 시 분기가 중단된다
+
+### 7.12. F12: 중단 조건 판단
+
+#### 7.12.1 User Story
+
+- SRE로서, 에이전트가 무한히 분기/탐색하지 않고, 신뢰도·비용·시간 기준으로 적절히 탐색을 종료하여, 운영 통제가 가능한 RCA 시스템이기를 원한다.
+
+#### 7.12.2 Flow
+
+1. 매 검증 루프(F10) 완료 후 중단 조건을 평가
+2. 중단 조건 충족 시 **DynamoDB 상태를 `REPORT_GENERATION`으로 전이**
+3. 미충족 시 다음 가설 검증 또는 하위 가설 분기(F11)로 계속 진행
+
+#### 7.12.3 Technical Description
+
+- **중단 조건 (OR 조건 — 하나라도 충족 시 중단)**:
+  - **신뢰도 임계치**: CONFIRMED 가설의 confidence_score가 0.9 이상
+  - **시간 예산**: RCA 시작 후 20분 경과
+  - **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과
+  - **최대 깊이**: 가설 트리 깊이가 5를 초과
+  - **최대 반복**: 검증 루프가 3회를 초과
+- **강제 중단 시**: 현재까지 수집된 증거와 가장 높은 confidence_score를 가진 가설을 기반으로 보고서 생성 진입
+- **정상 중단 시**: CONFIRMED 가설을 근본 원인으로 확정하고 보고서 생성 진입
+
+#### 7.12.4 Edge Cases / Error Handling
+
+- 시간 예산 초과 시 현재 진행 중인 툴 호출을 완료한 후 중단 (진행 중 강제 중단하지 않음)
+- 모든 가설이 기각되고 중단 조건 미충족 시 F3로 돌아가 추가 가설 생성 (최대 2회)
+- 추가 가설 생성 후에도 근본 원인 미확정 시 "근본 원인 미확정" 상태로 보고서 생성
+
+#### 7.12.5 Acceptance Criteria
+
+- [ ] 매 검증 루프 완료 후 중단 조건이 평가된다
+- [ ] 신뢰도 임계치 도달 시 탐색이 정상 종료된다
+- [ ] 시간/비용/깊이/반복 한도 초과 시 탐색이 강제 종료된다
+- [ ] 중단 시 DynamoDB 상태가 `REPORT_GENERATION`으로 전이된다
+- [ ] 근본 원인 미확정 시에도 현재 증거 기반으로 보고서 생성이 진행된다
+
+### 7.13. F13: RCA 보고서 생성
+
+#### 7.13.1 User Story
+
+- SRE로서, 에이전트가 근본 원인, 영향 범위, 조치 방안, 증거를 포함한 종합 RCA 보고서를 자동으로 생성하여, 수동 보고서 작성 시간을 절약하기를 원한다.
+
+#### 7.13.2 Flow
+
+1. **DynamoDB 상태를 `REPORT_GENERATION`으로 업데이트**
+2. 확정된 근본 원인, 가설 트리 전체 경로, 수집된 증거를 LLM에 전달
+3. LLM이 구조화된 RCA 보고서 생성
+4. 보고서를 S3에 Markdown/PDF 형태로 저장
+5. DynamoDB에 보고서 메타데이터(S3 경로, 생성 시각) 기록
+
+#### 7.13.3 Technical Description
+
+- **보고서 구조**:
+  - 장애 요약 (알람 정보, 발생 시각, 영향 범위)
+  - 근본 원인 (확정된 가설, 신뢰도)
+  - 가설 도출 경로 (트리에서 근본 원인까지의 경로, 기각된 가설 목록)
+  - 증거 목록 (메트릭 스냅샷, 로그 스니펫, 배포 이력, 코드 diff 참조)
+  - 임시 조치 방안 (예: 서비스 롤백, 리소스 증설)
+  - 영구 조치 방안 (예: 코드 수정, 설정 변경)
+  - 타임라인 (알람 발생 → 스코핑 → 가설 생성 → 검증 → 확정까지 시간 흐름)
+- **저장 형식**: Markdown (기본) + PDF 변환 옵션
+- **프롬프트 설계**: 전체 RCA 컨텍스트를 전달하고 "위 정보를 바탕으로 SRE 팀이 활용할 수 있는 구조화된 RCA 보고서를 작성하라"
+
+#### 7.13.4 Edge Cases / Error Handling
+
+- 근본 원인 미확정 시 "근본 원인 미확정 — 가장 유력한 후보" 형태로 보고서 생성
+- 증거 데이터가 S3에서 조회 실패 시 메타데이터만 참조하여 보고서 작성
+- LLM 컨텍스트 윈도우 초과 시 증거를 요약 후 전달
+
+#### 7.13.5 Acceptance Criteria
+
+- [ ] DynamoDB 상태가 `REPORT_GENERATION`으로 업데이트된다
+- [ ] 보고서에 근본 원인, 영향 범위, 증거, 임시/영구 조치 방안이 포함된다
+- [ ] 가설 도출 경로와 타임라인이 보고서에 포함된다
+- [ ] 보고서가 S3에 Markdown 형태로 저장된다
+- [ ] 보고서 생성이 1시간 이내에 완료된다
+
+### 7.14. F14: 플레이북 생성
+
+**(Should-Have)**
+
+#### 7.14.1 User Story
+
+- SRE로서, 에이전트가 동일 유형 장애 재발 시 활용할 수 있는 대응 플레이북을 자동으로 생성하고, 향후 유사 장애 발생 시 자동으로 검색 가능하도록 벡터 저장소에 인덱싱되기를 원한다.
+
+#### 7.14.2 Flow
+
+1. **DynamoDB에 플레이북 생성 상태를 `GENERATING_PLAYBOOK`으로 업데이트**
+2. RCA 보고서(F13)의 근본 원인, 조치 방안, 검증 경로를 기반으로 LLM에 플레이북 생성 요청
+3. LLM이 재사용 가능한 구조화된 플레이북 생성
+4. 플레이북을 S3에 저장
+5. **S3 Vectors에 플레이북 임베딩 저장 — 장애 유형, 증상 패턴, 근본 원인을 벡터화하여 유사도 검색 가능하도록 인덱싱**
+6. DynamoDB에 메타데이터(S3 경로, S3 Vectors ID, 생성 시각) 기록
+7. **DynamoDB 상태를 `COMPLETED`로 전이**
+
+#### 7.14.3 Technical Description
+
+- **플레이북 구조**:
+  - 장애 유형 분류 (예: DB 커넥션 누수, CPU 폭증, 메모리 릭 등)
+  - 증상 패턴 (어떤 알람/메트릭이 이 유형의 장애를 시사하는지)
+  - 확인 절차 (단계별 검증 방법 — 이번 RCA에서 검증한 경로 기반)
+  - 임시 조치 절차 (예: 롤백 명령, 리소스 증설 절차)
+  - 영구 조치 가이드 (코드 수정 방향, 설정 변경 사항)
+  - 예방 조치 (모니터링 추가, 알람 임계치 조정 등)
+- **S3 Vectors 인덱싱**:
+  - MCP 도구(`store_playbook_embedding`)로 플레이북의 장애 유형 + 증상 패턴 + 근본 원인 텍스트를 임베딩하여 S3 Vectors에 저장
+  - 메타데이터로 playbook_id, 장애 유형 태그, 생성 일시, RCA ID를 함께 저장
+- **태깅**: 장애 유형별 태그를 부여하여 필터링 + 벡터 유사도 검색 병행 가능
+
+#### 7.14.4 Edge Cases / Error Handling
+
+- 근본 원인 미확정 시 "추정 원인 기반 플레이북"으로 표기, 검증 부족 항목 명시
+- S3 Vectors 임베딩 저장 실패 시 S3에 플레이북은 저장하되, 임베딩 저장을 비동기 재시도
+- 기존 유사 플레이북이 있는 경우 LLM이 기존 플레이북과 차이점을 비교하여 업데이트 제안
+
+#### 7.14.5 Acceptance Criteria
+
+- [ ] DynamoDB에 플레이북 생성 상태가 업데이트된다
+- [ ] 플레이북에 장애 유형, 증상 패턴, 확인 절차, 조치 절차가 포함된다
+- [ ] 플레이북이 S3에 저장되고 장애 유형별 태그가 부여된다
+- [ ] S3 Vectors에 플레이북 임베딩이 저장되어 유사도 검색이 가능하다
+- [ ] 플레이북 생성 완료 후 DynamoDB 상태가 `COMPLETED`로 전이된다
+
+### 7.15. F15: 알림 전송
+
+#### 7.15.1 User Story
+
+- SRE로서, RCA가 완료되면 자동으로 알림을 받아, 대시보드에서 보고서를 즉시 확인할 수 있기를 원한다.
+
+#### 7.15.2 Flow
+
+1. **DynamoDB에 알림 전송 상태를 `SENDING_NOTIFICATION`으로 업데이트**
+2. RCA 보고서 S3 경로와 요약 정보를 SNS 메시지로 구성
+3. SNS Topic을 통해 SRE 팀에 알림 전송 (이메일/Slack 등 구독 채널)
+4. **DynamoDB 상태를 `COMPLETED`로 전이** (F14 플레이북 미생성 시) 또는 F14로 진행
+
+#### 7.15.3 Technical Description
+
+- **알림 메시지 구조**: RCA ID, 근본 원인 요약(1~2줄), 심각도, 보고서 링크(S3 Presigned URL 또는 대시보드 URL), 소요 시간
+- **SNS Topic**: RCA 전용 SNS Topic으로 발행, SRE 팀이 이메일/Slack/PagerDuty 등으로 구독
+- **근본 원인 미확정 시**: "근본 원인 미확정 — 수동 검토 필요" 메시지로 알림
+
+#### 7.15.4 Edge Cases / Error Handling
+
+- SNS 발행 실패 시 재시도 (최대 3회)
+- 알림 전송 실패가 RCA 전체 흐름을 블로킹하지 않음 — 실패해도 COMPLETED로 전이
+- Presigned URL 만료 대비 대시보드 URL 병행 제공
+
+#### 7.15.5 Acceptance Criteria
+
+- [ ] DynamoDB에 `SENDING_NOTIFICATION` 상태가 업데이트된다
+- [ ] SNS를 통해 SRE 팀에 보고서 링크 포함 알림이 전송된다
+- [ ] 알림 메시지에 근본 원인 요약과 심각도가 포함된다
+- [ ] 알림 전송 실패 시에도 RCA 흐름이 정상 완료된다
+
+### 7.16. F16: 증거 저장
+
+#### 7.16.1 User Story
+
+- SRE로서, 에이전트가 수집한 모든 증거(메트릭, 로그, 트레이스, 배포이력, 코드 diff)와 가설 트리 상태가 체계적으로 저장되고, 향후 유사 장애 분석 시 과거 증거를 유사도 검색으로 빠르게 참조할 수 있기를 원한다.
+
+#### 7.16.2 Flow
+
+1. 각 증거 수집 단계(F5~F9)에서 수집된 데이터를 즉시 S3에 저장
+2. **수집된 증거를 Bedrock Cohere Embed v4로 임베딩하여 S3 Vectors에 저장 — 향후 유사 장애 시 증거 유사도 검색 가능**
+3. 가설 트리 상태(생성/검증/확정/기각)를 DynamoDB에 실시간 업데이트
+4. RCA 완료 후 전체 증거 메타데이터를 DynamoDB에 인덱싱
+
+#### 7.16.3 Technical Description
+
+- **S3 저장 구조**: `s3://{bucket}/rca/{rca_id}/evidence/{hypothesis_id}/{evidence_type}/` 경로로 구조화 저장
+  - evidence_type: `metrics/`, `logs/`, `traces/`, `deploy_history/`, `code_diff/`
+- **S3 Vectors 임베딩**:
+  - MCP 도구(`store_evidence_embedding`)로 증거 데이터의 요약 텍스트를 임베딩하여 S3 Vectors에 저장
+  - 임베딩 모델: **Amazon Bedrock Cohere Embed v4**
+  - 메타데이터: `rca_id`, `hypothesis_id`, `evidence_type`, `alarm_type`, `service_name`, `timestamp`
+  - 향후 유사 장애 발생 시 `search_evidence` MCP 도구로 과거 증거를 유사도 검색하여 참조 가능
+- **DynamoDB 가설 트리 스키마**:
+  - PK: `rca_id`, SK: `hypothesis_id`
+  - Attributes: `parent_id`, `depth`, `status`, `confidence_score`, `evidence_refs[]`, `vector_ids[]`, `created_at`, `updated_at`
+- **증거 보존 정책**: RCA 완료 시점 기준 60일 보존 후 S3 Lifecycle으로 자동 삭제. S3 Vectors 임베딩은 플레이북과 동일 주기로 관리. 가설 트리 상태(DynamoDB)는 90일 보존
+- **감사 로그**: 모든 증거 저장/조회 행위를 CloudTrail로 기록
+
+#### 7.16.4 Edge Cases / Error Handling
+
+- S3 저장 실패 시 재시도 (최대 3회), 실패 지속 시 DynamoDB에 "저장 실패" 메타데이터만 기록
+- S3 Vectors 임베딩 저장 실패 시 S3에 원본 증거는 저장하되, 임베딩 저장을 비동기 재시도
+- DynamoDB 쓰기 쓰로틀링 시 exponential backoff
+- 증거 데이터가 S3 단일 객체 크기 제한(5GB)을 초과할 가능성은 낮으나, 초과 시 멀티파트 업로드 적용
+
+#### 7.16.5 Acceptance Criteria
+
+- [ ] 각 증거 수집 단계에서 데이터가 S3에 구조화된 경로로 즉시 저장된다
+- [ ] 수집된 증거가 Bedrock Cohere Embed v4로 임베딩되어 S3 Vectors에 저장된다
+- [ ] 가설 트리 상태가 DynamoDB에 실시간 업데이트된다
+- [ ] 증거 메타데이터(S3 경로, S3 Vectors ID, 수집 시각, 증거 유형)가 DynamoDB에 기록된다
+- [ ] S3 Vectors에서 과거 증거 유사도 검색이 정상 동작한다
+- [ ] 증거 보존 정책(60일)이 S3 Lifecycle으로 적용된다
+
+---
+
+## Section 8. MVP Metrics
+
+### 8.1. Data Collection Methods
+
+| KPI / NFR | 수집 데이터 | 수집 방법 | 비고 |
+|-----------|-----------|---------|------|
+| RCA 완료 시간 | 알람 수신 시각 ~ 근본 원인 확정 시각 | DynamoDB 상태 전이 타임스탬프 (`ALARM_RECEIVED` → `REPORT_GENERATION`) 차이 계산 | 각 Phase별 소요 시간도 개별 기록 |
+| 보고서·플레이북 생성 시간 | 근본 원인 확정 ~ 보고서/플레이북 저장 시각 | DynamoDB 상태 전이 타임스탬프 (`REPORT_GENERATION` → `COMPLETED`) 차이 계산 | |
+| 자동 완료율 | 사람 개입 없이 완료된 RCA 건수 / 전체 RCA 건수 | DynamoDB에서 `COMPLETED` 상태이면서 수동 개입 플래그 없는 건 집계 | 수동 개입 = SRE가 중간에 가설 수정/추가한 경우 |
+| Precision | 에이전트가 제시한 근본 원인 vs 실제 원인 | **시나리오 테스트셋**: 과거 실제 인시던트를 재현한 테스트 케이스(최소 20건)로 측정 + **사후 리뷰**: SRE 팀이 실제 운영 RCA 결과를 수동 검증하여 라벨링 | 두 방식 병행 |
+| Recall | 실제 원인이 가설 목록에 포함되었는지 | 시나리오 테스트셋에서 에이전트가 생성한 전체 가설 목록 중 실제 원인 포함 여부 확인 + SRE 사후 리뷰 | |
+| 오탐율 (False Positive) | 정상 상태에서 에이전트가 오보를 내는 비율 | 정상 상태(노이즈) 시나리오 테스트셋으로 측정 — 에이전트가 경보 없이 정상 리포트를 내는지 확인 | |
+| NF1: 성능 | 각 Phase별 소요 시간 | DynamoDB 상태 전이 타임스탬프, CloudWatch Custom Metrics로 대시보드화 | |
+| NF2: 보안 | VPC 엔드포인트 경유 여부, IAM 정책 적용 여부 | CloudTrail 감사 로그, VPC Flow Logs, IAM Access Analyzer | 릴리스 시 보안 체크리스트로 검증 |
+| NF3: 가용성 | 에이전트 실패 건수, 재시도 횟수, DLQ 적재 건수 | CloudWatch Metrics (Fargate Task 실패율), SQS DLQ 메시지 수 | |
+
+### 8.2. Success Thresholds
+
+| 지표 | 성공 기준 | 실패 기준 | 측정 기간 |
+|------|---------|---------|---------|
+| RCA 완료 시간 | 80% 이상의 RCA가 20분 이내 완료 | 50% 미만이 20분 이내 완료 | MVP 테스트 기간 (4주) |
+| 보고서·플레이북 생성 시간 | 90% 이상이 1시간 이내 완료 | 70% 미만이 1시간 이내 완료 | MVP 테스트 기간 (4주) |
+| 자동 완료율 | 90% 이상 | 70% 미만 | MVP 테스트 기간 (4주) |
+| Precision | 90% 이상 | 70% 미만 | 시나리오 테스트셋 + 운영 사후 리뷰 |
+| Recall | 90% 이상 | 70% 미만 | 시나리오 테스트셋 + 운영 사후 리뷰 |
+| 오탐율 | 20% 이하 | 30% 초과 | 정상 상태 시나리오 테스트셋 |
+| 에이전트 가용성 | 실패 후 자동 복구율 95% 이상 | 자동 복구율 80% 미만 | MVP 테스트 기간 (4주) |
+
+---
+
+## Section 9. Out of Scope
+
+### 9.1. Deferred Features
+
+| 항목 | 설명 | 향후 계획 |
+|------|------|---------|
+| 실시간 대응 모드 | 5초 이내 응답 목표의 실시간 RCA — MVP는 여유 시간(수분~20분) 기준 | v2에서 경량 프롬프트 + 캐싱 + Kinesis 스트리밍 기반 실시간 모드 추가 |
+| OpenSearch 기반 로그 검색 | 대용량 로그 전문 검색 — MVP는 CloudWatch Logs Insights만 사용 | v2에서 CloudWatch Logs → OpenSearch 스트리밍 파이프라인 구축 |
+| 자동 조치 실행 | 롤백, 리소스 증설 등 자동 실행 — MVP는 "권고"까지만 | v2에서 SRE 승인 후 자동 실행(Human-in-the-Loop) → v3에서 완전 자동화 |
+| Slack/PagerDuty 연동 | 알림 채널 확장 — MVP는 SNS(이메일) 기반 | v2에서 Slack Bot, PagerDuty 웹훅 연동 |
+| 멀티 리전/멀티 계정 | 크로스 리전, 크로스 계정 RCA — MVP는 단일 리전/단일 계정 | v2에서 AWS Organizations + Cross-Account IAM Role 기반 확장 |
+| 멀티 클라우드 | Azure, GCP 등 타 클라우드 대응 | v3 이후 검토 |
+| Step Functions 오케스트레이션 | 복잡한 워크플로우 관리 — MVP는 에이전트 자체 루프 | 운영 규모 확장 시 Step Functions 도입 검토 |
+| 대시보드 고도화 | 실시간 가설 트리 시각화, 인터랙티브 조작 — MVP는 기본 조회/열람 | v2에서 WebSocket 기반 실시간 업데이트, 가설 수동 추가/수정 기능 |
+| SRE 피드백 루프 | SRE가 RCA 결과를 평가하여 모델 튜닝에 활용 | v2에서 피드백 UI + 운영 루프 마련 |
+| 배치 분석 모드 | 일괄 수집/분석 — MVP는 개별 알람 기반 | v2에서 Kinesis 스트림 처리 + Lambda Auto Scaling 검토 |
+
+### 9.2. Technical Debt Roadmap
+
+| 항목 | 현재 상태 | 개선 방향 | 우선순위 |
+|------|---------|---------|---------|
+| LLM 비용 최적화 | MVP에서는 비용 관리 미적용 | LLM 호출 횟수 줄이기 위한 결과 캐싱, 유사 케이스 데이터베이스 활용, 예약 인스턴스 할인 적용 | 높음 |
+| 프롬프트 버전 관리 | 코드 내 하드코딩 | Git 기반 프롬프트 버전 관리, A/B 테스트 프레임워크 | 중간 |
+| 인프라 코드화 | 수동 구성 가능 | AWS CDK/CloudFormation으로 전체 인프라 IaC 전환 | 높음 |
+| 테스트 자동화 | 시나리오 테스트셋 수동 관리 | CI/CD 파이프라인에 시나리오 테스트 자동화 통합 | 중간 |
+| 모니터링 고도화 | 기본 CloudWatch 메트릭 | ADOT 기반 에이전트 자체 트레이싱, 커스텀 대시보드 구축 | 중간 |
+
+---
