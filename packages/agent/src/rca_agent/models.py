@@ -18,6 +18,21 @@ class RcaSessionState(StrEnum):
     FAILED = "FAILED"
 
 
+class HypothesisCategory(StrEnum):
+    DEPLOYMENT = "DEPLOYMENT"
+    INFRASTRUCTURE = "INFRASTRUCTURE"
+    TRAFFIC = "TRAFFIC"
+    DEPENDENCY = "DEPENDENCY"
+    CONFIGURATION = "CONFIGURATION"
+
+
+class HypothesisStatus(StrEnum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    REJECTED = "REJECTED"
+    NEEDS_INVESTIGATION = "NEEDS_INVESTIGATION"
+
+
 class AlarmTrigger(BaseModel):
     metric_name: str
     namespace: str
@@ -100,3 +115,22 @@ class ScopingResult(BaseModel):
     metric_snapshot: dict = Field(default_factory=dict)
     similar_playbooks: list[PlaybookMatch] = Field(default_factory=list)
     raw_alarm: AlarmPayload | None = None
+
+
+class Hypothesis(BaseModel):
+    hypothesis_id: str = ""
+    description: str
+    category: HypothesisCategory
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    required_evidence: list[str] = Field(default_factory=list)
+    referenced_playbook_id: str | None = None
+    status: HypothesisStatus = HypothesisStatus.PENDING
+    tree_id: str = ""
+    parent_id: str | None = None
+    depth: int = 0
+
+
+class HypothesisGenerationResult(BaseModel):
+    tree_id: str
+    hypotheses: list[Hypothesis]
+    scoping_result: ScopingResult

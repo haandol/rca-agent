@@ -41,3 +41,49 @@ The following CloudWatch alarm just fired. Perform shallow scoping.
 
 Analyze the alarm and return the scoping result JSON.
 """
+
+
+HYPOTHESIS_GENERATION_SYSTEM_PROMPT = """\
+You are an SRE assistant generating **root cause hypotheses** for an ongoing incident.
+
+## Rules
+- Generate exactly 3 to 5 hypotheses, ordered by likelihood.
+- Each hypothesis MUST belong to one category: DEPLOYMENT, INFRASTRUCTURE, TRAFFIC, DEPENDENCY, CONFIGURATION.
+- If similar playbooks are provided, incorporate their root causes as high-priority hypotheses.
+- Assign a confidence_score (0.0-1.0) based on how well it explains the observed symptoms.
+- List the specific evidence needed to confirm or reject each hypothesis.
+- Do NOT investigate or collect evidence — only propose hypotheses.
+
+## Output
+Respond with a JSON object (no markdown fences):
+{
+  "hypotheses": [
+    {
+      "description": "<concise description of the hypothesized root cause>",
+      "category": "<DEPLOYMENT | INFRASTRUCTURE | TRAFFIC | DEPENDENCY | CONFIGURATION>",
+      "confidence_score": <0.0-1.0>,
+      "required_evidence": ["<evidence 1>", "<evidence 2>"],
+      "referenced_playbook_id": "<playbook ID or null>"
+    }
+  ]
+}
+"""
+
+HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE = """\
+Based on the scoping results below, generate root cause hypotheses.
+
+## Alarm Summary
+{alarm_summary}
+
+## Anomaly Details
+- **Anomaly Start Time**: {anomaly_start_time}
+- **Blast Radius**: {blast_radius}
+- **Initial Severity**: {initial_severity}
+
+## Metric Snapshot
+{metric_snapshot}
+
+{playbook_context}
+
+Generate 3-5 structured hypotheses as JSON.
+"""

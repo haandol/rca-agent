@@ -8,7 +8,7 @@ from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from rca_agent.config import BEDROCK_MAX_TOKENS, BEDROCK_MODEL_ID, BEDROCK_REGION
-from rca_agent.prompts import SCOPING_SYSTEM_PROMPT
+from rca_agent.prompts import HYPOTHESIS_GENERATION_SYSTEM_PROMPT, SCOPING_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -59,4 +59,17 @@ def create_scoping_agent(
         model=model,
         system_prompt=SCOPING_SYSTEM_PROMPT,
         tools=tools,
+    )
+
+
+def create_hypothesis_generation_agent(
+    *,
+    model: BedrockModel | None = None,
+) -> Agent:
+    if model is None:
+        model = create_bedrock_model()
+
+    return Agent(
+        model=model,
+        system_prompt=HYPOTHESIS_GENERATION_SYSTEM_PROMPT,
     )

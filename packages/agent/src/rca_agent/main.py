@@ -9,9 +9,14 @@ import time
 
 import boto3
 
-from rca_agent.agent_factory import create_cloudwatch_mcp_client, create_scoping_agent
+from rca_agent.agent_factory import (
+    create_cloudwatch_mcp_client,
+    create_hypothesis_generation_agent,
+    create_scoping_agent,
+)
 from rca_agent.config import S3_VECTOR_BUCKET_NAME
 from rca_agent.healthz import start_health_server
+from rca_agent.hypothesis import run_hypothesis_generation
 from rca_agent.models import AlarmPayload
 from rca_agent.scoping import run_scoping
 
@@ -51,7 +56,7 @@ def _create_s3_vectors_client():
     return boto3.client("s3vectors")
 
 
-def _process_alarm(body: dict, agent, s3_vectors_client) -> None:
+def _process_alarm(body: dict, scoping_agent, hypothesis_agent, s3_vectors_client) -> None:
     alarm_data = _parse_sns_envelope(body)
     alarm = AlarmPayload.from_cloudwatch_sns(alarm_data)
     logger.info(
@@ -61,14 +66,23 @@ def _process_alarm(body: dict, agent, s3_vectors_client) -> None:
         alarm.service_name,
     )
 
-    scoping_result = run_scoping(alarm, agent, s3_vectors_client=s3_vectors_client)
+    scoping_result = run_scoping(alarm, scoping_agent, s3_vectors_client=s3_vectors_client)
     logger.info(
         "Scoping result: severity=%s, blast_radius=%s, playbooks=%d",
         scoping_result.initial_severity,
         scoping_result.blast_radius,
         len(scoping_result.similar_playbooks),
     )
-    # TODO: pass scoping_result to hypothesis generation (ADR 0002)
+
+    hypothesis_result = run_hypothesis_generation(scoping_result, hypothesis_agent)
+    logger.info(
+        "Hypothesis generation: tree_id=%s, count=%d",
+        hypothesis_result.tree_id,
+        len(hypothesis_result.hypotheses),
+    )
+    for h in hypothesis_result.hypotheses:
+        logger.info("  Hypothesis: [%s] %s (confidence=%.2f)", h.category, h.description, h.confidence_score)
+    # TODO: pass hypothesis_result to hypothesis prioritization (ADR 0003)
 
 
 def main() -> None:
@@ -83,9 +97,10 @@ def main() -> None:
     logger.info("Health server started on port 8000")
 
     mcp_client = create_cloudwatch_mcp_client()
-    agent = create_scoping_agent(mcp_clients=[mcp_client])
+    scoping_agent = create_scoping_agent(mcp_clients=[mcp_client])
+    hypothesis_agent = create_hypothesis_generation_agent()
     s3_vectors_client = _create_s3_vectors_client()
-    logger.info("Scoping agent initialized")
+    logger.info("Agents initialized (scoping, hypothesis_generation)")
 
     sqs = boto3.client("sqs")
     logger.info("Starting SQS long polling: %s", QUEUE_URL)
@@ -110,7 +125,7 @@ def main() -> None:
             try:
                 body = json.loads(msg["Body"])
                 logger.info("Received alarm message: %s", body.get("AlarmName", body.get("Message", "unknown")[:80]))
-                _process_alarm(body, agent, s3_vectors_client)
+                _process_alarm(body, scoping_agent, hypothesis_agent, s3_vectors_client)
             except Exception:
                 logger.exception("Failed to process message")
             finally:
