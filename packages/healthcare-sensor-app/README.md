@@ -75,6 +75,9 @@ otel-collector-config.yaml    # ADOT Collector 로컬 설정 (debug exporter)
 | `FAULT_INJECTION_ENABLED` | 장애 주입 API 활성화 여부 | `true` |
 | `DB_POOL_SIZE` | DB 커넥션 풀 크기 | `5` |
 | `DB_MAX_OVERFLOW` | DB 커넥션 풀 오버플로우 | `10` |
+| `FAULT_DB_LEAK` | DB 커넥션 리크 feature flag | `false` |
+| `FAULT_SLOW_QUERY_MS` | 요청당 인위적 지연 (ms) | `0` |
+| `FAULT_ERROR_RATE` | 요청 실패율 (0.0~1.0) | `0.0` |
 
 ## API Surface
 
@@ -122,3 +125,49 @@ Request/response 스키마는 `src/test_service/ports/dto/`와 `src/test_service
 - `HealthService`는 DB 커넥션 풀 상태(체크아웃 수, 풀 크기)를 포함한 헬스 체크를 제공한다.
 - DI 컨테이너는 lazy `@property` 패턴으로 서비스를 초기화하며, `cleanup()`에서 DB 엔진을 정리한다.
 - OpenTelemetry 계측이 FastAPI에 자동 적용되어 분산 트레이싱을 지원한다.
+
+## Feature Flag 기반 장애 시나리오
+
+환경변수를 변경한 배포만으로 장애를 발생시키고, 롤백(환경변수 원복)으로 복구하는 데모 시나리오.
+
+### 시나리오 1: DB 커넥션 리크 (PRD 데모)
+
+```bash
+# 장애 배포: FAULT_DB_LEAK=true 로 환경변수 변경 후 재배포
+FAULT_DB_LEAK=true docker compose up -d app
+
+# 결과: 모든 DB 요청에서 커넥션을 반환하지 않아 풀이 고갈됨
+# CloudWatch 메트릭: DatabaseConnections 지속 상승 → Alarm 트리거
+# 로그: "DB connection not returned (FAULT_DB_LEAK enabled)"
+
+# 복구: 환경변수 원복 후 재배포
+FAULT_DB_LEAK=false docker compose up -d app
+```
+
+### 시나리오 2: 지연 증가
+
+```bash
+# 장애 배포: 모든 비즈니스 요청에 3초 지연 주입
+FAULT_SLOW_QUERY_MS=3000 docker compose up -d app
+
+# 결과: p99 latency 급증 → Latency Alarm 트리거
+# 로그: "Injecting latency via FAULT_SLOW_QUERY_MS"
+```
+
+### 시나리오 3: 간헐적 500 에러
+
+```bash
+# 장애 배포: 30% 요청이 500 에러 반환
+FAULT_ERROR_RATE=0.3 docker compose up -d app
+
+# 결과: 5xx 에러율 급증 → Error Rate Alarm 트리거
+# 로그: "Request rejected by FAULT_ERROR_RATE"
+```
+
+### 시나리오 복합
+
+여러 flag를 동시에 설정하여 복합 장애 시나리오도 가능하다:
+
+```bash
+FAULT_DB_LEAK=true FAULT_SLOW_QUERY_MS=1000 docker compose up -d app
+```

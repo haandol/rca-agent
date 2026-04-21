@@ -12,6 +12,9 @@ class AppSettings:
     fault_injection_enabled: bool
     db_pool_size: int
     db_max_overflow: int
+    fault_db_leak: bool
+    fault_slow_query_ms: int
+    fault_error_rate: float
 
 
 @lru_cache(1)
@@ -24,4 +27,7 @@ def get_settings() -> AppSettings:
         fault_injection_enabled=environ.get("FAULT_INJECTION_ENABLED", "true").lower() == "true",
         db_pool_size=int(environ.get("DB_POOL_SIZE", "5")),
         db_max_overflow=int(environ.get("DB_MAX_OVERFLOW", "10")),
+        fault_db_leak=environ.get("FAULT_DB_LEAK", "false").lower() == "true",
+        fault_slow_query_ms=int(environ.get("FAULT_SLOW_QUERY_MS", "0")),
+        fault_error_rate=float(environ.get("FAULT_ERROR_RATE", "0.0")),
     )
