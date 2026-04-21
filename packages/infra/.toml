@@ -11,6 +11,10 @@ notificationEmail = "admin@example.com"
 [agent]
 imageTag = "latest"
 
+[storage]
+evidenceBucket = "rca-agent-dev-evidence"
+vectorBucket = "rca-agent-dev-vectors"
+
 [table]
 [table.rcaSession]
 name = "RcaAgentDevRcaSession"

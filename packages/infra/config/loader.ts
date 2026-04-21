@@ -25,6 +25,12 @@ const ConfigSchema = z.object({
       imageTag: z.string().default('latest'),
     })
     .required(),
+  storage: z
+    .object({
+      evidenceBucket: z.string(),
+      vectorBucket: z.string(),
+    })
+    .required(),
   table: z
     .object({
       rcaSession: z

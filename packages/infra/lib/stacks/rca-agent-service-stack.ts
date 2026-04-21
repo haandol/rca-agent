@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as iam from 'aws-cdk-lib/aws-iam'
+import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as logs from 'aws-cdk-lib/aws-logs'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import * as sns from 'aws-cdk-lib/aws-sns'
@@ -13,6 +14,8 @@ interface IProps extends cdk.StackProps {
   readonly alarmQueue: sqs.IQueue
   readonly alarmTopic: sns.ITopic
   readonly rcaSessionTable: dynamodb.ITable
+  readonly evidenceBucket: s3.IBucket
+  readonly vectorBucketName: string
   readonly imageTag: string
   readonly tracing: boolean
 }
@@ -62,6 +65,8 @@ export class RcaAgentServiceStack extends cdk.Stack {
         SQS_QUEUE_URL: props.alarmQueue.queueUrl,
         SNS_ALARM_TOPIC_ARN: props.alarmTopic.topicArn,
         DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
+        S3_EVIDENCE_BUCKET: props.evidenceBucket.bucketName,
+        S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
         OTEL_SERVICE_NAME: 'rca-agent',
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
@@ -106,6 +111,27 @@ export class RcaAgentServiceStack extends cdk.Stack {
     props.alarmQueue.grantConsumeMessages(taskDef.taskRole)
 
     props.rcaSessionTable.grantReadWriteData(taskDef.taskRole)
+
+    props.evidenceBucket.grantReadWrite(taskDef.taskRole)
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          's3vectors:CreateIndex',
+          's3vectors:GetIndex',
+          's3vectors:ListIndexes',
+          's3vectors:PutVectors',
+          's3vectors:GetVectors',
+          's3vectors:DeleteVectors',
+          's3vectors:QueryVectors',
+          's3vectors:ListVectors',
+        ],
+        resources: [
+          `arn:aws:s3vectors:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:bucket/${props.vectorBucketName}`,
+          `arn:aws:s3vectors:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:bucket/${props.vectorBucketName}/*`,
+        ],
+      })
+    )
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
