@@ -1,16 +1,13 @@
-FROM node:22-slim
+FROM public.ecr.aws/lambda/nodejs:22
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git python3 python3-pip pipx && \
-    rm -rf /var/lib/apt/lists/*
+RUN dnf install -y git tar gzip && dnf clean all
 
 RUN npm install -g @anthropic-ai/claude-code
 
-RUN pipx install uv
+ADD https://astral.sh/uv/install.sh /tmp/uv-install.sh
+RUN sh /tmp/uv-install.sh && rm /tmp/uv-install.sh
 
 ENV PATH="/root/.local/bin:$PATH"
-
-WORKDIR /app
 
 COPY package.json ./
 RUN npm install --omit=dev
@@ -19,4 +16,4 @@ COPY dist/ ./dist/
 COPY prompts/ ./prompts/
 COPY mcp-config.json ./
 
-CMD ["node", "dist/handler.js"]
+CMD ["dist/handler.handler"]
