@@ -13,7 +13,7 @@ BEDROCK_REGION = os.environ.get("AWS_REGION", "us-east-1")
 BEDROCK_MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "4096"))
 BEDROCK_HAIKU_MAX_TOKENS = int(os.environ.get("BEDROCK_HAIKU_MAX_TOKENS", "4096"))
 
-THINKING_ENABLED = os.environ.get("THINKING_ENABLED", "true").lower() in ("true", "1", "yes")
+THINKING_ENABLED = os.environ.get("THINKING_ENABLED", "false").lower() in ("true", "1", "yes")
 
 SCOPING_TIMEOUT_SECONDS = int(os.environ.get("SCOPING_TIMEOUT_SECONDS", "300"))
 HYPOTHESIS_GENERATION_TIMEOUT_SECONDS = int(os.environ.get("HYPOTHESIS_GENERATION_TIMEOUT_SECONDS", "180"))
