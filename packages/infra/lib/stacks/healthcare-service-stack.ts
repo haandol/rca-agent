@@ -107,6 +107,18 @@ export class HealthcareServiceStack extends cdk.Stack {
       });
     }
 
+    if (props.tracing) {
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: [
+            'xray:PutTraceSegments',
+            'xray:PutTelemetryRecords',
+          ],
+          resources: ['*'],
+        }),
+      );
+    }
+
     this.grantEcrPull(taskDef);
 
     return taskDef;
