@@ -1,24 +1,27 @@
 # RCA Agent — AWS 기반 자동 RCA 분석 에이전트
 
-AWS 환경에서 메트릭 알람 발생 시 가설-트리(Hypothesis Tree) 방식으로 자동 RCA(근본원인분석)를 수행하는 에이전트 시스템의 모노레포입니다. Strands Agents SDK와 MCP 서버를 활용하여 CloudWatch, X-Ray, CloudTrail 등 AWS 데이터 소스를 자동 분석하고, 근본 원인 도출부터 보고서 생성까지 전 과정을 자동화합니다.
+AWS 환경에서 메트릭 알람 발생 시 가설-트리(Hypothesis Tree) 방식으로 자동 RCA(근본원인분석)를 수행하는 에이전트 시스템의 모노레포입니다. Strands Agents SDK와 MCP 서버를 활용하여 CloudWatch 데이터 소스를 자동 분석하고, 근본 원인 도출부터 보고서 생성까지 전 과정을 자동화합니다.
 
 ## 패키지 개요
 
-- **`packages/agent`** – Strands Agents SDK 기반 RCA 에이전트. 가설 생성기(Orchestrator)와 전문 툴-콜러(Tool-Caller) 에이전트로 구성. 가설-트리 탐색, 증거 기반 검증, 보고서/플레이북 생성을 수행합니다.
-- **`packages/tools`** – MCP 도구 및 @tool 구현체. CloudWatch 메트릭 수집, 로그 검색, X-Ray 트레이스 분석, CloudTrail 배포 이력 조회, 코드 변경 분석, S3 Vectors 유사도 검색 도구를 제공합니다.
-- **`packages/infra`** – AWS CDK 인프라. ECS Fargate, SNS/SQS, DynamoDB, S3, S3 Vectors, VPC/PrivateLink, Bedrock 접근 등 전체 인프라를 코드로 관리합니다.
-- **`packages/web`** – RCA 대시보드 웹 프론트엔드. RCA 목록 조회, 가설 트리 시각화, 증거 상세 패널, 보고서 열람 기능을 제공합니다.
+- **`packages/agent`** – Strands Agents SDK 기반 RCA 에이전트. 9단계 파이프라인(스코핑 → 가설 생성 → 우선순위 → 검증 → 분기 → 종료 판단 → 보고서 → 플레이북 → 알림)을 실행합니다. Planning 티어(Sonnet 4.6 + adaptive thinking)와 Execution 티어(Haiku 4.5)의 2-tier 모델 아키텍처를 사용합니다.
+- **`packages/infra`** – AWS CDK 인프라. ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC/PrivateLink, Bedrock 접근 등 전체 인프라를 코드로 관리합니다.
+- **`packages/healthcare-sensor-app`** – 헬스케어 센서 데이터 수집/조회 서비스. RCA 에이전트 검증용 장애 주입(fault injection)을 지원합니다.
 
 ## 주요 기능
 
 - CloudWatch Alarm → SNS → SQS → ECS Fargate 에이전트 자동 실행
 - LLM 기반 가설 생성 및 우선순위 결정 (Amazon Bedrock Claude)
-- CloudWatch Metrics/Logs, X-Ray, CloudTrail, GitHub/CodeCommit 자동 증거 수집
+- 2-tier 모델 아키텍처: Planning(Sonnet 4.6 + adaptive thinking) / Execution(Haiku 4.5)
+- CloudWatch MCP 서버를 통한 메트릭 자동 수집
 - 가설-트리 기반 점진적 추론 및 가지치기
-- 신뢰도/비용/깊이 기반 중단 조건으로 운영 통제
-- RCA 보고서 및 플레이북 자동 생성
-- S3 Vectors 기반 과거 장애 플레이북/증거 유사도 검색
-- SNS 알림 전송 (보고서 링크 포함)
+- 전체 기각 시 자동 가설 재생성 (최대 2회)
+- 신뢰도/시간/깊이/루프 기반 종료 조건으로 운영 통제
+- RCA 보고서 자동 생성 및 S3 저장
+- 플레이북 검색 우선(search-first) 전략: 유사 플레이북 업데이트 또는 신규 생성
+- S3 Vectors 기반 과거 장애 플레이북 유사도 검색
+- SNS 알림 전송 (Presigned URL 보고서 링크 포함)
+- Adaptive thinking 피처플래그 (`THINKING_ENABLED`)로 즉시 on/off
 
 ## 빠른 시작
 
@@ -34,15 +37,32 @@ pnpm nx run-many -t test
 # 전체 린트
 pnpm nx run-many -t lint
 
-# 특정 패키지 빌드
-pnpm nx build agent
-pnpm nx build tools
+# 에이전트 패키지 단독 테스트
+cd packages/agent
+uv sync --extra dev
+uv run pytest tests/
 
 # 의존 관계 그래프 확인
 pnpm nx graph
 ```
 
-개별 패키지 명령은 `pnpm nx run <project>:<target>` 형식으로 실행할 수 있습니다.
+## 환경 설정
+
+에이전트 패키지는 `python-dotenv`를 사용하여 `packages/agent/env/local.env`에서 설정을 로드합니다 (`override=False`, 기존 환경변수 우선).
+
+주요 환경변수:
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `BEDROCK_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Planning 티어 모델 |
+| `BEDROCK_HAIKU_MODEL_ID` | `global.anthropic.claude-haiku-4-5-20251001-v1:0` | Execution 티어 모델 |
+| `THINKING_ENABLED` | `false` | Adaptive thinking 피처플래그 |
+| `SQS_QUEUE_URL` | - | SQS 큐 URL (필수) |
+| `S3_VECTOR_BUCKET_NAME` | - | S3 Vectors 버킷 |
+| `S3_REPORT_BUCKET` | - | 보고서 저장 S3 버킷 |
+| `SNS_NOTIFICATION_TOPIC_ARN` | - | RCA 완료 알림 SNS 토픽 |
+
+전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요.
 
 ## 문서
 

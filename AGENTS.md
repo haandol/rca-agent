@@ -6,9 +6,8 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 
 | Package | Description | Tech |
 |---------|-------------|------|
-| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 가설 생성기(Orchestrator) + 툴-콜러(Tool-Caller) | Python, Strands Agents SDK, Amazon Bedrock |
-| [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, DynamoDB, S3, VPC | TypeScript, CDK |
-| [`packages/web`](./packages/web/) | RCA 대시보드 웹 프론트엔드 — RCA 목록, 가설 트리, 증거 패널, 보고서 뷰 | TypeScript, Nuxt 4, TailwindCSS, DaisyUI |
+| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
+| [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC | TypeScript, CDK |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
 
 ## Quick Start
@@ -51,10 +50,9 @@ pnpm nx run-many -t test
 
 | Sub-Agent | Directory | Language | Lint/Build |
 |-----------|-----------|----------|------------|
-| **Agent** | `packages/agent/` | Python | `ruff check`, `pytest` |
+| **Agent** | `packages/agent/` | Python | `uv run ruff check`, `uv run pytest` |
 | **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
-| **Web** | `packages/web/` | TypeScript (Nuxt) | `pnpm lint`, `pnpm build` |
-| **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `ruff check`, `pytest` |
+| **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `uv run ruff check`, `uv run pytest` |
 
 #### Orchestrator Responsibilities
 
@@ -86,8 +84,9 @@ graph TB
         ECS["ECS Fargate<br/>RCA Agent (main.py)"]
     end
 
-    subgraph LLM["LLM 추론"]
-        BEDROCK["Amazon Bedrock<br/>Claude Sonnet 4.6<br/>(non-streaming, structured output)"]
+    subgraph LLM["LLM 추론 (2-tier)"]
+        BEDROCK_PLAN["Amazon Bedrock<br/>Sonnet 4.6 + Adaptive Thinking<br/>(Planning: 가설·보고서·플레이북)"]
+        BEDROCK_EXEC["Amazon Bedrock<br/>Haiku 4.5<br/>(Execution: 스코핑·검증)"]
     end
 
     subgraph DataTools["데이터 수집 도구"]
@@ -107,7 +106,8 @@ graph TB
     end
 
     CW_ALARM --> SNS_IN --> SQS --> ECS
-    ECS <--> BEDROCK
+    ECS <--> BEDROCK_PLAN
+    ECS <--> BEDROCK_EXEC
     ECS --> CW_MCP --> CW_API
     ECS <--> S3_VECTORS
     ECS --> S3
@@ -139,14 +139,7 @@ stateDiagram-v2
 
     HYPOTHESIS_GENERATION --> HYPOTHESIS_PRIORITIZATION: list[Hypothesis]
 
-    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION: PrioritizationResult
-    note right of EVIDENCE_COLLECTION
-        TODO: 미구현 (F5-F9)
-        CloudWatch 메트릭/로그 수집
-        CloudTrail 배포 이력 확인
-    end note
-
-    EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION: evidence_map
+    HYPOTHESIS_PRIORITIZATION --> HYPOTHESIS_VALIDATION: PrioritizationResult
     note right of HYPOTHESIS_VALIDATION
         가설별 confidence 재평가
         3-tier 분류:
@@ -170,6 +163,8 @@ stateDiagram-v2
         5. 전체 가설 REJECTED
     end note
 
+    TERMINATION_CHECK --> HYPOTHESIS_GENERATION: all_rejected\n(재생성, 최대 2회)
+
     BRANCHING --> HYPOTHESIS_PRIORITIZATION: 새 하위 가설 추가
     note right of BRANCHING
         NEEDS_INVESTIGATION 가설 분기
@@ -187,9 +182,10 @@ stateDiagram-v2
 
     PLAYBOOK_GENERATION --> NOTIFICATION: Playbook
     note right of PLAYBOOK_GENERATION
-        RCA 결과에서 플레이북 생성
+        검색 우선(Search-First):
+        유사 플레이북 검색 (≥0.86)
+        → 업데이트 or 신규 생성
         S3 Vectors에 인덱싱
-        (다음 인시던트에서 검색 가능)
     end note
 
     NOTIFICATION --> COMPLETED: SNS 발행
@@ -281,11 +277,12 @@ flowchart TD
 
     subgraph F8["F8: Playbook (playbook_gen.py)"]
         direction TB
-        PBK_AGENT["Playbook Agent"]
+        PB_EXIST["search_existing_playbooks()<br/>S3 Vectors (≥0.86)"]
+        PBK_AGENT["Playbook Agent<br/>(update or create)"]
         PBO["PlaybookOutput<br/>(structured_output)"]
         PBK["Playbook"]
         S3V_SAVE["save_playbook_to_s3_vectors()<br/>→ S3 Vectors 인덱싱"]
-        PBK_AGENT --> PBO --> PBK --> S3V_SAVE
+        PB_EXIST --> PBK_AGENT --> PBO --> PBK --> S3V_SAVE
     end
 
     subgraph F9["F9: Notification (notification.py)"]
@@ -315,9 +312,11 @@ flowchart TD
 
 ### Agent Architecture
 
-- **Supervisor-Orchestrator 패턴**: 가설 생성기(Orchestrator Agent)가 전문 툴 에이전트(Tool-Caller)에게 작업 위임
+- **9단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → F3(Prioritization) → F4(Validation) → F5(Branching) → F6(Termination) → F7(Report) → F8(Playbook) → F9(Notification)
+- **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **가설-트리 탐색**: 증거에 따라 가지치기/확장하는 트리형 점진적 추론
-- **상태 머신**: `ALARM_RECEIVED` → `SCOPING` → `HYPOTHESIS_GENERATION` → `HYPOTHESIS_PRIORITIZATION` → `EVIDENCE_COLLECTION` → `HYPOTHESIS_VALIDATION` → `REPORT_GENERATION` → `COMPLETED`
+- **검증 루프**: Prioritization → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
+- **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
 
 ### Technology Stack
 
@@ -326,16 +325,13 @@ flowchart TD
 | 에이전트 프레임워크 | Strands Agents SDK |
 | 에이전트 실행 환경 | AWS ECS Fargate |
 | 이벤트 라우팅 | Amazon SNS + SQS |
-| LLM 추론 | Amazon Bedrock (Claude) |
-| 임베딩 | Amazon Bedrock Cohere Embed v4 |
+| LLM 추론 (Planning) | Amazon Bedrock — Claude Sonnet 4.6 + adaptive thinking |
+| LLM 추론 (Execution) | Amazon Bedrock — Claude Haiku 4.5 |
+| 임베딩 | Amazon S3 Vectors (서버사이드 임베딩) |
 | 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 (`awslabs/cloudwatch-mcp-server`) |
-| 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 (`awslabs/cloudtrail-mcp-server`) |
-| 코드 변경 분석 도구 | GitHub MCP 서버 (`github/github-mcp-server`) |
-| 분산 트레이스 | ADOT + AWS X-Ray (MVP 이후) |
 | 증거/보고서 저장 | Amazon S3 |
 | 벡터 검색 | Amazon S3 Vectors |
-| 가설 트리 상태 | Amazon DynamoDB |
-| 시크릿 관리 | AWS Secrets Manager |
+| 환경 설정 | python-dotenv (`env/local.env`) |
 | 알림 | Amazon SNS |
 | 네트워크 보안 | VPC + PrivateLink |
 

@@ -33,6 +33,7 @@ adr/
 - [ADR 0007: RCA 보고서 생성 — 구조화된 분석 결과 보고](agent/0007-rca-report-generation.md)
 - [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
 - [ADR 0009: 알림 — RCA 진행/완료 알림 전달](agent/0009-notification.md)
+- [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
 
 ### Tools
 

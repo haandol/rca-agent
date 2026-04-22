@@ -48,9 +48,8 @@
 | Scope       | 대상                                                  |
 | ----------- | ----------------------------------------------------- |
 | `agent`     | RCA 에이전트 코어 (`packages/agent/`)                 |
-| `tools`     | MCP 도구 및 @tool 구현체 (`packages/tools/`)          |
 | `infra`     | AWS CDK 인프라 (`packages/infra/`)                    |
-| `web`       | RCA 대시보드 웹 프론트엔드 (`packages/web/`)          |
+| `sensor`    | 헬스케어 센서 앱 (`packages/healthcare-sensor-app/`)  |
 | `workspace` | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등) |
 | `deps`      | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)        |
 | `docs`      | 문서 (`docs/`, PRD, ADR)                              |
@@ -183,6 +182,27 @@ git push -u origin feat/my-feature
 - **상태 관리**: Pinia
 - **컴포넌트**: Vue 3 Composition API (`<script setup lang="ts">`)
 - **네이밍**: 컴포넌트 PascalCase, 변수/함수 camelCase
+
+### Python (Agent, Healthcare Sensor App)
+
+- **Python 버전**: 3.12+
+- **패키지 관리**: uv (`pyproject.toml`)
+- **린터/포매터**: ruff (`line-length=120`, `target-version="py312"`)
+- **타입 힌트**: Pydantic 모델 + `from __future__ import annotations`
+- **테스트**: pytest (`uv run pytest tests/`)
+- **환경 설정**: python-dotenv (`env/local.env`)
+- **네이밍**: 함수/변수 snake_case, 클래스 PascalCase
+
+```bash
+# 린트 검사
+uv run ruff check src/
+
+# 자동 포매팅
+uv run ruff format src/
+
+# 테스트
+uv run pytest tests/ -x -q
+```
 
 ### TypeScript (MCP 서버)
 
