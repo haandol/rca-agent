@@ -34,6 +34,7 @@ adr/
 - [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
 - [ADR 0009: 알림 — RCA 진행/완료 알림 전달](agent/0009-notification.md)
 - [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
+- [ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인](agent/0011-cc-headless-prompt-driven-rca.md)
 
 ### Tools
 
@@ -47,6 +48,7 @@ adr/
 
 - [ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate](infra/0001-alarm-ingestion-sns-sqs-fargate.md)
 - [ADR 0002: 증거 저장 — S3 + S3 Vectors + DynamoDB 기반 증거 아카이브](infra/0002-evidence-storage.md)
+- [ADR 0003: Lambda + CC on Bedrock headless 스택 — 서버리스 RCA 실행 인프라](infra/0003-lambda-cc-headless-stack.md)
 
 ### Web
 
