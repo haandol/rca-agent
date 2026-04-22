@@ -25,18 +25,23 @@ Accepted
 
 ### 핵심 결정사항
 
-1. **RCA 보고서 기반 생성**: F13 보고서의 근본 원인, 조치 방안, 검증 경로를 바탕으로 LLM이 재사용 가능한 플레이북을 생성한다.
+1. **검색 우선(Search-First) 전략**: 플레이북 생성 전에 S3 Vectors에서 유사 플레이북을 검색한다. 유사도 0.86 이상(`PLAYBOOK_UPDATE_THRESHOLD`)인 기존 플레이북이 있으면 LLM이 새 RCA 결과와 비교하여 업데이트할 내용이 있는지 판단한다. 업데이트가 필요하면 기존 플레이북 ID를 유지한 채 내용을 보강하고, 업데이트가 불필요하면 새 플레이북 생성도 건너뛴다. 일치하는 기존 플레이북이 없을 때만 새로 생성한다.
 
-2. **S3 Vectors 인덱싱**: 플레이북의 장애 유형 + 증상 패턴 + 근본 원인 텍스트를 Bedrock Cohere Embed v4로 임베딩하여 S3 Vectors에 저장한다. 메타데이터로 플레이북 ID, 장애 유형 태그, 생성 일시, RCA ID를 함께 저장한다.
+2. **벡터 임베딩 키**: `{근본 원인(failure_type)} | {알람 메트릭명} | {인시던트 요약}`을 `" | "` 구분자로 결합하여 임베딩 텍스트로 사용한다. 알람 메트릭명은 `ScopingResult.raw_alarm.trigger.metric_name`에서 추출한다.
 
-3. **태깅**: 장애 유형별 태그를 부여하여 태그 필터링 + 벡터 유사도 검색을 병행한다.
+3. **업데이트 판단 LLM**: `PlaybookUpdateOutput` Pydantic 모델(`needs_update`, 플레이북 전체 필드)을 `structured_output_model`로 지정하여 LLM이 기존 플레이북 대비 새 RCA에서 추가된 점이 있는지 판단한다. `needs_update=false`이면 기존 플레이북을 그대로 유지한다.
 
-4. **기존 플레이북과의 관계**: 유사 플레이북이 이미 있는 경우 LLM이 기존 플레이북과 차이점을 비교하여 업데이트를 제안한다.
+4. **S3 Vectors 인덱싱**: `save_playbook_to_s3_vectors()`가 임베딩 키를 텍스트로 전달하고, 메타데이터에 `failure_type`, `symptom_pattern`, `verification_steps`, `temporary_mitigation`, `permanent_remediation`, `prevention_measures`, `tags`, `rca_id`를 포함하여 이후 업데이트 판단에 활용한다.
+
+5. **태깅**: LLM이 생성한 `tags` 필드를 플레이북에 포함하여 유형별 분류에 활용한다.
+
+6. **타임아웃 및 fallback**: 각 LLM 호출에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 `failure_type="unknown"`, `symptom_pattern=incident_summary`로 최소 플레이북을 생성한다.
 
 ## Consequences
 
 ### Positive
 
+- 검색 우선 전략으로 중복 플레이북 축적 방지 — 동일 유형 장애의 플레이북이 점진적으로 보강됨
 - 과거 RCA 경험이 플레이북으로 체계적으로 축적되어 조직 지식 자산화
 - S3 Vectors 인덱싱으로 유사 장애 발생 시 즉시 검색하여 스코핑 단계(F2)에서 활용 가능
 - 재발 장애에 대한 MTTR 추가 단축
@@ -45,6 +50,7 @@ Accepted
 
 - 플레이북 품질이 RCA 결과의 정확도에 의존 — 오판된 RCA에서 잘못된 플레이북 생성 가능
 - S3 Vectors 임베딩 저장 실패 시 검색 불가(원본은 S3에 보존)
+- 업데이트 판단을 위한 LLM 호출이 추가로 발생 (기존 플레이북당 1회)
 
 ### Risks
 
