@@ -8,6 +8,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 10단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC | TypeScript, CDK |
+| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 서버리스 RCA 에이전트 — Lambda에서 CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, Lambda Container |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
 
 ## Quick Start
@@ -52,6 +53,7 @@ pnpm nx run-many -t test
 |-----------|-----------|----------|------------|
 | **Agent** | `packages/agent/` | Python | `uv run ruff check`, `uv run pytest` |
 | **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
+| **CC Headless** | `packages/cc-headless/` | TypeScript (Node.js) | `pnpm build`, `pnpm test` |
 | **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `uv run ruff check`, `uv run pytest` |
 
 #### Orchestrator Responsibilities

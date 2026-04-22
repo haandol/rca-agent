@@ -14,6 +14,9 @@ imageTag = "latest"
 [healthcare]
 imageTag = "latest"
 
+[ccHeadless]
+imageTag = "latest"
+
 [storage]
 evidenceBucket = "rca-agent-dev-evidence"
 vectorBucket = "rca-agent-dev-vectors"

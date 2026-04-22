@@ -30,6 +30,11 @@ const ConfigSchema = z.object({
       imageTag: z.string().default('latest'),
     })
     .required(),
+  ccHeadless: z
+    .object({
+      imageTag: z.string().default('latest'),
+    })
+    .required(),
   storage: z
     .object({
       evidenceBucket: z.string(),

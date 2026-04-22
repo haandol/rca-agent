@@ -6,6 +6,7 @@ import { DatabaseStack } from '../lib/stacks/database-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { RcaAgentServiceStack } from '../lib/stacks/rca-agent-service-stack';
 import { HealthcareServiceStack } from '../lib/stacks/healthcare-service-stack';
+import { CcHeadlessStack } from '../lib/stacks/cc-headless-stack';
 import { Config } from '../config/loader';
 
 const app = new cdk.App({
@@ -59,6 +60,24 @@ rcaAgentServiceStack.addDependency(networkStack);
 rcaAgentServiceStack.addDependency(eventBusStack);
 rcaAgentServiceStack.addDependency(databaseStack);
 rcaAgentServiceStack.addDependency(storageStack);
+
+const ccHeadlessStack = new CcHeadlessStack(
+  app,
+  `${Config.app.ns}CcHeadlessStack`,
+  {
+    env,
+    alarmTopic: eventBusStack.alarmTopic,
+    notificationTopic: eventBusStack.alarmTopic,
+    rcaSessionTable: databaseStack.rcaSessionTable,
+    evidenceBucket: storageStack.evidenceBucket,
+    vectorBucketName: Config.storage.vectorBucket,
+    reportBucket: Config.storage.evidenceBucket,
+    imageTag: Config.ccHeadless.imageTag,
+  },
+);
+ccHeadlessStack.addDependency(eventBusStack);
+ccHeadlessStack.addDependency(databaseStack);
+ccHeadlessStack.addDependency(storageStack);
 
 const healthcareServiceStack = new HealthcareServiceStack(
   app,
