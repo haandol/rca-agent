@@ -69,28 +69,248 @@ pnpm nx run-many -t test
 
 ## Architecture Overview
 
-### System Flow
+### System Architecture
 
+```mermaid
+graph TB
+    subgraph EventSource["이벤트 소스"]
+        CW_ALARM["☁️ CloudWatch Alarm"]
+    end
+
+    subgraph Messaging["이벤트 라우팅"]
+        SNS_IN["SNS Topic<br/>(알람 팬아웃)"]
+        SQS["SQS Queue<br/>(Long Polling)"]
+    end
+
+    subgraph Compute["에이전트 실행"]
+        ECS["ECS Fargate<br/>RCA Agent (main.py)"]
+    end
+
+    subgraph LLM["LLM 추론"]
+        BEDROCK["Amazon Bedrock<br/>Claude Sonnet 4.6<br/>(non-streaming, structured output)"]
+    end
+
+    subgraph DataTools["데이터 수집 도구"]
+        CW_MCP["CloudWatch MCP Server<br/>(awslabs.cw-mcp-server)"]
+        CW_API["CloudWatch<br/>Metrics / Logs"]
+    end
+
+    subgraph Storage["영속 저장소"]
+        S3_VECTORS["S3 Vectors<br/>(플레이북 임베딩)"]
+        S3["S3 Bucket<br/>(증거 / 보고서)"]
+        DDB["DynamoDB<br/>(가설 트리 상태)"]
+    end
+
+    subgraph Notification["알림"]
+        SNS_OUT["SNS Topic<br/>(RCA 완료 알림)"]
+        SRE["👩‍💻 SRE / Ops 팀"]
+    end
+
+    CW_ALARM --> SNS_IN --> SQS --> ECS
+    ECS <--> BEDROCK
+    ECS --> CW_MCP --> CW_API
+    ECS <--> S3_VECTORS
+    ECS --> S3
+    ECS --> DDB
+    ECS --> SNS_OUT --> SRE
 ```
-CloudWatch Alarm → SNS → SQS → ECS Fargate (RCA Agent)
-                                       │
-                    ┌──────────────────┼──────────────────┐
-                    ▼                  ▼                  ▼
-             CloudWatch          CloudTrail          X-Ray/ADOT
-            Metrics/Logs         (배포 이력)          (트레이스)
-                    │                  │                  │
-                    └──────────────────┼──────────────────┘
-                                       ▼
-                              Amazon Bedrock (Claude)
-                              가설 생성 / 검증 / 보고서
-                                       │
-                    ┌──────────────────┼──────────────────┐
-                    ▼                  ▼                  ▼
-               DynamoDB              S3               S3 Vectors
-            (가설 트리 상태)    (증거/보고서)      (플레이북 임베딩)
-                                       │
-                                       ▼
-                                 SNS → SRE 알림
+
+### Agent Pipeline (State Machine)
+
+에이전트는 가설-검증 루프를 반복하며, 5가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ALARM_RECEIVED: SQS 메시지 수신
+
+    ALARM_RECEIVED --> SCOPING: AlarmPayload 파싱
+    note right of SCOPING
+        CloudWatch MCP로 메트릭 수집
+        S3 Vectors에서 유사 플레이북 검색
+        timeout: 300s
+    end note
+
+    SCOPING --> HYPOTHESIS_GENERATION: ScopingResult
+    note right of HYPOTHESIS_GENERATION
+        초기 가설 3~5개 생성 (depth=0)
+        재시도: 최대 3회
+        timeout: 180s/회
+    end note
+
+    HYPOTHESIS_GENERATION --> HYPOTHESIS_PRIORITIZATION: list[Hypothesis]
+
+    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION: PrioritizationResult
+    note right of EVIDENCE_COLLECTION
+        TODO: 미구현 (F5-F9)
+        CloudWatch 메트릭/로그 수집
+        CloudTrail 배포 이력 확인
+    end note
+
+    EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION: evidence_map
+    note right of HYPOTHESIS_VALIDATION
+        가설별 confidence 재평가
+        3-tier 분류:
+        ≥0.8 CONFIRMED
+        ≤0.3 REJECTED
+        그 외 NEEDS_INVESTIGATION
+    end note
+
+    HYPOTHESIS_VALIDATION --> TERMINATION_CHECK: ValidationResult
+
+    state TERMINATION_CHECK <<choice>>
+    TERMINATION_CHECK --> BRANCHING: 계속 탐색
+    TERMINATION_CHECK --> REPORT_GENERATION: should_terminate=true
+
+    note left of TERMINATION_CHECK
+        종료 조건 (OR):
+        1. confidence ≥ 0.9 (CONFIRMED)
+        2. 시간 ≥ 20분
+        3. tree depth > 5
+        4. 검증 루프 > 3회
+        5. 전체 가설 REJECTED
+    end note
+
+    BRANCHING --> HYPOTHESIS_PRIORITIZATION: 새 하위 가설 추가
+    note right of BRANCHING
+        NEEDS_INVESTIGATION 가설 분기
+        중복 제거 (부모/rejected)
+        max_depth=3
+    end note
+
+    REPORT_GENERATION --> PLAYBOOK_GENERATION: RcaReport
+    note right of REPORT_GENERATION
+        인시던트 요약 / 근본 원인
+        임시 완화 / 영구 해결
+        타임라인 구성
+        S3에 Markdown 저장
+    end note
+
+    PLAYBOOK_GENERATION --> NOTIFICATION: Playbook
+    note right of PLAYBOOK_GENERATION
+        RCA 결과에서 플레이북 생성
+        S3 Vectors에 인덱싱
+        (다음 인시던트에서 검색 가능)
+    end note
+
+    NOTIFICATION --> COMPLETED: SNS 발행
+    note right of NOTIFICATION
+        presigned URL 생성
+        SNS 발행 (backoff 재시도 3회)
+    end note
+
+    COMPLETED --> [*]
+```
+
+### Data Flow (모듈 간 데이터 흐름)
+
+각 모듈이 생산/소비하는 Pydantic 모델과 모듈 간 의존 관계를 나타냅니다.
+
+```mermaid
+flowchart TD
+    subgraph Input["입력 파싱 (main.py)"]
+        SQS_MSG["SQS Message (JSON)"]
+        SNS_PARSE["_parse_sns_envelope()"]
+        AP["AlarmPayload"]
+        SQS_MSG --> SNS_PARSE --> AP
+    end
+
+    subgraph F1["F1: Scoping (scoping.py)"]
+        direction TB
+        PB_SEARCH["search_similar_playbooks()<br/>S3 Vectors → PlaybookMatch[]"]
+        SCOPING_AGENT["Scoping Agent<br/>(CloudWatch MCP)"]
+        SO["ScopingOutput<br/>(structured_output)"]
+        SR["ScopingResult"]
+        PB_SEARCH --> SCOPING_AGENT
+        SCOPING_AGENT --> SO --> SR
+    end
+
+    subgraph F2["F2: Hypothesis Generation (hypothesis.py)"]
+        direction TB
+        HYP_AGENT["Hypothesis Agent"]
+        HO["HypothesisOutput<br/>(structured_output)"]
+        HGR["HypothesisGenerationResult"]
+        H["Hypothesis[]<br/>(tree_id, depth=0)"]
+        HYP_AGENT --> HO --> HGR
+        HGR --> H
+    end
+
+    subgraph F3["F3: Prioritization (prioritization.py)"]
+        direction TB
+        PRIO_AGENT["Prioritization Agent"]
+        PO["PrioritizationOutput<br/>(structured_output)"]
+        PR["PrioritizationResult"]
+        PH["PrioritizedHypothesis[]<br/>(rank, tools, parallel_group)"]
+        PRIO_AGENT --> PO --> PR
+        PR --> PH
+    end
+
+    subgraph F4["F4: Validation (validation.py)"]
+        direction TB
+        VAL_AGENT["Validation Agent"]
+        VO["ValidationOutput<br/>(structured_output)"]
+        VJ["ValidationJudgment[]"]
+        VR["ValidationResult<br/>(all_rejected flag)"]
+        VAL_AGENT --> VO --> VJ --> VR
+    end
+
+    subgraph F5["F5: Branching (branching.py)"]
+        direction TB
+        BR_AGENT["Branching Agent"]
+        BO["BranchingOutput<br/>(structured_output)"]
+        BR["BranchingResult"]
+        CH["Child Hypothesis[]<br/>(depth=parent+1)"]
+        BR_AGENT --> BO --> BR
+        BR --> CH
+    end
+
+    subgraph F6["F6: Termination (termination.py)"]
+        direction TB
+        TC["check_termination()<br/>(순수 로직, LLM 미사용)"]
+        TD_OUT["TerminationDecision<br/>(should_terminate, reason,<br/>best_hypothesis)"]
+        TC --> TD_OUT
+    end
+
+    subgraph F7["F7: Report (report.py)"]
+        direction TB
+        RPT_AGENT["Report Agent"]
+        RO["ReportOutput<br/>(structured_output)"]
+        RCA["RcaReport"]
+        S3_SAVE["save_report_to_s3()<br/>→ Markdown"]
+        RPT_AGENT --> RO --> RCA --> S3_SAVE
+    end
+
+    subgraph F8["F8: Playbook (playbook_gen.py)"]
+        direction TB
+        PBK_AGENT["Playbook Agent"]
+        PBO["PlaybookOutput<br/>(structured_output)"]
+        PBK["Playbook"]
+        S3V_SAVE["save_playbook_to_s3_vectors()<br/>→ S3 Vectors 인덱싱"]
+        PBK_AGENT --> PBO --> PBK --> S3V_SAVE
+    end
+
+    subgraph F9["F9: Notification (notification.py)"]
+        direction TB
+        BUILD_N["build_notification()"]
+        NM["NotificationMessage"]
+        SEND_N["send_notification()<br/>→ SNS Publish"]
+        BUILD_N --> NM --> SEND_N
+    end
+
+    AP --> F1
+    SR --> F2
+    H --> F3
+    SR --> F3
+    PH --> F4
+    VR --> F6
+    H --> F6
+    VJ -->|NEEDS_INVESTIGATION| F5
+    TD_OUT -->|should_terminate=true| F7
+    CH -->|새 가설 추가| F3
+    RCA --> F8
+    RCA --> F9
+
+    style F6 fill:#f9f3e3,stroke:#d4a843
+    style Input fill:#e3f2fd,stroke:#1976d2
 ```
 
 ### Agent Architecture
