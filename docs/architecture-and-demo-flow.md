@@ -1,6 +1,6 @@
 # RCA Agent 아키텍처 및 데모 시나리오 흐름
 
-## 1. 전체 데이터 플로우
+## 1. 전체 데이터 플로우 — Fargate (Strands, 10단계)
 
 SQS 메시지 수신부터 SNS 알림 발행까지, 10단계 파이프라인의 전체 데이터 흐름을 나타냅니다.
 
@@ -108,9 +108,64 @@ flowchart TD
     style Regen fill:#fce4ec,stroke:#c62828
 ```
 
-## 2. 상태 전이 다이어그램
+## 2. 전체 데이터 플로우 — Lambda (CC Headless, 프롬프트 주도)
 
-DynamoDB에 기록되는 RCA 세션 상태 전이입니다.
+CC on Bedrock headless 모드에서 단일 프롬프트로 전체 RCA를 수행합니다. CC가 MCP 도구를 자율적으로 호출하며, 동일한 DynamoDB/S3/SNS를 공유합니다.
+
+```mermaid
+flowchart TD
+    subgraph Input["입력"]
+        SQS["SQS Event Source<br/>(batchSize=1)"]
+        PARSE["AlarmPayload 파싱"]
+        DEDUP["멱등성 체크<br/>(DynamoDB IDEMP# 키)"]
+        SESSION["세션 생성<br/>(engine: cc-headless)"]
+        SQS --> PARSE --> DEDUP --> SESSION
+    end
+
+    subgraph CCExec["CC CLI 실행"]
+        PROMPT["프롬프트 조립<br/>(system + user)"]
+        CC["Claude Code CLI<br/>--output-format json<br/>--mcp-config mcp-config.json"]
+        PROMPT --> CC
+    end
+
+    subgraph MCPTools["MCP 도구 (CC 자율 호출)"]
+        CW["CloudWatch MCP<br/>메트릭/로그 수집"]
+        CT["CloudTrail MCP<br/>배포/변경 이력"]
+        GH["GitHub MCP<br/>코드 변경 분석"]
+    end
+
+    subgraph RCA["프롬프트 내 RCA 워크플로우"]
+        direction TB
+        STEP1["Step 1: 초기 스코핑 (2분)"]
+        STEP2["Step 2: 가설 생성 (2분)"]
+        STEP3["Step 3: 증거 수집 + 검증 루프 (4분)"]
+        STEP4["Step 4: 종료 판단 (1분)"]
+        STEP5["Step 5: 보고서 생성 (1분)"]
+        STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5
+    end
+
+    subgraph Output["출력"]
+        S3_REPORT["S3 보고서 저장<br/>(Markdown)"]
+        SNS_NOTIFY["SNS 알림 발행<br/>(presigned URL)"]
+        DDB_COMPLETE["DynamoDB 상태 갱신<br/>(COMPLETED)"]
+        S3_REPORT --> SNS_NOTIFY --> DDB_COMPLETE
+    end
+
+    SESSION --> CCExec
+    CC <--> MCPTools
+    CC <--> RCA
+    CC --> Output
+
+    style CCExec fill:#e3f2fd,stroke:#1565c0
+    style RCA fill:#f3e5f5,stroke:#7b1fa2
+    style MCPTools fill:#fff3e0,stroke:#ef6c00
+```
+
+## 3. 상태 전이 다이어그램
+
+DynamoDB에 기록되는 RCA 세션 상태 전이입니다. 두 스택이 동일한 DynamoDB 테이블을 사용하며, `engine` 필드로 구분합니다.
+
+### Fargate Stack (Strands) 상태 전이
 
 ```mermaid
 stateDiagram-v2
@@ -150,7 +205,30 @@ stateDiagram-v2
     FAILED --> [*]
 ```
 
-## 3. 데모 시나리오: DB 커넥션 누수 장애
+### Lambda Stack (CC Headless) 상태 전이
+
+```mermaid
+stateDiagram-v2
+    [*] --> ALARM_RECEIVED: SQS Event Source
+
+    ALARM_RECEIVED --> ANALYZING: 멱등성 체크 통과 + 세션 생성
+    ALARM_RECEIVED --> [*]: 중복 감지 → 즉시 반환
+
+    ANALYZING --> COMPLETED: CC CLI 성공<br/>보고서 S3 저장 + SNS 알림
+    ANALYZING --> FAILED: CC 오류 / 타임아웃
+
+    note right of ANALYZING
+        CC CLI subprocess 실행
+        프롬프트 내 5단계 워크플로우 자율 수행
+        MCP 도구 자동 호출
+        engine: 'cc-headless'
+    end note
+
+    COMPLETED --> [*]
+    FAILED --> [*]
+```
+
+## 4. 데모 시나리오: DB 커넥션 누수 장애
 
 PRD Section 3에 정의된 데모 시나리오의 10단계 파이프라인 흐름입니다.
 
@@ -320,7 +398,9 @@ sequenceDiagram
 - 가설 A-2 "코드에서 커넥션 미반환"이 confidence 0.92로 확정
 - 임계치 0.9 이상 → 즉시 종료 → 보고서 생성 단계 진입
 
-## 4. 에이전트 모델 티어 매핑
+## 5. 에이전트 모델 티어 매핑
+
+### Fargate Stack (Strands) — 2-Tier
 
 ```mermaid
 flowchart LR
@@ -359,4 +439,35 @@ flowchart LR
     style Execution fill:#e8f5e9,stroke:#2e7d32
     style NoLLM fill:#f5f5f5,stroke:#616161
     style MCP fill:#fff3e0,stroke:#ef6c00
+```
+
+### Lambda Stack (CC Headless) — 단일 모델
+
+```mermaid
+flowchart LR
+    subgraph CCModel["CC Headless<br/>(Sonnet 4.6 via Bedrock)"]
+        CC["Claude Code CLI<br/>프롬프트 주도 RCA"]
+    end
+
+    subgraph MCP["MCP 서버 연결"]
+        CW["CloudWatch MCP"]
+        CT["CloudTrail MCP"]
+        GH["GitHub MCP"]
+    end
+
+    subgraph Lambda["Lambda 핸들러<br/>(LLM 미사용)"]
+        PARSE["알람 파싱"]
+        SESSION["세션 관리"]
+        REPORT_S["보고서 저장"]
+        NOTIFY["SNS 알림"]
+    end
+
+    CC -.-> CW
+    CC -.-> CT
+    CC -.-> GH
+    PARSE --> CC --> REPORT_S --> NOTIFY
+
+    style CCModel fill:#e3f2fd,stroke:#1565c0
+    style MCP fill:#fff3e0,stroke:#ef6c00
+    style Lambda fill:#f5f5f5,stroke:#616161
 ```

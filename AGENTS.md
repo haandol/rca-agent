@@ -11,6 +11,21 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 서버리스 RCA 에이전트 — Lambda에서 CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, Lambda Container |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
 
+## Dual-Stack Architecture
+
+동일한 CloudWatch 알람에 대해 두 가지 실행 엔진이 독립적으로 RCA를 수행합니다.
+
+| | Fargate Stack (Strands) | Lambda Stack (CC Headless) |
+|---|---|---|
+| **실행 환경** | ECS Fargate (Long Polling) | Lambda Container Image (SQS Event Source) |
+| **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
+| **RCA 방식** | 10단계 파이프라인 (F1~F10) | 단일 프롬프트 + MCP 도구 자율 호출 |
+| **모델** | 2-tier (Sonnet 4.6 + Haiku 4.5) | CC 기본 모델 (Sonnet 4.6) |
+| **타임아웃** | 제한 없음 (ECS) | 15분 (Lambda) |
+| **동시성** | Fargate 태스크 스케일링 | reserved concurrency 1 |
+| **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
+| **구분** | DynamoDB `engine` 필드: `strands` vs `cc-headless` |
+
 ## Quick Start
 
 Prerequisites와 환경 설정은 각 패키지의 AGENTS.md를 참조하세요.
@@ -52,8 +67,8 @@ pnpm nx run-many -t test
 | Sub-Agent | Directory | Language | Lint/Build |
 |-----------|-----------|----------|------------|
 | **Agent** | `packages/agent/` | Python | `uv run ruff check`, `uv run pytest` |
-| **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **CC Headless** | `packages/cc-headless/` | TypeScript (Node.js) | `pnpm build`, `pnpm test` |
+| **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `uv run ruff check`, `uv run pytest` |
 
 #### Orchestrator Responsibilities
@@ -79,19 +94,22 @@ graph TB
 
     subgraph Messaging["이벤트 라우팅"]
         SNS_IN["SNS Topic<br/>(알람 팬아웃)"]
-        SQS["SQS Queue<br/>(Long Polling)"]
+        SQS_FARGATE["SQS Queue<br/>(Fargate Long Polling)"]
+        SQS_LAMBDA["SQS Queue<br/>(Lambda Event Source)"]
     end
 
-    subgraph Compute["에이전트 실행"]
-        ECS["ECS Fargate<br/>RCA Agent (main.py)"]
+    subgraph Compute["에이전트 실행 (Dual-Stack)"]
+        ECS["ECS Fargate<br/>Strands Agent (main.py)"]
+        LAMBDA["Lambda Container<br/>CC Headless (handler.ts)"]
     end
 
-    subgraph LLM["LLM 추론 (2-tier)"]
+    subgraph LLM["LLM 추론"]
         BEDROCK_PLAN["Amazon Bedrock<br/>Sonnet 4.6 + Adaptive Thinking<br/>(Planning: 가설·보고서·플레이북)"]
         BEDROCK_EXEC["Amazon Bedrock<br/>Haiku 4.5<br/>(Execution: 스코핑·검증)"]
+        BEDROCK_CC["Amazon Bedrock<br/>Sonnet 4.6<br/>(CC Headless 프롬프트 주도)"]
     end
 
-    subgraph DataTools["데이터 수집 도구"]
+    subgraph DataTools["데이터 수집 도구 (MCP)"]
         CW_MCP["CloudWatch MCP Server<br/>(awslabs.cw-mcp-server)"]
         CT_MCP["CloudTrail MCP Server<br/>(awslabs.cloudtrail-mcp-server)"]
         GH_MCP["GitHub MCP Server<br/>(github/github-mcp-server)"]
@@ -100,10 +118,10 @@ graph TB
         GH_API["GitHub API<br/>Commits / PRs / Diffs"]
     end
 
-    subgraph Storage["영속 저장소"]
+    subgraph Storage["영속 저장소 (공유)"]
         S3_VECTORS["S3 Vectors<br/>(플레이북 임베딩)"]
         S3["S3 Bucket<br/>(증거 / 보고서)"]
-        DDB["DynamoDB<br/>(가설 트리 상태)"]
+        DDB["DynamoDB<br/>(세션 상태 + 멱등성)"]
     end
 
     subgraph Notification["알림"]
@@ -111,19 +129,33 @@ graph TB
         SRE["👩‍💻 SRE / Ops 팀"]
     end
 
-    CW_ALARM --> SNS_IN --> SQS --> ECS
+    CW_ALARM --> SNS_IN
+    SNS_IN --> SQS_FARGATE --> ECS
+    SNS_IN --> SQS_LAMBDA --> LAMBDA
     ECS <--> BEDROCK_PLAN
     ECS <--> BEDROCK_EXEC
-    ECS --> CW_MCP --> CW_API
-    ECS --> CT_MCP --> CT_API
-    ECS --> GH_MCP --> GH_API
+    LAMBDA <--> BEDROCK_CC
+    ECS --> CW_MCP
+    ECS --> CT_MCP
+    ECS --> GH_MCP
+    LAMBDA --> CW_MCP
+    LAMBDA --> CT_MCP
+    LAMBDA --> GH_MCP
+    CW_MCP --> CW_API
+    CT_MCP --> CT_API
+    GH_MCP --> GH_API
     ECS <--> S3_VECTORS
     ECS --> S3
     ECS --> DDB
-    ECS --> SNS_OUT --> SRE
+    LAMBDA <--> S3_VECTORS
+    LAMBDA --> S3
+    LAMBDA --> DDB
+    ECS --> SNS_OUT
+    LAMBDA --> SNS_OUT
+    SNS_OUT --> SRE
 ```
 
-### Agent Pipeline (State Machine)
+### Agent Pipeline — Fargate (Strands, 10단계)
 
 에이전트는 증거 수집-가설 검증 루프를 반복하며, 5가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다.
 
@@ -214,7 +246,45 @@ stateDiagram-v2
     COMPLETED --> [*]
 ```
 
-### Data Flow (모듈 간 데이터 흐름)
+### Agent Pipeline — Lambda (CC Headless, 프롬프트 주도)
+
+CC on Bedrock headless 모드에서 단일 프롬프트로 RCA 전체 워크플로우를 수행합니다. CC가 MCP 도구를 자율적으로 호출합니다.
+
+```mermaid
+stateDiagram-v2
+    [*] --> SQS_RECEIVED: SQS Event Source Mapping
+
+    SQS_RECEIVED --> IDEMPOTENCY_CHECK: AlarmPayload 파싱
+    note right of IDEMPOTENCY_CHECK
+        DynamoDB IDEMP# 키로 중복 체크
+        engine: 'cc-headless'
+    end note
+
+    IDEMPOTENCY_CHECK --> SESSION_CREATED: 신규 세션 생성
+    IDEMPOTENCY_CHECK --> SKIP: 중복 → 즉시 반환
+
+    SESSION_CREATED --> ANALYZING: CC CLI subprocess 시작
+    note right of ANALYZING
+        claude -p <prompt> --output-format json
+        --mcp-config mcp-config.json
+        프롬프트 내 5단계 RCA 워크플로우:
+        1. 초기 스코핑 (2분)
+        2. 가설 생성 (2분)
+        3. 증거 수집 + 검증 루프 (4분)
+        4. 종료 판단 (1분)
+        5. 보고서 생성 (1분)
+        timeout: 10분 (프롬프트), 15분 (Lambda)
+    end note
+
+    ANALYZING --> COMPLETED: 보고서 S3 저장 + SNS 알림
+    ANALYZING --> FAILED: CC 오류 / 타임아웃
+
+    COMPLETED --> [*]
+    FAILED --> [*]
+    SKIP --> [*]
+```
+
+### Data Flow — Fargate (모듈 간 데이터 흐름)
 
 각 모듈이 생산/소비하는 Pydantic 모델과 모듈 간 의존 관계를 나타냅니다.
 
@@ -342,28 +412,37 @@ flowchart TD
 
 ### Agent Architecture
 
+#### Fargate Stack (Strands Agents SDK)
 - **10단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → F3(Prioritization) → F4(Evidence Collection) → F5(Validation) → F6(Branching) → F7(Termination) → F8(Report) → F9(Playbook) → F10(Notification)
 - **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **가설-트리 탐색**: 증거에 따라 가지치기/확장하는 트리형 점진적 추론
 - **검증 루프**: Prioritization → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
 
+#### Lambda Stack (CC Headless)
+- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 5단계 워크플로우 정의, CC가 자율적으로 MCP 도구 호출
+- **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
+- **시간 예산 관리**: 프롬프트 레벨 10분 분석 + Lambda 15분 타임아웃
+- **멱등성**: DynamoDB `IDEMP#` 키로 Fargate 스택과의 중복 처리 방지
+- **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
+
 ### Technology Stack
 
-| Component | Technology |
+| Component | Fargate Stack | Lambda Stack |
+|-----------|--------------|--------------|
+| 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (TypeScript) |
+| 실행 환경 | AWS ECS Fargate | AWS Lambda Container Image |
+| 이벤트 수신 | SQS Long Polling | SQS Event Source Mapping |
+| LLM 추론 | Bedrock — Sonnet 4.6 (Planning) + Haiku 4.5 (Execution) | Bedrock — Sonnet 4.6 (CC 프롬프트 주도) |
+| MCP 도구 | CloudWatch + CloudTrail + GitHub MCP | CloudWatch + CloudTrail + GitHub MCP |
+| 환경 설정 | python-dotenv (`env/local.env`) | Lambda 환경변수 |
+
+| Component (공유) | Technology |
 |-----------|-----------|
-| 에이전트 프레임워크 | Strands Agents SDK |
-| 에이전트 실행 환경 | AWS ECS Fargate |
-| 이벤트 라우팅 | Amazon SNS + SQS |
-| LLM 추론 (Planning) | Amazon Bedrock — Claude Sonnet 4.6 + adaptive thinking |
-| LLM 추론 (Execution) | Amazon Bedrock — Claude Haiku 4.5 |
+| 이벤트 라우팅 | Amazon SNS → 각 스택별 SQS Queue |
 | 임베딩 | Amazon S3 Vectors (서버사이드 임베딩) |
-| 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 (`awslabs/cloudwatch-mcp-server`) |
-| 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 (`awslabs/cloudtrail-mcp-server`) |
-| 코드 변경 분석 도구 | GitHub MCP 서버 (`github/github-mcp-server`) |
 | 증거/보고서 저장 | Amazon S3 |
-| 벡터 검색 | Amazon S3 Vectors |
-| 환경 설정 | python-dotenv (`env/local.env`) |
+| 세션 관리 | Amazon DynamoDB (`engine` 필드로 스택 구분) |
 | 알림 | Amazon SNS |
 | 네트워크 보안 | VPC + PrivateLink |
 
@@ -419,9 +498,18 @@ cd packages/infra
 pnpm nx deploy infra
 ```
 
-### Agent (ECS Fargate)
+### Agent — Fargate (Strands)
 
 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, 알람 메시지 수신 시 RCA 워크플로우를 자동 시작합니다.
+
+### Agent — Lambda (CC Headless)
+
+CC Headless 에이전트는 Lambda Container Image로 배포됩니다. SQS Event Source Mapping으로 알람을 수신하며, CC CLI를 subprocess로 호출하여 RCA를 수행합니다.
+
+```bash
+cd packages/cc-headless
+docker build -t cc-headless .
+```
 
 ### Web Dashboard
 
