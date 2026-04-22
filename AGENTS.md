@@ -9,7 +9,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 10단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC | TypeScript, CDK |
 | [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 서버리스 RCA 에이전트 — Lambda에서 CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, Lambda Container |
-| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
+| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원, background traffic generator로 CloudWatch baseline 메트릭 축적 | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
 
 ## Dual-Stack Architecture
 
@@ -495,8 +495,26 @@ flowchart TD
 
 ```bash
 cd packages/infra
-pnpm nx deploy infra
+pnpm nx deploy infra          # 전체 스택 배포
+pnpm cdk diff                 # 변경사항 확인
+pnpm cdk deploy <StackName>   # 특정 스택 배포
 ```
+
+CDK 스택 구성 (9개):
+
+| Stack | Description |
+|-------|-------------|
+| EcrStack | ECR 리포지토리 (rca-agent, healthcare, cc-headless) |
+| NetworkStack | VPC (Public + Private subnets, NAT Gateway) |
+| EventBusStack | SNS Alarm Topic + SQS Queue (Fargate용) + DLQ |
+| DatabaseStack | DynamoDB RCA 세션 테이블 |
+| StorageStack | S3 Evidence/Report 버킷 |
+| RdsStack | PostgreSQL 17.4 (Healthcare 서비스용) |
+| RcaAgentServiceStack | ECS Fargate — Strands RCA 에이전트 |
+| CcHeadlessStack | Lambda Container — CC headless RCA 에이전트 |
+| HealthcareServiceStack | ECS Fargate — Healthcare 센서 서비스 |
+
+모든 서비스는 Private subnet에 배포되며, 인바운드 트래픽이 차단됩니다. 자세한 스택 의존관계와 IAM 권한은 [`packages/infra/AGENTS.md`](./packages/infra/AGENTS.md)를 참조하세요.
 
 ### Agent — Fargate (Strands)
 
@@ -504,18 +522,16 @@ pnpm nx deploy infra
 
 ### Agent — Lambda (CC Headless)
 
-CC Headless 에이전트는 Lambda Container Image로 배포됩니다. SQS Event Source Mapping으로 알람을 수신하며, CC CLI를 subprocess로 호출하여 RCA를 수행합니다.
+CC Headless 에이전트는 Lambda Container Image(AWS Lambda Node.js 22 base)로 배포됩니다. SQS Event Source Mapping으로 알람을 수신하며, CC CLI를 subprocess로 호출하여 RCA를 수행합니다.
 
 ```bash
 cd packages/cc-headless
 docker build -t cc-headless .
 ```
 
-### Web Dashboard
+### Healthcare Sensor App
 
-```bash
-pnpm nx build web
-```
+PostgreSQL + background traffic generator로 CloudWatch baseline 메트릭을 축적합니다. ECS Fargate로 배포되며, fault injection API로 장애 시나리오를 트리거합니다.
 
 ## Testing
 

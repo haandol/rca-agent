@@ -1,10 +1,11 @@
 # ADR 0003: Lambda + CC on Bedrock headless 스택 — 서버리스 RCA 실행 인프라
 
 Date: 2026-04-22
+Updated: 2026-04-22
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -39,7 +40,7 @@ flowchart LR
 
 1. **SNS Topic 공유, SQS Queue 분리**: 기존 Fargate 스택의 SNS Alarm Topic에 새로운 SQS Queue를 구독으로 추가한다. 두 스택이 동일 알람을 독립적으로 수신하여 A/B 비교가 가능하다. 필요 시 한쪽 SQS 구독을 비활성화하여 단일 스택만 운영할 수 있다.
 
-2. **Lambda Container Image**: CC CLI, Node.js 런타임, MCP 설정 파일을 포함한 컨테이너 이미지를 ECR에 저장한다. Lambda의 컨테이너 이미지 지원으로 CC CLI 바이너리를 패키징한다.
+2. **Lambda Container Image**: `public.ecr.aws/lambda/nodejs:22` base 이미지에 CC CLI, MCP 설정 파일, `uv` (standalone installer)를 포함한 컨테이너 이미지를 ECR에 저장한다. Lambda base 이미지가 Runtime Interface Client를 내장하므로 별도 RIC 설치가 불필요하다. Python은 시스템 패키지 대신 `uv`가 자체 관리하는 Python을 사용하여 Lambda base 이미지의 OpenSSL 버전 충돌을 회피한다.
 
 3. **Lambda 설정**:
    - 타임아웃: 900초 (15분, Lambda 최대값)
@@ -54,7 +55,7 @@ flowchart LR
    - Visibility Timeout: 960초 (Lambda 타임아웃 + 60초 여유)
    - DLQ: maxReceiveCount 3 후 DLQ 이동
 
-5. **IAM 권한**: 기존 Fargate Task Role과 동일한 권한 셋을 Lambda Execution Role에 부여한다 — SQS 소비, DynamoDB 읽기/쓰기, S3 읽기/쓰기, S3 Vectors 조회/저장, Bedrock InvokeModel, CloudWatch/CloudTrail 읽기, SNS Publish.
+5. **IAM 권한**: 기존 Fargate Task Role과 동일한 권한 셋을 Lambda Execution Role에 부여한다 — DynamoDB 읽기/쓰기, S3 읽기/쓰기, S3 Vectors 조회/저장, Bedrock InvokeModel, SNS Publish. CloudWatch와 CloudTrail은 `CloudWatchReadOnlyAccess`, `AWSCloudTrail_ReadOnlyAccess` AWS 매니지드 정책으로 부여하여 MCP 서버가 사용하는 모든 읽기 API를 커버한다.
 
 6. **환경변수**:
    - `CLAUDE_CODE_USE_BEDROCK=1`: Bedrock 백엔드 활성화

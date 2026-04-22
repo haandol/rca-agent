@@ -1,10 +1,11 @@
 # ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인
 
 Date: 2026-04-22
+Updated: 2026-04-22
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

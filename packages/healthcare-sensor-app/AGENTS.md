@@ -12,6 +12,7 @@ Healthcare Sensor App은 RCA 에이전트의 근본원인분석 정확도를 검
 - **이상치 감지**: 임계값 기반 자동 이상치 판별 및 알림
 - **환자별 바이탈 조회**: 타입/기간 필터링 지원
 - **장애 주입**: DB 커넥션 릭, CPU 부하, 메모리 압박, 슬로우 쿼리
+- **Background Traffic Generator**: 10명 가상 환자에 대해 5초 간격 센서 데이터 자동 생성 (92% 정상, 8% 비정상) — CloudWatch baseline 메트릭 축적용
 - **OpenTelemetry 계측**: 분산 트레이싱 및 메트릭 수집
 
 ### Tech Stack
@@ -80,7 +81,8 @@ packages/healthcare-sensor-app/
 │       ├── services/
 │       │   ├── sensor.py                 # 바이탈 수집, 이상치 판별, 조회
 │       │   ├── health.py                 # 헬스 체크 (DB 풀 상태 포함)
-│       │   └── fault.py                  # 장애 주입 (커넥션 릭, CPU, 메모리, 슬로우 쿼리)
+│       │   ├── fault.py                  # 장애 주입 (커넥션 릭, CPU, 메모리, 슬로우 쿼리)
+│       │   └── traffic_generator.py      # Background 센서 데이터 자동 생성 (lifespan task)
 │       ├── telemetry.py                  # OpenTelemetry 설정
 │       └── main.py                       # FastAPI entrypoint
 ├── tests/                                # pytest tests
