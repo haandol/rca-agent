@@ -92,8 +92,10 @@ graph TB
     subgraph DataTools["데이터 수집 도구"]
         CW_MCP["CloudWatch MCP Server<br/>(awslabs.cw-mcp-server)"]
         CT_MCP["CloudTrail MCP Server<br/>(awslabs.cloudtrail-mcp-server)"]
+        GH_MCP["GitHub MCP Server<br/>(github/github-mcp-server)"]
         CW_API["CloudWatch<br/>Metrics / Logs"]
         CT_API["CloudTrail<br/>Events / Lake"]
+        GH_API["GitHub API<br/>Commits / PRs / Diffs"]
     end
 
     subgraph Storage["영속 저장소"]
@@ -112,6 +114,7 @@ graph TB
     ECS <--> BEDROCK_EXEC
     ECS --> CW_MCP --> CW_API
     ECS --> CT_MCP --> CT_API
+    ECS --> GH_MCP --> GH_API
     ECS <--> S3_VECTORS
     ECS --> S3
     ECS --> DDB
@@ -146,6 +149,7 @@ stateDiagram-v2
     note right of EVIDENCE_COLLECTION
         CloudWatch MCP: 메트릭/로그 수집
         CloudTrail MCP: 배포/변경 이력 조회
+        GitHub MCP: 코드 변경 diff 분석
         S3에 증거 아카이브
         timeout: 120s/가설
     end note
@@ -253,7 +257,7 @@ flowchart TD
 
     subgraph F4["F4: Evidence Collection (evidence.py)"]
         direction TB
-        EV_AGENT["Evidence Agent<br/>(CloudWatch + CloudTrail MCP)"]
+        EV_AGENT["Evidence Agent<br/>(CloudWatch + CloudTrail + GitHub MCP)"]
         EO["EvidenceOutput<br/>(structured_output)"]
         ECR["EvidenceCollectionResult[]"]
         EM["evidence_map<br/>(hypothesis_id → text)"]
@@ -354,6 +358,7 @@ flowchart TD
 | 임베딩 | Amazon S3 Vectors (서버사이드 임베딩) |
 | 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 (`awslabs/cloudwatch-mcp-server`) |
 | 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 (`awslabs/cloudtrail-mcp-server`) |
+| 코드 변경 분석 도구 | GitHub MCP 서버 (`github/github-mcp-server`) |
 | 증거/보고서 저장 | Amazon S3 |
 | 벡터 검색 | Amazon S3 Vectors |
 | 환경 설정 | python-dotenv (`env/local.env`) |

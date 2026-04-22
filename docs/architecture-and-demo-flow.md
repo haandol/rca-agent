@@ -35,13 +35,15 @@ flowchart TD
         end
 
         subgraph F4["F4: Evidence Collection"]
-            E_AGENT["Evidence Agent<br/>(CW+CT MCP)"]
+            E_AGENT["Evidence Agent<br/>(CW+CT+GitHub MCP)"]
             E_CW["CloudWatch<br/>메트릭/로그"]
             E_CT["CloudTrail<br/>배포/변경 이력"]
+            E_GH["GitHub<br/>코드 변경 분석"]
             E_S3["S3 증거 아카이브"]
             E_MAP["evidence_map"]
             E_AGENT --> E_CW
             E_AGENT --> E_CT
+            E_AGENT --> E_GH
             E_AGENT --> E_MAP
             E_MAP --> E_S3
         end
@@ -126,6 +128,7 @@ stateDiagram-v2
     note right of EVIDENCE_COLLECTION
         CloudWatch MCP: 메트릭 + 로그
         CloudTrail MCP: 배포/변경 이력
+        GitHub MCP: 코드 변경 diff 분석
         S3에 증거 아카이브
     end note
 
@@ -164,6 +167,7 @@ sequenceDiagram
     participant Agent as RCA Agent<br/>(ECS Fargate)
     participant CW_MCP as CloudWatch MCP
     participant CT_MCP as CloudTrail MCP
+    participant GH_MCP as GitHub MCP
     participant Bedrock as Amazon Bedrock
     participant S3V as S3 Vectors
     participant S3 as S3
@@ -245,9 +249,11 @@ sequenceDiagram
     Agent->>DDB: state = EVIDENCE_COLLECTION
 
     rect rgb(232, 245, 233)
-        Note over Agent,CT_MCP: A-1, A-2 증거 수집
+        Note over Agent,GH_MCP: A-1, A-2 증거 수집
         Agent->>CT_MCP: 배포 변경 상세 조회
         CT_MCP-->>Agent: RegisterTaskDefinition 이벤트 상세
+        Agent->>GH_MCP: 배포 커밋 diff 조회 (get_commit)
+        GH_MCP-->>Agent: db.py에서 connection.close() 제거 확인
         Agent->>CW_MCP: 커넥션 추이 상세 분석
         CW_MCP-->>Agent: 배포 시점부터 정확히 선형 증가<br/>(풀 설정 변경 아닌 누수 패턴)
         Agent->>S3: 증거 아카이브 저장
@@ -289,7 +295,7 @@ sequenceDiagram
 | 1 | F1 스코핑 | ScopingResult (severity=high, blast=multi) | - |
 | 2 | F2 가설 생성 | 가설 A/B/C (3개) | - |
 | 3 | F3 우선순위 | A→B→C 검증 순서 | - |
-| 4 | F4 증거 수집 | 메트릭(커넥션 추이), 로그(Too many connections), 배포 이력 | S3 |
+| 4 | F4 증거 수집 | 메트릭(커넥션 추이), 로그(Too many connections), 배포 이력, 코드 diff | S3 |
 | 5 | F5 검증 (1차) | A: NEEDS_INVESTIGATION, B/C: REJECTED | DynamoDB |
 | 6 | F6 분기 | A-1(풀 설정), A-2(커넥션 미반환) | - |
 | 4-5 | F4-F5 (2차) | A-1: REJECTED, A-2: CONFIRMED (0.92) | S3, DynamoDB |
@@ -305,6 +311,8 @@ sequenceDiagram
 | CloudWatch MCP | `execute_log_insights_query` | "Too many connections" 에러 로그 검색 |
 | CloudWatch MCP | `analyze_metric` | 커넥션 증가 트렌드 분석 |
 | CloudTrail MCP | `lookup_events` | ECS 배포 이벤트(RegisterTaskDefinition) 조회 |
+| GitHub MCP | `get_commit`, `list_commits` | 배포 커밋 diff 조회, 결함 패턴 탐지 |
+| GitHub MCP | `pull_request_read` | PR diff, 변경 파일 목록, 리뷰 코멘트 조회 |
 
 ### 종료 조건 매핑
 
@@ -338,12 +346,14 @@ flowchart LR
     subgraph MCP["MCP 서버 연결"]
         CW["CloudWatch MCP"]
         CT["CloudTrail MCP"]
+        GH["GitHub MCP"]
     end
 
     SCOPING -.-> CW
     SCOPING -.-> CT
     EVIDENCE -.-> CW
     EVIDENCE -.-> CT
+    EVIDENCE -.-> GH
 
     style Planning fill:#e3f2fd,stroke:#1565c0
     style Execution fill:#e8f5e9,stroke:#2e7d32
