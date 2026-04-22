@@ -14,6 +14,7 @@ from rca_agent.config import (
     BEDROCK_MAX_TOKENS,
     BEDROCK_MODEL_ID,
     BEDROCK_REGION,
+    GITHUB_PERSONAL_ACCESS_TOKEN,
     THINKING_ENABLED,
 )
 from rca_agent.prompts import (
@@ -87,6 +88,29 @@ def create_cloudtrail_mcp_client() -> MCPClient:
                 command="uvx",
                 args=["awslabs.cloudtrail-mcp-server@latest"],
                 env={"FASTMCP_LOG_LEVEL": "ERROR"},
+            )
+        )
+    )
+
+
+def create_github_mcp_client() -> MCPClient:
+    return MCPClient(
+        lambda: stdio_client(
+            StdioServerParameters(
+                command="docker",
+                args=[
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "-e",
+                    "GITHUB_TOOLSETS=repos,pull_requests",
+                    "ghcr.io/github/github-mcp-server",
+                ],
+                env={
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_PERSONAL_ACCESS_TOKEN,
+                },
             )
         )
     )

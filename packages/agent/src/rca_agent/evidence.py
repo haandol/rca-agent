@@ -30,6 +30,7 @@ class EvidenceOutput(BaseModel):
     metrics_evidence: str = ""
     logs_evidence: str = ""
     deploy_evidence: str = ""
+    code_change_evidence: str = ""
     combined_summary: str = ""
 
 
@@ -117,6 +118,9 @@ def collect_evidence(
     if output.deploy_evidence:
         evidence_types.append("deploy_history")
         sections.append(f"## Deploy/Change Evidence\n{output.deploy_evidence}")
+    if output.code_change_evidence:
+        evidence_types.append("code_change")
+        sections.append(f"## Code Change Evidence\n{output.code_change_evidence}")
 
     combined = "\n\n".join(sections)
     if output.combined_summary:

@@ -57,12 +57,14 @@ def _make_evidence_output(
     metrics: str = "CPU at 92%",
     logs: str = "ERROR: Too many connections",
     deploy: str = "Deployment at 10:00",
+    code_change: str = "",
     summary: str = "Evidence points to recent deploy",
 ) -> EvidenceOutput:
     return EvidenceOutput(
         metrics_evidence=metrics,
         logs_evidence=logs,
         deploy_evidence=deploy,
+        code_change_evidence=code_change,
         combined_summary=summary,
     )
 
@@ -114,6 +116,15 @@ class TestCollectEvidence:
         assert "metrics" in result.evidence_types
         assert "logs" in result.evidence_types
         assert "deploy_history" in result.evidence_types
+
+    def test_includes_code_change_evidence(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+        output = _make_evidence_output(code_change="Removed connection.close() in db.py:42")
+        agent = _make_mock_agent(output)
+
+        result = collect_evidence(hypothesis, scoping_result, agent)
+
+        assert "connection.close()" in result.evidence_text
+        assert "code_change" in result.evidence_types
 
     def test_handles_partial_evidence(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
         output = EvidenceOutput(metrics_evidence="CPU high", logs_evidence="", deploy_evidence="")

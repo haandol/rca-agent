@@ -14,6 +14,7 @@ from rca_agent.agent_factory import (
     create_cloudtrail_mcp_client,
     create_cloudwatch_mcp_client,
     create_evidence_collection_agent,
+    create_github_mcp_client,
     create_hypothesis_generation_agent,
     create_playbook_agent,
     create_prioritization_agent,
@@ -24,6 +25,7 @@ from rca_agent.agent_factory import (
 from rca_agent.branching import run_branching
 from rca_agent.config import (
     DYNAMODB_TABLE_NAME,
+    GITHUB_PERSONAL_ACCESS_TOKEN,
     RCA_MAX_REGENERATION_ROUNDS,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
@@ -97,8 +99,9 @@ def _create_dynamodb_client():
 
 
 class _Agents:
-    def __init__(self, mcp_clients=None):
+    def __init__(self, mcp_clients=None, evidence_mcp_clients=None):
         self._mcp_clients = mcp_clients
+        self._evidence_mcp_clients = evidence_mcp_clients or mcp_clients
         self._scoping = None
         self._hypothesis = None
         self._prioritization = None
@@ -129,7 +132,7 @@ class _Agents:
     @property
     def evidence(self):
         if self._evidence is None:
-            self._evidence = create_evidence_collection_agent(mcp_clients=self._mcp_clients)
+            self._evidence = create_evidence_collection_agent(mcp_clients=self._evidence_mcp_clients)
         return self._evidence
 
     @property
@@ -436,7 +439,13 @@ def main() -> None:
 
     cw_mcp_client = create_cloudwatch_mcp_client()
     ct_mcp_client = create_cloudtrail_mcp_client()
-    agents = _Agents(mcp_clients=[cw_mcp_client, ct_mcp_client])
+    scoping_mcp_clients = [cw_mcp_client, ct_mcp_client]
+    evidence_mcp_clients = list(scoping_mcp_clients)
+    if GITHUB_PERSONAL_ACCESS_TOKEN:
+        gh_mcp_client = create_github_mcp_client()
+        evidence_mcp_clients.append(gh_mcp_client)
+        logger.info("GitHub MCP client enabled for evidence collection")
+    agents = _Agents(mcp_clients=scoping_mcp_clients, evidence_mcp_clients=evidence_mcp_clients)
     s3_vectors_client = _create_s3_vectors_client()
     s3_client = _create_s3_client()
     sns_client = _create_sns_client()
