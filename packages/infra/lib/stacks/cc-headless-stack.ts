@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
@@ -17,6 +18,7 @@ interface IProps extends cdk.StackProps {
   readonly evidenceBucket: s3.IBucket;
   readonly vectorBucketName: string;
   readonly reportBucket: string;
+  readonly repository: ecr.IRepository;
   readonly imageTag: string;
 }
 
@@ -77,9 +79,9 @@ export class CcHeadlessStack extends cdk.Stack {
 
     const fn = new lambda.DockerImageFunction(this, 'Function', {
       functionName: `${ns}CcHeadless`,
-      code: lambda.DockerImageCode.fromImageAsset(
-        `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/cc-headless:${props.imageTag}`,
-      ),
+      code: lambda.DockerImageCode.fromEcr(props.repository, {
+        tagOrDigest: props.imageTag,
+      }),
       architecture: lambda.Architecture.ARM_64,
       memorySize: 2048,
       timeout: cdk.Duration.minutes(15),
@@ -100,7 +102,6 @@ export class CcHeadlessStack extends cdk.Stack {
     fn.addEventSource(
       new SqsEventSource(alarmQueue, {
         batchSize: 1,
-        maxConcurrency: 1,
       }),
     );
 

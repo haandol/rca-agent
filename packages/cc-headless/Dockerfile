@@ -13,7 +13,7 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 
 COPY package.json ./
-RUN corepack enable && corepack prepare pnpm@latest --activate && pnpm install --prod --frozen-lockfile
+RUN npm install --omit=dev
 
 COPY dist/ ./dist/
 COPY prompts/ ./prompts/

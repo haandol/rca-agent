@@ -17,10 +17,21 @@ class AppSettings:
     fault_error_rate: float
 
 
+def _build_database_url() -> str:
+    if url := environ.get("DATABASE_URL"):
+        return url
+    user = environ.get("DB_USERNAME", "postgres")
+    password = environ.get("DB_PASSWORD", "postgres")
+    host = environ.get("DB_HOST", "localhost")
+    port = environ.get("DB_PORT", "5432")
+    name = environ.get("DB_NAME", "test_service")
+    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{name}"
+
+
 @lru_cache(1)
 def get_settings() -> AppSettings:
     return AppSettings(
-        database_url=environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/test_service"),
+        database_url=_build_database_url(),
         otel_exporter_otlp_endpoint=environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
         otel_service_name=environ.get("OTEL_SERVICE_NAME", "healthcare-sensor-app"),
         log_level=environ.get("LOG_LEVEL", "INFO"),

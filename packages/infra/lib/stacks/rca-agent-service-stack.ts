@@ -110,6 +110,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
     }
 
     this.grantTaskPermissions(taskDef, props);
+    this.grantEcrPull(taskDef);
 
     return taskDef;
   }
@@ -200,6 +201,14 @@ export class RcaAgentServiceStack extends cdk.Stack {
         actions: ['sns:Publish'],
         resources: [props.alarmTopic.topicArn],
       }),
+    );
+  }
+
+  private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {
+    taskDef.executionRole!.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        'AmazonEC2ContainerRegistryReadOnly',
+      ),
     );
   }
 

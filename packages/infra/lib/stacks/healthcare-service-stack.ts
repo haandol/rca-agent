@@ -1,11 +1,14 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as rds from 'aws-cdk-lib/aws-rds';
 import { Construct } from 'constructs';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
+  readonly dbInstance: rds.DatabaseInstance;
   readonly imageTag: string;
   readonly tracing: boolean;
 }
@@ -18,7 +21,7 @@ export class HealthcareServiceStack extends cdk.Stack {
 
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props);
-    this.newService(ns, cluster, taskDefinition);
+    this.newService(ns, cluster, taskDefinition, props);
   }
 
   private newCluster(ns: string, vpc: ec2.IVpc): ecs.Cluster {
@@ -49,6 +52,9 @@ export class HealthcareServiceStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const dbHost = props.dbInstance.instanceEndpoint.hostname;
+    const dbPort = props.dbInstance.instanceEndpoint.port.toString();
+
     taskDef.addContainer('Healthcare', {
       containerName: 'healthcare',
       image: ecs.ContainerImage.fromRegistry(
@@ -57,10 +63,17 @@ export class HealthcareServiceStack extends cdk.Stack {
       essential: true,
       environment: {
         AWS_REGION: cdk.Aws.REGION,
+        DB_HOST: dbHost,
+        DB_PORT: dbPort,
+        DB_NAME: 'healthcare',
         OTEL_SERVICE_NAME: 'healthcare-sensor-app',
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
         FAULT_ERROR_RATE: '0.0',
+      },
+      secrets: {
+        DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'healthcare',
@@ -94,13 +107,24 @@ export class HealthcareServiceStack extends cdk.Stack {
       });
     }
 
+    this.grantEcrPull(taskDef);
+
     return taskDef;
+  }
+
+  private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {
+    taskDef.executionRole!.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        'AmazonEC2ContainerRegistryReadOnly',
+      ),
+    );
   }
 
   private newService(
     ns: string,
     cluster: ecs.Cluster,
     taskDefinition: ecs.FargateTaskDefinition,
+    props: IProps,
   ): ecs.FargateService {
     const service = new ecs.FargateService(this, 'Service', {
       serviceName: `${ns}Healthcare`,
