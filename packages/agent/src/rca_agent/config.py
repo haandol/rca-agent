@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[3] / "env" / "local.env", override=False)
 
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-4-6")
+BEDROCK_HAIKU_MODEL_ID = os.environ.get("BEDROCK_HAIKU_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 BEDROCK_REGION = os.environ.get("AWS_REGION", "us-east-1")
 BEDROCK_MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "4096"))
+BEDROCK_HAIKU_MAX_TOKENS = int(os.environ.get("BEDROCK_HAIKU_MAX_TOKENS", "4096"))
+
+THINKING_ENABLED = os.environ.get("THINKING_ENABLED", "true").lower() in ("true", "1", "yes")
 
 SCOPING_TIMEOUT_SECONDS = int(os.environ.get("SCOPING_TIMEOUT_SECONDS", "300"))
 HYPOTHESIS_GENERATION_TIMEOUT_SECONDS = int(os.environ.get("HYPOTHESIS_GENERATION_TIMEOUT_SECONDS", "180"))

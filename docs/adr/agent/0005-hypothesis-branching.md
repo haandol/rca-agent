@@ -28,6 +28,8 @@ Accepted
 
 6. **타임아웃 및 fallback**: `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 빈 자식 목록을 반환하여 루프가 자연스럽게 종료되도록 한다.
 
+7. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 부모 가설에서 더 구체적인 하위 가설을 도출하는 추론이 필요하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ## Consequences
 
 ### Positive

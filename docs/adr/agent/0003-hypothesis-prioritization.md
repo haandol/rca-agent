@@ -32,6 +32,8 @@ Accepted
 
 5. **카테고리 기반 fallback**: LLM 호출이 타임아웃되거나 실패하면 카테고리 기본 순서(DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION)로 정렬하여 fallback 결과를 반환한다. `ThreadPoolExecutor`로 120초 타임아웃을 강제한다.
 
+6. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 가설 간 상대적 중요도 판단에 추론이 필요하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ## Consequences
 
 ### Positive

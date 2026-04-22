@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from mcp import StdioServerParameters, stdio_client
 from strands import Agent
 from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
-from rca_agent.config import BEDROCK_MAX_TOKENS, BEDROCK_MODEL_ID, BEDROCK_REGION
+from rca_agent.config import (
+    BEDROCK_HAIKU_MAX_TOKENS,
+    BEDROCK_HAIKU_MODEL_ID,
+    BEDROCK_MAX_TOKENS,
+    BEDROCK_MODEL_ID,
+    BEDROCK_REGION,
+    THINKING_ENABLED,
+)
 from rca_agent.prompts import (
     BRANCHING_SYSTEM_PROMPT,
     HYPOTHESIS_GENERATION_SYSTEM_PROMPT,
@@ -21,11 +29,34 @@ from rca_agent.prompts import (
 logger = logging.getLogger(__name__)
 
 
-def create_bedrock_model(
+def _build_thinking_fields() -> dict[str, Any]:
+    if THINKING_ENABLED:
+        return {"thinking": {"type": "adaptive"}}
+    return {}
+
+
+def create_planning_model(
     *,
     model_id: str = BEDROCK_MODEL_ID,
     region: str = BEDROCK_REGION,
     max_tokens: int = BEDROCK_MAX_TOKENS,
+) -> BedrockModel:
+    additional = _build_thinking_fields()
+    return BedrockModel(
+        model_id=model_id,
+        region_name=region,
+        max_tokens=max_tokens,
+        temperature=0.3,
+        streaming=False,
+        **({"additional_request_fields": additional} if additional else {}),
+    )
+
+
+def create_execution_model(
+    *,
+    model_id: str = BEDROCK_HAIKU_MODEL_ID,
+    region: str = BEDROCK_REGION,
+    max_tokens: int = BEDROCK_HAIKU_MAX_TOKENS,
 ) -> BedrockModel:
     return BedrockModel(
         model_id=model_id,
@@ -53,12 +84,8 @@ def create_scoping_agent(
     model: BedrockModel | None = None,
     mcp_clients: list[MCPClient] | None = None,
 ) -> Agent:
-    """Create a Strands Agent configured for the scoping phase.
-
-    The agent is wired with the CloudWatch MCP server tools for metric queries.
-    """
     if model is None:
-        model = create_bedrock_model()
+        model = create_execution_model()
 
     tools: list = []
     if mcp_clients:
@@ -76,7 +103,7 @@ def create_hypothesis_generation_agent(
     model: BedrockModel | None = None,
 ) -> Agent:
     if model is None:
-        model = create_bedrock_model()
+        model = create_planning_model()
 
     return Agent(
         model=model,
@@ -86,29 +113,29 @@ def create_hypothesis_generation_agent(
 
 def create_prioritization_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
-        model = create_bedrock_model()
+        model = create_planning_model()
     return Agent(model=model, system_prompt=PRIORITIZATION_SYSTEM_PROMPT)
 
 
 def create_validation_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
-        model = create_bedrock_model()
+        model = create_execution_model()
     return Agent(model=model, system_prompt=VALIDATION_SYSTEM_PROMPT)
 
 
 def create_branching_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
-        model = create_bedrock_model()
+        model = create_planning_model()
     return Agent(model=model, system_prompt=BRANCHING_SYSTEM_PROMPT)
 
 
 def create_report_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
-        model = create_bedrock_model()
+        model = create_planning_model()
     return Agent(model=model, system_prompt=REPORT_SYSTEM_PROMPT)
 
 
 def create_playbook_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
-        model = create_bedrock_model()
+        model = create_planning_model()
     return Agent(model=model, system_prompt=PLAYBOOK_SYSTEM_PROMPT)

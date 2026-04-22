@@ -64,6 +64,10 @@ flowchart TD
 
 `ThreadPoolExecutor`로 5분(300초) 타임아웃을 강제하며, 타임아웃 또는 에이전트 실패 시 알람 페이로드만으로 구성된 fallback `ScopingResult`를 반환하여 파이프라인이 중단되지 않도록 한다.
 
+### 모델 티어
+
+스코핑 에이전트는 **Execution 티어**(Haiku 4.5)를 사용한다. CloudWatch MCP 도구 호출 + 얕은 분석으로 구성되어 고도의 추론이 불필요하며, 비용 효율을 우선한다. 상세한 모델 티어 설계는 [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ### 플레이북 검색 재시도
 
 S3 Vectors 유사 플레이북 검색은 exponential backoff(base 1초, 최대 3회 재시도)로 일시적 오류를 처리한다. 검색 실패 시에도 빈 결과로 진행한다.

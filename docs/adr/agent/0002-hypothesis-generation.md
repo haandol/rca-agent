@@ -47,6 +47,8 @@ flowchart TD
 
 5. **3분 타임아웃 + 최대 3회 재시도**: 시도당 3분(180초) 타임아웃을 `ThreadPoolExecutor`로 강제하며, 파싱 실패 또는 타임아웃 시 최대 3회 재시도한다. 모든 시도 실패 시 빈 가설 목록을 반환한다.
 
+6. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 다각도 근본 원인 추론이 핵심이므로 adaptive thinking으로 모델이 복잡도에 맞춰 사고량을 자율 조절한다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ## Consequences
 
 ### Positive

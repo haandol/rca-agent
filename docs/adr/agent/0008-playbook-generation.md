@@ -37,6 +37,8 @@ Accepted
 
 6. **타임아웃 및 fallback**: 각 LLM 호출에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 `failure_type="unknown"`, `symptom_pattern=incident_summary`로 최소 플레이북을 생성한다.
 
+7. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 장애 패턴 추출, 절차 작성, 기존 플레이북 업데이트 판단에 추론이 필요하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ## Consequences
 
 ### Positive

@@ -34,6 +34,8 @@ Accepted
 
 4. **타임아웃 및 fallback**: `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 알람 요약과 best hypothesis 정보만으로 최소 보고서(`RcaReport`)를 생성하여 파이프라인이 중단되지 않도록 한다.
 
+5. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 구조화된 보고서 작성에 깊은 추론이 필요하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ## Consequences
 
 ### Positive

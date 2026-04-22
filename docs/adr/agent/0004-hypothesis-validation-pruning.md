@@ -38,6 +38,8 @@ Accepted
 
 5. **타임아웃 및 fallback**: 개별 가설 검증에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 기존 confidence_score를 유지하고 `NEEDS_INVESTIGATION` 상태로 처리하여 추가 조사 기회를 보존한다.
 
+6. **모델 티어**: **Execution 티어**(Haiku 4.5)를 사용한다. 수집된 증거 대비 가설의 지지/반박을 판정하는 단순 분류 작업이므로 경량 모델로 충분하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+
 ## Consequences
 
 ### Positive
