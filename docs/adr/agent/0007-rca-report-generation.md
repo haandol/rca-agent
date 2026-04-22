@@ -26,13 +26,13 @@ Accepted
 
 ### 핵심 결정사항
 
-1. **전체 컨텍스트 전달**: 확정된 근본 원인, 가설 트리 전체 경로, 수집된 증거를 LLM에 전달하여 구조화된 보고서를 생성한다.
+1. **Strands SDK structured output**: `ReportOutput` Pydantic 모델(`incident_summary`, `root_cause`, `temporary_mitigation`, `permanent_remediation`, `timeline`)을 `structured_output_model`로 지정한다. LLM 출력을 `RcaReport` 모델로 변환하여 `rca_id`, `hypothesis_path`, `evidence_list`, `rejected_hypotheses` 등 오케스트레이션 레이어에서 수집한 메타데이터를 추가한다.
 
-2. **Markdown 저장**: 보고서를 S3에 Markdown 형태로 저장한다. PDF 변환은 옵션으로 제공한다.
+2. **Markdown 저장**: `save_report_to_s3()`가 `_render_markdown()`으로 구조화된 Markdown을 생성하여 S3에 저장한다. 키 형식은 `reports/{rca_id}.md`이다. S3 버킷 미설정 시 업로드를 건너뛴다.
 
-3. **근본 원인 미확정 처리**: 근본 원인이 미확정인 경우 "근본 원인 미확정 — 가장 유력한 후보" 형태로 보고서를 생성한다.
+3. **근본 원인 미확정 처리**: `root_cause_confirmed=False`이면 Markdown에 "Unconfirmed (most likely candidate)" 라벨을 표시한다.
 
-4. **LLM 컨텍스트 윈도우 관리**: 증거 데이터가 컨텍스트 윈도우를 초과할 경우 증거를 요약 후 전달한다.
+4. **타임아웃 및 fallback**: `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 알람 요약과 best hypothesis 정보만으로 최소 보고서(`RcaReport`)를 생성하여 파이프라인이 중단되지 않도록 한다.
 
 ## Consequences
 

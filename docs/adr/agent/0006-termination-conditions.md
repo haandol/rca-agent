@@ -17,20 +17,22 @@ Accepted
 ### 중단 조건
 
 1. **신뢰도 임계치**: CONFIRMED 가설의 confidence_score가 0.9 이상
-2. **시간 예산**: RCA 시작 후 20분 경과
-3. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과
-4. **최대 깊이**: 가설 트리 깊이가 5를 초과
-5. **최대 반복**: 검증 루프가 3회를 초과
+2. **시간 예산**: RCA 시작 후 20분 경과 (`RCA_TIME_BUDGET_SECONDS=1200`)
+3. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과 — `TerminationReason.TOKEN_BUDGET` enum이 정의되어 있으나, Strands SDK의 토큰 사용량 추적 API가 확정되면 구현 예정 (현재 보류)
+4. **최대 깊이**: 가설 트리 깊이가 5를 초과 (`RCA_MAX_TREE_DEPTH=5`)
+5. **최대 반복**: 검증 루프가 3회를 초과 (`RCA_MAX_VALIDATION_LOOPS=3`)
 
 ### 핵심 결정사항
 
-1. **정상 중단**: CONFIRMED 가설을 근본 원인으로 확정하고 보고서 생성에 진입한다.
+1. **순수 로직 (LLM 미사용)**: `check_termination()` 함수는 LLM을 호출하지 않고 순수 로직으로 중단 조건을 평가한다. `time.monotonic()` 기반으로 경과 시간을 계산하고, 가설 목록에서 최대 depth를 추출한다.
 
-2. **강제 중단**: 시간/비용/깊이/반복 한도 초과 시 현재까지 수집된 증거와 가장 높은 confidence_score를 가진 가설을 기반으로 보고서를 생성한다.
+2. **정상 중단**: CONFIRMED 가설 중 confidence ≥ 0.9인 가설이 있으면 해당 가설을 `best_hypothesis`로 설정하고 보고서 생성에 진입한다.
 
-3. **진행 중 도구 호출 보호**: 시간 예산 초과 시 현재 진행 중인 도구 호출은 완료한 후 중단한다.
+3. **강제 중단**: 시간/깊이/반복 한도 초과 시 `_best_hypothesis()` 함수가 모든 judgment 중 가장 높은 confidence_score를 가진 가설을 선택하여 보고서 생성에 전달한다.
 
-4. **근본 원인 미확정 처리**: 모든 가설이 기각되고 추가 가설 생성(최대 2회)으로도 확정하지 못한 경우 "근본 원인 미확정" 상태로 보고서를 생성한다.
+4. **근본 원인 미확정 처리**: 모든 가설이 기각되고 추가 가설 생성(최대 2회, `RCA_MAX_REGENERATION_ROUNDS`)으로도 확정하지 못한 경우 `TerminationReason.ALL_REJECTED`로 중단하고 "근본 원인 미확정" 상태로 보고서를 생성한다.
+
+5. **OR 평가 순서**: CONFIRMED → TIME_BUDGET → MAX_DEPTH → MAX_LOOPS → ALL_REJECTED 순서로 평가하며, 첫 번째로 충족된 조건에서 즉시 반환한다.
 
 ## Consequences
 

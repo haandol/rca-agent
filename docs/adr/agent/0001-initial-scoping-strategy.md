@@ -52,9 +52,21 @@ flowchart TD
 
 5. **5분 타임아웃**: 스코핑이 5분을 초과하면 그 시점까지 수집된 데이터만으로 강제 완료한다. 메트릭 데이터가 없더라도 알람 페이로드 정보만으로 가설 생성에 진입한다.
 
-### CloudWatch API 호출 전략
+### CloudWatch MCP 기반 메트릭 조회
 
-스코핑에서의 CloudWatch 호출은 GetMetricData API로 알람 대상 메트릭과 핵심 연관 메트릭만 최소한으로 조회한다. API 호출 실패 시 exponential backoff로 재시도하며, 데이터 포인트가 부족한 경우에도 가용한 정보만으로 다음 단계를 진행한다.
+스코핑 에이전트는 CloudWatch MCP 서버(`awslabs.cw-mcp-server`)를 도구로 사용하여 메트릭을 조회한다. MCP 서버가 CloudWatch API 호출을 대행하므로 에이전트 코드에서 직접 API를 호출하지 않는다.
+
+### Strands SDK structured output
+
+스코핑 에이전트는 Strands Agents SDK의 `structured_output_model` 파라미터를 사용하여 Pydantic 모델(`ScopingOutput`)로 구조화된 결과를 반환받는다. SQS 배치 처리 특성상 비스트리밍(`streaming=False`) 모드로 호출한다.
+
+### 타임아웃 및 fallback
+
+`ThreadPoolExecutor`로 5분(300초) 타임아웃을 강제하며, 타임아웃 또는 에이전트 실패 시 알람 페이로드만으로 구성된 fallback `ScopingResult`를 반환하여 파이프라인이 중단되지 않도록 한다.
+
+### 플레이북 검색 재시도
+
+S3 Vectors 유사 플레이북 검색은 exponential backoff(base 1초, 최대 3회 재시도)로 일시적 오류를 처리한다. 검색 실패 시에도 빈 결과로 진행한다.
 
 ## Consequences
 

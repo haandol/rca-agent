@@ -28,13 +28,15 @@ Accepted
 
 ### 핵심 결정사항
 
-1. **증거 종합**: F5~F9에서 S3에 저장된 증거 데이터를 가설별로 수집하여 LLM 프롬프트에 포함한다.
+1. **Strands SDK structured output + score 기반 재분류**: `ValidationOutput` Pydantic 모델을 `structured_output_model`로 지정하여 LLM이 `status`, `confidence_score`, `reasoning`, `evidence_summary`를 반환한다. LLM이 반환한 status는 참고만 하고, **confidence_score를 기준으로 코드에서 status를 재분류**한다(≥0.8 → CONFIRMED, ≤0.3 → REJECTED, 나머지 → NEEDS_INVESTIGATION). 이는 LLM의 status 판단 일관성 부족을 보완한다.
 
-2. **판단 근거 기록**: LLM의 판단 결과뿐 아니라 판단 근거도 함께 기록하여 보고서 생성과 사후 검토에 활용한다.
+2. **증거 종합**: 가설별 `evidence_map`에서 증거 텍스트를 가져와 LLM 프롬프트에 포함한다. 증거 수집 모듈은 별도 구현 예정이다.
 
-3. **전체 기각 시 루프백**: 모든 가설이 기각된 경우 F3(가설 생성)로 돌아가 추가 가설을 생성한다.
+3. **판단 근거 기록**: LLM의 `reasoning`과 `evidence_summary`를 `ValidationJudgment`에 기록하여 보고서 생성과 사후 검토에 활용한다.
 
-4. **모호한 판단 처리**: 신뢰도 0.4~0.6 구간에서는 추가 증거 수집을 먼저 시도하고 재판단한다.
+4. **전체 기각 시 가설 재생성**: 오케스트레이션 레이어(`main.py`)에서 `all_rejected` 플래그를 감지하여 가설 생성 단계로 루프백한다. 최대 2회 추가 생성(`RCA_MAX_REGENERATION_ROUNDS`)으로 제한한다.
+
+5. **타임아웃 및 fallback**: 개별 가설 검증에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 기존 confidence_score를 유지하고 `NEEDS_INVESTIGATION` 상태로 처리하여 추가 조사 기회를 보존한다.
 
 ## Consequences
 

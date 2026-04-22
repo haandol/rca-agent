@@ -30,23 +30,22 @@ RCA Agent는 초기 스코핑 완료 후 장애의 가능한 원인을 체계적
 ```mermaid
 flowchart TD
     Start["스코핑 완료\n(SCOPING → HYPOTHESIS_GENERATION)"] --> Prepare["스코핑 결과 + 유사 플레이북\n프롬프트 구성"]
-    Prepare --> LLM["Bedrock Claude에\n가설 생성 요청"]
-    LLM --> Parse["가설 응답 파싱\n(3~5개 구조화된 가설)"]
-    Parse --> Store["DynamoDB에\n가설 트리 루트 노드 저장"]
-    Store --> Next["상태 전이:\nHYPOTHESIS_PRIORITIZATION"]
+    Prepare --> LLM["Bedrock Claude에\nstructured output 요청"]
+    LLM --> Assign["가설별 UUID, tree_id 부여\n(depth=0, parent_id=None)"]
+    Assign --> Next["상태 전이:\nHYPOTHESIS_PRIORITIZATION"]
 ```
 
 ### 핵심 결정사항
 
-1. **ReAct 패턴 기반 프롬프트**: 스코핑 결과와 유사 플레이북(있는 경우)을 LLM에 전달하고, "가능한 원인을 3~5개 가설 형태로 제시하라. 유사 플레이북이 있으면 해당 장애 패턴을 우선 고려하라"는 구조화된 지시를 한다.
+1. **Strands SDK structured output**: 스코핑 결과와 유사 플레이북을 프롬프트에 포함하여 Strands Agents SDK의 `structured_output_model` 파라미터로 `HypothesisOutput` Pydantic 모델을 지정한다. SDK가 출력 파싱을 처리하므로 프롬프트에 JSON 포맷 지시가 불필요하다. 비스트리밍 모드(`streaming=False`)로 호출한다.
 
-2. **가설 구조**: 각 가설은 설명, 카테고리(배포/인프라/트래픽/의존서비스/설정변경), 초기 신뢰도, 필요 증거 목록, 참조한 플레이북 ID(있는 경우)를 포함한다.
+2. **가설 구조**: 각 가설은 설명, 카테고리(DEPLOYMENT/INFRASTRUCTURE/TRAFFIC/DEPENDENCY/CONFIGURATION), 초기 신뢰도(0.0~1.0), 필요 증거 목록, 참조한 플레이북 ID(있는 경우)를 포함한다.
 
-3. **트리 저장**: DynamoDB에 가설 트리 구조로 저장하며, 초기 생성된 3~5개 가설이 루트 노드가 된다. 이후 검증 결과에 따라 하위 노드가 추가된다.
+3. **트리 노드 할당**: 생성된 가설에 UUID 기반 `hypothesis_id`와 공통 `tree_id`를 부여하며, 루트 노드이므로 `depth=0`, `parent_id=None`으로 설정한다. DynamoDB 저장은 오케스트레이션 레이어에서 별도 구현 예정이다.
 
 4. **플레이북 활용**: 유사 플레이북의 근본 원인과 검증 경로를 참고하여 가설 생성 시 우선순위와 검증 전략에 반영한다. 플레이북이 없는 경우에도 LLM의 일반 지식으로 가설을 생성한다.
 
-5. **3분 타임아웃**: 가설 생성이 3분을 초과하면 생성된 가설만으로 다음 단계로 진행한다.
+5. **3분 타임아웃 + 최대 3회 재시도**: 시도당 3분(180초) 타임아웃을 `ThreadPoolExecutor`로 강제하며, 파싱 실패 또는 타임아웃 시 최대 3회 재시도한다. 모든 시도 실패 시 빈 가설 목록을 반환한다.
 
 ## Consequences
 
@@ -58,14 +57,13 @@ flowchart TD
 
 ### Negative
 
-- LLM 응답의 일관성이 보장되지 않아 파싱 실패 가능성 존재
-- Bedrock API 호출 비용이 가설 생성마다 발생
+- Bedrock API 호출 비용이 가설 생성마다 발생 (재시도 시 추가 비용)
 - 유사 플레이북이 축적되기 전까지는 플레이북 우선 반영의 효용이 제한적
 
 ### Risks
 
 - LLM이 알람과 무관한 가설을 생성할 수 있다. 프롬프트에 스코핑 결과를 구체적으로 포함하여 완화한다.
-- LLM 응답 포맷이 지정 구조에 맞지 않을 수 있다. 파싱 실패 시 구조화 프롬프트를 재전송하여 최대 3회 재시도한다.
+- 3회 재시도 모두 실패 시 빈 가설 목록이 반환되어 파이프라인이 조기 종료된다. 이 경우 로그에 에러를 기록하여 모니터링한다.
 
 ## Related
 
