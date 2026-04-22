@@ -68,10 +68,11 @@ export class RcaAgentServiceStack extends cdk.Stack {
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         SQS_QUEUE_URL: props.alarmQueue.queueUrl,
-        SNS_ALARM_TOPIC_ARN: props.alarmTopic.topicArn,
+        SNS_NOTIFICATION_TOPIC_ARN: props.alarmTopic.topicArn,
         DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
         S3_EVIDENCE_BUCKET: props.evidenceBucket.bucketName,
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
+        S3_REPORT_BUCKET: props.evidenceBucket.bucketName,
         OTEL_SERVICE_NAME: 'rca-agent',
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
@@ -154,27 +155,8 @@ export class RcaAgentServiceStack extends cdk.Stack {
       }),
     );
 
-    taskDef.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'cloudwatch:GetMetricData',
-          'cloudwatch:ListMetrics',
-          'cloudwatch:DescribeAlarms',
-        ],
-        resources: ['*'],
-      }),
-    );
-
-    taskDef.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'logs:StartQuery',
-          'logs:GetQueryResults',
-          'logs:StopQuery',
-          'logs:DescribeLogGroups',
-        ],
-        resources: ['*'],
-      }),
+    taskDef.taskRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchReadOnlyAccess'),
     );
 
     taskDef.taskRole.addToPrincipalPolicy(
@@ -189,11 +171,8 @@ export class RcaAgentServiceStack extends cdk.Stack {
       }),
     );
 
-    taskDef.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: ['cloudtrail:LookupEvents'],
-        resources: ['*'],
-      }),
+    taskDef.taskRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudTrail_ReadOnlyAccess'),
     );
 
     taskDef.taskRole.addToPrincipalPolicy(

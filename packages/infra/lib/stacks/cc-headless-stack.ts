@@ -145,34 +145,12 @@ export class CcHeadlessStack extends cdk.Stack {
       }),
     );
 
-    fn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'cloudwatch:GetMetricData',
-          'cloudwatch:ListMetrics',
-          'cloudwatch:DescribeAlarms',
-        ],
-        resources: ['*'],
-      }),
+    fn.role!.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchReadOnlyAccess'),
     );
 
-    fn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'logs:StartQuery',
-          'logs:GetQueryResults',
-          'logs:StopQuery',
-          'logs:DescribeLogGroups',
-        ],
-        resources: ['*'],
-      }),
-    );
-
-    fn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ['cloudtrail:LookupEvents'],
-        resources: ['*'],
-      }),
+    fn.role!.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudTrail_ReadOnlyAccess'),
     );
 
     fn.addToRolePolicy(
