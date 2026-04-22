@@ -6,7 +6,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 
 | Package | Description | Tech |
 |---------|-------------|------|
-| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
+| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 10단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC | TypeScript, CDK |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원 | Python, FastAPI, SQLAlchemy, OpenTelemetry |
 
@@ -91,7 +91,9 @@ graph TB
 
     subgraph DataTools["데이터 수집 도구"]
         CW_MCP["CloudWatch MCP Server<br/>(awslabs.cw-mcp-server)"]
+        CT_MCP["CloudTrail MCP Server<br/>(awslabs.cloudtrail-mcp-server)"]
         CW_API["CloudWatch<br/>Metrics / Logs"]
+        CT_API["CloudTrail<br/>Events / Lake"]
     end
 
     subgraph Storage["영속 저장소"]
@@ -109,6 +111,7 @@ graph TB
     ECS <--> BEDROCK_PLAN
     ECS <--> BEDROCK_EXEC
     ECS --> CW_MCP --> CW_API
+    ECS --> CT_MCP --> CT_API
     ECS <--> S3_VECTORS
     ECS --> S3
     ECS --> DDB
@@ -117,7 +120,7 @@ graph TB
 
 ### Agent Pipeline (State Machine)
 
-에이전트는 가설-검증 루프를 반복하며, 5가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다.
+에이전트는 증거 수집-가설 검증 루프를 반복하며, 5가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다.
 
 ```mermaid
 stateDiagram-v2
@@ -139,7 +142,15 @@ stateDiagram-v2
 
     HYPOTHESIS_GENERATION --> HYPOTHESIS_PRIORITIZATION: list[Hypothesis]
 
-    HYPOTHESIS_PRIORITIZATION --> HYPOTHESIS_VALIDATION: PrioritizationResult
+    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION: PrioritizationResult
+    note right of EVIDENCE_COLLECTION
+        CloudWatch MCP: 메트릭/로그 수집
+        CloudTrail MCP: 배포/변경 이력 조회
+        S3에 증거 아카이브
+        timeout: 120s/가설
+    end note
+
+    EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION: evidence_map
     note right of HYPOTHESIS_VALIDATION
         가설별 confidence 재평가
         3-tier 분류:
@@ -240,7 +251,18 @@ flowchart TD
         PR --> PH
     end
 
-    subgraph F4["F4: Validation (validation.py)"]
+    subgraph F4["F4: Evidence Collection (evidence.py)"]
+        direction TB
+        EV_AGENT["Evidence Agent<br/>(CloudWatch + CloudTrail MCP)"]
+        EO["EvidenceOutput<br/>(structured_output)"]
+        ECR["EvidenceCollectionResult[]"]
+        EM["evidence_map<br/>(hypothesis_id → text)"]
+        S3_EV["save_evidence_to_s3()<br/>→ S3 아카이브"]
+        EV_AGENT --> EO --> ECR --> EM
+        ECR --> S3_EV
+    end
+
+    subgraph F5["F5: Validation (validation.py)"]
         direction TB
         VAL_AGENT["Validation Agent"]
         VO["ValidationOutput<br/>(structured_output)"]
@@ -249,7 +271,7 @@ flowchart TD
         VAL_AGENT --> VO --> VJ --> VR
     end
 
-    subgraph F5["F5: Branching (branching.py)"]
+    subgraph F6["F6: Branching (branching.py)"]
         direction TB
         BR_AGENT["Branching Agent"]
         BO["BranchingOutput<br/>(structured_output)"]
@@ -259,14 +281,14 @@ flowchart TD
         BR --> CH
     end
 
-    subgraph F6["F6: Termination (termination.py)"]
+    subgraph F7["F7: Termination (termination.py)"]
         direction TB
         TC["check_termination()<br/>(순수 로직, LLM 미사용)"]
         TD_OUT["TerminationDecision<br/>(should_terminate, reason,<br/>best_hypothesis)"]
         TC --> TD_OUT
     end
 
-    subgraph F7["F7: Report (report.py)"]
+    subgraph F8["F8: Report (report.py)"]
         direction TB
         RPT_AGENT["Report Agent"]
         RO["ReportOutput<br/>(structured_output)"]
@@ -275,7 +297,7 @@ flowchart TD
         RPT_AGENT --> RO --> RCA --> S3_SAVE
     end
 
-    subgraph F8["F8: Playbook (playbook_gen.py)"]
+    subgraph F9["F9: Playbook (playbook_gen.py)"]
         direction TB
         PB_EXIST["search_existing_playbooks()<br/>S3 Vectors (≥0.86)"]
         PBK_AGENT["Playbook Agent<br/>(update or create)"]
@@ -285,7 +307,7 @@ flowchart TD
         PB_EXIST --> PBK_AGENT --> PBO --> PBK --> S3V_SAVE
     end
 
-    subgraph F9["F9: Notification (notification.py)"]
+    subgraph F10["F10: Notification (notification.py)"]
         direction TB
         BUILD_N["build_notification()"]
         NM["NotificationMessage"]
@@ -298,21 +320,23 @@ flowchart TD
     H --> F3
     SR --> F3
     PH --> F4
-    VR --> F6
-    H --> F6
-    VJ -->|NEEDS_INVESTIGATION| F5
-    TD_OUT -->|should_terminate=true| F7
+    EM --> F5
+    VR --> F7
+    H --> F7
+    VJ -->|NEEDS_INVESTIGATION| F6
+    TD_OUT -->|should_terminate=true| F8
     CH -->|새 가설 추가| F3
-    RCA --> F8
     RCA --> F9
+    RCA --> F10
 
-    style F6 fill:#f9f3e3,stroke:#d4a843
+    style F7 fill:#f9f3e3,stroke:#d4a843
+    style F4 fill:#e8f5e9,stroke:#388e3c
     style Input fill:#e3f2fd,stroke:#1976d2
 ```
 
 ### Agent Architecture
 
-- **9단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → F3(Prioritization) → F4(Validation) → F5(Branching) → F6(Termination) → F7(Report) → F8(Playbook) → F9(Notification)
+- **10단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → F3(Prioritization) → F4(Evidence Collection) → F5(Validation) → F6(Branching) → F7(Termination) → F8(Report) → F9(Playbook) → F10(Notification)
 - **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **가설-트리 탐색**: 증거에 따라 가지치기/확장하는 트리형 점진적 추론
 - **검증 루프**: Prioritization → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
@@ -329,6 +353,7 @@ flowchart TD
 | LLM 추론 (Execution) | Amazon Bedrock — Claude Haiku 4.5 |
 | 임베딩 | Amazon S3 Vectors (서버사이드 임베딩) |
 | 메트릭/로그 도구 | AWS Labs CloudWatch MCP 서버 (`awslabs/cloudwatch-mcp-server`) |
+| 배포 이력 도구 | AWS Labs CloudTrail MCP 서버 (`awslabs/cloudtrail-mcp-server`) |
 | 증거/보고서 저장 | Amazon S3 |
 | 벡터 검색 | Amazon S3 Vectors |
 | 환경 설정 | python-dotenv (`env/local.env`) |
@@ -374,6 +399,7 @@ flowchart TD
 | Document | Description |
 |----------|-------------|
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
+| [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
 | [ADR Index](./docs/adr/README.md) | 아키텍처 결정 기록 인덱스 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |
 

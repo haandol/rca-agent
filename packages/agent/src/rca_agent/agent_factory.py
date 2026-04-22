@@ -18,6 +18,7 @@ from rca_agent.config import (
 )
 from rca_agent.prompts import (
     BRANCHING_SYSTEM_PROMPT,
+    EVIDENCE_COLLECTION_SYSTEM_PROMPT,
     HYPOTHESIS_GENERATION_SYSTEM_PROMPT,
     PLAYBOOK_SYSTEM_PROMPT,
     PRIORITIZATION_SYSTEM_PROMPT,
@@ -79,6 +80,18 @@ def create_cloudwatch_mcp_client() -> MCPClient:
     )
 
 
+def create_cloudtrail_mcp_client() -> MCPClient:
+    return MCPClient(
+        lambda: stdio_client(
+            StdioServerParameters(
+                command="uvx",
+                args=["awslabs.cloudtrail-mcp-server@latest"],
+                env={"FASTMCP_LOG_LEVEL": "ERROR"},
+            )
+        )
+    )
+
+
 def create_scoping_agent(
     *,
     model: BedrockModel | None = None,
@@ -115,6 +128,25 @@ def create_prioritization_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
         model = create_planning_model()
     return Agent(model=model, system_prompt=PRIORITIZATION_SYSTEM_PROMPT)
+
+
+def create_evidence_collection_agent(
+    *,
+    model: BedrockModel | None = None,
+    mcp_clients: list[MCPClient] | None = None,
+) -> Agent:
+    if model is None:
+        model = create_execution_model()
+
+    tools: list = []
+    if mcp_clients:
+        tools.extend(mcp_clients)
+
+    return Agent(
+        model=model,
+        system_prompt=EVIDENCE_COLLECTION_SYSTEM_PROMPT,
+        tools=tools,
+    )
 
 
 def create_validation_agent(*, model: BedrockModel | None = None) -> Agent:

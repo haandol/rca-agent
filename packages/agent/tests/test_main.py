@@ -9,6 +9,8 @@ from rca_agent.models import (
     HypothesisStatus,
     Playbook,
     RcaReport,
+    RcaSession,
+    RcaSessionState,
     ScopingResult,
     TerminationDecision,
     TerminationReason,
@@ -117,11 +119,18 @@ class TestProcessAlarmFullPipeline:
             failure_type="cpu-spike",
             symptom_pattern="CPU > 90%",
         )
+        session = RcaSession(
+            rca_id="rca-1",
+            idempotency_key="HighCPU#unknown",
+            state=RcaSessionState.ALARM_RECEIVED,
+        )
 
         names = [
             "run_scoping",
             "run_hypothesis_generation",
             "run_prioritization",
+            "run_evidence_collection",
+            "save_evidence_to_s3",
             "run_validation",
             "check_termination",
             "run_report_generation",
@@ -130,11 +139,18 @@ class TestProcessAlarmFullPipeline:
             "save_playbook_to_s3_vectors",
             "build_notification",
             "send_notification",
+            "check_duplicate",
+            "create_session",
+            "update_state",
+            "mark_completed",
+            "mark_failed",
         ]
         returns = [
             sr,
             hr,
             MagicMock(),
+            {"h-1": "metrics evidence", "h-2": "logs evidence"},
+            [],
             vr,
             td,
             rca,
@@ -142,6 +158,11 @@ class TestProcessAlarmFullPipeline:
             pb,
             True,
             MagicMock(),
+            True,
+            False,
+            session,
+            True,
+            True,
             True,
         ]
 
@@ -177,9 +198,16 @@ class TestProcessAlarmFullPipeline:
             hypotheses=[],
             scoping_result=_scoping(),
         )
+        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
         with (
+            patch("rca_agent.main.check_duplicate", return_value=False),
+            patch("rca_agent.main.create_session", return_value=session),
+            patch("rca_agent.main.update_state", return_value=True),
+            patch("rca_agent.main.mark_failed", return_value=True),
             patch("rca_agent.main.run_scoping", return_value=_scoping()),
             patch("rca_agent.main.run_hypothesis_generation", return_value=empty_hr),
+            patch("rca_agent.main.run_evidence_collection", return_value={}),
+            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
             patch("rca_agent.main.run_prioritization") as mock_prio,
         ):
             _process_alarm(_make_body(), _make_agents())
@@ -222,14 +250,21 @@ class TestProcessAlarmFullPipeline:
             root_cause="test",
             confidence_score=0.95,
         )
+        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
         with (
+            patch("rca_agent.main.check_duplicate", return_value=False),
+            patch("rca_agent.main.create_session", return_value=session),
+            patch("rca_agent.main.update_state", return_value=True),
+            patch("rca_agent.main.mark_completed", return_value=True),
             patch("rca_agent.main.run_scoping", return_value=_scoping()),
             patch(
                 "rca_agent.main.run_hypothesis_generation",
                 side_effect=[hr1, hr2],
             ) as mock_hypo,
             patch("rca_agent.main.run_prioritization"),
+            patch("rca_agent.main.run_evidence_collection", return_value={}),
+            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
             patch(
                 "rca_agent.main.run_validation",
                 side_effect=[vr_rejected, vr_confirmed],
@@ -291,11 +326,18 @@ class TestProcessAlarmFullPipeline:
             root_cause="test",
             confidence_score=0.95,
         )
+        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
         with (
+            patch("rca_agent.main.check_duplicate", return_value=False),
+            patch("rca_agent.main.create_session", return_value=session),
+            patch("rca_agent.main.update_state", return_value=True),
+            patch("rca_agent.main.mark_completed", return_value=True),
             patch("rca_agent.main.run_scoping", return_value=_scoping()),
             patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
             patch("rca_agent.main.run_prioritization"),
+            patch("rca_agent.main.run_evidence_collection", return_value={}),
+            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
             patch(
                 "rca_agent.main.run_validation",
                 side_effect=[vr_needs, vr_confirmed],
@@ -345,11 +387,18 @@ class TestProcessAlarmFullPipeline:
             root_cause="test",
             confidence_score=0.95,
         )
+        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
         with (
+            patch("rca_agent.main.check_duplicate", return_value=False),
+            patch("rca_agent.main.create_session", return_value=session),
+            patch("rca_agent.main.update_state", return_value=True),
+            patch("rca_agent.main.mark_completed", return_value=True),
             patch("rca_agent.main.run_scoping", return_value=_scoping()) as mock_scoping,
             patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
             patch("rca_agent.main.run_prioritization"),
+            patch("rca_agent.main.run_evidence_collection", return_value={}),
+            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
             patch("rca_agent.main.run_validation", return_value=vr),
             patch("rca_agent.main.check_termination", return_value=td),
             patch("rca_agent.main.run_report_generation", return_value=rca),
@@ -362,3 +411,44 @@ class TestProcessAlarmFullPipeline:
             _process_alarm(body, _make_agents())
 
         assert mock_scoping.call_args[0][0].alarm_name == "HighLatency"
+
+    def test_skips_duplicate_alarm(self):
+        with (
+            patch("rca_agent.main.check_duplicate", return_value=True),
+            patch("rca_agent.main.create_session") as mock_create,
+            patch("rca_agent.main.run_scoping") as mock_scoping,
+        ):
+            _process_alarm(_make_body(), _make_agents())
+
+        mock_create.assert_not_called()
+        mock_scoping.assert_not_called()
+
+    def test_marks_failed_on_pipeline_exception(self):
+        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
+
+        with (
+            patch("rca_agent.main.check_duplicate", return_value=False),
+            patch("rca_agent.main.create_session", return_value=session),
+            patch("rca_agent.main.update_state", return_value=True),
+            patch("rca_agent.main.mark_failed", return_value=True) as mock_failed,
+            patch("rca_agent.main.run_scoping", side_effect=RuntimeError("boom")),
+        ):
+            _process_alarm(_make_body(), _make_agents())
+
+        mock_failed.assert_called_once()
+        assert mock_failed.call_args[0][0] == "rca-1"
+
+    def test_state_transitions_in_full_pipeline(self):
+        mocks = self._run()
+        calls = [c[0][1] for c in mocks["update_state"].call_args_list]
+        assert RcaSessionState.SCOPING in calls
+        assert RcaSessionState.HYPOTHESIS_GENERATION in calls
+        assert RcaSessionState.HYPOTHESIS_PRIORITIZATION in calls
+        assert RcaSessionState.EVIDENCE_COLLECTION in calls
+        assert RcaSessionState.HYPOTHESIS_VALIDATION in calls
+        assert RcaSessionState.REPORT_GENERATION in calls
+
+    def test_evidence_collection_called_in_pipeline(self):
+        mocks = self._run()
+        mocks["run_evidence_collection"].assert_called_once()
+        mocks["save_evidence_to_s3"].assert_called_once()

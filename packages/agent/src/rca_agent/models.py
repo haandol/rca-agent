@@ -222,3 +222,14 @@ class NotificationMessage(BaseModel):
     dashboard_url: str = ""
     elapsed_seconds: int = 0
     confirmed: bool = True
+
+
+class RcaSession(BaseModel):
+    rca_id: str
+    idempotency_key: str
+    state: RcaSessionState = RcaSessionState.ALARM_RECEIVED
+    alarm_name: str = ""
+    alarm_arn: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    ttl: int = 0

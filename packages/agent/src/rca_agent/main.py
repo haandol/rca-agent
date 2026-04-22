@@ -11,7 +11,9 @@ import boto3
 
 from rca_agent.agent_factory import (
     create_branching_agent,
+    create_cloudtrail_mcp_client,
     create_cloudwatch_mcp_client,
+    create_evidence_collection_agent,
     create_hypothesis_generation_agent,
     create_playbook_agent,
     create_prioritization_agent,
@@ -21,19 +23,28 @@ from rca_agent.agent_factory import (
 )
 from rca_agent.branching import run_branching
 from rca_agent.config import (
+    DYNAMODB_TABLE_NAME,
     RCA_MAX_REGENERATION_ROUNDS,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
     SNS_NOTIFICATION_TOPIC_ARN,
 )
+from rca_agent.evidence import run_evidence_collection, save_evidence_to_s3
 from rca_agent.healthz import start_health_server
 from rca_agent.hypothesis import run_hypothesis_generation
-from rca_agent.models import AlarmPayload, HypothesisStatus
+from rca_agent.models import AlarmPayload, HypothesisStatus, RcaSessionState
 from rca_agent.notification import build_notification, send_notification
 from rca_agent.playbook_gen import run_playbook_generation, save_playbook_to_s3_vectors
 from rca_agent.prioritization import run_prioritization
 from rca_agent.report import run_report_generation, save_report_to_s3
 from rca_agent.scoping import run_scoping
+from rca_agent.session_store import (
+    check_duplicate,
+    create_session,
+    mark_completed,
+    mark_failed,
+    update_state,
+)
 from rca_agent.termination import check_termination
 from rca_agent.validation import run_validation
 
@@ -56,12 +67,6 @@ def _handle_signal(signum, _frame):
 
 
 def _parse_sns_envelope(body: dict) -> dict:
-    """Extract the CloudWatch alarm payload from an SNS envelope.
-
-    SQS messages from an SNS subscription wrap the actual payload inside a
-    top-level "Message" field (JSON-encoded string). If the body is already
-    a raw CloudWatch alarm payload (e.g. in tests), return it as-is.
-    """
     if "Message" in body and isinstance(body["Message"], str):
         return json.loads(body["Message"])
     return body
@@ -85,14 +90,19 @@ def _create_sns_client():
     return boto3.client("sns")
 
 
-class _Agents:
-    """Lazily-initialized container for all pipeline agents."""
+def _create_dynamodb_client():
+    if not DYNAMODB_TABLE_NAME:
+        return None
+    return boto3.client("dynamodb")
 
+
+class _Agents:
     def __init__(self, mcp_clients=None):
         self._mcp_clients = mcp_clients
         self._scoping = None
         self._hypothesis = None
         self._prioritization = None
+        self._evidence = None
         self._validation = None
         self._branching = None
         self._report = None
@@ -115,6 +125,12 @@ class _Agents:
         if self._prioritization is None:
             self._prioritization = create_prioritization_agent()
         return self._prioritization
+
+    @property
+    def evidence(self):
+        if self._evidence is None:
+            self._evidence = create_evidence_collection_agent(mcp_clients=self._mcp_clients)
+        return self._evidence
 
     @property
     def validation(self):
@@ -148,6 +164,7 @@ def _process_alarm(
     s3_vectors_client=None,
     s3_client=None,
     sns_client=None,
+    dynamodb_client=None,
 ) -> None:
     start_time = time.monotonic()
     alarm_data = _parse_sns_envelope(body)
@@ -159,7 +176,45 @@ def _process_alarm(
         alarm.service_name,
     )
 
+    # Idempotency check
+    if check_duplicate(alarm, dynamodb_client=dynamodb_client):
+        logger.info("Skipping duplicate alarm: %s", alarm.alarm_name)
+        return
+
+    # Create DynamoDB session
+    session = create_session(alarm, dynamodb_client=dynamodb_client)
+    rca_id = session.rca_id if session else ""
+
+    try:
+        _run_pipeline(
+            alarm,
+            agents,
+            rca_id=rca_id,
+            start_time=start_time,
+            s3_vectors_client=s3_vectors_client,
+            s3_client=s3_client,
+            sns_client=sns_client,
+            dynamodb_client=dynamodb_client,
+        )
+    except Exception:
+        logger.exception("Pipeline failed for alarm %s", alarm.alarm_name)
+        if rca_id:
+            mark_failed(rca_id, error_reason="Unhandled pipeline exception", dynamodb_client=dynamodb_client)
+
+
+def _run_pipeline(
+    alarm: AlarmPayload,
+    agents: _Agents,
+    *,
+    rca_id: str,
+    start_time: float,
+    s3_vectors_client=None,
+    s3_client=None,
+    sns_client=None,
+    dynamodb_client=None,
+) -> None:
     # F1: Scoping
+    update_state(rca_id, RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
     scoping_result = run_scoping(
         alarm,
         agents.scoping,
@@ -173,6 +228,7 @@ def _process_alarm(
     )
 
     # F2: Hypothesis generation (with regeneration loop on all-rejected)
+    update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION, dynamodb_client=dynamodb_client)
     hypothesis_result = run_hypothesis_generation(
         scoping_result,
         agents.hypothesis,
@@ -180,6 +236,7 @@ def _process_alarm(
     hypotheses = list(hypothesis_result.hypotheses)
     if not hypotheses:
         logger.error("No hypotheses generated, aborting RCA")
+        mark_failed(rca_id, error_reason="No hypotheses generated", dynamodb_client=dynamodb_client)
         return
 
     all_judgments = []
@@ -193,18 +250,37 @@ def _process_alarm(
     timeline.append(f"Scoping complete: severity={scoping_result.initial_severity}")
     timeline.append(f"Initial hypotheses: {len(hypotheses)}")
 
+    termination = None
+
     while True:
         validation_loop_count += 1
         logger.info("Validation loop %d, hypotheses=%d", validation_loop_count, len(hypotheses))
 
         # F3: Prioritization
+        update_state(rca_id, RcaSessionState.HYPOTHESIS_PRIORITIZATION, dynamodb_client=dynamodb_client)
         run_prioritization(
             scoping_result,
             hypotheses,
             agents.prioritization,
         )
 
-        # F4: Validation
+        # F4: Evidence collection
+        update_state(rca_id, RcaSessionState.EVIDENCE_COLLECTION, dynamodb_client=dynamodb_client)
+        new_hypotheses = [h for h in hypotheses if h.hypothesis_id not in evidence_map]
+        if new_hypotheses:
+            new_evidence = run_evidence_collection(
+                new_hypotheses,
+                scoping_result,
+                agents.evidence,
+            )
+            evidence_map.update(new_evidence)
+            save_evidence_to_s3(rca_id, new_evidence, s3_client=s3_client)
+        timeline.append(
+            f"Loop {validation_loop_count}: collected evidence for {len(new_hypotheses)} hypotheses",
+        )
+
+        # F5: Validation
+        update_state(rca_id, RcaSessionState.HYPOTHESIS_VALIDATION, dynamodb_client=dynamodb_client)
         validation_result = run_validation(
             hypotheses,
             evidence_map,
@@ -242,6 +318,7 @@ def _process_alarm(
                 timeline.append("Max regeneration rounds exceeded")
                 break
             logger.info("All rejected, regenerating hypotheses (round %d)", regeneration_count)
+            update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION, dynamodb_client=dynamodb_client)
             hypothesis_result = run_hypothesis_generation(
                 scoping_result,
                 agents.hypothesis,
@@ -281,7 +358,7 @@ def _process_alarm(
     # Determine best hypothesis
     best_hypothesis = None
     confirmed = False
-    if termination.should_terminate and termination.best_hypothesis:
+    if termination and termination.should_terminate and termination.best_hypothesis:
         best_hypothesis = termination.best_hypothesis
         confirmed = termination.reason and termination.reason.value == "CONFIRMED"
     elif all_judgments:
@@ -300,6 +377,7 @@ def _process_alarm(
     elapsed = int(time.monotonic() - start_time)
 
     # F7: Report generation
+    update_state(rca_id, RcaSessionState.REPORT_GENERATION, dynamodb_client=dynamodb_client)
     rca_report = run_report_generation(
         scoping_result,
         best_hypothesis,
@@ -310,6 +388,8 @@ def _process_alarm(
         timeline,
         agents.report,
     )
+    if rca_id:
+        rca_report.rca_id = rca_id
     logger.info("RCA report generated: %s", rca_report.rca_id)
 
     report_s3_key = save_report_to_s3(rca_report, s3_client=s3_client)
@@ -332,6 +412,14 @@ def _process_alarm(
     notification = build_notification(rca_report, report_s3_key, elapsed)
     send_notification(notification, sns_client=sns_client, s3_client=s3_client)
 
+    # Mark session completed
+    mark_completed(
+        rca_report.rca_id,
+        root_cause=rca_report.root_cause,
+        confirmed=confirmed,
+        dynamodb_client=dynamodb_client,
+    )
+
     logger.info("RCA complete: rca_id=%s, elapsed=%ds", rca_report.rca_id, elapsed)
 
 
@@ -346,11 +434,13 @@ def main() -> None:
     start_health_server()
     logger.info("Health server started on port 8000")
 
-    mcp_client = create_cloudwatch_mcp_client()
-    agents = _Agents(mcp_clients=[mcp_client])
+    cw_mcp_client = create_cloudwatch_mcp_client()
+    ct_mcp_client = create_cloudtrail_mcp_client()
+    agents = _Agents(mcp_clients=[cw_mcp_client, ct_mcp_client])
     s3_vectors_client = _create_s3_vectors_client()
     s3_client = _create_s3_client()
     sns_client = _create_sns_client()
+    dynamodb_client = _create_dynamodb_client()
     logger.info("Pipeline initialized")
 
     sqs = boto3.client("sqs")
@@ -385,6 +475,7 @@ def main() -> None:
                     s3_vectors_client=s3_vectors_client,
                     s3_client=s3_client,
                     sns_client=sns_client,
+                    dynamodb_client=dynamodb_client,
                 )
             except Exception:
                 logger.exception("Failed to process message")
