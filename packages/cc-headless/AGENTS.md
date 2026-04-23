@@ -6,35 +6,45 @@ Claude Code on Bedrock headless 모드를 사용하는 RCA 에이전트입니다
 
 | Component | Technology |
 |-----------|-----------|
-| Runtime | Node.js 22 (ECS Fargate Container) |
+| Language | Python 3.12 |
+| Runtime | python:3.12-slim + Node.js 22 (CC CLI용) on ECS Fargate |
 | Agent Engine | Claude Code CLI (headless, Bedrock backend) |
-| MCP Tools | CloudWatch MCP, CloudTrail MCP, GitHub MCP |
+| MCP Tools | CloudWatch MCP, CloudTrail MCP, GitHub MCP (Go binary) |
 | Trigger | SQS Long Polling |
+| Package Manager | uv |
 
 ## Directory Structure
 
 ```
-src/
-├── main.ts           # ECS SQS long polling entry point
-├── cc-runner.ts      # CC CLI subprocess wrapper
-├── prompt-builder.ts # System + user prompt assembly
-├── alarm-parser.ts   # CloudWatch SNS → AlarmContext
-├── session-store.ts  # DynamoDB session management
-└── report-store.ts   # S3 report storage + SNS notification
+src/cc_headless/
+├── __init__.py
+├── main.py           # ECS SQS long polling entry point
+├── config.py         # Environment variable configuration
+├── cc_runner.py      # CC CLI subprocess wrapper
+├── prompt_builder.py # System + user prompt assembly
+├── alarm_parser.py   # CloudWatch SNS → AlarmContext
+├── session_store.py  # DynamoDB session management
+├── report_store.py   # S3 report storage + SNS notification
+└── healthz.py        # HTTP health check server
 prompts/
 ├── rca-system.md     # RCA workflow system prompt
 └── rca-user.md       # Alarm details user prompt template
+tests/
+├── test_alarm_parser.py
+└── test_prompt_builder.py
 mcp-config.json       # MCP server configuration for CC
 Dockerfile            # ECS Fargate container image
+pyproject.toml        # Python project configuration
 ```
 
 ## Dev Commands
 
 ```bash
-pnpm install
-pnpm build          # TypeScript compile
-pnpm test           # vitest
-pnpm lint           # eslint
+uv sync --extra dev   # Install dependencies
+uv run pytest tests/  # Run tests
+uv run ruff check src/ tests/  # Lint
+uv run ruff format src/ tests/ # Format
+docker build -t cc-headless .  # Build container
 ```
 
 ## Environment Variables

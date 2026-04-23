@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+import os
+
+SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL", "")
+SQS_POLL_WAIT_SECONDS = int(os.environ.get("SQS_POLL_WAIT_SECONDS", "20"))
+
+DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "")
+SESSION_TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "90"))
+
+S3_REPORT_BUCKET = os.environ.get("S3_REPORT_BUCKET", "")
+SNS_NOTIFICATION_TOPIC_ARN = os.environ.get("SNS_NOTIFICATION_TOPIC_ARN", "")
+
+PRESIGNED_URL_EXPIRY = 86400
+
+CC_TIMEOUT_SECONDS = int(os.environ.get("CC_TIMEOUT_SECONDS", "600"))
+CC_MAX_TURNS = int(os.environ.get("CC_MAX_TURNS", "30"))
+
+ENGINE = "cc-headless"

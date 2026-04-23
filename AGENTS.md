@@ -8,7 +8,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 12단계 closed-loop 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
-| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, ECS Fargate |
+| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | Python, Claude Code CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
 | [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태 및 S3 보고서 조회 (로컬 전용) | TypeScript, Nuxt.js 4, @nuxt/ui |
 
@@ -68,7 +68,7 @@ pnpm nx run-many -t test
 | Sub-Agent | Directory | Language | Lint/Build |
 |-----------|-----------|----------|------------|
 | **Agent** | `packages/agent/` | Python | `uv run ruff check`, `uv run pytest` |
-| **CC Headless** | `packages/cc-headless/` | TypeScript (Node.js) | `pnpm build`, `pnpm test` |
+| **CC Headless** | `packages/cc-headless/` | Python | `uv run ruff check`, `uv run pytest` |
 | **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `uv run ruff check`, `uv run pytest` |
 | **Dashboard** | `packages/dashboard/` | TypeScript (Nuxt.js) | `pnpm dev`, `pnpm build` |
@@ -102,7 +102,7 @@ graph TB
 
     subgraph Compute["에이전트 실행 (Dual-Stack)"]
         ECS["ECS Fargate<br/>Strands Agent (main.py)"]
-        ECS_CC["ECS Fargate<br/>CC Headless (main.ts)"]
+        ECS_CC["ECS Fargate<br/>CC Headless (main.py)"]
     end
 
     subgraph LLM["LLM 추론"]
@@ -460,7 +460,7 @@ flowchart TD
 
 | Component | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
 |-----------|--------------|--------------|
-| 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (TypeScript) |
+| 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (Python) |
 | 실행 환경 | AWS ECS Fargate | AWS ECS Fargate |
 | 이벤트 수신 | SQS Long Polling | SQS Long Polling |
 | LLM 추론 | Bedrock — Sonnet 4.6 (Planning) + Haiku 4.5 (Execution) | Bedrock — Sonnet 4.6 (CC 프롬프트 주도) |
