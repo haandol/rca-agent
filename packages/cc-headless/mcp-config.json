@@ -9,14 +9,14 @@
     },
     "cloudwatch": {
       "command": "uvx",
-      "args": ["awslabs.cw-mcp-server@latest"],
+      "args": ["awslabs.cloudwatch-mcp-server"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
     },
     "cloudtrail": {
       "command": "uvx",
-      "args": ["awslabs.cloudtrail-mcp-server@latest"],
+      "args": ["awslabs.cloudtrail-mcp-server"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       }

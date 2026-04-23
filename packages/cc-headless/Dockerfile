@@ -44,6 +44,15 @@ RUN useradd -m -s /bin/bash ccuser \
 
 USER ccuser
 ENV HOME="/home/ccuser"
+ENV UV_CACHE_DIR="/app/.uv-cache"
+ENV UV_TOOL_DIR="/app/.uv-tools"
+ENV UV_TOOL_BIN_DIR="/app/.uv-tools/bin"
+
+RUN uv tool install fastmcp \
+    && uv tool install "awslabs.cloudwatch-mcp-server" \
+    && uv tool install "awslabs.cloudtrail-mcp-server"
+
+ENV UV_OFFLINE=true
 
 EXPOSE 8080
 
