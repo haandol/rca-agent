@@ -81,3 +81,4 @@ packages/card-news/.claude/settings.local.json
 packages/web/public/e2e-*.js
 packages/web/public/payment-e2e-*.js
 packages/api-infra/config/loader.js
+packages/infra/config/loader.js

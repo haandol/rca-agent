@@ -1,6 +1,7 @@
 .toml
-cdk.out/
 *.d.ts
 *.d.ts.map
 bin/**/*.js
 lib/**/*.js
+functions/image-resize/node_modules/
+functions/main/slack-notifier
