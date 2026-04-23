@@ -1,9 +1,5 @@
 {
   "mcpServers": {
-    "aws-knowledge": {
-      "type": "http",
-      "url": "https://knowledge-mcp.global.api.aws"
-    },
     "cloudwatch": {
       "command": "uvx",
       "args": ["awslabs.cw-mcp-server@latest"],

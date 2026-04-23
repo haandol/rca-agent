@@ -15,6 +15,7 @@ RUN npm install --omit=dev
 COPY dist/ ./dist/
 COPY prompts/ ./prompts/
 COPY mcp-config.json ./
+COPY .mcp.json ./
 COPY CLAUDE.md ./
 
 CMD ["dist/handler.handler"]
