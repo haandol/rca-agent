@@ -1,23 +1,84 @@
 <script setup lang="ts">
 const { data: sessions, status, refresh } = useFetch('/api/sessions')
 
-const stateColor: Record<string, string> = {
-  COMPLETED: 'badge-success',
-  FAILED: 'badge-error',
-  ALARM_RECEIVED: 'badge-info',
-  SCOPING: 'badge-warning',
-  HYPOTHESIS_GENERATION: 'badge-warning',
-  HYPOTHESIS_PRIORITIZATION: 'badge-warning',
-  EVIDENCE_COLLECTION: 'badge-warning',
-  HYPOTHESIS_VALIDATION: 'badge-warning',
-  REPORT_GENERATION: 'badge-warning',
-  REMEDIATION: 'badge-warning',
-  VERIFICATION: 'badge-warning',
+const stateStyle: Record<string, { bg: string; text: string; dot: string }> = {
+  COMPLETED: { bg: 'bg-success/10', text: 'text-success', dot: 'bg-success' },
+  FAILED: { bg: 'bg-error/10', text: 'text-error', dot: 'bg-error' },
+  CANCELLED: { bg: 'bg-base-content/5', text: 'text-base-content/60', dot: 'bg-base-content/40' },
+  OUTDATED: { bg: 'bg-base-content/5', text: 'text-base-content/40', dot: 'bg-base-content/20' },
+  ALARM_RECEIVED: { bg: 'bg-info/10', text: 'text-info', dot: 'bg-info animate-pulse' },
+  SCOPING: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  HYPOTHESIS_GENERATION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  HYPOTHESIS_PRIORITIZATION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  EVIDENCE_COLLECTION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  HYPOTHESIS_VALIDATION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  REPORT_GENERATION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  REMEDIATION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+  VERIFICATION: { bg: 'bg-warning/10', text: 'text-warning', dot: 'bg-warning animate-pulse' },
+}
+
+const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CANCELLED', 'OUTDATED']
+
+const STATE_LABEL: Record<string, string> = {
+  ALARM_RECEIVED: 'Received',
+  SCOPING: 'Scoping',
+  HYPOTHESIS_GENERATION: 'Hypotheses',
+  HYPOTHESIS_PRIORITIZATION: 'Prioritizing',
+  EVIDENCE_COLLECTION: 'Evidence',
+  HYPOTHESIS_VALIDATION: 'Validating',
+  REPORT_GENERATION: 'Reporting',
+  REMEDIATION: 'Remediation',
+  VERIFICATION: 'Verification',
+  COMPLETED: 'Completed',
+  FAILED: 'Failed',
+  CANCELLED: 'Cancelled',
+  OUTDATED: 'Outdated',
 }
 
 function formatTime(iso: string) {
   if (!iso) return '-'
-  return new Date(iso).toLocaleString()
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = now.getTime() - d.getTime()
+  if (diff < 60000) return 'just now'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+const stats = computed(() => {
+  if (!sessions.value) return null
+  const total = sessions.value.length
+  const completed = sessions.value.filter(s => s.state === 'COMPLETED').length
+  const failed = sessions.value.filter(s => s.state === 'FAILED').length
+  const inProgress = sessions.value.filter(s => !TERMINAL_STATES.includes(s.state)).length
+  return { total, completed, failed, inProgress }
+})
+
+const cancelTarget = ref<string | null>(null)
+const cancelling = ref(false)
+const cancelModalRef = ref<HTMLDialogElement | null>(null)
+
+function openCancelModal(rcaId: string) {
+  cancelTarget.value = rcaId
+  cancelModalRef.value?.showModal()
+}
+
+function closeCancelModal() {
+  cancelTarget.value = null
+  cancelModalRef.value?.close()
+}
+
+async function cancelSession() {
+  if (!cancelTarget.value) return
+  cancelling.value = true
+  try {
+    await $fetch(`/api/sessions/${cancelTarget.value}/cancel`, { method: 'POST' })
+    await refresh()
+  } finally {
+    cancelling.value = false
+    closeCancelModal()
+  }
 }
 
 const deleteTarget = ref<string | null>(null)
@@ -51,114 +112,148 @@ useHead({ title: 'RCA Dashboard' })
 
 <template>
   <div class="space-y-6">
+    <!-- Header -->
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">RCA Sessions</h1>
-      <button class="btn btn-ghost btn-sm gap-2" :class="{ 'loading': status === 'pending' }" @click="refresh()">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">Sessions</h1>
+        <p class="text-sm text-base-content/50 mt-0.5">Root Cause Analysis pipeline runs</p>
+      </div>
+      <button
+        class="btn btn-sm btn-ghost gap-2 rounded-lg"
+        :class="{ 'loading': status === 'pending' }"
+        @click="refresh()"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
         Refresh
       </button>
     </div>
 
     <!-- Stats -->
-    <div class="stats stats-vertical sm:stats-horizontal shadow w-full" v-if="sessions">
-      <div class="stat">
-        <div class="stat-title">Total</div>
-        <div class="stat-value text-2xl">{{ sessions.length }}</div>
+    <div v-if="stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="stat-card">
+        <div class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Total</div>
+        <div class="text-2xl font-bold mt-1">{{ stats.total }}</div>
       </div>
-      <div class="stat">
-        <div class="stat-title">Completed</div>
-        <div class="stat-value text-2xl text-success">{{ sessions.filter(s => s.state === 'COMPLETED').length }}</div>
+      <div class="stat-card">
+        <div class="text-xs font-medium text-success uppercase tracking-wider">Completed</div>
+        <div class="text-2xl font-bold mt-1 text-success">{{ stats.completed }}</div>
       </div>
-      <div class="stat">
-        <div class="stat-title">Failed</div>
-        <div class="stat-value text-2xl text-error">{{ sessions.filter(s => s.state === 'FAILED').length }}</div>
+      <div class="stat-card">
+        <div class="text-xs font-medium text-error uppercase tracking-wider">Failed</div>
+        <div class="text-2xl font-bold mt-1 text-error">{{ stats.failed }}</div>
       </div>
-      <div class="stat">
-        <div class="stat-title">In Progress</div>
-        <div class="stat-value text-2xl text-warning">{{ sessions.filter(s => !['COMPLETED', 'FAILED'].includes(s.state)).length }}</div>
+      <div class="stat-card">
+        <div class="text-xs font-medium text-warning uppercase tracking-wider">In Progress</div>
+        <div class="text-2xl font-bold mt-1 text-warning">{{ stats.inProgress }}</div>
       </div>
     </div>
 
     <!-- Sessions Table -->
-    <div class="card bg-base-100 shadow">
-      <div v-if="status === 'pending' && !sessions" class="card-body items-center text-base-content/60">
+    <div class="bg-base-100 rounded-xl border border-base-content/5 overflow-hidden">
+      <div v-if="status === 'pending' && !sessions" class="flex flex-col items-center justify-center py-16 text-base-content/40">
         <span class="loading loading-spinner loading-md" />
-        <p>Loading sessions...</p>
+        <p class="mt-3 text-sm">Loading sessions...</p>
       </div>
-      <div v-else-if="!sessions?.length" class="card-body items-center text-base-content/60">
-        No RCA sessions found.
+      <div v-else-if="!sessions?.length" class="flex flex-col items-center justify-center py-16 text-base-content/40">
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-10 mb-2 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
+        <p class="text-sm">No sessions found</p>
       </div>
-      <div v-else class="overflow-x-auto">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>State</th>
-              <th>Alarm</th>
-              <th>Engine</th>
-              <th>Root Cause</th>
-              <th>Created</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="session in sessions" :key="session.rcaId" class="hover">
-              <td>
-                <span class="badge badge-sm" :class="stateColor[session.state] || 'badge-ghost'">
-                  {{ session.state }}
-                </span>
-              </td>
-              <td>
-                <div class="font-medium">{{ session.alarmName }}</div>
-                <div class="text-xs opacity-50 font-mono">{{ session.rcaId.slice(0, 8) }}...</div>
-              </td>
-              <td>
-                <span class="badge badge-sm" :class="session.engine === 'cc-headless' ? 'badge-info' : 'badge-ghost'">
-                  {{ session.engine }}
-                </span>
-              </td>
-              <td class="max-w-xs">
-                <p v-if="session.rootCause" class="text-sm truncate">{{ session.rootCause }}</p>
-                <p v-else-if="session.errorReason" class="text-sm text-error truncate">{{ session.errorReason }}</p>
-                <p v-else class="text-sm opacity-40">-</p>
-              </td>
-              <td class="text-sm opacity-60 whitespace-nowrap">{{ formatTime(session.createdAt) }}</td>
-              <td>
-                <div class="flex gap-1">
-                  <NuxtLink :to="`/trace/${session.rcaId}`">
-                    <button class="btn btn-ghost btn-xs" title="Trace">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 3v12M18 9a3 3 0 11-6 0 3 3 0 016 0zM6 21a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                    </button>
-                  </NuxtLink>
-                  <NuxtLink :to="`/report/${session.rcaId}`">
-                    <button class="btn btn-ghost btn-xs" title="Report">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    </button>
-                  </NuxtLink>
-                  <button class="btn btn-ghost btn-xs text-error" title="Delete" @click="openDeleteModal(session.rcaId)">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+      <table v-else class="table w-full">
+        <thead>
+          <tr class="border-b border-base-content/5">
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider pl-5">Status</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Alarm</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Engine</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Result</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Time</th>
+            <th class="w-28"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="session in sessions" :key="session.rcaId" class="session-row border-b border-base-content/5 last:border-0">
+            <td class="pl-5">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md"
+                :class="[
+                  stateStyle[session.state]?.bg || 'bg-base-content/5',
+                  stateStyle[session.state]?.text || 'text-base-content/50',
+                ]"
+              >
+                <span class="size-1.5 rounded-full" :class="stateStyle[session.state]?.dot || 'bg-base-content/30'" />
+                {{ STATE_LABEL[session.state] || session.state }}
+              </span>
+            </td>
+            <td>
+              <div class="font-medium text-sm">{{ session.alarmName }}</div>
+              <div class="text-[11px] text-base-content/35 font-mono mt-0.5">{{ session.rcaId.slice(0, 8) }}</div>
+            </td>
+            <td>
+              <span class="text-xs font-mono text-base-content/60">{{ session.engine }}</span>
+            </td>
+            <td class="max-w-xs">
+              <p v-if="session.rootCause" class="text-sm truncate">{{ session.rootCause }}</p>
+              <p v-else-if="session.errorReason" class="text-sm text-error/80 truncate">{{ session.errorReason }}</p>
+              <span v-else class="text-base-content/25">-</span>
+            </td>
+            <td class="text-xs text-base-content/45 whitespace-nowrap">{{ formatTime(session.createdAt) }}</td>
+            <td>
+              <div class="flex items-center justify-end gap-0.5 pr-2">
+                <NuxtLink :to="`/trace/${session.rcaId}`">
+                  <button class="action-btn" title="Trace">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                   </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                </NuxtLink>
+                <NuxtLink :to="`/report/${session.rcaId}`">
+                  <button class="action-btn" title="Report">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  </button>
+                </NuxtLink>
+                <button
+                  v-if="!TERMINAL_STATES.includes(session.state)"
+                  class="action-btn text-warning"
+                  title="Cancel"
+                  @click="openCancelModal(session.rcaId)"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
+                </button>
+                <button class="action-btn text-error/70" title="Delete" @click="openDeleteModal(session.rcaId)">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
+
+    <!-- Cancel Modal -->
+    <dialog ref="cancelModalRef" class="modal">
+      <div class="modal-box max-w-sm">
+        <h3 class="font-bold text-lg">분석 중단</h3>
+        <p class="py-4 text-sm text-base-content/70">
+          세션 <span class="font-mono font-medium text-base-content">{{ cancelTarget?.slice(0, 8) }}</span>의
+          RCA 파이프라인을 중단합니다.<br />
+          다음 단계 전환 시점에 파이프라인이 종료됩니다.
+        </p>
+        <div class="modal-action">
+          <button class="btn btn-ghost btn-sm" @click="closeCancelModal()">닫기</button>
+          <button class="btn btn-warning btn-sm" :class="{ 'loading': cancelling }" @click="cancelSession()">중단</button>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+    </dialog>
 
     <!-- Delete Modal -->
     <dialog ref="deleteModalRef" class="modal">
-      <div class="modal-box">
-        <h3 class="font-bold text-lg flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="size-5 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          세션 삭제
-        </h3>
-        <p class="py-4">
-          세션 <span class="font-mono font-medium">{{ deleteTarget?.slice(0, 8) }}...</span>의
-          모든 데이터(세션, 트레이스, 가설, 리포트)가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+      <div class="modal-box max-w-sm">
+        <h3 class="font-bold text-lg">세션 삭제</h3>
+        <p class="py-4 text-sm text-base-content/70">
+          세션 <span class="font-mono font-medium text-base-content">{{ deleteTarget?.slice(0, 8) }}</span>의
+          모든 데이터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
         </p>
         <div class="modal-action">
-          <button class="btn btn-ghost" @click="closeDeleteModal()">취소</button>
-          <button class="btn btn-error" :class="{ 'loading': deleting }" @click="deleteSession()">삭제</button>
+          <button class="btn btn-ghost btn-sm" @click="closeDeleteModal()">취소</button>
+          <button class="btn btn-error btn-sm" :class="{ 'loading': deleting }" @click="deleteSession()">삭제</button>
         </div>
       </div>
       <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>

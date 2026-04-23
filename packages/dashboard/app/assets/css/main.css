@@ -4,3 +4,27 @@
 }
 @custom-variant dark (&:where([data-theme=dracula], [data-theme=dracula] *));
 @plugin "@tailwindcss/typography";
+
+@layer base {
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer components {
+  .glass-navbar {
+    @apply bg-base-100/80 backdrop-blur-xl border-b border-base-content/5;
+  }
+
+  .stat-card {
+    @apply bg-base-100 rounded-xl border border-base-content/5 p-4 transition-shadow hover:shadow-md;
+  }
+
+  .session-row {
+    @apply transition-colors hover:bg-base-content/[0.03];
+  }
+
+  .action-btn {
+    @apply btn btn-ghost btn-xs btn-square rounded-lg opacity-70 hover:opacity-100 transition-opacity;
+  }
+}
