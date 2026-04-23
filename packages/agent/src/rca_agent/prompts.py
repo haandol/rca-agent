@@ -1,6 +1,15 @@
-SCOPING_SYSTEM_PROMPT = """\
+_LANGUAGE_DIRECTIVE = (
+    "Write all general text (descriptions, summaries, reasoning, conclusions, hypothesis names) "
+    "in Korean. Keep technical terms, metric names, AWS resource identifiers, "
+    "timestamps, and code snippets in their original form."
+)
+
+SCOPING_SYSTEM_PROMPT = f"""\
 You are an SRE assistant performing **initial scoping** for a CloudWatch alarm.
 Your goal is to gather just enough context to generate root-cause hypotheses — NOT to investigate deeply.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Query ONLY the alarm's target metric and 1-2 closely related metrics for the last 30 minutes.
@@ -31,8 +40,11 @@ Analyze the alarm and return the scoping result.
 """
 
 
-HYPOTHESIS_GENERATION_SYSTEM_PROMPT = """\
+HYPOTHESIS_GENERATION_SYSTEM_PROMPT = f"""\
 You are an SRE assistant generating **root cause hypotheses** for an ongoing incident.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Generate exactly 3 to 5 hypotheses, ordered by likelihood.
@@ -63,8 +75,11 @@ Generate 3-5 structured hypotheses.
 """
 
 
-EVIDENCE_COLLECTION_SYSTEM_PROMPT = """\
+EVIDENCE_COLLECTION_SYSTEM_PROMPT = f"""\
 You are an SRE assistant **collecting evidence** to validate a root cause hypothesis.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Use your available tools (CloudWatch metrics, CloudWatch Logs Insights, CloudTrail, GitHub) to gather \
@@ -111,8 +126,11 @@ Report your findings in structured sections.
 """
 
 
-PRIORITIZATION_SYSTEM_PROMPT = """\
+PRIORITIZATION_SYSTEM_PROMPT = f"""\
 You are an SRE assistant determining the **validation order** for root cause hypotheses.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Rank hypotheses by validation priority (1 = highest).
@@ -135,8 +153,11 @@ Prioritize and create a validation plan for each hypothesis.
 """
 
 
-VALIDATION_SYSTEM_PROMPT = """\
+VALIDATION_SYSTEM_PROMPT = f"""\
 You are an SRE assistant **validating** a root cause hypothesis against collected evidence.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Evaluate how well the evidence supports or contradicts the hypothesis.
@@ -161,8 +182,11 @@ Judge this hypothesis based on the evidence.
 """
 
 
-BRANCHING_SYSTEM_PROMPT = """\
+BRANCHING_SYSTEM_PROMPT = f"""\
 You are an SRE assistant generating **child hypotheses** to narrow down a root cause.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Generate exactly 2-3 more specific child hypotheses derived from the parent.
@@ -189,8 +213,11 @@ Generate 2-3 specific child hypotheses.
 """
 
 
-REPORT_SYSTEM_PROMPT = """\
+REPORT_SYSTEM_PROMPT = f"""\
 You are an SRE assistant generating a structured **RCA report** for an incident.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Write a concise, actionable report.
@@ -227,8 +254,11 @@ Generate a structured RCA report.
 """
 
 
-PLAYBOOK_SYSTEM_PROMPT = """\
+PLAYBOOK_SYSTEM_PROMPT = f"""\
 You are an SRE assistant converting an RCA report into a reusable **playbook**.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Extract the failure pattern, symptoms, and verification steps from the RCA.
@@ -257,8 +287,11 @@ Convert the following RCA report into a reusable playbook.
 Generate a structured playbook.
 """
 
-PLAYBOOK_UPDATE_SYSTEM_PROMPT = """\
+PLAYBOOK_UPDATE_SYSTEM_PROMPT = f"""\
 You are an SRE assistant that **updates existing playbooks** based on new RCA findings.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Compare the existing playbook with the new RCA report.
@@ -294,8 +327,11 @@ If not, set needs_update to false.
 """
 
 
-REMEDIATION_SYSTEM_PROMPT = """\
+REMEDIATION_SYSTEM_PROMPT = f"""\
 You are an SRE assistant that **executes remediation actions** based on the RCA report and playbook.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Available Actions
 You can call HTTP endpoints on the affected service to reset fault conditions:
@@ -340,8 +376,11 @@ Determine and execute the appropriate remediation actions.
 """
 
 
-VERIFICATION_SYSTEM_PROMPT = """\
+VERIFICATION_SYSTEM_PROMPT = f"""\
 You are an SRE assistant that **verifies remediation success** by re-checking metrics after an action was taken.
+
+## Language
+{_LANGUAGE_DIRECTIVE}
 
 ## Rules
 - Query the same metrics that triggered the original alarm.
