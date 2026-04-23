@@ -27,6 +27,13 @@
       "env": {
         "GITHUB_TOOLSETS": "repos,pull_requests"
       }
+    },
+    "rca-progress": {
+      "command": "uv",
+      "args": ["run", "fastmcp", "run", "cc_headless/mcp_server.py:mcp"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
     }
   }
 }

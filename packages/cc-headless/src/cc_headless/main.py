@@ -6,6 +6,7 @@ import signal
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import boto3
 import structlog
@@ -22,13 +23,17 @@ from cc_headless.session_store import (
     create_session,
     mark_completed,
     mark_failed,
-    update_state,
     write_idempotency_key,
 )
 
 logger = structlog.get_logger()
 
 _running = True
+_SESSION_ID_PATH = Path("/tmp/rca-session-id")
+
+
+def _write_session_id(rca_id: str) -> None:
+    _SESSION_ID_PATH.write_text(rca_id)
 
 
 def _handle_signal(signum, _frame):
@@ -54,8 +59,7 @@ def _run_rca(
     alarm = parse_alarm(alarm_data)
 
     try:
-        update_state(rca_id, "ANALYZING")
-
+        _write_session_id(rca_id)
         prompt = build_prompt(alarm)
         log.info("cc_analysis_started")
 
@@ -68,7 +72,6 @@ def _run_rca(
             return False
 
         log.info("cc_analysis_completed", elapsed_seconds=elapsed_seconds)
-        update_state(rca_id, "REPORT_GENERATION")
 
         report_markdown = cc_result.result
         report_key = save_report(rca_id, report_markdown)
