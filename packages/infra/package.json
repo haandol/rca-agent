@@ -9,6 +9,7 @@
     "build": "tsc",
     "watch": "tsc -w",
     "deploy": "cdk deploy \"*\" --require-approval never --concurrency 4",
+    "deploy:service": "bash scripts/deploy-service.sh",
     "destroy": "cdk destroy",
     "diff": "cdk diff",
     "test": "jest",

@@ -18,6 +18,13 @@
         "cwd": "packages/infra"
       }
     },
+    "deploy:service": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm run deploy:service --",
+        "cwd": "packages/infra"
+      }
+    },
     "diff": {
       "executor": "nx:run-commands",
       "options": {

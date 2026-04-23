@@ -26,5 +26,19 @@
       }
     }
   ],
+  "targetDefaults": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "cache": true
+    },
+    "test": {
+      "inputs": ["default", "^production"],
+      "cache": true
+    },
+    "deploy": {
+      "cache": false
+    }
+  },
   "analytics": false
 }
