@@ -20,19 +20,19 @@ const stateStyle: Record<string, { bg: string; text: string; dot: string }> = {
 const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CANCELLED', 'OUTDATED']
 
 const STATE_LABEL: Record<string, string> = {
-  ALARM_RECEIVED: 'Received',
-  SCOPING: 'Scoping',
-  HYPOTHESIS_GENERATION: 'Hypotheses',
-  HYPOTHESIS_PRIORITIZATION: 'Prioritizing',
-  EVIDENCE_COLLECTION: 'Evidence',
-  HYPOTHESIS_VALIDATION: 'Validating',
-  REPORT_GENERATION: 'Reporting',
-  REMEDIATION: 'Remediation',
-  VERIFICATION: 'Verification',
-  COMPLETED: 'Completed',
-  FAILED: 'Failed',
-  CANCELLED: 'Cancelled',
-  OUTDATED: 'Outdated',
+  ALARM_RECEIVED: '알람 수신',
+  SCOPING: '스코핑',
+  HYPOTHESIS_GENERATION: '가설 생성',
+  HYPOTHESIS_PRIORITIZATION: '우선순위 결정',
+  EVIDENCE_COLLECTION: '증거 수집',
+  HYPOTHESIS_VALIDATION: '가설 검증',
+  REPORT_GENERATION: '보고서 생성',
+  REMEDIATION: '자동 복구',
+  VERIFICATION: '복구 검증',
+  COMPLETED: '완료',
+  FAILED: '실패',
+  CANCELLED: '중단됨',
+  OUTDATED: '만료됨',
 }
 
 function formatTime(iso: string) {
@@ -40,10 +40,10 @@ function formatTime(iso: string) {
   const d = new Date(iso)
   const now = new Date()
   const diff = now.getTime() - d.getTime()
-  if (diff < 60000) return 'just now'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (diff < 60000) return '방금 전'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}분 전`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}시간 전`
+  return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 const stats = computed(() => {
@@ -107,7 +107,7 @@ async function deleteSession() {
   }
 }
 
-useHead({ title: 'RCA Dashboard' })
+useHead({ title: 'RCA 대시보드' })
 </script>
 
 <template>
@@ -115,8 +115,8 @@ useHead({ title: 'RCA Dashboard' })
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">Sessions</h1>
-        <p class="text-sm text-base-content/50 mt-0.5">Root Cause Analysis pipeline runs</p>
+        <h1 class="text-2xl font-bold tracking-tight">세션 목록</h1>
+        <p class="text-sm text-base-content/50 mt-0.5">Root Cause Analysis 파이프라인 실행 이력</p>
       </div>
       <button
         class="btn btn-sm btn-ghost gap-2 rounded-lg"
@@ -124,26 +124,26 @@ useHead({ title: 'RCA Dashboard' })
         @click="refresh()"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-        Refresh
+        새로고침
       </button>
     </div>
 
     <!-- Stats -->
     <div v-if="stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div class="stat-card">
-        <div class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Total</div>
+        <div class="text-xs font-medium text-base-content/50 uppercase tracking-wider">전체</div>
         <div class="text-2xl font-bold mt-1">{{ stats.total }}</div>
       </div>
       <div class="stat-card">
-        <div class="text-xs font-medium text-success uppercase tracking-wider">Completed</div>
+        <div class="text-xs font-medium text-success uppercase tracking-wider">완료</div>
         <div class="text-2xl font-bold mt-1 text-success">{{ stats.completed }}</div>
       </div>
       <div class="stat-card">
-        <div class="text-xs font-medium text-error uppercase tracking-wider">Failed</div>
+        <div class="text-xs font-medium text-error uppercase tracking-wider">실패</div>
         <div class="text-2xl font-bold mt-1 text-error">{{ stats.failed }}</div>
       </div>
       <div class="stat-card">
-        <div class="text-xs font-medium text-warning uppercase tracking-wider">In Progress</div>
+        <div class="text-xs font-medium text-warning uppercase tracking-wider">진행 중</div>
         <div class="text-2xl font-bold mt-1 text-warning">{{ stats.inProgress }}</div>
       </div>
     </div>
@@ -152,20 +152,20 @@ useHead({ title: 'RCA Dashboard' })
     <div class="bg-base-100 rounded-xl border border-base-content/5 overflow-hidden">
       <div v-if="status === 'pending' && !sessions" class="flex flex-col items-center justify-center py-16 text-base-content/40">
         <span class="loading loading-spinner loading-md" />
-        <p class="mt-3 text-sm">Loading sessions...</p>
+        <p class="mt-3 text-sm">세션 로딩 중...</p>
       </div>
       <div v-else-if="!sessions?.length" class="flex flex-col items-center justify-center py-16 text-base-content/40">
         <svg xmlns="http://www.w3.org/2000/svg" class="size-10 mb-2 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
-        <p class="text-sm">No sessions found</p>
+        <p class="text-sm">세션이 없습니다</p>
       </div>
       <table v-else class="table w-full">
         <thead>
           <tr class="border-b border-base-content/5">
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider pl-5">Status</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Alarm</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Engine</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Result</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Time</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider pl-5">상태</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">알람</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">엔진</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">결과</th>
+            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">시간</th>
             <th class="w-28"></th>
           </tr>
         </thead>
@@ -199,24 +199,24 @@ useHead({ title: 'RCA Dashboard' })
             <td>
               <div class="flex items-center justify-end gap-0.5 pr-2">
                 <NuxtLink :to="`/trace/${session.rcaId}`">
-                  <button class="action-btn" title="Trace">
+                  <button class="action-btn" title="트레이스">
                     <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                   </button>
                 </NuxtLink>
                 <NuxtLink :to="`/report/${session.rcaId}`">
-                  <button class="action-btn" title="Report">
+                  <button class="action-btn" title="보고서">
                     <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                   </button>
                 </NuxtLink>
                 <button
                   v-if="!TERMINAL_STATES.includes(session.state)"
                   class="action-btn text-warning"
-                  title="Cancel"
+                  title="중단"
                   @click="openCancelModal(session.rcaId)"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
                 </button>
-                <button class="action-btn text-error/70" title="Delete" @click="openDeleteModal(session.rcaId)">
+                <button class="action-btn text-error/70" title="삭제" @click="openDeleteModal(session.rcaId)">
                   <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>

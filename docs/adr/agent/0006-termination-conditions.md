@@ -21,6 +21,7 @@ Accepted
 3. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과 — `TerminationReason.TOKEN_BUDGET` enum이 정의되어 있으나, Strands SDK의 토큰 사용량 추적 API가 확정되면 구현 예정 (현재 보류)
 4. **최대 깊이**: 가설 트리 깊이가 5를 초과 (`RCA_MAX_TREE_DEPTH=5`)
 5. **최대 반복**: 검증 루프가 3회를 초과 (`RCA_MAX_VALIDATION_LOOPS=3`)
+6. **외부 취소 (CANCELLED)**: 대시보드에서 관리자가 세션 상태를 `CANCELLED`로 변경하면, 다음 `update_state()` 호출 시점에 파이프라인이 즉시 종료된다.
 
 ### 핵심 결정사항
 
@@ -30,9 +31,11 @@ Accepted
 
 3. **강제 중단**: 시간/깊이/반복 한도 초과 시 `_best_hypothesis()` 함수가 모든 judgment 중 가장 높은 confidence_score를 가진 가설을 선택하여 보고서 생성에 전달한다.
 
-4. **근본 원인 미확정 처리**: 모든 가설이 기각되고 추가 가설 생성(최대 2회, `RCA_MAX_REGENERATION_ROUNDS`)으로도 확정하지 못한 경우 `TerminationReason.ALL_REJECTED`로 중단하고 "근본 원인 미확정" 상태로 보고서를 생성한다.
+4. **전체 기각 시 재생성**: 모든 가설이 기각되면 `check_termination()`에서 종료하지 않고, `main.py`의 검증 루프가 가설을 재생성한다(최대 2회, `RCA_MAX_REGENERATION_ROUNDS`). 재생성 한도를 초과하면 루프가 종료되고 "근본 원인 미확정" 상태로 보고서를 생성한다.
 
-5. **OR 평가 순서**: CONFIRMED → TIME_BUDGET → MAX_DEPTH → MAX_LOOPS → ALL_REJECTED 순서로 평가하며, 첫 번째로 충족된 조건에서 즉시 반환한다.
+5. **OR 평가 순서**: CONFIRMED → TIME_BUDGET → MAX_DEPTH → MAX_LOOPS 순서로 평가하며, 첫 번째로 충족된 조건에서 즉시 반환한다. 전체 기각(ALL_REJECTED)은 `check_termination()`이 아닌 메인 루프에서 재생성 로직으로 처리한다.
+
+6. **Cooperative Cancellation**: `update_state()`에 DynamoDB ConditionExpression(`#st <> CANCELLED`)을 추가하여, 세션이 CANCELLED 상태이면 `SessionCancelledError`를 발생시킨다. 파이프라인은 이 예외를 잡아 `mark_failed` 없이 조용히 종료한다. 별도 폴링 없이 매 단계 전환 시 자연스럽게 취소가 감지된다.
 
 ## Consequences
 
@@ -46,10 +49,18 @@ Accepted
 
 - 시간 예산(20분)이 복잡한 장애에 부족할 수 있음
 - 강제 중단 시 근본 원인이 확정되지 않은 보고서가 생성될 수 있음
+- CANCELLED 시 진행 중이던 LLM 호출은 즉시 중단되지 않고, 해당 호출이 완료된 뒤 다음 단계 전환에서 종료됨
 
 ### Risks
 
 - 중단 조건 임계치가 너무 느슨하면 비용 폭증, 너무 엄격하면 정확도 저하. MVP 운영 데이터로 조정한다.
+
+## Implementation Notes
+
+- `check_termination()`: CONFIRMED, TIME_BUDGET, MAX_DEPTH, MAX_LOOPS만 평가. ALL_REJECTED는 메인 루프에서 재생성으로 처리.
+- `update_state()`: `ConditionExpression: #st <> :cancelled`로 cooperative cancellation 구현. `ConditionalCheckFailedException` → `SessionCancelledError` 변환.
+- `_process_alarm()`: `SessionCancelledError`를 별도 `except` 블록에서 처리하여 `mark_failed` 없이 종료.
+- 대시보드: `POST /api/sessions/:id/cancel` 엔드포인트가 DDB 세션 상태를 CANCELLED로 업데이트. terminal 상태(`COMPLETED`, `FAILED`, `CANCELLED`, `OUTDATED`)인 세션은 취소 불가 (409 응답).
 
 ## Related
 

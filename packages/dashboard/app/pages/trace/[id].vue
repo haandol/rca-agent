@@ -59,7 +59,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
         </button>
       </NuxtLink>
       <div class="flex-1">
-        <h1 class="text-xl font-bold tracking-tight">Trace</h1>
+        <h1 class="text-xl font-bold tracking-tight">실행 트레이스</h1>
       </div>
       <span
         v-if="trace?.session"
@@ -74,7 +74,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
       <NuxtLink :to="`/report/${id}`">
         <button class="btn btn-ghost btn-sm gap-1.5 rounded-lg">
           <svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          Report
+          보고서
         </button>
       </NuxtLink>
     </div>
@@ -83,7 +83,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
     <div v-if="status === 'pending'" class="bg-base-100 rounded-xl border border-base-content/5">
       <div class="flex flex-col items-center justify-center py-16 text-base-content/40">
         <span class="loading loading-spinner loading-md" />
-        <p class="mt-3 text-sm">Loading trace...</p>
+        <p class="mt-3 text-sm">트레이스 로딩 중...</p>
       </div>
     </div>
 
@@ -91,7 +91,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
     <div v-else-if="error" class="bg-base-100 rounded-xl border border-base-content/5">
       <div class="flex flex-col items-center justify-center py-16">
         <svg xmlns="http://www.w3.org/2000/svg" class="size-8 text-error/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-        <p class="text-sm text-base-content/50 mt-2">Failed to load trace data</p>
+        <p class="text-sm text-base-content/50 mt-2">트레이스 데이터 로드 실패</p>
       </div>
     </div>
 
@@ -99,19 +99,19 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
       <!-- Session Info -->
       <div v-if="trace.session" class="bg-base-100 rounded-xl border border-base-content/5 p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
-          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">RCA ID</div>
+          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">RCA 아이디</div>
           <div class="text-sm font-mono mt-1 truncate">{{ id }}</div>
         </div>
         <div>
-          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">Alarm</div>
+          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">알람</div>
           <div class="text-sm mt-1">{{ trace.session.alarmName }}</div>
         </div>
         <div>
-          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">Engine</div>
+          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">엔진</div>
           <div class="text-sm font-mono mt-1">{{ trace.session.engine }}</div>
         </div>
         <div>
-          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">Created</div>
+          <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">생성일시</div>
           <div class="text-sm mt-1 text-base-content/60">{{ formatTime(trace.session.createdAt) }}</div>
         </div>
       </div>
@@ -155,17 +155,17 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                 </div>
 
                 <div v-if="selectedNode.detail" class="mt-3">
-                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">Output</div>
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">출력</div>
                   <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md(selectedNode.detail)" />
                 </div>
 
                 <div v-if="selectedNode.error" class="mt-3">
-                  <div class="text-[11px] font-medium text-error/60 uppercase tracking-wider mb-1.5">Error</div>
+                  <div class="text-[11px] font-medium text-error/60 uppercase tracking-wider mb-1.5">오류</div>
                   <div class="prose prose-xs max-w-none bg-error/5 text-error rounded-lg p-3 break-words" v-html="md(selectedNode.error)" />
                 </div>
 
                 <div v-if="selectedNode.metadata" class="mt-3">
-                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">Metadata</div>
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">메타데이터</div>
                   <div class="bg-base-200/60 rounded-lg p-3 space-y-1.5">
                     <div v-for="(val, key) in selectedNode.metadata" :key="String(key)" class="flex gap-2 text-xs">
                       <span class="text-base-content/40 shrink-0">{{ key }}</span>
@@ -201,12 +201,12 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                 <div class="prose prose-sm max-w-none mt-3" v-html="md(selectedNode.description || selectedNode.label)" />
 
                 <div v-if="selectedNode.evidenceSummary" class="mt-3">
-                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">Evidence</div>
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">증거 요약</div>
                   <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md(selectedNode.evidenceSummary)" />
                 </div>
 
                 <div v-if="selectedNode.judgmentReasoning" class="mt-3">
-                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">Reasoning</div>
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">판단 근거</div>
                   <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md(selectedNode.judgmentReasoning)" />
                 </div>
               </template>
@@ -215,7 +215,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
             <template v-else>
               <div class="flex flex-col items-center justify-center h-full text-base-content/30 gap-3">
                 <svg xmlns="http://www.w3.org/2000/svg" class="size-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
-                <p class="text-sm">Select a node to view details</p>
+                <p class="text-sm">노드를 클릭하면 상세 정보가 표시됩니다</p>
               </div>
             </template>
           </div>

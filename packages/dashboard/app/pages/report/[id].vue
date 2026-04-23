@@ -26,7 +26,7 @@ useHead({ title: () => `Report ${id.slice(0, 8)}` })
         </button>
       </NuxtLink>
       <div class="flex-1">
-        <h1 class="text-xl font-bold tracking-tight">RCA Report</h1>
+        <h1 class="text-xl font-bold tracking-tight">RCA 보고서</h1>
       </div>
       <span v-if="session" class="badge badge-sm" :class="session.state === 'COMPLETED' ? 'badge-success' : session.state === 'FAILED' ? 'badge-error' : 'badge-warning'">
         {{ session.state }}
@@ -36,21 +36,21 @@ useHead({ title: () => `Report ${id.slice(0, 8)}` })
     <!-- Session Info -->
     <div v-if="session" class="bg-base-100 rounded-xl border border-base-content/5 p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
       <div>
-        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">RCA ID</div>
+        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">RCA 아이디</div>
         <div class="text-sm font-mono mt-1 truncate">{{ id }}</div>
       </div>
       <div>
-        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">Alarm</div>
+        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">알람</div>
         <div class="text-sm mt-1">{{ session.alarmName }}</div>
       </div>
       <div>
-        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">Engine</div>
+        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">엔진</div>
         <div class="text-sm font-mono mt-1">{{ session.engine }}</div>
       </div>
       <div>
-        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">Confirmed</div>
+        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">확정 여부</div>
         <span class="badge badge-sm mt-1" :class="session.confirmed ? 'badge-success' : 'badge-ghost'">
-          {{ session.confirmed ? 'Yes' : 'No' }}
+          {{ session.confirmed ? '예' : '아니오' }}
         </span>
       </div>
     </div>
@@ -59,14 +59,14 @@ useHead({ title: () => `Report ${id.slice(0, 8)}` })
     <div v-if="status === 'pending'" class="bg-base-100 rounded-xl border border-base-content/5">
       <div class="flex flex-col items-center justify-center py-16 text-base-content/40">
         <span class="loading loading-spinner loading-md" />
-        <p class="mt-3 text-sm">Loading report...</p>
+        <p class="mt-3 text-sm">보고서 로딩 중...</p>
       </div>
     </div>
 
     <div v-else-if="error" class="bg-base-100 rounded-xl border border-base-content/5">
       <div class="flex flex-col items-center justify-center py-16">
         <svg xmlns="http://www.w3.org/2000/svg" class="size-8 text-error/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-        <p class="text-sm text-base-content/50 mt-2">{{ error.statusCode === 404 ? 'Report not found in S3.' : 'Failed to load report.' }}</p>
+        <p class="text-sm text-base-content/50 mt-2">{{ error.statusCode === 404 ? 'S3에 보고서가 없습니다.' : '보고서 로드에 실패했습니다.' }}</p>
         <p class="text-[11px] text-base-content/30 font-mono mt-1">reports/{{ id }}.md</p>
       </div>
     </div>
