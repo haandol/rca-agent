@@ -29,7 +29,7 @@ Accepted
 
 2. **프롬프트 주도 파이프라인**: Python/SDK로 다단계를 오케스트레이션하는 대신, 단일 프롬프트에 RCA 전체 워크플로우를 지시한다. CC headless가 MCP 도구를 자율 호출하며 스코핑 → 가설 → 증거 수집 → 검증 → 보고서를 한 번의 호출로 수행한다.
 
-3. **MCP 서버 연결**: CC headless의 MCP 설정(`.mcp.json` 또는 `--mcp-config`)으로 CloudWatch MCP, CloudTrail MCP, GitHub MCP를 등록한다. CC가 프롬프트 지시에 따라 도구를 자율 선택하여 호출한다.
+3. **MCP 서버 연결**: CC headless의 MCP 설정(`mcp-config.json` + `--mcp-config`)으로 AWS Knowledge MCP, CloudWatch MCP, CloudTrail MCP, GitHub MCP를 등록한다. GitHub MCP는 Go 바이너리를 컨테이너에 포함하여 `github-mcp-server stdio`로 실행한다. CC가 프롬프트 지시에 따라 도구를 자율 선택하여 호출한다.
 
 4. **프롬프트 구성**:
    - **시스템 프롬프트**: RCA 워크플로우 정의 (스코핑 → 가설 → 증거 수집 → 검증 → 분기/종료 → 보고서), 종료 조건, 출력 포맷 (JSON schema)

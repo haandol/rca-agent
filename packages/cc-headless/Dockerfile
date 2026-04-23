@@ -4,6 +4,11 @@ RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code
 
+ARG GITHUB_MCP_VERSION=v1.0.2
+RUN ARCH=$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/arm64/') && \
+    curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${GITHUB_MCP_VERSION}/github-mcp-server_Linux_${ARCH}.tar.gz" | tar -xz -C /usr/local/bin github-mcp-server && \
+    chmod +x /usr/local/bin/github-mcp-server
+
 ADD https://astral.sh/uv/install.sh /tmp/uv-install.sh
 RUN sh /tmp/uv-install.sh && rm /tmp/uv-install.sh
 

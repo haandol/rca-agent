@@ -20,6 +20,13 @@
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
+    },
+    "github": {
+      "command": "github-mcp-server",
+      "args": ["stdio"],
+      "env": {
+        "GITHUB_TOOLSETS": "repos,pull_requests"
+      }
     }
   }
 }

@@ -113,18 +113,12 @@ def create_github_mcp_client() -> MCPClient:
     return MCPClient(
         lambda: stdio_client(
             StdioServerParameters(
-                command="docker",
-                args=[
-                    "run",
-                    "-i",
-                    "--rm",
-                    "-e",
-                    "GITHUB_PERSONAL_ACCESS_TOKEN",
-                    "-e",
-                    "GITHUB_TOOLSETS=repos,pull_requests",
-                    "ghcr.io/github/github-mcp-server",
-                ],
-                env=_mcp_env(GITHUB_PERSONAL_ACCESS_TOKEN=GITHUB_PERSONAL_ACCESS_TOKEN),
+                command="github-mcp-server",
+                args=["stdio"],
+                env=_mcp_env(
+                    GITHUB_PERSONAL_ACCESS_TOKEN=GITHUB_PERSONAL_ACCESS_TOKEN,
+                    GITHUB_TOOLSETS="repos,pull_requests",
+                ),
             )
         )
     )

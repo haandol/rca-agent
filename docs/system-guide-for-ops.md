@@ -506,8 +506,9 @@ graph TB
 | AWS Knowledge | `uvx fastmcp run https://...` (stdio) | AWS 공식 문서/SOP 검색 |
 | CloudWatch | `uvx --from awslabs-cloudwatch-mcp-server awslabs.cloudwatch-mcp-server` (stdio) | 메트릭·로그 조회 |
 | CloudTrail | `uvx --from awslabs-cloudtrail-mcp-server awslabs.cloudtrail-mcp-server` (stdio) | 배포·변경 이력 |
+| GitHub | `github-mcp-server stdio` (Go 바이너리, 컨테이너 내장) | 커밋 diff·PR 조회 |
 
-모든 MCP 서버는 `uvx` (Python 패키지 런처)로 실행됩니다. `mcp-config.json`에 정의되어 있습니다.
+AWS 관련 MCP 서버는 `uvx` (Python 패키지 런처)로 실행됩니다. GitHub MCP 서버는 Go 바이너리로, Docker 이미지 빌드 시 GitHub Releases에서 다운로드하여 포함합니다.
 
 ---
 

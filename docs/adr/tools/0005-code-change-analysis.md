@@ -16,7 +16,7 @@ Accepted
 
 ### 핵심 결정사항
 
-1. **MCP 서버**: `github/github-mcp-server`를 Strands 에이전트에 등록한다. Docker 기반 로컬 실행(`ghcr.io/github/github-mcp-server`) 또는 HTTP 원격 연결(`https://api.githubcopilot.com/mcp`) 방식을 선택할 수 있다.
+1. **MCP 서버**: `github/github-mcp-server`를 Strands 에이전트와 CC Headless 에이전트 양쪽에 등록한다. GitHub Releases에서 Go 바이너리를 다운로드하여 컨테이너 이미지에 포함하고, `github-mcp-server stdio` 명령으로 실행한다.
 
 2. **주요 도구**:
    - `get_commit`: 커밋 해시로 diff와 변경 통계를 조회한다. CloudTrail에서 식별된 배포 커밋의 변경 내역을 가져오는 데 사용한다.

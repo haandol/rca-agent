@@ -41,6 +41,11 @@
 
 - `lookup_events`: 최근 API 호출, 배포, 설정 변경 이벤트 조회
 
+### GitHub MCP (`github`)
+
+- **커밋·PR 조회**: `get_commit`, `list_commits`, `get_pull_request`, `list_pull_requests`
+- **코드 변경 분석**: 배포 시점 전후 커밋 diff를 확인하여 코드 결함 가설을 검증
+
 ## 실행 제약사항
 
 - **시간 예산**: 전체 분석 + 복구를 가능한 신속히 완료
