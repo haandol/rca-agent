@@ -20,7 +20,7 @@ SECRET_NAME="${NS}/github/pat"
 
 echo ""
 echo "[1/2] GitHub repo secret 등록 (${REPO})..."
-echo "$TOKEN" | gh secret set GITHUB_PERSONAL_ACCESS_TOKEN -R "$REPO"
+echo "$TOKEN" | gh secret set GH_PAT -R "$REPO"
 echo "  완료"
 
 echo ""
