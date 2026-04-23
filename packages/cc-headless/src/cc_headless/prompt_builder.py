@@ -4,7 +4,17 @@ from pathlib import Path
 
 from cc_headless.alarm_parser import AlarmContext
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+
+def _find_prompts_dir() -> Path:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        candidate = parent / "prompts"
+        if candidate.is_dir():
+            return candidate
+    return Path("/app/prompts")
+
+
+_PROMPTS_DIR = _find_prompts_dir()
 
 
 def build_prompt(alarm: AlarmContext) -> str:

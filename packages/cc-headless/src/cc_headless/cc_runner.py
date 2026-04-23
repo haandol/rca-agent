@@ -11,7 +11,17 @@ from cc_headless.config import CC_MAX_TURNS, CC_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
-_MCP_CONFIG_PATH = str(Path(__file__).resolve().parents[3] / "mcp-config.json")
+
+def _find_file(name: str) -> str:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        candidate = parent / name
+        if candidate.exists():
+            return str(candidate)
+    return f"/app/{name}"
+
+
+_MCP_CONFIG_PATH = _find_file("mcp-config.json")
 
 
 @dataclass
