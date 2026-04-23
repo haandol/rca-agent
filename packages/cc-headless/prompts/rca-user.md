@@ -1,16 +1,18 @@
-The following CloudWatch alarm just fired. Perform a full RCA analysis.
+아래 CloudWatch 알람이 발생했다. 12단계 RCA 파이프라인을 실행하여 분석하라.
 
-## Alarm Details
-- **Alarm Name**: {alarm_name}
-- **State Reason**: {state_reason}
-- **State Change Time**: {state_change_time}
-- **Region**: {region}
+## 알람 상세
 
-## Trigger
-- **Metric**: {namespace}/{metric_name}
-- **Dimensions**: {dimensions}
-- **Statistic**: {statistic}
-- **Period**: {period}s
-- **Threshold**: {threshold} ({comparison_operator})
+- **알람 이름**: {alarm_name}
+- **상태 사유**: {state_reason}
+- **상태 변경 시각**: {state_change_time}
+- **리전**: {region}
 
-Analyze this alarm and produce a structured RCA report.
+## 트리거
+
+- **메트릭**: {namespace}/{metric_name}
+- **차원**: {dimensions}
+- **통계**: {statistic}
+- **주기**: {period}초
+- **임계치**: {threshold} ({comparison_operator})
+
+위 알람을 분석하고 구조화된 RCA 보고서를 생성하라.

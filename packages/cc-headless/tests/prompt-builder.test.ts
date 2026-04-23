@@ -20,8 +20,8 @@ describe('buildPrompt', () => {
     const prompt = buildPrompt(alarm);
 
     expect(prompt).toContain('Root Cause Analysis');
-    expect(prompt).toContain('Step 1: Initial Scoping');
-    expect(prompt).toContain('Step 5: Report');
+    expect(prompt).toContain('1단계: 초기 스코핑');
+    expect(prompt).toContain('8단계: 보고서 생성');
   });
 
   it('includes alarm details in user prompt', () => {
