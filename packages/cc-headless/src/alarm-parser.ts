@@ -1,4 +1,3 @@
-import type { SQSEvent } from 'aws-lambda';
 import type { AlarmContext } from './prompt-builder.js';
 
 interface CloudWatchAlarmSns {
@@ -18,14 +17,6 @@ interface CloudWatchAlarmSns {
   };
 }
 
-function parseSnsEnvelope(body: string): CloudWatchAlarmSns {
-  const parsed = JSON.parse(body);
-  if (typeof parsed.Message === 'string') {
-    return JSON.parse(parsed.Message);
-  }
-  return parsed;
-}
-
 function toDimensions(
   dims?: Array<{ name: string; value: string }>,
 ): Record<string, string> | undefined {
@@ -33,9 +24,8 @@ function toDimensions(
   return Object.fromEntries(dims.map((d) => [d.name, d.value]));
 }
 
-export function parseAlarmFromSqs(event: SQSEvent): AlarmContext {
-  const record = event.Records[0];
-  const alarm = parseSnsEnvelope(record.body);
+export function parseAlarm(data: Record<string, unknown>): AlarmContext {
+  const alarm = data as unknown as CloudWatchAlarmSns;
 
   return {
     alarmName: alarm.AlarmName ?? 'UnknownAlarm',

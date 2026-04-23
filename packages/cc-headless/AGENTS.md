@@ -1,21 +1,21 @@
 # CC Headless RCA Agent
 
-Claude Code on Bedrock headless 모드를 사용하는 서버리스 RCA 에이전트입니다. Lambda 컨테이너에서 CC CLI를 subprocess로 호출하여 단일 프롬프트로 전체 RCA 워크플로우를 수행합니다.
+Claude Code on Bedrock headless 모드를 사용하는 RCA 에이전트입니다. ECS Fargate 컨테이너에서 SQS Long Polling으로 알람을 수신하고, CC CLI를 subprocess로 호출하여 단일 프롬프트로 전체 RCA 워크플로우를 수행합니다.
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
-| Runtime | Node.js 22 (Lambda Container Image) |
+| Runtime | Node.js 22 (ECS Fargate Container) |
 | Agent Engine | Claude Code CLI (headless, Bedrock backend) |
 | MCP Tools | CloudWatch MCP, CloudTrail MCP, GitHub MCP |
-| Trigger | SQS Event Source Mapping |
+| Trigger | SQS Long Polling |
 
 ## Directory Structure
 
 ```
 src/
-├── handler.ts        # Lambda SQS handler (entry point)
+├── main.ts           # ECS SQS long polling entry point
 ├── cc-runner.ts      # CC CLI subprocess wrapper
 ├── prompt-builder.ts # System + user prompt assembly
 ├── alarm-parser.ts   # CloudWatch SNS → AlarmContext
@@ -25,7 +25,7 @@ prompts/
 ├── rca-system.md     # RCA workflow system prompt
 └── rca-user.md       # Alarm details user prompt template
 mcp-config.json       # MCP server configuration for CC
-Dockerfile            # Lambda container image
+Dockerfile            # ECS Fargate container image
 ```
 
 ## Dev Commands
@@ -41,6 +41,8 @@ pnpm lint           # eslint
 
 | Variable | Description |
 |----------|-------------|
+| `SQS_QUEUE_URL` | SQS alarm queue URL |
+| `SQS_POLL_WAIT_SECONDS` | Long polling wait (default: 20) |
 | `CLAUDE_CODE_USE_BEDROCK` | `1` to enable Bedrock backend |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | Bedrock model ID |
 | `DYNAMODB_TABLE_NAME` | Shared RCA session table |

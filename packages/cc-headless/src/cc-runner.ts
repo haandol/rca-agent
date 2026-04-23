@@ -44,7 +44,7 @@ export function runClaude(
     execFile(
       'claude',
       args,
-      { timeout, maxBuffer: MAX_BUFFER, env, cwd: '/var/task' },
+      { timeout, maxBuffer: MAX_BUFFER, env, cwd: '/app' },
       (error, stdout, stderr) => {
         if (error) {
           console.error('CC CLI error:', error.message);

@@ -96,17 +96,18 @@ const ccHeadlessStack = new CcHeadlessStack(
   `${Config.app.ns}CcHeadlessStack`,
   {
     env,
+    vpc: networkStack.vpc,
     alarmTopic: eventBusStack.alarmTopic,
     notificationTopic: eventBusStack.alarmTopic,
     rcaSessionTable: databaseStack.rcaSessionTable,
     evidenceBucket: storageStack.evidenceBucket,
     vectorBucketName: Config.storage.vectorBucket,
     reportBucket: Config.storage.evidenceBucket,
-    repository: ecrStack.ccHeadlessRepo,
     imageTag: Config.ccHeadless.imageTag,
   },
 );
 ccHeadlessStack.addDependency(ecrStack);
+ccHeadlessStack.addDependency(networkStack);
 ccHeadlessStack.addDependency(eventBusStack);
 ccHeadlessStack.addDependency(databaseStack);
 ccHeadlessStack.addDependency(storageStack);

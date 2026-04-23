@@ -44,7 +44,7 @@ RcaAgentDev
 ├── StorageStack                  # S3 Evidence/Report 버킷
 ├── RdsStack                      # PostgreSQL 17.4 (Healthcare 서비스용)
 ├── RcaAgentServiceStack          # ECS Fargate — Strands RCA 에이전트
-├── CcHeadlessStack               # Lambda Container — CC headless RCA 에이전트
+├── CcHeadlessStack               # ECS Fargate — CC headless RCA 에이전트
 └── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스 + Cloud Map DNS
 ```
 
@@ -58,6 +58,7 @@ DatabaseStack ────────┤
 StorageStack ─────────┘
 
 EcrStack ─────────────┐
+NetworkStack ─────────┤
 EventBusStack ────────┼── CcHeadlessStack
 DatabaseStack ────────┤
 StorageStack ─────────┘
@@ -80,7 +81,7 @@ NetworkStack ──────── RdsStack
 | `alarm` | `notificationEmail` | SNS 알림 이메일 |
 | `agent` | `imageTag` | RCA Agent ECS 이미지 태그 |
 | `healthcare` | `imageTag` | Healthcare ECS 이미지 태그 |
-| `ccHeadless` | `imageTag` | CC Headless Lambda 이미지 태그 |
+| `ccHeadless` | `imageTag` | CC Headless ECS 이미지 태그 |
 | `storage` | `evidenceBucket`, `vectorBucket` | S3 버킷명 |
 | `table.rcaSession` | `name` | DynamoDB 테이블명 |
 | `tracing` | `enabled` | OpenTelemetry 사이드카 활성화 |
@@ -100,10 +101,11 @@ NetworkStack ──────── RdsStack
 - SNS: Publish (알림 토픽)
 - ECS: UpdateService, DescribeServices (Remediation용 force new deployment)
 
-### CC Headless (Lambda Execution Role)
+### CC Headless (Fargate Task Role)
 
 - `CloudWatchReadOnlyAccess` (매니지드 정책)
 - `AWSCloudTrail_ReadOnlyAccess` (매니지드 정책)
+- SQS: ConsumeMessages
 - DynamoDB: ReadWriteData
 - S3: Evidence ReadWrite, Report PutObject/GetObject
 - S3 Vectors: 전체 CRUD

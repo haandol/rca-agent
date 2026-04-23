@@ -1,28 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseAlarmFromSqs } from '../src/alarm-parser.js';
-import type { SQSEvent } from 'aws-lambda';
+import { parseAlarm } from '../src/alarm-parser.js';
 
-function makeSqsEvent(body: Record<string, unknown>): SQSEvent {
-  return {
-    Records: [
-      {
-        messageId: 'msg-1',
-        receiptHandle: 'handle-1',
-        body: JSON.stringify(body),
-        attributes: {} as never,
-        messageAttributes: {},
-        md5OfBody: '',
-        eventSource: 'aws:sqs',
-        eventSourceARN: 'arn:aws:sqs:us-east-1:123456789012:queue',
-        awsRegion: 'us-east-1',
-      },
-    ],
-  };
-}
-
-describe('parseAlarmFromSqs', () => {
+describe('parseAlarm', () => {
   it('parses raw CloudWatch alarm body', () => {
-    const event = makeSqsEvent({
+    const alarm = parseAlarm({
       AlarmName: 'HighCPU',
       NewStateValue: 'ALARM',
       NewStateReason: 'Threshold crossed',
@@ -39,8 +20,6 @@ describe('parseAlarmFromSqs', () => {
       },
     });
 
-    const alarm = parseAlarmFromSqs(event);
-
     expect(alarm.alarmName).toBe('HighCPU');
     expect(alarm.stateReason).toBe('Threshold crossed');
     expect(alarm.region).toBe('ap-northeast-2');
@@ -50,27 +29,8 @@ describe('parseAlarmFromSqs', () => {
     expect(alarm.threshold).toBe(90);
   });
 
-  it('parses SNS-wrapped alarm body', () => {
-    const alarmData = {
-      AlarmName: 'HighLatency',
-      NewStateReason: 'p99 > 500ms',
-      Region: 'us-east-1',
-    };
-    const event = makeSqsEvent({
-      Message: JSON.stringify(alarmData),
-      Type: 'Notification',
-    });
-
-    const alarm = parseAlarmFromSqs(event);
-
-    expect(alarm.alarmName).toBe('HighLatency');
-    expect(alarm.stateReason).toBe('p99 > 500ms');
-  });
-
   it('handles missing fields gracefully', () => {
-    const event = makeSqsEvent({});
-
-    const alarm = parseAlarmFromSqs(event);
+    const alarm = parseAlarm({});
 
     expect(alarm.alarmName).toBe('UnknownAlarm');
     expect(alarm.stateReason).toBe('');

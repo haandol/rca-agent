@@ -15,10 +15,10 @@
     "@aws-sdk/client-dynamodb": "^3.800.0",
     "@aws-sdk/client-s3": "^3.800.0",
     "@aws-sdk/client-sns": "^3.800.0",
+    "@aws-sdk/client-sqs": "^3.800.0",
     "@aws-sdk/s3-request-presigner": "^3.800.0"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.150",
     "@types/node": "^22.0.0",
     "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",

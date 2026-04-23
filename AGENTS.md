@@ -8,7 +8,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 12단계 closed-loop 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
-| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 서버리스 RCA 에이전트 — Lambda에서 CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, Lambda Container |
+| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
 | [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태 및 S3 보고서 조회 (로컬 전용) | TypeScript, Nuxt.js 4, @nuxt/ui |
 
@@ -16,14 +16,14 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 
 동일한 CloudWatch 알람에 대해 두 가지 실행 엔진이 독립적으로 RCA를 수행합니다.
 
-| | Fargate Stack (Strands) | Lambda Stack (CC Headless) |
+| | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
 |---|---|---|
-| **실행 환경** | ECS Fargate (Long Polling) | Lambda Container Image (SQS Event Source) |
+| **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 12단계 closed-loop 파이프라인 (F1~F12) | 단일 프롬프트 + MCP 도구 자율 호출 |
+| **RCA 방식** | 12단계 closed-loop 파이프라인 | 단일 프롬프트 + MCP 도구 자율 호출 |
 | **모델** | 2-tier (Sonnet 4.6 + Haiku 4.5) | CC 기본 모델 (Sonnet 4.6) |
-| **타임아웃** | 제한 없음 (ECS) | 15분 (Lambda) |
-| **동시성** | Fargate 태스크 스케일링 | reserved concurrency 1 |
+| **타임아웃** | 제한 없음 | 제한 없음 |
+| **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
 | **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
 | **구분** | DynamoDB `engine` 필드: `strands` vs `cc-headless` |
 
@@ -97,12 +97,12 @@ graph TB
     subgraph Messaging["이벤트 라우팅"]
         SNS_IN["SNS Topic<br/>(알람 팬아웃)"]
         SQS_FARGATE["SQS Queue<br/>(Fargate Long Polling)"]
-        SQS_LAMBDA["SQS Queue<br/>(Lambda Event Source)"]
+        SQS_CC["SQS Queue<br/>(Fargate Long Polling)"]
     end
 
     subgraph Compute["에이전트 실행 (Dual-Stack)"]
         ECS["ECS Fargate<br/>Strands Agent (main.py)"]
-        LAMBDA["Lambda Container<br/>CC Headless (handler.ts)"]
+        ECS_CC["ECS Fargate<br/>CC Headless (main.ts)"]
     end
 
     subgraph LLM["LLM 추론"]
@@ -133,27 +133,27 @@ graph TB
 
     CW_ALARM --> SNS_IN
     SNS_IN --> SQS_FARGATE --> ECS
-    SNS_IN --> SQS_LAMBDA --> LAMBDA
+    SNS_IN --> SQS_CC --> ECS_CC
     ECS <--> BEDROCK_PLAN
     ECS <--> BEDROCK_EXEC
-    LAMBDA <--> BEDROCK_CC
+    ECS_CC <--> BEDROCK_CC
     ECS --> CW_MCP
     ECS --> CT_MCP
     ECS --> GH_MCP
-    LAMBDA --> CW_MCP
-    LAMBDA --> CT_MCP
-    LAMBDA --> GH_MCP
+    ECS_CC --> CW_MCP
+    ECS_CC --> CT_MCP
+    ECS_CC --> GH_MCP
     CW_MCP --> CW_API
     CT_MCP --> CT_API
     GH_MCP --> GH_API
     ECS <--> S3_VECTORS
     ECS --> S3
     ECS --> DDB
-    LAMBDA <--> S3_VECTORS
-    LAMBDA --> S3
-    LAMBDA --> DDB
+    ECS_CC <--> S3_VECTORS
+    ECS_CC --> S3
+    ECS_CC --> DDB
     ECS --> SNS_OUT
-    LAMBDA --> SNS_OUT
+    ECS_CC --> SNS_OUT
     SNS_OUT --> SRE
 ```
 
@@ -262,13 +262,13 @@ stateDiagram-v2
     COMPLETED --> [*]
 ```
 
-### Agent Pipeline — Lambda (CC Headless, 프롬프트 주도)
+### Agent Pipeline — ECS Fargate (CC Headless, 프롬프트 주도)
 
 CC on Bedrock headless 모드에서 단일 프롬프트로 RCA 전체 워크플로우를 수행합니다. CC가 MCP 도구를 자율적으로 호출합니다.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SQS_RECEIVED: SQS Event Source Mapping
+    [*] --> SQS_RECEIVED: SQS Long Polling
 
     SQS_RECEIVED --> IDEMPOTENCY_CHECK: AlarmPayload 파싱
     note right of IDEMPOTENCY_CHECK
@@ -283,13 +283,8 @@ stateDiagram-v2
     note right of ANALYZING
         claude -p <prompt> --output-format json
         --mcp-config mcp-config.json
-        프롬프트 내 5단계 RCA 워크플로우:
-        1. 초기 스코핑 (2분)
-        2. 가설 생성 (2분)
-        3. 증거 수집 + 검증 루프 (4분)
-        4. 종료 판단 (1분)
-        5. 보고서 생성 (1분)
-        timeout: 10분 (프롬프트), 15분 (Lambda)
+        프롬프트 내 10단계 RCA 워크플로우
+        (타임아웃 제한 없음, ECS Fargate)
     end note
 
     ANALYZING --> COMPLETED: 보고서 S3 저장 + SNS 알림
@@ -454,23 +449,23 @@ flowchart TD
 - **자동 복구**: `REMEDIATION_ENABLED=true` 시 플레이북 기반 fault reset API 호출 + ECS force deployment
 - **복구 검증**: CloudWatch MCP로 메트릭 정상화 확인
 
-#### Lambda Stack (CC Headless)
-- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 7단계 워크플로우 정의 (스코핑 ~ 복구 ~ 보고서), CC가 자율적으로 MCP 도구 호출
+#### Fargate Stack (CC Headless)
+- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 10단계 워크플로우 정의 (스코핑 ~ 복구 ~ 보고서), CC가 자율적으로 MCP 도구 호출
 - **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
-- **시간 예산 관리**: 프롬프트 레벨 10분 분석 + Lambda 15분 타임아웃
-- **멱등성**: DynamoDB `IDEMP#` 키로 Fargate 스택과의 중복 처리 방지
+- **타임아웃 없음**: ECS Fargate에서 실행되므로 Lambda 15분 제한 없음
+- **멱등성**: DynamoDB `IDEMP#` 키로 Strands 스택과의 중복 처리 방지
 - **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
 
 ### Technology Stack
 
-| Component | Fargate Stack | Lambda Stack |
+| Component | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
 |-----------|--------------|--------------|
 | 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (TypeScript) |
-| 실행 환경 | AWS ECS Fargate | AWS Lambda Container Image |
-| 이벤트 수신 | SQS Long Polling | SQS Event Source Mapping |
+| 실행 환경 | AWS ECS Fargate | AWS ECS Fargate |
+| 이벤트 수신 | SQS Long Polling | SQS Long Polling |
 | LLM 추론 | Bedrock — Sonnet 4.6 (Planning) + Haiku 4.5 (Execution) | Bedrock — Sonnet 4.6 (CC 프롬프트 주도) |
 | MCP 도구 | CloudWatch + CloudTrail + GitHub MCP | CloudWatch + CloudTrail + GitHub MCP |
-| 환경 설정 | python-dotenv (`env/local.env`) | Lambda 환경변수 |
+| 환경 설정 | python-dotenv (`env/local.env`) | ECS 환경변수 |
 
 | Component (공유) | Technology |
 |-----------|-----------|
@@ -547,7 +542,7 @@ CDK 스택 구성 (9개):
 | StorageStack | S3 Evidence/Report 버킷 |
 | RdsStack | PostgreSQL 17.4 (Healthcare 서비스용) |
 | RcaAgentServiceStack | ECS Fargate — Strands RCA 에이전트 |
-| CcHeadlessStack | Lambda Container — CC headless RCA 에이전트 |
+| CcHeadlessStack | ECS Fargate — CC headless RCA 에이전트 |
 | HealthcareServiceStack | ECS Fargate — Healthcare 센서 서비스 + Cloud Map Private DNS |
 
 모든 서비스는 Private subnet에 배포되며, 인바운드 트래픽이 차단됩니다. 자세한 스택 의존관계와 IAM 권한은 [`packages/infra/AGENTS.md`](./packages/infra/AGENTS.md)를 참조하세요.
@@ -556,9 +551,9 @@ CDK 스택 구성 (9개):
 
 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, 알람 메시지 수신 시 RCA 워크플로우를 자동 시작합니다.
 
-### Agent — Lambda (CC Headless)
+### Agent — Fargate (CC Headless)
 
-CC Headless 에이전트는 Lambda Container Image(AWS Lambda Node.js 22 base)로 배포됩니다. SQS Event Source Mapping으로 알람을 수신하며, CC CLI를 subprocess로 호출하여 RCA를 수행합니다.
+CC Headless 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, CC CLI를 subprocess로 호출하여 RCA를 수행합니다.
 
 ```bash
 cd packages/cc-headless
