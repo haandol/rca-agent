@@ -85,7 +85,7 @@ class TestCheckTermination:
         assert decision.should_terminate
         assert decision.reason == TerminationReason.MAX_LOOPS
 
-    def test_all_rejected(self):
+    def test_all_rejected_does_not_terminate(self):
         j = _make_judgment(status=HypothesisStatus.REJECTED, confidence=0.1)
         h = _make_hypothesis()
 
@@ -93,8 +93,7 @@ class TestCheckTermination:
             judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=1
         )
 
-        assert decision.should_terminate
-        assert decision.reason == TerminationReason.ALL_REJECTED
+        assert not decision.should_terminate
 
     def test_no_termination(self):
         j = _make_judgment(status=HypothesisStatus.NEEDS_INVESTIGATION, confidence=0.5)

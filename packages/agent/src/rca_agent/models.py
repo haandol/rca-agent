@@ -18,6 +18,7 @@ class RcaSessionState(StrEnum):
     VERIFICATION = "VERIFICATION"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    OUTDATED = "OUTDATED"
 
 
 class HypothesisCategory(StrEnum):

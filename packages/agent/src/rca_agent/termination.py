@@ -72,15 +72,6 @@ def check_termination(
             best_hypothesis=_best_hypothesis(judgments, hypotheses),
         )
 
-    all_rejected = judgments and all(j.status == HypothesisStatus.REJECTED for j in judgments)
-    if all_rejected:
-        logger.warning("Termination: all hypotheses rejected")
-        return TerminationDecision(
-            should_terminate=True,
-            reason=TerminationReason.ALL_REJECTED,
-            best_hypothesis=_best_hypothesis(judgments, hypotheses),
-        )
-
     return TerminationDecision(should_terminate=False)
 
 

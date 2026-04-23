@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import time
+from datetime import UTC, datetime
 
 import boto3
 
@@ -26,11 +27,13 @@ from rca_agent.agent_factory import (
 )
 from rca_agent.branching import run_branching
 from rca_agent.config import (
+    ALARM_STALENESS_SECONDS,
     DYNAMODB_TABLE_NAME,
     GITHUB_PERSONAL_ACCESS_TOKEN,
     HEALTHCARE_ECS_CLUSTER,
     HEALTHCARE_ECS_SERVICE,
     HEALTHCARE_SERVICE_HOST,
+    RCA_BEAM_WIDTH,
     RCA_MAX_REGENERATION_ROUNDS,
     REMEDIATION_ENABLED,
     S3_REPORT_BUCKET,
@@ -52,6 +55,7 @@ from rca_agent.session_store import (
     create_session,
     mark_completed,
     mark_failed,
+    mark_outdated,
     update_state,
 )
 from rca_agent.termination import check_termination
@@ -105,6 +109,17 @@ def _create_dynamodb_client():
     if not DYNAMODB_TABLE_NAME:
         return None
     return boto3.client("dynamodb")
+
+
+def _select_beam(
+    hypotheses: list,
+    prioritization_result,
+    beam_width: int,
+) -> list:
+    rank_map = {p.hypothesis_id: p.priority_rank for p in prioritization_result.prioritized}
+    candidates = [h for h in hypotheses if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION)]
+    candidates.sort(key=lambda h: rank_map.get(h.hypothesis_id, 9999))
+    return candidates[:beam_width]
 
 
 class _Agents:
@@ -199,6 +214,25 @@ def _process_alarm(
     if check_duplicate(alarm, dynamodb_client=dynamodb_client):
         logger.info("Skipping duplicate alarm: %s", alarm.alarm_name)
         return
+
+    # Stale alarm check
+    if alarm.state_change_time:
+        age_seconds = (datetime.now(UTC) - alarm.state_change_time).total_seconds()
+        if age_seconds > ALARM_STALENESS_SECONDS:
+            logger.info(
+                "Skipping stale alarm: %s (age=%.0fs > %ds)",
+                alarm.alarm_name,
+                age_seconds,
+                ALARM_STALENESS_SECONDS,
+            )
+            session = create_session(alarm, dynamodb_client=dynamodb_client)
+            if session:
+                mark_outdated(
+                    session.rca_id,
+                    reason=f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold",
+                    dynamodb_client=dynamodb_client,
+                )
+            return
 
     # Create DynamoDB session
     session = create_session(alarm, dynamodb_client=dynamodb_client)
@@ -310,20 +344,24 @@ def _run_pipeline(
             parent_span_id=loop_span.span_id,
             input_summary=f"가설={len(hypotheses)}개",
         ) as s:
-            run_prioritization(
+            prioritization_result = run_prioritization(
                 scoping_result,
                 hypotheses,
                 agents.prioritization,
             )
             s.output_summary = f"가설 {len(hypotheses)}개 우선순위 결정"
 
-        # F4: Evidence collection
+        # Beam selection: pick top-N by priority_rank
+        active_hypotheses = _select_beam(hypotheses, prioritization_result, RCA_BEAM_WIDTH)
+        logger.info("Beam selection: %d/%d hypotheses", len(active_hypotheses), len(hypotheses))
+
+        # F4: Evidence collection (beam only)
         update_state(rca_id, RcaSessionState.EVIDENCE_COLLECTION, dynamodb_client=dynamodb_client)
-        new_hypotheses = [h for h in hypotheses if h.hypothesis_id not in evidence_map]
+        new_hypotheses = [h for h in active_hypotheses if h.hypothesis_id not in evidence_map]
         with trace.span(
             SpanType.EVIDENCE_COLLECTION,
             parent_span_id=loop_span.span_id,
-            input_summary=f"신규_가설={len(new_hypotheses)}개",
+            input_summary=f"beam={len(active_hypotheses)}개, 신규={len(new_hypotheses)}개",
         ) as s:
             if new_hypotheses:
                 new_evidence = run_evidence_collection(
@@ -336,20 +374,21 @@ def _run_pipeline(
                 for h_id, ev_text in new_evidence.items():
                     trace.update_hypothesis_evidence(h_id, evidence_summary=ev_text[:500])
             s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
-            s.metadata = {"신규_가설_수": len(new_hypotheses)}
+            s.metadata = {"신규_가설_수": len(new_hypotheses), "beam_width": RCA_BEAM_WIDTH}
         timeline.append(
-            f"Loop {validation_loop_count}: collected evidence for {len(new_hypotheses)} hypotheses",
+            f"Loop {validation_loop_count}: evidence for {len(new_hypotheses)} hypotheses"
+            f" (beam={len(active_hypotheses)})",
         )
 
-        # F5: Validation
+        # F5: Validation (beam only)
         update_state(rca_id, RcaSessionState.HYPOTHESIS_VALIDATION, dynamodb_client=dynamodb_client)
         with trace.span(
             SpanType.VALIDATION,
             parent_span_id=loop_span.span_id,
-            input_summary=f"가설={len(hypotheses)}개, 증거={len(evidence_map)}건",
+            input_summary=f"beam={len(active_hypotheses)}개, 증거={len(evidence_map)}건",
         ) as s:
             validation_result = run_validation(
-                hypotheses,
+                active_hypotheses,
                 evidence_map,
                 agents.validation,
             )
@@ -365,9 +404,10 @@ def _run_pipeline(
                 "확정": confirmed_count,
                 "기각": rejected_count,
                 "전체기각": validation_result.all_rejected,
+                "beam_width": RCA_BEAM_WIDTH,
             }
         timeline.append(
-            f"Loop {validation_loop_count}: validated {len(all_judgments)} hypotheses",
+            f"Loop {validation_loop_count}: validated {len(all_judgments)} hypotheses (beam={len(active_hypotheses)})",
         )
 
         for j in all_judgments:
@@ -377,6 +417,9 @@ def _run_pipeline(
                 confidence=j.confidence_score,
                 judgment_reasoning=j.reasoning[:500],
             )
+            h = next((h for h in hypotheses if h.hypothesis_id == j.hypothesis_id), None)
+            if h:
+                h.status = j.status
 
         # Track rejected descriptions for branching dedup
         for j in all_judgments:

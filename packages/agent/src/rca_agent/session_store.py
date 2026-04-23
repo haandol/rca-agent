@@ -164,6 +164,39 @@ def mark_completed(
         return False
 
 
+def mark_outdated(
+    rca_id: str,
+    *,
+    reason: str = "",
+    dynamodb_client=None,
+) -> bool:
+    if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
+        return False
+
+    now = datetime.now(UTC).isoformat()
+
+    try:
+        dynamodb_client.update_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key={
+                "PK": {"S": f"RCA#{rca_id}"},
+                "SK": {"S": "SESSION"},
+            },
+            UpdateExpression="SET #st = :state, updated_at = :now, error_reason = :reason",
+            ExpressionAttributeNames={"#st": "state"},
+            ExpressionAttributeValues={
+                ":state": {"S": RcaSessionState.OUTDATED.value},
+                ":now": {"S": now},
+                ":reason": {"S": reason},
+            },
+        )
+        logger.info("Session %s marked OUTDATED: %s", rca_id, reason)
+        return True
+    except ClientError:
+        logger.exception("Failed to mark session %s as outdated", rca_id)
+        return False
+
+
 def mark_failed(
     rca_id: str,
     *,

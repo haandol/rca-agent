@@ -19,8 +19,11 @@ class TestRcaSessionState:
             "EVIDENCE_COLLECTION",
             "HYPOTHESIS_VALIDATION",
             "REPORT_GENERATION",
+            "REMEDIATION",
+            "VERIFICATION",
             "COMPLETED",
             "FAILED",
+            "OUTDATED",
         }
         assert {s.value for s in RcaSessionState} == expected
 
