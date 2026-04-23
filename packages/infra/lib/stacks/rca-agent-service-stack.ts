@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -62,6 +63,12 @@ export class RcaAgentServiceStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const githubPatSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      'GithubPatSecret',
+      `${ns}/github/pat`,
+    );
+
     taskDef.addContainer('RcaAgent', {
       containerName: 'rca-agent',
       image: ecs.ContainerImage.fromRegistry(
@@ -89,6 +96,9 @@ export class RcaAgentServiceStack extends cdk.Stack {
         ...(props.healthcareServiceName && {
           HEALTHCARE_ECS_SERVICE: props.healthcareServiceName,
         }),
+      },
+      secrets: {
+        GITHUB_PERSONAL_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(githubPatSecret),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'rca-agent',

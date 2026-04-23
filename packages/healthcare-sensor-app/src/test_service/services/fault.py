@@ -1,11 +1,13 @@
 import logging
 import threading
 
+import asyncpg
+
 from test_service.ports.interfaces.database import DatabasePort
 
 logger = logging.getLogger(__name__)
 
-_leaked_sessions: list = []
+_leaked_sessions: list[asyncpg.Connection] = []
 _memory_ballast: list[bytes] = []
 _cpu_stop_event = threading.Event()
 _cpu_threads: list[threading.Thread] = []
@@ -18,11 +20,15 @@ class FaultInjectionService:
         self._database = database
 
     async def leak_connections(self, count: int) -> dict:
+        url = self._database.engine.url
+        dsn = f"postgresql://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}"
         for _ in range(count):
-            async for session in self._database.leaky_session():
-                _leaked_sessions.append(session)
-            checked = self._database.checked_out_connections()
-            logger.warning("DB connection leaked (intentional fault injection)", extra={"pool_checked_out": checked})
+            conn = await asyncpg.connect(dsn)
+            _leaked_sessions.append(conn)
+            logger.warning(
+                "DB connection leaked (intentional fault injection)",
+                extra={"leaked_total": len(_leaked_sessions)},
+            )
 
         return {
             "leaked_total": len(_leaked_sessions),
@@ -32,9 +38,9 @@ class FaultInjectionService:
 
     async def reset_leaked_connections(self) -> dict:
         closed = 0
-        for session in _leaked_sessions:
+        for conn in _leaked_sessions:
             try:
-                await session.close()
+                await conn.close()
                 closed += 1
             except Exception:
                 pass

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from mcp import StdioServerParameters, stdio_client
@@ -71,13 +72,19 @@ def create_execution_model(
     )
 
 
+def _mcp_env(**extra: str) -> dict[str, str]:
+    env = {**os.environ, "FASTMCP_LOG_LEVEL": "ERROR"}
+    env.update(extra)
+    return env
+
+
 def create_cloudwatch_mcp_client() -> MCPClient:
     return MCPClient(
         lambda: stdio_client(
             StdioServerParameters(
                 command="uvx",
                 args=["--from", "awslabs-cloudwatch-mcp-server", "awslabs.cloudwatch-mcp-server"],
-                env={"FASTMCP_LOG_LEVEL": "ERROR"},
+                env=_mcp_env(),
             )
         )
     )
@@ -89,7 +96,7 @@ def create_cloudtrail_mcp_client() -> MCPClient:
             StdioServerParameters(
                 command="uvx",
                 args=["--from", "awslabs-cloudtrail-mcp-server", "awslabs.cloudtrail-mcp-server"],
-                env={"FASTMCP_LOG_LEVEL": "ERROR"},
+                env=_mcp_env(),
             )
         )
     )
@@ -117,9 +124,7 @@ def create_github_mcp_client() -> MCPClient:
                     "GITHUB_TOOLSETS=repos,pull_requests",
                     "ghcr.io/github/github-mcp-server",
                 ],
-                env={
-                    "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_PERSONAL_ACCESS_TOKEN,
-                },
+                env=_mcp_env(GITHUB_PERSONAL_ACCESS_TOKEN=GITHUB_PERSONAL_ACCESS_TOKEN),
             )
         )
     )

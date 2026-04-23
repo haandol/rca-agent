@@ -20,6 +20,15 @@ COPY .claude/ ./.claude/
 COPY mcp-config.json ./
 COPY CLAUDE.md ./
 
+RUN useradd -m -s /bin/bash ccuser \
+    && chown -R ccuser:ccuser /app \
+    && cp -r /root/.local /home/ccuser/.local \
+    && chown -R ccuser:ccuser /home/ccuser/.local
+
+USER ccuser
+ENV PATH="/home/ccuser/.local/bin:$PATH"
+ENV HOME="/home/ccuser"
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \

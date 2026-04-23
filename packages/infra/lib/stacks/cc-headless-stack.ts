@@ -3,6 +3,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
@@ -95,6 +96,12 @@ export class CcHeadlessStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const githubPatSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      'GithubPatSecret',
+      `${ns}/github/pat`,
+    );
+
     taskDef.addContainer('CcHeadless', {
       containerName: 'cc-headless',
       image: ecs.ContainerImage.fromRegistry(
@@ -111,6 +118,9 @@ export class CcHeadlessStack extends cdk.Stack {
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
         S3_REPORT_BUCKET: props.reportBucket,
         SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
+      },
+      secrets: {
+        GITHUB_PERSONAL_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(githubPatSecret),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'cc-headless',
