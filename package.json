@@ -5,6 +5,7 @@
   "scripts": {
     "deploy": "nx run infra:deploy",
     "deploy:service": "pnpm --filter infra run deploy:service --",
+    "dev:dashboard": "pnpm --filter dashboard run dev",
     "build": "nx run-many -t build",
     "test": "nx run-many -t test"
   },
