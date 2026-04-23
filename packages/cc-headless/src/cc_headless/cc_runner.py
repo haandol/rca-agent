@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
+
 from cc_headless.config import CC_MAX_TURNS, CC_TIMEOUT_SECONDS
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 def _find_file(name: str) -> str:
@@ -47,7 +48,7 @@ def run_claude(prompt: str, *, mcp_config: str | None = None) -> CcResult:
 
     env = {**os.environ, "HOME": "/tmp"}
 
-    logger.info("CC CLI args: %s", json.dumps(args[1:]))
+    logger.info("cc_cli_started", max_turns=CC_MAX_TURNS, mcp_config=mcp_config or _MCP_CONFIG_PATH)
 
     try:
         proc = subprocess.run(
@@ -67,11 +68,14 @@ def run_claude(prompt: str, *, mcp_config: str | None = None) -> CcResult:
             raw_output="",
         )
 
-    logger.info("CC CLI stderr: %s", (proc.stderr or "")[:3000])
-    logger.info("CC CLI stdout length: %d", len(proc.stdout or ""))
+    stdout_len = len(proc.stdout or "")
+    stderr_len = len(proc.stderr or "")
+    logger.info("cc_cli_finished", rc=proc.returncode, stdout_bytes=stdout_len, stderr_bytes=stderr_len)
+    if proc.stderr:
+        logger.info("cc_cli_stderr", stderr=proc.stderr[:5000])
 
     if proc.returncode != 0:
-        logger.error("CC CLI error: %s", (proc.stderr or "")[:3000])
+        logger.error("cc_cli_failed", rc=proc.returncode, stdout=(proc.stdout or "")[:5000])
         return CcResult(
             success=False,
             result=f"Claude Code process error (rc={proc.returncode})",

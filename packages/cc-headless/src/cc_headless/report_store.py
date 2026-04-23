@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
 
 import boto3
+import structlog
 from botocore.config import Config
 
 from cc_headless.config import ENGINE, PRESIGNED_URL_EXPIRY, S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 _s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
 _sns = boto3.client("sns")
@@ -41,7 +41,7 @@ def send_notification(
                 ExpiresIn=PRESIGNED_URL_EXPIRY,
             )
         except Exception:
-            logger.warning("Failed to generate presigned URL, falling back to S3 URI")
+            logger.warning("presigned_url_failed", rca_id=rca_id)
 
     message = json.dumps(
         {

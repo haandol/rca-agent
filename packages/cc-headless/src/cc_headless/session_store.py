@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import logging
+import json
 import time
 from datetime import UTC, datetime
 
 import boto3
+import structlog
 from botocore.exceptions import ClientError
 
-from cc_headless.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from cc_headless.config import (
+    DYNAMODB_TABLE_NAME,
+    ENGINE,
+    SESSION_TTL_DAYS,
+)
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 _ddb = boto3.client("dynamodb")
 
@@ -32,36 +37,35 @@ def check_duplicate(idempotency_key: str) -> bool:
     return "Item" in resp
 
 
-def create_session(rca_id: str, alarm_name: str, idempotency_key: str) -> bool:
+def create_session(
+    rca_id: str,
+    alarm_name: str,
+    idempotency_key: str,
+    *,
+    alarm_data: dict | None = None,
+) -> bool:
     if not DYNAMODB_TABLE_NAME:
         return True
     now = _now_iso()
     ttl = _ttl()
+    item = {
+        "PK": {"S": f"RCA#{rca_id}"},
+        "SK": {"S": "SESSION"},
+        "rca_id": {"S": rca_id},
+        "idempotency_key": {"S": idempotency_key},
+        "alarm_name": {"S": alarm_name},
+        "state": {"S": "ALARM_RECEIVED"},
+        "engine": {"S": ENGINE},
+        "created_at": {"S": now},
+        "updated_at": {"S": now},
+        "ttl": {"N": ttl},
+    }
+    if alarm_data:
+        item["alarm_data"] = {"S": json.dumps(alarm_data)}
     try:
         _ddb.put_item(
             TableName=DYNAMODB_TABLE_NAME,
-            Item={
-                "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": "SESSION"},
-                "rca_id": {"S": rca_id},
-                "idempotency_key": {"S": idempotency_key},
-                "alarm_name": {"S": alarm_name},
-                "state": {"S": "ALARM_RECEIVED"},
-                "engine": {"S": ENGINE},
-                "created_at": {"S": now},
-                "updated_at": {"S": now},
-                "ttl": {"N": ttl},
-            },
-            ConditionExpression="attribute_not_exists(PK)",
-        )
-        _ddb.put_item(
-            TableName=DYNAMODB_TABLE_NAME,
-            Item={
-                "PK": {"S": f"IDEMP#{idempotency_key}"},
-                "SK": {"S": "SESSION"},
-                "rca_id": {"S": rca_id},
-                "ttl": {"N": ttl},
-            },
+            Item=item,
             ConditionExpression="attribute_not_exists(PK)",
         )
         return True
@@ -69,6 +73,20 @@ def create_session(rca_id: str, alarm_name: str, idempotency_key: str) -> bool:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return False
         raise
+
+
+def write_idempotency_key(idempotency_key: str, rca_id: str) -> None:
+    if not DYNAMODB_TABLE_NAME:
+        return
+    _ddb.put_item(
+        TableName=DYNAMODB_TABLE_NAME,
+        Item={
+            "PK": {"S": f"IDEMP#{idempotency_key}"},
+            "SK": {"S": "SESSION"},
+            "rca_id": {"S": rca_id},
+            "ttl": {"N": _ttl()},
+        },
+    )
 
 
 def update_state(rca_id: str, state: str) -> None:
@@ -91,7 +109,11 @@ def mark_completed(rca_id: str, root_cause: str) -> None:
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": "SESSION"}},
         UpdateExpression="SET #state = :state, root_cause = :rc, updated_at = :now",
         ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={":state": {"S": "COMPLETED"}, ":rc": {"S": root_cause}, ":now": {"S": _now_iso()}},
+        ExpressionAttributeValues={
+            ":state": {"S": "COMPLETED"},
+            ":rc": {"S": root_cause},
+            ":now": {"S": _now_iso()},
+        },
     )
 
 
@@ -103,5 +125,9 @@ def mark_failed(rca_id: str, error_reason: str) -> None:
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": "SESSION"}},
         UpdateExpression="SET #state = :state, error_reason = :err, updated_at = :now",
         ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={":state": {"S": "FAILED"}, ":err": {"S": error_reason}, ":now": {"S": _now_iso()}},
+        ExpressionAttributeValues={
+            ":state": {"S": "FAILED"},
+            ":err": {"S": error_reason},
+            ":now": {"S": _now_iso()},
+        },
     )
