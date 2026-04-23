@@ -16,7 +16,7 @@ export class DatabaseStack extends cdk.Stack {
   }
 
   private newRcaSessionTable(tableName: string): dynamodb.Table {
-    return new dynamodb.Table(this, 'RcaSessionTable', {
+    const table = new dynamodb.Table(this, 'RcaSessionTable', {
       tableName,
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
@@ -27,5 +27,16 @@ export class DatabaseStack extends cdk.Stack {
       },
       timeToLiveAttribute: 'ttl',
     });
+
+    table.addGlobalSecondaryIndex({
+      indexName: 'idempotency-index',
+      partitionKey: {
+        name: 'idempotency_key',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.KEYS_ONLY,
+    });
+
+    return table;
   }
 }

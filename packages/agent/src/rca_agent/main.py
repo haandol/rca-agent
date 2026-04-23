@@ -10,6 +10,7 @@ import time
 import boto3
 
 from rca_agent.agent_factory import (
+    create_aws_knowledge_mcp_client,
     create_branching_agent,
     create_cloudtrail_mcp_client,
     create_cloudwatch_mcp_client,
@@ -437,9 +438,10 @@ def main() -> None:
     start_health_server()
     logger.info("Health server started on port 8000")
 
+    ak_mcp_client = create_aws_knowledge_mcp_client()
     cw_mcp_client = create_cloudwatch_mcp_client()
     ct_mcp_client = create_cloudtrail_mcp_client()
-    scoping_mcp_clients = [cw_mcp_client, ct_mcp_client]
+    scoping_mcp_clients = [ak_mcp_client, cw_mcp_client, ct_mcp_client]
     evidence_mcp_clients = list(scoping_mcp_clients)
     if GITHUB_PERSONAL_ACCESS_TOKEN:
         gh_mcp_client = create_github_mcp_client()

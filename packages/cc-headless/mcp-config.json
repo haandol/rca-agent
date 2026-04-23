@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "aws-knowledge": {
+      "type": "http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    },
     "cloudwatch": {
       "command": "uvx",
       "args": ["awslabs.cw-mcp-server@latest"],
@@ -12,18 +16,6 @@
       "args": ["awslabs.cloudtrail-mcp-server@latest"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    },
-    "github": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "-e", "GITHUB_TOOLSETS=repos,pull_requests",
-        "ghcr.io/github/github-mcp-server"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
       }
     }
   }

@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from mcp import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 from strands import Agent
 from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
@@ -91,6 +92,13 @@ def create_cloudtrail_mcp_client() -> MCPClient:
             )
         )
     )
+
+
+AWS_KNOWLEDGE_MCP_URL = "https://knowledge-mcp.global.api.aws"
+
+
+def create_aws_knowledge_mcp_client() -> MCPClient:
+    return MCPClient(lambda: streamablehttp_client(AWS_KNOWLEDGE_MCP_URL))
 
 
 def create_github_mcp_client() -> MCPClient:

@@ -11,6 +11,8 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
 RUN groupadd --gid 1000 app && useradd --uid 1000 --gid 1000 --no-create-home app
 
 WORKDIR /app

@@ -22,7 +22,7 @@ export function runClaude(
     prompt,
     '--output-format',
     'json',
-    '--verbose',
+    '--dangerously-skip-permissions',
   ];
 
   if (opts?.maxTurns) {
@@ -36,12 +36,20 @@ export function runClaude(
   const timeout = opts?.timeoutMs ?? CC_TIMEOUT_MS;
 
   return new Promise((resolve) => {
+    const env = {
+      ...process.env,
+      HOME: '/tmp',
+    };
+    console.log('CC CLI args:', JSON.stringify(args));
     execFile(
       'claude',
       args,
-      { timeout, maxBuffer: MAX_BUFFER },
+      { timeout, maxBuffer: MAX_BUFFER, env, cwd: '/var/task' },
       (error, stdout, stderr) => {
         if (error) {
+          console.error('CC CLI error:', error.message);
+          console.error('CC CLI error stderr:', stderr?.slice(0, 3000));
+          console.error('CC CLI error stdout:', stdout?.slice(0, 3000));
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
             resolve({
               success: false,
@@ -60,6 +68,8 @@ export function runClaude(
             return;
           }
 
+          console.error('CC CLI stderr:', stderr);
+          console.error('CC CLI stdout:', stdout?.slice(0, 2000));
           resolve({
             success: false,
             result: `Claude Code process error: ${error.message}`,
@@ -67,6 +77,10 @@ export function runClaude(
           });
           return;
         }
+
+        console.log('CC CLI stderr:', stderr?.slice(0, 3000) || '(empty)');
+        console.log('CC CLI stdout length:', stdout?.length ?? 0);
+        console.log('CC CLI stdout preview:', stdout?.slice(0, 2000) || '(empty)');
 
         try {
           const parsed = JSON.parse(stdout);
