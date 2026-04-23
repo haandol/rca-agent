@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
 from test_service.adapters.primary.schemas import (
-    FaultDurationRequest,
     FaultMemoryRequest,
     FaultRequest,
     FaultSlowQueryRequest,
@@ -18,9 +17,11 @@ class FaultController:
         self.router.add_api_route("/db-leak", self.db_leak, methods=["POST"])
         self.router.add_api_route("/db-leak/reset", self.db_leak_reset, methods=["POST"])
         self.router.add_api_route("/high-cpu", self.high_cpu, methods=["POST"])
+        self.router.add_api_route("/high-cpu/reset", self.high_cpu_reset, methods=["POST"])
         self.router.add_api_route("/high-memory", self.high_memory, methods=["POST"])
         self.router.add_api_route("/high-memory/reset", self.high_memory_reset, methods=["POST"])
         self.router.add_api_route("/slow-query", self.slow_query, methods=["POST"])
+        self.router.add_api_route("/slow-query/reset", self.slow_query_reset, methods=["POST"])
 
     def _require_enabled(self):
         if not self._enabled:
@@ -34,9 +35,13 @@ class FaultController:
         self._require_enabled()
         return await self._service.reset_leaked_connections()
 
-    async def high_cpu(self, req: FaultDurationRequest):
+    async def high_cpu(self):
         self._require_enabled()
-        return self._service.start_high_cpu(req.seconds)
+        return self._service.start_high_cpu()
+
+    async def high_cpu_reset(self):
+        self._require_enabled()
+        return self._service.stop_high_cpu()
 
     async def high_memory(self, req: FaultMemoryRequest):
         self._require_enabled()
@@ -48,4 +53,8 @@ class FaultController:
 
     async def slow_query(self, req: FaultSlowQueryRequest):
         self._require_enabled()
-        return await self._service.slow_query(req.seconds)
+        return self._service.start_slow_query(req.seconds)
+
+    async def slow_query_reset(self):
+        self._require_enabled()
+        return self._service.stop_slow_query()

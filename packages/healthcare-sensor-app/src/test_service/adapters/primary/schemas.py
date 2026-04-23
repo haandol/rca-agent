@@ -39,10 +39,6 @@ class FaultRequest(BaseModel):
     count: int = 10
 
 
-class FaultDurationRequest(BaseModel):
-    seconds: int = 30
-
-
 class FaultMemoryRequest(BaseModel):
     megabytes: int = 256
 

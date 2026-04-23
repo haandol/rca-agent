@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
+import * as cloudmap from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
 
 interface IProps extends cdk.StackProps {
@@ -14,14 +15,26 @@ interface IProps extends cdk.StackProps {
 }
 
 export class HealthcareServiceStack extends cdk.Stack {
+  public readonly serviceName: string;
+  public readonly clusterName: string;
+  public readonly serviceHost: string;
+
   constructor(scope: Construct, id: string, props: IProps) {
     super(scope, id, props);
 
     const ns = this.node.tryGetContext('ns') as string;
+    this.serviceName = `${ns}Healthcare`;
+    this.clusterName = `${ns}Healthcare`;
+
+    const namespace = new cloudmap.PrivateDnsNamespace(this, 'Namespace', {
+      name: `${ns.toLowerCase()}.local`,
+      vpc: props.vpc,
+    });
+    this.serviceHost = `healthcare.${ns.toLowerCase()}.local`;
 
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props);
-    this.newService(ns, cluster, taskDefinition, props);
+    this.newService(ns, cluster, taskDefinition, props, namespace);
   }
 
   private newCluster(ns: string, vpc: ec2.IVpc): ecs.Cluster {
@@ -137,6 +150,7 @@ export class HealthcareServiceStack extends cdk.Stack {
     cluster: ecs.Cluster,
     taskDefinition: ecs.FargateTaskDefinition,
     props: IProps,
+    namespace: cloudmap.PrivateDnsNamespace,
   ): ecs.FargateService {
     const service = new ecs.FargateService(this, 'Service', {
       serviceName: `${ns}Healthcare`,
@@ -148,6 +162,11 @@ export class HealthcareServiceStack extends cdk.Stack {
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
       enableExecuteCommand: true,
+      cloudMapOptions: {
+        name: 'healthcare',
+        cloudMapNamespace: namespace,
+        dnsRecordType: cloudmap.DnsRecordType.A,
+      },
     });
 
     return service;

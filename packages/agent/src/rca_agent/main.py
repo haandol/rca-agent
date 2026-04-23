@@ -22,12 +22,17 @@ from rca_agent.agent_factory import (
     create_report_agent,
     create_scoping_agent,
     create_validation_agent,
+    create_verification_agent,
 )
 from rca_agent.branching import run_branching
 from rca_agent.config import (
     DYNAMODB_TABLE_NAME,
     GITHUB_PERSONAL_ACCESS_TOKEN,
+    HEALTHCARE_ECS_CLUSTER,
+    HEALTHCARE_ECS_SERVICE,
+    HEALTHCARE_SERVICE_HOST,
     RCA_MAX_REGENERATION_ROUNDS,
+    REMEDIATION_ENABLED,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
     SNS_NOTIFICATION_TOPIC_ARN,
@@ -39,6 +44,7 @@ from rca_agent.models import AlarmPayload, HypothesisStatus, RcaSessionState
 from rca_agent.notification import build_notification, send_notification
 from rca_agent.playbook_gen import run_playbook_generation, save_playbook_to_s3_vectors
 from rca_agent.prioritization import run_prioritization
+from rca_agent.remediation import execute_remediation
 from rca_agent.report import run_report_generation, save_report_to_s3
 from rca_agent.scoping import run_scoping
 from rca_agent.session_store import (
@@ -50,6 +56,7 @@ from rca_agent.session_store import (
 )
 from rca_agent.termination import check_termination
 from rca_agent.validation import run_validation
+from rca_agent.verification import run_verification
 
 logging.basicConfig(
     level=logging.INFO,
@@ -111,6 +118,7 @@ class _Agents:
         self._branching = None
         self._report = None
         self._playbook = None
+        self._verification = None
 
     @property
     def scoping(self):
@@ -159,6 +167,12 @@ class _Agents:
         if self._playbook is None:
             self._playbook = create_playbook_agent()
         return self._playbook
+
+    @property
+    def post_remediation_verification(self):
+        if self._verification is None:
+            self._verification = create_verification_agent(mcp_clients=self._mcp_clients)
+        return self._verification
 
 
 def _process_alarm(
@@ -412,7 +426,40 @@ def _run_pipeline(
     )
     logger.info("Playbook %s: %s", playbook.playbook_id, playbook.failure_type)
 
-    # F9: Notification
+    # F9: Remediation
+    remediation_result = None
+    if REMEDIATION_ENABLED and HEALTHCARE_SERVICE_HOST:
+        update_state(rca_id, RcaSessionState.REMEDIATION, dynamodb_client=dynamodb_client)
+        remediation_result = execute_remediation(
+            report=rca_report,
+            playbook=playbook,
+            service_host=HEALTHCARE_SERVICE_HOST,
+            ecs_cluster=HEALTHCARE_ECS_CLUSTER,
+            ecs_service=HEALTHCARE_ECS_SERVICE,
+        )
+        logger.info(
+            "Remediation: success=%s, summary=%s",
+            remediation_result.overall_success,
+            remediation_result.summary[:200],
+        )
+
+    # F10: Verification
+    verification_result = None
+    if remediation_result and remediation_result.overall_success:
+        update_state(rca_id, RcaSessionState.VERIFICATION, dynamodb_client=dynamodb_client)
+        verification_result = run_verification(
+            agent=agents.post_remediation_verification,
+            alarm=alarm,
+            remediation=remediation_result,
+            remediation_time=time.time(),
+        )
+        logger.info(
+            "Verification: normalized=%s, summary=%s",
+            verification_result.metrics_normalized,
+            verification_result.verification_summary[:200],
+        )
+
+    # F11: Notification
     notification = build_notification(rca_report, report_s3_key, elapsed)
     send_notification(notification, sns_client=sns_client, s3_client=s3_client)
 

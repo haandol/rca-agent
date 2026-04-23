@@ -171,5 +171,15 @@ export class CcHeadlessStack extends cdk.Stack {
         }),
       );
     }
+
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'ecs:UpdateService',
+          'ecs:DescribeServices',
+        ],
+        resources: ['*'],
+      }),
+    );
   }
 }

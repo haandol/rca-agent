@@ -27,6 +27,7 @@ from rca_agent.prompts import (
     REPORT_SYSTEM_PROMPT,
     SCOPING_SYSTEM_PROMPT,
     VALIDATION_SYSTEM_PROMPT,
+    VERIFICATION_SYSTEM_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -203,3 +204,22 @@ def create_playbook_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
         model = create_planning_model()
     return Agent(model=model, system_prompt=PLAYBOOK_SYSTEM_PROMPT)
+
+
+def create_verification_agent(
+    *,
+    model: BedrockModel | None = None,
+    mcp_clients: list[MCPClient] | None = None,
+) -> Agent:
+    if model is None:
+        model = create_execution_model()
+
+    tools: list = []
+    if mcp_clients:
+        tools.extend(mcp_clients)
+
+    return Agent(
+        model=model,
+        system_prompt=VERIFICATION_SYSTEM_PROMPT,
+        tools=tools,
+    )

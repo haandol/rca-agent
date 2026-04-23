@@ -14,6 +14,8 @@ class RcaSessionState(StrEnum):
     EVIDENCE_COLLECTION = "EVIDENCE_COLLECTION"
     HYPOTHESIS_VALIDATION = "HYPOTHESIS_VALIDATION"
     REPORT_GENERATION = "REPORT_GENERATION"
+    REMEDIATION = "REMEDIATION"
+    VERIFICATION = "VERIFICATION"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
@@ -212,6 +214,30 @@ class Playbook(BaseModel):
     prevention_measures: list[str] = Field(default_factory=list)
     rca_id: str = ""
     tags: list[str] = Field(default_factory=list)
+
+
+class RemediationAction(BaseModel):
+    action_type: str
+    description: str
+    target: str = ""
+    parameters: dict = Field(default_factory=dict)
+    executed: bool = False
+    success: bool = False
+    error: str = ""
+
+
+class RemediationResult(BaseModel):
+    rca_id: str
+    actions_taken: list[RemediationAction] = Field(default_factory=list)
+    overall_success: bool = False
+    summary: str = ""
+
+
+class VerificationResult(BaseModel):
+    rca_id: str
+    metrics_normalized: bool = False
+    verification_summary: str = ""
+    remaining_issues: list[str] = Field(default_factory=list)
 
 
 class NotificationMessage(BaseModel):

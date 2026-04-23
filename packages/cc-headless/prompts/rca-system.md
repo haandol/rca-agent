@@ -68,6 +68,26 @@ Generate a structured RCA report in Markdown with these sections:
 [Brief list of hypotheses that were ruled out and why]
 ```
 
+### Step 6: Remediation
+If the root cause is confirmed (confidence >= 0.8), attempt automated remediation:
+
+1. **Match root cause to action**: Based on the root cause text, determine which fault reset API endpoint to call on the Healthcare Service:
+   - Connection leak / pool exhaustion → `POST /fault/db-leak/reset`
+   - High CPU / CPU spike → `POST /fault/high-cpu/reset`
+   - Memory pressure / OOM → `POST /fault/high-memory/reset`
+   - Slow query / read latency → `POST /fault/slow-query/reset`
+
+2. **Execute remediation**: Call the matched endpoint. If no endpoint matches, skip automated remediation and note it in the report.
+
+3. **Record result**: Add a `## Remediation` section to the report with the action taken and its result.
+
+### Step 7: Verification
+After remediation, wait 30 seconds for metrics to stabilize, then:
+
+1. **Re-check metrics**: Query the same alarming metric that triggered the incident.
+2. **Verify normalization**: Confirm that the metric has returned to normal levels.
+3. **Report outcome**: Add a `## Verification` section with whether metrics normalized and any remaining issues.
+
 ## Rules
 - Be concise and evidence-driven. Include specific data points, timestamps, and error messages.
 - If the root cause is unconfirmed (confidence < 0.9), clearly state it as "most likely candidate" with the confidence level.

@@ -7,6 +7,10 @@ logger = logging.getLogger(__name__)
 
 _leaked_sessions: list = []
 _memory_ballast: list[bytes] = []
+_cpu_stop_event = threading.Event()
+_cpu_threads: list[threading.Thread] = []
+_slow_query_stop_event = threading.Event()
+_slow_query_thread: threading.Thread | None = None
 
 
 class FaultInjectionService:
@@ -37,19 +41,38 @@ class FaultInjectionService:
         _leaked_sessions.clear()
         return {"closed": closed, "pool_checked_out": self._database.checked_out_connections()}
 
-    def start_high_cpu(self, seconds: int) -> dict:
-        def _burn_cpu(duration: int):
-            import time
+    def start_high_cpu(self) -> dict:
+        global _cpu_stop_event
+        if _cpu_threads:
+            return {"status": "already_running", "threads": len(_cpu_threads)}
 
-            end = time.monotonic() + duration
-            while time.monotonic() < end:
+        _cpu_stop_event.clear()
+
+        def _burn_cpu(stop: threading.Event):
+            while not stop.is_set():
                 _ = sum(i * i for i in range(10_000))
-            logger.error("High CPU fault injection completed", extra={"duration_seconds": duration})
+            logger.error("High CPU fault injection stopped")
 
-        t = threading.Thread(target=_burn_cpu, args=(seconds,), daemon=True)
-        t.start()
-        logger.error("High CPU fault injection started", extra={"duration_seconds": seconds})
-        return {"status": "started", "duration_seconds": seconds}
+        import os
+
+        num_threads = os.cpu_count() or 1
+        for _ in range(num_threads):
+            t = threading.Thread(target=_burn_cpu, args=(_cpu_stop_event,), daemon=True)
+            t.start()
+            _cpu_threads.append(t)
+
+        logger.error("High CPU fault injection started", extra={"threads": num_threads})
+        return {"status": "started", "threads": num_threads}
+
+    def stop_high_cpu(self) -> dict:
+        if not _cpu_threads:
+            return {"status": "not_running"}
+        _cpu_stop_event.set()
+        for t in _cpu_threads:
+            t.join(timeout=5)
+        count = len(_cpu_threads)
+        _cpu_threads.clear()
+        return {"status": "stopped", "threads_stopped": count}
 
     def allocate_memory(self, megabytes: int) -> dict:
         ballast = b"\x00" * (megabytes * 1024 * 1024)
@@ -63,11 +86,47 @@ class FaultInjectionService:
         _memory_ballast.clear()
         return {"released_ballasts": count}
 
-    async def slow_query(self, seconds: int) -> dict:
-        from sqlalchemy import text
+    def start_slow_query(self, seconds: int) -> dict:
+        global _slow_query_thread
+        if _slow_query_thread and _slow_query_thread.is_alive():
+            return {"status": "already_running"}
 
-        async for session in self._database.session():
-            await session.execute(text(f"SELECT pg_sleep({seconds})"))
+        _slow_query_stop_event.clear()
+        self._slow_query_interval = seconds
 
-        logger.error("Slow query fault injection completed", extra={"duration_seconds": seconds})
-        return {"status": "completed", "duration_seconds": seconds}
+        def _repeat_slow_query(stop: threading.Event, db: DatabasePort, interval: int):
+            import asyncio
+
+            from sqlalchemy import text
+
+            loop = asyncio.new_event_loop()
+
+            async def _run():
+                while not stop.is_set():
+                    try:
+                        async for session in db.session():
+                            await session.execute(text(f"SELECT pg_sleep({interval})"))
+                    except Exception:
+                        pass
+                logger.error("Slow query fault injection stopped")
+
+            loop.run_until_complete(_run())
+            loop.close()
+
+        _slow_query_thread = threading.Thread(
+            target=_repeat_slow_query,
+            args=(_slow_query_stop_event, self._database, seconds),
+            daemon=True,
+        )
+        _slow_query_thread.start()
+        logger.error("Slow query fault injection started", extra={"interval_seconds": seconds})
+        return {"status": "started", "interval_seconds": seconds}
+
+    def stop_slow_query(self) -> dict:
+        global _slow_query_thread
+        if not _slow_query_thread or not _slow_query_thread.is_alive():
+            return {"status": "not_running"}
+        _slow_query_stop_event.set()
+        _slow_query_thread.join(timeout=35)
+        _slow_query_thread = None
+        return {"status": "stopped"}

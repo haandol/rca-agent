@@ -45,47 +45,6 @@ const storageStack = new StorageStack(app, `${Config.app.ns}StorageStack`, {
   vectorBucketName: Config.storage.vectorBucket,
 });
 
-const rcaAgentServiceStack = new RcaAgentServiceStack(
-  app,
-  `${Config.app.ns}RcaAgentServiceStack`,
-  {
-    env,
-    vpc: networkStack.vpc,
-    alarmQueue: eventBusStack.alarmQueue,
-    alarmTopic: eventBusStack.alarmTopic,
-    rcaSessionTable: databaseStack.rcaSessionTable,
-    evidenceBucket: storageStack.evidenceBucket,
-    vectorBucketName: Config.storage.vectorBucket,
-    imageTag: Config.agent.imageTag,
-    tracing: Config.tracing.enabled,
-  },
-);
-rcaAgentServiceStack.addDependency(ecrStack);
-rcaAgentServiceStack.addDependency(networkStack);
-rcaAgentServiceStack.addDependency(eventBusStack);
-rcaAgentServiceStack.addDependency(databaseStack);
-rcaAgentServiceStack.addDependency(storageStack);
-
-const ccHeadlessStack = new CcHeadlessStack(
-  app,
-  `${Config.app.ns}CcHeadlessStack`,
-  {
-    env,
-    alarmTopic: eventBusStack.alarmTopic,
-    notificationTopic: eventBusStack.alarmTopic,
-    rcaSessionTable: databaseStack.rcaSessionTable,
-    evidenceBucket: storageStack.evidenceBucket,
-    vectorBucketName: Config.storage.vectorBucket,
-    reportBucket: Config.storage.evidenceBucket,
-    repository: ecrStack.ccHeadlessRepo,
-    imageTag: Config.ccHeadless.imageTag,
-  },
-);
-ccHeadlessStack.addDependency(ecrStack);
-ccHeadlessStack.addDependency(eventBusStack);
-ccHeadlessStack.addDependency(databaseStack);
-ccHeadlessStack.addDependency(storageStack);
-
 const rdsStack = new RdsStack(app, `${Config.app.ns}RdsStack`, {
   env,
   vpc: networkStack.vpc,
@@ -106,6 +65,51 @@ const healthcareServiceStack = new HealthcareServiceStack(
 healthcareServiceStack.addDependency(ecrStack);
 healthcareServiceStack.addDependency(networkStack);
 healthcareServiceStack.addDependency(rdsStack);
+
+const rcaAgentServiceStack = new RcaAgentServiceStack(
+  app,
+  `${Config.app.ns}RcaAgentServiceStack`,
+  {
+    env,
+    vpc: networkStack.vpc,
+    alarmQueue: eventBusStack.alarmQueue,
+    alarmTopic: eventBusStack.alarmTopic,
+    rcaSessionTable: databaseStack.rcaSessionTable,
+    evidenceBucket: storageStack.evidenceBucket,
+    vectorBucketName: Config.storage.vectorBucket,
+    imageTag: Config.agent.imageTag,
+    tracing: Config.tracing.enabled,
+    healthcareServiceHost: healthcareServiceStack.serviceHost,
+    healthcareClusterName: healthcareServiceStack.clusterName,
+    healthcareServiceName: healthcareServiceStack.serviceName,
+  },
+);
+rcaAgentServiceStack.addDependency(ecrStack);
+rcaAgentServiceStack.addDependency(networkStack);
+rcaAgentServiceStack.addDependency(eventBusStack);
+rcaAgentServiceStack.addDependency(databaseStack);
+rcaAgentServiceStack.addDependency(storageStack);
+rcaAgentServiceStack.addDependency(healthcareServiceStack);
+
+const ccHeadlessStack = new CcHeadlessStack(
+  app,
+  `${Config.app.ns}CcHeadlessStack`,
+  {
+    env,
+    alarmTopic: eventBusStack.alarmTopic,
+    notificationTopic: eventBusStack.alarmTopic,
+    rcaSessionTable: databaseStack.rcaSessionTable,
+    evidenceBucket: storageStack.evidenceBucket,
+    vectorBucketName: Config.storage.vectorBucket,
+    reportBucket: Config.storage.evidenceBucket,
+    repository: ecrStack.ccHeadlessRepo,
+    imageTag: Config.ccHeadless.imageTag,
+  },
+);
+ccHeadlessStack.addDependency(ecrStack);
+ccHeadlessStack.addDependency(eventBusStack);
+ccHeadlessStack.addDependency(databaseStack);
+ccHeadlessStack.addDependency(storageStack);
 
 const tags = cdk.Tags.of(app);
 tags.add('namespace', Config.app.ns);
