@@ -4,7 +4,9 @@
   "license": "MIT",
   "scripts": {
     "deploy": "nx run infra:deploy",
-    "deploy:service": "pnpm --filter infra run deploy:service --"
+    "deploy:service": "pnpm --filter infra run deploy:service --",
+    "build": "nx run-many -t build",
+    "test": "nx run-many -t test"
   },
   "private": true,
   "dependencies": {},
