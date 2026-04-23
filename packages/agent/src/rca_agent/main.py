@@ -55,6 +55,7 @@ from rca_agent.session_store import (
     update_state,
 )
 from rca_agent.termination import check_termination
+from rca_agent.trace_store import SpanStatus, SpanType, TraceStore
 from rca_agent.validation import run_validation
 from rca_agent.verification import run_verification
 
@@ -203,12 +204,15 @@ def _process_alarm(
     session = create_session(alarm, dynamodb_client=dynamodb_client)
     rca_id = session.rca_id if session else ""
 
+    trace = TraceStore(rca_id, dynamodb_client=dynamodb_client)
+
     try:
         _run_pipeline(
             alarm,
             agents,
             rca_id=rca_id,
             start_time=start_time,
+            trace=trace,
             s3_vectors_client=s3_vectors_client,
             s3_client=s3_client,
             sns_client=sns_client,
@@ -226,6 +230,7 @@ def _run_pipeline(
     *,
     rca_id: str,
     start_time: float,
+    trace: TraceStore,
     s3_vectors_client=None,
     s3_client=None,
     sns_client=None,
@@ -233,11 +238,21 @@ def _run_pipeline(
 ) -> None:
     # F1: Scoping
     update_state(rca_id, RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
-    scoping_result = run_scoping(
-        alarm,
-        agents.scoping,
-        s3_vectors_client=s3_vectors_client,
-    )
+    with trace.span(SpanType.SCOPING, input_summary=f"알람={alarm.alarm_name}, 리전={alarm.region}") as s:
+        scoping_result = run_scoping(
+            alarm,
+            agents.scoping,
+            s3_vectors_client=s3_vectors_client,
+        )
+        s.output_summary = (
+            f"심각도={scoping_result.initial_severity}, 영향범위={scoping_result.blast_radius}, "
+            f"유사 플레이북={len(scoping_result.similar_playbooks)}건"
+        )
+        s.metadata = {
+            "심각도": scoping_result.initial_severity,
+            "영향범위": scoping_result.blast_radius,
+            "유사_플레이북": len(scoping_result.similar_playbooks),
+        }
     logger.info(
         "Scoping: severity=%s, blast_radius=%s, playbooks=%d",
         scoping_result.initial_severity,
@@ -247,15 +262,23 @@ def _run_pipeline(
 
     # F2: Hypothesis generation (with regeneration loop on all-rejected)
     update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION, dynamodb_client=dynamodb_client)
-    hypothesis_result = run_hypothesis_generation(
-        scoping_result,
-        agents.hypothesis,
-    )
-    hypotheses = list(hypothesis_result.hypotheses)
+    with trace.span(
+        SpanType.HYPOTHESIS_GENERATION,
+        input_summary=f"심각도={scoping_result.initial_severity}, 영향범위={scoping_result.blast_radius}",
+    ) as s:
+        hypothesis_result = run_hypothesis_generation(
+            scoping_result,
+            agents.hypothesis,
+        )
+        hypotheses = list(hypothesis_result.hypotheses)
+        s.output_summary = f"가설 {len(hypotheses)}개 생성, tree_id={hypothesis_result.tree_id}"
+        s.metadata = {"가설_수": len(hypotheses), "tree_id": hypothesis_result.tree_id}
     if not hypotheses:
         logger.error("No hypotheses generated, aborting RCA")
         mark_failed(rca_id, error_reason="No hypotheses generated", dynamodb_client=dynamodb_client)
         return
+
+    trace.put_hypotheses(hypotheses)
 
     all_judgments = []
     rejected_descriptions: list[str] = []
@@ -274,40 +297,86 @@ def _run_pipeline(
         validation_loop_count += 1
         logger.info("Validation loop %d, hypotheses=%d", validation_loop_count, len(hypotheses))
 
+        loop_span = trace.start_span(
+            SpanType.VALIDATION_LOOP,
+            loop_index=validation_loop_count,
+            input_summary=f"가설={len(hypotheses)}개",
+        )
+
         # F3: Prioritization
         update_state(rca_id, RcaSessionState.HYPOTHESIS_PRIORITIZATION, dynamodb_client=dynamodb_client)
-        run_prioritization(
-            scoping_result,
-            hypotheses,
-            agents.prioritization,
-        )
+        with trace.span(
+            SpanType.PRIORITIZATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"가설={len(hypotheses)}개",
+        ) as s:
+            run_prioritization(
+                scoping_result,
+                hypotheses,
+                agents.prioritization,
+            )
+            s.output_summary = f"가설 {len(hypotheses)}개 우선순위 결정"
 
         # F4: Evidence collection
         update_state(rca_id, RcaSessionState.EVIDENCE_COLLECTION, dynamodb_client=dynamodb_client)
         new_hypotheses = [h for h in hypotheses if h.hypothesis_id not in evidence_map]
-        if new_hypotheses:
-            new_evidence = run_evidence_collection(
-                new_hypotheses,
-                scoping_result,
-                agents.evidence,
-            )
-            evidence_map.update(new_evidence)
-            save_evidence_to_s3(rca_id, new_evidence, s3_client=s3_client)
+        with trace.span(
+            SpanType.EVIDENCE_COLLECTION,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"신규_가설={len(new_hypotheses)}개",
+        ) as s:
+            if new_hypotheses:
+                new_evidence = run_evidence_collection(
+                    new_hypotheses,
+                    scoping_result,
+                    agents.evidence,
+                )
+                evidence_map.update(new_evidence)
+                save_evidence_to_s3(rca_id, new_evidence, s3_client=s3_client)
+                for h_id, ev_text in new_evidence.items():
+                    trace.update_hypothesis_evidence(h_id, evidence_summary=ev_text[:500])
+            s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
+            s.metadata = {"신규_가설_수": len(new_hypotheses)}
         timeline.append(
             f"Loop {validation_loop_count}: collected evidence for {len(new_hypotheses)} hypotheses",
         )
 
         # F5: Validation
         update_state(rca_id, RcaSessionState.HYPOTHESIS_VALIDATION, dynamodb_client=dynamodb_client)
-        validation_result = run_validation(
-            hypotheses,
-            evidence_map,
-            agents.validation,
-        )
-        all_judgments = validation_result.judgments
+        with trace.span(
+            SpanType.VALIDATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"가설={len(hypotheses)}개, 증거={len(evidence_map)}건",
+        ) as s:
+            validation_result = run_validation(
+                hypotheses,
+                evidence_map,
+                agents.validation,
+            )
+            all_judgments = validation_result.judgments
+            confirmed_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.CONFIRMED)
+            rejected_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.REJECTED)
+            s.output_summary = (
+                f"판정={len(all_judgments)}건, 확정={confirmed_count}, "
+                f"기각={rejected_count}, 전체기각={validation_result.all_rejected}"
+            )
+            s.metadata = {
+                "판정_수": len(all_judgments),
+                "확정": confirmed_count,
+                "기각": rejected_count,
+                "전체기각": validation_result.all_rejected,
+            }
         timeline.append(
             f"Loop {validation_loop_count}: validated {len(all_judgments)} hypotheses",
         )
+
+        for j in all_judgments:
+            trace.update_hypothesis_status(
+                j.hypothesis_id,
+                status=j.status.value,
+                confidence=j.confidence_score,
+                judgment_reasoning=j.reasoning[:500],
+            )
 
         # Track rejected descriptions for branching dedup
         for j in all_judgments:
@@ -316,16 +385,31 @@ def _run_pipeline(
                 if h and h.description not in rejected_descriptions:
                     rejected_descriptions.append(h.description)
 
-        # F6: Termination check
-        termination = check_termination(
-            judgments=all_judgments,
-            hypotheses=hypotheses,
-            start_time=start_time,
-            validation_loop_count=validation_loop_count,
-        )
+        # Termination check
+        with trace.span(
+            SpanType.TERMINATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"루프={validation_loop_count}, 판정={len(all_judgments)}건",
+        ) as s:
+            termination = check_termination(
+                judgments=all_judgments,
+                hypotheses=hypotheses,
+                start_time=start_time,
+                validation_loop_count=validation_loop_count,
+            )
+            s.output_summary = f"종료={termination.should_terminate}, 사유={termination.reason}"
+            s.metadata = {"종료여부": termination.should_terminate}
+            if termination.reason:
+                s.metadata["사유"] = termination.reason.value
+
         if termination.should_terminate:
             logger.info("Termination: %s", termination.reason)
             timeline.append(f"Terminated: {termination.reason}")
+            trace.end_span(
+                loop_span,
+                output_summary=f"종료: {termination.reason}",
+                metadata={"루프_번호": validation_loop_count},
+            )
             break
 
         # All rejected → regeneration loop (ADR 0004)
@@ -334,44 +418,82 @@ def _run_pipeline(
             if regeneration_count > RCA_MAX_REGENERATION_ROUNDS:
                 logger.warning("Max regeneration rounds exceeded")
                 timeline.append("Max regeneration rounds exceeded")
+                trace.end_span(
+                    loop_span,
+                    output_summary="최대 재생성 라운드 초과",
+                    status=SpanStatus.FAILED,
+                )
                 break
             logger.info("All rejected, regenerating hypotheses (round %d)", regeneration_count)
             update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION, dynamodb_client=dynamodb_client)
-            hypothesis_result = run_hypothesis_generation(
-                scoping_result,
-                agents.hypothesis,
-            )
-            hypotheses = list(hypothesis_result.hypotheses)
+            with trace.span(
+                SpanType.HYPOTHESIS_GENERATION,
+                parent_span_id=loop_span.span_id,
+                input_summary=f"재생성 라운드 {regeneration_count}",
+            ) as s:
+                hypothesis_result = run_hypothesis_generation(
+                    scoping_result,
+                    agents.hypothesis,
+                )
+                hypotheses = list(hypothesis_result.hypotheses)
+                s.output_summary = f"가설 {len(hypotheses)}개 재생성"
+                s.metadata = {"재생성_라운드": regeneration_count, "가설_수": len(hypotheses)}
             if not hypotheses:
                 logger.error("Regeneration produced no hypotheses")
+                trace.end_span(
+                    loop_span,
+                    output_summary="재생성 결과 가설 없음",
+                    status=SpanStatus.FAILED,
+                )
                 break
+            trace.put_hypotheses(hypotheses)
             timeline.append(f"Regenerated hypotheses: {len(hypotheses)}")
+            trace.end_span(
+                loop_span,
+                output_summary=f"가설 {len(hypotheses)}개 재생성",
+                metadata={"루프_번호": validation_loop_count, "재생성_라운드": regeneration_count},
+            )
             continue
 
-        # F5: Branching for NEEDS_INVESTIGATION hypotheses
+        # Branching for NEEDS_INVESTIGATION hypotheses
         new_children = []
-        for j in all_judgments:
-            if j.status != HypothesisStatus.NEEDS_INVESTIGATION:
-                continue
-            parent = next((h for h in hypotheses if h.hypothesis_id == j.hypothesis_id), None)
-            if parent is None:
-                continue
-            evidence_text = evidence_map.get(parent.hypothesis_id, "")
-            branching_result = run_branching(
-                parent,
-                evidence_text,
-                rejected_descriptions,
-                agents.branching,
-            )
-            new_children.extend(branching_result.children)
+        with trace.span(
+            SpanType.BRANCHING,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"추가조사필요="
+            f"{sum(1 for j in all_judgments if j.status == HypothesisStatus.NEEDS_INVESTIGATION)}건",
+        ) as s:
+            for j in all_judgments:
+                if j.status != HypothesisStatus.NEEDS_INVESTIGATION:
+                    continue
+                parent = next((h for h in hypotheses if h.hypothesis_id == j.hypothesis_id), None)
+                if parent is None:
+                    continue
+                evidence_text = evidence_map.get(parent.hypothesis_id, "")
+                branching_result = run_branching(
+                    parent,
+                    evidence_text,
+                    rejected_descriptions,
+                    agents.branching,
+                )
+                new_children.extend(branching_result.children)
+            s.output_summary = f"신규_하위가설={len(new_children)}개"
+            s.metadata = {"신규_하위가설_수": len(new_children)}
 
         if not new_children:
             logger.info("No new child hypotheses, terminating")
             timeline.append("No new child hypotheses")
+            trace.end_span(loop_span, output_summary="신규 하위가설 없음, 종료")
             break
 
+        trace.put_hypotheses(new_children)
         hypotheses.extend(new_children)
         logger.info("Added %d child hypotheses, total=%d", len(new_children), len(hypotheses))
+        trace.end_span(
+            loop_span,
+            output_summary=f"하위가설 {len(new_children)}개 추가, 총 {len(hypotheses)}개",
+            metadata={"루프_번호": validation_loop_count, "신규_하위가설": len(new_children)},
+        )
 
     # Determine best hypothesis
     best_hypothesis = None
@@ -396,47 +518,64 @@ def _run_pipeline(
 
     # F7: Report generation
     update_state(rca_id, RcaSessionState.REPORT_GENERATION, dynamodb_client=dynamodb_client)
-    rca_report = run_report_generation(
-        scoping_result,
-        best_hypothesis,
-        confirmed,
-        hypothesis_path,
-        evidence_texts,
-        rejected_descriptions,
-        timeline,
-        agents.report,
-    )
-    if rca_id:
-        rca_report.rca_id = rca_id
+    with trace.span(
+        SpanType.REPORT,
+        input_summary=f"최적가설={'있음' if best_hypothesis else '없음'}, 확정={confirmed}",
+    ) as s:
+        rca_report = run_report_generation(
+            scoping_result,
+            best_hypothesis,
+            confirmed,
+            hypothesis_path,
+            evidence_texts,
+            rejected_descriptions,
+            timeline,
+            agents.report,
+        )
+        if rca_id:
+            rca_report.rca_id = rca_id
+        s.output_summary = f"rca_id={rca_report.rca_id}, 신뢰도={rca_report.confidence_score}"
     logger.info("RCA report generated: %s", rca_report.rca_id)
 
     report_s3_key = save_report_to_s3(rca_report, s3_client=s3_client)
 
     # F8: Playbook generation (search-first: update existing or create new)
-    playbook = run_playbook_generation(
-        rca_report,
-        agents.playbook,
-        scoping_result=scoping_result,
-        s3_vectors_client=s3_vectors_client,
-    )
-    save_playbook_to_s3_vectors(
-        playbook,
-        scoping_result=scoping_result,
-        s3_vectors_client=s3_vectors_client,
-    )
+    with trace.span(
+        SpanType.PLAYBOOK,
+        input_summary=f"rca_id={rca_report.rca_id}",
+    ) as s:
+        playbook = run_playbook_generation(
+            rca_report,
+            agents.playbook,
+            scoping_result=scoping_result,
+            s3_vectors_client=s3_vectors_client,
+        )
+        save_playbook_to_s3_vectors(
+            playbook,
+            scoping_result=scoping_result,
+            s3_vectors_client=s3_vectors_client,
+        )
+        s.output_summary = f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"
     logger.info("Playbook %s: %s", playbook.playbook_id, playbook.failure_type)
 
     # F9: Remediation
     remediation_result = None
     if REMEDIATION_ENABLED and HEALTHCARE_SERVICE_HOST:
         update_state(rca_id, RcaSessionState.REMEDIATION, dynamodb_client=dynamodb_client)
-        remediation_result = execute_remediation(
-            report=rca_report,
-            playbook=playbook,
-            service_host=HEALTHCARE_SERVICE_HOST,
-            ecs_cluster=HEALTHCARE_ECS_CLUSTER,
-            ecs_service=HEALTHCARE_ECS_SERVICE,
-        )
+        with trace.span(
+            SpanType.REMEDIATION,
+            input_summary=f"플레이북={playbook.playbook_id}, 서비스={HEALTHCARE_SERVICE_HOST}",
+        ) as s:
+            remediation_result = execute_remediation(
+                report=rca_report,
+                playbook=playbook,
+                service_host=HEALTHCARE_SERVICE_HOST,
+                ecs_cluster=HEALTHCARE_ECS_CLUSTER,
+                ecs_service=HEALTHCARE_ECS_SERVICE,
+            )
+            actions_count = len(remediation_result.actions_taken)
+            s.output_summary = f"성공={remediation_result.overall_success}, 조치={actions_count}건"
+            s.metadata = {"성공": remediation_result.overall_success, "조치_수": actions_count}
         logger.info(
             "Remediation: success=%s, summary=%s",
             remediation_result.overall_success,
@@ -447,12 +586,18 @@ def _run_pipeline(
     verification_result = None
     if remediation_result and remediation_result.overall_success:
         update_state(rca_id, RcaSessionState.VERIFICATION, dynamodb_client=dynamodb_client)
-        verification_result = run_verification(
-            agent=agents.post_remediation_verification,
-            alarm=alarm,
-            remediation=remediation_result,
-            remediation_time=time.time(),
-        )
+        with trace.span(
+            SpanType.VERIFICATION,
+            input_summary=f"알람={alarm.alarm_name}",
+        ) as s:
+            verification_result = run_verification(
+                agent=agents.post_remediation_verification,
+                alarm=alarm,
+                remediation=remediation_result,
+                remediation_time=time.time(),
+            )
+            s.output_summary = f"메트릭_정상화={verification_result.metrics_normalized}"
+            s.metadata = {"메트릭_정상화": verification_result.metrics_normalized}
         logger.info(
             "Verification: normalized=%s, summary=%s",
             verification_result.metrics_normalized,
@@ -460,8 +605,10 @@ def _run_pipeline(
         )
 
     # F11: Notification
-    notification = build_notification(rca_report, report_s3_key, elapsed)
-    send_notification(notification, sns_client=sns_client, s3_client=s3_client)
+    with trace.span(SpanType.NOTIFICATION, input_summary=f"rca_id={rca_report.rca_id}") as s:
+        notification = build_notification(rca_report, report_s3_key, elapsed)
+        send_notification(notification, sns_client=sns_client, s3_client=s3_client)
+        s.output_summary = f"소요시간={elapsed}초"
 
     # Mark session completed
     mark_completed(

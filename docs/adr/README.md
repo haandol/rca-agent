@@ -51,6 +51,7 @@ adr/
 - [ADR 0002: 증거 저장 — S3 + S3 Vectors + DynamoDB 기반 증거 아카이브](infra/0002-evidence-storage.md)
 - [ADR 0003: Lambda + CC on Bedrock headless 스택 — 서버리스 RCA 실행 인프라](infra/0003-lambda-cc-headless-stack.md)
 - [ADR 0004: RDS PostgreSQL + Healthcare 서비스 배포 — RCA 검증용 데모 인프라](infra/0004-rds-healthcare-deployment.md)
+- [ADR 0005: 파이프라인 실행 트레이스 — DynamoDB 기반 단계별 추적](infra/0005-execution-trace-dynamodb.md)
 
 ### Web
 

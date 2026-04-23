@@ -100,9 +100,12 @@ useHead({ title: 'RCA Dashboard' })
               <p v-else class="text-sm text-gray-500">-</p>
             </td>
             <td class="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{{ formatTime(session.createdAt) }}</td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 flex gap-1">
+              <NuxtLink :to="`/trace/${session.rcaId}`">
+                <UButton icon="i-lucide-git-branch" variant="ghost" color="neutral" size="xs" title="Trace" />
+              </NuxtLink>
               <NuxtLink :to="`/report/${session.rcaId}`">
-                <UButton icon="i-lucide-file-text" variant="ghost" color="neutral" size="xs" />
+                <UButton icon="i-lucide-file-text" variant="ghost" color="neutral" size="xs" title="Report" />
               </NuxtLink>
             </td>
           </tr>

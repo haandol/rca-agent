@@ -70,4 +70,5 @@ flowchart TD
 ## Related
 
 - [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md) — DynamoDB RCA 세션 상태 관리의 확장
+- [ADR infra/0005: 파이프라인 실행 트레이스](0005-execution-trace-dynamodb.md) — 결정사항 3번(DynamoDB 가설 트리)의 구현
 - [ADR agent/0008: 플레이북 생성](../agent/0008-playbook-generation.md) — 플레이북도 S3 + S3 Vectors에 저장
