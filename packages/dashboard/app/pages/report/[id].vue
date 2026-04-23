@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { marked } from 'marked'
+
 const route = useRoute()
 const id = route.params.id as string
 
@@ -6,6 +8,10 @@ const { data: report, status, error } = useFetch(`/api/reports/${id}`)
 const { data: sessions } = useFetch('/api/sessions')
 
 const session = computed(() => sessions.value?.find(s => s.rcaId === id))
+const renderedHtml = computed(() => {
+  if (!report.value?.markdown) return ''
+  return marked.parse(report.value.markdown) as string
+})
 
 useHead({ title: () => `Report ${id.slice(0, 8)}` })
 </script>
@@ -59,23 +65,8 @@ useHead({ title: () => `Report ${id.slice(0, 8)}` })
     </div>
 
     <div v-else-if="report" class="bg-gray-900 border border-gray-800 rounded-xl p-6 prose prose-invert prose-sm max-w-none">
-      <div v-html="renderMarkdown(report.markdown)" />
+      <div v-html="renderedHtml" />
     </div>
   </div>
 </template>
 
-<script lang="ts">
-function renderMarkdown(md: string): string {
-  return md
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/^(?!<[hup]|<li|<ul)(.+)$/gm, '<p>$1</p>')
-}
-</script>
