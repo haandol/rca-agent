@@ -1,0 +1,21 @@
+services:
+  rca-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    volumes:
+      - ~/.aws:/home/app/.aws:ro
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_PROFILE=default
+      - SQS_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/395271362395/RcaAgentDevAlarmQueue
+      - SNS_NOTIFICATION_TOPIC_ARN=arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarmTopic
+      - DYNAMODB_TABLE_NAME=RcaAgentDevRcaSession
+      - S3_EVIDENCE_BUCKET=rca-agent-dev-evidence
+      - S3_VECTOR_BUCKET_NAME=rca-agent-dev-vectors
+      - S3_REPORT_BUCKET=rca-agent-dev-evidence
+      - HEALTHCARE_SERVICE_HOST=host.docker.internal
+      - REMEDIATION_ENABLED=false
+    ports:
+      - "8000:8000"

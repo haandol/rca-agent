@@ -1,0 +1,19 @@
+{
+  "name": "dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1034.0",
+    "@aws-sdk/client-s3": "^3.1034.0",
+    "@aws-sdk/lib-dynamodb": "^3.1035.0",
+    "@nuxt/ui": "^4.6.1",
+    "nuxt": "^4.4.2"
+  }
+}

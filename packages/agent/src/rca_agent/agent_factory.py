@@ -76,7 +76,7 @@ def create_cloudwatch_mcp_client() -> MCPClient:
         lambda: stdio_client(
             StdioServerParameters(
                 command="uvx",
-                args=["awslabs.cw-mcp-server@latest"],
+                args=["--from", "awslabs-cloudwatch-mcp-server", "awslabs.cloudwatch-mcp-server"],
                 env={"FASTMCP_LOG_LEVEL": "ERROR"},
             )
         )
@@ -88,7 +88,7 @@ def create_cloudtrail_mcp_client() -> MCPClient:
         lambda: stdio_client(
             StdioServerParameters(
                 command="uvx",
-                args=["awslabs.cloudtrail-mcp-server@latest"],
+                args=["--from", "awslabs-cloudtrail-mcp-server", "awslabs.cloudtrail-mcp-server"],
                 env={"FASTMCP_LOG_LEVEL": "ERROR"},
             )
         )
