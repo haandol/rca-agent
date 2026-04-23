@@ -6,10 +6,11 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 
 | Package | Description | Tech |
 |---------|-------------|------|
-| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 10단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
-| [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC | TypeScript, CDK |
+| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 12단계 closed-loop 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
+| [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 서버리스 RCA 에이전트 — Lambda에서 CC CLI로 단일 프롬프트 RCA 수행 | TypeScript, Claude Code CLI, Lambda Container |
-| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — RCA 에이전트 검증용 장애 주입 지원, background traffic generator로 CloudWatch baseline 메트릭 축적 | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
+| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
+| [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태 및 S3 보고서 조회 (로컬 전용) | TypeScript, Nuxt.js 4, @nuxt/ui |
 
 ## Dual-Stack Architecture
 
@@ -19,7 +20,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---|---|---|
 | **실행 환경** | ECS Fargate (Long Polling) | Lambda Container Image (SQS Event Source) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 10단계 파이프라인 (F1~F10) | 단일 프롬프트 + MCP 도구 자율 호출 |
+| **RCA 방식** | 12단계 closed-loop 파이프라인 (F1~F12) | 단일 프롬프트 + MCP 도구 자율 호출 |
 | **모델** | 2-tier (Sonnet 4.6 + Haiku 4.5) | CC 기본 모델 (Sonnet 4.6) |
 | **타임아웃** | 제한 없음 (ECS) | 15분 (Lambda) |
 | **동시성** | Fargate 태스크 스케일링 | reserved concurrency 1 |
@@ -70,6 +71,7 @@ pnpm nx run-many -t test
 | **CC Headless** | `packages/cc-headless/` | TypeScript (Node.js) | `pnpm build`, `pnpm test` |
 | **Infra** | `packages/infra/` | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **Healthcare Sensor App** | `packages/healthcare-sensor-app/` | Python (FastAPI) | `uv run ruff check`, `uv run pytest` |
+| **Dashboard** | `packages/dashboard/` | TypeScript (Nuxt.js) | `pnpm dev`, `pnpm build` |
 
 #### Orchestrator Responsibilities
 
@@ -110,8 +112,8 @@ graph TB
     end
 
     subgraph DataTools["데이터 수집 도구 (MCP)"]
-        CW_MCP["CloudWatch MCP Server<br/>(awslabs.cw-mcp-server)"]
-        CT_MCP["CloudTrail MCP Server<br/>(awslabs.cloudtrail-mcp-server)"]
+        CW_MCP["CloudWatch MCP Server<br/>(awslabs-cloudwatch-mcp-server)"]
+        CT_MCP["CloudTrail MCP Server<br/>(awslabs-cloudtrail-mcp-server)"]
         GH_MCP["GitHub MCP Server<br/>(github/github-mcp-server)"]
         CW_API["CloudWatch<br/>Metrics / Logs"]
         CT_API["CloudTrail<br/>Events / Lake"]
@@ -155,9 +157,9 @@ graph TB
     SNS_OUT --> SRE
 ```
 
-### Agent Pipeline — Fargate (Strands, 10단계)
+### Agent Pipeline — Fargate (Strands, 12단계)
 
-에이전트는 증거 수집-가설 검증 루프를 반복하며, 5가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다.
+에이전트는 증거 수집-가설 검증 루프를 반복하며, 5가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 분석 완료 후 자동 복구(Remediation)와 복구 검증(Verification) 단계를 거치는 closed-loop 파이프라인입니다.
 
 ```mermaid
 stateDiagram-v2
@@ -229,12 +231,26 @@ stateDiagram-v2
         S3에 Markdown 저장
     end note
 
-    PLAYBOOK_GENERATION --> NOTIFICATION: Playbook
+    PLAYBOOK_GENERATION --> REMEDIATION: Playbook
     note right of PLAYBOOK_GENERATION
         검색 우선(Search-First):
         유사 플레이북 검색 (≥0.86)
         → 업데이트 or 신규 생성
         S3 Vectors에 인덱싱
+    end note
+
+    REMEDIATION --> VERIFICATION: RemediationResult
+    note right of REMEDIATION
+        REMEDIATION_ENABLED=true일 때 실행
+        1. 플레이북 기반 fault reset API 호출
+        2. ECS force new deployment (롤백)
+        Cloud Map DNS로 서비스 디스커버리
+    end note
+
+    VERIFICATION --> NOTIFICATION: VerificationResult
+    note right of VERIFICATION
+        복구 성공 시 메트릭 재확인
+        CloudWatch MCP로 정상화 검증
     end note
 
     NOTIFICATION --> COMPLETED: SNS 발행
@@ -383,7 +399,22 @@ flowchart TD
         PB_EXIST --> PBK_AGENT --> PBO --> PBK --> S3V_SAVE
     end
 
-    subgraph F10["F10: Notification (notification.py)"]
+    subgraph F10["F10: Remediation (remediation.py)"]
+        direction TB
+        REM_PARSE["플레이북 기반 복구 액션 결정"]
+        REM_EXEC["fault reset API 호출<br/>+ ECS force deploy"]
+        REM_RESULT["RemediationResult"]
+        REM_PARSE --> REM_EXEC --> REM_RESULT
+    end
+
+    subgraph F11["F11: Verification (verification.py)"]
+        direction TB
+        VER_AGENT["Verification Agent<br/>(CloudWatch MCP)"]
+        VER_OUT["VerificationResult"]
+        VER_AGENT --> VER_OUT
+    end
+
+    subgraph F12["F12: Notification (notification.py)"]
         direction TB
         BUILD_N["build_notification()"]
         NM["NotificationMessage"]
@@ -403,7 +434,9 @@ flowchart TD
     TD_OUT -->|should_terminate=true| F8
     CH -->|새 가설 추가| F3
     RCA --> F9
-    RCA --> F10
+    PBK --> F10
+    REM_RESULT --> F11
+    VER_OUT --> F12
 
     style F7 fill:#f9f3e3,stroke:#d4a843
     style F4 fill:#e8f5e9,stroke:#388e3c
@@ -413,14 +446,16 @@ flowchart TD
 ### Agent Architecture
 
 #### Fargate Stack (Strands Agents SDK)
-- **10단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → F3(Prioritization) → F4(Evidence Collection) → F5(Validation) → F6(Branching) → F7(Termination) → F8(Report) → F9(Playbook) → F10(Notification)
+- **12단계 closed-loop 파이프라인**: F1(Scoping) → F2(Hypothesis) → F3(Prioritization) → F4(Evidence) → F5(Validation) → F6(Branching) → F7(Termination) → F8(Report) → F9(Playbook) → F10(Remediation) → F11(Verification) → F12(Notification)
 - **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **가설-트리 탐색**: 증거에 따라 가지치기/확장하는 트리형 점진적 추론
 - **검증 루프**: Prioritization → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
+- **자동 복구**: `REMEDIATION_ENABLED=true` 시 플레이북 기반 fault reset API 호출 + ECS force deployment
+- **복구 검증**: CloudWatch MCP로 메트릭 정상화 확인
 
 #### Lambda Stack (CC Headless)
-- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 5단계 워크플로우 정의, CC가 자율적으로 MCP 도구 호출
+- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 7단계 워크플로우 정의 (스코핑 ~ 복구 ~ 보고서), CC가 자율적으로 MCP 도구 호출
 - **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
 - **시간 예산 관리**: 프롬프트 레벨 10분 분석 + Lambda 15분 타임아웃
 - **멱등성**: DynamoDB `IDEMP#` 키로 Fargate 스택과의 중복 처리 방지
@@ -487,6 +522,7 @@ flowchart TD
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
 | [ADR Index](./docs/adr/README.md) | 아키텍처 결정 기록 인덱스 |
+| [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |
 
 ## Deployment
@@ -512,7 +548,7 @@ CDK 스택 구성 (9개):
 | RdsStack | PostgreSQL 17.4 (Healthcare 서비스용) |
 | RcaAgentServiceStack | ECS Fargate — Strands RCA 에이전트 |
 | CcHeadlessStack | Lambda Container — CC headless RCA 에이전트 |
-| HealthcareServiceStack | ECS Fargate — Healthcare 센서 서비스 |
+| HealthcareServiceStack | ECS Fargate — Healthcare 센서 서비스 + Cloud Map Private DNS |
 
 모든 서비스는 Private subnet에 배포되며, 인바운드 트래픽이 차단됩니다. 자세한 스택 의존관계와 IAM 권한은 [`packages/infra/AGENTS.md`](./packages/infra/AGENTS.md)를 참조하세요.
 

@@ -9,7 +9,7 @@
 3. [AWS 인프라 구성](#3-aws-인프라-구성)
 4. [데이터 흐름 — 알람부터 보고서까지](#4-데이터-흐름--알람부터-보고서까지)
 5. [두 가지 RCA 엔진 비교](#5-두-가지-rca-엔진-비교)
-6. [Fargate 엔진 — 10단계 파이프라인](#6-fargate-엔진--10단계-파이프라인)
+6. [Fargate 엔진 — 12단계 파이프라인](#6-fargate-엔진--12단계-파이프라인)
 7. [Lambda 엔진 — CC Headless](#7-lambda-엔진--cc-headless)
 8. [MCP 서버 — 외부 데이터 수집 도구](#8-mcp-서버--외부-데이터-수집-도구)
 9. [Healthcare Sensor App — 데모용 서비스](#9-healthcare-sensor-app--데모용-서비스)
@@ -57,7 +57,7 @@ graph TB
 
     subgraph DualStack["Dual-Stack RCA 엔진"]
         subgraph FargateStack["🟦 Fargate Stack"]
-            ECS["ECS Fargate Task<br/>Python · Strands SDK<br/>10단계 파이프라인"]
+            ECS["ECS Fargate Task<br/>Python · Strands SDK<br/>12단계 파이프라인"]
         end
         subgraph LambdaStack["🟧 Lambda Stack"]
             LAMBDA["Lambda Container<br/>Node.js · Claude Code CLI<br/>프롬프트 주도 RCA"]
@@ -120,7 +120,7 @@ graph TB
 
 | | Fargate (Strands) | Lambda (CC Headless) |
 |---|---|---|
-| 장점 | 정교한 10단계 분석, 플레이북 학습 | 빠른 응답, 서버리스, 운영 부담 적음 |
+| 장점 | 정교한 12단계 분석, 플레이북 학습 | 빠른 응답, 서버리스, 운영 부담 적음 |
 | 단점 | 항시 실행, 비용 발생 | 15분 타임아웃 제한 |
 | 용도 | 정밀 분석이 필요한 복잡한 장애 | 빠른 초기 대응, 간단한 장애 |
 
@@ -257,7 +257,7 @@ graph LR
     subgraph Fargate["🟦 Fargate Stack (Strands)"]
         direction TB
         F_ENV["ECS Fargate<br/>Python 3.12"]
-        F_SDK["Strands Agents SDK<br/>10단계 파이프라인"]
+        F_SDK["Strands Agents SDK<br/>12단계 파이프라인"]
         F_MODEL["2-Tier 모델<br/>Sonnet 4.6 (추론)<br/>Haiku 4.5 (수집)"]
         F_TIME["시간 제한 없음<br/>(ECS 무제한)"]
         F_PLAY["✅ 플레이북 생성/학습"]
@@ -280,7 +280,7 @@ graph LR
 |------|-------------------|---------------------|
 | **실행 환경** | ECS Fargate (항시 실행) | Lambda Container (이벤트 트리거) |
 | **에이전트 프레임워크** | Strands Agents SDK (Python) | Claude Code CLI (Node.js) |
-| **RCA 방식** | 10단계 파이프라인 (코드로 정의) | 프롬프트에 워크플로우 정의, CC가 자율 실행 |
+| **RCA 방식** | 12단계 파이프라인 (코드로 정의) | 프롬프트에 워크플로우 정의, CC가 자율 실행 |
 | **AI 모델** | Sonnet 4.6 + Haiku 4.5 (2-Tier) | Sonnet 4.6 (단일) |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
 | **플레이북** | 생성 + S3 Vectors 인덱싱 | 미지원 |
@@ -291,9 +291,9 @@ graph LR
 
 ---
 
-## 6. Fargate 엔진 — 10단계 파이프라인
+## 6. Fargate 엔진 — 12단계 파이프라인
 
-Strands SDK 기반 Fargate 엔진은 RCA를 체계적인 10단계로 수행합니다.
+Strands SDK 기반 Fargate 엔진은 RCA를 체계적인 12단계로 수행합니다.
 
 ```mermaid
 flowchart TD
@@ -324,8 +324,10 @@ flowchart TD
     subgraph Output["④ 결과 생성"]
         F8["F8: 보고서 작성<br/>🧠 Sonnet 4.6<br/>→ S3 저장"]
         F9["F9: 플레이북 생성<br/>🧠 Sonnet 4.6<br/>→ S3 Vectors 인덱싱"]
-        F10["F10: SNS 알림<br/>(presigned URL)"]
-        F8 --> F9 --> F10
+        F10["F10: 자동 복구<br/>fault reset API<br/>ECS force deploy"]
+        F11["F11: 복구 검증<br/>🔧 Haiku 4.5<br/>CloudWatch MCP 메트릭 확인"]
+        F12["F12: SNS 알림<br/>(presigned URL)"]
+        F8 --> F9 --> F10 --> F11 --> F12
     end
 
     DEDUP --> F1
@@ -371,11 +373,13 @@ graph TB
     subgraph Execution["🔧 Execution Tier — Haiku 4.5"]
         E1["F1: 스코핑<br/>(MCP 도구 호출)"]
         E2["F4: 증거 수집<br/>(MCP 도구 호출)"]
+        E3["F11: 복구 검증<br/>(MCP 도구 호출)"]
     end
 
     subgraph NoLLM["⚙️ 순수 로직 (AI 미사용)"]
         N1["F7: 종료 판단"]
-        N2["F10: SNS 알림"]
+        N2["F12: SNS 알림"]
+        N3["F10: 자동 복구"]
     end
 
     style Planning fill:#e3f2fd,stroke:#1565c0
@@ -500,8 +504,8 @@ graph TB
 | MCP 서버 | 실행 방식 | 비고 |
 |----------|----------|------|
 | AWS Knowledge | `uvx fastmcp run https://...` (stdio) | AWS 공식 문서/SOP 검색 |
-| CloudWatch | `uvx awslabs.cw-mcp-server@latest` (stdio) | 메트릭·로그 조회 |
-| CloudTrail | `uvx awslabs.cloudtrail-mcp-server@latest` (stdio) | 배포·변경 이력 |
+| CloudWatch | `uvx --from awslabs-cloudwatch-mcp-server awslabs.cloudwatch-mcp-server` (stdio) | 메트릭·로그 조회 |
+| CloudTrail | `uvx --from awslabs-cloudtrail-mcp-server awslabs.cloudtrail-mcp-server` (stdio) | 배포·변경 이력 |
 
 모든 MCP 서버는 `uvx` (Python 패키지 런처)로 실행됩니다. `mcp-config.json`에 정의되어 있습니다.
 
@@ -553,9 +557,24 @@ graph TB
 | `POST /fault/db-leak` | DB 커넥션을 열고 닫지 않음 | RDS DatabaseConnections 급증 |
 | `POST /fault/db-leak/reset` | 누수된 커넥션 정리 | — |
 | `POST /fault/high-cpu` | CPU 집중 작업 실행 | ECS CPUUtilization 급증 |
+| `POST /fault/high-cpu/reset` | CPU 부하 중지 | — |
 | `POST /fault/high-memory` | 메모리 대량 할당 | ECS MemoryUtilization 급증 |
 | `POST /fault/high-memory/reset` | 할당 메모리 해제 | — |
 | `POST /fault/slow-query` | 의도적으로 느린 쿼리 실행 | RDS ReadLatency 급증 |
+| `POST /fault/slow-query/reset` | 느린 쿼리 중지 | — |
+
+> **참고**: `high-cpu`와 `slow-query` 장애는 명시적으로 reset 호출할 때까지 지속됩니다.
+
+> **Cloud Map DNS**: VPC 내부에서 `healthcare.rcaagentdev.local`로 접근할 수 있습니다.
+
+### RCA 대시보드
+
+`packages/dashboard`에 Nuxt.js 기반 로컬 전용 대시보드가 있습니다. DynamoDB 세션 목록과 S3 보고서를 조회할 수 있습니다.
+
+```bash
+cd packages/dashboard
+pnpm dev   # http://localhost:3100
+```
 
 ---
 
@@ -727,7 +746,9 @@ stateDiagram-v2
     EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION: 증거 수집 완료
     HYPOTHESIS_VALIDATION --> REPORT_GENERATION: 종료 조건 충족
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 분기 후 재루프
-    REPORT_GENERATION --> COMPLETED: 보고서 + 알림
+    REPORT_GENERATION --> REMEDIATION: 보고서 생성 완료
+    REMEDIATION --> VERIFICATION: 복구 실행
+    VERIFICATION --> COMPLETED: 검증 완료 + 알림
 
     ALARM_RECEIVED --> FAILED: 오류
     SCOPING --> FAILED: 오류

@@ -9,7 +9,7 @@ Accepted
 
 ## Context
 
-현재 RCA 에이전트(agent/0001~0010)는 Strands Agents SDK를 사용하여 10단계 파이프라인(F1~F10)을 Python 코드로 직접 구현한다. 각 단계마다 전용 Agent 인스턴스를 생성하고, Pydantic structured output으로 단계 간 데이터를 전달하며, 가설 트리 탐색 루프를 Python 코드로 오케스트레이션한다. 이 접근법은 세밀한 제어가 가능하지만 다음 한계가 있다:
+현재 RCA 에이전트(agent/0001~0010)는 Strands Agents SDK를 사용하여 12단계 파이프라인(F1~F12)을 Python 코드로 직접 구현한다. 각 단계마다 전용 Agent 인스턴스를 생성하고, Pydantic structured output으로 단계 간 데이터를 전달하며, 가설 트리 탐색 루프를 Python 코드로 오케스트레이션한다. 이 접근법은 세밀한 제어가 가능하지만 다음 한계가 있다:
 
 1. **구현 복잡도**: 10개 에이전트 팩토리, 10개 프롬프트, 8개 Pydantic 모델, 루프/분기/종료 로직을 모두 직접 작성해야 한다
 2. **모델 업그레이드 부담**: 모델 변경 시 SDK 호환성, structured output 포맷, thinking 파라미터를 모두 검증해야 한다
@@ -27,7 +27,7 @@ Accepted
 
 1. **실행 방식**: Lambda 함수 내에서 Claude Code CLI를 subprocess로 호출한다. `CLAUDE_CODE_USE_BEDROCK=1` 환경변수로 Bedrock 백엔드를 활성화하고, `--output-format json` 플래그로 구조화된 결과를 받는다.
 
-2. **프롬프트 주도 파이프라인**: Python/SDK로 10단계를 오케스트레이션하는 대신, 단일 프롬프트에 RCA 전체 워크플로우를 지시한다. CC headless가 MCP 도구를 자율 호출하며 스코핑 → 가설 → 증거 수집 → 검증 → 보고서를 한 번의 호출로 수행한다.
+2. **프롬프트 주도 파이프라인**: Python/SDK로 다단계를 오케스트레이션하는 대신, 단일 프롬프트에 RCA 전체 워크플로우를 지시한다. CC headless가 MCP 도구를 자율 호출하며 스코핑 → 가설 → 증거 수집 → 검증 → 보고서를 한 번의 호출로 수행한다.
 
 3. **MCP 서버 연결**: CC headless의 MCP 설정(`.mcp.json` 또는 `--mcp-config`)으로 CloudWatch MCP, CloudTrail MCP, GitHub MCP를 등록한다. CC가 프롬프트 지시에 따라 도구를 자율 선택하여 호출한다.
 
@@ -47,7 +47,7 @@ Accepted
 | 항목 | Fargate 스택 (기존) | Lambda 스택 (신규) |
 |------|--------------------|--------------------|
 | 실행 엔진 | Strands Agents SDK | CC on Bedrock headless |
-| 오케스트레이션 | Python 코드 (10단계 루프) | 단일 프롬프트 (CC 자율 실행) |
+| 오케스트레이션 | Python 코드 (12단계 루프) | 단일 프롬프트 (CC 자율 실행) |
 | 컴퓨팅 | ECS Fargate (상시 실행) | Lambda (이벤트 기반) |
 | 타임아웃 | 제한 없음 (20분 버짓) | 15분 (Lambda 제한) |
 | MCP 연결 | SDK MCPClient 팩토리 | CC MCP 설정 파일 |

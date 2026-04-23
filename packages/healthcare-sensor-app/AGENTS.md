@@ -11,7 +11,7 @@ Healthcare Sensor App은 RCA 에이전트의 근본원인분석 정확도를 검
 - **센서 데이터 수집**: 심박수, 혈압(수축기/이완기), 체온, SpO2 배치 수집
 - **이상치 감지**: 임계값 기반 자동 이상치 판별 및 알림
 - **환자별 바이탈 조회**: 타입/기간 필터링 지원
-- **장애 주입**: DB 커넥션 릭, CPU 부하, 메모리 압박, 슬로우 쿼리
+- **장애 주입**: DB 커넥션 릭, CPU 부하, 메모리 압박, 슬로우 쿼리 (high-cpu, slow-query는 명시적 reset API 호출까지 영구 지속)
 - **Background Traffic Generator**: 10명 가상 환자에 대해 5초 간격 센서 데이터 자동 생성 (92% 정상, 8% 비정상) — CloudWatch baseline 메트릭 축적용
 - **OpenTelemetry 계측**: 분산 트레이싱 및 메트릭 수집
 
@@ -103,10 +103,15 @@ packages/healthcare-sensor-app/
 
 ### 장애 주입 시나리오
 
-1. Fault injection API로 특정 장애 유형 트리거
+1. Fault injection API로 특정 장애 유형 트리거 (high-cpu, slow-query는 reset 호출까지 영구 지속)
 2. CloudWatch/X-Ray에서 이상 징후 포착
 3. RCA 에이전트가 알람을 수신하고 근본원인분석 수행
-4. 분석 결과를 기대 원인과 비교하여 정확도 측정
+4. (Remediation 활성화 시) 에이전트가 reset API를 자동 호출하여 장애 해제
+5. 분석 결과를 기대 원인과 비교하여 정확도 측정
+
+### 서비스 디스커버리
+
+ECS 배포 시 Cloud Map Private DNS로 등록된다: `healthcare.rcaagentdev.local:8000`. RCA 에이전트의 Remediation 단계에서 이 DNS로 reset API를 호출한다.
 
 ## Architecture Principles
 

@@ -1,8 +1,8 @@
 # RCA Agent 아키텍처 및 데모 시나리오 흐름
 
-## 1. 전체 데이터 플로우 — Fargate (Strands, 10단계)
+## 1. 전체 데이터 플로우 — Fargate (Strands, 12단계)
 
-SQS 메시지 수신부터 SNS 알림 발행까지, 10단계 파이프라인의 전체 데이터 흐름을 나타냅니다.
+SQS 메시지 수신부터 SNS 알림 발행까지, 12단계 파이프라인의 전체 데이터 흐름을 나타냅니다.
 
 ```mermaid
 flowchart TD
@@ -89,11 +89,23 @@ flowchart TD
             PB_SEARCH --> PB_AGENT --> PB_S3V
         end
 
-        subgraph F10["F10: Notification"]
+        subgraph F10["F10: Remediation"]
+            REM_PARSE["플레이북 기반 복구 액션 결정"]
+            REM_EXEC["fault reset API + ECS force deploy"]
+            REM_PARSE --> REM_EXEC
+        end
+
+        subgraph F11["F11: Verification"]
+            VER_AGENT["Verification Agent<br/>(CloudWatch MCP)"]
+            VER_RESULT["VerificationResult"]
+            VER_AGENT --> VER_RESULT
+        end
+
+        subgraph F12["F12: Notification"]
             N_SNS["SNS Publish<br/>(presigned URL)"]
         end
 
-        F8 --> F9 --> F10
+        F8 --> F9 --> F10 --> F11 --> F12
     end
 
     DEDUP --> F1
@@ -191,7 +203,11 @@ stateDiagram-v2
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 분기 후 재루프
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_GENERATION: 전체 기각 (재생성)
 
-    REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + 알림
+    REPORT_GENERATION --> REMEDIATION: 보고서 + 플레이북 생성
+    REMEDIATION --> VERIFICATION: 복구 실행
+    VERIFICATION --> COMPLETED: 검증 + 알림
+
+    REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + 알림 (복구 비활성화 시)
 
     state FAILED_STATE <<join>>
     SCOPING --> FAILED_STATE: 예외 발생
@@ -230,7 +246,7 @@ stateDiagram-v2
 
 ## 4. 데모 시나리오: DB 커넥션 누수 장애
 
-PRD Section 3에 정의된 데모 시나리오의 10단계 파이프라인 흐름입니다.
+PRD Section 3에 정의된 데모 시나리오의 12단계 파이프라인 흐름입니다.
 
 ### 시나리오 개요
 
@@ -358,7 +374,15 @@ sequenceDiagram
     Bedrock-->>Agent: DB 커넥션 누수 플레이북
     Agent->>S3V: 플레이북 임베딩 인덱싱
 
-    Note over Agent,SNS: Phase 9: F10 알림
+    Note over Agent,SNS: Phase 9: F10 Remediation (데모에서는 비활성화 가능)
+    Agent->>Agent: 플레이북 기반 복구 액션 결정
+    Agent->>Agent: fault reset API + ECS force deploy
+
+    Note over Agent,CW_MCP: Phase 10: F11 Verification (데모에서는 비활성화 가능)
+    Agent->>CW_MCP: 복구 후 메트릭 검증
+    CW_MCP-->>Agent: DB 커넥션 수 안정화 확인
+
+    Note over Agent,SNS: Phase 11: F12 알림
     Agent->>S3: presigned URL 생성
     Agent->>SNS: RCA 완료 알림 발행
     Agent->>DDB: state = COMPLETED
@@ -379,7 +403,9 @@ sequenceDiagram
 | 4-5 | F4-F5 (2차) | A-1: REJECTED, A-2: CONFIRMED (0.92) | S3, DynamoDB |
 | 7 | F8 보고서 | RCA Report (Markdown) | S3 |
 | 8 | F9 플레이북 | DB 커넥션 누수 대응 플레이북 | S3 Vectors |
-| 9 | F10 알림 | SNS 알림 (presigned URL 포함) | SNS → SRE |
+| 9 | F10 Remediation | 플레이북 기반 복구 액션 (fault reset API + ECS force deploy) | - |
+| 10 | F11 Verification | CloudWatch MCP로 복구 후 메트릭 검증 | - |
+| 11 | F12 알림 | SNS 알림 (presigned URL 포함) | SNS → SRE |
 
 ### 데모에서 사용되는 MCP 도구
 
@@ -416,11 +442,13 @@ flowchart LR
         SCOPING["F1: Scoping"]
         EVIDENCE["F4: Evidence Collection"]
         VALIDATION["F5: Validation"]
+        VERIF["F11: Verification"]
     end
 
     subgraph NoLLM["순수 로직 (LLM 미사용)"]
         TERM["F7: Termination"]
-        NOTIF["F10: Notification"]
+        REMED["F10: Remediation"]
+        NOTIF["F12: Notification"]
     end
 
     subgraph MCP["MCP 서버 연결"]
@@ -434,6 +462,7 @@ flowchart LR
     EVIDENCE -.-> CW
     EVIDENCE -.-> CT
     EVIDENCE -.-> GH
+    VERIF -.-> CW
 
     style Planning fill:#e3f2fd,stroke:#1565c0
     style Execution fill:#e8f5e9,stroke:#2e7d32

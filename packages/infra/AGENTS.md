@@ -45,7 +45,7 @@ RcaAgentDev
 ├── RdsStack                      # PostgreSQL 17.4 (Healthcare 서비스용)
 ├── RcaAgentServiceStack          # ECS Fargate — Strands RCA 에이전트
 ├── CcHeadlessStack               # Lambda Container — CC headless RCA 에이전트
-└── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스
+└── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스 + Cloud Map DNS
 ```
 
 ### Stack Dependencies
@@ -98,6 +98,7 @@ NetworkStack ──────── RdsStack
 - Bedrock: InvokeModel / InvokeModelWithResponseStream
 - X-Ray: BatchGetTraces, GetTraceSummaries, PutTraceSegments, PutTelemetryRecords
 - SNS: Publish (알림 토픽)
+- ECS: UpdateService, DescribeServices (Remediation용 force new deployment)
 
 ### CC Headless (Lambda Execution Role)
 
@@ -108,6 +109,7 @@ NetworkStack ──────── RdsStack
 - S3 Vectors: 전체 CRUD
 - Bedrock: InvokeModel / InvokeModelWithResponseStream
 - SNS: Publish (알림 토픽)
+- ECS: UpdateService, DescribeServices (Remediation용 force new deployment)
 
 ### Healthcare (Fargate Task Role)
 

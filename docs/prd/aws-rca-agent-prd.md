@@ -1000,12 +1000,12 @@ graph TD
 |------|------|---------|
 | 실시간 대응 모드 | 5초 이내 응답 목표의 실시간 RCA — MVP는 여유 시간(수분~20분) 기준 | v2에서 경량 프롬프트 + 캐싱 + Kinesis 스트리밍 기반 실시간 모드 추가 |
 | OpenSearch 기반 로그 검색 | 대용량 로그 전문 검색 — MVP는 CloudWatch Logs Insights만 사용 | v2에서 CloudWatch Logs → OpenSearch 스트리밍 파이프라인 구축 |
-| 자동 조치 실행 | 롤백, 리소스 증설 등 자동 실행 — MVP는 "권고"까지만 | v2에서 SRE 승인 후 자동 실행(Human-in-the-Loop) → v3에서 완전 자동화 |
+| 자동 조치 실행 | fault reset API + ECS force deploy 구현 완료 (`REMEDIATION_ENABLED` 피처 플래그) | ~~v2에서 SRE 승인 후 자동 실행~~ → MVP에서 구현 완료. v2에서 조치 범위 확대 (Human-in-the-Loop 승인) |
 | Slack/PagerDuty 연동 | 알림 채널 확장 — MVP는 SNS(이메일) 기반 | v2에서 Slack Bot, PagerDuty 웹훅 연동 |
 | 멀티 리전/멀티 계정 | 크로스 리전, 크로스 계정 RCA — MVP는 단일 리전/단일 계정 | v2에서 AWS Organizations + Cross-Account IAM Role 기반 확장 |
 | 멀티 클라우드 | Azure, GCP 등 타 클라우드 대응 | v3 이후 검토 |
 | Step Functions 오케스트레이션 | 복잡한 워크플로우 관리 — MVP는 에이전트 자체 루프 | 운영 규모 확장 시 Step Functions 도입 검토 |
-| 대시보드 고도화 | 실시간 가설 트리 시각화, 인터랙티브 조작 — MVP는 기본 조회/열람 | v2에서 WebSocket 기반 실시간 업데이트, 가설 수동 추가/수정 기능 |
+| 대시보드 고도화 | 로컬 전용 Nuxt.js 대시보드(`packages/dashboard`) 구현 완료 — 세션 목록, 보고서 조회 | v2에서 WebSocket 기반 실시간 업데이트, 가설 수동 추가/수정, 인증/배포 기능 |
 | SRE 피드백 루프 | SRE가 RCA 결과를 평가하여 모델 튜닝에 활용 | v2에서 피드백 UI + 운영 루프 마련 |
 | 배치 분석 모드 | 일괄 수집/분석 — MVP는 개별 알람 기반 | v2에서 Kinesis 스트림 처리 + Lambda Auto Scaling 검토 |
 
