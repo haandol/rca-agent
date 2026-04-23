@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from rca_agent.main import _Agents, _parse_sns_envelope, _process_alarm
+from rca_agent.main import _Agents, _parse_sns_envelope, _process_alarm, _prune_subtree
 from rca_agent.models import (
     Hypothesis,
     HypothesisCategory,
@@ -468,3 +468,59 @@ class TestProcessAlarmFullPipeline:
 
         mock_scoping.assert_not_called()
         mock_failed.assert_not_called()
+
+
+class TestPruneSubtree:
+    def test_prunes_direct_children(self):
+        parent = _make_hypothesis("h-1")
+        parent.status = HypothesisStatus.REJECTED
+        child1 = _make_hypothesis("h-1a")
+        child1.parent_id = "h-1"
+        child1.depth = 1
+        child2 = _make_hypothesis("h-1b")
+        child2.parent_id = "h-1"
+        child2.depth = 1
+        unrelated = _make_hypothesis("h-2")
+
+        hypotheses = [parent, child1, child2, unrelated]
+        pruned = _prune_subtree("h-1", hypotheses)
+
+        assert set(pruned) == {"h-1a", "h-1b"}
+        assert child1.status == HypothesisStatus.REJECTED
+        assert child2.status == HypothesisStatus.REJECTED
+        assert unrelated.status == HypothesisStatus.PENDING
+
+    def test_prunes_deep_descendants(self):
+        parent = _make_hypothesis("h-1")
+        parent.status = HypothesisStatus.REJECTED
+        child = _make_hypothesis("h-1a")
+        child.parent_id = "h-1"
+        child.depth = 1
+        grandchild = _make_hypothesis("h-1a1")
+        grandchild.parent_id = "h-1a"
+        grandchild.depth = 2
+
+        hypotheses = [parent, child, grandchild]
+        pruned = _prune_subtree("h-1", hypotheses)
+
+        assert set(pruned) == {"h-1a", "h-1a1"}
+        assert grandchild.status == HypothesisStatus.REJECTED
+
+    def test_skips_already_rejected_descendants(self):
+        parent = _make_hypothesis("h-1")
+        parent.status = HypothesisStatus.REJECTED
+        child = _make_hypothesis("h-1a")
+        child.parent_id = "h-1"
+        child.status = HypothesisStatus.REJECTED
+
+        hypotheses = [parent, child]
+        pruned = _prune_subtree("h-1", hypotheses)
+
+        assert pruned == []
+
+    def test_no_children_returns_empty(self):
+        parent = _make_hypothesis("h-1")
+        parent.status = HypothesisStatus.REJECTED
+
+        pruned = _prune_subtree("h-1", [parent])
+        assert pruned == []

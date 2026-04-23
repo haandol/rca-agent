@@ -81,9 +81,6 @@ const rcaAgentServiceStack = new RcaAgentServiceStack(
     vectorBucketName: Config.storage.vectorBucket,
     imageTag: Config.agent.imageTag,
     tracing: Config.tracing.enabled,
-    healthcareServiceHost: healthcareServiceStack.serviceHost,
-    healthcareClusterName: healthcareServiceStack.clusterName,
-    healthcareServiceName: healthcareServiceStack.serviceName,
   },
 );
 rcaAgentServiceStack.addDependency(ecrStack);
@@ -91,7 +88,6 @@ rcaAgentServiceStack.addDependency(networkStack);
 rcaAgentServiceStack.addDependency(eventBusStack);
 rcaAgentServiceStack.addDependency(databaseStack);
 rcaAgentServiceStack.addDependency(storageStack);
-rcaAgentServiceStack.addDependency(healthcareServiceStack);
 
 const ccHeadlessStack = new CcHeadlessStack(
   app,

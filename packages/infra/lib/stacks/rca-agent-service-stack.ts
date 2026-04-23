@@ -19,9 +19,6 @@ interface IProps extends cdk.StackProps {
   readonly vectorBucketName: string;
   readonly imageTag: string;
   readonly tracing: boolean;
-  readonly healthcareServiceHost?: string;
-  readonly healthcareClusterName?: string;
-  readonly healthcareServiceName?: string;
 }
 
 export class RcaAgentServiceStack extends cdk.Stack {
@@ -87,15 +84,6 @@ export class RcaAgentServiceStack extends cdk.Stack {
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
         FAULT_ERROR_RATE: '0.0',
-        ...(props.healthcareServiceHost && {
-          HEALTHCARE_SERVICE_HOST: props.healthcareServiceHost,
-        }),
-        ...(props.healthcareClusterName && {
-          HEALTHCARE_ECS_CLUSTER: props.healthcareClusterName,
-        }),
-        ...(props.healthcareServiceName && {
-          HEALTHCARE_ECS_SERVICE: props.healthcareServiceName,
-        }),
       },
       secrets: {
         GITHUB_PERSONAL_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(githubPatSecret),
@@ -201,16 +189,6 @@ export class RcaAgentServiceStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ['sns:Publish'],
         resources: [props.alarmTopic.topicArn],
-      }),
-    );
-
-    taskDef.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'ecs:UpdateService',
-          'ecs:DescribeServices',
-        ],
-        resources: ['*'],
       }),
     );
   }

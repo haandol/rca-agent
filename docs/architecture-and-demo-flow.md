@@ -1,8 +1,8 @@
 # RCA Agent 아키텍처 및 데모 시나리오 흐름
 
-## 1. 전체 데이터 플로우 — Fargate (Strands, 12단계)
+## 1. 전체 데이터 플로우 — Fargate (Strands, 9단계)
 
-SQS 메시지 수신부터 SNS 알림 발행까지, 12단계 파이프라인의 전체 데이터 흐름을 나타냅니다.
+SQS 메시지 수신부터 SNS 알림 발행까지, 9단계 파이프라인의 전체 데이터 흐름을 나타냅니다. 검증 루프 내에서 Beam Selection으로 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증합니다. Remediation과 Verification은 별도 에이전트로 분리되어 SNS → SQS 이벤트를 통해 비동기로 수행됩니다.
 
 ```mermaid
 flowchart TD
@@ -10,12 +10,13 @@ flowchart TD
         SQS["SQS Message"]
         PARSE["AlarmPayload 파싱"]
         DEDUP["멱등성 체크<br/>(DynamoDB)"]
-        SQS --> PARSE --> DEDUP
+        STALE["Stale 알람 체크<br/>(30분 초과 → OUTDATED)"]
+        SQS --> PARSE --> DEDUP --> STALE
     end
 
     subgraph F1["F1: Scoping"]
         S_PB["S3 Vectors<br/>유사 플레이북 검색"]
-        S_AGENT["Scoping Agent<br/>(CW+CT MCP)"]
+        S_AGENT["Scoping Agent<br/>(AWS Knowledge + CW + CT MCP)"]
         S_OUT["ScopingResult"]
         S_PB --> S_AGENT --> S_OUT
     end
@@ -34,8 +35,12 @@ flowchart TD
             P_AGENT --> P_OUT
         end
 
+        subgraph BEAM["Beam Selection"]
+            B_SEL["상위 N개 선택<br/>(RCA_BEAM_WIDTH, 기본 3)"]
+        end
+
         subgraph F4["F4: Evidence Collection"]
-            E_AGENT["Evidence Agent<br/>(CW+CT+GitHub MCP)"]
+            E_AGENT["Evidence Agent<br/>(AWS Knowledge + CW + CT + GitHub MCP)"]
             E_CW["CloudWatch<br/>메트릭/로그"]
             E_CT["CloudTrail<br/>배포/변경 이력"]
             E_GH["GitHub<br/>코드 변경 분석"]
@@ -54,8 +59,8 @@ flowchart TD
             V_AGENT --> V_OUT
         end
 
-        subgraph F7["F7: Termination Check"]
-            T_CHECK["5가지 종료 조건 평가"]
+        subgraph TC["Termination Check"]
+            T_CHECK["4가지 종료 조건 평가<br/>(CONFIRMED / TIME_BUDGET /<br/>MAX_DEPTH / MAX_LOOPS)"]
             T_DEC{{"종료?"}}
             T_CHECK --> T_DEC
         end
@@ -66,7 +71,7 @@ flowchart TD
             B_AGENT --> B_OUT
         end
 
-        F3 --> F4 --> F5 --> F7
+        F3 --> BEAM --> F4 --> F5 --> TC
         T_DEC -->|계속| F6
         F6 -->|새 하위 가설| F3
     end
@@ -76,47 +81,36 @@ flowchart TD
     end
 
     subgraph Output["출력"]
-        subgraph F8["F8: Report"]
+        subgraph F7["F7: Report"]
             R_AGENT["Report Agent"]
             R_S3["S3 보고서 저장<br/>(Markdown)"]
             R_AGENT --> R_S3
         end
 
-        subgraph F9["F9: Playbook"]
+        subgraph F8["F8: Playbook"]
             PB_SEARCH["S3 Vectors<br/>기존 플레이북 검색"]
             PB_AGENT["Playbook Agent<br/>(update or create)"]
             PB_S3V["S3 Vectors 인덱싱"]
             PB_SEARCH --> PB_AGENT --> PB_S3V
         end
 
-        subgraph F10["F10: Remediation"]
-            REM_PARSE["플레이북 기반 복구 액션 결정"]
-            REM_EXEC["fault reset API + ECS force deploy"]
-            REM_PARSE --> REM_EXEC
+        subgraph F9["F9: Notification"]
+            N_SNS["SNS Publish<br/>(presigned URL + 플레이북)"]
         end
 
-        subgraph F11["F11: Verification"]
-            VER_AGENT["Verification Agent<br/>(CloudWatch MCP)"]
-            VER_RESULT["VerificationResult"]
-            VER_AGENT --> VER_RESULT
-        end
-
-        subgraph F12["F12: Notification"]
-            N_SNS["SNS Publish<br/>(presigned URL)"]
-        end
-
-        F8 --> F9 --> F10 --> F11 --> F12
+        F7 --> F8 --> F9
     end
 
-    DEDUP --> F1
+    STALE --> F1
     S_OUT --> F2
     H_OUT --> Loop
-    T_DEC -->|종료| F8
+    T_DEC -->|종료| F7
     V_OUT -->|all_rejected| Regen
     Regen --> Loop
 
     style F4 fill:#e8f5e9,stroke:#388e3c
-    style F7 fill:#f9f3e3,stroke:#d4a843
+    style TC fill:#f9f3e3,stroke:#d4a843
+    style BEAM fill:#e8eaf6,stroke:#3f51b5
     style Regen fill:#fce4ec,stroke:#c62828
 ```
 
@@ -141,6 +135,7 @@ flowchart TD
     end
 
     subgraph MCPTools["MCP 도구 (CC 자율 호출)"]
+        AK["AWS Knowledge MCP<br/>AWS 문서 참조"]
         CW["CloudWatch MCP<br/>메트릭/로그 수집"]
         CT["CloudTrail MCP<br/>배포/변경 이력"]
         GH["GitHub MCP<br/>코드 변경 분석"]
@@ -185,16 +180,18 @@ DynamoDB에 기록되는 RCA 세션 상태 전이입니다. 두 스택이 동일
 stateDiagram-v2
     [*] --> ALARM_RECEIVED: SQS 메시지 수신
 
+    ALARM_RECEIVED --> OUTDATED: Stale 알람 (30분 초과)
     ALARM_RECEIVED --> SCOPING: AlarmPayload 파싱 완료
 
     SCOPING --> HYPOTHESIS_GENERATION: ScopingResult 생성
 
     HYPOTHESIS_GENERATION --> HYPOTHESIS_PRIORITIZATION: 가설 3~5개 생성
 
-    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION: 검증 순서 결정
+    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION: Beam Selection 후 검증 순서 결정
 
     EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION: evidence_map 구성
     note right of EVIDENCE_COLLECTION
+        AWS Knowledge MCP: AWS 문서 참조
         CloudWatch MCP: 메트릭 + 로그
         CloudTrail MCP: 배포/변경 이력
         GitHub MCP: 코드 변경 diff 분석
@@ -205,11 +202,7 @@ stateDiagram-v2
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 분기 후 재루프
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_GENERATION: 전체 기각 (재생성)
 
-    REPORT_GENERATION --> REMEDIATION: 보고서 + 플레이북 생성
-    REMEDIATION --> VERIFICATION: 복구 실행
-    VERIFICATION --> COMPLETED: 검증 + 알림
-
-    REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + 알림 (복구 비활성화 시)
+    REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + 알림<br/>(플레이북 포함 SNS 발행)
 
     state FAILED_STATE <<join>>
     SCOPING --> FAILED_STATE: 예외 발생
@@ -219,8 +212,15 @@ stateDiagram-v2
     REPORT_GENERATION --> FAILED_STATE: 예외 발생
     FAILED_STATE --> FAILED
 
+    SCOPING --> CANCELLED: 세션 취소 요청
+    HYPOTHESIS_GENERATION --> CANCELLED: 세션 취소 요청
+    EVIDENCE_COLLECTION --> CANCELLED: 세션 취소 요청
+    HYPOTHESIS_VALIDATION --> CANCELLED: 세션 취소 요청
+
     COMPLETED --> [*]
     FAILED --> [*]
+    OUTDATED --> [*]
+    CANCELLED --> [*]
 ```
 
 ### ECS Fargate (CC Headless) 상태 전이
@@ -248,7 +248,7 @@ stateDiagram-v2
 
 ## 4. 데모 시나리오: DB 커넥션 누수 장애
 
-PRD Section 3에 정의된 데모 시나리오의 12단계 파이프라인 흐름입니다.
+PRD Section 3에 정의된 데모 시나리오의 11단계 파이프라인 흐름입니다.
 
 ### 시나리오 개요
 
@@ -261,6 +261,7 @@ sequenceDiagram
     participant CW as CloudWatch Alarm
     participant SQS as SQS Queue
     participant Agent as RCA Agent<br/>(ECS Fargate)
+    participant AK_MCP as AWS Knowledge MCP
     participant CW_MCP as CloudWatch MCP
     participant CT_MCP as CloudTrail MCP
     participant GH_MCP as GitHub MCP
@@ -334,7 +335,7 @@ sequenceDiagram
     Agent->>Bedrock: 가설 C + 증거 → 검증
     Bedrock-->>Agent: C: REJECTED (0.15)
 
-    Note over Agent,Bedrock: Phase 6: F7 종료 판단 + F6 분기
+    Note over Agent,Bedrock: Phase 6: 종료 판단 + F6 분기
     Agent->>Agent: 종료 조건 미충족 → 계속
     Agent->>Bedrock: 가설 A 하위 분기 요청
     Bedrock-->>Agent: 하위 가설 생성
@@ -363,32 +364,24 @@ sequenceDiagram
 
     Note over Agent,Bedrock: 종료 → confidence ≥ 0.9
 
-    Note over Agent,S3: Phase 7: F8 보고서 생성
+    Note over Agent,S3: Phase 7: F7 보고서 생성
     Agent->>DDB: state = REPORT_GENERATION
     Agent->>Bedrock: RCA 보고서 작성 요청
     Bedrock-->>Agent: 구조화된 보고서
     Agent->>S3: reports/{rca_id}.md 저장
 
-    Note over Agent,S3V: Phase 8: F9 플레이북 생성
+    Note over Agent,S3V: Phase 8: F8 플레이북 생성
     Agent->>S3V: 기존 유사 플레이북 검색 (≥0.86)
     S3V-->>Agent: (해당 없음 → 신규 생성)
     Agent->>Bedrock: 플레이북 생성 요청
     Bedrock-->>Agent: DB 커넥션 누수 플레이북
     Agent->>S3V: 플레이북 임베딩 인덱싱
 
-    Note over Agent,SNS: Phase 9: F10 Remediation (데모에서는 비활성화 가능)
-    Agent->>Agent: 플레이북 기반 복구 액션 결정
-    Agent->>Agent: fault reset API + ECS force deploy
-
-    Note over Agent,CW_MCP: Phase 10: F11 Verification (데모에서는 비활성화 가능)
-    Agent->>CW_MCP: 복구 후 메트릭 검증
-    CW_MCP-->>Agent: DB 커넥션 수 안정화 확인
-
-    Note over Agent,SNS: Phase 11: F12 알림
+    Note over Agent,SNS: Phase 9: F9 알림
     Agent->>S3: presigned URL 생성
-    Agent->>SNS: RCA 완료 알림 발행
+    Agent->>SNS: RCA 완료 알림 발행 (플레이북 포함)
     Agent->>DDB: state = COMPLETED
-    SNS-->>SNS: SRE 팀 수신
+    SNS-->>SNS: SRE 팀 + Remediation Agent 수신
 ```
 
 ### 각 Phase별 산출물
@@ -398,21 +391,20 @@ sequenceDiagram
 | 0 | 알람 수신 | AlarmPayload, RCA 세션 | DynamoDB |
 | 1 | F1 스코핑 | ScopingResult (severity=high, blast=multi) | - |
 | 2 | F2 가설 생성 | 가설 A/B/C (3개) | - |
-| 3 | F3 우선순위 | A→B→C 검증 순서 | - |
+| 3 | F3 우선순위 + Beam Selection | A→B→C 검증 순서, 상위 3개 선택 | - |
 | 4 | F4 증거 수집 | 메트릭(커넥션 추이), 로그(Too many connections), 배포 이력, 코드 diff | S3 |
 | 5 | F5 검증 (1차) | A: NEEDS_INVESTIGATION, B/C: REJECTED | DynamoDB |
 | 6 | F6 분기 | A-1(풀 설정), A-2(커넥션 미반환) | - |
 | 4-5 | F4-F5 (2차) | A-1: REJECTED, A-2: CONFIRMED (0.92) | S3, DynamoDB |
-| 7 | F8 보고서 | RCA Report (Markdown) | S3 |
-| 8 | F9 플레이북 | DB 커넥션 누수 대응 플레이북 | S3 Vectors |
-| 9 | F10 Remediation | 플레이북 기반 복구 액션 (fault reset API + ECS force deploy) | - |
-| 10 | F11 Verification | CloudWatch MCP로 복구 후 메트릭 검증 | - |
-| 11 | F12 알림 | SNS 알림 (presigned URL 포함) | SNS → SRE |
+| 7 | F7 보고서 | RCA Report (Markdown) | S3 |
+| 8 | F8 플레이북 | DB 커넥션 누수 대응 플레이북 | S3 Vectors |
+| 9 | F9 알림 | SNS 알림 (presigned URL + 플레이북 포함) | SNS → SRE + Remediation Agent |
 
 ### 데모에서 사용되는 MCP 도구
 
 | MCP 서버 | 도구 | 용도 |
 |---------|------|------|
+| AWS Knowledge MCP | `search_documentation`, `read_documentation` | AWS 서비스 문서 참조, 모범 사례 검색 |
 | CloudWatch MCP | `get_metric_data` | DB 커넥션 수, Latency, RequestCount, CPU 메트릭 조회 |
 | CloudWatch MCP | `execute_log_insights_query` | "Too many connections" 에러 로그 검색 |
 | CloudWatch MCP | `analyze_metric` | 커넥션 증가 트렌드 분석 |
@@ -424,7 +416,7 @@ sequenceDiagram
 
 이 데모에서는 **CONFIRMED** 종료 조건이 트리거됩니다:
 - 가설 A-2 "코드에서 커넥션 미반환"이 confidence 0.92로 확정
-- 임계치 0.9 이상 → 즉시 종료 → 보고서 생성 단계 진입
+- 임계치 0.9 이상 → 즉시 종료 → 보고서 생성 → 플레이북 생성 → 알림 발행
 
 ## 5. 에이전트 모델 티어 매핑
 
@@ -436,35 +428,35 @@ flowchart LR
         HYP["F2: Hypothesis Gen"]
         PRIO["F3: Prioritization"]
         BRANCH["F6: Branching"]
-        REPORT["F8: Report"]
-        PLAYBOOK["F9: Playbook"]
+        REPORT["F7: Report"]
+        PLAYBOOK["F8: Playbook"]
     end
 
     subgraph Execution["Execution Tier<br/>(Haiku 4.5)"]
         SCOPING["F1: Scoping"]
         EVIDENCE["F4: Evidence Collection"]
         VALIDATION["F5: Validation"]
-        VERIF["F11: Verification"]
     end
 
     subgraph NoLLM["순수 로직 (LLM 미사용)"]
-        TERM["F7: Termination"]
-        REMED["F10: Remediation"]
-        NOTIF["F12: Notification"]
+        TERM["Termination Check"]
+        NOTIF["F9: Notification"]
     end
 
     subgraph MCP["MCP 서버 연결"]
+        AK["AWS Knowledge MCP"]
         CW["CloudWatch MCP"]
         CT["CloudTrail MCP"]
         GH["GitHub MCP"]
     end
 
+    SCOPING -.-> AK
     SCOPING -.-> CW
     SCOPING -.-> CT
+    EVIDENCE -.-> AK
     EVIDENCE -.-> CW
     EVIDENCE -.-> CT
     EVIDENCE -.-> GH
-    VERIF -.-> CW
 
     style Planning fill:#e3f2fd,stroke:#1565c0
     style Execution fill:#e8f5e9,stroke:#2e7d32
@@ -481,6 +473,7 @@ flowchart LR
     end
 
     subgraph MCP["MCP 서버 연결"]
+        AK["AWS Knowledge MCP"]
         CW["CloudWatch MCP"]
         CT["CloudTrail MCP"]
         GH["GitHub MCP"]
@@ -493,6 +486,7 @@ flowchart LR
         NOTIFY["SNS 알림"]
     end
 
+    CC -.-> AK
     CC -.-> CW
     CC -.-> CT
     CC -.-> GH

@@ -48,8 +48,3 @@ DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "")
 SESSION_TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "90"))
 
 ALARM_STALENESS_SECONDS = int(os.environ.get("ALARM_STALENESS_SECONDS", "1800"))
-
-HEALTHCARE_SERVICE_HOST = os.environ.get("HEALTHCARE_SERVICE_HOST", "")
-HEALTHCARE_ECS_CLUSTER = os.environ.get("HEALTHCARE_ECS_CLUSTER", "")
-HEALTHCARE_ECS_SERVICE = os.environ.get("HEALTHCARE_ECS_SERVICE", "")
-REMEDIATION_ENABLED = os.environ.get("REMEDIATION_ENABLED", "true").lower() in ("true", "1", "yes")

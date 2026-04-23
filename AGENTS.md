@@ -6,7 +6,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 
 | Package | Description | Tech |
 |---------|-------------|------|
-| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 12단계 closed-loop 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
+| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | Python, Claude Code CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
@@ -20,7 +20,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---|---|---|
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 11단계 closed-loop 파이프라인 | 단일 프롬프트 + MCP 도구 자율 호출 |
+| **RCA 방식** | 9단계 closed-loop 파이프라인 | 단일 프롬프트 + MCP 도구 자율 호출 |
 | **모델** | 2-tier (Sonnet 4.6 + Haiku 4.5) | CC 기본 모델 (Sonnet 4.6) |
 | **타임아웃** | 제한 없음 | 제한 없음 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
@@ -160,9 +160,9 @@ graph TB
     SNS_OUT --> SRE
 ```
 
-### Agent Pipeline — Fargate (Strands, 11단계)
+### Agent Pipeline — Fargate (Strands, 9단계)
 
-에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 자동 복구(Remediation)와 복구 검증(Verification) 단계를 거치는 closed-loop 파이프라인입니다.
+에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북을 포함한 SNS 알림을 발행합니다. Remediation과 Verification은 별도 에이전트가 SNS → SQS로 구독하여 수행합니다.
 
 ```mermaid
 stateDiagram-v2
@@ -234,7 +234,7 @@ stateDiagram-v2
         S3에 Markdown 저장
     end note
 
-    PLAYBOOK_GENERATION --> REMEDIATION: Playbook
+    PLAYBOOK_GENERATION --> NOTIFICATION: Playbook
     note right of PLAYBOOK_GENERATION
         검색 우선(Search-First):
         유사 플레이북 검색 (≥0.86)
@@ -242,24 +242,11 @@ stateDiagram-v2
         S3 Vectors에 인덱싱
     end note
 
-    REMEDIATION --> VERIFICATION: RemediationResult
-    note right of REMEDIATION
-        REMEDIATION_ENABLED=true일 때 실행
-        1. 플레이북 기반 fault reset API 호출
-        2. ECS force new deployment (롤백)
-        Cloud Map DNS로 서비스 디스커버리
-    end note
-
-    VERIFICATION --> NOTIFICATION: VerificationResult
-    note right of VERIFICATION
-        복구 성공 시 메트릭 재확인
-        AWS Knowledge + CloudWatch + CloudTrail MCP로 정상화 검증
-    end note
-
     NOTIFICATION --> COMPLETED: SNS 발행
     note right of NOTIFICATION
-        presigned URL 생성
+        presigned URL + 플레이북 포함
         SNS 발행 (backoff 재시도 3회)
+        Remediation Agent가 SNS → SQS로 구독
     end note
 
     COMPLETED --> [*]
@@ -397,24 +384,9 @@ flowchart TD
         PB_EXIST --> PBK_AGENT --> PBO --> PBK --> S3V_SAVE
     end
 
-    subgraph F9["F9: Remediation (remediation.py)"]
+    subgraph F9["F9: Notification (notification.py)"]
         direction TB
-        REM_PARSE["플레이북 기반 복구 액션 결정"]
-        REM_EXEC["fault reset API 호출<br/>+ ECS force deploy"]
-        REM_RESULT["RemediationResult"]
-        REM_PARSE --> REM_EXEC --> REM_RESULT
-    end
-
-    subgraph F10["F10: Verification (verification.py)"]
-        direction TB
-        VER_AGENT["Verification Agent<br/>(AWS Knowledge + CloudWatch + CloudTrail MCP)"]
-        VER_OUT["VerificationResult"]
-        VER_AGENT --> VER_OUT
-    end
-
-    subgraph F11["F11: Notification (notification.py)"]
-        direction TB
-        BUILD_N["build_notification()"]
+        BUILD_N["build_notification()<br/>(플레이북 포함)"]
         NM["NotificationMessage"]
         SEND_N["send_notification()<br/>→ SNS Publish"]
         BUILD_N --> NM --> SEND_N
@@ -433,8 +405,6 @@ flowchart TD
     CH -->|새 가설 추가| F3
     RCA --> F8
     PBK --> F9
-    REM_RESULT --> F10
-    VER_OUT --> F11
 
     style TC fill:#f9f3e3,stroke:#d4a843
     style F4 fill:#e8f5e9,stroke:#388e3c
@@ -444,13 +414,12 @@ flowchart TD
 ### Agent Architecture
 
 #### Fargate Stack (Strands Agents SDK)
-- **11단계 closed-loop 파이프라인**: F1(Scoping) → F2(Hypothesis) → [검증 루프: F3(Prioritization) → Beam Selection → F4(Evidence) → F5(Validation) → Termination Check → F6(Branching)] → F7(Report) → F8(Playbook) → F9(Remediation) → F10(Verification) → F11(Notification)
+- **9단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → [검증 루프: F3(Prioritization) → Beam Selection → F4(Evidence) → F5(Validation) → Termination Check → F6(Branching)] → F7(Report) → F8(Playbook) → F9(Notification)
 - **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: Prioritization → Beam Selection → Evidence → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
-- **자동 복구**: `REMEDIATION_ENABLED=true` 시 플레이북 기반 fault reset API 호출 + ECS force deployment
-- **복구 검증**: CloudWatch MCP로 메트릭 정상화 확인
+- **Remediation 분리**: 플레이북을 포함한 SNS 알림 발행 후 별도 Remediation Agent가 복구 수행 (ADR agent/0012)
 
 #### Fargate Stack (CC Headless)
 - **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 10단계 워크플로우 정의 (스코핑 ~ 복구 ~ 보고서), CC가 자율적으로 MCP 도구 호출

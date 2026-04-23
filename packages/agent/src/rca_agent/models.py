@@ -14,8 +14,6 @@ class RcaSessionState(StrEnum):
     EVIDENCE_COLLECTION = "EVIDENCE_COLLECTION"
     HYPOTHESIS_VALIDATION = "HYPOTHESIS_VALIDATION"
     REPORT_GENERATION = "REPORT_GENERATION"
-    REMEDIATION = "REMEDIATION"
-    VERIFICATION = "VERIFICATION"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     OUTDATED = "OUTDATED"
@@ -250,6 +248,7 @@ class NotificationMessage(BaseModel):
     dashboard_url: str = ""
     elapsed_seconds: int = 0
     confirmed: bool = True
+    playbook: dict | None = None
 
 
 class RcaSession(BaseModel):

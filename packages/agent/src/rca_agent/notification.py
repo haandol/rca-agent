@@ -5,7 +5,7 @@ import logging
 import time
 
 from rca_agent.config import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
-from rca_agent.models import NotificationMessage, RcaReport
+from rca_agent.models import NotificationMessage, Playbook, RcaReport
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,19 @@ def build_notification(
     report_s3_key: str,
     elapsed_seconds: int,
     *,
+    playbook: Playbook | None = None,
     dashboard_url: str = "",
 ) -> NotificationMessage:
+    playbook_data = None
+    if playbook:
+        playbook_data = {
+            "playbook_id": playbook.playbook_id,
+            "failure_type": playbook.failure_type,
+            "symptom_pattern": playbook.symptom_pattern,
+            "verification_steps": playbook.verification_steps,
+            "temporary_mitigation": playbook.temporary_mitigation,
+            "permanent_remediation": playbook.permanent_remediation,
+        }
     return NotificationMessage(
         rca_id=report.rca_id,
         root_cause_summary=(
@@ -32,6 +43,7 @@ def build_notification(
         dashboard_url=dashboard_url,
         elapsed_seconds=elapsed_seconds,
         confirmed=report.root_cause_confirmed,
+        playbook=playbook_data,
     )
 
 
@@ -73,6 +85,8 @@ def send_notification(
         "elapsed_seconds": notification.elapsed_seconds,
         "confirmed": notification.confirmed,
     }
+    if notification.playbook:
+        message_body["playbook"] = notification.playbook
 
     for attempt in range(max_retries):
         try:

@@ -23,19 +23,14 @@ from rca_agent.agent_factory import (
     create_report_agent,
     create_scoping_agent,
     create_validation_agent,
-    create_verification_agent,
 )
 from rca_agent.branching import run_branching
 from rca_agent.config import (
     ALARM_STALENESS_SECONDS,
     DYNAMODB_TABLE_NAME,
     GITHUB_PERSONAL_ACCESS_TOKEN,
-    HEALTHCARE_ECS_CLUSTER,
-    HEALTHCARE_ECS_SERVICE,
-    HEALTHCARE_SERVICE_HOST,
     RCA_BEAM_WIDTH,
     RCA_MAX_REGENERATION_ROUNDS,
-    REMEDIATION_ENABLED,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
     SNS_NOTIFICATION_TOPIC_ARN,
@@ -47,7 +42,6 @@ from rca_agent.models import AlarmPayload, HypothesisStatus, RcaSessionState
 from rca_agent.notification import build_notification, send_notification
 from rca_agent.playbook_gen import run_playbook_generation, save_playbook_to_s3_vectors
 from rca_agent.prioritization import run_prioritization
-from rca_agent.remediation import execute_remediation
 from rca_agent.report import run_report_generation, save_report_to_s3
 from rca_agent.scoping import run_scoping
 from rca_agent.session_store import (
@@ -62,7 +56,6 @@ from rca_agent.session_store import (
 from rca_agent.termination import check_termination
 from rca_agent.trace_store import SpanStatus, SpanType, TraceStore
 from rca_agent.validation import run_validation
-from rca_agent.verification import run_verification
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,6 +116,19 @@ def _select_beam(
     return candidates[:beam_width]
 
 
+def _prune_subtree(rejected_id: str, hypotheses: list) -> list[str]:
+    pruned: list[str] = []
+    queue = [rejected_id]
+    while queue:
+        parent_id = queue.pop()
+        for h in hypotheses:
+            if h.parent_id == parent_id and h.status != HypothesisStatus.REJECTED:
+                h.status = HypothesisStatus.REJECTED
+                pruned.append(h.hypothesis_id)
+                queue.append(h.hypothesis_id)
+    return pruned
+
+
 class _Agents:
     def __init__(self, mcp_clients=None, evidence_mcp_clients=None):
         self._mcp_clients = mcp_clients
@@ -135,7 +141,6 @@ class _Agents:
         self._branching = None
         self._report = None
         self._playbook = None
-        self._verification = None
 
     @property
     def scoping(self):
@@ -184,12 +189,6 @@ class _Agents:
         if self._playbook is None:
             self._playbook = create_playbook_agent()
         return self._playbook
-
-    @property
-    def post_remediation_verification(self):
-        if self._verification is None:
-            self._verification = create_verification_agent(mcp_clients=self._mcp_clients)
-        return self._verification
 
 
 def _process_alarm(
@@ -424,12 +423,17 @@ def _run_pipeline(
             if h:
                 h.status = j.status
 
-        # Track rejected descriptions for branching dedup
+        # Track rejected descriptions for branching dedup + prune subtrees
         for j in all_judgments:
             if j.status == HypothesisStatus.REJECTED:
                 h = next((h for h in hypotheses if h.hypothesis_id == j.hypothesis_id), None)
                 if h and h.description not in rejected_descriptions:
                     rejected_descriptions.append(h.description)
+                pruned = _prune_subtree(j.hypothesis_id, hypotheses)
+                if pruned:
+                    logger.info("Pruned %d descendant hypotheses of %s", len(pruned), j.hypothesis_id)
+                    for pid in pruned:
+                        trace.update_hypothesis_status(pid, status=HypothesisStatus.REJECTED.value)
 
         # Termination check
         with trace.span(
@@ -604,55 +608,9 @@ def _run_pipeline(
         s.output_summary = f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"
     logger.info("Playbook %s: %s", playbook.playbook_id, playbook.failure_type)
 
-    # F9: Remediation
-    remediation_result = None
-    if REMEDIATION_ENABLED and HEALTHCARE_SERVICE_HOST:
-        update_state(rca_id, RcaSessionState.REMEDIATION, dynamodb_client=dynamodb_client)
-        with trace.span(
-            SpanType.REMEDIATION,
-            input_summary=f"플레이북={playbook.playbook_id}, 서비스={HEALTHCARE_SERVICE_HOST}",
-        ) as s:
-            remediation_result = execute_remediation(
-                report=rca_report,
-                playbook=playbook,
-                service_host=HEALTHCARE_SERVICE_HOST,
-                ecs_cluster=HEALTHCARE_ECS_CLUSTER,
-                ecs_service=HEALTHCARE_ECS_SERVICE,
-            )
-            actions_count = len(remediation_result.actions_taken)
-            s.output_summary = f"성공={remediation_result.overall_success}, 조치={actions_count}건"
-            s.metadata = {"성공": remediation_result.overall_success, "조치_수": actions_count}
-        logger.info(
-            "Remediation: success=%s, summary=%s",
-            remediation_result.overall_success,
-            remediation_result.summary[:200],
-        )
-
-    # F10: Verification
-    verification_result = None
-    if remediation_result and remediation_result.overall_success:
-        update_state(rca_id, RcaSessionState.VERIFICATION, dynamodb_client=dynamodb_client)
-        with trace.span(
-            SpanType.VERIFICATION,
-            input_summary=f"알람={alarm.alarm_name}",
-        ) as s:
-            verification_result = run_verification(
-                agent=agents.post_remediation_verification,
-                alarm=alarm,
-                remediation=remediation_result,
-                remediation_time=time.time(),
-            )
-            s.output_summary = f"메트릭_정상화={verification_result.metrics_normalized}"
-            s.metadata = {"메트릭_정상화": verification_result.metrics_normalized}
-        logger.info(
-            "Verification: normalized=%s, summary=%s",
-            verification_result.metrics_normalized,
-            verification_result.verification_summary[:200],
-        )
-
-    # F11: Notification
+    # F9: Notification (includes playbook for downstream Remediation Agent)
     with trace.span(SpanType.NOTIFICATION, input_summary=f"rca_id={rca_report.rca_id}") as s:
-        notification = build_notification(rca_report, report_s3_key, elapsed)
+        notification = build_notification(rca_report, report_s3_key, elapsed, playbook=playbook)
         send_notification(notification, sns_client=sns_client, s3_client=s3_client)
         s.output_summary = f"소요시간={elapsed}초"
 
