@@ -24,6 +24,7 @@ class TestRcaSessionState:
             "COMPLETED",
             "FAILED",
             "OUTDATED",
+            "CANCELLED",
         }
         assert {s.value for s in RcaSessionState} == expected
 

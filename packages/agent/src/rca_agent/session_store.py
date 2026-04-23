@@ -97,6 +97,10 @@ def check_duplicate(
     return False
 
 
+class SessionCancelledError(Exception):
+    """Raised when a session has been cancelled externally."""
+
+
 def update_state(
     rca_id: str,
     new_state: RcaSessionState,
@@ -116,15 +120,20 @@ def update_state(
                 "SK": {"S": "SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now",
+            ConditionExpression="#st <> :cancelled",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": new_state.value},
                 ":now": {"S": now},
+                ":cancelled": {"S": RcaSessionState.CANCELLED.value},
             },
         )
         logger.info("Session %s state updated to %s", rca_id, new_state.value)
         return True
-    except ClientError:
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.info("Session %s has been cancelled, aborting pipeline", rca_id)
+            raise SessionCancelledError(rca_id) from e
         logger.exception("Failed to update session state for %s", rca_id)
         return False
 

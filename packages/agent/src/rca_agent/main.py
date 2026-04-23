@@ -51,6 +51,7 @@ from rca_agent.remediation import execute_remediation
 from rca_agent.report import run_report_generation, save_report_to_s3
 from rca_agent.scoping import run_scoping
 from rca_agent.session_store import (
+    SessionCancelledError,
     check_duplicate,
     create_session,
     mark_completed,
@@ -252,6 +253,8 @@ def _process_alarm(
             sns_client=sns_client,
             dynamodb_client=dynamodb_client,
         )
+    except SessionCancelledError:
+        logger.info("Pipeline cancelled for alarm %s (rca_id=%s)", alarm.alarm_name, rca_id)
     except Exception:
         logger.exception("Pipeline failed for alarm %s", alarm.alarm_name)
         if rca_id:

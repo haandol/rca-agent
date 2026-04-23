@@ -1,3 +1,6 @@
 @import "tailwindcss";
-@import "@nuxt/ui";
+@plugin "daisyui" {
+  themes: emerald --default, dracula --prefersdark;
+}
+@custom-variant dark (&:where([data-theme=dracula], [data-theme=dracula] *));
 @plugin "@tailwindcss/typography";

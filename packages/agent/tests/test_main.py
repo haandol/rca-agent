@@ -17,6 +17,7 @@ from rca_agent.models import (
     ValidationJudgment,
     ValidationResult,
 )
+from rca_agent.session_store import SessionCancelledError
 
 
 class TestParseSnsEnvelope:
@@ -452,3 +453,18 @@ class TestProcessAlarmFullPipeline:
         mocks = self._run()
         mocks["run_evidence_collection"].assert_called_once()
         mocks["save_evidence_to_s3"].assert_called_once()
+
+    def test_cancelled_session_stops_pipeline(self):
+        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
+
+        with (
+            patch("rca_agent.main.check_duplicate", return_value=False),
+            patch("rca_agent.main.create_session", return_value=session),
+            patch("rca_agent.main.update_state", side_effect=SessionCancelledError("rca-1")),
+            patch("rca_agent.main.mark_failed") as mock_failed,
+            patch("rca_agent.main.run_scoping") as mock_scoping,
+        ):
+            _process_alarm(_make_body(), _make_agents())
+
+        mock_scoping.assert_not_called()
+        mock_failed.assert_not_called()

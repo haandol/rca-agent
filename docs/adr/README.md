@@ -36,6 +36,7 @@ adr/
 - [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
 - [ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인](agent/0011-cc-headless-prompt-driven-rca.md)
 - [ADR 0012: 자동 복구(Remediation) — 분석 결과 기반 closed-loop 장애 복구](agent/0012-automated-remediation.md)
+- [ADR 0013: Beam Search 탐색 전략 — 우선순위 상위 N개 가설 선택적 검증](agent/0013-beam-search-traversal.md)
 
 ### Tools
 

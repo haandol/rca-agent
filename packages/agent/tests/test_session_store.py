@@ -8,6 +8,7 @@ from botocore.exceptions import ClientError
 
 from rca_agent.models import AlarmPayload, AlarmTrigger, RcaSessionState
 from rca_agent.session_store import (
+    SessionCancelledError,
     build_idempotency_key,
     check_duplicate,
     create_session,
@@ -170,6 +171,24 @@ class TestUpdateState:
         call_kwargs = dynamodb_client.update_item.call_args[1]
         assert call_kwargs["Key"]["PK"]["S"] == "RCA#rca-123"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "SCOPING"
+
+    def test_includes_cancelled_condition(self, dynamodb_client: MagicMock):
+        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
+
+        call_kwargs = dynamodb_client.update_item.call_args[1]
+        assert "ConditionExpression" in call_kwargs
+        assert call_kwargs["ExpressionAttributeValues"][":cancelled"]["S"] == "CANCELLED"
+
+    def test_raises_session_cancelled_error(self, dynamodb_client: MagicMock):
+        error_response = {"Error": {"Code": "ConditionalCheckFailedException", "Message": "cancelled"}}
+        dynamodb_client.update_item.side_effect = ClientError(error_response, "UpdateItem")
+
+        with (
+            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
+            pytest.raises(SessionCancelledError),
+        ):
+            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
 
     def test_returns_false_on_error(self, dynamodb_client: MagicMock):
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
