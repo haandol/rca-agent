@@ -120,14 +120,14 @@ flowchart TD
     style Regen fill:#fce4ec,stroke:#c62828
 ```
 
-## 2. 전체 데이터 플로우 — Lambda (CC Headless, 프롬프트 주도)
+## 2. 전체 데이터 플로우 — ECS Fargate (CC Headless, 프롬프트 주도)
 
 CC on Bedrock headless 모드에서 단일 프롬프트로 전체 RCA를 수행합니다. CC가 MCP 도구를 자율적으로 호출하며, 동일한 DynamoDB/S3/SNS를 공유합니다.
 
 ```mermaid
 flowchart TD
     subgraph Input["입력"]
-        SQS["SQS Event Source<br/>(batchSize=1)"]
+        SQS["SQS Long Polling"]
         PARSE["AlarmPayload 파싱"]
         DEDUP["멱등성 체크<br/>(DynamoDB IDEMP# 키)"]
         SESSION["세션 생성<br/>(engine: cc-headless)"]
@@ -148,12 +148,14 @@ flowchart TD
 
     subgraph RCA["프롬프트 내 RCA 워크플로우"]
         direction TB
-        STEP1["Step 1: 초기 스코핑 (2분)"]
-        STEP2["Step 2: 가설 생성 (2분)"]
-        STEP3["Step 3: 증거 수집 + 검증 루프 (4분)"]
-        STEP4["Step 4: 종료 판단 (1분)"]
-        STEP5["Step 5: 보고서 생성 (1분)"]
-        STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5
+        STEP1["Step 1: 초기 스코핑"]
+        STEP2["Step 2: 가설 생성"]
+        STEP3["Step 3: 증거 수집 + 검증 루프"]
+        STEP4["Step 4: 종료 판단"]
+        STEP5["Step 5: 자동 복구 + 검증"]
+        STEP6["Step 6: 보고서 생성"]
+        STEP7["Step 7: 알림 전송"]
+        STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5 --> STEP6 --> STEP7
     end
 
     subgraph Output["출력"]
@@ -221,11 +223,11 @@ stateDiagram-v2
     FAILED --> [*]
 ```
 
-### Lambda Stack (CC Headless) 상태 전이
+### ECS Fargate (CC Headless) 상태 전이
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ALARM_RECEIVED: SQS Event Source
+    [*] --> ALARM_RECEIVED: SQS Long Polling
 
     ALARM_RECEIVED --> ANALYZING: 멱등성 체크 통과 + 세션 생성
     ALARM_RECEIVED --> [*]: 중복 감지 → 즉시 반환
@@ -235,7 +237,7 @@ stateDiagram-v2
 
     note right of ANALYZING
         CC CLI subprocess 실행
-        프롬프트 내 5단계 워크플로우 자율 수행
+        프롬프트 내 7단계 워크플로우 자율 수행
         MCP 도구 자동 호출
         engine: 'cc-headless'
     end note
@@ -470,7 +472,7 @@ flowchart LR
     style MCP fill:#fff3e0,stroke:#ef6c00
 ```
 
-### Lambda Stack (CC Headless) — 단일 모델
+### ECS Fargate (CC Headless) — 단일 모델
 
 ```mermaid
 flowchart LR
@@ -484,7 +486,7 @@ flowchart LR
         GH["GitHub MCP"]
     end
 
-    subgraph Lambda["Lambda 핸들러<br/>(LLM 미사용)"]
+    subgraph Handler["ECS 핸들러<br/>(LLM 미사용)"]
         PARSE["알람 파싱"]
         SESSION["세션 관리"]
         REPORT_S["보고서 저장"]
@@ -498,5 +500,5 @@ flowchart LR
 
     style CCModel fill:#e3f2fd,stroke:#1565c0
     style MCP fill:#fff3e0,stroke:#ef6c00
-    style Lambda fill:#f5f5f5,stroke:#616161
+    style Handler fill:#f5f5f5,stroke:#616161
 ```

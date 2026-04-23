@@ -10,7 +10,7 @@
 4. [데이터 흐름 — 알람부터 보고서까지](#4-데이터-흐름--알람부터-보고서까지)
 5. [두 가지 RCA 엔진 비교](#5-두-가지-rca-엔진-비교)
 6. [Fargate 엔진 — 12단계 파이프라인](#6-fargate-엔진--12단계-파이프라인)
-7. [Lambda 엔진 — CC Headless](#7-lambda-엔진--cc-headless)
+7. [CC Headless 엔진 — ECS Fargate](#7-cc-headless-엔진--ecs-fargate)
 8. [MCP 서버 — 외부 데이터 수집 도구](#8-mcp-서버--외부-데이터-수집-도구)
 9. [Healthcare Sensor App — 데모용 서비스](#9-healthcare-sensor-app--데모용-서비스)
 10. [데모 시나리오 1: DB 커넥션 누수](#10-데모-시나리오-1-db-커넥션-누수)
@@ -52,15 +52,15 @@ graph TB
     subgraph Routing["이벤트 라우팅 (SNS → SQS)"]
         SNS["SNS Topic<br/>(알람 팬아웃)"]
         SQS_F["SQS Queue #1<br/>(Fargate용)"]
-        SQS_L["SQS Queue #2<br/>(Lambda용)"]
+        SQS_L["SQS Queue #2<br/>(CC Headless용)"]
     end
 
     subgraph DualStack["Dual-Stack RCA 엔진"]
         subgraph FargateStack["🟦 Fargate Stack"]
             ECS["ECS Fargate Task<br/>Python · Strands SDK<br/>12단계 파이프라인"]
         end
-        subgraph LambdaStack["🟧 Lambda Stack"]
-            LAMBDA["Lambda Container<br/>Node.js · Claude Code CLI<br/>프롬프트 주도 RCA"]
+        subgraph CcHeadlessStack["🟧 CC Headless Stack"]
+            CCFARGATE["ECS Fargate<br/>Node.js · Claude Code CLI<br/>프롬프트 주도 RCA"]
         end
     end
 
@@ -112,16 +112,16 @@ graph TB
     SNS_OUT --> SRE
 
     style FargateStack fill:#e3f2fd,stroke:#1565c0
-    style LambdaStack fill:#fff3e0,stroke:#ef6c00
+    style CcHeadlessStack fill:#fff3e0,stroke:#ef6c00
     style Tools fill:#e8f5e9,stroke:#388e3c
 ```
 
 **왜 두 개의 엔진을 사용하나요?**
 
-| | Fargate (Strands) | Lambda (CC Headless) |
+| | Fargate (Strands) | Fargate (CC Headless) |
 |---|---|---|
-| 장점 | 정교한 12단계 분석, 플레이북 학습 | 빠른 응답, 서버리스, 운영 부담 적음 |
-| 단점 | 항시 실행, 비용 발생 | 15분 타임아웃 제한 |
+| 장점 | 정교한 12단계 분석, 플레이북 학습 | 프롬프트 주도로 유연, 코드 간단 |
+| 단점 | 항시 실행, 비용 발생 | 동작이 덜 예측 가능 |
 | 용도 | 정밀 분석이 필요한 복잡한 장애 | 빠른 초기 대응, 간단한 장애 |
 
 ---
@@ -140,7 +140,7 @@ graph TB
         STORAGE["🗄️ StorageStack<br/>S3 + S3 Vectors"]
         RDS["🐘 RdsStack<br/>PostgreSQL 17.4"]
         AGENT["🟦 RcaAgentServiceStack<br/>ECS Fargate (RCA)"]
-        CC["🟧 CcHeadlessStack<br/>Lambda Container"]
+        CC["🟧 CcHeadlessStack<br/>ECS Fargate"]
         HEALTH["🏥 HealthcareServiceStack<br/>ECS Fargate (데모)"]
     end
 
@@ -175,12 +175,12 @@ graph TB
 | **VPC** | 모든 서비스의 네트워크 | Public + Private Subnet, NAT Gateway |
 | **SNS (알람 수신)** | CloudWatch 알람 팬아웃 | 1개 토픽 → 2개 SQS로 분배 |
 | **SQS (Fargate용)** | Fargate Long Polling | visibility=25분, retention=4일, DLQ 연결 |
-| **SQS (Lambda용)** | Lambda Event Source | batchSize=1, reserved concurrency=1 |
+| **SQS (CC Headless용)** | CC Headless Long Polling | visibility=35분, retention=4일, DLQ 연결 |
 | **DynamoDB** | RCA 세션 상태 관리 | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성) |
 | **S3 (Evidence)** | 수집 증거 + 보고서 저장 | 60일 lifecycle, S3 managed encryption |
 | **S3 Vectors** | 플레이북 임베딩 검색 | cosine 유사도, 1024차원 벡터 |
 | **ECS Fargate** | RCA Agent + Healthcare App | ARM64, 1vCPU, 2GB RAM |
-| **Lambda** | CC Headless RCA | ARM64, 2GB RAM, 15분 timeout |
+| **ECS Fargate (CC Headless)** | CC Headless RCA | ARM64, 1vCPU, 2GB RAM |
 | **RDS PostgreSQL** | Healthcare 센서 데이터 | PostgreSQL 17.4 |
 | **ECR** | Docker 이미지 레지스트리 | rca-agent, cc-headless, healthcare 3개 |
 
@@ -195,9 +195,9 @@ sequenceDiagram
     participant CW as CloudWatch<br/>Alarm
     participant SNS as SNS Topic<br/>(알람 팬아웃)
     participant SQS1 as SQS Queue #1<br/>(Fargate용)
-    participant SQS2 as SQS Queue #2<br/>(Lambda용)
+    participant SQS2 as SQS Queue #2<br/>(CC Headless용)
     participant ECS as ECS Fargate<br/>(Strands 에이전트)
-    participant LAM as Lambda<br/>(CC Headless)
+    participant CCH as ECS Fargate<br/>(CC Headless)
     participant DDB as DynamoDB<br/>(세션 테이블)
     participant MCP as MCP 서버들<br/>(CW·CT·Knowledge)
     participant BED as Amazon Bedrock<br/>(AI 모델)
@@ -207,17 +207,17 @@ sequenceDiagram
     Note over CW,NOTIFY: ① 알람 발생 및 라우팅
     CW->>SNS: 알람 메시지 발행
     SNS->>SQS1: 복제 (Fargate용)
-    SNS->>SQS2: 복제 (Lambda용)
+    SNS->>SQS2: 복제 (CC Headless용)
 
     Note over ECS,DDB: ② 멱등성 체크 (중복 방지)
     par Fargate
         SQS1->>ECS: Long Polling으로 수신
         ECS->>DDB: 중복 체크 (IDEMP# 키)
         DDB-->>ECS: 신규 → 세션 생성
-    and Lambda
-        SQS2->>LAM: Event Source로 수신
-        LAM->>DDB: 중복 체크 (IDEMP# 키)
-        DDB-->>LAM: 신규 → 세션 생성
+    and CC Headless
+        SQS2->>CCH: Long Polling으로 수신
+        CCH->>DDB: 중복 체크 (IDEMP# 키)
+        DDB-->>CCH: 신규 → 세션 생성
     end
 
     Note over ECS,BED: ③ RCA 분석 수행 (두 엔진 독립 실행)
@@ -228,18 +228,18 @@ sequenceDiagram
         BED-->>ECS: AI 응답
         ECS->>S3: 증거 + 보고서 저장
         ECS->>DDB: 상태 갱신 (COMPLETED)
-    and Lambda 분석
-        LAM->>MCP: 메트릭·로그·배포이력 수집
-        MCP-->>LAM: 데이터 반환
-        LAM->>BED: 프롬프트 주도 분석
-        BED-->>LAM: AI 응답
-        LAM->>S3: 보고서 저장
-        LAM->>DDB: 상태 갱신 (COMPLETED)
+    and CC Headless 분석
+        CCH->>MCP: 메트릭·로그·배포이력 수집
+        MCP-->>CCH: 데이터 반환
+        CCH->>BED: 프롬프트 주도 분석
+        BED-->>CCH: AI 응답
+        CCH->>S3: 보고서 저장
+        CCH->>DDB: 상태 갱신 (COMPLETED)
     end
 
     Note over ECS,NOTIFY: ④ 알림 발송
     ECS->>NOTIFY: RCA 완료 알림 (presigned URL)
-    LAM->>NOTIFY: RCA 완료 알림 (presigned URL)
+    CCH->>NOTIFY: RCA 완료 알림 (presigned URL)
 ```
 
 **핵심 포인트**:
@@ -263,31 +263,31 @@ graph LR
         F_PLAY["✅ 플레이북 생성/학습"]
     end
 
-    subgraph Lambda["🟧 Lambda Stack (CC Headless)"]
+    subgraph CcStack["🟧 CC Headless Stack (ECS Fargate)"]
         direction TB
-        L_ENV["Lambda Container<br/>Node.js 22"]
+        L_ENV["ECS Fargate<br/>Node.js 22"]
         L_SDK["Claude Code CLI<br/>프롬프트 주도"]
         L_MODEL["단일 모델<br/>Sonnet 4.6"]
-        L_TIME["15분 타임아웃<br/>(Lambda 제한)"]
+        L_TIME["타임아웃 없음<br/>(ECS 무제한)"]
         L_PLAY["❌ 플레이북 미지원"]
     end
 
     style Fargate fill:#e3f2fd,stroke:#1565c0
-    style Lambda fill:#fff3e0,stroke:#ef6c00
+    style CcStack fill:#fff3e0,stroke:#ef6c00
 ```
 
-| 항목 | Fargate (Strands) | Lambda (CC Headless) |
+| 항목 | Fargate (Strands) | Fargate (CC Headless) |
 |------|-------------------|---------------------|
-| **실행 환경** | ECS Fargate (항시 실행) | Lambda Container (이벤트 트리거) |
+| **실행 환경** | ECS Fargate (항시 실행) | ECS Fargate (항시 실행) |
 | **에이전트 프레임워크** | Strands Agents SDK (Python) | Claude Code CLI (Node.js) |
 | **RCA 방식** | 12단계 파이프라인 (코드로 정의) | 프롬프트에 워크플로우 정의, CC가 자율 실행 |
 | **AI 모델** | Sonnet 4.6 + Haiku 4.5 (2-Tier) | Sonnet 4.6 (단일) |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
 | **플레이북** | 생성 + S3 Vectors 인덱싱 | 미지원 |
-| **이벤트 수신** | SQS Long Polling | SQS Event Source Mapping |
-| **타임아웃** | 없음 (종료조건 기반) | 15분 (Lambda 한계) |
-| **동시성** | Fargate 태스크 스케일링 | Reserved concurrency = 1 |
-| **비용 모델** | 항시 실행 비용 | 실행 시간만 과금 |
+| **이벤트 수신** | SQS Long Polling | SQS Long Polling |
+| **타임아웃** | 없음 (종료조건 기반) | 없음 (ECS 무제한) |
+| **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
+| **비용 모델** | 항시 실행 비용 | 항시 실행 비용 |
 
 ---
 
@@ -393,13 +393,13 @@ graph TB
 
 ---
 
-## 7. Lambda 엔진 — CC Headless
+## 7. CC Headless 엔진 — ECS Fargate
 
-Claude Code CLI를 Lambda에서 headless 모드로 실행하여, 프롬프트 하나로 전체 RCA를 수행합니다.
+Claude Code CLI를 ECS Fargate에서 headless 모드로 실행하여, 프롬프트 하나로 전체 RCA를 수행합니다.
 
 ```mermaid
 flowchart TD
-    subgraph LambdaHandler["Lambda Handler (Node.js)"]
+    subgraph EcsHandler["ECS Handler (Node.js)"]
         SQS["SQS Event 수신"]
         PARSE["알람 파싱"]
         IDEMP["멱등성 체크<br/>(DynamoDB)"]
@@ -447,8 +447,8 @@ flowchart TD
 
 **Fargate와의 차이점**:
 - Fargate는 각 단계를 **Python 코드로** 명시적으로 구현
-- Lambda는 모든 단계를 **프롬프트로 설명**하고, Claude Code가 자율적으로 실행
-- 따라서 Lambda 엔진은 코드가 훨씬 간단하지만, 동작이 덜 예측 가능함
+- CC Headless는 모든 단계를 **프롬프트로 설명**하고, Claude Code가 자율적으로 실행
+- 따라서 CC Headless 엔진은 코드가 훨씬 간단하지만, 동작이 덜 예측 가능함
 
 ---
 
@@ -759,7 +759,7 @@ stateDiagram-v2
     FAILED --> [*]
 ```
 
-### Lambda 세션 상태 전이
+### CC Headless 세션 상태 전이
 
 ```mermaid
 stateDiagram-v2
@@ -804,9 +804,9 @@ flowchart TD
     Q2 -->|"Yes"| Q3{"SQS에 메시지가<br/>도착했는가?"}
     Q3 -->|"No"| A3["SQS Queue 설정 확인<br/>SQS > Queue details"]
     Q3 -->|"Yes"| Q4{"DynamoDB에<br/>세션이 생성되었는가?"}
-    Q4 -->|"No"| A4["Lambda/Fargate 로그 확인<br/>CloudWatch > Log groups"]
+    Q4 -->|"No"| A4["Fargate 로그 확인<br/>CloudWatch > Log groups"]
     Q4 -->|"Yes"| Q5{"세션 상태가<br/>FAILED인가?"}
-    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Fargate: 최대 20분<br/>Lambda: 최대 15분)"]
+    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>CC Headless: 제한 없음)"]
     Q5 -->|"Yes"| A6["에러 원인 확인<br/>DDB의 error 필드 확인<br/>CloudWatch Logs 검색"]
 ```
 
@@ -815,7 +815,7 @@ flowchart TD
 | 서비스 | Log Group | 확인 사항 |
 |--------|-----------|----------|
 | Fargate RCA Agent | `/ecs/rca-agent-*` | MCP 연결 실패, Bedrock API 오류 |
-| Lambda CC Headless | `/aws/lambda/rca-*-cc-headless` | CC CLI 오류, 타임아웃 |
+| Fargate CC Headless | `/ecs/*/cc-headless` | CC CLI 오류 |
 | Healthcare App | `/ecs/healthcare-*` | 장애 주입 동작, 트래픽 생성기 |
 | SQS DLQ | DLQ 메시지 수 | 처리 실패한 알람 메시지 |
 
@@ -824,10 +824,10 @@ flowchart TD
 | 증상 | 원인 | 해결 |
 |------|------|------|
 | MCP 서버 연결 실패 | uvx 패키지 다운로드 실패 | NAT Gateway/인터넷 연결 확인 |
-| CC CLI 0초 완료 | HOME 디렉토리 미설정 | Lambda 환경변수 HOME=/tmp 확인 |
+| CC CLI 0초 완료 | HOME 디렉토리 미설정 | 컨테이너 환경변수 HOME=/tmp 확인 |
 | 중복 RCA 실행 | 멱등성 키 불일치 | DynamoDB GSI `idempotency-index` 확인 |
 | Bedrock API 오류 | 리전/모델 설정 오류 | BEDROCK_REGION, MODEL_ID 환경변수 확인 |
-| 보고서 S3 업로드 실패 | IAM 권한 부족 | Lambda/Task Role의 S3 PutObject 권한 확인 |
+| 보고서 S3 업로드 실패 | IAM 권한 부족 | Task Role의 S3 PutObject 권한 확인 |
 
 ---
 
