@@ -45,14 +45,16 @@
 
 변경 대상 모듈을 괄호 안에 명시합니다. 이 프로젝트의 주요 scope:
 
-| Scope       | 대상                                                  |
-| ----------- | ----------------------------------------------------- |
-| `agent`     | RCA 에이전트 코어 (`packages/agent/`)                 |
-| `infra`     | AWS CDK 인프라 (`packages/infra/`)                    |
-| `sensor`    | 헬스케어 센서 앱 (`packages/healthcare-sensor-app/`)  |
-| `workspace` | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등) |
-| `deps`      | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)        |
-| `docs`      | 문서 (`docs/`, PRD, ADR)                              |
+| Scope         | 대상                                                  |
+| ------------- | ----------------------------------------------------- |
+| `agent`       | RCA 에이전트 코어 (`packages/agent/`)                 |
+| `cc-headless` | CC on Bedrock headless 에이전트 (`packages/cc-headless/`) |
+| `infra`       | AWS CDK 인프라 (`packages/infra/`)                    |
+| `sensor`      | 헬스케어 센서 앱 (`packages/healthcare-sensor-app/`)  |
+| `dashboard`   | RCA 대시보드 (`packages/dashboard/`)                  |
+| `workspace`   | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등) |
+| `deps`        | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)        |
+| `docs`        | 문서 (`docs/`, PRD, ADR)                              |
 
 ### Subject (필수)
 
@@ -179,7 +181,7 @@ git push -u origin feat/my-feature
 ### TypeScript (Web)
 
 - **프레임워크**: Nuxt 4 | **스타일링**: TailwindCSS 4 + DaisyUI 5
-- **상태 관리**: Pinia
+- **그래프**: Vue Flow + dagre
 - **컴포넌트**: Vue 3 Composition API (`<script setup lang="ts">`)
 - **네이밍**: 컴포넌트 PascalCase, 변수/함수 camelCase
 
