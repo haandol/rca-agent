@@ -58,6 +58,7 @@ const healthcareServiceStack = new HealthcareServiceStack(
     env,
     vpc: networkStack.vpc,
     dbInstance: rdsStack.instance,
+    alarmTopic: eventBusStack.alarmTopic,
     imageTag: Config.healthcare.imageTag,
     tracing: Config.tracing.enabled,
   },
@@ -65,6 +66,7 @@ const healthcareServiceStack = new HealthcareServiceStack(
 healthcareServiceStack.addDependency(ecrStack);
 healthcareServiceStack.addDependency(networkStack);
 healthcareServiceStack.addDependency(rdsStack);
+healthcareServiceStack.addDependency(eventBusStack);
 
 const rcaAgentServiceStack = new RcaAgentServiceStack(
   app,

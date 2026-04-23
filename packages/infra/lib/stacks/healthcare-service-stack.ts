@@ -1,15 +1,19 @@
 import * as cdk from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cw_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
+import * as sns from 'aws-cdk-lib/aws-sns';
 import * as cloudmap from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
   readonly dbInstance: rds.DatabaseInstance;
+  readonly alarmTopic: sns.ITopic;
   readonly imageTag: string;
   readonly tracing: boolean;
 }
@@ -34,7 +38,8 @@ export class HealthcareServiceStack extends cdk.Stack {
 
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props);
-    this.newService(ns, cluster, taskDefinition, props, namespace);
+    const service = this.newService(ns, cluster, taskDefinition, props, namespace);
+    this.newAlarms(ns, props, service);
   }
 
   private newCluster(ns: string, vpc: ec2.IVpc): ecs.Cluster {
@@ -170,5 +175,60 @@ export class HealthcareServiceStack extends cdk.Stack {
     });
 
     return service;
+  }
+
+  private newAlarms(
+    ns: string,
+    props: IProps,
+    service: ecs.FargateService,
+  ): void {
+    const alarmAction = new cw_actions.SnsAction(props.alarmTopic);
+
+    const dbConnAlarm = new cloudwatch.Alarm(this, 'RdsHighConnections', {
+      alarmName: `${ns}-Healthcare-RdsHighConnections`,
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/RDS',
+        metricName: 'DatabaseConnections',
+        dimensionsMap: {
+          DBInstanceIdentifier: `${ns.toLowerCase()}-postgres`,
+        },
+        statistic: 'Maximum',
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 30,
+      evaluationPeriods: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    dbConnAlarm.addAlarmAction(alarmAction);
+    dbConnAlarm.addOkAction(alarmAction);
+
+    const cpuAlarm = new cloudwatch.Alarm(this, 'EcsHighCPU', {
+      alarmName: `${ns}-Healthcare-HighCPU`,
+      metric: service.metricCpuUtilization({
+        statistic: 'Average',
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 80,
+      evaluationPeriods: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    cpuAlarm.addAlarmAction(alarmAction);
+    cpuAlarm.addOkAction(alarmAction);
+
+    const memAlarm = new cloudwatch.Alarm(this, 'EcsHighMemory', {
+      alarmName: `${ns}-Healthcare-HighMemory`,
+      metric: service.metricMemoryUtilization({
+        statistic: 'Average',
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 80,
+      evaluationPeriods: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    memAlarm.addAlarmAction(alarmAction);
+    memAlarm.addOkAction(alarmAction);
   }
 }
