@@ -876,20 +876,23 @@ curl -X POST $HEALTH_URL/fault/db-leak/reset
 ### CPU 과부하 데모 실행
 
 ```bash
-# 5분간 CPU 부하 생성
-curl -X POST $HEALTH_URL/fault/high-cpu \
-  -H "Content-Type: application/json" \
-  -d '{"seconds": 300}'
-# → 자동 복구됨 (duration 만료)
+# CPU 부하 생성 (reset 호출 전까지 지속)
+curl -X POST $HEALTH_URL/fault/high-cpu
+
+# 장애 정리
+curl -X POST $HEALTH_URL/fault/high-cpu/reset
 ```
 
 ### Slow Query 데모 실행
 
 ```bash
-# 30초짜리 느린 쿼리 실행
+# 30초 간격 느린 쿼리 반복 실행 (reset 호출 전까지 지속)
 curl -X POST $HEALTH_URL/fault/slow-query \
   -H "Content-Type: application/json" \
   -d '{"seconds": 30}'
+
+# 장애 정리
+curl -X POST $HEALTH_URL/fault/slow-query/reset
 ```
 
 ### RCA 보고서 확인
