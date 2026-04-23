@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
         TableName: config.dynamodbTableName,
         Key: { PK: `RCA#${id}`, SK: 'SESSION' },
         UpdateExpression: 'SET #st = :cancelled, updated_at = :now',
-        ConditionExpression: 'attribute_exists(PK) AND #st NOT IN (:completed, :failed, :cancelled, :outdated)',
+        ConditionExpression: 'attribute_exists(PK) AND #st <> :completed AND #st <> :failed AND #st <> :cancelled AND #st <> :outdated',
         ExpressionAttributeNames: { '#st': 'state' },
         ExpressionAttributeValues: {
           ':cancelled': 'CANCELLED',
