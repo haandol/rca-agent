@@ -4,6 +4,18 @@
 
 **모든 산출물과 보고서는 한글로 작성한다.**
 
+### 스팬 기록 (필수)
+
+대시보드 트레이스 표시를 위해 **모든 분석 단계를 `start_span` → 작업 → `end_span`으로 감싼다.**
+
+```
+span = start_span(span_type="SCOPING", input_summary="알람 요약...")
+... 작업 수행 ...
+end_span(span_id=span["span_id"], status="COMPLETED", output_summary="결과 요약...")
+```
+
+검증 루프는 먼저 VALIDATION_LOOP 스팬을 시작하고, 하위 단계(PRIORITIZATION, EVIDENCE_COLLECTION, VALIDATION, BRANCHING)에 `parent_span_id`를 전달한다.
+
 ---
 
 ## 파이프라인 개요
@@ -21,6 +33,10 @@
 
 ## 1단계: 초기 스코핑 (직접 수행)
 
+```
+scoping_span = start_span(span_type="SCOPING", input_summary="알람: {알람이름}")
+```
+
 1. AWS Knowledge MCP로 해당 서비스의 장애 패턴, 서비스 제한, 트러블슈팅 가이드를 검색한다 (30초).
 2. CloudWatch MCP로 알람 메트릭과 관련 메트릭 1-2개를 최근 30분 + 24시간 전 동일 구간과 비교한다.
 3. **영향범위** 판단: `single` (단일 리소스), `service` (서비스 전체), `regional` (리전 전체).
@@ -35,11 +51,16 @@
 **완료 후 반드시:**
 ```
 save_artifact("scoping.md", "스코핑 결과 마크다운")
+end_span(span_id=scoping_span["span_id"], status="COMPLETED", output_summary="영향범위: ..., 심각도: ...")
 ```
 
 ---
 
 ## 2단계: 가설 생성 (서브에이전트)
+
+```
+hypo_gen_span = start_span(span_type="HYPOTHESIS_GENERATION", input_summary="스코핑 결과 기반 가설 생성")
+```
 
 Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 
@@ -54,11 +75,21 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 4. `save_artifact("hypotheses.md", ...)`로 /tmp에 저장한다
 5. 가설 목록을 JSON으로 반환한다
 
+```
+end_span(span_id=hypo_gen_span["span_id"], status="COMPLETED", output_summary="가설 N개 생성")
+```
+
 ---
 
 ## 3-7단계: 검증 루프 (서브에이전트, 최대 3회 반복)
 
-각 루프마다 Agent tool을 사용하여 **가설 검증 서브에이전트**를 스폰한다.
+각 루프마다:
+
+```
+loop_span = start_span(span_type="VALIDATION_LOOP", input_summary="검증 루프 {N}", loop_index={N})
+```
+
+Agent tool을 사용하여 **가설 검증 서브에이전트**를 스폰한다.
 
 ### 서브에이전트 프롬프트에 포함할 내용
 
@@ -81,6 +112,10 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
    - `save_hypotheses()`로 하위 가설 저장
 5. `save_artifact("validation-{N}.md", ...)` 로 산출물 저장
 6. JSON 결과 반환
+
+```
+end_span(span_id=loop_span["span_id"], status="COMPLETED", output_summary="검증 루프 {N} 완료: 확정 N, 기각 N, 조사필요 N")
+```
 
 ### 루프 종료 판단 (메인 에이전트)
 
@@ -107,6 +142,10 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 ---
 
 ## 8단계: 보고서 생성 (직접 수행)
+
+```
+report_span = start_span(span_type="REPORT", input_summary="최종 RCA 보고서 생성")
+```
 
 아래 구조의 한글 Markdown RCA 보고서를 생성한다:
 
@@ -143,7 +182,15 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 
 **반드시 `save_artifact("report.md", ...)` 로 저장한다. Python wrapper가 이 파일을 읽어서 S3에 업로드한다.**
 
+```
+end_span(span_id=report_span["span_id"], status="COMPLETED", output_summary="보고서 생성 완료")
+```
+
 ## 9단계: 자동 복구 (직접 수행)
+
+```
+remediation_span = start_span(span_type="REMEDIATION", input_summary="자동 복구 시도")
+```
 
 근본원인이 확정(신뢰도 ≥ 0.8)되면 자동 복구를 시도한다:
 
@@ -156,13 +203,25 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 3. 매칭되는 엔드포인트 없으면 ECS 강제 새 배포를 시도한다.
 4. 보고서에 `## 복구 조치` 섹션을 추가하고 수행한 조치와 결과를 기록한다.
 
+```
+end_span(span_id=remediation_span["span_id"], status="COMPLETED", output_summary="복구 조치: ...")
+```
+
 ## 10단계: 복구 검증 (직접 수행)
+
+```
+verification_span = start_span(span_type="VERIFICATION", input_summary="복구 검증")
+```
 
 복구 후 30초 대기한 뒤:
 
 1. 원래 알람을 트리거한 메트릭을 재조회한다.
 2. 메트릭이 임계치 이하로 정상화되었는지 확인한다.
 3. 보고서에 `## 복구 검증` 섹션을 추가하고 정상화 여부와 잔여 이슈를 기록한다.
+
+```
+end_span(span_id=verification_span["span_id"], status="COMPLETED", output_summary="정상화 여부: ...")
+```
 
 ---
 

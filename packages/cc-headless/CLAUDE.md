@@ -55,9 +55,19 @@ Agent tool을 사용하여 서브에이전트를 스폰한다:
 
 | 도구 | 용도 |
 |------|------|
+| `start_span(span_type, input_summary, ...)` | 분석 단계 시작 기록. 반환된 `span_id`를 보관한다. |
+| `end_span(span_id, status, output_summary)` | 분석 단계 완료 기록. |
 | `save_hypotheses(hypotheses_json)` | 가설 배치 저장 (대시보드 표시용) |
 | `update_hypothesis(...)` | 가설 검증 결과 반영 |
 | `save_artifact(filename, content)` | /tmp에 마크다운 산출물 저장 |
+
+### 스팬 기록 규칙
+
+**모든 분석 단계는 `start_span` → 작업 수행 → `end_span`으로 감싸야 한다.** 대시보드 트레이스 뷰에 표시된다.
+
+유효한 `span_type`: `SCOPING`, `HYPOTHESIS_GENERATION`, `VALIDATION_LOOP`, `PRIORITIZATION`, `EVIDENCE_COLLECTION`, `VALIDATION`, `BRANCHING`, `REPORT`, `REMEDIATION`, `VERIFICATION`
+
+검증 루프 내 하위 단계(PRIORITIZATION, EVIDENCE_COLLECTION, VALIDATION, BRANCHING)는 `parent_span_id`에 VALIDATION_LOOP 스팬 ID를 전달한다.
 
 ## 사용 가능한 MCP 도구
 

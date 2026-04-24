@@ -3,11 +3,16 @@ import { marked } from 'marked'
 
 const route = useRoute()
 const id = route.params.id as string
+const engine = (route.query.engine as string) || ''
 
 const { data: report, status, error } = useFetch(`/api/reports/${id}`)
 const { data: sessions } = useFetch('/api/sessions')
 
-const session = computed(() => sessions.value?.find(s => s.rcaId === id))
+const session = computed(() => {
+  if (!sessions.value) return undefined
+  if (engine) return sessions.value.find(s => s.rcaId === id && s.engine === engine)
+  return sessions.value.find(s => s.rcaId === id)
+})
 const renderedHtml = computed(() => {
   if (!report.value?.markdown) return ''
   return marked.parse(report.value.markdown) as string

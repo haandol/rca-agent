@@ -11,6 +11,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing RCA id' })
   }
 
+  const query = getQuery(event)
+  const engineFilter = (query.engine as string) || ''
+
   const config = useRuntimeConfig()
   const ddb = useDynamoDB()
 
@@ -24,7 +27,17 @@ export default defineEventHandler(async (event) => {
 
   const items = result.Items ?? []
 
-  const session = items.find((i) => (i.SK as string).endsWith('#SESSION') || i.SK === 'SESSION')
+  function matchesEngine(sk: string): boolean {
+    if (!engineFilter) return true
+    const itemEngine = parseEngine(sk)
+    return itemEngine === engineFilter
+  }
+
+  const session = items.find((i) => {
+    const sk = i.SK as string
+    const isSession = sk.endsWith('#SESSION') || sk === 'SESSION'
+    return isSession && matchesEngine(sk)
+  })
   const sessionData = session
     ? {
         state: (session.state as string) || 'UNKNOWN',
@@ -42,7 +55,7 @@ export default defineEventHandler(async (event) => {
   const spans = items
     .filter((i) => {
       const sk = (i.SK as string) || ''
-      return sk.includes('#SPAN#') || sk.startsWith('SPAN#')
+      return (sk.includes('#SPAN#') || sk.startsWith('SPAN#')) && matchesEngine(sk)
     })
     .map((i) => {
       const sk = i.SK as string
@@ -68,7 +81,7 @@ export default defineEventHandler(async (event) => {
   const hypotheses = items
     .filter((i) => {
       const sk = (i.SK as string) || ''
-      return sk.includes('#HYPO#') || sk.startsWith('HYPO#')
+      return (sk.includes('#HYPO#') || sk.startsWith('HYPO#')) && matchesEngine(sk)
     })
     .map((i) => {
       const sk = i.SK as string

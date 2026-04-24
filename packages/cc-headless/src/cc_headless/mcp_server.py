@@ -1,10 +1,11 @@
-"""rca-progress MCP server — 가설/산출물 관리."""
+"""rca-progress MCP server — 스팬/가설/산출물 관리."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +23,23 @@ _ddb = boto3.client("dynamodb") if _TABLE else None
 
 _SUMMARY_MAX = 500
 
+_VALID_SPAN_TYPES = {
+    "SCOPING",
+    "HYPOTHESIS_GENERATION",
+    "PRIORITIZATION",
+    "EVIDENCE_COLLECTION",
+    "VALIDATION",
+    "BRANCHING",
+    "TERMINATION",
+    "REPORT",
+    "PLAYBOOK",
+    "REMEDIATION",
+    "VERIFICATION",
+    "NOTIFICATION",
+    "VALIDATION_LOOP",
+}
+_VALID_SPAN_STATUSES = {"RUNNING", "COMPLETED", "FAILED", "TIMED_OUT"}
+
 
 def _rca_id() -> str:
     try:
@@ -36,6 +54,108 @@ def _now_iso() -> str:
 
 def _ttl() -> str:
     return str(int(time.time()) + _TTL_DAYS * 86400)
+
+
+# ── Span persistence ──────────────────────────────────────────────
+
+
+@mcp.tool()
+def start_span(
+    span_type: str,
+    input_summary: str = "",
+    parent_span_id: str = "",
+    loop_index: int = -1,
+) -> str:
+    """분석 단계 시작을 DDB에 기록한다. 반환된 span_id를 end_span에 전달해야 한다.
+
+    Args:
+        span_type: 단계 유형. SCOPING, HYPOTHESIS_GENERATION, PRIORITIZATION,
+                   EVIDENCE_COLLECTION, VALIDATION, BRANCHING, REPORT,
+                   REMEDIATION, VERIFICATION, VALIDATION_LOOP 중 하나.
+        input_summary: 단계 입력 요약 (500자 이내).
+        parent_span_id: 부모 스팬 ID (검증 루프 내 하위 단계일 때).
+        loop_index: 검증 루프 인덱스 (1-based, 해당 없으면 -1).
+    """
+    rca_id = _rca_id()
+    span_id = str(uuid.uuid4())
+
+    if not _ddb or not _TABLE or not rca_id:
+        return json.dumps({"ok": True, "skipped": True, "span_id": span_id})
+
+    if span_type not in _VALID_SPAN_TYPES:
+        return json.dumps({"ok": False, "error": f"invalid span_type: {span_type}"})
+
+    now = _now_iso()
+    ttl = _ttl()
+
+    item: dict = {
+        "PK": {"S": f"RCA#{rca_id}"},
+        "SK": {"S": f"{_ENGINE}#SPAN#{span_id}"},
+        "engine": {"S": _ENGINE},
+        "span_type": {"S": span_type},
+        "span_status": {"S": "RUNNING"},
+        "start_time": {"S": now},
+        "input_summary": {"S": input_summary[:_SUMMARY_MAX]},
+        "output_summary": {"S": ""},
+        "ttl": {"N": ttl},
+    }
+    if parent_span_id:
+        item["parent_span_id"] = {"S": parent_span_id}
+    if loop_index >= 0:
+        item["loop_index"] = {"N": str(loop_index)}
+
+    _ddb.put_item(TableName=_TABLE, Item=item)
+    return json.dumps({"ok": True, "span_id": span_id})
+
+
+@mcp.tool()
+def end_span(
+    span_id: str,
+    status: str = "COMPLETED",
+    output_summary: str = "",
+    error: str = "",
+) -> str:
+    """분석 단계 완료를 DDB에 기록한다.
+
+    Args:
+        span_id: start_span이 반환한 스팬 ID.
+        status: COMPLETED, FAILED, TIMED_OUT 중 하나.
+        output_summary: 단계 출력 요약 (500자 이내).
+        error: 오류 메시지 (실패 시).
+    """
+    rca_id = _rca_id()
+    if not _ddb or not _TABLE or not rca_id:
+        return json.dumps({"ok": True, "skipped": True})
+
+    if status not in _VALID_SPAN_STATUSES:
+        status = "COMPLETED"
+
+    now = _now_iso()
+
+    expr_parts = [
+        "span_status = :status",
+        "end_time = :end_time",
+        "output_summary = :out",
+    ]
+    attr_values: dict = {
+        ":status": {"S": status},
+        ":end_time": {"S": now},
+        ":out": {"S": output_summary[:_SUMMARY_MAX]},
+    }
+    if error:
+        expr_parts.append("error = :err")
+        attr_values[":err"] = {"S": error[:_SUMMARY_MAX]}
+
+    _ddb.update_item(
+        TableName=_TABLE,
+        Key={
+            "PK": {"S": f"RCA#{rca_id}"},
+            "SK": {"S": f"{_ENGINE}#SPAN#{span_id}"},
+        },
+        UpdateExpression="SET " + ", ".join(expr_parts),
+        ExpressionAttributeValues=attr_values,
+    )
+    return json.dumps({"ok": True, "span_id": span_id, "status": status})
 
 
 # ── Hypothesis persistence ─────────────────────────────────────────
