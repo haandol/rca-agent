@@ -191,6 +191,12 @@ class _Agents:
         return self._playbook
 
 
+def _should_process(alarm_data: dict) -> bool:
+    if not alarm_data.get("AlarmName"):
+        return False
+    return alarm_data.get("NewStateValue", "ALARM") == "ALARM"
+
+
 def _process_alarm(
     body: dict,
     agents: _Agents,
@@ -202,6 +208,15 @@ def _process_alarm(
 ) -> None:
     start_time = time.monotonic()
     alarm_data = _parse_sns_envelope(body)
+
+    if not _should_process(alarm_data):
+        logger.info(
+            "Skipping non-alarm message: AlarmName=%s, NewStateValue=%s",
+            alarm_data.get("AlarmName"),
+            alarm_data.get("NewStateValue"),
+        )
+        return
+
     alarm = AlarmPayload.from_cloudwatch_sns(alarm_data)
     logger.info(
         "Parsed alarm: name=%s, resource=%s, service=%s",

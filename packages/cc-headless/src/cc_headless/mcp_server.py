@@ -113,6 +113,10 @@ def save_hypotheses(hypotheses_json: str) -> str:
     if not _ddb or not _TABLE or not rca_id:
         return json.dumps({"ok": True, "skipped": True})
 
+    cancelled = json.loads(check_cancelled())
+    if cancelled.get("cancelled"):
+        return json.dumps({"ok": False, "cancelled": True})
+
     hypotheses = json.loads(hypotheses_json)
     now = _now_iso()
     ttl = _ttl()
@@ -170,6 +174,10 @@ def update_hypothesis(
     rca_id = _rca_id()
     if not _ddb or not _TABLE or not rca_id:
         return json.dumps({"ok": True, "skipped": True})
+
+    cancelled = json.loads(check_cancelled())
+    if cancelled.get("cancelled"):
+        return json.dumps({"ok": False, "cancelled": True})
 
     now = _now_iso()
     _ddb.update_item(

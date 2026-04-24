@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from botocore.exceptions import ClientError
 
 from rca_agent.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from rca_agent.session_store import SessionCancelledError
 
 if TYPE_CHECKING:
     from rca_agent.models import Hypothesis
@@ -95,6 +96,25 @@ class TraceStore:
         self._dynamodb = dynamodb_client
         self._enabled = bool(DYNAMODB_TABLE_NAME and dynamodb_client)
 
+    def check_cancelled(self) -> None:
+        if not self._enabled:
+            return
+        try:
+            resp = self._dynamodb.get_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key={
+                    "PK": {"S": f"RCA#{self._rca_id}"},
+                    "SK": {"S": f"{ENGINE}#SESSION"},
+                },
+                ProjectionExpression="#st",
+                ExpressionAttributeNames={"#st": "state"},
+            )
+            state = resp.get("Item", {}).get("state", {}).get("S", "")
+            if state == "CANCELLED":
+                raise SessionCancelledError(self._rca_id)
+        except ClientError:
+            logger.exception("Failed to check cancellation for %s", self._rca_id)
+
     # ── Span lifecycle ──────────────────────────────────────────────
 
     def start_span(
@@ -172,6 +192,7 @@ class TraceStore:
         if not self._enabled or not hypotheses:
             return
 
+        self.check_cancelled()
         now = datetime.now(UTC).isoformat()
         ttl = int(time.time()) + SESSION_TTL_DAYS * 86400
 
@@ -226,6 +247,7 @@ class TraceStore:
         if not self._enabled:
             return
 
+        self.check_cancelled()
         now = datetime.now(UTC).isoformat()
         expr_parts = ["#st = :status", "updated_at = :now", "judgment_reasoning = :jr"]
         attr_names = {"#st": "status"}
@@ -262,6 +284,7 @@ class TraceStore:
         if not self._enabled:
             return
 
+        self.check_cancelled()
         now = datetime.now(UTC).isoformat()
         try:
             self._dynamodb.update_item(

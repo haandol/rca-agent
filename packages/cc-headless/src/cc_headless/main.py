@@ -90,8 +90,23 @@ def _run_rca(
         return False
 
 
+def _should_process(alarm_data: dict) -> bool:
+    if not alarm_data.get("AlarmName"):
+        return False
+    return alarm_data.get("NewStateValue", "ALARM") == "ALARM"
+
+
 def _process_message(message_body: str) -> bool:
     alarm_data = _parse_sns_envelope(message_body)
+
+    if not _should_process(alarm_data):
+        logger.info(
+            "skipping_non_alarm_message",
+            alarm_name=alarm_data.get("AlarmName"),
+            new_state_value=alarm_data.get("NewStateValue"),
+        )
+        return True
+
     alarm = parse_alarm(alarm_data)
 
     ts_raw = alarm.state_change_time
