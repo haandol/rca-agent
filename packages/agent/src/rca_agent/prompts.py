@@ -113,6 +113,7 @@ Collect evidence to validate the following hypothesis.
 
 ## Current Metric Snapshot
 {metric_context}
+{parent_context}\
 
 ## Hypothesis to Validate
 - **Description**: {hypothesis_description}

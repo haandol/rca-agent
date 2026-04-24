@@ -14,7 +14,7 @@ from rca_agent.config import (
     S3_EVIDENCE_BUCKET,
     S3_EVIDENCE_MAX_RETRIES,
 )
-from rca_agent.models import Hypothesis, ScopingResult
+from rca_agent.models import Hypothesis, HypothesisStatus, ScopingResult
 from rca_agent.prompts import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
@@ -53,9 +53,38 @@ class EvidenceCollectionSummary(BaseModel):
 EVIDENCE_FAILED_SENTINEL = "Evidence collection timed out or failed."
 
 
+def _build_parent_context(
+    hypothesis: Hypothesis,
+    hypotheses_by_id: dict[str, Hypothesis] | None,
+    evidence_map: dict[str, str] | None,
+) -> str:
+    if not hypothesis.parent_id or not hypotheses_by_id or not evidence_map:
+        return ""
+    parent = hypotheses_by_id.get(hypothesis.parent_id)
+    if parent is None:
+        return ""
+
+    if parent.status == HypothesisStatus.REJECTED:
+        return f"\n## Parent Hypothesis (REJECTED)\n- **Description**: {parent.description}\n- **Status**: REJECTED\n"
+
+    parent_summary = evidence_map.get(parent.hypothesis_id, "")
+    if not parent_summary:
+        return ""
+
+    return (
+        f"\n## Parent Hypothesis Evidence\n"
+        f"- **Description**: {parent.description}\n"
+        f"- **Category**: {parent.category}\n"
+        f"- **Evidence Summary**:\n{parent_summary}\n"
+    )
+
+
 def _build_user_prompt(
     hypothesis: Hypothesis,
     scoping_result: ScopingResult,
+    *,
+    hypotheses_by_id: dict[str, Hypothesis] | None = None,
+    evidence_map: dict[str, str] | None = None,
 ) -> str:
     alarm = scoping_result.raw_alarm
     metric_context = ""
@@ -68,6 +97,8 @@ def _build_user_prompt(
             lines.append(f"- {name}: current={current}, baseline={baseline} {unit}")
         metric_context = "\n".join(lines)
 
+    parent_context = _build_parent_context(hypothesis, hypotheses_by_id, evidence_map)
+
     return EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE.format(
         alarm_name=alarm.alarm_name if alarm else "N/A",
         alarm_region=alarm.region if alarm else "us-east-1",
@@ -77,6 +108,7 @@ def _build_user_prompt(
         blast_radius=scoping_result.blast_radius,
         initial_severity=scoping_result.initial_severity,
         metric_context=metric_context or "No metric data available.",
+        parent_context=parent_context,
         hypothesis_description=hypothesis.description,
         hypothesis_category=hypothesis.category,
         required_evidence="\n".join(f"- {e}" for e in hypothesis.required_evidence) or "N/A",
@@ -120,9 +152,16 @@ def collect_evidence(
     *,
     mcp_clients: list[MCPClient] | None = None,
     timeout_seconds: int = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
+    hypotheses_by_id: dict[str, Hypothesis] | None = None,
+    evidence_map: dict[str, str] | None = None,
 ) -> EvidenceCollectionResult:
     agent = create_evidence_collection_agent(mcp_clients=mcp_clients)
-    user_prompt = _build_user_prompt(hypothesis, scoping_result)
+    user_prompt = _build_user_prompt(
+        hypothesis,
+        scoping_result,
+        hypotheses_by_id=hypotheses_by_id,
+        evidence_map=evidence_map,
+    )
     logger.info(
         "Collecting evidence for hypothesis %s: %s",
         hypothesis.hypothesis_id,
@@ -174,9 +213,16 @@ def run_evidence_collection(
     rca_id: str = "",
     trace=None,
     s3_client=None,
+    existing_evidence_map: dict[str, str] | None = None,
+    all_hypotheses: list[Hypothesis] | None = None,
 ) -> EvidenceCollectionSummary:
-    evidence_map: dict[str, str] = {}
+    lookup_map: dict[str, str] = {}
+    if existing_evidence_map:
+        lookup_map.update(existing_evidence_map)
+    new_evidence_map: dict[str, str] = {}
     failed_ids: set[str] = set()
+    source = all_hypotheses if all_hypotheses else hypotheses
+    hypotheses_by_id = {h.hypothesis_id: h for h in source}
 
     for h in hypotheses:
         result = collect_evidence(
@@ -184,9 +230,12 @@ def run_evidence_collection(
             scoping_result,
             mcp_clients=mcp_clients,
             timeout_seconds=timeout_seconds,
+            hypotheses_by_id=hypotheses_by_id,
+            evidence_map=lookup_map,
         )
 
-        evidence_map[h.hypothesis_id] = result.summary
+        lookup_map[h.hypothesis_id] = result.summary
+        new_evidence_map[h.hypothesis_id] = result.summary
 
         if result.failed:
             failed_ids.add(h.hypothesis_id)
@@ -197,7 +246,7 @@ def run_evidence_collection(
         if rca_id and not result.failed:
             _save_single_evidence_to_s3(rca_id, h.hypothesis_id, result.full_evidence, s3_client=s3_client)
 
-    return EvidenceCollectionSummary(evidence_map=evidence_map, failed_ids=failed_ids)
+    return EvidenceCollectionSummary(evidence_map=new_evidence_map, failed_ids=failed_ids)
 
 
 def _save_single_evidence_to_s3(

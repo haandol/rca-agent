@@ -388,6 +388,8 @@ def _run_pipeline(
                     rca_id=rca_id,
                     trace=trace,
                     s3_client=s3_client,
+                    existing_evidence_map=evidence_map,
+                    all_hypotheses=hypotheses,
                 )
                 evidence_map.update(ev_summary.evidence_map)
                 evidence_failed_ids.update(ev_summary.failed_ids)

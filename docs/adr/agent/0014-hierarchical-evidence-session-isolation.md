@@ -5,7 +5,7 @@ Updated: 2026-04-24
 
 ## Status
 
-Accepted (Phase 1 완료)
+Accepted (Phase 2 완료)
 
 ## Context
 
@@ -128,7 +128,7 @@ flowchart TD
 ## Implementation Notes
 
 Phase 1 (완료): 가설별 독립 Agent 인스턴스 + 요약만 반환 + DDB/S3 직접 저장 + 대시보드 full evidence 조회 (오버플로우 해결 및 책임 분리)
-Phase 2: 계층적 부모 요약 주입 (하위 가설 프롬프트에 부모 요약 포함, REJECTED 가설은 기각 사실만 전달)
+Phase 2 (완료): 계층적 부모 요약 주입 (하위 가설 프롬프트에 부모 요약 포함, REJECTED 가설은 기각 사실만 전달)
 
 ## Related
 

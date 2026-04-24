@@ -9,6 +9,7 @@ from rca_agent.evidence import (
     EvidenceCollectionResult,
     EvidenceCollectionSummary,
     EvidenceOutput,
+    _build_parent_context,
     _build_user_prompt,
     collect_evidence,
     run_evidence_collection,
@@ -19,6 +20,7 @@ from rca_agent.models import (
     AlarmTrigger,
     Hypothesis,
     HypothesisCategory,
+    HypothesisStatus,
     ScopingResult,
 )
 
@@ -101,6 +103,140 @@ class TestBuildUserPrompt:
         sr = ScopingResult(alarm_summary="test", raw_alarm=None)
         prompt = _build_user_prompt(hypothesis, sr)
         assert "N/A" in prompt
+
+
+class TestBuildParentContext:
+    def test_no_parent_returns_empty(self):
+        h = Hypothesis(
+            hypothesis_id="h-1",
+            description="Root hypothesis",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+        )
+        assert _build_parent_context(h, None, None) == ""
+
+    def test_parent_with_evidence_summary(self):
+        parent = Hypothesis(
+            hypothesis_id="h-1",
+            description="Parent hypothesis",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            status=HypothesisStatus.NEEDS_INVESTIGATION,
+        )
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child hypothesis",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            parent_id="h-1",
+            depth=1,
+        )
+        by_id = {"h-1": parent}
+        ev_map = {"h-1": "CPU spike correlated with deploy at 10:00"}
+
+        result = _build_parent_context(child, by_id, ev_map)
+
+        assert "Parent hypothesis" in result
+        assert "DEPLOYMENT" in result
+        assert "CPU spike correlated with deploy" in result
+
+    def test_rejected_parent_shows_minimal_info(self):
+        parent = Hypothesis(
+            hypothesis_id="h-1",
+            description="Rejected parent",
+            category=HypothesisCategory.TRAFFIC,
+            confidence_score=0.2,
+            status=HypothesisStatus.REJECTED,
+        )
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child",
+            category=HypothesisCategory.TRAFFIC,
+            confidence_score=0.5,
+            parent_id="h-1",
+            depth=1,
+        )
+        by_id = {"h-1": parent}
+        ev_map = {"h-1": "Full evidence that should not appear"}
+
+        result = _build_parent_context(child, by_id, ev_map)
+
+        assert "REJECTED" in result
+        assert "Rejected parent" in result
+        assert "Full evidence that should not appear" not in result
+
+    def test_parent_not_in_lookup_returns_empty(self):
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            parent_id="h-missing",
+            depth=1,
+        )
+        assert _build_parent_context(child, {}, {"h-missing": "data"}) == ""
+
+    def test_parent_with_no_evidence_returns_empty(self):
+        parent = Hypothesis(
+            hypothesis_id="h-1",
+            description="Parent",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            status=HypothesisStatus.NEEDS_INVESTIGATION,
+        )
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            parent_id="h-1",
+            depth=1,
+        )
+        by_id = {"h-1": parent}
+        assert _build_parent_context(child, by_id, {}) == ""
+
+
+class TestBuildUserPromptWithParentContext:
+    def test_child_prompt_includes_parent_context(self, scoping_result):
+        parent = Hypothesis(
+            hypothesis_id="h-1",
+            description="Parent: deployment caused leak",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            status=HypothesisStatus.NEEDS_INVESTIGATION,
+        )
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Specific connection pool exhaustion",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            required_evidence=["pool metrics"],
+            parent_id="h-1",
+            depth=1,
+            tree_id="tree-1",
+        )
+        by_id = {"h-1": parent, "h-1-a": child}
+        ev_map = {"h-1": "Deploy at 10:00 caused connection spike"}
+
+        prompt = _build_user_prompt(
+            child,
+            scoping_result,
+            hypotheses_by_id=by_id,
+            evidence_map=ev_map,
+        )
+
+        assert "Parent Hypothesis Evidence" in prompt
+        assert "Deploy at 10:00 caused connection spike" in prompt
+        assert "Specific connection pool exhaustion" in prompt
+
+    def test_root_prompt_has_no_parent_context(self, hypothesis, scoping_result):
+        prompt = _build_user_prompt(
+            hypothesis,
+            scoping_result,
+            hypotheses_by_id={"h-1": hypothesis},
+            evidence_map={},
+        )
+        assert "Parent Hypothesis" not in prompt
 
 
 class TestCollectEvidence:
@@ -392,6 +528,101 @@ class TestRunEvidenceCollection:
         _, kwargs = mock_collect.call_args
         assert kwargs["mcp_clients"] is mcp_clients
         assert kwargs["timeout_seconds"] == 30
+
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_passes_existing_evidence_map_for_parent_lookup(self, mock_collect, scoping_result):
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child hypothesis",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            parent_id="h-1",
+            depth=1,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1-a",
+            summary="Child evidence",
+            full_evidence="Full child evidence",
+            evidence_types=["metrics"],
+        )
+        existing = {"h-1": "Parent evidence summary"}
+
+        run_evidence_collection(
+            [child],
+            scoping_result,
+            existing_evidence_map=existing,
+        )
+
+        _, kwargs = mock_collect.call_args
+        assert "h-1" in kwargs["evidence_map"]
+        assert kwargs["evidence_map"]["h-1"] == "Parent evidence summary"
+
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_returns_only_new_evidence(self, mock_collect, scoping_result):
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            parent_id="h-1",
+            depth=1,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1-a",
+            summary="Child evidence",
+            full_evidence="Full",
+            evidence_types=[],
+        )
+
+        summary = run_evidence_collection(
+            [child],
+            scoping_result,
+            existing_evidence_map={"h-1": "Parent summary"},
+        )
+
+        assert "h-1-a" in summary.evidence_map
+        assert "h-1" not in summary.evidence_map
+
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_passes_all_hypotheses_for_parent_lookup(self, mock_collect, scoping_result):
+        parent = Hypothesis(
+            hypothesis_id="h-1",
+            description="Parent",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+        child = Hypothesis(
+            hypothesis_id="h-1-a",
+            description="Child",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.5,
+            parent_id="h-1",
+            depth=1,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1-a",
+            summary="s",
+            full_evidence="f",
+            evidence_types=[],
+        )
+
+        run_evidence_collection(
+            [child],
+            scoping_result,
+            existing_evidence_map={"h-1": "Parent evidence"},
+            all_hypotheses=[parent, child],
+        )
+
+        _, kwargs = mock_collect.call_args
+        assert "h-1" in kwargs["hypotheses_by_id"]
+        assert "h-1-a" in kwargs["hypotheses_by_id"]
 
 
 class TestSaveEvidenceToS3:
