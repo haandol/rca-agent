@@ -58,8 +58,10 @@ Accepted
 ## Implementation Notes
 
 - `check_termination()`: CONFIRMED, TIME_BUDGET, MAX_DEPTH, MAX_LOOPS만 평가. ALL_REJECTED는 메인 루프에서 재생성으로 처리.
+- **미검증 가설 자동 기각**: 루프 종료 후 보고서 생성 전에, PENDING/NEEDS_INVESTIGATION 상태의 가설을 REJECTED로 일괄 기각한다. `judgment_reasoning`에 "리소스 제약으로 검증 미완료 — 분석 종료 시 자동 기각"을 기록한다. best_hypothesis는 제외. 이를 통해 세션 COMPLETED 시 모든 가설이 최종 상태(CONFIRMED/REJECTED)를 갖는다.
 - `update_state()`: `ConditionExpression: #st <> :cancelled`로 cooperative cancellation 구현. `ConditionalCheckFailedException` → `SessionCancelledError` 변환.
-- `_process_alarm()`: `SessionCancelledError`를 별도 `except` 블록에서 처리하여 `mark_failed` 없이 종료.
+- `_process_alarm()` / `_run_rca()`: `SessionCancelledError`를 별도 `except` 블록에서 처리하여 `mark_failed` 없이 종료.
+- `mark_completed()` / `mark_failed()`: `AND #state <> :cancelled` ConditionExpression으로 CANCELLED 상태의 세션이 COMPLETED/FAILED로 전이되지 않도록 가드.
 - 대시보드: `POST /api/sessions/:id/cancel` 엔드포인트가 DDB 세션 상태를 CANCELLED로 업데이트. terminal 상태(`COMPLETED`, `FAILED`, `CANCELLED`, `OUTDATED`)인 세션은 취소 불가 (409 응답).
 
 ## Related

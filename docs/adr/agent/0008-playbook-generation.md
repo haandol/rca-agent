@@ -37,7 +37,9 @@ Accepted
 
 6. **타임아웃 및 fallback**: 각 LLM 호출에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 `failure_type="unknown"`, `symptom_pattern=incident_summary`로 최소 플레이북을 생성한다.
 
-7. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 장애 패턴 추출, 절차 작성, 기존 플레이북 업데이트 판단에 추론이 필요하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
+7. **비차단(non-blocking) 실행**: 플레이북 생성은 파이프라인을 중단시키지 않는다. 생성 실패 시 FAILED 스팬을 기록하고 파이프라인은 알림/세션 완료로 계속 진행한다. 이는 Strands(`start_span`/`end_span` + try/except)와 CC Headless(Python wrapper `_process_playbook()`) 모두에 적용된다.
+
+8. **모델 티어**: **Planning 티어**(Sonnet 4.6 + adaptive thinking)를 사용한다. 장애 패턴 추출, 절차 작성, 기존 플레이북 업데이트 판단에 추론이 필요하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
 
 ## Consequences
 
@@ -63,7 +65,7 @@ Accepted
 - **플레이북 생성/저장/인덱싱**: 구현 완료 (Strands F8 단계, CC Headless 9단계)
 - **유사 플레이북 검색**: 구현 완료 (Scoping 단계에서 S3 Vectors 검색)
 - **플레이북 기반 자동 복구**: **미구현** — ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 플레이북의 복구 절차를 실행하도록 설계되었으나, Remediation Agent가 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
-- **대시보드 표시**: 구현 완료 (트레이스 뷰에서 PLAYBOOK span 선택 시 플레이북 상세 표시)
+- **대시보드 표시**: 구현 완료 (전용 플레이북 페이지 `/playbook/:id`, 세션 목록 및 트레이스 뷰에서 링크)
 
 현재 플레이북은 생성 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행되며, 다음 알람 수신 시 Scoping 단계에서 유사 플레이북으로 검색되어 가설 생성에 참고된다. 그러나 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동으로 실행하는 경로는 아직 연결되지 않았다.
 
