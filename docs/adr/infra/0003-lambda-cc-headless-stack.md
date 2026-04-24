@@ -1,11 +1,11 @@
 # ADR 0003: CC Headless 스택 — ECS Fargate 기반 RCA 실행 인프라
 
 Date: 2026-04-22
-Updated: 2026-04-23
+Updated: 2026-04-24
 
 ## Status
 
-Accepted (Updated — Lambda에서 ECS Fargate로 전환)
+Accepted (Updated — Lambda에서 ECS Fargate로 전환, 산출물 기반 트레이싱 추가)
 
 ## Context
 
@@ -47,15 +47,17 @@ flowchart LR
    - Desired Count: 1 (한 번에 하나의 RCA만 실행)
    - Health Check: `GET /healthz` (HTTP 8080)
 
-4. **MCP 서버 연결**: 컨테이너 내 `mcp-config.json`에 CloudWatch MCP, CloudTrail MCP, AWS Knowledge MCP, GitHub MCP를 정의한다. CC headless가 시작 시 `--mcp-config` 플래그로 이 설정을 읽어 MCP 서버를 자동 연결한다.
+4. **MCP 서버 연결**: 컨테이너 내 `mcp-config.json`에 CloudWatch MCP, CloudTrail MCP, AWS Knowledge MCP, GitHub MCP, rca-progress MCP를 정의한다. CC headless가 시작 시 `--mcp-config` 플래그로 이 설정을 읽어 MCP 서버를 자동 연결한다. rca-progress MCP는 `save_artifact` 도구만 제공하며, 산출물 파일을 `/tmp/rca-{id}/`에 저장한다.
 
-5. **세션 상태 관리**: 기존 DynamoDB 테이블에 세션을 기록한다. `engine` 필드를 `cc-headless`로 설정하여 Strands Agent(`strands`)와 구분한다.
+5. **산출물 파일 기반 트레이싱**: Python wrapper의 `artifact_watcher` 스레드가 `/tmp/rca-{id}/` 디렉토리를 3초 간격으로 폴링한다. 새 파일이 감지되면 JSON을 파싱하여 DDB에 스팬/가설 아이템을 자동 기록한다. CC CLI는 `save_artifact`로 파일만 저장하면 되고, 트레이싱 로직을 알 필요가 없다. 상세는 infra/0005를 참조한다.
 
-6. **멱등성**: DynamoDB Conditional Write 기반 이중 멱등성 체크(idempotency key + session creation)를 사용한다.
+6. **세션 상태 관리**: 기존 DynamoDB 테이블에 세션을 기록한다. `engine` 필드를 `cc-headless`로 설정하여 Strands Agent(`strands`)와 구분한다. SK 접두사에 엔진명을 포함하여 엔진별 트레이스를 분리한다.
 
-7. **구조화 로깅**: structlog 라이브러리로 구조화된 로그를 출력한다. ECS 환경(`ECS_CONTAINER_METADATA_URI_V4` 존재)에서는 JSON 포맷, 로컬에서는 plain text 포맷을 자동 선택한다.
+7. **멱등성**: DynamoDB Conditional Write 기반 이중 멱등성 체크(idempotency key + session creation)를 사용한다.
 
-8. **파일 경로 탐색**: 프롬프트 파일(`prompts/`)과 MCP 설정(`mcp-config.json`)은 `Path.parents` 순회 방식으로 탐색한다. 컨테이너(`/app/src/cc_headless/`)와 로컬 개발 환경 모두에서 동작한다.
+8. **구조화 로깅**: structlog 라이브러리로 구조화된 로그를 출력한다. ECS 환경(`ECS_CONTAINER_METADATA_URI_V4` 존재)에서는 JSON 포맷, 로컬에서는 plain text 포맷을 자동 선택한다.
+
+9. **파일 경로 탐색**: 프롬프트 파일(`prompts/`)과 MCP 설정(`mcp-config.json`)은 `Path.parents` 순회 방식으로 탐색한다. 컨테이너(`/app/src/cc_headless/`)와 로컬 개발 환경 모두에서 동작한다.
 
 ### 공유 인프라
 
@@ -90,3 +92,4 @@ Strands Agent 스택과 다음 인프라를 공유한다:
 - [ADR agent/0011: CC headless 기반 프롬프트 주도 RCA](../agent/0011-cc-headless-prompt-driven-rca.md) — CC Headless RCA 에이전트 설계
 - [ADR infra/0001: 알람 수신 아키텍처 (Fargate)](0001-alarm-ingestion-sns-sqs-fargate.md) — Strands Agent의 동일 패턴
 - [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — 공유 저장소 아키텍처
+- [ADR infra/0005: 실행 트레이스 DynamoDB](0005-execution-trace-dynamodb.md) — 산출물 파일 기반 트레이싱 상세
