@@ -8,7 +8,7 @@ from pathlib import Path
 
 import structlog
 
-from cc_headless.config import CC_MAX_TURNS, CC_TIMEOUT_SECONDS
+from cc_headless.config import CC_TIMEOUT_SECONDS
 
 logger = structlog.get_logger()
 
@@ -40,15 +40,13 @@ def run_claude(prompt: str, *, mcp_config: str | None = None) -> CcResult:
         "--output-format",
         "json",
         "--dangerously-skip-permissions",
-        "--max-turns",
-        str(CC_MAX_TURNS),
         "--mcp-config",
         mcp_config or _MCP_CONFIG_PATH,
     ]
 
     env = {**os.environ, "HOME": "/tmp"}
 
-    logger.info("cc_cli_started", max_turns=CC_MAX_TURNS, mcp_config=mcp_config or _MCP_CONFIG_PATH)
+    logger.info("cc_cli_started", mcp_config=mcp_config or _MCP_CONFIG_PATH)
 
     try:
         proc = subprocess.run(

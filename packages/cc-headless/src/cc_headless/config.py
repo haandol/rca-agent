@@ -14,6 +14,5 @@ SNS_NOTIFICATION_TOPIC_ARN = os.environ.get("SNS_NOTIFICATION_TOPIC_ARN", "")
 PRESIGNED_URL_EXPIRY = 86400
 
 CC_TIMEOUT_SECONDS = int(os.environ.get("CC_TIMEOUT_SECONDS", "600"))
-CC_MAX_TURNS = int(os.environ.get("CC_MAX_TURNS", "30"))
 
 ENGINE = "cc-headless"
