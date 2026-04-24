@@ -50,7 +50,7 @@ const STATE_DESC: Record<string, string> = {
   HYPOTHESIS_GENERATION: '스코핑 결과를 바탕으로 3~5개의 근본원인 가설을 생성하는 단계',
   HYPOTHESIS_PRIORITIZATION: '생성된 가설의 우선순위를 결정하고 상위 빔을 선택하는 단계',
   EVIDENCE_COLLECTION: 'CloudWatch, CloudTrail, GitHub 등에서 가설 검증을 위한 증거를 수집하는 단계',
-  HYPOTHESIS_VALIDATION: '수집된 증거를 바탕으로 가설을 확정(CONFIRMED), 기각(REJECTED), 또는 추가 조사(NEEDS_INVESTIGATION)로 분류하는 단계',
+  HYPOTHESIS_VALIDATION: '수집된 증거를 바탕으로 가설을 확정(CONFIRMED), 기각(REJECTED), 종결(CLOSED), 또는 추가 조사(NEEDS_INVESTIGATION)로 분류하는 단계',
   REPORT_GENERATION: '확정된 근본원인과 증거를 기반으로 한글 RCA 보고서를 생성하는 단계',
   REMEDIATION: '근본원인에 맞는 자동 복구 조치(장애 리셋, ECS 재배포 등)를 수행하는 단계',
   VERIFICATION: '복구 후 메트릭을 재조회하여 정상화 여부를 확인하는 단계',
@@ -302,6 +302,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                   <span class="badge badge-sm" :class="{
                     'badge-success': selectedNode.status === 'CONFIRMED',
                     'badge-error': selectedNode.status === 'REJECTED',
+                    'badge-ghost': selectedNode.status === 'CLOSED',
                     'badge-warning': selectedNode.status === 'NEEDS_INVESTIGATION',
                   }">{{ selectedNode.status }}</span>
                   <span

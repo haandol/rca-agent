@@ -21,7 +21,7 @@ Accepted
 3. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과 — `TerminationReason.TOKEN_BUDGET` enum이 정의되어 있으나, Strands SDK의 토큰 사용량 추적 API가 확정되면 구현 예정 (현재 보류)
 4. **최대 깊이**: 가설 트리 깊이가 5를 초과 (`RCA_MAX_TREE_DEPTH=5`)
 5. **최대 반복**: 검증 루프가 3회를 초과 (`RCA_MAX_VALIDATION_LOOPS=3`)
-6. **외부 취소 (CANCELLED)**: 대시보드에서 관리자가 세션 상태를 `CANCELLED`로 변경하면, 다음 `update_state()` 호출 시점에 파이프라인이 즉시 종료된다.
+6. **외부 취소 및 terminal 상태 강제 중단**: 대시보드에서 관리자가 세션 상태를 `CANCELLED`로 변경하거나, 세션이 `COMPLETED`, `FAILED`, `OUTDATED` 등 terminal 상태에 진입하면, 다음 `update_state()` 호출 시점에 파이프라인이 즉시 종료된다. `_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}` 중 하나라도 해당되면 `SessionCancelledError`가 발생한다.
 
 ### 핵심 결정사항
 
@@ -58,11 +58,11 @@ Accepted
 ## Implementation Notes
 
 - `check_termination()`: CONFIRMED, TIME_BUDGET, MAX_DEPTH, MAX_LOOPS만 평가. ALL_REJECTED는 메인 루프에서 재생성으로 처리.
-- **미검증 가설 자동 기각**: 루프 종료 후 보고서 생성 전에, PENDING/NEEDS_INVESTIGATION 상태의 가설을 REJECTED로 일괄 기각한다. `judgment_reasoning`에 "리소스 제약으로 검증 미완료 — 분석 종료 시 자동 기각"을 기록한다. best_hypothesis는 제외. 이를 통해 세션 COMPLETED 시 모든 가설이 최종 상태(CONFIRMED/REJECTED)를 갖는다.
-- `update_state()`: `ConditionExpression: #st <> :cancelled`로 cooperative cancellation 구현. `ConditionalCheckFailedException` → `SessionCancelledError` 변환.
+- **미검증 가설 자동 정리 (CLOSED)**: 루프 종료 후 보고서 생성 전에, PENDING/NEEDS_INVESTIGATION 상태의 가설을 **CLOSED**로 일괄 처리한다. REJECTED는 증거 기반으로 명시적으로 기각된 가설에만 사용하고, 예산 소진/미검증 종료는 CLOSED로 구분한다. `judgment_reasoning`에 종료 사유별 메시지를 기록한다 — `TerminationReason` 매핑: CONFIRMED→"확정된 근본원인 발견으로 추가 검증 불필요", TIME_BUDGET→"시간 예산 소진", TOKEN_BUDGET→"토큰 예산 소진", MAX_DEPTH→"최대 트리 깊이 초과", MAX_LOOPS→"최대 검증 루프 초과", ALL_REJECTED→"전체 가설 기각", 기본→"분석 종료". best_hypothesis는 제외. 이를 통해 세션 COMPLETED 시 모든 가설이 최종 상태(CONFIRMED/REJECTED/CLOSED)를 갖는다.
+- `update_state()`: `ConditionExpression: NOT #st IN (:completed, :failed, :outdated, :cancelled)`로 cooperative termination 구현. 모든 terminal 상태에서 `ConditionalCheckFailedException` → `SessionCancelledError` 변환.
 - `_process_alarm()` / `_run_rca()`: `SessionCancelledError`를 별도 `except` 블록에서 처리하여 `mark_failed` 없이 종료.
-- `mark_completed()` / `mark_failed()`: `AND #state <> :cancelled` ConditionExpression으로 CANCELLED 상태의 세션이 COMPLETED/FAILED로 전이되지 않도록 가드.
-- 대시보드: `POST /api/sessions/:id/cancel` 엔드포인트가 DDB 세션 상태를 CANCELLED로 업데이트. terminal 상태(`COMPLETED`, `FAILED`, `CANCELLED`, `OUTDATED`)인 세션은 취소 불가 (409 응답).
+- `mark_completed()` / `mark_failed()`: `NOT #state IN (:completed, :failed, :outdated, :cancelled)` ConditionExpression으로 terminal 상태의 세션이 덮어쓰기되지 않도록 가드.
+- 대시보드: `POST /api/sessions/:id/cancel` 엔드포인트가 DDB 세션 상태를 CANCELLED로 업데이트하고, 해당 RCA의 PENDING/NEEDS_INVESTIGATION 상태 가설 노드를 CLOSED로 일괄 처리한다(`judgment_reasoning: "관리자에 의한 분석 중단"`). terminal 상태(`COMPLETED`, `FAILED`, `CANCELLED`, `OUTDATED`)인 세션은 취소 불가 (409 응답).
 
 ## Related
 

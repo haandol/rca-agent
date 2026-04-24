@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from botocore.exceptions import ClientError
 
 from rca_agent.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
-from rca_agent.session_store import SessionCancelledError
+from rca_agent.session_store import _TERMINAL_STATES, SessionCancelledError
 
 if TYPE_CHECKING:
     from rca_agent.models import Hypothesis
@@ -110,7 +110,7 @@ class TraceStore:
                 ExpressionAttributeNames={"#st": "state"},
             )
             state = resp.get("Item", {}).get("state", {}).get("S", "")
-            if state == "CANCELLED":
+            if state in _TERMINAL_STATES:
                 raise SessionCancelledError(self._rca_id)
         except ClientError:
             logger.exception("Failed to check cancellation for %s", self._rca_id)

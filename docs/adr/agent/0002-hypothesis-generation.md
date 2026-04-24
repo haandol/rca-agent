@@ -37,7 +37,7 @@ flowchart TD
 
 ### 핵심 결정사항
 
-1. **Strands SDK structured output**: 스코핑 결과와 유사 플레이북을 프롬프트에 포함하여 Strands Agents SDK의 `structured_output_model` 파라미터로 `HypothesisOutput` Pydantic 모델을 지정한다. SDK가 출력 파싱을 처리하므로 프롬프트에 JSON 포맷 지시가 불필요하다. 비스트리밍 모드(`streaming=False`)로 호출한다.
+1. **Strands SDK structured output**: 스코핑 결과와 유사 플레이북을 프롬프트에 포함하여 Strands Agents SDK의 `structured_output_model` 파라미터로 `HypothesisOutput` Pydantic 모델을 지정한다. SDK가 출력 파싱을 처리하므로 프롬프트에 JSON 포맷 지시가 불필요하다. 비스트리밍 모드(`streaming=False`)로 호출한다. Pydantic 모델의 `max_length=5` 제약으로 레벨당 최대 5개 가설을 하드 제한하며, 생성 후에도 방어적으로 5개를 초과하면 잘라낸다.
 
 2. **가설 구조**: 각 가설은 설명, 카테고리(DEPLOYMENT/INFRASTRUCTURE/TRAFFIC/DEPENDENCY/CONFIGURATION), 초기 신뢰도(0.0~1.0), 필요 증거 목록, 참조한 플레이북 ID(있는 경우)를 포함한다.
 

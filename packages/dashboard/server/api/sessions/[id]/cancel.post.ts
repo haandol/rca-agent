@@ -1,4 +1,40 @@
-import { UpdateCommand } from '@aws-sdk/lib-dynamodb'
+import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
+
+const OPEN_HYPO_STATES = new Set(['PENDING', 'NEEDS_INVESTIGATION'])
+
+async function closeOpenHypotheses(ddb: ReturnType<typeof useDynamoDB>, tableName: string, rcaId: string, now: string) {
+  const resp = await ddb.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: 'PK = :pk',
+      FilterExpression: 'contains(SK, :hypo)',
+      ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':hypo': '#HYPO#' },
+      ProjectionExpression: 'PK, SK, #st',
+      ExpressionAttributeNames: { '#st': 'status' },
+    }),
+  )
+
+  const updates = (resp.Items || [])
+    .filter((item) => OPEN_HYPO_STATES.has(item.status))
+    .map((item) =>
+      ddb.send(
+        new UpdateCommand({
+          TableName: tableName,
+          Key: { PK: item.PK, SK: item.SK },
+          UpdateExpression: 'SET #st = :closed, judgment_reasoning = :reason, updated_at = :now',
+          ExpressionAttributeNames: { '#st': 'status' },
+          ExpressionAttributeValues: {
+            ':closed': 'CLOSED',
+            ':reason': '관리자에 의한 분석 중단',
+            ':now': now,
+          },
+        }),
+      ),
+    )
+
+  await Promise.allSettled(updates)
+  return updates.length
+}
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -67,5 +103,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Session cannot be cancelled (already terminal or not found)' })
   }
 
-  return { cancelled: true, rcaId: id }
+  const closedCount = await closeOpenHypotheses(ddb, config.dynamodbTableName, id, now)
+
+  return { cancelled: true, rcaId: id, closedHypotheses: closedCount }
 })

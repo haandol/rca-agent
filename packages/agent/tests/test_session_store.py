@@ -199,6 +199,13 @@ class TestCheckDuplicate:
         assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
 
 
+def _ddb_with_state(state: str) -> MagicMock:
+    """Create a MagicMock DDB client that returns the given state for get_item."""
+    ddb = MagicMock()
+    ddb.get_item.return_value = {"Item": {"state": {"S": state}}}
+    return ddb
+
+
 class TestUpdateState:
     def test_returns_false_when_no_table(self, dynamodb_client: MagicMock):
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
@@ -210,41 +217,45 @@ class TestUpdateState:
             result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=None)
         assert result is False
 
-    def test_updates_state_successfully(self, dynamodb_client: MagicMock):
+    def test_updates_state_successfully(self):
+        ddb = _ddb_with_state("ALARM_RECEIVED")
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
+            result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
         assert result is True
-        dynamodb_client.update_item.assert_called_once()
-        call_kwargs = dynamodb_client.update_item.call_args[1]
+        ddb.update_item.assert_called_once()
+        call_kwargs = ddb.update_item.call_args[1]
         assert call_kwargs["Key"]["PK"]["S"] == "RCA#rca-123"
         assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "SCOPING"
 
-    def test_includes_cancelled_condition(self, dynamodb_client: MagicMock):
+    def test_includes_cancelled_condition(self):
+        ddb = _ddb_with_state("ALARM_RECEIVED")
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
+            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
-        call_kwargs = dynamodb_client.update_item.call_args[1]
+        call_kwargs = ddb.update_item.call_args[1]
         assert "ConditionExpression" in call_kwargs
         assert call_kwargs["ExpressionAttributeValues"][":cancelled"]["S"] == "CANCELLED"
 
-    def test_raises_session_cancelled_error(self, dynamodb_client: MagicMock):
+    def test_raises_session_cancelled_error(self):
+        ddb = _ddb_with_state("ALARM_RECEIVED")
         error_response = {"Error": {"Code": "ConditionalCheckFailedException", "Message": "cancelled"}}
-        dynamodb_client.update_item.side_effect = ClientError(error_response, "UpdateItem")
+        ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
         with (
             patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
             pytest.raises(SessionCancelledError),
         ):
-            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
+            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
-    def test_returns_false_on_error(self, dynamodb_client: MagicMock):
+    def test_returns_false_on_error(self):
+        ddb = _ddb_with_state("ALARM_RECEIVED")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
-        dynamodb_client.update_item.side_effect = ClientError(error_response, "UpdateItem")
+        ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
+            result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
         assert result is False
 
@@ -255,28 +266,30 @@ class TestMarkCompleted:
             result = mark_completed("rca-123", dynamodb_client=dynamodb_client)
         assert result is False
 
-    def test_marks_completed_with_root_cause(self, dynamodb_client: MagicMock):
+    def test_marks_completed_with_root_cause(self):
+        ddb = _ddb_with_state("REPORT_GENERATION")
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = mark_completed(
                 "rca-123",
                 root_cause="Bad deploy",
                 confirmed=True,
-                dynamodb_client=dynamodb_client,
+                dynamodb_client=ddb,
             )
 
         assert result is True
-        call_kwargs = dynamodb_client.update_item.call_args[1]
+        call_kwargs = ddb.update_item.call_args[1]
         assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "COMPLETED"
         assert call_kwargs["ExpressionAttributeValues"][":rc"]["S"] == "Bad deploy"
         assert call_kwargs["ExpressionAttributeValues"][":cf"]["BOOL"] is True
 
-    def test_returns_false_on_error(self, dynamodb_client: MagicMock):
+    def test_returns_false_on_error(self):
+        ddb = _ddb_with_state("REPORT_GENERATION")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
-        dynamodb_client.update_item.side_effect = ClientError(error_response, "UpdateItem")
+        ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = mark_completed("rca-123", dynamodb_client=dynamodb_client)
+            result = mark_completed("rca-123", dynamodb_client=ddb)
 
         assert result is False
 
@@ -287,25 +300,27 @@ class TestMarkFailed:
             result = mark_failed("rca-123", dynamodb_client=dynamodb_client)
         assert result is False
 
-    def test_marks_failed_with_reason(self, dynamodb_client: MagicMock):
+    def test_marks_failed_with_reason(self):
+        ddb = _ddb_with_state("SCOPING")
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = mark_failed(
                 "rca-123",
                 error_reason="Pipeline crash",
-                dynamodb_client=dynamodb_client,
+                dynamodb_client=ddb,
             )
 
         assert result is True
-        call_kwargs = dynamodb_client.update_item.call_args[1]
+        call_kwargs = ddb.update_item.call_args[1]
         assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "FAILED"
         assert call_kwargs["ExpressionAttributeValues"][":err"]["S"] == "Pipeline crash"
 
-    def test_returns_false_on_error(self, dynamodb_client: MagicMock):
+    def test_returns_false_on_error(self):
+        ddb = _ddb_with_state("SCOPING")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
-        dynamodb_client.update_item.side_effect = ClientError(error_response, "UpdateItem")
+        ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
         with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = mark_failed("rca-123", dynamodb_client=dynamodb_client)
+            result = mark_failed("rca-123", dynamodb_client=ddb)
 
         assert result is False

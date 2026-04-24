@@ -188,10 +188,11 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict) -> None
         return
 
     now = _now_iso()
-    for bucket in ("confirmed", "rejected", "needs_investigation"):
+    for bucket in ("confirmed", "rejected", "closed", "needs_investigation"):
         status_map = {
             "confirmed": "CONFIRMED",
             "rejected": "REJECTED",
+            "closed": "CLOSED",
             "needs_investigation": "NEEDS_INVESTIGATION",
         }
         for h in artifact.get(bucket, []):

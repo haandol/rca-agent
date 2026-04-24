@@ -7,6 +7,7 @@ defineProps<{ data: NodeData }>()
 const statusClass: Record<string, string> = {
   CONFIRMED: 'border-success/40 bg-success/8',
   REJECTED: 'border-error/30 bg-error/5 opacity-60',
+  CLOSED: 'border-base-content/20 bg-base-content/5 opacity-70',
   NEEDS_INVESTIGATION: 'border-warning/40 bg-warning/8 animate-pulse',
   PENDING: 'border-base-content/10 bg-base-100',
 }

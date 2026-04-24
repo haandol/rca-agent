@@ -68,7 +68,7 @@ NEEDS_INVESTIGATION 가설에 대해:
   "judgments": [
     {
       "hypothesis_id": "uuid",
-      "status": "CONFIRMED|REJECTED|NEEDS_INVESTIGATION",
+      "status": "CONFIRMED|REJECTED|CLOSED|NEEDS_INVESTIGATION",
       "confidence_score": 0.85,
       "reasoning": "판단 근거"
     }

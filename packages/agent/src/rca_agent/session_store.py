@@ -158,10 +158,8 @@ def _validate_transition(
     current = _get_current_state(rca_id, dynamodb_client=dynamodb_client)
     if current is None:
         return
-    if current == "CANCELLED":
-        raise SessionCancelledError(rca_id)
     if current in _TERMINAL_STATES:
-        raise InvalidStateTransitionError(f"{rca_id}: {current} → {target}")
+        raise SessionCancelledError(rca_id)
     allowed = VALID_TRANSITIONS.get(current, set())
     if target not in allowed:
         raise InvalidStateTransitionError(f"{rca_id}: {current} → {target}")

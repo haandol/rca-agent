@@ -21,6 +21,7 @@ from cc_headless.playbook_store import load_playbook, save_playbook_to_s3_vector
 from cc_headless.prompt_builder import build_prompt
 from cc_headless.report_store import save_report, send_notification
 from cc_headless.session_store import (
+    _TERMINAL_STATES,
     InvalidStateTransitionError,
     SessionCancelledError,
     build_rca_id,
@@ -67,7 +68,7 @@ def _should_process(alarm_data: dict) -> bool:
     return alarm_data.get("NewStateValue", "ALARM") == "ALARM"
 
 
-def _is_cancelled(rca_id: str, ddb) -> bool:
+def _is_terminated(rca_id: str, ddb) -> bool:
     if not DYNAMODB_TABLE_NAME or not ddb:
         return False
     try:
@@ -81,9 +82,9 @@ def _is_cancelled(rca_id: str, ddb) -> bool:
             ExpressionAttributeNames={"#st": "state"},
         )
         state = resp.get("Item", {}).get("state", {}).get("S", "")
-        return state == "CANCELLED"
+        return state in _TERMINAL_STATES
     except Exception:
-        logger.exception("cancel_check_failed", rca_id=rca_id)
+        logger.exception("termination_check_failed", rca_id=rca_id)
         return False
 
 
@@ -105,14 +106,14 @@ def _run_rca(
 
         watcher_thread, watcher_stop = start_watcher(artifact_dir, rca_id, ddb)
 
-        cc_result = run_claude(prompt, cancel_checker=lambda: _is_cancelled(rca_id, ddb))
+        cc_result = run_claude(prompt, cancel_checker=lambda: _is_terminated(rca_id, ddb))
         elapsed_seconds = int(time.time() - start_time)
 
         watcher_stop.set()
         watcher_thread.join(timeout=10)
 
-        if _is_cancelled(rca_id, ddb):
-            log.info("session_cancelled_after_cc", elapsed_seconds=elapsed_seconds)
+        if _is_terminated(rca_id, ddb):
+            log.info("session_terminated_after_cc", elapsed_seconds=elapsed_seconds)
             return True
 
         if not cc_result.success:

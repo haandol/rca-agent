@@ -38,7 +38,7 @@ Accepted
 
 5. **타임아웃 및 fallback**: 개별 가설 검증에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 기존 confidence_score를 유지하고 `NEEDS_INVESTIGATION` 상태로 처리하여 추가 조사 기회를 보존한다.
 
-6. **루프 종료 시 미검증 가설 자동 기각**: 검증 루프가 종료되면(CONFIRMED 발견, 시간 초과, 최대 루프 등) PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설을 REJECTED로 자동 기각한다. `judgment_reasoning`에 "리소스 제약으로 검증 미완료"를 기록한다. best_hypothesis로 선택된 가설은 제외한다. 이를 통해 세션 완료 시 모든 가설이 CONFIRMED 또는 REJECTED의 최종 상태를 갖게 된다. CC Headless에서도 프롬프트로 동일한 동작을 유도한다.
+6. **루프 종료 시 미검증 가설 자동 정리 (CLOSED)**: 검증 루프가 종료되면(CONFIRMED 발견, 시간 초과, 최대 루프 등) PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설을 **CLOSED**로 처리한다. REJECTED는 증거에 의해 명시적으로 기각된 경우에만 사용하고, 예산 소진/미검증으로 종료된 가설은 CLOSED로 구분한다. `judgment_reasoning`에 종료 사유별 한글 메시지를 기록한다(예: "시간 예산 소진", "확정된 근본원인 발견으로 추가 검증 불필요", "최대 검증 루프 초과" 등). best_hypothesis로 선택된 가설은 제외한다. 이를 통해 세션 완료 시 모든 가설이 CONFIRMED, REJECTED, CLOSED 중 하나의 최종 상태를 갖게 된다. CC Headless에서도 산출물 파싱과 프롬프트로 동일한 동작을 구현한다.
 
 7. **모델 티어**: **Execution 티어**(Haiku 4.5)를 사용한다. 수집된 증거 대비 가설의 지지/반박을 판정하는 단순 분류 작업이므로 경량 모델로 충분하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
 

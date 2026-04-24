@@ -64,7 +64,7 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
 
 #### validation-{N}.json
 
-**중요: confirmed/rejected/needs_investigation의 `hypothesis_id`는 반드시 `hypotheses.json`에서 생성한 UUID와 정확히 일치해야 한다. 새로운 ID를 만들지 않는다.**
+**중요: confirmed/rejected/closed/needs_investigation의 `hypothesis_id`는 반드시 `hypotheses.json`에서 생성한 UUID와 정확히 일치해야 한다. 새로운 ID를 만들지 않는다.**
 
 ```json
 {
@@ -78,6 +78,9 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
   ],
   "needs_investigation": [
     {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.5, "reasoning": "추가 조사 필요 사유 (한글, 상세히)"}
+  ],
+  "closed": [
+    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.4, "reasoning": "종료 사유 (예: 시간 예산 소진, 확정된 근본원인 발견으로 추가 검증 불필요)"}
   ],
   "new_hypotheses": [
     {
@@ -99,7 +102,7 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
 ```
 
 **주의사항:**
-- `confirmed`/`rejected`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
+- `confirmed`/`rejected`/`closed`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
 - `new_hypotheses`의 각 항목에는 반드시 `description`과 `category`를 포함한다.
 - 모든 가설은 `hypotheses.json`에서 이미 생성된 `hypothesis_id`를 참조해야 한다.
 
@@ -222,9 +225,9 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 
 ### 루프 종료 시 미검증 가설 처리 (필수)
 
-**검증 루프 종료 후, PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설은 최종 validation JSON의 `rejected`에 포함한다.** 이때 `reasoning`에 "리소스 제약으로 검증 미완료 — 분석 종료 시 자동 기각"를 기재한다. 확정된(CONFIRMED) 가설과 이미 기각된(REJECTED) 가설은 제외한다.
+**검증 루프 종료 후, PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설은 최종 validation JSON의 `closed`에 포함한다.** 각 항목에 `hypothesis_id`, `confidence`, `reasoning`을 기재한다. reasoning에는 종료 사유(예: "시간 예산 소진", "확정된 근본원인 발견으로 추가 검증 불필요")를 명시한다. 확정된(CONFIRMED) 가설과 이미 기각된(REJECTED) 가설은 제외한다.
 
-이 처리를 통해 세션 완료 시 모든 가설이 CONFIRMED 또는 REJECTED 상태를 갖게 된다.
+이 처리를 통해 세션 완료 시 모든 가설이 CONFIRMED, REJECTED, 또는 CLOSED 상태를 갖게 된다.
 
 ---
 

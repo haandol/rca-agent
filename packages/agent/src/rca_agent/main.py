@@ -38,7 +38,7 @@ from rca_agent.config import (
 from rca_agent.evidence import run_evidence_collection, save_evidence_to_s3
 from rca_agent.healthz import start_health_server
 from rca_agent.hypothesis import run_hypothesis_generation
-from rca_agent.models import AlarmPayload, HypothesisStatus, Playbook, RcaSessionState
+from rca_agent.models import AlarmPayload, HypothesisStatus, Playbook, RcaSessionState, TerminationReason
 from rca_agent.notification import build_notification, send_notification
 from rca_agent.playbook_gen import run_playbook_generation, save_playbook_to_s3_vectors
 from rca_agent.prioritization import run_prioritization
@@ -571,17 +571,28 @@ def _run_pipeline(
             metadata={"루프_번호": validation_loop_count, "신규_하위가설": len(new_children)},
         )
 
-    # Finalize unresolved hypotheses — mark PENDING/NEEDS_INVESTIGATION as NOT_INVESTIGATED
+    # Finalize unresolved hypotheses — all must be CONFIRMED, REJECTED, or CLOSED before report
+    close_reason_map: dict[TerminationReason, str] = {
+        TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 추가 검증 불필요",
+        TerminationReason.TIME_BUDGET: "시간 예산 소진",
+        TerminationReason.TOKEN_BUDGET: "토큰 예산 소진",
+        TerminationReason.MAX_DEPTH: "최대 트리 깊이 초과",
+        TerminationReason.MAX_LOOPS: "최대 검증 루프 초과",
+        TerminationReason.ALL_REJECTED: "전체 가설 기각",
+    }
+    close_reason = (
+        close_reason_map.get(termination.reason, "분석 종료") if termination and termination.reason else "분석 종료"
+    )
     best_hid = termination.best_hypothesis.hypothesis_id if termination and termination.best_hypothesis else None
     for h in hypotheses:
         if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
             if h.hypothesis_id == best_hid:
                 continue
-            h.status = HypothesisStatus.REJECTED
+            h.status = HypothesisStatus.CLOSED
             trace.update_hypothesis_status(
                 h.hypothesis_id,
-                status=HypothesisStatus.REJECTED.value,
-                judgment_reasoning="리소스 제약으로 검증 미완료 — 분석 종료 시 자동 기각",
+                status=HypothesisStatus.CLOSED.value,
+                judgment_reasoning=close_reason,
             )
 
     # Determine best hypothesis

@@ -89,9 +89,11 @@ class InvalidStateTransitionError(Exception):
 
 
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "ALARM_RECEIVED": {"ANALYZING", "FAILED", "CANCELLED"},
-    "ANALYZING": {"COMPLETED", "FAILED", "CANCELLED"},
+    "ALARM_RECEIVED": {"ANALYZING", "FAILED", "OUTDATED", "CANCELLED"},
+    "ANALYZING": {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"},
 }
+
+_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
 
 
 def _get_current_state(rca_id: str) -> str | None:
@@ -111,7 +113,7 @@ def _validate_transition(rca_id: str, target: str) -> None:
     current = _get_current_state(rca_id)
     if current is None:
         return
-    if current == "CANCELLED":
+    if current in _TERMINAL_STATES:
         raise SessionCancelledError(rca_id)
     allowed = VALID_TRANSITIONS.get(current, set())
     if target not in allowed:
@@ -127,11 +129,14 @@ def update_state(rca_id: str, state: str) -> None:
             TableName=DYNAMODB_TABLE_NAME,
             Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
             UpdateExpression="SET #state = :state, updated_at = :now",
-            ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
+            ConditionExpression="attribute_exists(SK) AND NOT #state IN (:completed, :failed, :outdated, :cancelled)",
             ExpressionAttributeNames={"#state": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": state},
                 ":now": {"S": _now_iso()},
+                ":completed": {"S": "COMPLETED"},
+                ":failed": {"S": "FAILED"},
+                ":outdated": {"S": "OUTDATED"},
                 ":cancelled": {"S": "CANCELLED"},
             },
         )
@@ -150,18 +155,21 @@ def mark_completed(rca_id: str, root_cause: str) -> None:
             TableName=DYNAMODB_TABLE_NAME,
             Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
             UpdateExpression="SET #state = :state, root_cause = :rc, updated_at = :now",
-            ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
+            ConditionExpression="attribute_exists(SK) AND NOT #state IN (:completed, :failed, :outdated, :cancelled)",
             ExpressionAttributeNames={"#state": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": "COMPLETED"},
                 ":rc": {"S": root_cause},
                 ":now": {"S": _now_iso()},
+                ":completed": {"S": "COMPLETED"},
+                ":failed": {"S": "FAILED"},
+                ":outdated": {"S": "OUTDATED"},
                 ":cancelled": {"S": "CANCELLED"},
             },
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            logger.warning("mark_completed_skipped_cancelled", rca_id=rca_id)
+            logger.warning("mark_completed_skipped_terminal", rca_id=rca_id)
             return
         raise
 
@@ -175,17 +183,20 @@ def mark_failed(rca_id: str, error_reason: str) -> None:
             TableName=DYNAMODB_TABLE_NAME,
             Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
             UpdateExpression="SET #state = :state, error_reason = :err, updated_at = :now",
-            ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
+            ConditionExpression="attribute_exists(SK) AND NOT #state IN (:completed, :failed, :outdated, :cancelled)",
             ExpressionAttributeNames={"#state": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": "FAILED"},
                 ":err": {"S": error_reason},
                 ":now": {"S": _now_iso()},
+                ":completed": {"S": "COMPLETED"},
+                ":failed": {"S": "FAILED"},
+                ":outdated": {"S": "OUTDATED"},
                 ":cancelled": {"S": "CANCELLED"},
             },
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            logger.warning("mark_failed_skipped_cancelled", rca_id=rca_id)
+            logger.warning("mark_failed_skipped_terminal", rca_id=rca_id)
             return
         raise

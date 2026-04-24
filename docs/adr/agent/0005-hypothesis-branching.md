@@ -16,7 +16,7 @@ Accepted
 
 ### 핵심 결정사항
 
-1. **Strands SDK structured output**: `BranchingOutput` Pydantic 모델을 `structured_output_model`로 지정하여 LLM이 `description`, `category`, `confidence_score`, `required_evidence`를 포함한 자식 가설 목록을 반환한다. 비스트리밍 모드로 호출한다.
+1. **Strands SDK structured output**: `BranchingOutput` Pydantic 모델을 `structured_output_model`로 지정하여 LLM이 `description`, `category`, `confidence_score`, `required_evidence`를 포함한 자식 가설 목록을 반환한다. 비스트리밍 모드로 호출한다. Pydantic 모델의 `max_length=3` 제약으로 부모당 최대 3개 자식 가설을 하드 제한하며, 생성 후에도 방어적으로 3개를 초과하면 잘라낸다.
 
 2. **트리 확장**: 자식 노드에 UUID 기반 `hypothesis_id`를 부여하고, `parent_id`를 부모 가설 ID로, `depth`를 `parent.depth + 1`로 설정한다. 부모 가설과 수집된 증거, 기각된 가설 목록을 LLM에 전달한다.
 
