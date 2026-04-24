@@ -7,8 +7,8 @@ export default defineEventHandler(async () => {
   const result = await ddb.send(
     new ScanCommand({
       TableName: config.dynamodbTableName,
-      FilterExpression: 'SK = :sk AND begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':sk': 'SESSION', ':prefix': 'RCA#' },
+      FilterExpression: 'contains(SK, :session_suffix) AND begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':session_suffix': 'SESSION', ':prefix': 'RCA#' },
     }),
   )
 
@@ -23,7 +23,7 @@ export default defineEventHandler(async () => {
       errorReason: (item.error_reason as string) || '',
       createdAt: (item.created_at as string) || '',
       updatedAt: (item.updated_at as string) || '',
-      engine: (item.engine as string) || 'strands',
+      engine: (item.engine as string) || ((item.SK as string) === 'SESSION' ? 'strands' : (item.SK as string).split('#SESSION')[0]) || 'strands',
     }))
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 

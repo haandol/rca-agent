@@ -81,7 +81,8 @@ class TestStartSpan:
         dynamodb_client.put_item.assert_called_once()
         item = dynamodb_client.put_item.call_args[1]["Item"]
         assert item["PK"]["S"] == "RCA#rca-123"
-        assert item["SK"]["S"].startswith("SPAN#")
+        assert item["SK"]["S"].startswith("strands#SPAN#")
+        assert item["engine"]["S"] == "strands"
         assert item["span_type"]["S"] == "SCOPING"
         assert item["span_status"]["S"] == "RUNNING"
 
@@ -126,6 +127,7 @@ class TestEndSpan:
         assert span.output_summary == "severity=high"
         assert dynamodb_client.update_item.call_count == 1
         call_kwargs = dynamodb_client.update_item.call_args[1]
+        assert call_kwargs["Key"]["SK"]["S"].startswith("strands#SPAN#")
         assert ":meta" in call_kwargs["ExpressionAttributeValues"]
 
     def test_end_span_with_error(self, trace: TraceStore, dynamodb_client: MagicMock):
@@ -183,8 +185,15 @@ class TestPutHypotheses:
         dynamodb_client.batch_write_item.assert_called_once()
         items = dynamodb_client.batch_write_item.call_args[1]["RequestItems"][TABLE_NAME]
         assert len(items) == 2
-        assert items[0]["PutRequest"]["Item"]["SK"]["S"] == "HYPO#h-1"
-        assert items[1]["PutRequest"]["Item"]["SK"]["S"] == "HYPO#h-2"
+        assert items[0]["PutRequest"]["Item"]["SK"]["S"] == "strands#HYPO#h-1"
+        assert items[1]["PutRequest"]["Item"]["SK"]["S"] == "strands#HYPO#h-2"
+
+    def test_includes_engine_attribute(self, trace: TraceStore, dynamodb_client: MagicMock):
+        with patch(PATCH_TABLE, TABLE_NAME):
+            trace.put_hypotheses([_make_hypothesis()])
+
+        item = dynamodb_client.batch_write_item.call_args[1]["RequestItems"][TABLE_NAME][0]
+        assert item["PutRequest"]["Item"]["engine"]["S"] == "strands"
 
     def test_sets_parent_id_null_for_root(self, trace: TraceStore, dynamodb_client: MagicMock):
         with patch(PATCH_TABLE, TABLE_NAME):
@@ -236,7 +245,7 @@ class TestUpdateHypothesisStatus:
             )
 
         call_kwargs = dynamodb_client.update_item.call_args[1]
-        assert call_kwargs["Key"]["SK"]["S"] == "HYPO#h-1"
+        assert call_kwargs["Key"]["SK"]["S"] == "strands#HYPO#h-1"
         assert ":status" in call_kwargs["ExpressionAttributeValues"]
         assert call_kwargs["ExpressionAttributeValues"][":status"]["S"] == "CONFIRMED"
         assert call_kwargs["ExpressionAttributeValues"][":jc"]["N"] == "0.95"
@@ -263,7 +272,7 @@ class TestUpdateHypothesisEvidence:
             trace.update_hypothesis_evidence("h-1", evidence_summary="CPU spike at 12:00")
 
         call_kwargs = dynamodb_client.update_item.call_args[1]
-        assert call_kwargs["Key"]["SK"]["S"] == "HYPO#h-1"
+        assert call_kwargs["Key"]["SK"]["S"] == "strands#HYPO#h-1"
         assert call_kwargs["ExpressionAttributeValues"][":es"]["S"] == "CPU spike at 12:00"
 
     def test_truncates_long_evidence(self, trace: TraceStore, dynamodb_client: MagicMock):
@@ -292,20 +301,22 @@ class TestGetTrace:
             "Items": [
                 {
                     "PK": {"S": "RCA#rca-123"},
-                    "SK": {"S": "SESSION"},
+                    "SK": {"S": "strands#SESSION"},
                     "state": {"S": "COMPLETED"},
                     "alarm_name": {"S": "HighCPU"},
                     "alarm_arn": {"S": ""},
                     "root_cause": {"S": "Bad deploy"},
                     "confirmed": {"BOOL": True},
+                    "engine": {"S": "strands"},
                     "created_at": {"S": "2025-06-01T12:00:00"},
                     "updated_at": {"S": "2025-06-01T12:05:00"},
                 },
                 {
                     "PK": {"S": "RCA#rca-123"},
-                    "SK": {"S": "SPAN#span-1"},
+                    "SK": {"S": "strands#SPAN#span-1"},
                     "span_type": {"S": "SCOPING"},
                     "span_status": {"S": "COMPLETED"},
+                    "engine": {"S": "strands"},
                     "start_time": {"S": "2025-06-01T12:00:00"},
                     "end_time": {"S": "2025-06-01T12:01:00"},
                     "duration_ms": {"N": "60000"},
@@ -314,7 +325,7 @@ class TestGetTrace:
                 },
                 {
                     "PK": {"S": "RCA#rca-123"},
-                    "SK": {"S": "HYPO#h-1"},
+                    "SK": {"S": "strands#HYPO#h-1"},
                     "tree_id": {"S": "tree-1"},
                     "parent_id": {"NULL": True},
                     "depth": {"N": "0"},
@@ -322,6 +333,7 @@ class TestGetTrace:
                     "category": {"S": "DEPLOYMENT"},
                     "confidence_score": {"N": "0.9"},
                     "status": {"S": "CONFIRMED"},
+                    "engine": {"S": "strands"},
                     "required_evidence": {"L": [{"S": "logs"}]},
                     "evidence_summary": {"S": "Found deploy error"},
                     "judgment_reasoning": {"S": "Logs confirm deploy failure"},
@@ -337,13 +349,70 @@ class TestGetTrace:
 
         assert result["session"]["state"] == "COMPLETED"
         assert result["session"]["alarm_name"] == "HighCPU"
+        assert result["session"]["engine"] == "strands"
         assert len(result["spans"]) == 1
         assert result["spans"][0]["span_type"] == "SCOPING"
+        assert result["spans"][0]["span_id"] == "span-1"
         assert result["spans"][0]["duration_ms"] == 60000
+        assert result["spans"][0]["engine"] == "strands"
         assert len(result["hypotheses"]) == 1
+        assert result["hypotheses"][0]["hypothesis_id"] == "h-1"
         assert result["hypotheses"][0]["description"] == "Bad deploy"
         assert result["hypotheses"][0]["judgment_confidence"] == 0.95
         assert result["hypotheses"][0]["parent_id"] is None
+        assert result["hypotheses"][0]["engine"] == "strands"
+
+    def test_backward_compat_legacy_sk(self, dynamodb_client: MagicMock):
+        """Legacy items without engine prefix should still be parsed correctly."""
+        dynamodb_client.query.return_value = {
+            "Items": [
+                {
+                    "PK": {"S": "RCA#rca-123"},
+                    "SK": {"S": "SESSION"},
+                    "state": {"S": "COMPLETED"},
+                    "alarm_name": {"S": "HighCPU"},
+                    "alarm_arn": {"S": ""},
+                    "created_at": {"S": "2025-06-01T12:00:00"},
+                    "updated_at": {"S": "2025-06-01T12:05:00"},
+                },
+                {
+                    "PK": {"S": "RCA#rca-123"},
+                    "SK": {"S": "SPAN#span-1"},
+                    "span_type": {"S": "SCOPING"},
+                    "span_status": {"S": "COMPLETED"},
+                    "start_time": {"S": "2025-06-01T12:00:00"},
+                    "input_summary": {"S": ""},
+                    "output_summary": {"S": ""},
+                },
+                {
+                    "PK": {"S": "RCA#rca-123"},
+                    "SK": {"S": "HYPO#h-1"},
+                    "tree_id": {"S": "tree-1"},
+                    "depth": {"N": "0"},
+                    "description": {"S": "Legacy hypo"},
+                    "category": {"S": "DEPLOYMENT"},
+                    "confidence_score": {"N": "0.5"},
+                    "status": {"S": "PENDING"},
+                    "required_evidence": {"L": []},
+                    "evidence_summary": {"S": ""},
+                    "judgment_reasoning": {"S": ""},
+                    "created_at": {"S": "2025-06-01T12:00:00"},
+                    "updated_at": {"S": "2025-06-01T12:00:00"},
+                },
+            ],
+        }
+
+        with patch(PATCH_TABLE, TABLE_NAME):
+            result = TraceStore.get_trace("rca-123", dynamodb_client=dynamodb_client)
+
+        assert result["session"] is not None
+        assert result["session"]["engine"] == "strands"
+        assert len(result["spans"]) == 1
+        assert result["spans"][0]["span_id"] == "span-1"
+        assert result["spans"][0]["engine"] == "strands"
+        assert len(result["hypotheses"]) == 1
+        assert result["hypotheses"][0]["hypothesis_id"] == "h-1"
+        assert result["hypotheses"][0]["engine"] == "strands"
 
     def test_returns_empty_on_error(self, dynamodb_client: MagicMock):
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
@@ -356,10 +425,10 @@ class TestGetTrace:
 
 
 class TestDeserializeSpan:
-    def test_deserializes_full_span(self):
+    def test_deserializes_full_span_with_engine_prefix(self):
         item = {
             "PK": {"S": "RCA#rca-123"},
-            "SK": {"S": "SPAN#span-1"},
+            "SK": {"S": "strands#SPAN#span-1"},
             "span_type": {"S": "VALIDATION"},
             "span_status": {"S": "COMPLETED"},
             "parent_span_id": {"S": "loop-1"},
@@ -370,6 +439,7 @@ class TestDeserializeSpan:
             "input_summary": {"S": "test input"},
             "output_summary": {"S": "test output"},
             "error": {"S": "some error"},
+            "engine": {"S": "strands"},
             "metadata": {"M": {"count": {"N": "5"}, "flag": {"BOOL": True}}},
         }
         result = _deserialize_span(item)
@@ -379,13 +449,28 @@ class TestDeserializeSpan:
         assert result["error"] == "some error"
         assert result["metadata"]["count"] == 5
         assert result["metadata"]["flag"] is True
+        assert result["engine"] == "strands"
+
+    def test_deserializes_legacy_span_without_engine_prefix(self):
+        item = {
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": "SPAN#span-1"},
+            "span_type": {"S": "SCOPING"},
+            "span_status": {"S": "COMPLETED"},
+            "start_time": {"S": "2025-06-01T12:00:00"},
+            "input_summary": {"S": ""},
+            "output_summary": {"S": ""},
+        }
+        result = _deserialize_span(item)
+        assert result["span_id"] == "span-1"
+        assert result["engine"] == "strands"
 
 
 class TestDeserializeHypothesis:
-    def test_deserializes_with_parent(self):
+    def test_deserializes_with_parent_and_engine_prefix(self):
         item = {
             "PK": {"S": "RCA#rca-123"},
-            "SK": {"S": "HYPO#h-2"},
+            "SK": {"S": "strands#HYPO#h-2"},
             "tree_id": {"S": "tree-1"},
             "parent_id": {"S": "h-1"},
             "depth": {"N": "1"},
@@ -393,6 +478,7 @@ class TestDeserializeHypothesis:
             "category": {"S": "INFRASTRUCTURE"},
             "confidence_score": {"N": "0.6"},
             "status": {"S": "NEEDS_INVESTIGATION"},
+            "engine": {"S": "strands"},
             "required_evidence": {"L": [{"S": "metrics"}, {"S": "traces"}]},
             "evidence_summary": {"S": ""},
             "judgment_reasoning": {"S": ""},
@@ -405,3 +491,25 @@ class TestDeserializeHypothesis:
         assert result["depth"] == 1
         assert result["required_evidence"] == ["metrics", "traces"]
         assert result["judgment_confidence"] is None
+        assert result["engine"] == "strands"
+
+    def test_deserializes_legacy_hypothesis_without_engine_prefix(self):
+        item = {
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": "HYPO#h-2"},
+            "tree_id": {"S": "tree-1"},
+            "parent_id": {"S": "h-1"},
+            "depth": {"N": "1"},
+            "description": {"S": "Legacy hypothesis"},
+            "category": {"S": "DEPLOYMENT"},
+            "confidence_score": {"N": "0.5"},
+            "status": {"S": "PENDING"},
+            "required_evidence": {"L": []},
+            "evidence_summary": {"S": ""},
+            "judgment_reasoning": {"S": ""},
+            "created_at": {"S": "2025-06-01T12:00:00"},
+            "updated_at": {"S": "2025-06-01T12:00:00"},
+        }
+        result = _deserialize_hypothesis(item)
+        assert result["hypothesis_id"] == "h-2"
+        assert result["engine"] == "strands"

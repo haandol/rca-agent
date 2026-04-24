@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from botocore.exceptions import ClientError
 
-from rca_agent.config import DYNAMODB_TABLE_NAME, SESSION_TTL_DAYS
+from rca_agent.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
 from rca_agent.models import AlarmPayload, RcaSession, RcaSessionState
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,10 @@ def build_idempotency_key(alarm: AlarmPayload) -> str:
     return f"{alarm.alarm_name}#{ts}"
 
 
+def build_rca_id(idempotency_key: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, idempotency_key))
+
+
 def create_session(
     alarm: AlarmPayload,
     *,
@@ -26,15 +30,16 @@ def create_session(
     if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
         return None
 
-    rca_id = str(uuid.uuid4())
     idempotency_key = build_idempotency_key(alarm)
+    rca_id = build_rca_id(idempotency_key)
     now = datetime.now(UTC)
     ttl = int(time.time()) + SESSION_TTL_DAYS * 86400
 
     item = {
         "PK": {"S": f"RCA#{rca_id}"},
-        "SK": {"S": "SESSION"},
+        "SK": {"S": f"{ENGINE}#SESSION"},
         "rca_id": {"S": rca_id},
+        "engine": {"S": ENGINE},
         "idempotency_key": {"S": idempotency_key},
         "state": {"S": RcaSessionState.ALARM_RECEIVED.value},
         "alarm_name": {"S": alarm.alarm_name},
@@ -48,8 +53,7 @@ def create_session(
         dynamodb_client.put_item(
             TableName=DYNAMODB_TABLE_NAME,
             Item=item,
-            ConditionExpression="attribute_not_exists(idempotency_key) OR idempotency_key <> :ik",
-            ExpressionAttributeValues={":ik": {"S": idempotency_key}},
+            ConditionExpression="attribute_not_exists(SK)",
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
@@ -64,6 +68,7 @@ def create_session(
         state=RcaSessionState.ALARM_RECEIVED,
         alarm_name=alarm.alarm_name,
         alarm_arn=alarm.alarm_arn or "",
+        engine=ENGINE,
         created_at=now,
         updated_at=now,
         ttl=ttl,
@@ -79,16 +84,17 @@ def check_duplicate(
         return False
 
     idempotency_key = build_idempotency_key(alarm)
+    rca_id = build_rca_id(idempotency_key)
 
     try:
-        response = dynamodb_client.query(
+        response = dynamodb_client.get_item(
             TableName=DYNAMODB_TABLE_NAME,
-            IndexName="idempotency-index",
-            KeyConditionExpression="idempotency_key = :ik",
-            ExpressionAttributeValues={":ik": {"S": idempotency_key}},
-            Limit=1,
+            Key={
+                "PK": {"S": f"RCA#{rca_id}"},
+                "SK": {"S": f"{ENGINE}#SESSION"},
+            },
         )
-        if response.get("Items"):
+        if response.get("Item"):
             logger.info("Duplicate alarm found: idempotency_key=%s", idempotency_key)
             return True
     except ClientError:
@@ -117,7 +123,7 @@ def update_state(
             TableName=DYNAMODB_TABLE_NAME,
             Key={
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": "SESSION"},
+                "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now",
             ConditionExpression="#st <> :cancelled",
@@ -155,7 +161,7 @@ def mark_completed(
             TableName=DYNAMODB_TABLE_NAME,
             Key={
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": "SESSION"},
+                "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now, root_cause = :rc, confirmed = :cf",
             ExpressionAttributeNames={"#st": "state"},
@@ -189,7 +195,7 @@ def mark_outdated(
             TableName=DYNAMODB_TABLE_NAME,
             Key={
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": "SESSION"},
+                "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now, error_reason = :reason",
             ExpressionAttributeNames={"#st": "state"},
@@ -222,7 +228,7 @@ def mark_failed(
             TableName=DYNAMODB_TABLE_NAME,
             Key={
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": "SESSION"},
+                "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now, error_reason = :err",
             ExpressionAttributeNames={"#st": "state"},

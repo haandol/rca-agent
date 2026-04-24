@@ -48,3 +48,5 @@ DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "")
 SESSION_TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "90"))
 
 ALARM_STALENESS_SECONDS = int(os.environ.get("ALARM_STALENESS_SECONDS", "1800"))
+
+ENGINE = "strands"

@@ -15,6 +15,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("rca-progress")
 
+_ENGINE = "cc-headless"
 _SESSION_ID_PATH = Path("/tmp/rca-session-id")
 _TABLE = os.environ.get("DYNAMODB_TABLE_NAME", "")
 _TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "90"))
@@ -61,7 +62,7 @@ def report_progress(stage: str, summary: str) -> str:
     try:
         _ddb.update_item(
             TableName=_TABLE,
-            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": "SESSION"}},
+            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{_ENGINE}#SESSION"}},
             UpdateExpression="SET #st = :state, updated_at = :now",
             ConditionExpression="#st <> :cancelled",
             ExpressionAttributeNames={"#st": "state"},
@@ -81,7 +82,8 @@ def report_progress(stage: str, summary: str) -> str:
         TableName=_TABLE,
         Item={
             "PK": {"S": f"RCA#{rca_id}"},
-            "SK": {"S": f"SPAN#{span_id}"},
+            "SK": {"S": f"{_ENGINE}#SPAN#{span_id}"},
+            "engine": {"S": _ENGINE},
             "span_type": {"S": stage},
             "span_status": {"S": "COMPLETED"},
             "start_time": {"S": now},
@@ -121,7 +123,8 @@ def save_hypotheses(hypotheses_json: str) -> str:
             "PutRequest": {
                 "Item": {
                     "PK": {"S": f"RCA#{rca_id}"},
-                    "SK": {"S": f"HYPO#{h['hypothesis_id']}"},
+                    "SK": {"S": f"{_ENGINE}#HYPO#{h['hypothesis_id']}"},
+                    "engine": {"S": _ENGINE},
                     "tree_id": {"S": h.get("tree_id", "")},
                     "depth": {"N": str(h.get("depth", 0))},
                     "description": {"S": h.get("description", "")[:_SUMMARY_MAX]},
@@ -173,7 +176,7 @@ def update_hypothesis(
         TableName=_TABLE,
         Key={
             "PK": {"S": f"RCA#{rca_id}"},
-            "SK": {"S": f"HYPO#{hypothesis_id}"},
+            "SK": {"S": f"{_ENGINE}#HYPO#{hypothesis_id}"},
         },
         UpdateExpression=(
             "SET #st = :status, confidence_score = :cs, judgment_confidence = :cs, "
@@ -224,7 +227,7 @@ def check_cancelled() -> str:
 
     resp = _ddb.get_item(
         TableName=_TABLE,
-        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": "SESSION"}},
+        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{_ENGINE}#SESSION"}},
         ProjectionExpression="#st",
         ExpressionAttributeNames={"#st": "state"},
     )

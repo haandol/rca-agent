@@ -9,8 +9,33 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const ddb = useDynamoDB()
 
-  try {
-    await ddb.send(
+  const engines = ['strands', 'cc-headless']
+  const now = new Date().toISOString()
+
+  const results = await Promise.allSettled(
+    engines.map((engine) =>
+      ddb.send(
+        new UpdateCommand({
+          TableName: config.dynamodbTableName,
+          Key: { PK: `RCA#${id}`, SK: `${engine}#SESSION` },
+          UpdateExpression: 'SET #st = :cancelled, updated_at = :now',
+          ConditionExpression: 'attribute_exists(PK) AND #st <> :completed AND #st <> :failed AND #st <> :cancelled AND #st <> :outdated',
+          ExpressionAttributeNames: { '#st': 'state' },
+          ExpressionAttributeValues: {
+            ':cancelled': 'CANCELLED',
+            ':completed': 'COMPLETED',
+            ':failed': 'FAILED',
+            ':outdated': 'OUTDATED',
+            ':now': now,
+          },
+        }),
+      ),
+    ),
+  )
+
+  // Also try the legacy bare SESSION key
+  const legacyResult = await Promise.allSettled([
+    ddb.send(
       new UpdateCommand({
         TableName: config.dynamodbTableName,
         Key: { PK: `RCA#${id}`, SK: 'SESSION' },
@@ -22,16 +47,24 @@ export default defineEventHandler(async (event) => {
           ':completed': 'COMPLETED',
           ':failed': 'FAILED',
           ':outdated': 'OUTDATED',
-          ':now': new Date().toISOString(),
+          ':now': now,
         },
       }),
-    )
-  } catch (e: unknown) {
-    const err = e as { name?: string }
-    if (err.name === 'ConditionalCheckFailedException') {
-      throw createError({ statusCode: 409, statusMessage: 'Session cannot be cancelled (already terminal or not found)' })
+    ),
+  ])
+
+  const allResults = [...results, ...legacyResult]
+  const succeeded = allResults.filter((r) => r.status === 'fulfilled').length
+
+  // Re-throw unexpected errors
+  for (const r of allResults) {
+    if (r.status === 'rejected' && (r.reason as { name?: string })?.name !== 'ConditionalCheckFailedException') {
+      throw r.reason
     }
-    throw e
+  }
+
+  if (succeeded === 0) {
+    throw createError({ statusCode: 409, statusMessage: 'Session cannot be cancelled (already terminal or not found)' })
   }
 
   return { cancelled: true, rcaId: id }

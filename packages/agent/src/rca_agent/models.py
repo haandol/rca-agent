@@ -257,6 +257,7 @@ class RcaSession(BaseModel):
     state: RcaSessionState = RcaSessionState.ALARM_RECEIVED
     alarm_name: str = ""
     alarm_arn: str = ""
+    engine: str = "strands"
     created_at: datetime | None = None
     updated_at: datetime | None = None
     ttl: int = 0

@@ -35,7 +35,8 @@ def put_span(
 
     item: dict = {
         "PK": {"S": f"RCA#{RCA_ID}"},
-        "SK": {"S": f"SPAN#{span_id}"},
+        "SK": {"S": f"strands#SPAN#{span_id}"},
+        "engine": {"S": "strands"},
         "span_type": {"S": span_type},
         "span_status": {"S": status},
         "start_time": {"S": start.isoformat()},
@@ -84,7 +85,8 @@ def put_hypothesis(
     now = datetime.now(UTC).isoformat()
     item: dict = {
         "PK": {"S": f"RCA#{RCA_ID}"},
-        "SK": {"S": f"HYPO#{hypothesis_id}"},
+        "SK": {"S": f"strands#HYPO#{hypothesis_id}"},
+        "engine": {"S": "strands"},
         "tree_id": {"S": "tree-demo-001"},
         "depth": {"N": str(depth)},
         "description": {"S": description},

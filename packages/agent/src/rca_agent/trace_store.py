@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from botocore.exceptions import ClientError
 
-from rca_agent.config import DYNAMODB_TABLE_NAME, SESSION_TTL_DAYS
+from rca_agent.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
 
 if TYPE_CHECKING:
     from rca_agent.models import Hypothesis
@@ -181,7 +181,8 @@ class TraceStore:
                 "PutRequest": {
                     "Item": {
                         "PK": {"S": f"RCA#{self._rca_id}"},
-                        "SK": {"S": f"HYPO#{h.hypothesis_id}"},
+                        "SK": {"S": f"{ENGINE}#HYPO#{h.hypothesis_id}"},
+                        "engine": {"S": ENGINE},
                         "tree_id": {"S": h.tree_id},
                         "depth": {"N": str(h.depth)},
                         "description": {"S": h.description[:_SUMMARY_MAX_LEN]},
@@ -243,7 +244,7 @@ class TraceStore:
                 TableName=DYNAMODB_TABLE_NAME,
                 Key={
                     "PK": {"S": f"RCA#{self._rca_id}"},
-                    "SK": {"S": f"HYPO#{hypothesis_id}"},
+                    "SK": {"S": f"{ENGINE}#HYPO#{hypothesis_id}"},
                 },
                 UpdateExpression="SET " + ", ".join(expr_parts),
                 ExpressionAttributeNames=attr_names,
@@ -267,7 +268,7 @@ class TraceStore:
                 TableName=DYNAMODB_TABLE_NAME,
                 Key={
                     "PK": {"S": f"RCA#{self._rca_id}"},
-                    "SK": {"S": f"HYPO#{hypothesis_id}"},
+                    "SK": {"S": f"{ENGINE}#HYPO#{hypothesis_id}"},
                 },
                 UpdateExpression="SET evidence_summary = :es, updated_at = :now",
                 ExpressionAttributeValues={
@@ -301,11 +302,11 @@ class TraceStore:
 
         for item in result.get("Items", []):
             sk = item["SK"]["S"]
-            if sk == "SESSION":
+            if sk.endswith("#SESSION") or sk == "SESSION":
                 session = _deserialize_session(item)
-            elif sk.startswith("SPAN#"):
+            elif "#SPAN#" in sk or sk.startswith("SPAN#"):
                 spans.append(_deserialize_span(item))
-            elif sk.startswith("HYPO#"):
+            elif "#HYPO#" in sk or sk.startswith("HYPO#"):
                 hypotheses.append(_deserialize_hypothesis(item))
 
         spans.sort(key=lambda s: s.get("start_time", ""))
@@ -320,7 +321,8 @@ class TraceStore:
         ttl = int(time.time()) + SESSION_TTL_DAYS * 86400
         item: dict = {
             "PK": {"S": f"RCA#{span.rca_id}"},
-            "SK": {"S": f"SPAN#{span.span_id}"},
+            "SK": {"S": f"{ENGINE}#SPAN#{span.span_id}"},
+            "engine": {"S": ENGINE},
             "span_type": {"S": span.span_type.value},
             "span_status": {"S": span.status.value},
             "start_time": {"S": span.start_time.isoformat()},
@@ -366,7 +368,7 @@ class TraceStore:
                 TableName=DYNAMODB_TABLE_NAME,
                 Key={
                     "PK": {"S": f"RCA#{span.rca_id}"},
-                    "SK": {"S": f"SPAN#{span.span_id}"},
+                    "SK": {"S": f"{ENGINE}#SPAN#{span.span_id}"},
                 },
                 UpdateExpression="SET " + ", ".join(expr_parts),
                 ExpressionAttributeValues=attr_values,
@@ -404,8 +406,10 @@ def _deserialize_session(item: dict) -> dict:
 
 
 def _deserialize_span(item: dict) -> dict:
+    sk = item["SK"]["S"]
+    span_id = sk.split("#SPAN#")[1] if "#SPAN#" in sk else sk.replace("SPAN#", "")
     return {
-        "span_id": item["SK"]["S"].replace("SPAN#", ""),
+        "span_id": span_id,
         "span_type": item.get("span_type", {}).get("S", ""),
         "span_status": item.get("span_status", {}).get("S", ""),
         "parent_span_id": item.get("parent_span_id", {}).get("S"),
@@ -417,6 +421,7 @@ def _deserialize_span(item: dict) -> dict:
         "output_summary": item.get("output_summary", {}).get("S", ""),
         "error": item.get("error", {}).get("S"),
         "metadata": _deserialize_metadata(item.get("metadata", {}).get("M")) if "metadata" in item else None,
+        "engine": item.get("engine", {}).get("S", "strands"),
     }
 
 
@@ -425,8 +430,10 @@ def _deserialize_hypothesis(item: dict) -> dict:
     for e in item.get("required_evidence", {}).get("L", []):
         if "S" in e:
             required.append(e["S"])
+    sk = item["SK"]["S"]
+    hypo_id = sk.split("#HYPO#")[1] if "#HYPO#" in sk else sk.replace("HYPO#", "")
     return {
-        "hypothesis_id": item["SK"]["S"].replace("HYPO#", ""),
+        "hypothesis_id": hypo_id,
         "tree_id": item.get("tree_id", {}).get("S", ""),
         "parent_id": item.get("parent_id", {}).get("S"),
         "depth": int(item.get("depth", {}).get("N", "0")),
@@ -441,6 +448,7 @@ def _deserialize_hypothesis(item: dict) -> dict:
         "judgment_confidence": float(item["judgment_confidence"]["N"]) if "judgment_confidence" in item else None,
         "created_at": item.get("created_at", {}).get("S", ""),
         "updated_at": item.get("updated_at", {}).get("S", ""),
+        "engine": item.get("engine", {}).get("S", "strands"),
     }
 
 

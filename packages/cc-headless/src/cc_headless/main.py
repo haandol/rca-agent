@@ -5,7 +5,7 @@ import re
 import signal
 import sys
 import time
-import uuid
+from datetime import datetime
 from pathlib import Path
 
 import boto3
@@ -19,11 +19,11 @@ from cc_headless.logging import setup_logging
 from cc_headless.prompt_builder import build_prompt
 from cc_headless.report_store import save_report, send_notification
 from cc_headless.session_store import (
+    build_rca_id,
     check_duplicate,
     create_session,
     mark_completed,
     mark_failed,
-    write_idempotency_key,
 )
 
 logger = structlog.get_logger()
@@ -80,7 +80,6 @@ def _run_rca(
         root_cause_line = match.group(1) if match else report_markdown[:200]
 
         mark_completed(rca_id, root_cause_line)
-        write_idempotency_key(idempotency_key, rca_id)
         send_notification(rca_id, alarm.alarm_name, root_cause_line, report_key, elapsed_seconds)
 
         log.info("rca_complete", elapsed_seconds=elapsed_seconds, root_cause=root_cause_line[:200])
@@ -94,16 +93,23 @@ def _run_rca(
 def _process_message(message_body: str) -> bool:
     alarm_data = _parse_sns_envelope(message_body)
     alarm = parse_alarm(alarm_data)
-    idempotency_key = f"{alarm.alarm_name}#{alarm.state_change_time or 'unknown'}"
 
-    log = logger.bind(alarm_name=alarm.alarm_name, idempotency_key=idempotency_key)
+    ts_raw = alarm.state_change_time
+    if ts_raw:
+        dt = datetime.fromisoformat(ts_raw.replace("+0000", "+00:00"))
+        ts = dt.isoformat()
+    else:
+        ts = "unknown"
+    idempotency_key = f"{alarm.alarm_name}#{ts}"
+
+    rca_id = build_rca_id(idempotency_key)
+    log = logger.bind(alarm_name=alarm.alarm_name, idempotency_key=idempotency_key, rca_id=rca_id)
     log.info("alarm_received")
 
-    if check_duplicate(idempotency_key):
+    if check_duplicate(rca_id):
         log.info("duplicate_alarm_skipped")
         return True
 
-    rca_id = str(uuid.uuid4())
     log = log.bind(rca_id=rca_id)
 
     if not create_session(rca_id, alarm.alarm_name, idempotency_key, alarm_data=alarm_data):
