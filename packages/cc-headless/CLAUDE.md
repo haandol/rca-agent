@@ -15,9 +15,9 @@ Python Wrapper (상태관리)          CC Headless (자율 분석)
 ├── CC Headless 프로세스 실행  →   ├── 3-7. 검증 루프 → validation-{N}.json
 ├── 산출물 감시 → DDB 스팬 기록    │   (서브에이전트, 최대 3회)
 ├── 취소 감지 → 프로세스 kill      ├── 8. 보고서 생성 → report.md
-├── 리포트 파싱 (report.md)        ├── 9. 자동 복구
-├── 세션 완료 (COMPLETED/FAILED)   └── 10. 복구 검증
-├── S3 저장 + SNS 알림
+├── 리포트 파싱 (report.md)        ├── 9. 플레이북 생성 → playbook.json
+├── 세션 완료 (COMPLETED/FAILED)   ├── 10. 자동 복구
+├── S3 저장 + SNS 알림             └── 11. 복구 검증
 └── 상태관리는 Python이 담당
 ```
 
@@ -46,6 +46,10 @@ CC CLI                          artifact_watcher (Python Thread)         DynamoD
   │                                      ├─ VALIDATION_LOOP 스팬 ────────→ │
   │                                      ├─ confirmed/rejected → HYPO 갱신 │
   │                                      │                                  │
+  ├─ save_artifact("playbook.json")       │                                  │
+  │                                      ├─ playbook.json 감지             │
+  │                                      ├─ PLAYBOOK 스팬 + metadata ────→ │ metadata: failure_type, tags, ...
+  │                                      │                                  │
   ├─ save_artifact("report.md")          │                                  │
   │                                      ├─ REPORT 스팬 ─────────────────→ │
   │                                      │                                  │
@@ -66,6 +70,7 @@ CC CLI                          artifact_watcher (Python Thread)         DynamoD
 | `scoping.json` | JSON | 스코핑 결과 (영향범위, 심각도, 메트릭 스냅샷) |
 | `hypotheses.json` | JSON | 가설 목록 (hypothesis_id, description, category 등) |
 | `validation-{N}.json` | JSON | N번째 검증 루프 결과 (confirmed, rejected, needs_investigation) |
+| `playbook.json` | JSON | 플레이북 (장애유형, 증상패턴, 검증절차, 복구방안) |
 | `report.md` | Markdown | **최종 RCA 보고서** — Python wrapper가 S3에 업로드한다 |
 
 **중간 산출물은 반드시 valid JSON이어야 한다.** 파싱 실패 시 해당 단계가 에러로 기록된다.

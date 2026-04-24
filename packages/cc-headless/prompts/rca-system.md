@@ -17,6 +17,7 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
 | `scoping.json` | 초기 스코핑 | JSON |
 | `hypotheses.json` | 가설 생성 | JSON |
 | `validation-{N}.json` | N번째 검증 루프 | JSON |
+| `playbook.json` | 플레이북 | JSON |
 | `report.md` | 최종 보고서 | Markdown |
 
 ### JSON 스키마
@@ -83,6 +84,24 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
 }
 ```
 
+#### playbook.json
+
+```json
+{
+  "stage": "PLAYBOOK",
+  "playbook_id": "UUID",
+  "failure_type": "장애 유형 (예: DB 커넥션 누수, CPU 폭증)",
+  "symptom_pattern": "이 유형의 장애를 시사하는 알람/메트릭 패턴",
+  "verification_steps": ["확인 절차 1", "확인 절차 2"],
+  "temporary_mitigation": "즉각적 임시 완화 조치",
+  "permanent_remediation": "영구 복구 방안",
+  "prevention_measures": ["재발 방지 조치 1", "재발 방지 조치 2"],
+  "tags": ["태그1", "태그2"],
+  "summary": "플레이북 생성 완료",
+  "output_summary": "playbook_id=UUID, 장애유형=DB 커넥션 누수"
+}
+```
+
 **JSON은 반드시 valid해야 한다. 파싱 실패 시 해당 단계가 에러로 기록된다.**
 
 ---
@@ -95,8 +114,9 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
 | 2 | 가설 생성 | 서브에이전트 | `hypotheses.json` |
 | 3-7 | 검증 루프 (최대 3회) | 서브에이전트 | `validation-{N}.json` |
 | 8 | 보고서 생성 | 메인 에이전트 (직접) | `report.md` |
-| 9 | 자동 복구 | 메인 에이전트 (직접) | - |
-| 10 | 복구 검증 | 메인 에이전트 (직접) | - |
+| 9 | 플레이북 생성 | 메인 에이전트 (직접) | `playbook.json` |
+| 10 | 자동 복구 | 메인 에이전트 (직접) | - |
+| 11 | 복구 검증 | 메인 에이전트 (직접) | - |
 
 ---
 
@@ -220,7 +240,25 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 
 **반드시 `save_artifact("report.md", ...)` 로 저장한다. Python wrapper가 이 파일을 읽어서 S3에 업로드한다.**
 
-## 9단계: 자동 복구 (직접 수행)
+## 9단계: 플레이북 생성 (직접 수행)
+
+보고서를 기반으로 유사 장애 재발 시 활용할 플레이북을 생성한다:
+
+1. RCA 보고서에서 장애 유형, 증상 패턴, 검증 절차, 완화/복구 조치를 추출한다.
+2. UUID `playbook_id`를 생성한다.
+3. `playbook.json` 스키마에 맞게 JSON을 구성한다.
+4. `save_artifact("playbook.json", ...)` 으로 저장한다.
+
+플레이북 필드 작성 가이드:
+- **failure_type**: 근본원인을 한 줄로 분류 (예: "DB 커넥션 풀 소진", "CPU 스트레스")
+- **symptom_pattern**: 이 장애를 시사하는 알람/메트릭 패턴
+- **verification_steps**: 이번 RCA에서 검증한 경로를 단계별로 기술
+- **temporary_mitigation**: 즉각 수행 가능한 임시 조치
+- **permanent_remediation**: 코드 수정, 설정 변경 등 영구 해결 방안
+- **prevention_measures**: 모니터링 추가, 알람 임계치 조정 등 재발 방지 조치
+- **tags**: 장애 유형 분류 태그 (예: ["database", "connection-pool", "rds"])
+
+## 10단계: 자동 복구 (직접 수행)
 
 근본원인이 확정(신뢰도 ≥ 0.8)되면 자동 복구를 시도한다:
 
@@ -233,7 +271,7 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 3. 매칭되는 엔드포인트 없으면 ECS 강제 새 배포를 시도한다.
 4. 보고서에 `## 복구 조치` 섹션을 추가하고 수행한 조치와 결과를 기록한다.
 
-## 10단계: 복구 검증 (직접 수행)
+## 11단계: 복구 검증 (직접 수행)
 
 복구 후 30초 대기한 뒤:
 

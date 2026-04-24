@@ -269,7 +269,7 @@ graph LR
         L_SDK["Claude Code CLI<br/>프롬프트 주도"]
         L_MODEL["단일 모델<br/>Sonnet 4.6"]
         L_TIME["타임아웃 없음<br/>(ECS 무제한)"]
-        L_PLAY["❌ 플레이북 미지원"]
+        L_PLAY["✅ 플레이북 생성 (프롬프트)"]
     end
 
     style Fargate fill:#e3f2fd,stroke:#1565c0
@@ -283,7 +283,7 @@ graph LR
 | **RCA 방식** | 12단계 파이프라인 (코드로 정의) | 프롬프트에 워크플로우 정의, CC가 자율 실행 |
 | **AI 모델** | Sonnet 4.6 + Haiku 4.5 (2-Tier) | Sonnet 4.6 (단일) |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
-| **플레이북** | 생성 + S3 Vectors 인덱싱 | 미지원 |
+| **플레이북** | 생성 + S3 Vectors 인덱싱 | 생성 (프롬프트 기반, 9단계) |
 | **이벤트 수신** | SQS Long Polling | SQS Long Polling |
 | **타임아웃** | 없음 (종료조건 기반) | 없음 (ECS 무제한) |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
@@ -747,9 +747,7 @@ stateDiagram-v2
     EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION: 증거 수집 완료
     HYPOTHESIS_VALIDATION --> REPORT_GENERATION: 종료 조건 충족
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 분기 후 재루프
-    REPORT_GENERATION --> REMEDIATION: 보고서 생성 완료
-    REMEDIATION --> VERIFICATION: 복구 실행
-    VERIFICATION --> COMPLETED: 검증 완료 + 알림
+    REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + 알림
 
     ALARM_RECEIVED --> FAILED: 오류
     SCOPING --> FAILED: 오류
@@ -776,17 +774,160 @@ stateDiagram-v2
     FAILED --> [*]
 ```
 
-### DynamoDB 테이블 구조
+### DynamoDB 싱글테이블 스키마
 
-| 키 | 설명 | 예시 |
-|----|------|------|
-| `PK` (Partition Key) | `RCA#{rca_id}` | `RCA#a1b2c3d4-...` |
-| `SK` (Sort Key) | `SESSION` | `SESSION` |
-| `engine` | 실행 엔진 구분 | `strands` 또는 `cc-headless` |
-| `state` | 현재 상태 | `ANALYZING`, `COMPLETED`, `FAILED` |
-| `alarm_name` | 알람 이름 | `HighDatabaseConnections` |
-| `idempotency_key` | 중복 방지 키 | `AlarmName#2026-04-23T10:00:00Z` |
-| `ttl` | 자동 삭제 시간 | 30일 후 |
+하나의 DynamoDB 테이블에 세션, 스팬(실행 트레이스), 가설 세 가지 엔티티를 저장합니다. `PK`로 RCA 세션을 묶고, `SK` 접두사로 엔티티 유형을 구분하는 싱글테이블 설계입니다.
+
+```mermaid
+erDiagram
+    RCA_SESSION {
+        string PK "RCA#{rca_id}"
+        string SK "{engine}#SESSION"
+        string engine "strands | cc-headless"
+        string state "ALARM_RECEIVED → COMPLETED"
+        string alarm_name "CloudWatch 알람 이름"
+        string alarm_arn "알람 ARN"
+        string idempotency_key "AlarmName#timestamp"
+        string root_cause "확정된 근본 원인"
+        boolean confirmed "근본 원인 확정 여부"
+        string error_reason "실패 사유"
+        string created_at "ISO 8601"
+        string updated_at "ISO 8601"
+        number ttl "TTL (90일)"
+    }
+
+    SPAN {
+        string PK "RCA#{rca_id}"
+        string SK "{engine}#SPAN#{span_id}"
+        string engine "strands | cc-headless"
+        string span_type "SCOPING | HYPOTHESIS_GENERATION | ..."
+        string span_status "RUNNING | COMPLETED | FAILED"
+        string parent_span_id "부모 스팬 ID (선택)"
+        number loop_index "검증 루프 번호 (선택)"
+        string input_summary "단계 입력 요약"
+        string output_summary "단계 출력 요약"
+        string error "에러 메시지 (선택)"
+        map metadata "추가 데이터 (선택)"
+        string start_time "ISO 8601"
+        string end_time "ISO 8601"
+        number duration_ms "소요 시간 (ms)"
+        number ttl "TTL (90일)"
+    }
+
+    HYPOTHESIS {
+        string PK "RCA#{rca_id}"
+        string SK "{engine}#HYPO#{hypothesis_id}"
+        string engine "strands | cc-headless"
+        string tree_id "가설 트리 ID"
+        string parent_id "부모 가설 ID (선택)"
+        number depth "트리 깊이 (0-based)"
+        string description "가설 설명"
+        string category "DEPLOYMENT | INFRASTRUCTURE | ..."
+        number confidence_score "신뢰도 (0.0-1.0)"
+        string status "PENDING | CONFIRMED | REJECTED"
+        list required_evidence "필요한 증거 목록"
+        string referenced_playbook_id "참조 플레이북 ID (선택)"
+        string evidence_summary "증거 요약"
+        string judgment_reasoning "판단 근거"
+        number judgment_confidence "판단 신뢰도"
+        string created_at "ISO 8601"
+        string updated_at "ISO 8601"
+        number ttl "TTL (90일)"
+    }
+```
+
+### 키 구조 및 접근 패턴
+
+동일한 `PK = RCA#{rca_id}` 파티션 안에 세션 1개, 스팬 N개, 가설 N개가 저장됩니다. `SK` 접두사로 엔티티를 구분하며, `{engine}#` 접두사로 Strands와 CC Headless의 데이터를 분리합니다.
+
+```mermaid
+flowchart TD
+    subgraph Partition["PK = RCA#a1b2c3d4-..."]
+        direction TB
+        S1["SK: strands#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
+        S2["SK: cc-headless#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
+
+        SP1["SK: strands#SPAN#uuid-1<br/>span_type=SCOPING, 3.2s"]
+        SP2["SK: strands#SPAN#uuid-2<br/>span_type=HYPOTHESIS_GENERATION, 5.1s"]
+        SP3["SK: strands#SPAN#uuid-3<br/>span_type=PLAYBOOK, metadata={...}, 8.4s"]
+        SP4["SK: cc-headless#SPAN#uuid-a<br/>span_type=SCOPING, 4.0s"]
+
+        H1["SK: strands#HYPO#uuid-h1<br/>depth=0, DB 커넥션 누수, CONFIRMED 0.92"]
+        H2["SK: strands#HYPO#uuid-h2<br/>depth=0, 트래픽 급증, REJECTED 0.1"]
+        H3["SK: cc-headless#HYPO#uuid-h3<br/>depth=0, 커넥션 풀 고갈, CONFIRMED 0.88"]
+    end
+
+    style S1 fill:#e3f2fd,stroke:#1565c0
+    style S2 fill:#fff3e0,stroke:#ef6c00
+    style SP1 fill:#e8f5e9,stroke:#388e3c
+    style SP2 fill:#e8f5e9,stroke:#388e3c
+    style SP3 fill:#e8f5e9,stroke:#388e3c
+    style SP4 fill:#f3e5f5,stroke:#7b1fa2
+    style H1 fill:#fce4ec,stroke:#c62828
+    style H2 fill:#fce4ec,stroke:#c62828
+    style H3 fill:#f3e5f5,stroke:#7b1fa2
+```
+
+### 접근 패턴 일람
+
+| 접근 패턴 | 오퍼레이션 | 키 조건 | 사용처 |
+|-----------|-----------|---------|--------|
+| 세션 생성 (멱등) | `PutItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `attribute_not_exists(SK)` | 에이전트 시작 시 |
+| 중복 체크 | `GetItem` | `PK=RCA#{id}`, `SK={engine}#SESSION` | 알람 수신 시 |
+| 상태 전이 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state <> CANCELLED` | 파이프라인 각 단계 |
+| 취소 감지 | `GetItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `ProjectionExpression=state` | 파이프라인 주기적 폴링 |
+| 완료 마킹 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION` | 파이프라인 종료 시 |
+| 스팬 시작 | `PutItem` | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}` | 각 분석 단계 시작 |
+| 스팬 종료 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}` | 각 분석 단계 완료 |
+| 가설 배치 저장 | `BatchWriteItem` | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}` | 가설 생성/분기 시 |
+| 가설 상태 갱신 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}` | 가설 검증 결과 반영 |
+| 전체 트레이스 조회 | `Query` | `PK=RCA#{id}` | 대시보드 트레이스 뷰 |
+| 세션 목록 조회 | `Scan` | `FilterExpression: contains(SK, '#SESSION') AND begins_with(PK, 'RCA#')` | 대시보드 세션 목록 |
+| 세션 삭제 | `Query` → `BatchWriteItem` | `PK=RCA#{id}` 전체 아이템 삭제 | 대시보드 세션 삭제 |
+| 세션 취소 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state → CANCELLED` | 대시보드 취소 버튼 |
+
+### GSI
+
+| 인덱스 이름 | 파티션 키 | 프로젝션 | 용도 |
+|-------------|----------|----------|------|
+| `idempotency-index` | `idempotency_key` (String) | KEYS_ONLY | 멱등성 키로 기존 세션 유무 조회 |
+
+### DynamoDB 데이터 흐름
+
+아래 다이어그램은 하나의 알람에 대해 두 엔진이 동시에 DynamoDB를 사용하는 전체 데이터 흐름입니다.
+
+```mermaid
+sequenceDiagram
+    participant SA as Strands Agent
+    participant DDB as DynamoDB<br/>(싱글테이블)
+    participant CCA as CC Headless Agent
+    participant DASH as Dashboard
+
+    Note over SA,CCA: 1. 세션 생성 (멱등)
+    SA->>DDB: PutItem PK=RCA#id, SK=strands#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
+    CCA->>DDB: PutItem PK=RCA#id, SK=cc-headless#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
+
+    Note over SA,DDB: 2. 파이프라인 실행 (Strands)
+    SA->>DDB: PutItem SK=strands#SPAN#{id} (SCOPING 시작)
+    SA->>DDB: UpdateItem SK=strands#SPAN#{id} (SCOPING 완료)
+    SA->>DDB: BatchWriteItem SK=strands#HYPO#{id} × N (가설 저장)
+    SA->>DDB: PutItem SK=strands#SPAN#{id} (검증루프 시작)
+    SA->>DDB: UpdateItem SK=strands#HYPO#{id} (검증 결과)
+    SA->>DDB: PutItem + UpdateItem (PLAYBOOK span + metadata)
+    SA->>DDB: UpdateItem SK=strands#SESSION (state=COMPLETED)
+
+    Note over CCA,DDB: 3. 파이프라인 실행 (CC Headless)
+    CCA->>DDB: PutItem SK=cc-headless#SPAN#{id} (MCP start_span)
+    CCA->>DDB: UpdateItem SK=cc-headless#SPAN#{id} (MCP end_span)
+    CCA->>DDB: BatchWriteItem SK=cc-headless#HYPO#{id} × N
+    CCA->>DDB: UpdateItem SK=cc-headless#SESSION (state=COMPLETED)
+
+    Note over DASH,DDB: 4. 대시보드 조회
+    DASH->>DDB: Scan (세션 목록)
+    DDB-->>DASH: SESSION 아이템들 반환
+    DASH->>DDB: Query PK=RCA#id (트레이스 상세)
+    DDB-->>DASH: SESSION + SPAN[] + HYPO[] 반환
+```
 
 ---
 
