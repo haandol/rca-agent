@@ -490,6 +490,14 @@ def _run_pipeline(
                 )
                 break
             logger.info("All rejected, regenerating hypotheses (round %d)", regeneration_count)
+            for h in hypotheses:
+                if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
+                    h.status = HypothesisStatus.REJECTED
+                    trace.update_hypothesis_status(
+                        h.hypothesis_id,
+                        status=HypothesisStatus.REJECTED.value,
+                        judgment_reasoning="전체 기각으로 가설 재생성 — 이전 라운드 자동 기각",
+                    )
             update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION, dynamodb_client=dynamodb_client)
             with trace.span(
                 SpanType.HYPOTHESIS_GENERATION,
