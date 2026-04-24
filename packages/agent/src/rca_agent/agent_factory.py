@@ -52,6 +52,7 @@ def create_planning_model(
         max_tokens=max_tokens,
         temperature=0.3,
         streaming=False,
+        cache_prompt="default",
         **({"additional_request_fields": additional} if additional else {}),
     )
 
@@ -68,6 +69,7 @@ def create_execution_model(
         max_tokens=max_tokens,
         temperature=0.3,
         streaming=False,
+        cache_prompt="default",
     )
 
 
