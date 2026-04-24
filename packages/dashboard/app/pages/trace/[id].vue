@@ -27,6 +27,23 @@ const stateStyle: Record<string, { bg: string; text: string }> = {
   OUTDATED: { bg: 'bg-base-content/5', text: 'text-base-content/40' },
 }
 
+const STATE_LABEL: Record<string, string> = {
+  ALARM_RECEIVED: '알람 수신',
+  SCOPING: '스코핑',
+  HYPOTHESIS_GENERATION: '가설 생성',
+  HYPOTHESIS_PRIORITIZATION: '우선순위 결정',
+  EVIDENCE_COLLECTION: '증거 수집',
+  HYPOTHESIS_VALIDATION: '가설 검증',
+  REPORT_GENERATION: '보고서 생성',
+  REMEDIATION: '자동 복구',
+  VERIFICATION: '복구 검증',
+  ANALYZING: '분석 중',
+  COMPLETED: '완료',
+  FAILED: '실패',
+  CANCELLED: '중단됨',
+  OUTDATED: '만료됨',
+}
+
 function formatTime(iso: string) {
   if (!iso) return '-'
   return new Date(iso).toLocaleString()
@@ -72,7 +89,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
           stateStyle[trace.session.state]?.text || 'text-warning',
         ]"
       >
-        {{ trace.session.state }}
+        {{ STATE_LABEL[trace.session.state] || trace.session.state }}
       </span>
       <NuxtLink :to="engine ? `/report/${id}?engine=${engine}` : `/report/${id}`">
         <button class="btn btn-ghost btn-sm gap-1.5 rounded-lg">
