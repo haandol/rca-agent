@@ -15,4 +15,8 @@
 - **주기**: {period}초
 - **임계치**: {threshold} ({comparison_operator})
 
-위 알람을 분석하고 구조화된 한글 RCA 보고서를 생성하라. 반드시 `save_artifact("report.md", ...)` 로 최종 보고서를 저장하라.
+위 알람을 분석하고 각 단계별 산출물을 `save_artifact`로 저장하라:
+1. `scoping.json` — 스코핑 결과 (JSON)
+2. `hypotheses.json` — 가설 목록 (JSON)
+3. `validation-{N}.json` — 검증 루프 결과 (JSON)
+4. `report.md` — 최종 한글 RCA 보고서 (Markdown)

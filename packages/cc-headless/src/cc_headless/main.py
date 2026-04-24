@@ -12,6 +12,7 @@ import boto3
 import structlog
 
 from cc_headless.alarm_parser import parse_alarm
+from cc_headless.artifact_watcher import start_watcher
 from cc_headless.cc_runner import run_claude
 from cc_headless.config import DYNAMODB_TABLE_NAME, ENGINE, SQS_POLL_WAIT_SECONDS, SQS_QUEUE_URL
 from cc_headless.healthz import start_health_server
@@ -99,8 +100,13 @@ def _run_rca(
         prompt = build_prompt(alarm)
         log.info("cc_analysis_started")
 
+        watcher_thread, watcher_stop = start_watcher(artifact_dir, rca_id, ddb)
+
         cc_result = run_claude(prompt, cancel_checker=lambda: _is_cancelled(rca_id, ddb))
         elapsed_seconds = int(time.time() - start_time)
+
+        watcher_stop.set()
+        watcher_thread.join(timeout=5)
 
         if _is_cancelled(rca_id, ddb):
             log.info("session_cancelled_after_cc", elapsed_seconds=elapsed_seconds)
