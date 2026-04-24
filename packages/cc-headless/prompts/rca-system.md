@@ -64,25 +64,44 @@ Python wrapper가 이 파일들을 감시하여 대시보드 트레이스를 자
 
 #### validation-{N}.json
 
+**중요: confirmed/rejected/needs_investigation의 `hypothesis_id`는 반드시 `hypotheses.json`에서 생성한 UUID와 정확히 일치해야 한다. 새로운 ID를 만들지 않는다.**
+
 ```json
 {
   "stage": "VALIDATION",
   "loop_index": 1,
   "confirmed": [
-    {"hypothesis_id": "UUID", "confidence": 0.95, "reasoning": "확정 근거"}
+    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.95, "reasoning": "확정 근거 (한글, 상세히)"}
   ],
   "rejected": [
-    {"hypothesis_id": "UUID", "confidence": 0.1, "reasoning": "기각 근거"}
+    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.1, "reasoning": "기각 근거 (한글, 상세히)"}
   ],
   "needs_investigation": [
-    {"hypothesis_id": "UUID", "confidence": 0.5, "reasoning": "추가 조사 필요"}
+    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.5, "reasoning": "추가 조사 필요 사유 (한글, 상세히)"}
   ],
-  "new_hypotheses": [],
-  "best_hypothesis": {"hypothesis_id": "UUID", "confidence": 0.95},
+  "new_hypotheses": [
+    {
+      "hypothesis_id": "새 UUID (기존과 다른 값)",
+      "tree_id": "hypotheses.json의 tree_id와 동일",
+      "description": "새 가설 설명 (한글, 필수)",
+      "category": "INFRASTRUCTURE | DEPLOYMENT | TRAFFIC | DEPENDENCY | APPLICATION",
+      "confidence_score": 0.5,
+      "required_evidence": ["필요한 증거"],
+      "status": "PENDING",
+      "parent_id": "분기 원본 가설의 hypothesis_id",
+      "depth": 1
+    }
+  ],
+  "best_hypothesis": {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.95},
   "summary": "검증 루프 1 완료",
   "output_summary": "확정 1, 기각 2, 조사필요 1"
 }
 ```
+
+**주의사항:**
+- `confirmed`/`rejected`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
+- `new_hypotheses`의 각 항목에는 반드시 `description`과 `category`를 포함한다.
+- 모든 가설은 `hypotheses.json`에서 이미 생성된 `hypothesis_id`를 참조해야 한다.
 
 #### playbook.json
 
@@ -200,6 +219,12 @@ Agent tool을 사용하여 **가설 생성 서브에이전트**를 스폰한다.
 4. 검증 루프를 재개한다
 
 2회 재생성 후에도 확정 없으면 최고 신뢰도 가설을 "가장 유력한 후보"로 선정한다.
+
+### 루프 종료 시 미검증 가설 처리 (필수)
+
+**검증 루프 종료 후, PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설은 최종 validation JSON의 `rejected`에 포함한다.** 이때 `reasoning`에 "리소스 제약으로 검증 미완료 — 분석 종료 시 자동 기각"를 기재한다. 확정된(CONFIRMED) 가설과 이미 기각된(REJECTED) 가설은 제외한다.
+
+이 처리를 통해 세션 완료 시 모든 가설이 CONFIRMED 또는 REJECTED 상태를 갖게 된다.
 
 ---
 

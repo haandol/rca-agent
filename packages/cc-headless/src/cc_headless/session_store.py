@@ -80,52 +80,75 @@ def create_session(
         raise
 
 
+class SessionCancelledError(Exception):
+    pass
+
+
 def update_state(rca_id: str, state: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return
-    _ddb.update_item(
-        TableName=DYNAMODB_TABLE_NAME,
-        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
-        UpdateExpression="SET #state = :state, updated_at = :now",
-        ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
-        ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={
-            ":state": {"S": state},
-            ":now": {"S": _now_iso()},
-            ":cancelled": {"S": "CANCELLED"},
-        },
-    )
+    try:
+        _ddb.update_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+            UpdateExpression="SET #state = :state, updated_at = :now",
+            ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={
+                ":state": {"S": state},
+                ":now": {"S": _now_iso()},
+                ":cancelled": {"S": "CANCELLED"},
+            },
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise SessionCancelledError(rca_id) from e
+        raise
 
 
 def mark_completed(rca_id: str, root_cause: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return
-    _ddb.update_item(
-        TableName=DYNAMODB_TABLE_NAME,
-        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
-        UpdateExpression="SET #state = :state, root_cause = :rc, updated_at = :now",
-        ConditionExpression="attribute_exists(SK)",
-        ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={
-            ":state": {"S": "COMPLETED"},
-            ":rc": {"S": root_cause},
-            ":now": {"S": _now_iso()},
-        },
-    )
+    try:
+        _ddb.update_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+            UpdateExpression="SET #state = :state, root_cause = :rc, updated_at = :now",
+            ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={
+                ":state": {"S": "COMPLETED"},
+                ":rc": {"S": root_cause},
+                ":now": {"S": _now_iso()},
+                ":cancelled": {"S": "CANCELLED"},
+            },
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.warning("mark_completed_skipped_cancelled", rca_id=rca_id)
+            return
+        raise
 
 
 def mark_failed(rca_id: str, error_reason: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return
-    _ddb.update_item(
-        TableName=DYNAMODB_TABLE_NAME,
-        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
-        UpdateExpression="SET #state = :state, error_reason = :err, updated_at = :now",
-        ConditionExpression="attribute_exists(SK)",
-        ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={
-            ":state": {"S": "FAILED"},
-            ":err": {"S": error_reason},
-            ":now": {"S": _now_iso()},
-        },
-    )
+    try:
+        _ddb.update_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+            UpdateExpression="SET #state = :state, error_reason = :err, updated_at = :now",
+            ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={
+                ":state": {"S": "FAILED"},
+                ":err": {"S": error_reason},
+                ":now": {"S": _now_iso()},
+                ":cancelled": {"S": "CANCELLED"},
+            },
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.warning("mark_failed_skipped_cancelled", rca_id=rca_id)
+            return
+        raise

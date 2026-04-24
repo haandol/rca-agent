@@ -38,7 +38,7 @@ from rca_agent.config import (
 from rca_agent.evidence import run_evidence_collection, save_evidence_to_s3
 from rca_agent.healthz import start_health_server
 from rca_agent.hypothesis import run_hypothesis_generation
-from rca_agent.models import AlarmPayload, HypothesisStatus, RcaSessionState
+from rca_agent.models import AlarmPayload, HypothesisStatus, Playbook, RcaSessionState
 from rca_agent.notification import build_notification, send_notification
 from rca_agent.playbook_gen import run_playbook_generation, save_playbook_to_s3_vectors
 from rca_agent.prioritization import run_prioritization
@@ -560,6 +560,19 @@ def _run_pipeline(
             metadata={"루프_번호": validation_loop_count, "신규_하위가설": len(new_children)},
         )
 
+    # Finalize unresolved hypotheses — mark PENDING/NEEDS_INVESTIGATION as NOT_INVESTIGATED
+    best_hid = termination.best_hypothesis.hypothesis_id if termination and termination.best_hypothesis else None
+    for h in hypotheses:
+        if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
+            if h.hypothesis_id == best_hid:
+                continue
+            h.status = HypothesisStatus.REJECTED
+            trace.update_hypothesis_status(
+                h.hypothesis_id,
+                status=HypothesisStatus.REJECTED.value,
+                judgment_reasoning="리소스 제약으로 검증 미완료 — 분석 종료 시 자동 기각",
+            )
+
     # Determine best hypothesis
     best_hypothesis = None
     confirmed = False
@@ -604,11 +617,10 @@ def _run_pipeline(
 
     report_s3_key = save_report_to_s3(rca_report, s3_client=s3_client)
 
-    # F8: Playbook generation (search-first: update existing or create new)
-    with trace.span(
-        SpanType.PLAYBOOK,
-        input_summary=f"rca_id={rca_report.rca_id}",
-    ) as s:
+    # F8: Playbook generation (non-blocking — must not break notification/completion)
+    playbook: Playbook | None = None
+    playbook_span = trace.start_span(SpanType.PLAYBOOK, input_summary=f"rca_id={rca_report.rca_id}")
+    try:
         playbook = run_playbook_generation(
             rca_report,
             agents.playbook,
@@ -620,18 +632,24 @@ def _run_pipeline(
             scoping_result=scoping_result,
             s3_vectors_client=s3_vectors_client,
         )
-        s.output_summary = f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"
-        s.metadata = {
-            "playbook_id": playbook.playbook_id,
-            "failure_type": playbook.failure_type,
-            "symptom_pattern": playbook.symptom_pattern,
-            "verification_steps": playbook.verification_steps,
-            "temporary_mitigation": playbook.temporary_mitigation,
-            "permanent_remediation": playbook.permanent_remediation,
-            "prevention_measures": playbook.prevention_measures,
-            "tags": playbook.tags,
-        }
-    logger.info("Playbook %s: %s", playbook.playbook_id, playbook.failure_type)
+        trace.end_span(
+            playbook_span,
+            output_summary=f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}",
+            metadata={
+                "playbook_id": playbook.playbook_id,
+                "failure_type": playbook.failure_type,
+                "symptom_pattern": playbook.symptom_pattern,
+                "verification_steps": playbook.verification_steps,
+                "temporary_mitigation": playbook.temporary_mitigation,
+                "permanent_remediation": playbook.permanent_remediation,
+                "prevention_measures": playbook.prevention_measures,
+                "tags": playbook.tags,
+            },
+        )
+        logger.info("Playbook %s: %s", playbook.playbook_id, playbook.failure_type)
+    except Exception:
+        logger.exception("Playbook generation failed, continuing pipeline")
+        trace.end_span(playbook_span, status=SpanStatus.FAILED, error="Playbook generation failed")
 
     # F9: Notification (includes playbook for downstream Remediation Agent)
     with trace.span(SpanType.NOTIFICATION, input_summary=f"rca_id={rca_report.rca_id}") as s:

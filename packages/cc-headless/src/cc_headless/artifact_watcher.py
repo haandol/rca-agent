@@ -210,6 +210,7 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict) -> None
                     UpdateExpression=(
                         "SET #st = :status, confidence_score = :cs, judgment_reasoning = :jr, updated_at = :now"
                     ),
+                    ConditionExpression="attribute_exists(SK)",
                     ExpressionAttributeNames={"#st": "status"},
                     ExpressionAttributeValues={
                         ":status": {"S": status_map[bucket]},
@@ -219,67 +220,63 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict) -> None
                     },
                 )
             except Exception:
-                logger.exception("hypothesis_update_failed", hypothesis_id=hid)
+                logger.warning("hypothesis_update_skipped", hypothesis_id=hid, bucket=bucket)
 
     new_hypotheses = artifact.get("new_hypotheses", [])
     if new_hypotheses:
         _save_hypotheses_to_ddb(ddb, rca_id, {"hypotheses": new_hypotheses})
 
 
-def _watch_loop(artifact_dir: Path, rca_id: str, ddb, stop_event: Event) -> None:
-    seen: set[str] = set()
-    validation_loop_span_id: str | None = None
+def _scan_once(
+    artifact_dir: Path,
+    rca_id: str,
+    ddb,
+    seen: set[str],
+    validation_ctx: dict,
+) -> None:
+    if not artifact_dir.exists():
+        return
 
-    while not stop_event.is_set():
-        if not artifact_dir.exists():
-            stop_event.wait(_POLL_INTERVAL)
+    for path in sorted(artifact_dir.iterdir()):
+        if path.name in seen:
             continue
 
-        for path in sorted(artifact_dir.iterdir()):
-            if path.name in seen:
-                continue
+        artifact = _parse_artifact(path)
+        span_type = ARTIFACT_SPAN_MAP.get(path.name)
 
-            artifact = _parse_artifact(path)
-            span_type = ARTIFACT_SPAN_MAP.get(path.name)
+        if span_type:
+            _write_span(ddb, rca_id, span_type, artifact)
+            if span_type == "HYPOTHESIS_GENERATION" and artifact and not artifact.get("error"):
+                _save_hypotheses_to_ddb(ddb, rca_id, artifact)
+            seen.add(path.name)
+            logger.info("artifact_detected", file=path.name, span_type=span_type)
 
-            if span_type:
-                _write_span(ddb, rca_id, span_type, artifact)
-                if span_type == "HYPOTHESIS_GENERATION" and artifact and not artifact.get("error"):
-                    _save_hypotheses_to_ddb(ddb, rca_id, artifact)
-                seen.add(path.name)
-                logger.info("artifact_detected", file=path.name, span_type=span_type)
+        elif path.name.startswith(VALIDATION_PATTERN) and path.suffix == ".json":
+            idx_str = path.stem.replace(VALIDATION_PATTERN, "")
+            try:
+                loop_index = int(idx_str)
+            except ValueError:
+                loop_index = 0
 
-            elif path.name.startswith(VALIDATION_PATTERN) and path.suffix == ".json":
-                idx_str = path.stem.replace(VALIDATION_PATTERN, "")
-                try:
-                    loop_index = int(idx_str)
-                except ValueError:
-                    loop_index = 0
+            _write_span(ddb, rca_id, "VALIDATION_LOOP", artifact, loop_index=loop_index)
 
-                if validation_loop_span_id is None or loop_index == 1:
-                    validation_loop_span_id = _write_span(
-                        ddb,
-                        rca_id,
-                        "VALIDATION_LOOP",
-                        artifact,
-                        loop_index=loop_index,
-                    )
-                else:
-                    _write_span(
-                        ddb,
-                        rca_id,
-                        "VALIDATION_LOOP",
-                        artifact,
-                        loop_index=loop_index,
-                    )
+            if artifact and not artifact.get("error"):
+                _update_hypotheses_from_validation(ddb, rca_id, artifact)
 
-                if artifact and not artifact.get("error"):
-                    _update_hypotheses_from_validation(ddb, rca_id, artifact)
+            seen.add(path.name)
+            logger.info("artifact_detected", file=path.name, span_type="VALIDATION_LOOP", loop_index=loop_index)
 
-                seen.add(path.name)
-                logger.info("artifact_detected", file=path.name, span_type="VALIDATION_LOOP", loop_index=loop_index)
 
+def _watch_loop(artifact_dir: Path, rca_id: str, ddb, stop_event: Event) -> None:
+    seen: set[str] = set()
+    validation_ctx: dict = {}
+
+    while not stop_event.is_set():
+        _scan_once(artifact_dir, rca_id, ddb, seen, validation_ctx)
         stop_event.wait(_POLL_INTERVAL)
+
+    _scan_once(artifact_dir, rca_id, ddb, seen, validation_ctx)
+    logger.info("watcher_final_scan_complete", seen_count=len(seen))
 
 
 def start_watcher(artifact_dir: Path, rca_id: str, ddb) -> tuple[Thread, Event]:

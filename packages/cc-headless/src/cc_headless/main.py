@@ -21,6 +21,7 @@ from cc_headless.playbook_store import load_playbook, save_playbook_to_s3_vector
 from cc_headless.prompt_builder import build_prompt
 from cc_headless.report_store import save_report, send_notification
 from cc_headless.session_store import (
+    SessionCancelledError,
     build_rca_id,
     check_duplicate,
     create_session,
@@ -107,7 +108,7 @@ def _run_rca(
         elapsed_seconds = int(time.time() - start_time)
 
         watcher_stop.set()
-        watcher_thread.join(timeout=5)
+        watcher_thread.join(timeout=10)
 
         if _is_cancelled(rca_id, ddb):
             log.info("session_cancelled_after_cc", elapsed_seconds=elapsed_seconds)
@@ -130,21 +131,40 @@ def _run_rca(
             match = re.search(r"## Root Cause\n+(.+)", report_markdown)
         root_cause_line = match.group(1) if match else report_markdown[:200]
 
-        playbook = load_playbook(artifact_dir)
-        if playbook:
-            metric_name = alarm.metric_name or ""
-            save_playbook_to_s3_vectors(playbook, rca_id, metric_name=metric_name)
-            log.info("playbook_saved", playbook_id=playbook.get("playbook_id"))
+        playbook = _process_playbook(artifact_dir, rca_id, alarm, log)
 
         mark_completed(rca_id, root_cause_line)
         send_notification(rca_id, alarm.alarm_name, root_cause_line, report_key, elapsed_seconds, playbook=playbook)
 
         log.info("rca_complete", elapsed_seconds=elapsed_seconds, root_cause=root_cause_line[:200])
         return True
+    except SessionCancelledError:
+        log.info("session_cancelled_during_state_update")
+        return True
     except Exception:
         log.exception("pipeline_failed")
         mark_failed(rca_id, "Unhandled pipeline exception")
         return False
+
+
+def _process_playbook(
+    artifact_dir: Path,
+    rca_id: str,
+    alarm,
+    log: structlog.stdlib.BoundLogger,
+) -> dict | None:
+    try:
+        playbook = load_playbook(artifact_dir)
+        if not playbook:
+            log.info("playbook_not_generated")
+            return None
+        metric_name = alarm.metric_name or ""
+        save_playbook_to_s3_vectors(playbook, rca_id, metric_name=metric_name)
+        log.info("playbook_saved", playbook_id=playbook.get("playbook_id"))
+        return playbook
+    except Exception:
+        log.exception("playbook_processing_failed")
+        return None
 
 
 def _process_message(message_body: str, ddb) -> bool:
