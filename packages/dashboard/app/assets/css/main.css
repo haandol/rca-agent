@@ -27,4 +27,12 @@
   .action-btn {
     @apply btn btn-ghost btn-xs btn-square rounded-lg opacity-70 hover:opacity-100 transition-opacity;
   }
+
+  .sortable-th {
+    @apply text-xs font-medium text-base-content/50 uppercase tracking-wider cursor-pointer select-none hover:text-base-content/80 transition-colors;
+  }
+
+  .sort-indicator {
+    @apply text-[10px] ml-0.5 text-base-content/40;
+  }
 }

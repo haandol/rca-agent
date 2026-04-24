@@ -55,6 +55,34 @@ const stats = computed(() => {
   return { total, completed, failed, inProgress }
 })
 
+type SortKey = 'state' | 'alarmName' | 'engine' | 'createdAt'
+type SortDir = 'asc' | 'desc'
+
+const sortKey = ref<SortKey>('createdAt')
+const sortDir = ref<SortDir>('desc')
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = key === 'createdAt' ? 'desc' : 'asc'
+  }
+}
+
+const sortedSessions = computed(() => {
+  if (!sessions.value) return []
+  return [...sessions.value].sort((a, b) => {
+    const key = sortKey.value
+    const dir = sortDir.value === 'asc' ? 1 : -1
+    const va = (a as Record<string, unknown>)[key] ?? ''
+    const vb = (b as Record<string, unknown>)[key] ?? ''
+    if (va < vb) return -1 * dir
+    if (va > vb) return 1 * dir
+    return 0
+  })
+})
+
 const cancelTarget = ref<string | null>(null)
 const cancelling = ref(false)
 const cancelModalRef = ref<HTMLDialogElement | null>(null)
@@ -161,16 +189,28 @@ useHead({ title: 'RCA 대시보드' })
       <table v-else class="table w-full">
         <thead>
           <tr class="border-b border-base-content/5">
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider pl-5">상태</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">알람</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">엔진</th>
+            <th class="sortable-th pl-5" @click="toggleSort('state')">
+              상태
+              <span v-if="sortKey === 'state'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+            </th>
+            <th class="sortable-th" @click="toggleSort('alarmName')">
+              알람
+              <span v-if="sortKey === 'alarmName'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+            </th>
+            <th class="sortable-th" @click="toggleSort('engine')">
+              엔진
+              <span v-if="sortKey === 'engine'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+            </th>
             <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">결과</th>
-            <th class="text-xs font-medium text-base-content/50 uppercase tracking-wider">시간</th>
+            <th class="sortable-th" @click="toggleSort('createdAt')">
+              시간
+              <span v-if="sortKey === 'createdAt'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+            </th>
             <th class="w-28"></th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="session in sessions" :key="session.rcaId" class="session-row border-b border-base-content/5 last:border-0">
+          <tr v-for="session in sortedSessions" :key="`${session.rcaId}-${session.engine}`" class="session-row border-b border-base-content/5 last:border-0">
             <td class="pl-5">
               <span
                 class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md"
