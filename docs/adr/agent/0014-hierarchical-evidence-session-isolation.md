@@ -1,10 +1,11 @@
 # ADR 0014: 계층형 증거 수집 세션 격리 — 가설별 독립 컨텍스트 윈도우 관리
 
 Date: 2026-04-24
+Updated: 2026-04-24
 
 ## Status
 
-Proposed
+Accepted (Phase 1 완료)
 
 ## Context
 
@@ -68,6 +69,8 @@ MCP 서버 수준 또는 에이전트 시스템 프롬프트에서 도구 응답
 
 7. **MCP 도구 응답 제한 (보조 수단)**: evidence agent의 시스템 프롬프트에 Logs Insights 쿼리 시 `limit` 절 사용과 결과 요약을 지시한다. 이는 단독 해결책이 아닌 방어적 가드레일이다.
 
+8. **대시보드 full evidence 조회**: 대시보드 트레이스 뷰의 가설 상세 패널에서 DynamoDB의 `evidence_summary`(요약)를 기본 표시하고, "상세 보기" 버튼으로 S3에 저장된 **full evidence**를 on-demand로 조회한다. S3 경로는 `rca/{rca_id}/evidence/{hypothesis_id}/combined.md`이다. 이를 통해 요약만으로 부족할 때 원본 증거(메트릭 시계열, 로그 원본, 코드 diff 등)를 확인할 수 있다.
+
 ### 정보 흐름
 
 ```mermaid
@@ -124,7 +127,7 @@ flowchart TD
 
 ## Implementation Notes
 
-Phase 1: 가설별 독립 Agent 인스턴스 + 요약만 반환 + DDB/S3 직접 저장 (오버플로우 해결 및 책임 분리)
+Phase 1 (완료): 가설별 독립 Agent 인스턴스 + 요약만 반환 + DDB/S3 직접 저장 + 대시보드 full evidence 조회 (오버플로우 해결 및 책임 분리)
 Phase 2: 계층적 부모 요약 주입 (하위 가설 프롬프트에 부모 요약 포함, REJECTED 가설은 기각 사실만 전달)
 
 ## Related

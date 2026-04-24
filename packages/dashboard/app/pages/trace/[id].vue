@@ -20,6 +20,24 @@ const { data: trace, status, error } = useFetch(`/api/traces/${id}`, {
   query: engine ? { engine } : undefined,
 })
 
+const fullEvidence = ref<string | null>(null)
+const fullEvidenceLoading = ref(false)
+const evidenceModalRef = ref<HTMLDialogElement | null>(null)
+
+async function showFullEvidence(hypothesisId: string) {
+  fullEvidence.value = null
+  fullEvidenceLoading.value = true
+  evidenceModalRef.value?.showModal()
+  try {
+    const data = await $fetch(`/api/evidence/${id}/${hypothesisId}`)
+    fullEvidence.value = (data as any).markdown || ''
+  } catch {
+    fullEvidence.value = '증거를 불러올 수 없습니다.'
+  } finally {
+    fullEvidenceLoading.value = false
+  }
+}
+
 const stateStyle: Record<string, { bg: string; text: string }> = {
   COMPLETED: { bg: 'bg-success/10', text: 'text-success' },
   FAILED: { bg: 'bg-error/10', text: 'text-error' },
@@ -325,7 +343,14 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                 <div class="prose prose-sm max-w-none mt-3" v-html="md(selectedNode.description || selectedNode.label)" />
 
                 <div v-if="selectedNode.evidenceSummary" class="mt-3">
-                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">증거 요약</div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">증거 요약</div>
+                    <button
+                      v-if="selectedNode.hypothesisId"
+                      class="btn btn-ghost btn-xs text-primary"
+                      @click="showFullEvidence(selectedNode.hypothesisId!)"
+                    >상세 보기</button>
+                  </div>
                   <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md(selectedNode.evidenceSummary)" />
                 </div>
 
@@ -346,6 +371,21 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
         </div>
       </div>
     </template>
+
+    <!-- Full Evidence Modal -->
+    <dialog ref="evidenceModalRef" class="modal">
+      <div class="modal-box max-w-3xl max-h-[80vh]">
+        <h3 class="font-bold text-lg mb-4">상세 증거</h3>
+        <div v-if="fullEvidenceLoading" class="flex items-center justify-center py-12">
+          <span class="loading loading-spinner loading-md" />
+        </div>
+        <div v-else class="prose prose-sm max-w-none overflow-y-auto max-h-[60vh]" v-html="md(fullEvidence)" />
+        <div class="modal-action">
+          <form method="dialog"><button class="btn btn-ghost btn-sm">닫기</button></form>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+    </dialog>
 
     <!-- State Description Modal -->
     <dialog ref="stateModalRef" class="modal">

@@ -47,6 +47,7 @@ export interface NodeData {
   category?: string
   confidenceScore?: number
   loopIndex?: number | null
+  hypothesisId?: string
   description?: string
   evidenceSummary?: string
   judgmentReasoning?: string
@@ -129,6 +130,7 @@ export function buildTraceGraph(spans: SpanItem[], hypotheses: HypothesisItem[])
         detail: h.evidenceSummary || h.judgmentReasoning,
         category: h.category,
         confidenceScore: h.confidenceScore,
+        hypothesisId: h.hypothesisId,
         description: h.description,
         evidenceSummary: h.evidenceSummary,
         judgmentReasoning: h.judgmentReasoning,
