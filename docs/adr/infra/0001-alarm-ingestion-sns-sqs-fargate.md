@@ -1,10 +1,11 @@
 # ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate
 
 Date: 2026-04-21
+Updated: 2026-04-24
 
 ## Status
 
-Accepted
+Accepted (Updated — State Machine 기반 상태 전이 검증 추가)
 
 ## Context
 
@@ -44,11 +45,29 @@ flowchart LR
 
 2. **ECS Fargate 상시 실행 + Long Polling**: 에이전트는 Fargate에서 상시 실행되며 SQS를 Long Polling으로 구독한다. 콜드스타트 없이 알람 수신 즉시(목표 60초 이내) RCA를 시작할 수 있고, 장시간 실행에 타임아웃 제약이 없다.
 
-3. **DynamoDB 기반 RCA 세션 상태 관리**: 알람 수신 즉시 DynamoDB에 RCA 세션을 생성하고 상태를 기록한다. 상태 전이 흐름: `ALARM_RECEIVED` → `SCOPING` → `HYPOTHESIS_GENERATION` → `HYPOTHESIS_PRIORITIZATION` → `EVIDENCE_COLLECTION` → `HYPOTHESIS_VALIDATION` → `REPORT_GENERATION` → `COMPLETED` (또는 `FAILED`). 이를 통해 대시보드에서 실시간 진행 상태를 조회할 수 있다.
+3. **DynamoDB 기반 RCA 세션 상태 관리**: 알람 수신 즉시 DynamoDB에 RCA 세션을 생성하고 상태를 기록한다. 이를 통해 대시보드에서 실시간 진행 상태를 조회할 수 있다.
 
-4. **이중 멱등성 체크**: SQS Visibility Timeout으로 동일 메시지 중복 처리를 1차 방지하고, DynamoDB에 알람 ID + 타임스탬프 기반 멱등성 키로 2차 중복을 방지한다. 기존 진행 중인 RCA가 있으면 새 메시지를 스킵한다.
+4. **State Machine 기반 상태 전이 검증**: 각 엔진의 `session_store`에 `VALID_TRANSITIONS` 딕셔너리를 정의하여, 상태 전이 전에 현재 상태 → 목표 상태가 허용된 전이인지 검증한다. 잘못된 전이 시 `InvalidStateTransitionError`를 발생시키고, CANCELLED 상태 감지 시 기존과 동일하게 `SessionCancelledError`를 발생시킨다. DDB ConditionExpression 가드는 동시성 보호를 위해 그대로 유지하고, state machine은 그 위에 논리적 검증 레이어로 동작한다.
 
-5. **DLQ(Dead Letter Queue)를 통한 실패 메시지 보존**: 메시지 처리가 최대 3회 재시도 후에도 실패하면 DLQ로 이동하여 메시지를 보존한다. 이를 통해 장애 원인 사후 분석과 수동 재처리가 가능하다.
+   **Strands 엔진 상태 전이**:
+   ```
+   ALARM_RECEIVED → SCOPING → HYPOTHESIS_GENERATION → HYPOTHESIS_PRIORITIZATION
+   → EVIDENCE_COLLECTION → HYPOTHESIS_VALIDATION → REPORT_GENERATION → COMPLETED
+   ```
+   - HYPOTHESIS_VALIDATION에서 전체 기각 시 HYPOTHESIS_GENERATION으로 재진입 가능
+   - HYPOTHESIS_VALIDATION에서 추가 증거 필요 시 EVIDENCE_COLLECTION으로 재진입 가능
+   - 모든 non-terminal 상태에서 FAILED, OUTDATED, CANCELLED로 전이 가능
+
+   **CC Headless 엔진 상태 전이**:
+   ```
+   ALARM_RECEIVED → ANALYZING → COMPLETED
+   ```
+   - ALARM_RECEIVED에서 ANALYZING, FAILED, CANCELLED로 전이 가능
+   - ANALYZING에서 COMPLETED, FAILED, CANCELLED로 전이 가능
+
+5. **이중 멱등성 체크**: SQS Visibility Timeout으로 동일 메시지 중복 처리를 1차 방지하고, DynamoDB에 알람 ID + 타임스탬프 기반 멱등성 키로 2차 중복을 방지한다. 기존 진행 중인 RCA가 있으면 새 메시지를 스킵한다.
+
+6. **DLQ(Dead Letter Queue)를 통한 실패 메시지 보존**: 메시지 처리가 최대 3회 재시도 후에도 실패하면 DLQ로 이동하여 메시지를 보존한다. 이를 통해 장애 원인 사후 분석과 수동 재처리가 가능하다.
 
 ### 지원 알람 유형
 

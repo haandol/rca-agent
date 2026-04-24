@@ -45,6 +45,7 @@ from rca_agent.prioritization import run_prioritization
 from rca_agent.report import run_report_generation, save_report_to_s3
 from rca_agent.scoping import run_scoping
 from rca_agent.session_store import (
+    InvalidStateTransitionError,
     SessionCancelledError,
     check_duplicate,
     create_session,
@@ -269,6 +270,8 @@ def _process_alarm(
         )
     except SessionCancelledError:
         logger.info("Pipeline cancelled for alarm %s (rca_id=%s)", alarm.alarm_name, rca_id)
+    except InvalidStateTransitionError:
+        logger.exception("Invalid state transition for alarm %s (rca_id=%s)", alarm.alarm_name, rca_id)
     except Exception:
         logger.exception("Pipeline failed for alarm %s", alarm.alarm_name)
         if rca_id:

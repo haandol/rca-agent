@@ -27,10 +27,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+MAX_HYPOTHESES_PER_LEVEL = 5
+
+
 class HypothesisOutput(BaseModel):
     """Structured output model for the hypothesis generation agent."""
 
-    hypotheses: list[_HypothesisItem]
+    hypotheses: list[_HypothesisItem] = Field(max_length=MAX_HYPOTHESES_PER_LEVEL)
 
 
 class _HypothesisItem(BaseModel):
@@ -130,6 +133,9 @@ def run_hypothesis_generation(
         )
 
     hypotheses = _convert_output_to_hypotheses(output, tree_id)
+    if len(hypotheses) > MAX_HYPOTHESES_PER_LEVEL:
+        logger.warning("Truncating hypotheses from %d to %d", len(hypotheses), MAX_HYPOTHESES_PER_LEVEL)
+        hypotheses = hypotheses[:MAX_HYPOTHESES_PER_LEVEL]
     logger.info("Generated %d hypotheses (tree_id=%s)", len(hypotheses), tree_id)
 
     return HypothesisGenerationResult(

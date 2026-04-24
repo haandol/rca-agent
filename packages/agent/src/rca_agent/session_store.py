@@ -107,6 +107,65 @@ class SessionCancelledError(Exception):
     """Raised when a session has been cancelled externally."""
 
 
+class InvalidStateTransitionError(Exception):
+    pass
+
+
+VALID_TRANSITIONS: dict[str, set[str]] = {
+    "ALARM_RECEIVED": {"SCOPING", "FAILED", "OUTDATED", "CANCELLED"},
+    "SCOPING": {"HYPOTHESIS_GENERATION", "FAILED", "OUTDATED", "CANCELLED"},
+    "HYPOTHESIS_GENERATION": {"HYPOTHESIS_PRIORITIZATION", "FAILED", "OUTDATED", "CANCELLED"},
+    "HYPOTHESIS_PRIORITIZATION": {"EVIDENCE_COLLECTION", "FAILED", "OUTDATED", "CANCELLED"},
+    "EVIDENCE_COLLECTION": {"HYPOTHESIS_VALIDATION", "FAILED", "OUTDATED", "CANCELLED"},
+    "HYPOTHESIS_VALIDATION": {
+        "REPORT_GENERATION",
+        "EVIDENCE_COLLECTION",
+        "HYPOTHESIS_GENERATION",
+        "FAILED",
+        "OUTDATED",
+        "CANCELLED",
+    },
+    "REPORT_GENERATION": {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"},
+}
+
+_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
+
+
+def _get_current_state(
+    rca_id: str,
+    *,
+    dynamodb_client=None,
+) -> str | None:
+    if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
+        return None
+    resp = dynamodb_client.get_item(
+        TableName=DYNAMODB_TABLE_NAME,
+        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+        ProjectionExpression="#st",
+        ExpressionAttributeNames={"#st": "state"},
+    )
+    item = resp.get("Item")
+    return item["state"]["S"] if item else None
+
+
+def _validate_transition(
+    rca_id: str,
+    target: str,
+    *,
+    dynamodb_client=None,
+) -> None:
+    current = _get_current_state(rca_id, dynamodb_client=dynamodb_client)
+    if current is None:
+        return
+    if current == "CANCELLED":
+        raise SessionCancelledError(rca_id)
+    if current in _TERMINAL_STATES:
+        raise InvalidStateTransitionError(f"{rca_id}: {current} → {target}")
+    allowed = VALID_TRANSITIONS.get(current, set())
+    if target not in allowed:
+        raise InvalidStateTransitionError(f"{rca_id}: {current} → {target}")
+
+
 def update_state(
     rca_id: str,
     new_state: RcaSessionState,
@@ -116,6 +175,7 @@ def update_state(
     if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
         return False
 
+    _validate_transition(rca_id, new_state.value, dynamodb_client=dynamodb_client)
     now = datetime.now(UTC).isoformat()
 
     try:
@@ -154,6 +214,7 @@ def mark_completed(
     if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
         return False
 
+    _validate_transition(rca_id, "COMPLETED", dynamodb_client=dynamodb_client)
     now = datetime.now(UTC).isoformat()
 
     try:
@@ -189,6 +250,7 @@ def mark_outdated(
     if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
         return False
 
+    _validate_transition(rca_id, "OUTDATED", dynamodb_client=dynamodb_client)
     now = datetime.now(UTC).isoformat()
 
     try:
@@ -223,6 +285,7 @@ def mark_failed(
     if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
         return False
 
+    _validate_transition(rca_id, "FAILED", dynamodb_client=dynamodb_client)
     now = datetime.now(UTC).isoformat()
 
     try:

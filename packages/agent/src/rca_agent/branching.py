@@ -30,8 +30,11 @@ class _ChildItem(BaseModel):
     required_evidence: list[str] = Field(default_factory=list)
 
 
+MAX_CHILDREN_PER_BRANCH = 3
+
+
 class BranchingOutput(BaseModel):
-    children: list[_ChildItem]
+    children: list[_ChildItem] = Field(max_length=MAX_CHILDREN_PER_BRANCH)
 
 
 BranchingOutput.model_rebuild()
@@ -110,5 +113,8 @@ def run_branching(
             )
         )
 
+    if len(children) > MAX_CHILDREN_PER_BRANCH:
+        logger.warning("Truncating children from %d to %d", len(children), MAX_CHILDREN_PER_BRANCH)
+        children = children[:MAX_CHILDREN_PER_BRANCH]
     logger.info("Generated %d child hypotheses for %s", len(children), parent.hypothesis_id)
     return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=children)

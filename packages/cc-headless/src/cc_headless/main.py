@@ -21,6 +21,7 @@ from cc_headless.playbook_store import load_playbook, save_playbook_to_s3_vector
 from cc_headless.prompt_builder import build_prompt
 from cc_headless.report_store import save_report, send_notification
 from cc_headless.session_store import (
+    InvalidStateTransitionError,
     SessionCancelledError,
     build_rca_id,
     check_duplicate,
@@ -141,6 +142,9 @@ def _run_rca(
     except SessionCancelledError:
         log.info("session_cancelled_during_state_update")
         return True
+    except InvalidStateTransitionError as e:
+        log.error("invalid_state_transition", detail=str(e))
+        return False
     except Exception:
         log.exception("pipeline_failed")
         mark_failed(rca_id, "Unhandled pipeline exception")

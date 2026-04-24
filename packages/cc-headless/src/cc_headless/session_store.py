@@ -84,9 +84,44 @@ class SessionCancelledError(Exception):
     pass
 
 
+class InvalidStateTransitionError(Exception):
+    pass
+
+
+VALID_TRANSITIONS: dict[str, set[str]] = {
+    "ALARM_RECEIVED": {"ANALYZING", "FAILED", "CANCELLED"},
+    "ANALYZING": {"COMPLETED", "FAILED", "CANCELLED"},
+}
+
+
+def _get_current_state(rca_id: str) -> str | None:
+    if not DYNAMODB_TABLE_NAME:
+        return None
+    resp = _ddb.get_item(
+        TableName=DYNAMODB_TABLE_NAME,
+        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+        ProjectionExpression="#st",
+        ExpressionAttributeNames={"#st": "state"},
+    )
+    item = resp.get("Item")
+    return item["state"]["S"] if item else None
+
+
+def _validate_transition(rca_id: str, target: str) -> None:
+    current = _get_current_state(rca_id)
+    if current is None:
+        return
+    if current == "CANCELLED":
+        raise SessionCancelledError(rca_id)
+    allowed = VALID_TRANSITIONS.get(current, set())
+    if target not in allowed:
+        raise InvalidStateTransitionError(f"{rca_id}: {current} → {target}")
+
+
 def update_state(rca_id: str, state: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return
+    _validate_transition(rca_id, state)
     try:
         _ddb.update_item(
             TableName=DYNAMODB_TABLE_NAME,
@@ -109,6 +144,7 @@ def update_state(rca_id: str, state: str) -> None:
 def mark_completed(rca_id: str, root_cause: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return
+    _validate_transition(rca_id, "COMPLETED")
     try:
         _ddb.update_item(
             TableName=DYNAMODB_TABLE_NAME,
@@ -133,6 +169,7 @@ def mark_completed(rca_id: str, root_cause: str) -> None:
 def mark_failed(rca_id: str, error_reason: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return
+    _validate_transition(rca_id, "FAILED")
     try:
         _ddb.update_item(
             TableName=DYNAMODB_TABLE_NAME,
