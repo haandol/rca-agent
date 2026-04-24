@@ -64,7 +64,7 @@ def report_progress(stage: str, summary: str) -> str:
             TableName=_TABLE,
             Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{_ENGINE}#SESSION"}},
             UpdateExpression="SET #st = :state, updated_at = :now",
-            ConditionExpression="#st <> :cancelled",
+            ConditionExpression="attribute_exists(SK) AND #st <> :cancelled",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": stage},

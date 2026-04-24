@@ -87,6 +87,7 @@ def update_state(rca_id: str, state: str) -> None:
         TableName=DYNAMODB_TABLE_NAME,
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
         UpdateExpression="SET #state = :state, updated_at = :now",
+        ConditionExpression="attribute_exists(SK)",
         ExpressionAttributeNames={"#state": "state"},
         ExpressionAttributeValues={":state": {"S": state}, ":now": {"S": _now_iso()}},
     )
@@ -99,6 +100,7 @@ def mark_completed(rca_id: str, root_cause: str) -> None:
         TableName=DYNAMODB_TABLE_NAME,
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
         UpdateExpression="SET #state = :state, root_cause = :rc, updated_at = :now",
+        ConditionExpression="attribute_exists(SK)",
         ExpressionAttributeNames={"#state": "state"},
         ExpressionAttributeValues={
             ":state": {"S": "COMPLETED"},
@@ -115,6 +117,7 @@ def mark_failed(rca_id: str, error_reason: str) -> None:
         TableName=DYNAMODB_TABLE_NAME,
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
         UpdateExpression="SET #state = :state, error_reason = :err, updated_at = :now",
+        ConditionExpression="attribute_exists(SK)",
         ExpressionAttributeNames={"#state": "state"},
         ExpressionAttributeValues={
             ":state": {"S": "FAILED"},

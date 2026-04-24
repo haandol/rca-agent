@@ -92,7 +92,7 @@ class AlarmPayload(BaseModel):
                 region = arn_parts[3]
 
         return cls(
-            alarm_name=raw.get("AlarmName", ""),
+            alarm_name=raw.get("AlarmName") or "UnknownAlarm",
             alarm_arn=alarm_arn,
             new_state=raw.get("NewStateValue", "ALARM"),
             new_state_reason=raw.get("NewStateReason", ""),

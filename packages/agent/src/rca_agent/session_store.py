@@ -126,7 +126,7 @@ def update_state(
                 "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now",
-            ConditionExpression="#st <> :cancelled",
+            ConditionExpression="attribute_exists(SK) AND #st <> :cancelled",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": new_state.value},
@@ -164,6 +164,7 @@ def mark_completed(
                 "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now, root_cause = :rc, confirmed = :cf",
+            ConditionExpression="attribute_exists(SK)",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": RcaSessionState.COMPLETED.value},
@@ -198,6 +199,7 @@ def mark_outdated(
                 "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now, error_reason = :reason",
+            ConditionExpression="attribute_exists(SK)",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": RcaSessionState.OUTDATED.value},
@@ -231,6 +233,7 @@ def mark_failed(
                 "SK": {"S": f"{ENGINE}#SESSION"},
             },
             UpdateExpression="SET #st = :state, updated_at = :now, error_reason = :err",
+            ConditionExpression="attribute_exists(SK)",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":state": {"S": RcaSessionState.FAILED.value},
