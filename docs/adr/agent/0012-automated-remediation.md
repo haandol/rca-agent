@@ -80,6 +80,22 @@ flowchart LR
 - **중복 실행**: 멱등성 있는 복구 액션(reset API, force deploy)을 사용하여 중복 실행에 안전하다
 - **검증 오판**: 메트릭 정상화에 시간이 걸려 검증 시점에 아직 복구가 반영되지 않을 수 있다. 검증 전 대기 시간을 포함한다
 
+## Implementation Status
+
+**미구현 — 설계만 완료된 상태.**
+
+현재 구현된 부분:
+- RCA 에이전트(Strands)가 F9(Notification)에서 플레이북을 포함한 SNS 알림을 발행 (**구현 완료**)
+- `remediation.py` 모듈: Healthcare 장애 리셋 API 호출, ECS 강제 배포 로직 (**모듈 준비됨, 파이프라인 미연결**)
+- `verification.py` 모듈: 복구 후 메트릭 정상화 검증 (**모듈 준비됨, 파이프라인 미연결**)
+
+미구현 부분:
+- Remediation Agent ECS Fargate 서비스 및 전용 SQS Queue (인프라)
+- SNS → SQS 구독 설정
+- Remediation Agent의 `main.py` 진입점 (SQS 폴링 → 복구 실행 → 검증)
+
+CC Headless는 프롬프트 내에서 직접 복구를 수행하므로(10~11단계) 별도 Remediation Agent가 불필요하다.
+
 ## Related
 
 - [ADR 0007: RCA 보고서 생성](./0007-rca-report-generation.md) — 복구 전 보고서 생성

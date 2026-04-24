@@ -145,8 +145,72 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
         <div class="bg-base-100 rounded-xl border border-base-content/5 w-80 shrink-0 overflow-y-auto">
           <div class="p-4">
             <template v-if="selectedNode">
-              <!-- Span detail -->
-              <template v-if="selectedNode.nodeType === 'span'">
+              <!-- Playbook detail -->
+              <template v-if="selectedNode.nodeType === 'span' && selectedNode.spanType === 'PLAYBOOK' && selectedNode.metadata">
+                <h3 class="font-bold text-sm">플레이북</h3>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-sm" :class="{
+                    'badge-success': selectedNode.status === 'COMPLETED',
+                    'badge-error': selectedNode.status === 'FAILED',
+                    'badge-warning': selectedNode.status === 'RUNNING',
+                  }">{{ selectedNode.status }}</span>
+                  <span v-if="selectedNode.durationMs" class="badge badge-sm badge-ghost font-mono">{{ formatDuration(selectedNode.durationMs) }}</span>
+                </div>
+
+                <div v-if="selectedNode.metadata.failure_type" class="mt-3">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1">장애 유형</div>
+                  <span class="badge badge-sm badge-outline">{{ selectedNode.metadata.failure_type }}</span>
+                </div>
+
+                <div v-if="selectedNode.metadata.symptom_pattern" class="mt-3">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">증상 패턴</div>
+                  <div class="text-xs bg-base-200/60 rounded-lg p-3 break-words">{{ selectedNode.metadata.symptom_pattern }}</div>
+                </div>
+
+                <div v-if="(selectedNode.metadata.verification_steps as string[] | undefined)?.length" class="mt-3">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">검증 절차</div>
+                  <ol class="text-xs bg-base-200/60 rounded-lg p-3 pl-6 space-y-1 list-decimal">
+                    <li v-for="(step, i) in (selectedNode.metadata.verification_steps as string[])" :key="i">{{ step }}</li>
+                  </ol>
+                </div>
+
+                <div v-if="selectedNode.metadata.temporary_mitigation" class="mt-3">
+                  <div class="text-[11px] font-medium text-warning uppercase tracking-wider mb-1.5">임시 완화</div>
+                  <div class="text-xs bg-warning/5 border border-warning/10 rounded-lg p-3 break-words">{{ selectedNode.metadata.temporary_mitigation }}</div>
+                </div>
+
+                <div v-if="selectedNode.metadata.permanent_remediation" class="mt-3">
+                  <div class="text-[11px] font-medium text-success uppercase tracking-wider mb-1.5">영구 복구</div>
+                  <div class="text-xs bg-success/5 border border-success/10 rounded-lg p-3 break-words">{{ selectedNode.metadata.permanent_remediation }}</div>
+                </div>
+
+                <div v-if="(selectedNode.metadata.prevention_measures as string[] | undefined)?.length" class="mt-3">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">재발 방지</div>
+                  <ul class="text-xs bg-base-200/60 rounded-lg p-3 pl-6 space-y-1 list-disc">
+                    <li v-for="(m, i) in (selectedNode.metadata.prevention_measures as string[])" :key="i">{{ m }}</li>
+                  </ul>
+                </div>
+
+                <div v-if="(selectedNode.metadata.tags as string[] | undefined)?.length" class="mt-3">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">태그</div>
+                  <div class="flex flex-wrap gap-1">
+                    <span v-for="tag in (selectedNode.metadata.tags as string[])" :key="tag" class="badge badge-xs badge-ghost">{{ tag }}</span>
+                  </div>
+                </div>
+
+                <div v-if="selectedNode.metadata.playbook_id" class="mt-3 pt-3 border-t border-base-content/5">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1">Playbook ID</div>
+                  <div class="text-[10px] font-mono text-base-content/40 truncate">{{ selectedNode.metadata.playbook_id }}</div>
+                </div>
+
+                <div v-if="selectedNode.error" class="mt-3">
+                  <div class="text-[11px] font-medium text-error/60 uppercase tracking-wider mb-1.5">오류</div>
+                  <div class="prose prose-xs max-w-none bg-error/5 text-error rounded-lg p-3 break-words" v-html="md(selectedNode.error)" />
+                </div>
+              </template>
+
+              <!-- Span detail (generic) -->
+              <template v-else-if="selectedNode.nodeType === 'span'">
                 <h3 class="font-bold text-sm">{{ selectedNode.label }}</h3>
                 <div class="flex gap-2 mt-2">
                   <span class="badge badge-sm" :class="{

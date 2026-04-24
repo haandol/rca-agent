@@ -108,12 +108,29 @@ def start_span(
     return json.dumps({"ok": True, "span_id": span_id})
 
 
+def _serialize_metadata(meta: dict) -> dict:
+    result = {}
+    for k, v in meta.items():
+        if isinstance(v, str):
+            result[k] = {"S": v}
+        elif isinstance(v, bool):
+            result[k] = {"BOOL": v}
+        elif isinstance(v, (int, float)):
+            result[k] = {"N": str(v)}
+        elif isinstance(v, list):
+            result[k] = {"L": [{"S": str(i)} for i in v]}
+        else:
+            result[k] = {"S": str(v)}
+    return result
+
+
 @mcp.tool()
 def end_span(
     span_id: str,
     status: str = "COMPLETED",
     output_summary: str = "",
     error: str = "",
+    metadata_json: str = "",
 ) -> str:
     """분석 단계 완료를 DDB에 기록한다.
 
@@ -122,6 +139,7 @@ def end_span(
         status: COMPLETED, FAILED, TIMED_OUT 중 하나.
         output_summary: 단계 출력 요약 (500자 이내).
         error: 오류 메시지 (실패 시).
+        metadata_json: 추가 메타데이터 JSON 문자열 (선택). 예: {"failure_type": "db-leak", "tags": ["db","connection"]}
     """
     rca_id = _rca_id()
     if not _ddb or not _TABLE or not rca_id:
@@ -145,6 +163,13 @@ def end_span(
     if error:
         expr_parts.append("error = :err")
         attr_values[":err"] = {"S": error[:_SUMMARY_MAX]}
+    if metadata_json:
+        try:
+            meta = json.loads(metadata_json)
+            expr_parts.append("metadata = :meta")
+            attr_values[":meta"] = {"M": _serialize_metadata(meta)}
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     _ddb.update_item(
         TableName=_TABLE,

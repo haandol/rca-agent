@@ -621,6 +621,16 @@ def _run_pipeline(
             s3_vectors_client=s3_vectors_client,
         )
         s.output_summary = f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"
+        s.metadata = {
+            "playbook_id": playbook.playbook_id,
+            "failure_type": playbook.failure_type,
+            "symptom_pattern": playbook.symptom_pattern,
+            "verification_steps": playbook.verification_steps,
+            "temporary_mitigation": playbook.temporary_mitigation,
+            "permanent_remediation": playbook.permanent_remediation,
+            "prevention_measures": playbook.prevention_measures,
+            "tags": playbook.tags,
+        }
     logger.info("Playbook %s: %s", playbook.playbook_id, playbook.failure_type)
 
     # F9: Notification (includes playbook for downstream Remediation Agent)

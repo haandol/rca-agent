@@ -26,8 +26,9 @@ end_span(span_id=span["span_id"], status="COMPLETED", output_summary="결과 요
 | 2 | 가설 생성 | 서브에이전트 |
 | 3-7 | 검증 루프 (최대 3회) | 서브에이전트 |
 | 8 | 보고서 생성 | 메인 에이전트 (직접) |
-| 9 | 자동 복구 | 메인 에이전트 (직접) |
-| 10 | 복구 검증 | 메인 에이전트 (직접) |
+| 9 | 플레이북 생성 | 메인 에이전트 (직접) |
+| 10 | 자동 복구 | 메인 에이전트 (직접) |
+| 11 | 복구 검증 | 메인 에이전트 (직접) |
 
 ---
 
@@ -186,7 +187,38 @@ report_span = start_span(span_type="REPORT", input_summary="최종 RCA 보고서
 end_span(span_id=report_span["span_id"], status="COMPLETED", output_summary="보고서 생성 완료")
 ```
 
-## 9단계: 자동 복구 (직접 수행)
+## 9단계: 플레이북 생성 (직접 수행)
+
+```
+playbook_span = start_span(span_type="PLAYBOOK", input_summary="플레이북 생성")
+```
+
+보고서의 근본원인, 증거, 완화/복구 방안을 기반으로 재사용 가능한 플레이북을 생성한다.
+
+플레이북에 포함할 항목:
+1. **장애 유형** (`failure_type`): 장애 분류 (예: db-connection-leak, high-cpu, memory-pressure, slow-query)
+2. **증상 패턴** (`symptom_pattern`): 이 장애가 발생했을 때 관측되는 증상
+3. **검증 절차** (`verification_steps`): 장애 확인을 위해 수행할 단계 목록
+4. **임시 완화** (`temporary_mitigation`): 즉각적 영향 감소 조치
+5. **영구 복구** (`permanent_remediation`): 장기 수정 권장 사항
+6. **재발 방지** (`prevention_measures`): 재발 방지를 위한 조치 목록
+7. **태그** (`tags`): 검색용 키워드 목록
+
+**반드시 `save_artifact("playbook.md", ...)` 로 저장한다.**
+
+`end_span` 호출 시 `metadata_json`에 플레이북 필드를 포함한다:
+```
+end_span(
+  span_id=playbook_span["span_id"],
+  status="COMPLETED",
+  output_summary="플레이북 생성 완료: {failure_type}",
+  metadata_json='{"playbook_id": "...", "failure_type": "...", "symptom_pattern": "...", "verification_steps": [...], "temporary_mitigation": "...", "permanent_remediation": "...", "prevention_measures": [...], "tags": [...]}'
+)
+```
+
+---
+
+## 10단계: 자동 복구 (직접 수행)
 
 ```
 remediation_span = start_span(span_type="REMEDIATION", input_summary="자동 복구 시도")
@@ -207,7 +239,7 @@ remediation_span = start_span(span_type="REMEDIATION", input_summary="자동 복
 end_span(span_id=remediation_span["span_id"], status="COMPLETED", output_summary="복구 조치: ...")
 ```
 
-## 10단계: 복구 검증 (직접 수행)
+## 11단계: 복구 검증 (직접 수행)
 
 ```
 verification_span = start_span(span_type="VERIFICATION", input_summary="복구 검증")

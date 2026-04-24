@@ -409,6 +409,8 @@ def _serialize_metadata(meta: dict) -> dict:
             result[k] = {"BOOL": v}
         elif isinstance(v, (int, float)):
             result[k] = {"N": str(v)}
+        elif isinstance(v, list):
+            result[k] = {"L": [{"S": str(i)} for i in v]}
         else:
             result[k] = {"S": str(v)}
     return result
@@ -487,6 +489,8 @@ def _deserialize_metadata(meta_map: dict | None) -> dict | None:
             result[k] = int(n) if "." not in n else float(n)
         elif "BOOL" in v:
             result[k] = v["BOOL"]
+        elif "L" in v:
+            result[k] = [i.get("S", str(i)) for i in v["L"]]
         else:
             result[k] = str(v)
     return result

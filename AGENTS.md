@@ -162,7 +162,7 @@ graph TB
 
 ### Agent Pipeline — Fargate (Strands, 9단계)
 
-에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북을 포함한 SNS 알림을 발행합니다. Remediation과 Verification은 별도 에이전트가 SNS → SQS로 구독하여 수행합니다.
+에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북을 포함한 SNS 알림을 발행합니다. **플레이북은 생성/저장/인덱싱만 수행되며, 자동 복구(Remediation)는 아직 미구현입니다.** ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 수행하도록 설계되었으나, 해당 에이전트는 아직 배포되지 않았습니다. `remediation.py`와 `verification.py` 모듈이 준비되어 있습니다.
 
 ```mermaid
 stateDiagram-v2
@@ -246,7 +246,7 @@ stateDiagram-v2
     note right of NOTIFICATION
         presigned URL + 플레이북 포함
         SNS 발행 (backoff 재시도 3회)
-        Remediation Agent가 SNS → SQS로 구독
+        (Remediation Agent 미구현 — ADR 0012)
     end note
 
     COMPLETED --> [*]
@@ -273,7 +273,8 @@ stateDiagram-v2
     note right of ANALYZING
         claude -p <prompt> --output-format json
         --mcp-config mcp-config.json
-        프롬프트 내 10단계 RCA 워크플로우
+        프롬프트 내 11단계 RCA 워크플로우
+        (스코핑~검증~보고서~플레이북~복구~검증)
         (타임아웃 제한 없음, ECS Fargate)
     end note
 
@@ -419,10 +420,10 @@ flowchart TD
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: Prioritization → Beam Selection → Evidence → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
-- **Remediation 분리**: 플레이북을 포함한 SNS 알림 발행 후 별도 Remediation Agent가 복구 수행 (ADR agent/0012)
+- **Remediation 분리 (미구현)**: 플레이북을 포함한 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독하여 복구를 수행하도록 설계(ADR agent/0012)되었으나, 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
 
 #### Fargate Stack (CC Headless)
-- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 10단계 워크플로우 정의 (스코핑 ~ 복구 ~ 보고서), CC가 자율적으로 MCP 도구 호출
+- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 11단계 워크플로우 정의 (스코핑 ~ 보고서 ~ 플레이북 ~ 복구 ~ 검증), CC가 자율적으로 MCP 도구 호출. Strands와 달리 복구를 프롬프트 내에서 직접 수행
 - **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
 - **타임아웃 없음**: ECS Fargate에서 실행되므로 Lambda 15분 제한 없음
 - **멱등성**: DynamoDB `IDEMP#` 키로 Strands 스택과의 중복 처리 방지

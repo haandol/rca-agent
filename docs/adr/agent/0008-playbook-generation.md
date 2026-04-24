@@ -58,8 +58,18 @@ Accepted
 
 - 근본 원인 미확정 RCA에서 생성된 플레이북이 향후 유사 장애 시 오도할 수 있다. "추정 원인 기반" 플레이북으로 명시하고 검증 부족 항목을 표기하여 완화한다.
 
+## Implementation Status
+
+- **플레이북 생성/저장/인덱싱**: 구현 완료 (Strands F8 단계, CC Headless 9단계)
+- **유사 플레이북 검색**: 구현 완료 (Scoping 단계에서 S3 Vectors 검색)
+- **플레이북 기반 자동 복구**: **미구현** — ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 플레이북의 복구 절차를 실행하도록 설계되었으나, Remediation Agent가 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
+- **대시보드 표시**: 구현 완료 (트레이스 뷰에서 PLAYBOOK span 선택 시 플레이북 상세 표시)
+
+현재 플레이북은 생성 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행되며, 다음 알람 수신 시 Scoping 단계에서 유사 플레이북으로 검색되어 가설 생성에 참고된다. 그러나 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동으로 실행하는 경로는 아직 연결되지 않았다.
+
 ## Related
 
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 플레이북의 입력인 RCA 보고서를 생성하는 단계
 - [ADR agent/0001: 초기 스코핑 전략](0001-initial-scoping-strategy.md) — 플레이북을 유사도 검색하여 활용하는 단계
+- [ADR agent/0012: 자동 복구](0012-automated-remediation.md) — 플레이북 기반 복구를 별도 에이전트로 분리 (미구현)
 - [ADR infra/0002: 증거 저장](../infra/0002-evidence-storage.md) — 플레이북도 S3 + S3 Vectors에 저장
