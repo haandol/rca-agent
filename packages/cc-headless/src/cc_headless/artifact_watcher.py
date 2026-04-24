@@ -20,6 +20,7 @@ _POLL_INTERVAL = 3
 ARTIFACT_SPAN_MAP: dict[str, str] = {
     "scoping.json": "SCOPING",
     "hypotheses.json": "HYPOTHESIS_GENERATION",
+    "playbook.json": "PLAYBOOK",
     "report.md": "REPORT",
 }
 
@@ -32,6 +33,29 @@ def _now_iso() -> str:
 
 def _ttl() -> str:
     return str(int(time.time()) + SESSION_TTL_DAYS * 86400)
+
+
+_PLAYBOOK_STR_FIELDS = (
+    "playbook_id",
+    "failure_type",
+    "symptom_pattern",
+    "temporary_mitigation",
+    "permanent_remediation",
+)
+_PLAYBOOK_LIST_FIELDS = ("verification_steps", "prevention_measures", "tags")
+
+
+def _build_playbook_metadata(artifact: dict) -> dict:
+    meta: dict = {}
+    for k in _PLAYBOOK_STR_FIELDS:
+        v = artifact.get(k)
+        if v:
+            meta[k] = {"S": str(v)}
+    for k in _PLAYBOOK_LIST_FIELDS:
+        v = artifact.get(k)
+        if isinstance(v, list) and v:
+            meta[k] = {"L": [{"S": str(i)} for i in v]}
+    return meta
 
 
 def _write_span(
@@ -82,6 +106,11 @@ def _write_span(
         item["loop_index"] = {"N": str(loop_index)}
     if error_msg:
         item["error"] = {"S": error_msg}
+
+    if span_type == "PLAYBOOK" and artifact:
+        meta = _build_playbook_metadata(artifact)
+        if meta:
+            item["metadata"] = {"M": meta}
 
     try:
         ddb.put_item(TableName=DYNAMODB_TABLE_NAME, Item=item)

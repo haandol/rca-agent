@@ -28,6 +28,8 @@ def send_notification(
     root_cause: str,
     report_s3_key: str,
     elapsed_seconds: int,
+    *,
+    playbook: dict | None = None,
 ) -> None:
     if not SNS_NOTIFICATION_TOPIC_ARN:
         return
@@ -43,19 +45,26 @@ def send_notification(
         except Exception:
             logger.warning("presigned_url_failed", rca_id=rca_id)
 
-    message = json.dumps(
-        {
-            "rca_id": rca_id,
-            "alarm_name": alarm_name,
-            "root_cause": root_cause,
-            "report_url": report_url,
-            "engine": ENGINE,
-            "elapsed_seconds": elapsed_seconds,
+    body: dict = {
+        "rca_id": rca_id,
+        "alarm_name": alarm_name,
+        "root_cause": root_cause,
+        "report_url": report_url,
+        "engine": ENGINE,
+        "elapsed_seconds": elapsed_seconds,
+    }
+    if playbook:
+        body["playbook"] = {
+            "playbook_id": playbook.get("playbook_id", ""),
+            "failure_type": playbook.get("failure_type", ""),
+            "symptom_pattern": playbook.get("symptom_pattern", ""),
+            "verification_steps": playbook.get("verification_steps", []),
+            "temporary_mitigation": playbook.get("temporary_mitigation", ""),
+            "permanent_remediation": playbook.get("permanent_remediation", ""),
         }
-    )
 
     _sns.publish(
         TopicArn=SNS_NOTIFICATION_TOPIC_ARN,
         Subject=f"[RCA] {alarm_name} — Analysis Complete ({ENGINE})",
-        Message=message,
+        Message=json.dumps(body),
     )

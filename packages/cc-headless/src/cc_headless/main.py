@@ -17,6 +17,7 @@ from cc_headless.cc_runner import run_claude
 from cc_headless.config import DYNAMODB_TABLE_NAME, ENGINE, SQS_POLL_WAIT_SECONDS, SQS_QUEUE_URL
 from cc_headless.healthz import start_health_server
 from cc_headless.logging import setup_logging
+from cc_headless.playbook_store import load_playbook, save_playbook_to_s3_vectors
 from cc_headless.prompt_builder import build_prompt
 from cc_headless.report_store import save_report, send_notification
 from cc_headless.session_store import (
@@ -129,8 +130,14 @@ def _run_rca(
             match = re.search(r"## Root Cause\n+(.+)", report_markdown)
         root_cause_line = match.group(1) if match else report_markdown[:200]
 
+        playbook = load_playbook(artifact_dir)
+        if playbook:
+            metric_name = alarm.metric_name or ""
+            save_playbook_to_s3_vectors(playbook, rca_id, metric_name=metric_name)
+            log.info("playbook_saved", playbook_id=playbook.get("playbook_id"))
+
         mark_completed(rca_id, root_cause_line)
-        send_notification(rca_id, alarm.alarm_name, root_cause_line, report_key, elapsed_seconds)
+        send_notification(rca_id, alarm.alarm_name, root_cause_line, report_key, elapsed_seconds, playbook=playbook)
 
         log.info("rca_complete", elapsed_seconds=elapsed_seconds, root_cause=root_cause_line[:200])
         return True
