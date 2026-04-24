@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rca_agent.evidence import EvidenceCollectionSummary
 from rca_agent.models import (
     Hypothesis,
     HypothesisCategory,
@@ -428,8 +429,7 @@ class TestPipelineFinalizeBeforeReport:
             patch("rca_agent.main.run_scoping", return_value=sr),
             patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
             patch("rca_agent.main.run_prioritization", return_value=MagicMock()),
-            patch("rca_agent.main.run_evidence_collection", return_value={}),
-            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
+            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
             patch("rca_agent.main.run_validation", return_value=vr),
             patch("rca_agent.main.check_termination", return_value=td),
             patch("rca_agent.main.run_report_generation", return_value=rca),

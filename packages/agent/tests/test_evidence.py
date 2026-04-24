@@ -5,7 +5,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from rca_agent.evidence import (
+    EVIDENCE_FAILED_SENTINEL,
     EvidenceCollectionResult,
+    EvidenceCollectionSummary,
     EvidenceOutput,
     _build_user_prompt,
     collect_evidence,
@@ -102,78 +104,121 @@ class TestBuildUserPrompt:
 
 
 class TestCollectEvidence:
-    def test_returns_combined_evidence(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_returns_combined_evidence(self, mock_create, hypothesis, scoping_result):
         output = _make_evidence_output()
-        agent = _make_mock_agent(output)
+        mock_create.return_value = _make_mock_agent(output)
 
-        result = collect_evidence(hypothesis, scoping_result, agent)
+        result = collect_evidence(hypothesis, scoping_result)
 
         assert isinstance(result, EvidenceCollectionResult)
         assert result.hypothesis_id == "h-1"
-        assert "CPU at 92%" in result.evidence_text
-        assert "Too many connections" in result.evidence_text
-        assert "Deployment at 10:00" in result.evidence_text
+        assert "CPU at 92%" in result.full_evidence
+        assert "Too many connections" in result.full_evidence
+        assert "Deployment at 10:00" in result.full_evidence
         assert "metrics" in result.evidence_types
         assert "logs" in result.evidence_types
         assert "deploy_history" in result.evidence_types
+        assert not result.failed
 
-    def test_includes_code_change_evidence(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_summary_from_combined_summary(self, mock_create, hypothesis, scoping_result):
+        output = _make_evidence_output(summary="Deploy caused CPU spike")
+        mock_create.return_value = _make_mock_agent(output)
+
+        result = collect_evidence(hypothesis, scoping_result)
+
+        assert result.summary == "Deploy caused CPU spike"
+
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_includes_code_change_evidence(self, mock_create, hypothesis, scoping_result):
         output = _make_evidence_output(code_change="Removed connection.close() in db.py:42")
-        agent = _make_mock_agent(output)
+        mock_create.return_value = _make_mock_agent(output)
 
-        result = collect_evidence(hypothesis, scoping_result, agent)
+        result = collect_evidence(hypothesis, scoping_result)
 
-        assert "connection.close()" in result.evidence_text
+        assert "connection.close()" in result.full_evidence
         assert "code_change" in result.evidence_types
 
-    def test_handles_partial_evidence(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_handles_partial_evidence(self, mock_create, hypothesis, scoping_result):
         output = EvidenceOutput(metrics_evidence="CPU high", logs_evidence="", deploy_evidence="")
-        agent = _make_mock_agent(output)
+        mock_create.return_value = _make_mock_agent(output)
 
-        result = collect_evidence(hypothesis, scoping_result, agent)
+        result = collect_evidence(hypothesis, scoping_result)
 
-        assert "CPU high" in result.evidence_text
+        assert "CPU high" in result.full_evidence
         assert result.evidence_types == ["metrics"]
 
-    def test_handles_empty_evidence(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_handles_empty_evidence(self, mock_create, hypothesis, scoping_result):
         output = EvidenceOutput()
-        agent = _make_mock_agent(output)
+        mock_create.return_value = _make_mock_agent(output)
 
-        result = collect_evidence(hypothesis, scoping_result, agent)
+        result = collect_evidence(hypothesis, scoping_result)
 
-        assert "No evidence could be collected" in result.evidence_text
+        assert "No evidence could be collected" in result.full_evidence
 
-    def test_handles_timeout(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_handles_timeout(self, mock_create, hypothesis, scoping_result):
         import time as _time
 
         def slow_agent(prompt, **kwargs):
             _time.sleep(5)
 
-        agent = MagicMock(side_effect=slow_agent)
+        mock_agent = MagicMock(side_effect=slow_agent)
+        mock_create.return_value = mock_agent
 
-        result = collect_evidence(hypothesis, scoping_result, agent, timeout_seconds=1)
+        result = collect_evidence(hypothesis, scoping_result, timeout_seconds=1)
 
-        assert "timed out or failed" in result.evidence_text
+        assert result.failed
+        assert result.summary == EVIDENCE_FAILED_SENTINEL
 
-    def test_handles_agent_exception(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
-        agent = MagicMock(side_effect=RuntimeError("boom"))
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_handles_agent_exception(self, mock_create, hypothesis, scoping_result):
+        mock_agent = MagicMock(side_effect=RuntimeError("boom"))
+        mock_create.return_value = mock_agent
 
-        result = collect_evidence(hypothesis, scoping_result, agent)
+        result = collect_evidence(hypothesis, scoping_result)
 
-        assert "timed out or failed" in result.evidence_text
+        assert result.failed
+        assert result.summary == EVIDENCE_FAILED_SENTINEL
 
-    def test_passes_structured_output_model(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_passes_structured_output_model(self, mock_create, hypothesis, scoping_result):
         output = _make_evidence_output()
-        agent = _make_mock_agent(output)
+        mock_agent = _make_mock_agent(output)
+        mock_create.return_value = mock_agent
 
-        collect_evidence(hypothesis, scoping_result, agent)
+        collect_evidence(hypothesis, scoping_result)
 
-        _, kwargs = agent.call_args
+        _, kwargs = mock_agent.call_args
         assert kwargs["structured_output_model"] is EvidenceOutput
+
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_passes_mcp_clients(self, mock_create, hypothesis, scoping_result):
+        output = _make_evidence_output()
+        mock_create.return_value = _make_mock_agent(output)
+        mcp_clients = [MagicMock(), MagicMock()]
+
+        collect_evidence(hypothesis, scoping_result, mcp_clients=mcp_clients)
+
+        mock_create.assert_called_once_with(mcp_clients=mcp_clients)
+
+    @patch("rca_agent.evidence.create_evidence_collection_agent")
+    def test_creates_fresh_agent_per_call(self, mock_create, hypothesis, scoping_result):
+        output = _make_evidence_output()
+        mock_create.return_value = _make_mock_agent(output)
+
+        collect_evidence(hypothesis, scoping_result)
+        collect_evidence(hypothesis, scoping_result)
+
+        assert mock_create.call_count == 2
 
 
 class TestRunEvidenceCollection:
-    def test_collects_for_all_hypotheses(self, scoping_result: ScopingResult):
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_collects_for_all_hypotheses(self, mock_collect, scoping_result):
         h1 = Hypothesis(
             hypothesis_id="h-1",
             description="Hypothesis 1",
@@ -189,14 +234,164 @@ class TestRunEvidenceCollection:
             tree_id="tree-1",
         )
 
-        output = _make_evidence_output()
-        agent = _make_mock_agent(output)
+        mock_collect.side_effect = [
+            EvidenceCollectionResult(
+                hypothesis_id="h-1",
+                summary="Evidence for h-1",
+                full_evidence="Full evidence for h-1",
+                evidence_types=["metrics"],
+            ),
+            EvidenceCollectionResult(
+                hypothesis_id="h-2",
+                summary="Evidence for h-2",
+                full_evidence="Full evidence for h-2",
+                evidence_types=["logs"],
+            ),
+        ]
 
-        evidence_map = run_evidence_collection([h1, h2], scoping_result, agent)
+        summary = run_evidence_collection([h1, h2], scoping_result)
 
-        assert "h-1" in evidence_map
-        assert "h-2" in evidence_map
-        assert agent.call_count == 2
+        assert isinstance(summary, EvidenceCollectionSummary)
+        assert "h-1" in summary.evidence_map
+        assert "h-2" in summary.evidence_map
+        assert len(summary.failed_ids) == 0
+        assert mock_collect.call_count == 2
+
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_tracks_failed_hypotheses(self, mock_collect, scoping_result):
+        h1 = Hypothesis(
+            hypothesis_id="h-1",
+            description="Hypothesis 1",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1",
+            summary=EVIDENCE_FAILED_SENTINEL,
+            full_evidence=EVIDENCE_FAILED_SENTINEL,
+            failed=True,
+        )
+
+        summary = run_evidence_collection([h1], scoping_result)
+
+        assert "h-1" in summary.failed_ids
+        assert summary.evidence_map["h-1"] == EVIDENCE_FAILED_SENTINEL
+
+    @patch("rca_agent.evidence._save_single_evidence_to_s3")
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_saves_to_s3_when_rca_id_provided(self, mock_collect, mock_s3_save, scoping_result):
+        h1 = Hypothesis(
+            hypothesis_id="h-1",
+            description="Hypothesis 1",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1",
+            summary="Evidence summary",
+            full_evidence="Full evidence text",
+            evidence_types=["metrics"],
+        )
+        s3_client = MagicMock()
+
+        run_evidence_collection(
+            [h1],
+            scoping_result,
+            rca_id="rca-123",
+            s3_client=s3_client,
+        )
+
+        mock_s3_save.assert_called_once_with(
+            "rca-123",
+            "h-1",
+            "Full evidence text",
+            s3_client=s3_client,
+        )
+
+    @patch("rca_agent.evidence._save_single_evidence_to_s3")
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_skips_s3_for_failed_evidence(self, mock_collect, mock_s3_save, scoping_result):
+        h1 = Hypothesis(
+            hypothesis_id="h-1",
+            description="Hypothesis 1",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1",
+            summary=EVIDENCE_FAILED_SENTINEL,
+            full_evidence=EVIDENCE_FAILED_SENTINEL,
+            failed=True,
+        )
+
+        run_evidence_collection(
+            [h1],
+            scoping_result,
+            rca_id="rca-123",
+            s3_client=MagicMock(),
+        )
+
+        mock_s3_save.assert_not_called()
+
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_updates_trace(self, mock_collect, scoping_result):
+        h1 = Hypothesis(
+            hypothesis_id="h-1",
+            description="Hypothesis 1",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1",
+            summary="Evidence summary",
+            full_evidence="Full evidence text",
+            evidence_types=["metrics"],
+        )
+        trace = MagicMock()
+
+        run_evidence_collection([h1], scoping_result, trace=trace)
+
+        trace.update_hypothesis_evidence.assert_called_once_with(
+            "h-1",
+            evidence_summary="Evidence summary",
+        )
+
+    @patch("rca_agent.evidence.collect_evidence")
+    def test_passes_mcp_clients_and_timeout(self, mock_collect, scoping_result):
+        h1 = Hypothesis(
+            hypothesis_id="h-1",
+            description="Hypothesis 1",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1",
+            summary="s",
+            full_evidence="f",
+            evidence_types=[],
+        )
+        mcp_clients = [MagicMock()]
+
+        run_evidence_collection(
+            [h1],
+            scoping_result,
+            mcp_clients=mcp_clients,
+            timeout_seconds=30,
+        )
+
+        _, kwargs = mock_collect.call_args
+        assert kwargs["mcp_clients"] is mcp_clients
+        assert kwargs["timeout_seconds"] == 30
 
 
 class TestSaveEvidenceToS3:

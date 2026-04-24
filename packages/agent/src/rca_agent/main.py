@@ -15,7 +15,6 @@ from rca_agent.agent_factory import (
     create_branching_agent,
     create_cloudtrail_mcp_client,
     create_cloudwatch_mcp_client,
-    create_evidence_collection_agent,
     create_github_mcp_client,
     create_hypothesis_generation_agent,
     create_playbook_agent,
@@ -35,7 +34,7 @@ from rca_agent.config import (
     S3_VECTOR_BUCKET_NAME,
     SNS_NOTIFICATION_TOPIC_ARN,
 )
-from rca_agent.evidence import run_evidence_collection, save_evidence_to_s3
+from rca_agent.evidence import run_evidence_collection
 from rca_agent.healthz import start_health_server
 from rca_agent.hypothesis import run_hypothesis_generation
 from rca_agent.models import AlarmPayload, HypothesisStatus, Playbook, RcaSessionState, TerminationReason
@@ -137,11 +136,14 @@ class _Agents:
         self._scoping = None
         self._hypothesis = None
         self._prioritization = None
-        self._evidence = None
         self._validation = None
         self._branching = None
         self._report = None
         self._playbook = None
+
+    @property
+    def evidence_mcp_clients(self):
+        return self._evidence_mcp_clients
 
     @property
     def scoping(self):
@@ -160,12 +162,6 @@ class _Agents:
         if self._prioritization is None:
             self._prioritization = create_prioritization_agent()
         return self._prioritization
-
-    @property
-    def evidence(self):
-        if self._evidence is None:
-            self._evidence = create_evidence_collection_agent(mcp_clients=self._evidence_mcp_clients)
-        return self._evidence
 
     @property
     def validation(self):
@@ -340,6 +336,7 @@ def _run_pipeline(
     regeneration_count = 0
     timeline: list[str] = []
     evidence_map: dict[str, str] = {}
+    evidence_failed_ids: set[str] = set()
 
     timeline.append(f"Alarm received: {alarm.alarm_name}")
     timeline.append(f"Scoping complete: severity={scoping_result.initial_severity}")
@@ -384,15 +381,16 @@ def _run_pipeline(
             input_summary=f"beam={len(active_hypotheses)}개, 신규={len(new_hypotheses)}개",
         ) as s:
             if new_hypotheses:
-                new_evidence = run_evidence_collection(
+                ev_summary = run_evidence_collection(
                     new_hypotheses,
                     scoping_result,
-                    agents.evidence,
+                    mcp_clients=agents.evidence_mcp_clients,
+                    rca_id=rca_id,
+                    trace=trace,
+                    s3_client=s3_client,
                 )
-                evidence_map.update(new_evidence)
-                save_evidence_to_s3(rca_id, new_evidence, s3_client=s3_client)
-                for h_id, ev_text in new_evidence.items():
-                    trace.update_hypothesis_evidence(h_id, evidence_summary=ev_text[:500])
+                evidence_map.update(ev_summary.evidence_map)
+                evidence_failed_ids.update(ev_summary.failed_ids)
             s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
             s.metadata = {"신규_가설_수": len(new_hypotheses), "beam_width": RCA_BEAM_WIDTH}
         timeline.append(
@@ -411,6 +409,7 @@ def _run_pipeline(
                 active_hypotheses,
                 evidence_map,
                 agents.validation,
+                evidence_failed_ids=evidence_failed_ids,
             )
             all_judgments = validation_result.judgments
             confirmed_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.CONFIRMED)

@@ -37,6 +37,7 @@ adr/
 - [ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인](agent/0011-cc-headless-prompt-driven-rca.md)
 - [ADR 0012: 자동 복구(Remediation) — 별도 에이전트로 분리한 이벤트 기반 복구](agent/0012-automated-remediation.md)
 - [ADR 0013: Beam Search 탐색 전략 — 우선순위 상위 N개 가설 선택적 검증](agent/0013-beam-search-traversal.md)
+- [ADR 0014: 계층형 증거 수집 세션 격리 — 가설별 독립 컨텍스트 윈도우 관리](agent/0014-hierarchical-evidence-session-isolation.md)
 
 ### Tools
 

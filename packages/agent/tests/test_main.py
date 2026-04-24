@@ -1,6 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from rca_agent.evidence import EvidenceCollectionSummary
 from rca_agent.main import _Agents, _parse_sns_envelope, _process_alarm, _prune_subtree
 from rca_agent.models import (
     Hypothesis,
@@ -56,6 +57,7 @@ def _make_agents():
     agents.scoping = MagicMock()
     agents.hypothesis = MagicMock()
     agents.prioritization = MagicMock()
+    agents.evidence_mcp_clients = [MagicMock()]
     agents.validation = MagicMock()
     agents.branching = MagicMock()
     agents.report = MagicMock()
@@ -131,7 +133,6 @@ class TestProcessAlarmFullPipeline:
             "run_hypothesis_generation",
             "run_prioritization",
             "run_evidence_collection",
-            "save_evidence_to_s3",
             "run_validation",
             "check_termination",
             "run_report_generation",
@@ -150,8 +151,10 @@ class TestProcessAlarmFullPipeline:
             sr,
             hr,
             MagicMock(),
-            {"h-1": "metrics evidence", "h-2": "logs evidence"},
-            [],
+            EvidenceCollectionSummary(
+                evidence_map={"h-1": "metrics evidence", "h-2": "logs evidence"},
+                failed_ids=set(),
+            ),
             vr,
             td,
             rca,
@@ -207,8 +210,7 @@ class TestProcessAlarmFullPipeline:
             patch("rca_agent.main.mark_failed", return_value=True),
             patch("rca_agent.main.run_scoping", return_value=_scoping()),
             patch("rca_agent.main.run_hypothesis_generation", return_value=empty_hr),
-            patch("rca_agent.main.run_evidence_collection", return_value={}),
-            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
+            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
             patch("rca_agent.main.run_prioritization") as mock_prio,
         ):
             _process_alarm(_make_body(), _make_agents())
@@ -264,8 +266,7 @@ class TestProcessAlarmFullPipeline:
                 side_effect=[hr1, hr2],
             ) as mock_hypo,
             patch("rca_agent.main.run_prioritization"),
-            patch("rca_agent.main.run_evidence_collection", return_value={}),
-            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
+            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
             patch(
                 "rca_agent.main.run_validation",
                 side_effect=[vr_rejected, vr_confirmed],
@@ -337,8 +338,7 @@ class TestProcessAlarmFullPipeline:
             patch("rca_agent.main.run_scoping", return_value=_scoping()),
             patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
             patch("rca_agent.main.run_prioritization"),
-            patch("rca_agent.main.run_evidence_collection", return_value={}),
-            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
+            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
             patch(
                 "rca_agent.main.run_validation",
                 side_effect=[vr_needs, vr_confirmed],
@@ -398,8 +398,7 @@ class TestProcessAlarmFullPipeline:
             patch("rca_agent.main.run_scoping", return_value=_scoping()) as mock_scoping,
             patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
             patch("rca_agent.main.run_prioritization"),
-            patch("rca_agent.main.run_evidence_collection", return_value={}),
-            patch("rca_agent.main.save_evidence_to_s3", return_value=[]),
+            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
             patch("rca_agent.main.run_validation", return_value=vr),
             patch("rca_agent.main.check_termination", return_value=td),
             patch("rca_agent.main.run_report_generation", return_value=rca),
@@ -452,7 +451,6 @@ class TestProcessAlarmFullPipeline:
     def test_evidence_collection_called_in_pipeline(self):
         mocks = self._run()
         mocks["run_evidence_collection"].assert_called_once()
-        mocks["save_evidence_to_s3"].assert_called_once()
 
     def test_cancelled_session_stops_pipeline(self):
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)

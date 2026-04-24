@@ -204,6 +204,10 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                   }">{{ selectedNode.status }}</span>
                   <span v-if="selectedNode.durationMs" class="badge badge-sm badge-ghost font-mono">{{ formatDuration(selectedNode.durationMs) }}</span>
                 </div>
+                <div v-if="selectedNode.spanId" class="mt-2">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-0.5">Span ID</div>
+                  <div class="text-[10px] font-mono text-base-content/50 truncate select-all" :title="selectedNode.spanId">{{ selectedNode.spanId }}</div>
+                </div>
 
                 <div v-if="selectedNode.metadata.failure_type" class="mt-3">
                   <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1">장애 유형</div>
@@ -267,6 +271,10 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                     'badge-warning': selectedNode.status === 'RUNNING',
                   }">{{ selectedNode.status }}</span>
                   <span v-if="selectedNode.durationMs" class="badge badge-sm badge-ghost font-mono">{{ formatDuration(selectedNode.durationMs) }}</span>
+                </div>
+                <div v-if="selectedNode.spanId" class="mt-2">
+                  <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-0.5">Span ID</div>
+                  <div class="text-[10px] font-mono text-base-content/50 truncate select-all" :title="selectedNode.spanId">{{ selectedNode.spanId }}</div>
                 </div>
 
                 <div v-if="selectedNode.detail" class="mt-3">

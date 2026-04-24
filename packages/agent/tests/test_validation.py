@@ -14,12 +14,13 @@ from rca_agent.validation import (
 )
 
 
-def _make_hypothesis(hid="h-1", confidence=0.5) -> Hypothesis:
+def _make_hypothesis(hid="h-1", confidence=0.5, required_evidence=None) -> Hypothesis:
     return Hypothesis(
         hypothesis_id=hid,
         description="Test hypothesis",
         category=HypothesisCategory.DEPLOYMENT,
         confidence_score=confidence,
+        required_evidence=required_evidence or [],
         tree_id="tree-1",
     )
 
@@ -94,6 +95,31 @@ class TestValidateHypothesis:
         assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
         assert judgment.confidence_score == h.confidence_score
 
+    def test_caps_confirmed_when_evidence_failed_with_required_evidence(self):
+        h = _make_hypothesis(required_evidence=["deployment history", "logs"])
+        agent = _make_mock_agent(HypothesisStatus.CONFIRMED, 0.9, "Strong evidence")
+
+        judgment = validate_hypothesis(h, "Evidence collection timed out or failed.", agent, evidence_failed=True)
+
+        assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
+        assert judgment.confidence_score == 0.9
+
+    def test_allows_confirmed_when_evidence_failed_but_no_required_evidence(self):
+        h = _make_hypothesis(required_evidence=[])
+        agent = _make_mock_agent(HypothesisStatus.CONFIRMED, 0.9, "Strong evidence")
+
+        judgment = validate_hypothesis(h, "Evidence collection timed out or failed.", agent, evidence_failed=True)
+
+        assert judgment.status == HypothesisStatus.CONFIRMED
+
+    def test_no_cap_when_evidence_succeeded(self):
+        h = _make_hypothesis(required_evidence=["deployment history"])
+        agent = _make_mock_agent(HypothesisStatus.CONFIRMED, 0.9, "Strong evidence")
+
+        judgment = validate_hypothesis(h, "CPU spiked after deploy", agent, evidence_failed=False)
+
+        assert judgment.status == HypothesisStatus.CONFIRMED
+
 
 class TestRunValidation:
     def test_validates_all_hypotheses(self):
@@ -112,3 +138,11 @@ class TestRunValidation:
         result = run_validation(hyps, {}, agent)
 
         assert result.all_rejected
+
+    def test_caps_confirmed_for_failed_evidence_ids(self):
+        hyps = [_make_hypothesis("h-1", required_evidence=["logs"])]
+        agent = _make_mock_agent(HypothesisStatus.CONFIRMED, 0.9)
+
+        result = run_validation(hyps, {"h-1": "timed out"}, agent, evidence_failed_ids={"h-1"})
+
+        assert result.judgments[0].status == HypothesisStatus.NEEDS_INVESTIGATION

@@ -42,6 +42,7 @@ export interface NodeData {
   detail: string
   error?: string | null
   metadata?: Record<string, unknown> | null
+  spanId?: string
   spanType?: string
   category?: string
   confidenceScore?: number
@@ -94,6 +95,7 @@ export function buildTraceGraph(spans: SpanItem[], hypotheses: HypothesisItem[])
         detail: s.outputSummary || s.inputSummary,
         error: s.error,
         metadata: s.metadata,
+        spanId: s.spanId,
         spanType: s.spanType,
         loopIndex: s.loopIndex,
       },

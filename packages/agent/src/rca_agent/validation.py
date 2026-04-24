@@ -68,6 +68,7 @@ def validate_hypothesis(
     agent: Agent,
     *,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
+    evidence_failed: bool = False,
 ) -> ValidationJudgment:
     user_prompt = _build_user_prompt(hypothesis, evidence_text)
 
@@ -91,6 +92,13 @@ def validate_hypothesis(
 
     status = _classify_status(output.judgment.confidence_score)
 
+    if evidence_failed and hypothesis.required_evidence and status == HypothesisStatus.CONFIRMED:
+        logger.warning(
+            "Capping %s from CONFIRMED to NEEDS_INVESTIGATION — evidence failed",
+            hypothesis.hypothesis_id,
+        )
+        status = HypothesisStatus.NEEDS_INVESTIGATION
+
     logger.info(
         "Validation result for %s: %s (confidence=%.2f)",
         hypothesis.hypothesis_id,
@@ -113,13 +121,21 @@ def run_validation(
     agent: Agent,
     *,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
+    evidence_failed_ids: set[str] | None = None,
 ) -> ValidationResult:
     tree_id = hypotheses[0].tree_id if hypotheses else ""
     judgments = []
+    _failed = evidence_failed_ids or set()
 
     for h in hypotheses:
         evidence_text = evidence_map.get(h.hypothesis_id, "")
-        judgment = validate_hypothesis(h, evidence_text, agent, timeout_seconds=timeout_seconds)
+        judgment = validate_hypothesis(
+            h,
+            evidence_text,
+            agent,
+            timeout_seconds=timeout_seconds,
+            evidence_failed=h.hypothesis_id in _failed,
+        )
         judgments.append(judgment)
 
     all_rejected = all(j.status == HypothesisStatus.REJECTED for j in judgments)

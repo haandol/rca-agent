@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from rca_agent.agent_factory import create_evidence_collection_agent
 from rca_agent.config import (
     EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
     S3_EVIDENCE_BUCKET,
@@ -18,10 +19,12 @@ from rca_agent.prompts import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent
+    from strands.tools.mcp import MCPClient
 
 logger = logging.getLogger(__name__)
 
 _S3_BASE_DELAY = 1.0
+_SUMMARY_MAX_LEN = 500
 
 
 class EvidenceOutput(BaseModel):
@@ -36,9 +39,18 @@ class EvidenceOutput(BaseModel):
 
 class EvidenceCollectionResult(BaseModel):
     hypothesis_id: str
-    evidence_text: str
+    summary: str
+    full_evidence: str
     evidence_types: list[str] = Field(default_factory=list)
-    s3_keys: list[str] = Field(default_factory=list)
+    failed: bool = False
+
+
+class EvidenceCollectionSummary(BaseModel):
+    evidence_map: dict[str, str] = Field(default_factory=dict)
+    failed_ids: set[str] = Field(default_factory=set)
+
+
+EVIDENCE_FAILED_SENTINEL = "Evidence collection timed out or failed."
 
 
 def _build_user_prompt(
@@ -76,37 +88,7 @@ def _invoke_agent(agent: Agent, prompt: str) -> EvidenceOutput:
     return result.structured_output
 
 
-def collect_evidence(
-    hypothesis: Hypothesis,
-    scoping_result: ScopingResult,
-    agent: Agent,
-    *,
-    timeout_seconds: int = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
-) -> EvidenceCollectionResult:
-    user_prompt = _build_user_prompt(hypothesis, scoping_result)
-    logger.info(
-        "Collecting evidence for hypothesis %s: %s",
-        hypothesis.hypothesis_id,
-        hypothesis.description[:60],
-    )
-
-    output: EvidenceOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except FuturesTimeoutError:
-            logger.warning("Evidence collection timed out for %s", hypothesis.hypothesis_id)
-            future.cancel()
-        except Exception:
-            logger.exception("Evidence collection failed for %s", hypothesis.hypothesis_id)
-
-    if output is None:
-        return EvidenceCollectionResult(
-            hypothesis_id=hypothesis.hypothesis_id,
-            evidence_text="Evidence collection timed out or failed.",
-        )
-
+def _build_full_evidence(output: EvidenceOutput) -> tuple[str, list[str]]:
     evidence_types = []
     sections = []
     if output.metrics_evidence:
@@ -129,6 +111,46 @@ def collect_evidence(
     if not combined.strip():
         combined = "No evidence could be collected for this hypothesis."
 
+    return combined, evidence_types
+
+
+def collect_evidence(
+    hypothesis: Hypothesis,
+    scoping_result: ScopingResult,
+    *,
+    mcp_clients: list[MCPClient] | None = None,
+    timeout_seconds: int = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
+) -> EvidenceCollectionResult:
+    agent = create_evidence_collection_agent(mcp_clients=mcp_clients)
+    user_prompt = _build_user_prompt(hypothesis, scoping_result)
+    logger.info(
+        "Collecting evidence for hypothesis %s: %s",
+        hypothesis.hypothesis_id,
+        hypothesis.description[:60],
+    )
+
+    output: EvidenceOutput | None = None
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_invoke_agent, agent, user_prompt)
+        try:
+            output = future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError:
+            logger.warning("Evidence collection timed out for %s", hypothesis.hypothesis_id)
+            future.cancel()
+        except Exception:
+            logger.exception("Evidence collection failed for %s", hypothesis.hypothesis_id)
+
+    if output is None:
+        return EvidenceCollectionResult(
+            hypothesis_id=hypothesis.hypothesis_id,
+            summary=EVIDENCE_FAILED_SENTINEL,
+            full_evidence=EVIDENCE_FAILED_SENTINEL,
+            failed=True,
+        )
+
+    full_evidence, evidence_types = _build_full_evidence(output)
+    summary = (output.combined_summary or full_evidence)[:_SUMMARY_MAX_LEN]
+
     logger.info(
         "Evidence collected for %s: types=%s",
         hypothesis.hypothesis_id,
@@ -137,7 +159,8 @@ def collect_evidence(
 
     return EvidenceCollectionResult(
         hypothesis_id=hypothesis.hypothesis_id,
-        evidence_text=combined,
+        summary=summary,
+        full_evidence=full_evidence,
         evidence_types=evidence_types,
     )
 
@@ -145,17 +168,71 @@ def collect_evidence(
 def run_evidence_collection(
     hypotheses: list[Hypothesis],
     scoping_result: ScopingResult,
-    agent: Agent,
     *,
+    mcp_clients: list[MCPClient] | None = None,
     timeout_seconds: int = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
-) -> dict[str, str]:
+    rca_id: str = "",
+    trace=None,
+    s3_client=None,
+) -> EvidenceCollectionSummary:
     evidence_map: dict[str, str] = {}
+    failed_ids: set[str] = set()
 
     for h in hypotheses:
-        result = collect_evidence(h, scoping_result, agent, timeout_seconds=timeout_seconds)
-        evidence_map[h.hypothesis_id] = result.evidence_text
+        result = collect_evidence(
+            h,
+            scoping_result,
+            mcp_clients=mcp_clients,
+            timeout_seconds=timeout_seconds,
+        )
 
-    return evidence_map
+        evidence_map[h.hypothesis_id] = result.summary
+
+        if result.failed:
+            failed_ids.add(h.hypothesis_id)
+
+        if trace:
+            trace.update_hypothesis_evidence(h.hypothesis_id, evidence_summary=result.summary)
+
+        if rca_id and not result.failed:
+            _save_single_evidence_to_s3(rca_id, h.hypothesis_id, result.full_evidence, s3_client=s3_client)
+
+    return EvidenceCollectionSummary(evidence_map=evidence_map, failed_ids=failed_ids)
+
+
+def _save_single_evidence_to_s3(
+    rca_id: str,
+    hypothesis_id: str,
+    evidence_text: str,
+    *,
+    s3_client=None,
+    max_retries: int = S3_EVIDENCE_MAX_RETRIES,
+    base_delay: float = _S3_BASE_DELAY,
+) -> str | None:
+    if not S3_EVIDENCE_BUCKET or s3_client is None:
+        return None
+    if not evidence_text.strip():
+        return None
+
+    key = f"rca/{rca_id}/evidence/{hypothesis_id}/combined.md"
+    for attempt in range(max_retries):
+        try:
+            s3_client.put_object(
+                Bucket=S3_EVIDENCE_BUCKET,
+                Key=key,
+                Body=evidence_text,
+                ContentType="text/markdown",
+            )
+            logger.info("Evidence saved: s3://%s/%s", S3_EVIDENCE_BUCKET, key)
+            return key
+        except Exception:
+            if attempt == max_retries - 1:
+                logger.exception("Failed to save evidence for %s after %d attempts", hypothesis_id, max_retries)
+            else:
+                delay = base_delay * (2**attempt)
+                logger.warning("Evidence save attempt %d failed, retrying in %.1fs", attempt + 1, delay)
+                time.sleep(delay)
+    return None
 
 
 def save_evidence_to_s3(
@@ -172,26 +249,15 @@ def save_evidence_to_s3(
 
     saved_keys = []
     for hypothesis_id, evidence_text in evidence_map.items():
-        if not evidence_text.strip():
-            continue
-        key = f"rca/{rca_id}/evidence/{hypothesis_id}/combined.md"
-        for attempt in range(max_retries):
-            try:
-                s3_client.put_object(
-                    Bucket=S3_EVIDENCE_BUCKET,
-                    Key=key,
-                    Body=evidence_text,
-                    ContentType="text/markdown",
-                )
-                saved_keys.append(key)
-                logger.info("Evidence saved: s3://%s/%s", S3_EVIDENCE_BUCKET, key)
-                break
-            except Exception:
-                if attempt == max_retries - 1:
-                    logger.exception("Failed to save evidence for %s after %d attempts", hypothesis_id, max_retries)
-                else:
-                    delay = base_delay * (2**attempt)
-                    logger.warning("Evidence save attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-                    time.sleep(delay)
+        key = _save_single_evidence_to_s3(
+            rca_id,
+            hypothesis_id,
+            evidence_text,
+            s3_client=s3_client,
+            max_retries=max_retries,
+            base_delay=base_delay,
+        )
+        if key:
+            saved_keys.append(key)
 
     return saved_keys

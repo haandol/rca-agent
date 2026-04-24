@@ -1,10 +1,11 @@
 # ADR 0004: 가설 검증 및 가지치기 — 증거 기반 확정/기각 판단
 
 Date: 2026-04-21
+Updated: 2026-04-24
 
 ## Status
 
-Accepted
+Accepted (Updated — 증거 수집 실패 시 CONFIRMED 방지 가드레일 추가)
 
 ## Context
 
@@ -38,6 +39,8 @@ Accepted
 
 5. **타임아웃 및 fallback**: 개별 가설 검증에 `ThreadPoolExecutor` 120초 타임아웃을 적용하며, 실패 시 기존 confidence_score를 유지하고 `NEEDS_INVESTIGATION` 상태로 처리하여 추가 조사 기회를 보존한다.
 
+8. **증거 수집 실패 시 CONFIRMED 방지**: 증거 수집이 타임아웃 또는 예외로 실패한 가설에 대해, `required_evidence`가 비어있지 않으면 **CONFIRMED 상태를 금지**하고 최대 `NEEDS_INVESTIGATION`까지만 허용한다. 이는 LLM이 가설 description과 이전 confidence_score만으로 높은 신뢰도를 부여하여 증거 없이 확정되는 문제를 방지한다. `required_evidence`가 비어있는 가설은 증거 없이도 확정 가능하다. 증거 수집 모듈에서 실패한 가설 ID 목록을 별도로 추적하여 검증 단계에 전달한다.
+
 6. **루프 종료 시 미검증 가설 자동 정리 (CLOSED)**: 검증 루프가 종료되면(CONFIRMED 발견, 시간 초과, 최대 루프 등) PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설을 **CLOSED**로 처리한다. REJECTED는 증거에 의해 명시적으로 기각된 경우에만 사용하고, 예산 소진/미검증으로 종료된 가설은 CLOSED로 구분한다. `judgment_reasoning`에 종료 사유별 한글 메시지를 기록한다(예: "시간 예산 소진", "확정된 근본원인 발견으로 추가 검증 불필요", "최대 검증 루프 초과" 등). best_hypothesis로 선택된 가설은 제외한다. 이를 통해 세션 완료 시 모든 가설이 CONFIRMED, REJECTED, CLOSED 중 하나의 최종 상태를 갖게 된다. CC Headless에서도 산출물 파싱과 프롬프트로 동일한 동작을 구현한다.
 
 7. **모델 티어**: **Execution 티어**(Haiku 4.5)를 사용한다. 수집된 증거 대비 가설의 지지/반박을 판정하는 단순 분류 작업이므로 경량 모델로 충분하다. [ADR agent/0010](0010-model-tier-architecture.md) 참조.
@@ -57,9 +60,10 @@ Accepted
 
 ### Risks
 
-- 증거가 부족한 상태에서 LLM이 높은 신뢰도로 오판할 수 있다. 증거 수량이 최소 기준 미달 시 `NEEDS_INVESTIGATION`으로 강제 처리하여 완화한다.
+- 증거가 부족한 상태에서 LLM이 높은 신뢰도로 오판할 수 있다. 증거 수집 실패 시 `required_evidence`가 존재하면 CONFIRMED를 NEEDS_INVESTIGATION으로 cap하여 완화한다(결정사항 8번).
 - 모든 가설 기각 후 추가 가설 생성 루프가 무한 반복될 수 있다. 최대 2회 추가 생성으로 제한한다.
 
 ## Related
 
 - [ADR agent/0003: 가설 우선순위 결정](0003-hypothesis-prioritization.md) — 검증 순서를 결정하는 이전 단계
+- [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집 실패의 근본 원인(컨텍스트 오버플로우) 해결
