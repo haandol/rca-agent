@@ -87,9 +87,13 @@ def update_state(rca_id: str, state: str) -> None:
         TableName=DYNAMODB_TABLE_NAME,
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
         UpdateExpression="SET #state = :state, updated_at = :now",
-        ConditionExpression="attribute_exists(SK)",
+        ConditionExpression="attribute_exists(SK) AND #state <> :cancelled",
         ExpressionAttributeNames={"#state": "state"},
-        ExpressionAttributeValues={":state": {"S": state}, ":now": {"S": _now_iso()}},
+        ExpressionAttributeValues={
+            ":state": {"S": state},
+            ":now": {"S": _now_iso()},
+            ":cancelled": {"S": "CANCELLED"},
+        },
     )
 
 

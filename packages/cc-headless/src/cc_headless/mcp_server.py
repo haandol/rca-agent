@@ -1,16 +1,14 @@
-"""rca-progress MCP server — DynamoDB 상태 업데이트 + span/hypothesis 기록."""
+"""rca-progress MCP server — 가설/산출물 관리."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
-from botocore.exceptions import ClientError
 from fastmcp import FastMCP
 
 mcp = FastMCP("rca-progress")
@@ -40,63 +38,6 @@ def _ttl() -> str:
     return str(int(time.time()) + _TTL_DAYS * 86400)
 
 
-# ── Pipeline state ─────────────────────────────────────────────────
-
-
-@mcp.tool()
-def report_progress(stage: str, summary: str) -> str:
-    """파이프라인 단계를 DDB 세션 상태에 반영하고 span을 기록한다.
-
-    Args:
-        stage: 파이프라인 단계. SCOPING, HYPOTHESIS_GENERATION,
-               HYPOTHESIS_PRIORITIZATION, EVIDENCE_COLLECTION,
-               HYPOTHESIS_VALIDATION, REPORT_GENERATION,
-               REMEDIATION, VERIFICATION 중 하나.
-        summary: 이 단계에서 수행한 작업 요약 (500자 이내).
-    """
-    rca_id = _rca_id()
-    if not _ddb or not _TABLE or not rca_id:
-        return json.dumps({"ok": True, "skipped": True, "reason": "DDB not configured"})
-
-    now = _now_iso()
-    try:
-        _ddb.update_item(
-            TableName=_TABLE,
-            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{_ENGINE}#SESSION"}},
-            UpdateExpression="SET #st = :state, updated_at = :now",
-            ConditionExpression="attribute_exists(SK) AND #st <> :cancelled",
-            ExpressionAttributeNames={"#st": "state"},
-            ExpressionAttributeValues={
-                ":state": {"S": stage},
-                ":now": {"S": now},
-                ":cancelled": {"S": "CANCELLED"},
-            },
-        )
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            return json.dumps({"ok": False, "cancelled": True})
-        raise
-
-    span_id = str(uuid.uuid4())
-    _ddb.put_item(
-        TableName=_TABLE,
-        Item={
-            "PK": {"S": f"RCA#{rca_id}"},
-            "SK": {"S": f"{_ENGINE}#SPAN#{span_id}"},
-            "engine": {"S": _ENGINE},
-            "span_type": {"S": stage},
-            "span_status": {"S": "COMPLETED"},
-            "start_time": {"S": now},
-            "end_time": {"S": now},
-            "duration_ms": {"N": "0"},
-            "input_summary": {"S": ""},
-            "output_summary": {"S": summary[:_SUMMARY_MAX]},
-            "ttl": {"N": _ttl()},
-        },
-    )
-    return json.dumps({"ok": True, "cancelled": False, "span_id": span_id})
-
-
 # ── Hypothesis persistence ─────────────────────────────────────────
 
 
@@ -112,10 +53,6 @@ def save_hypotheses(hypotheses_json: str) -> str:
     rca_id = _rca_id()
     if not _ddb or not _TABLE or not rca_id:
         return json.dumps({"ok": True, "skipped": True})
-
-    cancelled = json.loads(check_cancelled())
-    if cancelled.get("cancelled"):
-        return json.dumps({"ok": False, "cancelled": True})
 
     hypotheses = json.loads(hypotheses_json)
     now = _now_iso()
@@ -175,10 +112,6 @@ def update_hypothesis(
     if not _ddb or not _TABLE or not rca_id:
         return json.dumps({"ok": True, "skipped": True})
 
-    cancelled = json.loads(check_cancelled())
-    if cancelled.get("cancelled"):
-        return json.dumps({"ok": False, "cancelled": True})
-
     now = _now_iso()
     _ddb.update_item(
         TableName=_TABLE,
@@ -210,7 +143,7 @@ def save_artifact(filename: str, content: str) -> str:
     """분석 산출물을 /tmp 아래에 마크다운 파일로 저장한다.
 
     Args:
-        filename: 파일명 (예: hypotheses.md, validation-1.md).
+        filename: 파일명 (예: hypotheses.md, validation-1.md, report.md).
                   /tmp/rca-{RCA_ID}/ 아래에 저장된다.
         content: 마크다운 내용.
     """
@@ -221,23 +154,3 @@ def save_artifact(filename: str, content: str) -> str:
     with open(path, "w") as f:
         f.write(content)
     return json.dumps({"ok": True, "path": path})
-
-
-# ── Cancellation check ─────────────────────────────────────────────
-
-
-@mcp.tool()
-def check_cancelled() -> str:
-    """현재 세션이 CANCELLED 상태인지 확인한다."""
-    rca_id = _rca_id()
-    if not _ddb or not _TABLE or not rca_id:
-        return json.dumps({"cancelled": False, "skipped": True})
-
-    resp = _ddb.get_item(
-        TableName=_TABLE,
-        Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{_ENGINE}#SESSION"}},
-        ProjectionExpression="#st",
-        ExpressionAttributeNames={"#st": "state"},
-    )
-    state = resp.get("Item", {}).get("state", {}).get("S", "")
-    return json.dumps({"cancelled": state == "CANCELLED", "state": state})
