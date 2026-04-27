@@ -8,7 +8,7 @@ from pathlib import Path
 import boto3
 import structlog
 
-from cc_headless.config import S3_VECTOR_BUCKET_NAME, S3_VECTOR_PLAYBOOK_INDEX
+from cc_headless.config import S3_VECTOR_BUCKET_NAME, S3_VECTOR_PLAYBOOK_INDEX, S3_VECTOR_REGION
 from cc_headless.embeddings import embed_document
 
 logger = structlog.get_logger()
@@ -19,7 +19,7 @@ _s3vectors = None
 def _get_s3vectors_client():
     global _s3vectors  # noqa: PLW0603
     if _s3vectors is None:
-        _s3vectors = boto3.client("s3vectors")
+        _s3vectors = boto3.client("s3vectors", region_name=S3_VECTOR_REGION)
     return _s3vectors
 
 

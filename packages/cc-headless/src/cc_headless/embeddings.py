@@ -5,7 +5,7 @@ import json
 import boto3
 import structlog
 
-from cc_headless.config import BEDROCK_EMBEDDING_MODEL_ID
+from cc_headless.config import BEDROCK_EMBEDDING_MODEL_ID, S3_VECTOR_REGION
 
 logger = structlog.get_logger()
 
@@ -15,7 +15,7 @@ _bedrock_client = None
 def _get_bedrock_client():
     global _bedrock_client  # noqa: PLW0603
     if _bedrock_client is None:
-        _bedrock_client = boto3.client("bedrock-runtime")
+        _bedrock_client = boto3.client("bedrock-runtime", region_name=S3_VECTOR_REGION)
     return _bedrock_client
 
 

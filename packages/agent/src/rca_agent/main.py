@@ -33,6 +33,7 @@ from rca_agent.config import (
     REJECTION_THRESHOLD,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
+    S3_VECTOR_REGION,
     SNS_NOTIFICATION_TOPIC_ARN,
 )
 from rca_agent.evidence import run_evidence_collection
@@ -85,7 +86,7 @@ def _parse_sns_envelope(body: dict) -> dict:
 def _create_s3_vectors_client():
     if not S3_VECTOR_BUCKET_NAME:
         return None
-    return boto3.client("s3vectors")
+    return boto3.client("s3vectors", region_name=S3_VECTOR_REGION)
 
 
 def _create_s3_client():

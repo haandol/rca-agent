@@ -37,6 +37,7 @@ PLAYBOOK_UPDATE_THRESHOLD = float(os.environ.get("PLAYBOOK_UPDATE_THRESHOLD", "0
 PLAYBOOK_TOP_K = int(os.environ.get("PLAYBOOK_TOP_K", "3"))
 
 S3_VECTOR_BUCKET_NAME = os.environ.get("S3_VECTOR_BUCKET_NAME", "")
+S3_VECTOR_REGION = os.environ.get("S3_VECTOR_REGION", "us-east-1")
 S3_VECTOR_PLAYBOOK_INDEX = os.environ.get("S3_VECTOR_PLAYBOOK_INDEX", "playbook-index")
 S3_EVIDENCE_BUCKET = os.environ.get("S3_EVIDENCE_BUCKET", "")
 S3_EVIDENCE_MAX_RETRIES = int(os.environ.get("S3_EVIDENCE_MAX_RETRIES", "3"))
