@@ -84,7 +84,9 @@ def search_similar_playbooks(
         logger.info("S3 Vectors not configured, skipping playbook search")
         return []
 
-    query_text = f"{alarm.service_name} {alarm.alarm_name} {alarm.new_state_reason}"
+    reason = alarm.new_state_reason[:80] if alarm.new_state_reason else ""
+    metric = alarm.trigger.metric_name[:80] if alarm.trigger else ""
+    query_text = f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
     try:
         query_vector = embed_query(query_text)
     except Exception:
@@ -117,9 +119,9 @@ def search_similar_playbooks(
         matches.append(
             PlaybookMatch(
                 playbook_id=item.get("key", ""),
-                title=metadata.get("title", "Unknown"),
+                title=metadata.get("failure_type", "Unknown"),
                 similarity=similarity,
-                root_cause_summary=metadata.get("root_cause_summary", ""),
+                root_cause_summary=metadata.get("symptom_pattern", ""),
             )
         )
     return matches

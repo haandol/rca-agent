@@ -64,16 +64,23 @@ class _ExistingPlaybookHit(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+_EMBED_FIELD_MAX = 80
+
+
+def _truncate(text: str, max_len: int = _EMBED_FIELD_MAX) -> str:
+    return text[:max_len].strip() if text else ""
+
+
 def _build_embed_key(report: RcaReport, scoping_result: ScopingResult | None) -> str:
     metric_name = ""
     if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
         metric_name = scoping_result.raw_alarm.trigger.metric_name
-    parts = [
-        report.root_cause or "unknown",
-        metric_name,
-        report.incident_summary,
-    ]
-    return " | ".join(p for p in parts if p)
+    parts = {
+        "장애유형": _truncate(report.root_cause or "unknown"),
+        "증상": _truncate(report.incident_summary),
+        "메트릭": _truncate(metric_name),
+    }
+    return " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
 
 
 def _build_user_prompt(report: RcaReport) -> str:
@@ -159,17 +166,20 @@ def search_existing_playbooks(
         if similarity < threshold:
             continue
         metadata = item.get("metadata", {})
+        tags_raw = metadata.get("tags", "")
+        if isinstance(tags_raw, str) and tags_raw:
+            tags = tags_raw.split(",")
+        elif isinstance(tags_raw, list):
+            tags = tags_raw
+        else:
+            tags = []
         hits.append(
             _ExistingPlaybookHit(
                 playbook_id=item.get("key", ""),
                 similarity=similarity,
                 failure_type=metadata.get("failure_type", ""),
                 symptom_pattern=metadata.get("symptom_pattern", ""),
-                verification_steps=metadata.get("verification_steps", []),
-                temporary_mitigation=metadata.get("temporary_mitigation", ""),
-                permanent_remediation=metadata.get("permanent_remediation", ""),
-                prevention_measures=metadata.get("prevention_measures", []),
-                tags=metadata.get("tags", []),
+                tags=tags,
             )
         )
     return hits
@@ -287,7 +297,12 @@ def save_playbook_to_s3_vectors(
     if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
         metric_name = scoping_result.raw_alarm.trigger.metric_name
 
-    embed_text = " | ".join(p for p in [playbook.failure_type, metric_name, playbook.symptom_pattern] if p)
+    parts = {
+        "장애유형": _truncate(playbook.failure_type),
+        "증상": _truncate(playbook.symptom_pattern),
+        "메트릭": _truncate(metric_name),
+    }
+    embed_text = " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
     try:
         vector = embed_document(embed_text)
     except Exception:
@@ -295,13 +310,9 @@ def save_playbook_to_s3_vectors(
         return False
 
     metadata = {
-        "failure_type": playbook.failure_type,
-        "symptom_pattern": playbook.symptom_pattern,
-        "verification_steps": playbook.verification_steps,
-        "temporary_mitigation": playbook.temporary_mitigation,
-        "permanent_remediation": playbook.permanent_remediation,
-        "prevention_measures": playbook.prevention_measures,
-        "tags": playbook.tags,
+        "failure_type": _truncate(playbook.failure_type),
+        "symptom_pattern": _truncate(playbook.symptom_pattern),
+        "tags": ",".join(playbook.tags)[:256],
         "rca_id": playbook.rca_id,
     }
 

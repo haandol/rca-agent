@@ -135,12 +135,12 @@ async function cancelSession() {
   }
 }
 
-const deleteTarget = ref<string | null>(null)
+const deleteTarget = ref<{ rcaId: string; engine: string } | null>(null)
 const deleting = ref(false)
 const deleteModalRef = ref<HTMLDialogElement | null>(null)
 
-function openDeleteModal(rcaId: string) {
-  deleteTarget.value = rcaId
+function openDeleteModal(rcaId: string, engine: string) {
+  deleteTarget.value = { rcaId, engine }
   deleteModalRef.value?.showModal()
 }
 
@@ -153,7 +153,7 @@ async function deleteSession() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await $fetch(`/api/sessions/${deleteTarget.value}`, { method: 'DELETE' })
+    await $fetch(`/api/sessions/${deleteTarget.value.rcaId}?engine=${deleteTarget.value.engine}`, { method: 'DELETE' })
     await refresh()
   } finally {
     deleting.value = false
@@ -288,7 +288,7 @@ useHead({ title: 'RCA 대시보드' })
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
                 </button>
-                <button class="action-btn text-error/70" title="삭제" @click="openDeleteModal(session.rcaId)">
+                <button class="action-btn text-error/70" title="삭제" @click="openDeleteModal(session.rcaId, session.engine)">
                   <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
@@ -320,8 +320,9 @@ useHead({ title: 'RCA 대시보드' })
       <div class="modal-box max-w-sm">
         <h3 class="font-bold text-lg">세션 삭제</h3>
         <p class="py-4 text-sm text-base-content/70">
-          세션 <span class="font-mono font-medium text-base-content">{{ deleteTarget?.slice(0, 8) }}</span>의
-          모든 데이터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+          세션 <span class="font-mono font-medium text-base-content">{{ deleteTarget?.rcaId.slice(0, 8) }}</span>
+          <span class="font-mono text-xs text-base-content/50">({{ deleteTarget?.engine }})</span>의
+          데이터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
         </p>
         <div class="modal-action">
           <button class="btn btn-ghost btn-sm" @click="closeDeleteModal()">취소</button>

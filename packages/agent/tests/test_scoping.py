@@ -127,7 +127,7 @@ class TestRunScoping:
                 {
                     "key": "pb-1",
                     "distance": 0.9,
-                    "metadata": {"title": "Past CPU incident", "root_cause_summary": "Memory leak"},
+                    "metadata": {"failure_type": "Past CPU incident", "symptom_pattern": "Memory leak"},
                 }
             ]
         }

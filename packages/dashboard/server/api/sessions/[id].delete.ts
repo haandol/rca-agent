@@ -7,6 +7,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing session id' })
   }
 
+  const query = getQuery(event)
+  const engine = typeof query.engine === 'string' ? query.engine : undefined
+
   const config = useRuntimeConfig()
   const ddb = useDynamoDB()
   const s3 = useS3()
@@ -14,8 +17,12 @@ export default defineEventHandler(async (event) => {
   const result = await ddb.send(
     new QueryCommand({
       TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `RCA#${id}` },
+      KeyConditionExpression: engine
+        ? 'PK = :pk AND begins_with(SK, :skPrefix)'
+        : 'PK = :pk',
+      ExpressionAttributeValues: engine
+        ? { ':pk': `RCA#${id}`, ':skPrefix': `${engine}#` }
+        : { ':pk': `RCA#${id}` },
       ProjectionExpression: 'PK, SK',
     }),
   )
@@ -42,16 +49,31 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  try {
-    await s3.send(
-      new DeleteObjectCommand({
-        Bucket: config.s3ReportBucket,
-        Key: `reports/${id}.md`,
+  let hasRemainingSession = false
+  if (engine) {
+    const remaining = await ddb.send(
+      new QueryCommand({
+        TableName: config.dynamodbTableName,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': `RCA#${id}` },
+        Select: 'COUNT',
       }),
     )
-  } catch (_) {
-    // S3 리포트가 없어도 무시
+    hasRemainingSession = (remaining.Count ?? 0) > 0
   }
 
-  return { deleted: true, rcaId: id, itemCount: items.length }
+  if (!hasRemainingSession) {
+    try {
+      await s3.send(
+        new DeleteObjectCommand({
+          Bucket: config.s3ReportBucket,
+          Key: `reports/${id}.md`,
+        }),
+      )
+    } catch (_) {
+      // S3 리포트가 없어도 무시
+    }
+  }
+
+  return { deleted: true, rcaId: id, engine, itemCount: items.length }
 })

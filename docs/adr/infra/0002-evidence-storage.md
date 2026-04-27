@@ -37,7 +37,7 @@ flowchart TD
 
 1. **S3 저장 경로**: `s3://{bucket}/rca/{rca_id}/evidence/{hypothesis_id}/{evidence_type}/` 구조로 저장한다. evidence_type은 `metrics/`, `logs/`, `traces/`, `deploy_history/`, `code_diff/`로 분류한다.
 
-2. **S3 Vectors 임베딩**: 증거 데이터의 요약 텍스트를 Bedrock Cohere Embed v4로 임베딩하여 S3 Vectors에 저장한다. 메타데이터로 rca_id, hypothesis_id, evidence_type, alarm_type, service_name, timestamp를 함께 저장한다.
+2. **S3 Vectors 임베딩**: 증거 데이터의 요약 텍스트를 Bedrock **Cohere Embed V4** (`cohere.embed-v4:0`, 1536차원)로 임베딩하여 `float32` 벡터를 직접 생성 후 S3 Vectors에 저장한다. S3 Vectors의 메타데이터는 2048 bytes 제한이 있으므로 경량 필드만 포함한다. 플레이북 인덱스의 경우 `failure_type`(80자), `symptom_pattern`(80자), `tags`(CSV 256자), `rca_id`를 저장하고, 상세 정보는 DynamoDB에서 조회한다.
 
 3. **DynamoDB 가설 트리**: PK는 rca_id, SK는 hypothesis_id로 구성한다. parent_id, depth, status, confidence_score, evidence_refs, vector_ids, created_at, updated_at를 속성으로 관리한다.
 

@@ -27,11 +27,15 @@ Accepted
 
 1. **검색 우선(Search-First) 전략**: 플레이북 생성 전에 S3 Vectors에서 유사 플레이북을 검색한다. 유사도 0.86 이상(`PLAYBOOK_UPDATE_THRESHOLD`)인 기존 플레이북이 있으면 LLM이 새 RCA 결과와 비교하여 업데이트할 내용이 있는지 판단한다. 업데이트가 필요하면 기존 플레이북 ID를 유지한 채 내용을 보강하고, 업데이트가 불필요하면 새 플레이북 생성도 건너뛴다. 일치하는 기존 플레이북이 없을 때만 새로 생성한다.
 
-2. **벡터 임베딩 키**: `{근본 원인(failure_type)} | {알람 메트릭명} | {인시던트 요약}`을 `" | "` 구분자로 결합하여 임베딩 텍스트로 사용한다. 알람 메트릭명은 `ScopingResult.raw_alarm.trigger.metric_name`에서 추출한다.
+2. **벡터 임베딩**: Bedrock **Cohere Embed V4** (`cohere.embed-v4:0`, 1536차원)를 사용하며, 구조화된 템플릿으로 임베딩 텍스트를 생성한다:
+   ```
+   장애유형: {failure_type} | 증상: {symptom_pattern} | 메트릭: {metric_name}
+   ```
+   각 필드는 80자로 truncate하여 임베딩 품질을 유지한다. 저장 시 `input_type=search_document`, 검색 시 `input_type=search_query`를 사용한다. 스코핑 단계의 유사 플레이북 검색에서도 동일 템플릿(`장애유형: {alarm_name} | 증상: {state_reason} | 메트릭: {metric_name}`)을 적용하여 저장-검색 간 임베딩 공간 일관성을 보장한다.
 
 3. **업데이트 판단 LLM**: `PlaybookUpdateOutput` Pydantic 모델(`needs_update`, 플레이북 전체 필드)을 `structured_output_model`로 지정하여 LLM이 기존 플레이북 대비 새 RCA에서 추가된 점이 있는지 판단한다. `needs_update=false`이면 기존 플레이북을 그대로 유지한다.
 
-4. **S3 Vectors 인덱싱**: `save_playbook_to_s3_vectors()`가 임베딩 키를 텍스트로 전달하고, 메타데이터에 `failure_type`, `symptom_pattern`, `verification_steps`, `temporary_mitigation`, `permanent_remediation`, `prevention_measures`, `tags`, `rca_id`를 포함하여 이후 업데이트 판단에 활용한다.
+4. **S3 Vectors 인덱싱**: `save_playbook_to_s3_vectors()`가 Cohere Embed V4로 `float32` 벡터를 직접 생성하여 저장한다. 메타데이터는 S3 Vectors의 2048 bytes 제한에 맞춰 `failure_type`(80자), `symptom_pattern`(80자), `tags`(CSV 256자), `rca_id`만 포함한다. `verification_steps`, `temporary_mitigation` 등 상세 필드는 DynamoDB의 플레이북 레코드에서 조회한다.
 
 5. **태깅**: LLM이 생성한 `tags` 필드를 플레이북에 포함하여 유형별 분류에 활용한다.
 
@@ -62,12 +66,12 @@ Accepted
 
 ## Implementation Status
 
-- **플레이북 생성/저장/인덱싱**: 구현 완료 (Strands F8 단계, CC Headless 9단계)
-- **유사 플레이북 검색**: 구현 완료 (Scoping 단계에서 S3 Vectors 검색)
+- **플레이북 생성/저장/인덱싱**: 구현 완료 (Strands F8 단계, CC Headless 9단계). Cohere Embed V4(1536차원) + `float32` 벡터 직접 저장 방식으로 E2E 검증 완료. 양쪽 엔진 모두 S3 Vectors에 벡터 저장 성공 확인.
+- **유사 플레이북 검색**: 구현 완료 (Scoping 단계에서 S3 Vectors 검색). 구조화 임베딩 템플릿(`장애유형 | 증상 | 메트릭`)으로 저장-검색 간 일관성 확보.
 - **플레이북 기반 자동 복구**: **미구현** — ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 플레이북의 복구 절차를 실행하도록 설계되었으나, Remediation Agent가 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
 - **대시보드 표시**: 구현 완료 (전용 플레이북 페이지 `/playbook/:id`, 세션 목록 및 트레이스 뷰에서 링크)
 
-현재 플레이북은 생성 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행되며, 다음 알람 수신 시 Scoping 단계에서 유사 플레이북으로 검색되어 가설 생성에 참고된다. 그러나 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동으로 실행하는 경로는 아직 연결되지 않았다.
+현재 플레이북은 생성 → Cohere Embed V4 임베딩 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행되며, 다음 알람 수신 시 Scoping 단계에서 유사 플레이북으로 검색되어 가설 생성에 참고된다. 그러나 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동으로 실행하는 경로는 아직 연결되지 않았다.
 
 ## Related
 

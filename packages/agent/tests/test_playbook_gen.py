@@ -292,7 +292,8 @@ class TestSavePlaybookToS3Vectors:
         vector = call_args[1]["vectors"][0]
         assert vector["data"]["float32"] == [0.1] * 1024
         assert vector["metadata"]["failure_type"] == "Memory leak"
-        assert vector["metadata"]["verification_steps"] == []
+        assert vector["metadata"]["tags"] == "memory"
+        assert "verification_steps" not in vector["metadata"]
 
     @patch("rca_agent.playbook_gen.embed_document", return_value=[0.1] * 1024)
     @patch("rca_agent.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")

@@ -443,7 +443,7 @@ flowchart TD
 | Component (공유) | Technology |
 |-----------|-----------|
 | 이벤트 라우팅 | Amazon SNS → 각 스택별 SQS Queue |
-| 임베딩 | Amazon S3 Vectors (서버사이드 임베딩) |
+| 임베딩 | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (`float32` 벡터 저장) |
 | 증거/보고서 저장 | Amazon S3 |
 | 세션 관리 | Amazon DynamoDB (`engine` 필드로 스택 구분) |
 | 알림 | Amazon SNS |
