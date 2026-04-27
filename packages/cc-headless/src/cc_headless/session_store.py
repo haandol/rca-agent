@@ -174,6 +174,33 @@ def mark_completed(rca_id: str, root_cause: str) -> None:
         raise
 
 
+def mark_outdated(rca_id: str, reason: str) -> None:
+    if not DYNAMODB_TABLE_NAME:
+        return
+    try:
+        _ddb.update_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+            UpdateExpression="SET #state = :state, outdated_reason = :reason, updated_at = :now",
+            ConditionExpression="attribute_exists(SK) AND NOT #state IN (:completed, :failed, :outdated, :cancelled)",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={
+                ":state": {"S": "OUTDATED"},
+                ":reason": {"S": reason},
+                ":now": {"S": _now_iso()},
+                ":completed": {"S": "COMPLETED"},
+                ":failed": {"S": "FAILED"},
+                ":outdated": {"S": "OUTDATED"},
+                ":cancelled": {"S": "CANCELLED"},
+            },
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.warning("mark_outdated_skipped_terminal", rca_id=rca_id)
+            return
+        raise
+
+
 def mark_failed(rca_id: str, error_reason: str) -> None:
     if not DYNAMODB_TABLE_NAME:
         return

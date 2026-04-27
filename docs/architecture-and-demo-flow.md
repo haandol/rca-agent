@@ -91,7 +91,7 @@ flowchart TD
     end
 
     subgraph Finalize["마무리"]
-        CLOSE["미검증 가설 CLOSED 처리<br/>(PENDING/NEEDS_INVESTIGATION → CLOSED)<br/>best_hypothesis 제외"]
+        CLOSE["미해결 가설 최종 분류<br/>CONFIRMED 종료 → REJECTED<br/>기타 종료: 저신뢰도 → REJECTED,<br/>나머지 → CLOSED"]
 
         subgraph F7["F7: Report"]
             R_AGENT["Report Agent<br/>(Planning 티어: Sonnet 4.6)"]
@@ -164,6 +164,7 @@ stateDiagram-v2
 
     HYPOTHESIS_VALIDATION --> REPORT_GENERATION: 종료 조건 충족 또는 분기 불가
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 분기 후 재루프
+    HYPOTHESIS_VALIDATION --> EVIDENCE_COLLECTION: 재검증 필요
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_GENERATION: 전체 기각 (재생성, 최대 2회)
 
     REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + SNS 알림
@@ -271,8 +272,9 @@ flowchart TD
         SQS["SQS Long Polling<br/>(WaitTimeSeconds=20)"]
         PARSE["AlarmPayload 파싱<br/>(SNS envelope unwrap)"]
         DEDUP["멱등성 체크<br/>(DynamoDB IDEMP# 키)"]
+        STALE["Stale 알람 체크<br/>(30분 초과 → OUTDATED)"]
         SESSION["세션 생성<br/>(engine: cc-headless)"]
-        SQS --> PARSE --> DEDUP --> SESSION
+        SQS --> PARSE --> DEDUP --> STALE --> SESSION
     end
 
     subgraph Prepare["실행 준비"]
@@ -350,10 +352,13 @@ stateDiagram-v2
 
     ALARM_RECEIVED --> [*]: 중복 감지 → 즉시 반환
     ALARM_RECEIVED --> ANALYZING: 멱등성 체크 통과
+    ALARM_RECEIVED --> OUTDATED: Stale 알람 (30분 초과)
 
     ANALYZING --> COMPLETED: CC CLI 성공<br/>보고서 S3 저장 + SNS 알림
     ANALYZING --> FAILED: CC 오류 / 타임아웃 (30분)
     ANALYZING --> CANCELLED: 외부 취소 요청 감지<br/>(15초 간격 DDB 폴링)
+
+    OUTDATED --> [*]
 
     note right of ANALYZING
         CC CLI subprocess 실행 중
@@ -586,9 +591,9 @@ sequenceDiagram
 
     Note over Agent,Bedrock: 종료 → confidence ≥ 0.9 (CONFIRMED)
 
-    Note over Agent: 미검증 가설 CLOSED 처리
-    Agent->>DDB: A-1 → CLOSED ("확정된 근본원인 발견")
-    Agent->>DDB: A → CLOSED ("확정된 근본원인 발견")
+    Note over Agent: CONFIRMED 종료 → 미해결 가설 REJECTED 처리
+    Agent->>DDB: A-1 → REJECTED ("확정된 근본원인 발견으로 기각")
+    Agent->>DDB: A → REJECTED ("확정된 근본원인 발견으로 기각")
 
     Note over Agent,S3: F7 보고서 생성
     Agent->>DDB: state = REPORT_GENERATION
@@ -621,7 +626,7 @@ sequenceDiagram
 | 5 | F5 검증 (1차) | A: NEEDS_INVESTIGATION, B/C: REJECTED | DynamoDB |
 | 6 | F6 분기 | A-1(풀 설정), A-2(커넥션 미반환) | DynamoDB (HYPO#) |
 | 4-5 | F4-F5 (2차) | A-1: REJECTED, A-2: CONFIRMED (0.92) | S3, DynamoDB |
-| - | CLOSED 처리 | A-1, A → CLOSED | DynamoDB |
+| - | REJECTED 처리 | A-1, A → REJECTED (확정된 근본원인 발견으로 기각) | DynamoDB |
 | 7 | F7 보고서 | RCA Report (Markdown) | S3 |
 | 8 | F8 플레이북 | DB 커넥션 누수 대응 플레이북 | S3 Vectors |
 | 9 | F9 알림 | SNS 알림 (presigned URL + 플레이북 포함) | SNS → SRE |
@@ -642,7 +647,7 @@ sequenceDiagram
 
 이 데모에서는 **CONFIRMED** 종료 조건이 트리거됩니다:
 - 가설 A-2 "코드에서 커넥션 미반환"이 confidence 0.92로 확정
-- 임계치 0.9 이상 → 즉시 종료 → CLOSED 처리 → 보고서 → 플레이북 → 알림
+- 임계치 0.9 이상 → 즉시 종료 → 나머지 가설 REJECTED 처리 → 보고서 → 플레이북 → 알림
 
 ---
 

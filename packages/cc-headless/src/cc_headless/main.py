@@ -5,7 +5,7 @@ import re
 import signal
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
@@ -14,7 +14,13 @@ import structlog
 from cc_headless.alarm_parser import parse_alarm
 from cc_headless.artifact_watcher import start_watcher
 from cc_headless.cc_runner import run_claude
-from cc_headless.config import DYNAMODB_TABLE_NAME, ENGINE, SQS_POLL_WAIT_SECONDS, SQS_QUEUE_URL
+from cc_headless.config import (
+    ALARM_STALENESS_SECONDS,
+    DYNAMODB_TABLE_NAME,
+    ENGINE,
+    SQS_POLL_WAIT_SECONDS,
+    SQS_QUEUE_URL,
+)
 from cc_headless.healthz import start_health_server
 from cc_headless.logging import setup_logging
 from cc_headless.playbook_store import load_playbook, save_playbook_to_s3_vectors
@@ -29,6 +35,7 @@ from cc_headless.session_store import (
     create_session,
     mark_completed,
     mark_failed,
+    mark_outdated,
     update_state,
 )
 
@@ -200,6 +207,22 @@ def _process_message(message_body: str, ddb) -> bool:
     if check_duplicate(rca_id):
         log.info("duplicate_alarm_skipped")
         return True
+
+    if ts_raw:
+        dt = datetime.fromisoformat(ts_raw.replace("+0000", "+00:00"))
+        age_seconds = (datetime.now(UTC) - dt).total_seconds()
+        if age_seconds > ALARM_STALENESS_SECONDS:
+            log.info(
+                "stale_alarm_skipped",
+                age_seconds=int(age_seconds),
+                threshold=ALARM_STALENESS_SECONDS,
+            )
+            if create_session(rca_id, alarm.alarm_name, idempotency_key, alarm_data=alarm_data):
+                mark_outdated(
+                    rca_id,
+                    f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold",
+                )
+            return True
 
     if not create_session(rca_id, alarm.alarm_name, idempotency_key, alarm_data=alarm_data):
         log.info("session_already_exists")
