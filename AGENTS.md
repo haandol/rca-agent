@@ -10,7 +10,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | Python, Claude Code CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
-| [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
+| [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
 
 ## Dual-Stack Architecture
 

@@ -15,7 +15,7 @@ Architecture Decision Record (ADR)는 소프트웨어 개발 과정에서 내린
 ```
 adr/
 ├── agent/        # RCA 에이전트 코어 관련 결정 (가설-트리, 상태 머신, 프롬프트 등)
-├── tools/        # MCP 도구 관련 결정 (CloudWatch, Logs, X-Ray, CloudTrail 등)
+├── tools/        # MCP 도구 관련 결정 (CloudWatch, Logs, CloudTrail, GitHub 등)
 ├── infra/        # 인프라 관련 결정 (ECS Fargate, SNS/SQS, DynamoDB, S3, VPC 등)
 └── web/          # RCA 대시보드 웹 프론트엔드 관련 결정
 ```
@@ -43,7 +43,7 @@ adr/
 
 - [ADR 0001: 메트릭 수집 — CloudWatch MCP 서버 기반 증거 수집](tools/0001-metrics-collection.md)
 - [ADR 0002: 로그 검색 — CloudWatch MCP 서버 기반 증거 수집](tools/0002-log-search.md)
-- [ADR 0003: 트레이스 분석 — X-Ray 기반 분산 트레이스 조회](tools/0003-trace-analysis.md)
+- [ADR 0003: 트레이스 분석 — X-Ray 기반 분산 트레이스 조회](tools/0003-trace-analysis.md) *(Rejected)*
 - [ADR 0004: 배포 이력 조회 — CloudTrail MCP 서버 기반 배포/변경 이벤트 조회](tools/0004-deploy-history.md)
 - [ADR 0005: 코드 변경 분석 — GitHub MCP 서버 기반 배포 코드 diff의 LLM 결함 탐지](tools/0005-code-change-analysis.md)
 
