@@ -442,8 +442,8 @@ class TestPipelineFinalizeBeforeReport:
         ):
             _process_alarm(body, MagicMock())
 
-        closed_updates = [(hid, st) for hid, st, _ in trace_update_calls if st == "CLOSED"]
-        assert ("h-2", "CLOSED") in closed_updates
+        rejected_updates = [(hid, st) for hid, st, _ in trace_update_calls if st == "REJECTED"]
+        assert ("h-2", "REJECTED") in rejected_updates, "h-2 should be REJECTED when another hypothesis is CONFIRMED"
 
-        rejected_updates = [hid for hid, st, _ in trace_update_calls if st == "REJECTED" and hid == "h-2"]
-        assert rejected_updates == [], "h-2 should be CLOSED, not REJECTED"
+        closed_updates = [hid for hid, st, _ in trace_update_calls if st == "CLOSED" and hid == "h-2"]
+        assert closed_updates == [], "h-2 should be REJECTED, not CLOSED"

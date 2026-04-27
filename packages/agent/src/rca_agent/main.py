@@ -30,6 +30,7 @@ from rca_agent.config import (
     GITHUB_PERSONAL_ACCESS_TOKEN,
     RCA_BEAM_WIDTH,
     RCA_MAX_REGENERATION_ROUNDS,
+    REJECTION_THRESHOLD,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
     SNS_NOTIFICATION_TOPIC_ARN,
@@ -573,8 +574,10 @@ def _run_pipeline(
         )
 
     # Finalize unresolved hypotheses — all must be CONFIRMED, REJECTED, or CLOSED before report
+    # CONFIRMED termination: other hypotheses are REJECTED (disproven by confirmed root cause)
+    # Other terminations: hypotheses with low confidence (evidence contradicts) are REJECTED, rest CLOSED
     close_reason_map: dict[TerminationReason, str] = {
-        TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 추가 검증 불필요",
+        TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 기각",
         TerminationReason.TIME_BUDGET: "시간 예산 소진",
         TerminationReason.TOKEN_BUDGET: "토큰 예산 소진",
         TerminationReason.MAX_DEPTH: "최대 트리 깊이 초과",
@@ -585,16 +588,22 @@ def _run_pipeline(
         close_reason_map.get(termination.reason, "분석 종료") if termination and termination.reason else "분석 종료"
     )
     best_hid = termination.best_hypothesis.hypothesis_id if termination and termination.best_hypothesis else None
+    terminated_by_confirmed = termination and termination.reason == TerminationReason.CONFIRMED
+    judgment_scores: dict[str, float] = {j.hypothesis_id: j.confidence_score for j in all_judgments}
     for h in hypotheses:
-        if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
-            if h.hypothesis_id == best_hid:
-                continue
-            h.status = HypothesisStatus.CLOSED
-            trace.update_hypothesis_status(
-                h.hypothesis_id,
-                status=HypothesisStatus.CLOSED.value,
-                judgment_reasoning=close_reason,
-            )
+        if h.status not in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
+            continue
+        if h.hypothesis_id == best_hid:
+            continue
+        score = judgment_scores.get(h.hypothesis_id)
+        should_reject = terminated_by_confirmed or (score is not None and score <= REJECTION_THRESHOLD)
+        new_status = HypothesisStatus.REJECTED if should_reject else HypothesisStatus.CLOSED
+        h.status = new_status
+        trace.update_hypothesis_status(
+            h.hypothesis_id,
+            status=new_status.value,
+            judgment_reasoning=close_reason,
+        )
 
     # Determine best hypothesis
     best_hypothesis = None
