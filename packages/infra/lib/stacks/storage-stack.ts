@@ -64,7 +64,7 @@ export class StorageStack extends cdk.Stack {
       indexName,
       vectorBucketName: vectorBucket.vectorBucketName,
       dataType: 'float32',
-      dimension: 1024,
+      dimension: 1536,
       distanceMetric: 'cosine',
     });
     index.addDependency(vectorBucket);

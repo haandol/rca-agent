@@ -126,7 +126,11 @@ def search_existing_playbooks(
         return []
 
     query_text = _build_embed_key(report, scoping_result)
-    query_vector = embed_query(query_text)
+    try:
+        query_vector = embed_query(query_text)
+    except Exception:
+        logger.exception("Failed to embed query text, skipping playbook search")
+        return []
 
     response = None
     for attempt in range(max_retries):
@@ -284,7 +288,11 @@ def save_playbook_to_s3_vectors(
         metric_name = scoping_result.raw_alarm.trigger.metric_name
 
     embed_text = " | ".join(p for p in [playbook.failure_type, metric_name, playbook.symptom_pattern] if p)
-    vector = embed_document(embed_text)
+    try:
+        vector = embed_document(embed_text)
+    except Exception:
+        logger.exception("Failed to embed playbook text")
+        return False
 
     metadata = {
         "failure_type": playbook.failure_type,

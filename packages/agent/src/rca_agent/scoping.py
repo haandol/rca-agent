@@ -85,7 +85,11 @@ def search_similar_playbooks(
         return []
 
     query_text = f"{alarm.service_name} {alarm.alarm_name} {alarm.new_state_reason}"
-    query_vector = embed_query(query_text)
+    try:
+        query_vector = embed_query(query_text)
+    except Exception:
+        logger.exception("Failed to embed query text, skipping playbook search")
+        return []
 
     for attempt in range(max_retries):
         try:

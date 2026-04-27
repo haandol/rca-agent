@@ -48,7 +48,11 @@ def save_playbook_to_s3_vectors(playbook: dict, rca_id: str, *, metric_name: str
         logger.warning("playbook_empty_embed_text", rca_id=rca_id)
         return False
 
-    vector = embed_document(embed_text)
+    try:
+        vector = embed_document(embed_text)
+    except Exception:
+        logger.exception("playbook_embed_failed", rca_id=rca_id)
+        return False
 
     metadata = {
         "failure_type": failure_type,
