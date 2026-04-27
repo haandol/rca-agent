@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import { marked } from 'marked'
+
+function md(text: string | undefined | null): string {
+  if (!text) return ''
+  const normalized = text
+    .replace(/\\n/g, '\n')
+    .replace(/(?<!\n)(\d+)\.\s/g, '\n$1. ')
+    .trim()
+  return marked.parse(normalized, { async: false, breaks: true }) as string
+}
+
 const route = useRoute()
 const id = route.params.id as string
 const engine = (route.query.engine as string) || ''
@@ -106,15 +117,15 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` })
           <!-- Symptom pattern -->
           <div v-if="playbook.symptom_pattern" class="bg-base-100 rounded-xl border border-base-content/5 p-5">
             <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-2">증상 패턴</div>
-            <p class="text-sm leading-relaxed">{{ playbook.symptom_pattern }}</p>
+            <div class="prose prose-sm max-w-none" v-html="md(playbook.symptom_pattern)" />
           </div>
 
           <!-- Verification steps -->
           <div v-if="playbook.verification_steps?.length" class="bg-base-100 rounded-xl border border-base-content/5 p-5">
             <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-2">검증 절차</div>
-            <ol class="text-sm space-y-2 list-decimal list-inside">
-              <li v-for="(step, i) in playbook.verification_steps" :key="i" class="leading-relaxed">{{ step }}</li>
-            </ol>
+            <div v-for="(step, i) in playbook.verification_steps" :key="i" class="prose prose-sm max-w-none [&:not(:last-child)]:mb-3">
+              <div v-html="md(step)" />
+            </div>
           </div>
         </div>
 
@@ -123,21 +134,21 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` })
           <!-- Temporary mitigation -->
           <div v-if="playbook.temporary_mitigation" class="bg-warning/5 rounded-xl border border-warning/15 p-5">
             <div class="text-[11px] font-medium text-warning uppercase tracking-wider mb-2">임시 완화 조치</div>
-            <p class="text-sm leading-relaxed">{{ playbook.temporary_mitigation }}</p>
+            <div class="prose prose-sm max-w-none" v-html="md(playbook.temporary_mitigation)" />
           </div>
 
           <!-- Permanent remediation -->
           <div v-if="playbook.permanent_remediation" class="bg-success/5 rounded-xl border border-success/15 p-5">
             <div class="text-[11px] font-medium text-success uppercase tracking-wider mb-2">영구 복구 방안</div>
-            <p class="text-sm leading-relaxed">{{ playbook.permanent_remediation }}</p>
+            <div class="prose prose-sm max-w-none" v-html="md(playbook.permanent_remediation)" />
           </div>
 
           <!-- Prevention measures -->
           <div v-if="playbook.prevention_measures?.length" class="bg-base-100 rounded-xl border border-base-content/5 p-5">
             <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-2">재발 방지</div>
-            <ul class="text-sm space-y-1.5 list-disc list-inside">
-              <li v-for="(m, i) in playbook.prevention_measures" :key="i" class="leading-relaxed">{{ m }}</li>
-            </ul>
+            <div v-for="(m, i) in playbook.prevention_measures" :key="i" class="prose prose-sm max-w-none [&:not(:last-child)]:mb-2">
+              <div v-html="md(m)" />
+            </div>
           </div>
 
           <!-- Tags -->
