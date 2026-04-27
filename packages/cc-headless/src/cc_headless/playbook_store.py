@@ -9,6 +9,7 @@ import boto3
 import structlog
 
 from cc_headless.config import S3_VECTOR_BUCKET_NAME, S3_VECTOR_PLAYBOOK_INDEX
+from cc_headless.embeddings import embed_document
 
 logger = structlog.get_logger()
 
@@ -47,6 +48,8 @@ def save_playbook_to_s3_vectors(playbook: dict, rca_id: str, *, metric_name: str
         logger.warning("playbook_empty_embed_text", rca_id=rca_id)
         return False
 
+    vector = embed_document(embed_text)
+
     metadata = {
         "failure_type": failure_type,
         "symptom_pattern": symptom_pattern,
@@ -66,7 +69,7 @@ def save_playbook_to_s3_vectors(playbook: dict, rca_id: str, *, metric_name: str
             vectors=[
                 {
                     "key": playbook_id,
-                    "data": {"text": embed_text},
+                    "data": {"float32": vector},
                     "metadata": metadata,
                 }
             ],

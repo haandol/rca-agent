@@ -15,6 +15,7 @@ from rca_agent.config import (
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
 )
+from rca_agent.embeddings import embed_document, embed_query
 from rca_agent.models import Playbook, RcaReport, ScopingResult
 from rca_agent.prompts import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
@@ -125,6 +126,7 @@ def search_existing_playbooks(
         return []
 
     query_text = _build_embed_key(report, scoping_result)
+    query_vector = embed_query(query_text)
 
     response = None
     for attempt in range(max_retries):
@@ -132,7 +134,7 @@ def search_existing_playbooks(
             response = s3_vectors_client.query_vectors(
                 vectorBucketName=S3_VECTOR_BUCKET_NAME,
                 indexName=S3_VECTOR_PLAYBOOK_INDEX,
-                queryText=query_text,
+                queryVector={"float32": query_vector},
                 topK=3,
             )
             break
@@ -282,6 +284,7 @@ def save_playbook_to_s3_vectors(
         metric_name = scoping_result.raw_alarm.trigger.metric_name
 
     embed_text = " | ".join(p for p in [playbook.failure_type, metric_name, playbook.symptom_pattern] if p)
+    vector = embed_document(embed_text)
 
     metadata = {
         "failure_type": playbook.failure_type,
@@ -301,7 +304,7 @@ def save_playbook_to_s3_vectors(
             vectors=[
                 {
                     "key": playbook.playbook_id,
-                    "data": {"text": embed_text},
+                    "data": {"float32": vector},
                     "metadata": metadata,
                 }
             ],

@@ -17,6 +17,7 @@ from rca_agent.config import (
     S3_VECTOR_PLAYBOOK_INDEX,
     SCOPING_TIMEOUT_SECONDS,
 )
+from rca_agent.embeddings import embed_query
 from rca_agent.models import AlarmPayload, PlaybookMatch, ScopingResult
 from rca_agent.prompts import SCOPING_USER_PROMPT_TEMPLATE
 
@@ -84,13 +85,14 @@ def search_similar_playbooks(
         return []
 
     query_text = f"{alarm.service_name} {alarm.alarm_name} {alarm.new_state_reason}"
+    query_vector = embed_query(query_text)
 
     for attempt in range(max_retries):
         try:
             response = s3_vectors_client.query_vectors(
                 vectorBucketName=S3_VECTOR_BUCKET_NAME,
                 indexName=S3_VECTOR_PLAYBOOK_INDEX,
-                queryText=query_text,
+                queryVector={"float32": query_vector},
                 topK=PLAYBOOK_TOP_K,
             )
             break

@@ -89,8 +89,9 @@ class TestSearchExistingPlaybooks:
         result = search_existing_playbooks(_make_report(), None)
         assert result == []
 
+    @patch("rca_agent.playbook_gen.embed_query", return_value=[0.1] * 1024)
     @patch("rca_agent.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_returns_hits_above_threshold(self):
+    def test_returns_hits_above_threshold(self, _mock_embed):
         mock_client = MagicMock()
         mock_client.query_vectors.return_value = {
             "vectors": [
@@ -117,8 +118,9 @@ class TestSearchExistingPlaybooks:
         assert len(hits) == 1
         assert hits[0].playbook_id == "pb-1"
 
+    @patch("rca_agent.playbook_gen.embed_query", return_value=[0.1] * 1024)
     @patch("rca_agent.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_handles_search_failure(self):
+    def test_handles_search_failure(self, _mock_embed):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("fail")
         hits = search_existing_playbooks(
@@ -266,8 +268,9 @@ class TestSavePlaybookToS3Vectors:
         playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
         assert not save_playbook_to_s3_vectors(playbook)
 
+    @patch("rca_agent.playbook_gen.embed_document", return_value=[0.1] * 1024)
     @patch("rca_agent.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_indexes_with_embed_key(self):
+    def test_indexes_with_embed_key(self, _mock_embed):
         playbook = Playbook(
             playbook_id="p-1",
             failure_type="Memory leak",
@@ -287,12 +290,13 @@ class TestSavePlaybookToS3Vectors:
         assert result is True
         call_args = mock_client.put_vectors.call_args
         vector = call_args[1]["vectors"][0]
-        assert "CPUUtilization" in vector["data"]["text"]
+        assert vector["data"]["float32"] == [0.1] * 1024
         assert vector["metadata"]["failure_type"] == "Memory leak"
         assert vector["metadata"]["verification_steps"] == []
 
+    @patch("rca_agent.playbook_gen.embed_document", return_value=[0.1] * 1024)
     @patch("rca_agent.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_handles_error(self):
+    def test_handles_error(self, _mock_embed):
         playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
         mock_client = MagicMock()
         mock_client.put_vectors.side_effect = RuntimeError("fail")
