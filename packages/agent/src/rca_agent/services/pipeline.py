@@ -158,11 +158,51 @@ class PipelineOrchestrator:
                 )
 
     def _run_pipeline(self, alarm, *, rca_id, start_time, trace):
-        c = self._container
-        store = c.session_store
+        store = self._container.session_store
 
-        # F1: Scoping
-        store.update_state(rca_id, RcaSessionState.SCOPING)
+        scoping_result = self._run_scoping(alarm, rca_id=rca_id, trace=trace)
+
+        hypotheses = self._run_hypothesis_generation(
+            scoping_result,
+            rca_id=rca_id,
+            trace=trace,
+        )
+        if not hypotheses:
+            store.mark_failed(rca_id, error_reason="No hypotheses generated")
+            return
+
+        termination, all_judgments, evidence_map, rejected_descriptions, timeline = self._run_validation_loop(
+            alarm,
+            scoping_result,
+            hypotheses,
+            rca_id=rca_id,
+            start_time=start_time,
+            trace=trace,
+        )
+
+        best_hypothesis, confirmed = self._finalize_hypotheses(
+            hypotheses,
+            termination,
+            all_judgments,
+            trace=trace,
+        )
+
+        self._run_report_and_notify(
+            scoping_result,
+            best_hypothesis,
+            confirmed,
+            hypothesis_path=[best_hypothesis.description] if best_hypothesis else [],
+            evidence_texts=[e for e in evidence_map.values() if e],
+            rejected_descriptions=rejected_descriptions,
+            timeline=timeline,
+            rca_id=rca_id,
+            start_time=start_time,
+            trace=trace,
+        )
+
+    def _run_scoping(self, alarm, *, rca_id, trace):
+        c = self._container
+        c.session_store.update_state(rca_id, RcaSessionState.SCOPING)
         with trace.span(
             SpanType.SCOPING,
             input_summary=f"알람={alarm.alarm_name}, 리전={alarm.region}",
@@ -188,9 +228,11 @@ class PipelineOrchestrator:
             scoping_result.blast_radius,
             len(scoping_result.similar_playbooks),
         )
+        return scoping_result
 
-        # F2: Hypothesis generation
-        store.update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION)
+    def _run_hypothesis_generation(self, scoping_result, *, rca_id, trace):
+        c = self._container
+        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION)
         with trace.span(
             SpanType.HYPOTHESIS_GENERATION,
             input_summary=(f"심각도={scoping_result.initial_severity}, 영향범위={scoping_result.blast_radius}"),
@@ -207,13 +249,13 @@ class PipelineOrchestrator:
             }
         if not hypotheses:
             logger.error("No hypotheses generated, aborting RCA")
-            store.mark_failed(
-                rca_id,
-                error_reason="No hypotheses generated",
-            )
-            return
-
+            return []
         trace.put_hypotheses(hypotheses)
+        return hypotheses
+
+    def _run_validation_loop(self, alarm, scoping_result, hypotheses, *, rca_id, start_time, trace):
+        c = self._container
+        store = c.session_store
 
         all_judgments = []
         rejected_descriptions: list[str] = []
@@ -528,7 +570,9 @@ class PipelineOrchestrator:
                 },
             )
 
-        # Finalize unresolved hypotheses
+        return termination, all_judgments, evidence_map, rejected_descriptions, timeline
+
+    def _finalize_hypotheses(self, hypotheses, termination, all_judgments, *, trace):
         close_reason_map = {
             TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 기각",
             TerminationReason.TIME_BUDGET: "시간 예산 소진",
@@ -561,7 +605,6 @@ class PipelineOrchestrator:
                 judgment_reasoning=close_reason,
             )
 
-        # Best hypothesis
         best_hypothesis = None
         confirmed = False
         if termination and termination.should_terminate and termination.best_hypothesis:
@@ -577,11 +620,24 @@ class PipelineOrchestrator:
                 None,
             )
 
-        hypothesis_path = []
-        if best_hypothesis:
-            hypothesis_path.append(best_hypothesis.description)
+        return best_hypothesis, confirmed
 
-        evidence_texts = [e for e in evidence_map.values() if e]
+    def _run_report_and_notify(
+        self,
+        scoping_result,
+        best_hypothesis,
+        confirmed,
+        *,
+        hypothesis_path,
+        evidence_texts,
+        rejected_descriptions,
+        timeline,
+        rca_id,
+        start_time,
+        trace,
+    ):
+        c = self._container
+        store = c.session_store
         elapsed = int(time.monotonic() - start_time)
 
         # F7: Report

@@ -240,9 +240,9 @@ from rca_agent.session_store import check_duplicate, create_session, ...  # noqa
 
 `trace_store.py`(496줄) → `adapters/secondary/trace/dynamodb_trace_store.py`로 이동. `session_store.py`(311줄)의 함수 기반 코드를 `adapters/secondary/session/dynamodb_session_store.py`에 병합. 루트 파일은 adapter에서 re-export하는 스텁(총 28줄)으로 전환. `pipeline.py`의 `trace_store` import를 adapter 경로로 변경.
 
-## Phase 4: pipeline.py `_run_pipeline` 분할 (예정)
+## Phase 4: pipeline.py `_run_pipeline` 분할 (완료)
 
-520줄 단일 메서드를 `_run_scoping`, `_run_hypothesis_generation`, `_run_validation_loop`, `_run_report_and_notify` 등으로 분할.
+520줄 단일 메서드를 5개 메서드로 분할: `_run_scoping`, `_run_hypothesis_generation`, `_run_validation_loop`, `_finalize_hypotheses`, `_run_report_and_notify`. `_run_pipeline`은 이 메서드들을 순서대로 호출하는 ~30줄 오케스트레이션 메서드로 축소.
 
 ## Phase 5 (선택): prompts.py 분리 (예정)
 
