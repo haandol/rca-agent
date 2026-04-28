@@ -652,7 +652,7 @@ class PipelineOrchestrator:
             )
 
         # F9: Notification
-        from rca_agent.notification import build_notification
+        from rca_agent.services.notification import build_notification
 
         with trace.span(
             SpanType.NOTIFICATION,

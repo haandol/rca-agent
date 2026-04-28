@@ -2,7 +2,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
-from rca_agent.evidence import EvidenceCollectionSummary
 from rca_agent.models import (
     Hypothesis,
     HypothesisCategory,
@@ -18,6 +17,7 @@ from rca_agent.models import (
     ValidationJudgment,
     ValidationResult,
 )
+from rca_agent.services.evidence import EvidenceCollectionSummary
 from rca_agent.services.pipeline import (
     PipelineOrchestrator,
     parse_sns_envelope,
@@ -199,7 +199,7 @@ class TestProcessAlarmFullPipeline:
         stack[-1].start()
 
         notification_mock = patch(
-            "rca_agent.notification.build_notification",
+            "rca_agent.services.notification.build_notification",
             return_value=MagicMock(),
         )
         active["build_notification"] = notification_mock.start()
@@ -327,7 +327,7 @@ class TestProcessAlarmFullPipeline:
             patch(f"{_P}.run_report_generation", return_value=rca),
             patch(f"{_P}.run_playbook_generation", return_value=MagicMock()),
             patch(f"{_P}.TraceStore", return_value=mock_trace),
-            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
+            patch("rca_agent.services.notification.build_notification", return_value=MagicMock()),
         ):
             orchestrator = PipelineOrchestrator(container)
             orchestrator.process_alarm(_make_body())
@@ -407,7 +407,7 @@ class TestProcessAlarmFullPipeline:
             patch(f"{_P}.run_report_generation", return_value=rca),
             patch(f"{_P}.run_playbook_generation", return_value=MagicMock()),
             patch(f"{_P}.TraceStore", return_value=mock_trace),
-            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
+            patch("rca_agent.services.notification.build_notification", return_value=MagicMock()),
         ):
             orchestrator = PipelineOrchestrator(container)
             orchestrator.process_alarm(_make_body())
@@ -473,7 +473,7 @@ class TestProcessAlarmFullPipeline:
             patch(f"{_P}.run_report_generation", return_value=rca),
             patch(f"{_P}.run_playbook_generation", return_value=MagicMock()),
             patch(f"{_P}.TraceStore", return_value=mock_trace),
-            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
+            patch("rca_agent.services.notification.build_notification", return_value=MagicMock()),
         ):
             orchestrator = PipelineOrchestrator(container)
             orchestrator.process_alarm(body)

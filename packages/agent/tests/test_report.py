@@ -6,7 +6,7 @@ from rca_agent.models import (
     RcaReport,
     ScopingResult,
 )
-from rca_agent.report import (
+from rca_agent.services.report import (
     ReportOutput,
     _render_markdown,
     run_report_generation,
@@ -109,7 +109,7 @@ class TestSaveReportToS3:
         report = RcaReport(rca_id="r-1", incident_summary="t", root_cause="t", confidence_score=0.5)
         mock_s3 = MagicMock()
 
-        with patch("rca_agent.report.S3_REPORT_BUCKET", "my-bucket"):
+        with patch("rca_agent.services.report.S3_REPORT_BUCKET", "my-bucket"):
             key = save_report_to_s3(report, s3_client=mock_s3)
 
         assert key == "reports/r-1.md"

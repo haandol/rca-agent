@@ -2,7 +2,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from rca_agent.models import NotificationMessage, RcaReport
-from rca_agent.notification import build_notification, send_notification
+from rca_agent.services.notification import build_notification, send_notification
 
 
 def _make_report(confirmed=True) -> RcaReport:
@@ -39,7 +39,7 @@ class TestSendNotification:
         msg = NotificationMessage(rca_id="r-1", root_cause_summary="t", severity="high")
         assert not send_notification(msg)
 
-    @patch("rca_agent.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
+    @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
     def test_publishes_to_sns(self):
         msg = NotificationMessage(rca_id="r-1", root_cause_summary="Memory leak", severity="high")
         mock_sns = MagicMock()
@@ -53,7 +53,7 @@ class TestSendNotification:
         body = json.loads(call_kwargs["Message"])
         assert body["rca_id"] == "r-1"
 
-    @patch("rca_agent.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
+    @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
     def test_retries_on_failure(self):
         msg = NotificationMessage(rca_id="r-1", root_cause_summary="t", severity="high")
         mock_sns = MagicMock()
@@ -64,7 +64,7 @@ class TestSendNotification:
         assert result is True
         assert mock_sns.publish.call_count == 2
 
-    @patch("rca_agent.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
+    @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
     def test_exhausts_retries(self):
         msg = NotificationMessage(rca_id="r-1", root_cause_summary="t", severity="high")
         mock_sns = MagicMock()
@@ -75,8 +75,8 @@ class TestSendNotification:
         assert result is False
         assert mock_sns.publish.call_count == 2
 
-    @patch("rca_agent.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
-    @patch("rca_agent.notification.S3_REPORT_BUCKET", "my-bucket")
+    @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
+    @patch("rca_agent.services.notification.S3_REPORT_BUCKET", "my-bucket")
     def test_includes_presigned_url(self):
         msg = NotificationMessage(rca_id="r-1", root_cause_summary="t", severity="high", report_s3_key="reports/r-1.md")
         mock_sns = MagicMock()

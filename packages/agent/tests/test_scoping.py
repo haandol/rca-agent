@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from rca_agent.models import AlarmPayload, ScopingResult
-from rca_agent.scoping import ScopingOutput, run_scoping, search_similar_playbooks
+from rca_agent.services.scoping import ScopingOutput, run_scoping, search_similar_playbooks
 
 
 class TestSearchSimilarPlaybooks:
@@ -9,8 +9,8 @@ class TestSearchSimilarPlaybooks:
         result = search_similar_playbooks(sample_alarm, s3_vectors_client=None)
         assert result == []
 
-    @patch("rca_agent.scoping.embed_query", return_value=[0.1] * 1024)
-    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
+    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_returns_matches_above_threshold(self, _mock_embed, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.return_value = {
@@ -32,16 +32,16 @@ class TestSearchSimilarPlaybooks:
         assert result[0].playbook_id == "playbook-001"
         assert result[0].similarity == 0.85
 
-    @patch("rca_agent.scoping.embed_query", return_value=[0.1] * 1024)
-    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
+    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_handles_api_error_gracefully(self, _mock_embed, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("S3 Vectors unavailable")
         result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
         assert result == []
 
-    @patch("rca_agent.scoping.embed_query", return_value=[0.1] * 1024)
-    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
+    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_retries_with_exponential_backoff(self, _mock_embed, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = [
@@ -53,8 +53,8 @@ class TestSearchSimilarPlaybooks:
         assert result[0].playbook_id == "pb-1"
         assert mock_client.query_vectors.call_count == 2
 
-    @patch("rca_agent.scoping.embed_query", return_value=[0.1] * 1024)
-    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
+    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_exhausts_all_retries(self, _mock_embed, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("persistent failure")
@@ -115,8 +115,8 @@ class TestRunScoping:
         result = run_scoping(sample_alarm, mock_agent)
         assert result.anomaly_start_time is None
 
-    @patch("rca_agent.scoping.embed_query", return_value=[0.1] * 1024)
-    @patch("rca_agent.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
+    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_includes_playbooks_in_result(self, _mock_embed, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")
         mock_agent = self._make_mock_agent(output)

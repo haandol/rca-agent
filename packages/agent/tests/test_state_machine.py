@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rca_agent.evidence import EvidenceCollectionSummary
 from rca_agent.models import (
     Hypothesis,
     HypothesisCategory,
@@ -15,6 +14,7 @@ from rca_agent.models import (
     TerminationDecision,
     TerminationReason,
 )
+from rca_agent.services.evidence import EvidenceCollectionSummary
 from rca_agent.session_store import (
     _TERMINAL_STATES,
     VALID_TRANSITIONS,
@@ -435,7 +435,7 @@ class TestPipelineFinalizeBeforeReport:
             patch(f"{pipeline}.check_termination", return_value=td),
             patch(f"{pipeline}.run_report_generation", return_value=rca),
             patch(f"{pipeline}.run_playbook_generation", return_value=MagicMock()),
-            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
+            patch("rca_agent.services.notification.build_notification", return_value=MagicMock()),
             patch(f"{pipeline}.TraceStore", original_trace_cls),
         ):
             orchestrator = PipelineOrchestrator(container)
