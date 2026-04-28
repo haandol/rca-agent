@@ -9,7 +9,11 @@ import HypoNode from '~/components/flow/HypoNode.vue'
 
 function md(text: string | undefined | null): string {
   if (!text) return ''
-  return marked.parse(text, { async: false }) as string
+  const normalized = text
+    .replace(/\\n/g, '\n')
+    .replace(/(?<!\n)(\d+)\.\s/g, '\n$1. ')
+    .trim()
+  return marked.parse(normalized, { async: false, breaks: true }) as string
 }
 
 const route = useRoute()
@@ -217,31 +221,27 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
 
                 <div v-if="selectedNode.metadata.symptom_pattern" class="mt-3">
                   <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">증상 패턴</div>
-                  <div class="text-xs bg-base-200/60 rounded-lg p-3 break-words">{{ selectedNode.metadata.symptom_pattern }}</div>
+                  <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md(selectedNode.metadata.symptom_pattern as string)" />
                 </div>
 
                 <div v-if="(selectedNode.metadata.verification_steps as string[] | undefined)?.length" class="mt-3">
                   <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">검증 절차</div>
-                  <ol class="text-xs bg-base-200/60 rounded-lg p-3 pl-6 space-y-1 list-decimal">
-                    <li v-for="(step, i) in (selectedNode.metadata.verification_steps as string[])" :key="i">{{ step }}</li>
-                  </ol>
+                  <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md((selectedNode.metadata.verification_steps as string[]).map((s, i) => `${i + 1}. ${s}`).join('\n'))" />
                 </div>
 
                 <div v-if="selectedNode.metadata.temporary_mitigation" class="mt-3">
                   <div class="text-[11px] font-medium text-warning uppercase tracking-wider mb-1.5">임시 완화</div>
-                  <div class="text-xs bg-warning/5 border border-warning/10 rounded-lg p-3 break-words">{{ selectedNode.metadata.temporary_mitigation }}</div>
+                  <div class="prose prose-xs max-w-none bg-warning/5 border border-warning/10 rounded-lg p-3 break-words" v-html="md(selectedNode.metadata.temporary_mitigation as string)" />
                 </div>
 
                 <div v-if="selectedNode.metadata.permanent_remediation" class="mt-3">
                   <div class="text-[11px] font-medium text-success uppercase tracking-wider mb-1.5">영구 복구</div>
-                  <div class="text-xs bg-success/5 border border-success/10 rounded-lg p-3 break-words">{{ selectedNode.metadata.permanent_remediation }}</div>
+                  <div class="prose prose-xs max-w-none bg-success/5 border border-success/10 rounded-lg p-3 break-words" v-html="md(selectedNode.metadata.permanent_remediation as string)" />
                 </div>
 
                 <div v-if="(selectedNode.metadata.prevention_measures as string[] | undefined)?.length" class="mt-3">
                   <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-1.5">재발 방지</div>
-                  <ul class="text-xs bg-base-200/60 rounded-lg p-3 pl-6 space-y-1 list-disc">
-                    <li v-for="(m, i) in (selectedNode.metadata.prevention_measures as string[])" :key="i">{{ m }}</li>
-                  </ul>
+                  <div class="prose prose-xs max-w-none bg-base-200/60 rounded-lg p-3 break-words" v-html="md((selectedNode.metadata.prevention_measures as string[]).map((s, i) => `${i + 1}. ${s}`).join('\n'))" />
                 </div>
 
                 <div v-if="(selectedNode.metadata.tags as string[] | undefined)?.length" class="mt-3">
