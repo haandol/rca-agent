@@ -39,7 +39,11 @@ Accepted
 
 6. **Config 모듈 분리**: 환경변수 로딩과 상수 정의를 `config/settings.py`로 분리하여 Adapter 생성 시 참조한다. 비즈니스 로직(Service)은 설정값을 직접 읽지 않고 Container나 생성자 인자로 전달받는다.
 
-7. **기존 모듈 유지(Thin Wrapper)**: 기존 최상위 모듈(`hypothesis.py`, `branching.py`, `scoping.py`, `evidence.py`, `report.py`, `playbook_gen.py`, `notification.py` 등)은 Service 계층으로 로직을 이동한 후 얇은 re-export 래퍼로 남겨둔다. 실제 비즈니스 로직은 모두 `services/` 하위에 위치하며, 루트 래퍼는 하위호환용으로만 존재한다. 외부 진입점(`main.py`)은 Container를 통해 Service를 조합하여 파이프라인을 실행한다.
+7. **기존 모듈 유지(Thin Wrapper)**: 기존 최상위 모듈(`hypothesis.py`, `branching.py`, `scoping.py`, `evidence.py`, `report.py`, `playbook_gen.py`, `notification.py`, `session_store.py`, `trace_store.py` 등)은 각각 Service 또는 Adapter 계층으로 로직을 이동한 후 얇은 re-export 래퍼로 남겨둔다. 비즈니스 로직 모듈은 `services/`로, 인프라 모듈(`session_store.py`, `trace_store.py`)은 `adapters/secondary/`로 이동하였다. 루트 래퍼는 하위호환용으로만 존재한다. 외부 진입점(`main.py`)은 Container를 통해 Service를 조합하여 파이프라인을 실행한다.
+
+8. **프롬프트 모듈 분리**: 기존 단일 `prompts.py`(409줄)를 `prompts/` 패키지로 분리한다. 공통 언어 지시문(`common.py`)과 9개 스테이지별 모듈로 구성하여 각 서비스와 프롬프트의 응집도를 높인다. `__init__.py`에서 전체 상수를 re-export하여 기존 import 경로를 유지한다.
+
+9. **파이프라인 메서드 분할**: `PipelineOrchestrator._run_pipeline`(520줄 단일 메서드)을 `_run_scoping`, `_run_hypothesis_generation`, `_run_validation_loop`, `_finalize_hypotheses`, `_run_report_and_notify` 5개 메서드로 분할하여 가독성과 테스트 가능성을 개선한다.
 
 ### Adapter 분류
 

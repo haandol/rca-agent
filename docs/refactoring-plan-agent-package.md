@@ -244,6 +244,6 @@ from rca_agent.session_store import check_duplicate, create_session, ...  # noqa
 
 520줄 단일 메서드를 5개 메서드로 분할: `_run_scoping`, `_run_hypothesis_generation`, `_run_validation_loop`, `_finalize_hypotheses`, `_run_report_and_notify`. `_run_pipeline`은 이 메서드들을 순서대로 호출하는 ~30줄 오케스트레이션 메서드로 축소.
 
-## Phase 5 (선택): prompts.py 분리 (예정)
+## Phase 5: prompts.py 분리 (완료)
 
-409줄의 프롬프트 상수를 `prompts/` 패키지로 분리하거나 각 서비스 모듈 내로 이동.
+409줄의 `prompts.py` 단일 파일을 `prompts/` 패키지로 분리. `common.py`(공통 LANGUAGE_DIRECTIVE) + 9개 스테이지별 모듈(`scoping.py`, `hypothesis.py`, `evidence.py`, `prioritization.py`, `validation.py`, `branching.py`, `report.py`, `playbook.py`, `remediation.py`, `verification.py`)로 구성. `__init__.py`에서 전체 상수를 re-export하여 기존 `from rca_agent.prompts import X` 경로 유지.
