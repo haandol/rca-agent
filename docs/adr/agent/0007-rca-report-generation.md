@@ -17,16 +17,21 @@ Accepted
 ### 보고서 구조
 
 - 장애 요약 (알람 정보, 발생 시각, 영향 범위)
+- 심각도 (서비스 영향 범위와 지속 시간 기반: critical/high/medium/low)
+- 영향 평가 (영향받은 서비스, 사용자 범위, 지속 시간, 에러율/지연 등 정량적 영향)
+- 탐지 방법 (어떤 알람/메트릭/모니터링이 인시던트를 감지했는지)
 - 근본 원인 (확정된 가설, 신뢰도)
 - 가설 도출 경로 (트리에서 근본 원인까지의 경로, 기각된 가설 목록)
 - 증거 목록 (메트릭 스냅샷, 로그 스니펫, 배포 이력, 코드 diff 참조)
 - 임시 조치 방안 (예: 서비스 롤백, 리소스 증설)
 - 영구 조치 방안 (예: 코드 수정, 설정 변경)
+- 조치 항목 (재발 방지, 영향 축소, 프로세스 개선으로 분류된 후속 작업)
+- 교훈 (탐지/대응에서 잘된 점, 개선할 점, 운이 좋았던 점)
 - 타임라인 (알람 발생 → 스코핑 → 가설 생성 → 검증 → 확정까지 시간 흐름)
 
 ### 핵심 결정사항
 
-1. **Strands SDK structured output**: `ReportOutput` Pydantic 모델(`incident_summary`, `root_cause`, `temporary_mitigation`, `permanent_remediation`, `timeline`)을 `structured_output_model`로 지정한다. LLM 출력을 `RcaReport` 모델로 변환하여 `rca_id`, `hypothesis_path`, `evidence_list`, `rejected_hypotheses` 등 오케스트레이션 레이어에서 수집한 메타데이터를 추가한다.
+1. **Strands SDK structured output**: `ReportOutput` Pydantic 모델(`incident_summary`, `severity`, `impact_summary`, `detection_method`, `root_cause`, `temporary_mitigation`, `permanent_remediation`, `action_items`, `lessons_learned`, `timeline`)을 `structured_output_model`로 지정한다. LLM 출력을 `RcaReport` 모델로 변환하여 `rca_id`, `hypothesis_path`, `evidence_list`, `rejected_hypotheses` 등 오케스트레이션 레이어에서 수집한 메타데이터를 추가한다.
 
 2. **Markdown 저장**: `save_report_to_s3()`가 `_render_markdown()`으로 구조화된 Markdown을 생성하여 S3에 저장한다. 키 형식은 `reports/{rca_id}.md`이다. S3 버킷 미설정 시 업로드를 건너뛴다.
 

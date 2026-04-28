@@ -78,7 +78,7 @@ graph TB
     subgraph SharedStorage["공유 저장소"]
         DDB["DynamoDB<br/>세션 상태 + 멱등성"]
         S3["S3<br/>증거 · 보고서"]
-        S3V["S3 Vectors<br/>플레이북 임베딩"]
+        S3V["S3 Vectors<br/>플레이북/보고서 임베딩"]
     end
 
     subgraph Notify["알림"]
@@ -178,7 +178,7 @@ graph TB
 | **SQS (CC Headless용)** | CC Headless Long Polling | visibility=35분, retention=4일, DLQ 연결 |
 | **DynamoDB** | RCA 세션 상태 관리 | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성) |
 | **S3 (Evidence)** | 수집 증거 + 보고서 저장 | 60일 lifecycle, S3 managed encryption |
-| **S3 Vectors** | 플레이북 임베딩 검색 | cosine 유사도, 1024차원 벡터 |
+| **S3 Vectors** | 플레이북/보고서 임베딩 검색 | cosine 유사도, 1536차원 벡터 (Cohere Embed V4) |
 | **ECS Fargate** | RCA Agent + Healthcare App | ARM64, 1vCPU, 2GB RAM |
 | **ECS Fargate (CC Headless)** | CC Headless RCA | ARM64, 1vCPU, 2GB RAM |
 | **RDS PostgreSQL** | Healthcare 센서 데이터 | PostgreSQL 17.4 |

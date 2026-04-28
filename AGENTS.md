@@ -122,7 +122,7 @@ graph TB
     end
 
     subgraph Storage["영속 저장소 (공유)"]
-        S3_VECTORS["S3 Vectors<br/>(플레이북 임베딩)"]
+        S3_VECTORS["S3 Vectors<br/>(플레이북/보고서 임베딩)"]
         S3["S3 Bucket<br/>(증거 / 보고서)"]
         DDB["DynamoDB<br/>(세션 상태 + 멱등성)"]
     end
@@ -171,7 +171,7 @@ stateDiagram-v2
     ALARM_RECEIVED --> SCOPING: AlarmPayload 파싱
     note right of SCOPING
         AWS Knowledge + CloudWatch + CloudTrail MCP로 메트릭 수집
-        S3 Vectors에서 유사 플레이북 검색
+        S3 Vectors에서 유사 보고서 검색
         timeout: 300s
     end note
 
@@ -228,10 +228,13 @@ stateDiagram-v2
 
     REPORT_GENERATION --> PLAYBOOK_GENERATION: RcaReport
     note right of REPORT_GENERATION
-        인시던트 요약 / 근본 원인
+        인시던트 요약 / 심각도 / 영향 평가
+        탐지 방법 / 근본 원인
         임시 완화 / 영구 해결
+        조치 항목 / 교훈
         타임라인 구성
         S3에 Markdown 저장
+        S3 Vectors에 보고서 인덱싱
     end note
 
     PLAYBOOK_GENERATION --> NOTIFICATION: Playbook
@@ -239,6 +242,7 @@ stateDiagram-v2
         검색 우선(Search-First):
         유사 플레이북 검색 (≥0.86)
         → 업데이트 or 신규 생성
+        심각도 판단 기준 / 에스컬레이션 기준 포함
         S3 Vectors에 인덱싱
     end note
 
@@ -301,11 +305,11 @@ flowchart TD
 
     subgraph F1["F1: Scoping (scoping.py)"]
         direction TB
-        PB_SEARCH["search_similar_playbooks()<br/>S3 Vectors → PlaybookMatch[]"]
+        RPT_SEARCH["search_similar_reports()<br/>S3 Vectors → ReportMatch[]"]
         SCOPING_AGENT["Scoping Agent<br/>(AWS Knowledge + CloudWatch + CloudTrail MCP)"]
         SO["ScopingOutput<br/>(structured_output)"]
         SR["ScopingResult"]
-        PB_SEARCH --> SCOPING_AGENT
+        RPT_SEARCH --> SCOPING_AGENT
         SCOPING_AGENT --> SO --> SR
     end
 
@@ -371,8 +375,10 @@ flowchart TD
         RPT_AGENT["Report Agent"]
         RO["ReportOutput<br/>(structured_output)"]
         RCA["RcaReport"]
-        S3_SAVE["save_report_to_s3()<br/>→ Markdown"]
+        S3_SAVE["report_store.save()<br/>→ S3 Markdown"]
+        S3V_RPT["report_store.save_vectors()<br/>→ S3 Vectors 인덱싱"]
         RPT_AGENT --> RO --> RCA --> S3_SAVE
+        RCA --> S3V_RPT
     end
 
     subgraph F8["F8: Playbook (playbook_gen.py)"]
@@ -440,6 +446,7 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 - **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: Prioritization → Beam Selection → Evidence → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
+- **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors의 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용 (ADR agent/0016)
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
 - **Remediation 분리 (미구현)**: 플레이북을 포함한 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독하여 복구를 수행하도록 설계(ADR agent/0012)되었으나, 아직 배포되지 않음
 
@@ -464,7 +471,7 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 | Component (공유) | Technology |
 |-----------|-----------|
 | 이벤트 라우팅 | Amazon SNS → 각 스택별 SQS Queue |
-| 임베딩 | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (`float32` 벡터 저장) |
+| 임베딩 | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (`float32` 벡터 저장, 플레이북 + 보고서 인덱스) |
 | 증거/보고서 저장 | Amazon S3 |
 | 세션 관리 | Amazon DynamoDB (`engine` 필드로 스택 구분) |
 | 알림 | Amazon SNS |
@@ -533,7 +540,7 @@ CDK 스택 구성 (9개):
 | NetworkStack | VPC (Public + Private subnets, NAT Gateway) |
 | EventBusStack | SNS Alarm Topic + SQS Queue (Fargate용) + DLQ |
 | DatabaseStack | DynamoDB RCA 세션 테이블 |
-| StorageStack | S3 Evidence/Report 버킷 + S3 Vectors (플레이북 임베딩) |
+| StorageStack | S3 Evidence/Report 버킷 + S3 Vectors (플레이북/보고서 임베딩) |
 | RdsStack | PostgreSQL 17.4 (Healthcare 서비스용) |
 | RcaAgentServiceStack | ECS Fargate — Strands RCA 에이전트 |
 | CcHeadlessStack | ECS Fargate — CC headless RCA 에이전트 |

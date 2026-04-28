@@ -18,10 +18,10 @@ flowchart TD
     end
 
     subgraph F1["F1: Scoping"]
-        S_PB["S3 Vectors<br/>유사 플레이북 검색"]
+        S_RPT["S3 Vectors<br/>유사 보고서 검색"]
         S_AGENT["Scoping Agent<br/>(Execution 티어: Haiku 4.5)<br/>AWS Knowledge + CW + CT MCP"]
-        S_OUT["ScopingResult<br/>(severity, blast_radius,<br/>anomaly_start_time, playbooks)"]
-        S_PB --> S_AGENT --> S_OUT
+        S_OUT["ScopingResult<br/>(severity, blast_radius,<br/>anomaly_start_time, similar_reports)"]
+        S_RPT --> S_AGENT --> S_OUT
     end
 
     subgraph F2["F2: Hypothesis Generation"]
@@ -231,7 +231,7 @@ flowchart LR
 
 | 단계 | 입력 | 출력 | 모델 티어 | MCP 도구 |
 |------|------|------|----------|---------|
-| F1: Scoping | AlarmPayload | ScopingResult (severity, blast_radius, playbooks, anomaly_start_time) | Execution | AWS Knowledge + CW + CT |
+| F1: Scoping | AlarmPayload | ScopingResult (severity, blast_radius, similar_reports, anomaly_start_time) | Execution | AWS Knowledge + CW + CT |
 | F2: Hypothesis Gen | ScopingResult | Hypothesis[] (3~5개, depth=0) | Planning | - |
 | F3: Prioritization | Hypothesis[] + ScopingResult | PrioritizedHypothesis[] (rank, plan) | Planning | - |
 | Beam Selection | PrioritizedHypothesis[] | 상위 N개 필터 (기본 3) | 순수 로직 | - |
@@ -239,7 +239,7 @@ flowchart LR
 | F5: Validation | Beam 가설 + evidence_map | ValidationJudgment[] + all_rejected | Execution | - |
 | Termination | judgments + hypotheses + start_time | TerminationDecision (should_terminate, reason) | 순수 로직 | - |
 | F6: Branching | NEEDS_INVESTIGATION 가설 + evidence | Child Hypothesis[] (depth+1) | Planning | - |
-| F7: Report | best_hypothesis + evidence + timeline | RcaReport (Markdown) → S3 저장 | Planning | - |
+| F7: Report | best_hypothesis + evidence + timeline | RcaReport (Markdown) → S3 저장 + S3 Vectors 인덱싱 | Planning | - |
 | F8: Playbook | RcaReport | Playbook → S3 Vectors 인덱싱 | Planning | - |
 | F9: Notification | RcaReport + Playbook | SNS 메시지 (presigned URL + 플레이북) | 순수 로직 | - |
 
@@ -499,8 +499,8 @@ sequenceDiagram
 
     Note over Agent,CW_MCP: Phase 1: F1 초기 스코핑
     Agent->>DDB: state = SCOPING
-    Agent->>S3V: 유사 플레이북 검색
-    S3V-->>Agent: (유사 플레이북 없음)
+    Agent->>S3V: 유사 보고서 검색
+    S3V-->>Agent: (유사 보고서 없음)
     Agent->>AK_MCP: RDS 장애 패턴 / 트러블슈팅 가이드 검색
     Agent->>CW_MCP: DB 커넥션 수 추이 조회 (30분)
     CW_MCP-->>Agent: 커넥션 수 선형 증가 확인

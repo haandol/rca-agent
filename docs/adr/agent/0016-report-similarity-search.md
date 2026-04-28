@@ -12,9 +12,14 @@ Accepted
 
 RCA 보고서는 가설 생성에 더 적합한 정보를 담고 있다:
 - `incident_summary`: 장애 증상 요약
+- `severity`: 심각도 (critical/high/medium/low)
+- `impact_summary`: 영향 평가 (영향받은 서비스, 사용자 범위, 지속 시간)
+- `detection_method`: 탐지 방법 (알람, 메트릭, 모니터링)
 - `root_cause`: 확정/추정 근본 원인
 - `hypothesis_path`: 증상에서 근본 원인에 도달한 추론 경로
 - `evidence_list`: 근본 원인을 뒷받침하는 증거
+- `action_items`: 재발 방지, 영향 축소, 프로세스 개선 후속 작업
+- `lessons_learned`: 탐지/대응에서의 교훈
 
 유사한 증상의 과거 보고서에서 "이 증상일 때 근본 원인은 X였고, Y 경로로 확인했다"라는 정보를 가설 생성에 직접 주입하면 초기 가설의 정확도가 크게 향상될 수 있다.
 

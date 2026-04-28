@@ -28,6 +28,7 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 - 신뢰도/시간/깊이/루프 기반 종료 조건으로 운영 통제
 - 전체 기각 시 자동 가설 재생성 (최대 2회)
 - 가설 상태: PENDING → CONFIRMED / REJECTED / CLOSED / NEEDS_INVESTIGATION
+- 유사 보고서 검색: 스코핑 시 과거 RCA 보고서의 "증상 → 근본 원인" 경로를 활용하여 가설 생성 정확도 향상
 - 플레이북 검색 우선(search-first) 전략: 유사 플레이북 업데이트 또는 신규 생성
 
 ### CC Headless Stack
@@ -45,7 +46,7 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 ### 공통
 - AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP 서버를 통한 데이터 자동 수집
 - RCA 보고서 자동 생성 및 S3 저장
-- S3 Vectors 기반 과거 장애 플레이북 유사도 검색
+- S3 Vectors 기반 유사 보고서/플레이북 검색 (가설 생성 정확도 향상)
 - SNS 알림 전송 (Presigned URL 보고서 링크 포함)
 - DynamoDB 기반 파이프라인 실행 트레이스 (단계별 추적)
 
@@ -184,7 +185,7 @@ npx cdk deploy RcaAgentDevHealthcareServiceStack
 | `NetworkStack` | VPC, 서브넷, NAT Gateway |
 | `EventBusStack` | SNS 토픽, SQS 큐 (알람 → 에이전트 연결) |
 | `DatabaseStack` | DynamoDB 테이블 (RCA 세션) |
-| `StorageStack` | S3 버킷 (증거, 보고서), S3 Vectors (플레이북 임베딩) |
+| `StorageStack` | S3 버킷 (증거, 보고서), S3 Vectors (플레이북/보고서 임베딩) |
 | `RdsStack` | RDS PostgreSQL (Healthcare 서비스용) |
 | `HealthcareServiceStack` | Healthcare 센서 앱 (ECS Fargate + CloudWatch 알람 + Cloud Map DNS) |
 | `RcaAgentServiceStack` | Strands RCA 에이전트 (ECS Fargate) |
@@ -220,7 +221,7 @@ curl -X POST http://${HEALTHCARE_HOST}:8000/fault/db-leak
 CloudWatch Alarm → SNS → SQS 경로로 알람이 전달되면, RCA 에이전트가 자동으로 분석을 시작합니다.
 
 **Strands Agent (9단계 파이프라인)**:
-1. **Scoping**: 알람 메트릭 + 유사 플레이북 검색
+1. **Scoping**: 알람 메트릭 + 유사 보고서 검색 (S3 Vectors)
 2. **Hypothesis Generation**: 가설 3~5개 생성 (배포 코드 결함, 트래픽 급증, RDS 문제 등)
 3. **Prioritization + Beam Selection**: 우선순위 결정, 상위 3개 선택
 4. **Evidence Collection**: CloudWatch 메트릭/로그, CloudTrail 배포 이력, GitHub 코드 diff 수집
