@@ -39,7 +39,7 @@ Accepted
 
 6. **Config 모듈 분리**: 환경변수 로딩과 상수 정의를 `config/settings.py`로 분리하여 Adapter 생성 시 참조한다. 비즈니스 로직(Service)은 설정값을 직접 읽지 않고 Container나 생성자 인자로 전달받는다.
 
-7. **기존 모듈 유지(Thin Wrapper)**: 기존 최상위 모듈(`hypothesis.py`, `branching.py` 등)은 Service 계층으로 로직을 이동한 후 얇은 래퍼로 남겨두거나 제거한다. 외부 진입점(`main.py`)은 Container를 통해 Service를 조합하여 파이프라인을 실행한다.
+7. **기존 모듈 유지(Thin Wrapper)**: 기존 최상위 모듈(`hypothesis.py`, `branching.py`, `scoping.py`, `evidence.py`, `report.py`, `playbook_gen.py`, `notification.py` 등)은 Service 계층으로 로직을 이동한 후 얇은 re-export 래퍼로 남겨둔다. 실제 비즈니스 로직은 모두 `services/` 하위에 위치하며, 루트 래퍼는 하위호환용으로만 존재한다. 외부 진입점(`main.py`)은 Container를 통해 Service를 조합하여 파이프라인을 실행한다.
 
 ### Adapter 분류
 

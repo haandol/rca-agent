@@ -97,7 +97,7 @@ packages/agent/src/rca_agent/
 
 ---
 
-## Phase 1: main.py 축소 — 레거시 파이프라인 제거
+## Phase 1: main.py 축소 — 레거시 파이프라인 제거 (완료)
 
 ### 목표
 
@@ -232,9 +232,9 @@ from rca_agent.session_store import check_duplicate, create_session, ...  # noqa
 
 ---
 
-## Phase 2: 비즈니스 로직을 services/로 이동 (예정)
+## Phase 2: 비즈니스 로직을 services/로 이동 (완료)
 
-루트의 `scoping.py`(185줄), `evidence.py`(312줄), `report.py`(187줄), `playbook_gen.py`(335줄), `notification.py`(108줄) 코드를 `services/*`로 이동. 현재 `services/*`의 re-export 래퍼를 실제 구현으로 교체.
+루트의 `scoping.py`(185줄), `evidence.py`(312줄), `report.py`(187줄), `playbook_gen.py`(335줄), `notification.py`(108줄) 실제 구현을 `services/*`로 이동. 루트 파일은 `services/*`에서 re-export하는 얇은 스텁(총 49줄)으로 전환. 테스트 import 및 `@patch` 경로를 `rca_agent.services.*`로 일괄 변경. `pipeline.py`의 `notification` inline import도 `services.notification`으로 변경.
 
 ## Phase 3: 인프라 모듈을 adapters/로 통합 (예정)
 
