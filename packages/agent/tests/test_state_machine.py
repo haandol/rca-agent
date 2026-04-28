@@ -367,12 +367,11 @@ class TestPreReportHypothesisFinalization:
 
 class TestPipelineFinalizeBeforeReport:
     """
-    Verifies that main._run_pipeline marks hypotheses as CLOSED (not REJECTED)
-    before transitioning to REPORT_GENERATION.
+    Verifies that PipelineOrchestrator._run_pipeline marks hypotheses as
+    REJECTED (not CLOSED) before transitioning to REPORT_GENERATION.
     """
 
     def test_pipeline_closes_pending_on_confirmed_termination(self):
-        from rca_agent.main import _process_alarm
         from rca_agent.models import (
             HypothesisGenerationResult,
             RcaReport,
@@ -381,6 +380,7 @@ class TestPipelineFinalizeBeforeReport:
             ValidationJudgment,
             ValidationResult,
         )
+        from rca_agent.services.pipeline import PipelineOrchestrator
 
         confirmed_h = _make_hypothesis("h-1", HypothesisStatus.PENDING, 0.95)
         pending_h = _make_hypothesis("h-2", HypothesisStatus.PENDING, 0.4)
@@ -421,26 +421,25 @@ class TestPipelineFinalizeBeforeReport:
             "Trigger": {"MetricName": "CPUUtilization", "Namespace": "AWS/ECS", "Dimensions": []},
         }
 
+        container = MagicMock()
+        container.session_store.check_duplicate.return_value = False
+        container.session_store.create_session.return_value = session
+
+        pipeline = "rca_agent.services.pipeline"
         with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", return_value=True),
-            patch("rca_agent.main.mark_completed", return_value=True),
-            patch("rca_agent.main.run_scoping", return_value=sr),
-            patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
-            patch("rca_agent.main.run_prioritization", return_value=MagicMock()),
-            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
-            patch("rca_agent.main.run_validation", return_value=vr),
-            patch("rca_agent.main.check_termination", return_value=td),
-            patch("rca_agent.main.run_report_generation", return_value=rca),
-            patch("rca_agent.main.save_report_to_s3", return_value=""),
-            patch("rca_agent.main.run_playbook_generation", return_value=MagicMock()),
-            patch("rca_agent.main.save_playbook_to_s3_vectors"),
-            patch("rca_agent.main.build_notification", return_value=MagicMock()),
-            patch("rca_agent.main.send_notification"),
-            patch("rca_agent.main.TraceStore", original_trace_cls),
+            patch(f"{pipeline}.run_scoping", return_value=sr),
+            patch(f"{pipeline}.run_hypothesis_generation", return_value=hr),
+            patch(f"{pipeline}.run_prioritization", return_value=MagicMock()),
+            patch(f"{pipeline}.run_evidence_collection", return_value=EvidenceCollectionSummary()),
+            patch(f"{pipeline}.run_validation", return_value=vr),
+            patch(f"{pipeline}.check_termination", return_value=td),
+            patch(f"{pipeline}.run_report_generation", return_value=rca),
+            patch(f"{pipeline}.run_playbook_generation", return_value=MagicMock()),
+            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
+            patch(f"{pipeline}.TraceStore", original_trace_cls),
         ):
-            _process_alarm(body, MagicMock())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(body)
 
         rejected_updates = [(hid, st) for hid, st, _ in trace_update_calls if st == "REJECTED"]
         assert ("h-2", "REJECTED") in rejected_updates, "h-2 should be REJECTED when another hypothesis is CONFIRMED"

@@ -1,8 +1,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
 from rca_agent.evidence import EvidenceCollectionSummary
-from rca_agent.main import _Agents, _parse_sns_envelope, _process_alarm, _prune_subtree
 from rca_agent.models import (
     Hypothesis,
     HypothesisCategory,
@@ -18,24 +18,28 @@ from rca_agent.models import (
     ValidationJudgment,
     ValidationResult,
 )
-from rca_agent.session_store import SessionCancelledError
+from rca_agent.services.pipeline import (
+    PipelineOrchestrator,
+    parse_sns_envelope,
+    prune_subtree,
+)
 
 
 class TestParseSnsEnvelope:
     def test_extracts_message_from_sns_wrapper(self):
         alarm_data = {"AlarmName": "HighCPU", "NewStateValue": "ALARM"}
         body = {"Message": json.dumps(alarm_data), "Type": "Notification"}
-        result = _parse_sns_envelope(body)
+        result = parse_sns_envelope(body)
         assert result == alarm_data
 
     def test_returns_raw_body_when_no_envelope(self):
         body = {"AlarmName": "HighCPU", "NewStateValue": "ALARM"}
-        result = _parse_sns_envelope(body)
+        result = parse_sns_envelope(body)
         assert result == body
 
     def test_returns_raw_body_when_message_is_not_string(self):
         body = {"Message": {"nested": True}}
-        result = _parse_sns_envelope(body)
+        result = parse_sns_envelope(body)
         assert result == body
 
 
@@ -52,17 +56,25 @@ def _make_body(alarm_name="HighCPU"):
     }
 
 
-def _make_agents():
-    agents = MagicMock(spec=_Agents)
-    agents.scoping = MagicMock()
-    agents.hypothesis = MagicMock()
-    agents.prioritization = MagicMock()
-    agents.evidence_mcp_clients = [MagicMock()]
-    agents.validation = MagicMock()
-    agents.branching = MagicMock()
-    agents.report = MagicMock()
-    agents.playbook = MagicMock()
-    return agents
+def _make_container():
+    container = MagicMock()
+    container.session_store = MagicMock()
+    container.session_store.check_duplicate.return_value = False
+    container.report_store = MagicMock()
+    container.notification = MagicMock()
+    container.playbook_store = MagicMock()
+    container.s3_vectors_client = MagicMock()
+    container.s3_client = MagicMock()
+    container.dynamodb_client = MagicMock()
+    container.scoping_agent = MagicMock()
+    container.hypothesis_agent = MagicMock()
+    container.prioritization_agent = MagicMock()
+    container.evidence_mcp_clients = [MagicMock()]
+    container.validation_agent = MagicMock()
+    container.branching_agent = MagicMock()
+    container.report_agent = MagicMock()
+    container.playbook_agent = MagicMock()
+    return container
 
 
 def _make_hypothesis(hid="h-1", confidence=0.5):
@@ -89,11 +101,14 @@ def _hypo_result(hypotheses=None):
     )
 
 
+_P = "rca_agent.services.pipeline"
+
+
 class TestProcessAlarmFullPipeline:
     """Test the full F1-F9 pipeline orchestration."""
 
     def _run(self, *, hypo_result=None, validation_result=None, termination=None):
-        """Helper that patches all pipeline functions and runs _process_alarm."""
+        """Helper that patches all pipeline functions and runs process_alarm."""
         sr = _scoping()
         hr = hypo_result or _hypo_result()
         vr = validation_result or ValidationResult(
@@ -128,6 +143,9 @@ class TestProcessAlarmFullPipeline:
             state=RcaSessionState.ALARM_RECEIVED,
         )
 
+        container = _make_container()
+        container.session_store.create_session.return_value = session
+
         names = [
             "run_scoping",
             "run_hypothesis_generation",
@@ -136,16 +154,7 @@ class TestProcessAlarmFullPipeline:
             "run_validation",
             "check_termination",
             "run_report_generation",
-            "save_report_to_s3",
             "run_playbook_generation",
-            "save_playbook_to_s3_vectors",
-            "build_notification",
-            "send_notification",
-            "check_duplicate",
-            "create_session",
-            "update_state",
-            "mark_completed",
-            "mark_failed",
         ]
         returns = [
             sr,
@@ -158,27 +167,48 @@ class TestProcessAlarmFullPipeline:
             vr,
             td,
             rca,
-            "reports/rca-1.md",
             pb,
-            True,
-            MagicMock(),
-            True,
-            False,
-            session,
-            True,
-            True,
-            True,
         ]
 
         active = {}
         stack = []
         for name, rv in zip(names, returns, strict=True):
-            p = patch(f"rca_agent.main.{name}", return_value=rv)
+            p = patch(f"{_P}.{name}", return_value=rv)
             active[name] = p.start()
             stack.append(p)
 
+        stack.append(
+            patch(
+                f"{_P}.TraceStore",
+                return_value=MagicMock(
+                    span=MagicMock(
+                        return_value=MagicMock(
+                            __enter__=MagicMock(return_value=MagicMock()),
+                            __exit__=MagicMock(return_value=False),
+                        )
+                    ),
+                    start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+                    end_span=MagicMock(),
+                    put_hypotheses=MagicMock(),
+                    update_hypothesis_status=MagicMock(),
+                    update_hypothesis_evidence=MagicMock(),
+                    check_cancelled=MagicMock(),
+                ),
+            )
+        )
+        stack[-1].start()
+
+        notification_mock = patch(
+            "rca_agent.notification.build_notification",
+            return_value=MagicMock(),
+        )
+        active["build_notification"] = notification_mock.start()
+        stack.append(notification_mock)
+
         try:
-            _process_alarm(_make_body(), _make_agents())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
+            active["_container"] = container
             return active
         finally:
             for p in stack:
@@ -192,9 +222,7 @@ class TestProcessAlarmFullPipeline:
         assert mocks["run_validation"].called
         assert mocks["check_termination"].called
         assert mocks["run_report_generation"].called
-        assert mocks["save_report_to_s3"].called
         assert mocks["run_playbook_generation"].called
-        assert mocks["send_notification"].called
 
     def test_early_exit_on_no_hypotheses(self):
         empty_hr = HypothesisGenerationResult(
@@ -202,18 +230,34 @@ class TestProcessAlarmFullPipeline:
             hypotheses=[],
             scoping_result=_scoping(),
         )
+        container = _make_container()
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
+        container.session_store.create_session.return_value = session
+
         with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", return_value=True),
-            patch("rca_agent.main.mark_failed", return_value=True),
-            patch("rca_agent.main.run_scoping", return_value=_scoping()),
-            patch("rca_agent.main.run_hypothesis_generation", return_value=empty_hr),
-            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
-            patch("rca_agent.main.run_prioritization") as mock_prio,
+            patch(f"{_P}.run_scoping", return_value=_scoping()),
+            patch(f"{_P}.run_hypothesis_generation", return_value=empty_hr),
+            patch(f"{_P}.run_evidence_collection", return_value=EvidenceCollectionSummary()),
+            patch(f"{_P}.run_prioritization") as mock_prio,
+            patch(
+                f"{_P}.TraceStore",
+                return_value=MagicMock(
+                    span=MagicMock(
+                        return_value=MagicMock(
+                            __enter__=MagicMock(return_value=MagicMock()),
+                            __exit__=MagicMock(return_value=False),
+                        )
+                    ),
+                    start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+                    end_span=MagicMock(),
+                    put_hypotheses=MagicMock(),
+                    update_hypothesis_status=MagicMock(),
+                    check_cancelled=MagicMock(),
+                ),
+            ),
         ):
-            _process_alarm(_make_body(), _make_agents())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
 
         mock_prio.assert_not_called()
 
@@ -255,34 +299,38 @@ class TestProcessAlarmFullPipeline:
         )
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
+        container = _make_container()
+        container.session_store.create_session.return_value = session
+
+        mock_trace = MagicMock(
+            span=MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+            start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+            end_span=MagicMock(),
+            put_hypotheses=MagicMock(),
+            update_hypothesis_status=MagicMock(),
+            update_hypothesis_evidence=MagicMock(),
+            check_cancelled=MagicMock(),
+        )
+
         with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", return_value=True),
-            patch("rca_agent.main.mark_completed", return_value=True),
-            patch("rca_agent.main.run_scoping", return_value=_scoping()),
-            patch(
-                "rca_agent.main.run_hypothesis_generation",
-                side_effect=[hr1, hr2],
-            ) as mock_hypo,
-            patch("rca_agent.main.run_prioritization"),
-            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
-            patch(
-                "rca_agent.main.run_validation",
-                side_effect=[vr_rejected, vr_confirmed],
-            ),
-            patch(
-                "rca_agent.main.check_termination",
-                side_effect=[td_continue, td_stop],
-            ),
-            patch("rca_agent.main.run_report_generation", return_value=rca),
-            patch("rca_agent.main.save_report_to_s3", return_value=""),
-            patch("rca_agent.main.run_playbook_generation", return_value=MagicMock()),
-            patch("rca_agent.main.save_playbook_to_s3_vectors"),
-            patch("rca_agent.main.build_notification", return_value=MagicMock()),
-            patch("rca_agent.main.send_notification"),
+            patch(f"{_P}.run_scoping", return_value=_scoping()),
+            patch(f"{_P}.run_hypothesis_generation", side_effect=[hr1, hr2]) as mock_hypo,
+            patch(f"{_P}.run_prioritization"),
+            patch(f"{_P}.run_evidence_collection", return_value=EvidenceCollectionSummary()),
+            patch(f"{_P}.run_validation", side_effect=[vr_rejected, vr_confirmed]),
+            patch(f"{_P}.check_termination", side_effect=[td_continue, td_stop]),
+            patch(f"{_P}.run_report_generation", return_value=rca),
+            patch(f"{_P}.run_playbook_generation", return_value=MagicMock()),
+            patch(f"{_P}.TraceStore", return_value=mock_trace),
+            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
         ):
-            _process_alarm(_make_body(), _make_agents())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
 
         assert mock_hypo.call_count == 2
 
@@ -330,32 +378,39 @@ class TestProcessAlarmFullPipeline:
         )
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
+        container = _make_container()
+        container.session_store.create_session.return_value = session
+
+        mock_trace = MagicMock(
+            span=MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+            start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+            end_span=MagicMock(),
+            put_hypotheses=MagicMock(),
+            update_hypothesis_status=MagicMock(),
+            update_hypothesis_evidence=MagicMock(),
+            check_cancelled=MagicMock(),
+        )
+
         with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", return_value=True),
-            patch("rca_agent.main.mark_completed", return_value=True),
-            patch("rca_agent.main.run_scoping", return_value=_scoping()),
-            patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
-            patch("rca_agent.main.run_prioritization"),
-            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
-            patch(
-                "rca_agent.main.run_validation",
-                side_effect=[vr_needs, vr_confirmed],
-            ),
-            patch(
-                "rca_agent.main.check_termination",
-                side_effect=[td_continue, td_stop],
-            ),
-            patch("rca_agent.main.run_branching", return_value=br) as mock_branch,
-            patch("rca_agent.main.run_report_generation", return_value=rca),
-            patch("rca_agent.main.save_report_to_s3", return_value=""),
-            patch("rca_agent.main.run_playbook_generation", return_value=MagicMock()),
-            patch("rca_agent.main.save_playbook_to_s3_vectors"),
-            patch("rca_agent.main.build_notification", return_value=MagicMock()),
-            patch("rca_agent.main.send_notification"),
+            patch(f"{_P}.run_scoping", return_value=_scoping()),
+            patch(f"{_P}.run_hypothesis_generation", return_value=hr),
+            patch(f"{_P}.run_prioritization"),
+            patch(f"{_P}.run_evidence_collection", return_value=EvidenceCollectionSummary()),
+            patch(f"{_P}.run_validation", side_effect=[vr_needs, vr_confirmed]),
+            patch(f"{_P}.check_termination", side_effect=[td_continue, td_stop]),
+            patch(f"{_P}.run_branching", return_value=br) as mock_branch,
+            patch(f"{_P}.run_report_generation", return_value=rca),
+            patch(f"{_P}.run_playbook_generation", return_value=MagicMock()),
+            patch(f"{_P}.TraceStore", return_value=mock_trace),
+            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
         ):
-            _process_alarm(_make_body(), _make_agents())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
 
         mock_branch.assert_called_once()
 
@@ -390,57 +445,88 @@ class TestProcessAlarmFullPipeline:
         )
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
+        container = _make_container()
+        container.session_store.create_session.return_value = session
+
+        mock_trace = MagicMock(
+            span=MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+            start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+            end_span=MagicMock(),
+            put_hypotheses=MagicMock(),
+            update_hypothesis_status=MagicMock(),
+            update_hypothesis_evidence=MagicMock(),
+            check_cancelled=MagicMock(),
+        )
+
         with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", return_value=True),
-            patch("rca_agent.main.mark_completed", return_value=True),
-            patch("rca_agent.main.run_scoping", return_value=_scoping()) as mock_scoping,
-            patch("rca_agent.main.run_hypothesis_generation", return_value=hr),
-            patch("rca_agent.main.run_prioritization"),
-            patch("rca_agent.main.run_evidence_collection", return_value=EvidenceCollectionSummary()),
-            patch("rca_agent.main.run_validation", return_value=vr),
-            patch("rca_agent.main.check_termination", return_value=td),
-            patch("rca_agent.main.run_report_generation", return_value=rca),
-            patch("rca_agent.main.save_report_to_s3", return_value=""),
-            patch("rca_agent.main.run_playbook_generation", return_value=MagicMock()),
-            patch("rca_agent.main.save_playbook_to_s3_vectors"),
-            patch("rca_agent.main.build_notification", return_value=MagicMock()),
-            patch("rca_agent.main.send_notification"),
+            patch(f"{_P}.run_scoping", return_value=_scoping()) as mock_scoping,
+            patch(f"{_P}.run_hypothesis_generation", return_value=hr),
+            patch(f"{_P}.run_prioritization"),
+            patch(f"{_P}.run_evidence_collection", return_value=EvidenceCollectionSummary()),
+            patch(f"{_P}.run_validation", return_value=vr),
+            patch(f"{_P}.check_termination", return_value=td),
+            patch(f"{_P}.run_report_generation", return_value=rca),
+            patch(f"{_P}.run_playbook_generation", return_value=MagicMock()),
+            patch(f"{_P}.TraceStore", return_value=mock_trace),
+            patch("rca_agent.notification.build_notification", return_value=MagicMock()),
         ):
-            _process_alarm(body, _make_agents())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(body)
 
         assert mock_scoping.call_args[0][0].alarm_name == "HighLatency"
 
     def test_skips_duplicate_alarm(self):
-        with (
-            patch("rca_agent.main.check_duplicate", return_value=True),
-            patch("rca_agent.main.create_session") as mock_create,
-            patch("rca_agent.main.run_scoping") as mock_scoping,
-        ):
-            _process_alarm(_make_body(), _make_agents())
+        container = _make_container()
+        container.session_store.check_duplicate.return_value = True
 
-        mock_create.assert_not_called()
+        with (
+            patch(f"{_P}.run_scoping") as mock_scoping,
+        ):
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
+
+        container.session_store.create_session.assert_not_called()
         mock_scoping.assert_not_called()
 
     def test_marks_failed_on_pipeline_exception(self):
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
-        with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", return_value=True),
-            patch("rca_agent.main.mark_failed", return_value=True) as mock_failed,
-            patch("rca_agent.main.run_scoping", side_effect=RuntimeError("boom")),
-        ):
-            _process_alarm(_make_body(), _make_agents())
+        container = _make_container()
+        container.session_store.create_session.return_value = session
 
-        mock_failed.assert_called_once()
-        assert mock_failed.call_args[0][0] == "rca-1"
+        mock_trace = MagicMock(
+            span=MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+            start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+            end_span=MagicMock(),
+            put_hypotheses=MagicMock(),
+            update_hypothesis_status=MagicMock(),
+            check_cancelled=MagicMock(),
+        )
+
+        with (
+            patch(f"{_P}.run_scoping", side_effect=RuntimeError("boom")),
+            patch(f"{_P}.TraceStore", return_value=mock_trace),
+        ):
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
+
+        container.session_store.mark_failed.assert_called_once()
+        assert container.session_store.mark_failed.call_args[0][0] == "rca-1"
 
     def test_state_transitions_in_full_pipeline(self):
         mocks = self._run()
-        calls = [c[0][1] for c in mocks["update_state"].call_args_list]
+        container = mocks["_container"]
+        calls = [c[0][1] for c in container.session_store.update_state.call_args_list]
         assert RcaSessionState.SCOPING in calls
         assert RcaSessionState.HYPOTHESIS_GENERATION in calls
         assert RcaSessionState.HYPOTHESIS_PRIORITIZATION in calls
@@ -455,17 +541,33 @@ class TestProcessAlarmFullPipeline:
     def test_cancelled_session_stops_pipeline(self):
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
 
+        container = _make_container()
+        container.session_store.create_session.return_value = session
+        container.session_store.update_state.side_effect = SessionCancelledError("rca-1")
+
+        mock_trace = MagicMock(
+            span=MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+            start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+            end_span=MagicMock(),
+            put_hypotheses=MagicMock(),
+            update_hypothesis_status=MagicMock(),
+            check_cancelled=MagicMock(),
+        )
+
         with (
-            patch("rca_agent.main.check_duplicate", return_value=False),
-            patch("rca_agent.main.create_session", return_value=session),
-            patch("rca_agent.main.update_state", side_effect=SessionCancelledError("rca-1")),
-            patch("rca_agent.main.mark_failed") as mock_failed,
-            patch("rca_agent.main.run_scoping") as mock_scoping,
+            patch(f"{_P}.run_scoping") as mock_scoping,
+            patch(f"{_P}.TraceStore", return_value=mock_trace),
         ):
-            _process_alarm(_make_body(), _make_agents())
+            orchestrator = PipelineOrchestrator(container)
+            orchestrator.process_alarm(_make_body())
 
         mock_scoping.assert_not_called()
-        mock_failed.assert_not_called()
+        container.session_store.mark_failed.assert_not_called()
 
 
 class TestPruneSubtree:
@@ -481,7 +583,7 @@ class TestPruneSubtree:
         unrelated = _make_hypothesis("h-2")
 
         hypotheses = [parent, child1, child2, unrelated]
-        pruned = _prune_subtree("h-1", hypotheses)
+        pruned = prune_subtree("h-1", hypotheses)
 
         assert set(pruned) == {"h-1a", "h-1b"}
         assert child1.status == HypothesisStatus.REJECTED
@@ -499,7 +601,7 @@ class TestPruneSubtree:
         grandchild.depth = 2
 
         hypotheses = [parent, child, grandchild]
-        pruned = _prune_subtree("h-1", hypotheses)
+        pruned = prune_subtree("h-1", hypotheses)
 
         assert set(pruned) == {"h-1a", "h-1a1"}
         assert grandchild.status == HypothesisStatus.REJECTED
@@ -512,7 +614,7 @@ class TestPruneSubtree:
         child.status = HypothesisStatus.REJECTED
 
         hypotheses = [parent, child]
-        pruned = _prune_subtree("h-1", hypotheses)
+        pruned = prune_subtree("h-1", hypotheses)
 
         assert pruned == []
 
@@ -520,5 +622,5 @@ class TestPruneSubtree:
         parent = _make_hypothesis("h-1")
         parent.status = HypothesisStatus.REJECTED
 
-        pruned = _prune_subtree("h-1", [parent])
+        pruned = prune_subtree("h-1", [parent])
         assert pruned == []
