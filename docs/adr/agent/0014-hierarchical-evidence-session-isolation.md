@@ -132,9 +132,7 @@ Phase 2 (완료): 계층적 부모 요약 주입 (하위 가설 프롬프트에 
 
 ## Related
 
-- [ADR agent/0004: 가설 검증 및 가지치기](0004-hypothesis-validation-pruning.md) — 증거 실패 시 CONFIRMED 방지 로직 추가
-- [ADR agent/0005: 하위 가설 분기](0005-hypothesis-branching.md) — 계층적 정보 흐름의 트리 구조
+- [ADR agent/0018: 가설 트리 라이프사이클](0018-hypothesis-tree-lifecycle.md) — 가설 트리 구조, 검증 시 증거 실패 가드레일, Beam Search에 따른 증거 수집 범위
 - [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — evidence agent는 Execution 티어(Haiku) 사용
-- [ADR agent/0013: Beam Search 탐색 전략](0013-beam-search-traversal.md) — beam 내 가설에 대해서만 증거 수집
 - [ADR infra/0002: 증거 저장](../infra/0002-evidence-storage.md) — S3 + DynamoDB 증거 저장 구조
 - [ADR infra/0005: 파이프라인 실행 트레이스](../infra/0005-execution-trace-dynamodb.md) — DynamoDB 트레이스 스키마

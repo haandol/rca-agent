@@ -45,4 +45,4 @@ Accepted
 
 ## Related
 
-- [ADR agent/0003: 가설 우선순위 결정](../agent/0003-hypothesis-prioritization.md) — 검증 계획에서 메트릭 수집 도구 호출을 지정
+- [ADR agent/0018: 가설 트리 라이프사이클](../agent/0018-hypothesis-tree-lifecycle.md) — 우선순위 결정 단계에서 메트릭 수집 도구 호출을 지정

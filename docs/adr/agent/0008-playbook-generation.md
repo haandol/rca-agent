@@ -78,12 +78,11 @@ Accepted (ADR 0016으로 사용처 개정: 스코핑 소비 제거 → Remediati
 - **플레이북 기반 자동 복구**: **미구현** — ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 플레이북의 복구 절차를 실행하도록 설계되었으나, Remediation Agent가 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
 - **대시보드 표시**: 구현 완료 (전용 플레이북 페이지 `/playbook/:id`, 세션 목록 및 트레이스 뷰에서 링크)
 
-현재 플레이북은 생성 → Cohere Embed V4 임베딩 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행된다. 스코핑 단계에서는 더 이상 플레이북을 조회하지 않으며(ADR 0016으로 보고서로 교체됨), 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동 실행하는 경로는 향후 Remediation Agent에서 처리한다.
+현재 플레이북은 생성 → Cohere Embed V4 임베딩 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행된다. 스코핑 단계에서는 더 이상 플레이북을 조회하지 않으며(ADR 0017로 보고서로 교체됨), 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동 실행하는 경로는 향후 Remediation Agent에서 처리한다.
 
 ## Related
 
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 플레이북의 입력인 RCA 보고서를 생성하는 단계
-- [ADR agent/0001: 초기 스코핑 전략](0001-initial-scoping-strategy.md) — 스코핑 단계의 유사도 검색은 보고서로 교체됨(ADR 0016)
-- [ADR agent/0016: 보고서 기반 유사도 검색](0016-report-similarity-search.md) — 플레이북 대신 보고서를 사용하는 전환 결정
+- [ADR agent/0017: 초기 스코핑 + RCA 보고서 유사도 검색](0017-initial-scoping-and-report-similarity.md) — 스코핑 단계의 유사도 검색은 보고서로 교체됨
 - [ADR agent/0012: 자동 복구](0012-automated-remediation.md) — 플레이북 기반 복구를 별도 에이전트로 분리 (미구현)
 - [ADR infra/0002: 증거 저장](../infra/0002-evidence-storage.md) — 플레이북도 S3 + S3 Vectors에 저장

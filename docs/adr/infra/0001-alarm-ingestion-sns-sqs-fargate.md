@@ -98,5 +98,5 @@ flowchart LR
 
 ## Related
 
-- [ADR agent/0001: 초기 스코핑 전략](../agent/0001-initial-scoping-strategy.md) — 알람 수신 후 스코핑을 시작하는 다음 단계
+- [ADR agent/0017: 초기 스코핑 + RCA 보고서 유사도 검색](../agent/0017-initial-scoping-and-report-similarity.md) — 알람 수신 후 스코핑을 시작하는 다음 단계
 - [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — DynamoDB RCA 세션 상태 관리의 확장

@@ -24,11 +24,6 @@ adr/
 
 ### Agent
 
-- [ADR 0001: 초기 스코핑 전략 — 얕은 스코핑 + 유사 보고서 검색](agent/0001-initial-scoping-strategy.md)
-- [ADR 0002: 가설 생성 — 스코핑 기반 초기 가설 트리 구성](agent/0002-hypothesis-generation.md)
-- [ADR 0003: 가설 우선순위 — 신뢰도 기반 검증 순서 결정](agent/0003-hypothesis-prioritization.md)
-- [ADR 0004: 가설 검증/기각 — 증거 기반 가설 상태 전이](agent/0004-hypothesis-validation-pruning.md)
-- [ADR 0005: 가설 분기 — 검증 중 발견된 새 가설 동적 추가](agent/0005-hypothesis-branching.md)
 - [ADR 0006: 종료 조건 — RCA 분석 자동 종료 판단](agent/0006-termination-conditions.md)
 - [ADR 0007: RCA 보고서 생성 — 구조화된 분석 결과 보고](agent/0007-rca-report-generation.md)
 - [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
@@ -36,10 +31,10 @@ adr/
 - [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
 - [ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인](agent/0011-cc-headless-prompt-driven-rca.md)
 - [ADR 0012: 자동 복구(Remediation) — 별도 에이전트로 분리한 이벤트 기반 복구](agent/0012-automated-remediation.md)
-- [ADR 0013: Beam Search 탐색 전략 — 우선순위 상위 N개 가설 선택적 검증](agent/0013-beam-search-traversal.md)
 - [ADR 0014: 계층형 증거 수집 세션 격리 — 가설별 독립 컨텍스트 윈도우 관리](agent/0014-hierarchical-evidence-session-isolation.md)
 - [ADR 0015: Hexagonal Architecture — Ports & Adapters 기반 패키지 구조 전환](agent/0015-hexagonal-architecture.md)
-- [ADR 0016: 보고서 기반 유사도 검색 — RCA 보고서 벡터 인덱싱으로 가설 생성 정확도 향상](agent/0016-report-similarity-search.md)
+- [ADR 0017: 초기 스코핑 + RCA 보고서 유사도 검색 (Roll-up)](agent/0017-initial-scoping-and-report-similarity.md) — 얕은 스코핑 + S3 Vectors 유사 보고서 검색으로 가설 생성 컨텍스트 확보 (0001, 0016 통합)
+- [ADR 0018: 가설 트리 라이프사이클 (Roll-up)](agent/0018-hypothesis-tree-lifecycle.md) — 가설 생성·우선순위·검증·분기·Beam 탐색의 통합 아키텍처 (0002, 0003, 0004, 0005, 0013 통합)
 
 ### Tools
 
