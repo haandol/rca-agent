@@ -36,6 +36,12 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 - MCP 서버 구성: AWS Knowledge, CloudWatch, CloudTrail, GitHub (`mcp-config.json`)
 - CC가 MCP 도구를 자율적으로 호출
 
+### 공통 — Hexagonal Architecture
+- 양쪽 패키지(agent, cc-headless) 모두 Ports & Adapters 패턴 적용
+- 비즈니스 로직(services/)은 Port 인터페이스(ports/interfaces/)에만 의존, 인프라 구체 클래스(adapters/)와 분리
+- DI Container로 AWS Adapter(DynamoDB, S3, SNS, Bedrock)를 lazy-init 주입
+- DTO(ports/dto/)를 공유 데이터 모델로 사용
+
 ### 공통
 - AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP 서버를 통한 데이터 자동 수집
 - RCA 보고서 자동 생성 및 S3 저장

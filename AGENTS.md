@@ -414,13 +414,34 @@ flowchart TD
 
 ### Agent Architecture
 
+#### Hexagonal Architecture (Ports & Adapters)
+
+agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비즈니스 로직과 인프라를 분리합니다 (ADR agent/0015).
+
+```
+패키지 구조 (agent, cc-headless 공통):
+├── ports/                    # 인터페이스 계층
+│   ├── dto/                  # 공유 데이터 모델 (Pydantic)
+│   └── interfaces/           # 추상 Port (ABC)
+├── adapters/                 # 인프라 구현
+│   ├── primary/              # 인바운드 (SQS Consumer, Health Server)
+│   └── secondary/            # 아웃바운드 (DynamoDB, S3, SNS, Bedrock 등)
+├── services/                 # 순수 비즈니스 로직 (Port 인터페이스에만 의존)
+├── di/                       # DI Container (Adapter 생성 + Port 주입)
+├── config/                   # 환경변수, 설정값
+└── main.py                   # 진입점 (Container → Service 조합)
+```
+
+- **의존성 방향**: Service → Port(인터페이스) ← Adapter. Service는 인프라 구체 클래스를 알지 못함
+- **DI Container**: 추상 `Container`가 Port property를 선언하고, `AppContainer`가 AWS Adapter를 lazy-init으로 생성. 테스트 시 인메모리 구현 주입 가능
+
 #### Fargate Stack (Strands Agents SDK)
 - **9단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → [검증 루프: F3(Prioritization) → Beam Selection → F4(Evidence) → F5(Validation) → Termination Check → F6(Branching)] → F7(Report) → F8(Playbook) → F9(Notification)
 - **2-Tier 모델 아키텍처**: Planning(Sonnet 4.6 + adaptive thinking)은 추론 단계, Execution(Haiku 4.5)은 수집/판정 단계에 사용
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: Prioritization → Beam Selection → Evidence → Validation → Termination Check → Branching을 반복하며, 전체 기각 시 가설 재생성
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
-- **Remediation 분리 (미구현)**: 플레이북을 포함한 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독하여 복구를 수행하도록 설계(ADR agent/0012)되었으나, 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
+- **Remediation 분리 (미구현)**: 플레이북을 포함한 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독하여 복구를 수행하도록 설계(ADR agent/0012)되었으나, 아직 배포되지 않음
 
 #### Fargate Stack (CC Headless)
 - **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 11단계 워크플로우 정의 (스코핑 ~ 보고서 ~ 플레이북 ~ 복구 ~ 검증), CC가 자율적으로 MCP 도구 호출. Strands와 달리 복구를 프롬프트 내에서 직접 수행
