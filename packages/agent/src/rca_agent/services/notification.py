@@ -27,9 +27,11 @@ def build_notification(
             "playbook_id": playbook.playbook_id,
             "failure_type": playbook.failure_type,
             "symptom_pattern": playbook.symptom_pattern,
+            "severity_criteria": playbook.severity_criteria,
             "verification_steps": playbook.verification_steps,
             "temporary_mitigation": playbook.temporary_mitigation,
             "permanent_remediation": playbook.permanent_remediation,
+            "escalation_criteria": playbook.escalation_criteria,
         }
     return NotificationMessage(
         rca_id=report.rca_id,

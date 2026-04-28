@@ -51,10 +51,13 @@ export default defineEventHandler(async (event) => {
     playbook_id: (metadata.playbook_id as string) || '',
     failure_type: (metadata.failure_type as string) || '',
     symptom_pattern: (metadata.symptom_pattern as string) || '',
+    severity_criteria: (metadata.severity_criteria as string) || '',
     verification_steps: (metadata.verification_steps as string[]) || [],
     temporary_mitigation: (metadata.temporary_mitigation as string) || '',
     permanent_remediation: (metadata.permanent_remediation as string) || '',
+    escalation_criteria: (metadata.escalation_criteria as string) || '',
     prevention_measures: (metadata.prevention_measures as string[]) || [],
+    related_metrics: (metadata.related_metrics as string[]) || [],
     tags: (metadata.tags as string[]) || [],
   }
 })

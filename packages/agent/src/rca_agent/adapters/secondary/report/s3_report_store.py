@@ -150,13 +150,25 @@ def _render_markdown(report: RcaReport) -> str:
         "## Incident Summary",
         report.incident_summary,
         "",
-        "## Root Cause",
-        f"**Status**: {confirmed_label}",
-        f"**Confidence**: {report.confidence_score:.2f}",
-        "",
-        report.root_cause,
-        "",
+        f"- **Severity**: {report.severity}",
     ]
+    if report.detection_method:
+        lines.append(f"- **Detection**: {report.detection_method}")
+    lines.append("")
+
+    if report.impact_summary:
+        lines.extend(["## Impact Assessment", report.impact_summary, ""])
+
+    lines.extend(
+        [
+            "## Root Cause",
+            f"**Status**: {confirmed_label}",
+            f"**Confidence**: {report.confidence_score:.2f}",
+            "",
+            report.root_cause,
+            "",
+        ]
+    )
     if report.hypothesis_path:
         lines.append("## Hypothesis Path")
         for p in report.hypothesis_path:
@@ -167,15 +179,22 @@ def _render_markdown(report: RcaReport) -> str:
         for e in report.evidence_list:
             lines.append(f"- {e}")
         lines.append("")
-    if report.temporary_mitigation:
-        lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
-    if report.permanent_remediation:
-        lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
     if report.timeline:
         lines.append("## Timeline")
         for t in report.timeline:
             lines.append(f"- {t}")
         lines.append("")
+    if report.temporary_mitigation:
+        lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
+    if report.permanent_remediation:
+        lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
+    if report.action_items:
+        lines.append("## Action Items")
+        for item in report.action_items:
+            lines.append(f"- {item}")
+        lines.append("")
+    if report.lessons_learned:
+        lines.extend(["## Lessons Learned", report.lessons_learned, ""])
     if report.rejected_hypotheses:
         lines.append("## Rejected Hypotheses")
         for r in report.rejected_hypotheses:

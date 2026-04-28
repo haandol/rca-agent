@@ -34,10 +34,13 @@ _SEARCH_BASE_DELAY = 1.0
 class PlaybookOutput(BaseModel):
     failure_type: str
     symptom_pattern: str
+    severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
+    escalation_criteria: str = ""
     prevention_measures: list[str] = Field(default_factory=list)
+    related_metrics: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -45,10 +48,13 @@ class PlaybookUpdateOutput(BaseModel):
     needs_update: bool = True
     failure_type: str = ""
     symptom_pattern: str = ""
+    severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
+    escalation_criteria: str = ""
     prevention_measures: list[str] = Field(default_factory=list)
+    related_metrics: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -57,10 +63,13 @@ class _ExistingPlaybookHit(BaseModel):
     similarity: float
     failure_type: str
     symptom_pattern: str
+    severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
+    escalation_criteria: str = ""
     prevention_measures: list[str] = Field(default_factory=list)
+    related_metrics: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -87,10 +96,12 @@ def _build_user_prompt(report: RcaReport) -> str:
     return PLAYBOOK_USER_PROMPT_TEMPLATE.format(
         failure_type="Inferred from root cause",
         root_cause=report.root_cause,
-        severity="high" if report.root_cause_confirmed else "medium",
+        severity=report.severity,
         evidence_highlights="\n".join(f"- {e}" for e in report.evidence_list[:5]) or "N/A",
+        detection_method=report.detection_method or "N/A",
         mitigation_text=report.temporary_mitigation or "N/A",
         remediation_text=report.permanent_remediation or "N/A",
+        action_items_text="\n".join(f"- {a}" for a in report.action_items) or "N/A",
     )
 
 
@@ -98,13 +109,17 @@ def _build_update_prompt(existing: _ExistingPlaybookHit, report: RcaReport) -> s
     return PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE.format(
         existing_failure_type=existing.failure_type,
         existing_symptom_pattern=existing.symptom_pattern,
+        existing_severity_criteria=existing.severity_criteria or "N/A",
         existing_verification_steps="\n".join(f"  - {s}" for s in existing.verification_steps) or "N/A",
         existing_temporary_mitigation=existing.temporary_mitigation or "N/A",
         existing_permanent_remediation=existing.permanent_remediation or "N/A",
+        existing_escalation_criteria=existing.escalation_criteria or "N/A",
         existing_prevention_measures="\n".join(f"  - {m}" for m in existing.prevention_measures) or "N/A",
+        existing_related_metrics="\n".join(f"  - {m}" for m in existing.related_metrics) or "N/A",
         root_cause=report.root_cause,
-        severity="high" if report.root_cause_confirmed else "medium",
+        severity=report.severity,
         evidence_highlights="\n".join(f"  - {e}" for e in report.evidence_list[:5]) or "N/A",
+        detection_method=report.detection_method or "N/A",
         mitigation_text=report.temporary_mitigation or "N/A",
         remediation_text=report.permanent_remediation or "N/A",
     )
@@ -217,10 +232,13 @@ def _try_update_existing(
         playbook_id=hit.playbook_id,
         failure_type=output.failure_type or hit.failure_type,
         symptom_pattern=output.symptom_pattern or hit.symptom_pattern,
+        severity_criteria=output.severity_criteria or hit.severity_criteria,
         verification_steps=output.verification_steps or hit.verification_steps,
         temporary_mitigation=output.temporary_mitigation or hit.temporary_mitigation,
         permanent_remediation=output.permanent_remediation or hit.permanent_remediation,
+        escalation_criteria=output.escalation_criteria or hit.escalation_criteria,
         prevention_measures=output.prevention_measures or hit.prevention_measures,
+        related_metrics=output.related_metrics or hit.related_metrics,
         rca_id=report.rca_id,
         tags=output.tags or hit.tags,
     )
@@ -274,10 +292,13 @@ def run_playbook_generation(
         playbook_id=playbook_id,
         failure_type=output.failure_type,
         symptom_pattern=output.symptom_pattern,
+        severity_criteria=output.severity_criteria,
         verification_steps=output.verification_steps,
         temporary_mitigation=output.temporary_mitigation,
         permanent_remediation=output.permanent_remediation,
+        escalation_criteria=output.escalation_criteria,
         prevention_measures=output.prevention_measures,
+        related_metrics=output.related_metrics,
         rca_id=report.rca_id,
         tags=output.tags,
     )

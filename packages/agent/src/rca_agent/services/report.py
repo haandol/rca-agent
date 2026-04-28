@@ -24,9 +24,14 @@ logger = logging.getLogger(__name__)
 
 class ReportOutput(BaseModel):
     incident_summary: str
+    severity: str = "medium"
+    impact_summary: str = ""
+    detection_method: str = ""
     root_cause: str
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
+    action_items: list[str] = Field(default_factory=list)
+    lessons_learned: str = ""
     timeline: list[str] = Field(default_factory=list)
 
 
@@ -42,8 +47,17 @@ def _build_user_prompt(
     root_cause_desc = best_hypothesis.description if best_hypothesis else "Unknown"
     confidence = best_hypothesis.confidence_score if best_hypothesis else 0.0
 
+    alarm_name = ""
+    metric_name = ""
+    if scoping.raw_alarm:
+        alarm_name = scoping.raw_alarm.alarm_name
+        if scoping.raw_alarm.trigger:
+            metric_name = scoping.raw_alarm.trigger.metric_name
+
     return REPORT_USER_PROMPT_TEMPLATE.format(
         incident_summary=scoping.alarm_summary,
+        alarm_name=alarm_name or "N/A",
+        metric_name=metric_name or "N/A",
         confirmed="Yes" if confirmed else "No (most likely candidate)",
         root_cause_description=root_cause_desc,
         confidence=f"{confidence:.2f}",
@@ -96,6 +110,7 @@ def run_report_generation(
         return RcaReport(
             rca_id=rca_id,
             incident_summary=scoping_result.alarm_summary,
+            severity=scoping_result.initial_severity,
             root_cause=best_hypothesis.description if best_hypothesis else "Unknown",
             root_cause_confirmed=confirmed,
             confidence_score=best_hypothesis.confidence_score if best_hypothesis else 0.0,
@@ -109,6 +124,9 @@ def run_report_generation(
     return RcaReport(
         rca_id=rca_id,
         incident_summary=output.incident_summary,
+        severity=output.severity,
+        impact_summary=output.impact_summary,
+        detection_method=output.detection_method,
         root_cause=output.root_cause,
         root_cause_confirmed=confirmed,
         confidence_score=best_hypothesis.confidence_score if best_hypothesis else 0.0,
@@ -116,6 +134,8 @@ def run_report_generation(
         evidence_list=evidence_texts,
         temporary_mitigation=output.temporary_mitigation,
         permanent_remediation=output.permanent_remediation,
+        action_items=output.action_items,
+        lessons_learned=output.lessons_learned,
         timeline=output.timeline,
         rejected_hypotheses=rejected_descriptions,
     )
@@ -146,13 +166,25 @@ def _render_markdown(report: RcaReport) -> str:
         "## Incident Summary",
         report.incident_summary,
         "",
-        "## Root Cause",
-        f"**Status**: {confirmed_label}",
-        f"**Confidence**: {report.confidence_score:.2f}",
-        "",
-        report.root_cause,
-        "",
+        f"- **Severity**: {report.severity}",
     ]
+    if report.detection_method:
+        lines.append(f"- **Detection**: {report.detection_method}")
+    lines.append("")
+
+    if report.impact_summary:
+        lines.extend(["## Impact Assessment", report.impact_summary, ""])
+
+    lines.extend(
+        [
+            "## Root Cause",
+            f"**Status**: {confirmed_label}",
+            f"**Confidence**: {report.confidence_score:.2f}",
+            "",
+            report.root_cause,
+            "",
+        ]
+    )
 
     if report.hypothesis_path:
         lines.append("## Hypothesis Path")
@@ -166,17 +198,26 @@ def _render_markdown(report: RcaReport) -> str:
             lines.append(f"- {e}")
         lines.append("")
 
+    if report.timeline:
+        lines.append("## Timeline")
+        for t in report.timeline:
+            lines.append(f"- {t}")
+        lines.append("")
+
     if report.temporary_mitigation:
         lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
 
     if report.permanent_remediation:
         lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
 
-    if report.timeline:
-        lines.append("## Timeline")
-        for t in report.timeline:
-            lines.append(f"- {t}")
+    if report.action_items:
+        lines.append("## Action Items")
+        for item in report.action_items:
+            lines.append(f"- {item}")
         lines.append("")
+
+    if report.lessons_learned:
+        lines.extend(["## Lessons Learned", report.lessons_learned, ""])
 
     if report.rejected_hypotheses:
         lines.append("## Rejected Hypotheses")

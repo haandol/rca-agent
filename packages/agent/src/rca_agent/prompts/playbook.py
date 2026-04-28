@@ -9,8 +9,17 @@ You are an SRE assistant converting an RCA report into a reusable **playbook**.
 ## Rules
 - Extract the failure pattern, symptoms, and verification steps from the RCA.
 - Write actionable steps that a future SRE can follow if the same symptoms appear.
+- Follow the "Five A's" runbook principles: Actionable, Accessible, Accurate, \
+Authoritative, Adaptable.
 - Include both temporary mitigation and permanent remediation.
 - Add prevention measures to avoid recurrence.
+- **severity_criteria**: Define how to judge severity when this pattern occurs — \
+describe the conditions that distinguish critical, high, medium, and low severity.
+- **escalation_criteria**: Specify when and to whom to escalate — \
+e.g., "if temporary mitigation does not restore service within 10 minutes, \
+escalate to the infrastructure team".
+- **related_metrics**: List the key metrics and dashboards relevant to this \
+failure type, extracted from the RCA evidence and detection information.
 - In `failure_type` and `symptom_pattern`, describe the pattern qualitatively \
 without specific numbers, thresholds, percentages, or timestamps. \
 Use phrases like "abnormally high", "exceeds threshold", "sustained spike" \
@@ -29,13 +38,20 @@ Convert the following RCA report into a reusable playbook.
 ## Evidence Highlights
 {evidence_highlights}
 
+## Detection
+{detection_method}
+
 ## Mitigation Applied
 {mitigation_text}
 
 ## Remediation Plan
 {remediation_text}
 
-Generate a structured playbook.
+## Action Items
+{action_items_text}
+
+Generate a structured playbook with severity criteria, escalation criteria, \
+and related metrics.
 """
 
 PLAYBOOK_UPDATE_SYSTEM_PROMPT = f"""\
@@ -46,7 +62,8 @@ You are an SRE assistant that **updates existing playbooks** based on new RCA fi
 
 ## Rules
 - Compare the existing playbook with the new RCA report.
-- If the new RCA provides additional verification steps, mitigations, or remediations \
+- If the new RCA provides additional verification steps, mitigations, remediations, \
+severity criteria, escalation criteria, or related metrics \
 that are NOT already in the existing playbook, merge them.
 - If the existing playbook is already comprehensive and the new RCA adds nothing new, \
 set needs_update to false.
@@ -62,16 +79,20 @@ Compare the existing playbook with the new RCA findings and decide whether to up
 ## Existing Playbook
 - **Failure Type**: {existing_failure_type}
 - **Symptom Pattern**: {existing_symptom_pattern}
+- **Severity Criteria**: {existing_severity_criteria}
 - **Verification Steps**: {existing_verification_steps}
 - **Temporary Mitigation**: {existing_temporary_mitigation}
 - **Permanent Remediation**: {existing_permanent_remediation}
+- **Escalation Criteria**: {existing_escalation_criteria}
 - **Prevention Measures**: {existing_prevention_measures}
+- **Related Metrics**: {existing_related_metrics}
 
 ## New RCA Findings
 - **Root Cause**: {root_cause}
 - **Severity**: {severity}
 - **Evidence Highlights**:
 {evidence_highlights}
+- **Detection**: {detection_method}
 - **Mitigation Applied**: {mitigation_text}
 - **Remediation Plan**: {remediation_text}
 

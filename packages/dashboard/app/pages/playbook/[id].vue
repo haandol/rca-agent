@@ -120,11 +120,25 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` })
             <div class="prose prose-sm max-w-none" v-html="md(playbook.symptom_pattern)" />
           </div>
 
+          <!-- Severity criteria -->
+          <div v-if="playbook.severity_criteria" class="bg-base-100 rounded-xl border border-base-content/5 p-5">
+            <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-2">심각도 판단 기준</div>
+            <div class="prose prose-sm max-w-none" v-html="md(playbook.severity_criteria)" />
+          </div>
+
           <!-- Verification steps -->
           <div v-if="playbook.verification_steps?.length" class="bg-base-100 rounded-xl border border-base-content/5 p-5">
             <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-2">검증 절차</div>
             <div v-for="(step, i) in playbook.verification_steps" :key="i" class="prose prose-sm max-w-none [&:not(:last-child)]:mb-3">
               <div v-html="md(step)" />
+            </div>
+          </div>
+
+          <!-- Related metrics -->
+          <div v-if="playbook.related_metrics?.length" class="bg-base-100 rounded-xl border border-base-content/5 p-5">
+            <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mb-2">참고 메트릭</div>
+            <div v-for="(m, i) in playbook.related_metrics" :key="i" class="prose prose-sm max-w-none [&:not(:last-child)]:mb-2">
+              <div v-html="md(m)" />
             </div>
           </div>
         </div>
@@ -141,6 +155,12 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` })
           <div v-if="playbook.permanent_remediation" class="bg-success/5 rounded-xl border border-success/15 p-5">
             <div class="text-[11px] font-medium text-success uppercase tracking-wider mb-2">영구 복구 방안</div>
             <div class="prose prose-sm max-w-none" v-html="md(playbook.permanent_remediation)" />
+          </div>
+
+          <!-- Escalation criteria -->
+          <div v-if="playbook.escalation_criteria" class="bg-error/5 rounded-xl border border-error/15 p-5">
+            <div class="text-[11px] font-medium text-error uppercase tracking-wider mb-2">에스컬레이션 기준</div>
+            <div class="prose prose-sm max-w-none" v-html="md(playbook.escalation_criteria)" />
           </div>
 
           <!-- Prevention measures -->

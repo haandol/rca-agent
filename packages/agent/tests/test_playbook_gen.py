@@ -23,12 +23,16 @@ def _make_report() -> RcaReport:
     return RcaReport(
         rca_id="rca-1",
         incident_summary="CPU spike on web-service",
+        severity="high",
+        impact_summary="50% error rate for 15 minutes",
+        detection_method="CloudWatch CPUUtilization alarm",
         root_cause="Memory leak in worker",
         root_cause_confirmed=True,
         confidence_score=0.9,
         evidence_list=["high CPU", "memory growth"],
         temporary_mitigation="Restart tasks",
         permanent_remediation="Fix leak",
+        action_items=["[prevent] Add memory alerts"],
     )
 
 
@@ -57,10 +61,13 @@ def _make_hit(**overrides) -> _ExistingPlaybookHit:
         "similarity": 0.9,
         "failure_type": "Memory leak",
         "symptom_pattern": "CPU spike + memory growth",
+        "severity_criteria": "Critical if OOM kills detected",
         "verification_steps": ["Check memory"],
         "temporary_mitigation": "Restart",
         "permanent_remediation": "Fix code",
+        "escalation_criteria": "Escalate if not resolved in 10 min",
         "prevention_measures": ["Add alerts"],
+        "related_metrics": ["CPUUtilization", "MemoryUtilization"],
         "tags": ["memory"],
     }
     defaults.update(overrides)
@@ -140,7 +147,10 @@ class TestTryUpdateExisting:
             needs_update=True,
             failure_type="Memory leak (updated)",
             symptom_pattern="CPU spike + memory growth + OOM",
+            severity_criteria="Critical if OOM kills exceed 3/min",
             verification_steps=["Check memory", "Check OOM kills"],
+            escalation_criteria="Escalate to infra if not resolved in 5 min",
+            related_metrics=["CPUUtilization", "MemoryUtilization", "OOMKillCount"],
             tags=["memory", "oom"],
         )
         agent = _make_mock_agent(update_output)
@@ -151,6 +161,9 @@ class TestTryUpdateExisting:
         assert result.playbook_id == "existing-1"
         assert result.failure_type == "Memory leak (updated)"
         assert len(result.verification_steps) == 2
+        assert result.severity_criteria == "Critical if OOM kills exceed 3/min"
+        assert result.escalation_criteria == "Escalate to infra if not resolved in 5 min"
+        assert len(result.related_metrics) == 3
 
     def test_returns_none_when_no_update_needed(self):
         hit = _make_hit()
@@ -194,6 +207,9 @@ class TestRunPlaybookGeneration:
         new_output = PlaybookOutput(
             failure_type="Memory leak",
             symptom_pattern="CPU spike",
+            severity_criteria="High if sustained over 5 min",
+            escalation_criteria="Escalate after 10 min",
+            related_metrics=["CPUUtilization"],
             tags=["memory"],
         )
         agent = _make_mock_agent(new_output)
@@ -205,6 +221,9 @@ class TestRunPlaybookGeneration:
             playbook = run_playbook_generation(_make_report(), agent)
 
         assert playbook.failure_type == "Memory leak"
+        assert playbook.severity_criteria == "High if sustained over 5 min"
+        assert playbook.escalation_criteria == "Escalate after 10 min"
+        assert playbook.related_metrics == ["CPUUtilization"]
         assert playbook.rca_id == "rca-1"
 
     def test_creates_new_when_existing_needs_no_update(self):
