@@ -13,6 +13,7 @@ export class StorageStack extends cdk.Stack {
   readonly vectorBucket: s3vectors.CfnVectorBucket;
   readonly evidenceIndex: s3vectors.CfnIndex;
   readonly playbookIndex: s3vectors.CfnIndex;
+  readonly reportIndex: s3vectors.CfnIndex;
 
   constructor(scope: Construct, id: string, props: IProps) {
     super(scope, id, props);
@@ -27,6 +28,11 @@ export class StorageStack extends cdk.Stack {
     this.playbookIndex = this.newVectorIndex(
       'PlaybookIndex',
       'playbook',
+      this.vectorBucket,
+    );
+    this.reportIndex = this.newVectorIndex(
+      'ReportIndex',
+      'report',
       this.vectorBucket,
     );
   }
