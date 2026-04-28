@@ -215,20 +215,17 @@ class PipelineOrchestrator:
             s.output_summary = (
                 f"심각도={scoping_result.initial_severity},"
                 f" 영향범위={scoping_result.blast_radius},"
-                f" 유사 플레이북={len(scoping_result.similar_playbooks)}건,"
                 f" 유사 보고서={len(scoping_result.similar_reports)}건"
             )
             s.metadata = {
                 "심각도": scoping_result.initial_severity,
                 "영향범위": scoping_result.blast_radius,
-                "유사_플레이북": len(scoping_result.similar_playbooks),
                 "유사_보고서": len(scoping_result.similar_reports),
             }
         logger.info(
-            "Scoping: severity=%s, blast_radius=%s, playbooks=%d, reports=%d",
+            "Scoping: severity=%s, blast_radius=%s, reports=%d",
             scoping_result.initial_severity,
             scoping_result.blast_radius,
-            len(scoping_result.similar_playbooks),
             len(scoping_result.similar_reports),
         )
         return scoping_result
@@ -685,10 +682,13 @@ class PipelineOrchestrator:
                 "playbook_id": playbook.playbook_id,
                 "failure_type": playbook.failure_type,
                 "symptom_pattern": playbook.symptom_pattern,
+                "severity_criteria": playbook.severity_criteria,
                 "verification_steps": playbook.verification_steps,
                 "temporary_mitigation": playbook.temporary_mitigation,
                 "permanent_remediation": playbook.permanent_remediation,
+                "escalation_criteria": playbook.escalation_criteria,
                 "prevention_measures": playbook.prevention_measures,
+                "related_metrics": playbook.related_metrics,
                 "tags": playbook.tags,
             }
             trace.end_span(

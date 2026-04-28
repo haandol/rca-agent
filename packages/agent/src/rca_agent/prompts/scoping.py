@@ -30,7 +30,7 @@ The following CloudWatch alarm just fired. Perform shallow scoping.
 - **Period**: {period}s
 - **Threshold**: {threshold} ({comparison_operator})
 
-{playbook_context}
+{report_context}
 
 Analyze the alarm and return the scoping result.
 """

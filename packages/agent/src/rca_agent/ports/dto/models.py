@@ -125,7 +125,6 @@ class ScopingResult(BaseModel):
     blast_radius: str = "single"
     initial_severity: str = "medium"
     metric_snapshot: dict = Field(default_factory=dict)
-    similar_playbooks: list[PlaybookMatch] = Field(default_factory=list)
     similar_reports: list[ReportMatch] = Field(default_factory=list)
     raw_alarm: AlarmPayload | None = None
 

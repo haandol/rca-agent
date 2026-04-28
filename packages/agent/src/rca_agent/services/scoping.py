@@ -11,17 +11,14 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from rca_agent.config.settings import (
-    PLAYBOOK_SIMILARITY_THRESHOLD,
-    PLAYBOOK_TOP_K,
     REPORT_SIMILARITY_THRESHOLD,
     REPORT_TOP_K,
     S3_VECTOR_BUCKET_NAME,
-    S3_VECTOR_PLAYBOOK_INDEX,
     S3_VECTOR_REPORT_INDEX,
     SCOPING_TIMEOUT_SECONDS,
 )
 from rca_agent.embeddings import embed_query
-from rca_agent.ports.dto.models import AlarmPayload, PlaybookMatch, ReportMatch, ScopingResult
+from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
 from rca_agent.prompts import SCOPING_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
@@ -29,8 +26,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PLAYBOOK_SEARCH_MAX_RETRIES = 3
-_PLAYBOOK_SEARCH_BASE_DELAY = 1.0
+_REPORT_SEARCH_MAX_RETRIES = 3
+_REPORT_SEARCH_BASE_DELAY = 1.0
 
 
 class ScopingOutput(BaseModel):
@@ -43,18 +40,19 @@ class ScopingOutput(BaseModel):
     metric_snapshot: dict[str, dict] = Field(default_factory=dict)
 
 
-def _build_playbook_context(playbooks: list[PlaybookMatch]) -> str:
-    if not playbooks:
-        return "No similar playbooks found."
-    lines = ["## Similar Playbooks (from past incidents)"]
-    for i, pb in enumerate(playbooks, 1):
-        lines.append(f"{i}. **{pb.title}** (similarity: {pb.similarity:.2f})")
-        if pb.root_cause_summary:
-            lines.append(f"   Root cause: {pb.root_cause_summary}")
+def _build_report_context(reports: list[ReportMatch]) -> str:
+    if not reports:
+        return "No similar past RCA reports found."
+    lines = ["## Similar Past RCA Reports"]
+    for i, r in enumerate(reports, 1):
+        status = "confirmed" if r.confirmed else "unconfirmed"
+        lines.append(f"{i}. **{r.root_cause}** (similarity: {r.similarity:.2f}, {status})")
+        if r.incident_summary:
+            lines.append(f"   Incident: {r.incident_summary}")
     return "\n".join(lines)
 
 
-def _build_user_prompt(alarm: AlarmPayload, playbooks: list[PlaybookMatch]) -> str:
+def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
     trigger = alarm.trigger
     return SCOPING_USER_PROMPT_TEMPLATE.format(
         alarm_name=alarm.alarm_name,
@@ -68,70 +66,16 @@ def _build_user_prompt(alarm: AlarmPayload, playbooks: list[PlaybookMatch]) -> s
         period=trigger.period if trigger else 300,
         threshold=trigger.threshold if trigger else "N/A",
         comparison_operator=trigger.comparison_operator if trigger else "N/A",
-        playbook_context=_build_playbook_context(playbooks),
+        report_context=_build_report_context(reports),
     )
-
-
-def search_similar_playbooks(
-    alarm: AlarmPayload,
-    *,
-    s3_vectors_client=None,
-    max_retries: int = _PLAYBOOK_SEARCH_MAX_RETRIES,
-    base_delay: float = _PLAYBOOK_SEARCH_BASE_DELAY,
-) -> list[PlaybookMatch]:
-    if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
-        logger.info("S3 Vectors not configured, skipping playbook search")
-        return []
-
-    reason = alarm.new_state_reason[:80] if alarm.new_state_reason else ""
-    metric = alarm.trigger.metric_name[:80] if alarm.trigger else ""
-    query_text = f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
-    try:
-        query_vector = embed_query(query_text)
-    except Exception:
-        logger.exception("Failed to embed query text, skipping playbook search")
-        return []
-
-    for attempt in range(max_retries):
-        try:
-            response = s3_vectors_client.query_vectors(
-                vectorBucketName=S3_VECTOR_BUCKET_NAME,
-                indexName=S3_VECTOR_PLAYBOOK_INDEX,
-                queryVector={"float32": query_vector},
-                topK=PLAYBOOK_TOP_K,
-            )
-            break
-        except Exception:
-            if attempt == max_retries - 1:
-                logger.exception("Failed to search playbooks after %d attempts", max_retries)
-                return []
-            delay = base_delay * (2**attempt)
-            logger.warning("Playbook search attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-            time.sleep(delay)
-
-    matches = []
-    for item in response.get("vectors", []):
-        similarity = item.get("distance", 0.0)
-        if similarity < PLAYBOOK_SIMILARITY_THRESHOLD:
-            continue
-        metadata = item.get("metadata", {})
-        matches.append(
-            PlaybookMatch(
-                playbook_id=item.get("key", ""),
-                title=metadata.get("failure_type", "Unknown"),
-                similarity=similarity,
-                root_cause_summary=metadata.get("symptom_pattern", ""),
-            )
-        )
-    return matches
 
 
 def search_similar_reports(
     alarm: AlarmPayload,
     *,
     s3_vectors_client=None,
-    max_retries: int = _PLAYBOOK_SEARCH_MAX_RETRIES,
-    base_delay: float = _PLAYBOOK_SEARCH_BASE_DELAY,
+    max_retries: int = _REPORT_SEARCH_MAX_RETRIES,
+    base_delay: float = _REPORT_SEARCH_BASE_DELAY,
 ) -> list[ReportMatch]:
     if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
         logger.info("S3 Vectors not configured, skipping report search")
@@ -197,9 +141,8 @@ def run_scoping(
     s3_vectors_client=None,
     timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
 ) -> ScopingResult:
-    playbooks = search_similar_playbooks(alarm, s3_vectors_client=s3_vectors_client)
     reports = search_similar_reports(alarm, s3_vectors_client=s3_vectors_client)
-    user_prompt = _build_user_prompt(alarm, playbooks)
+    user_prompt = _build_user_prompt(alarm, reports)
 
     logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)
 
@@ -219,7 +162,6 @@ def run_scoping(
             alarm_summary=f"[Timeout] {alarm.alarm_name}: {alarm.new_state_reason}",
             blast_radius="single",
             initial_severity="medium",
-            similar_playbooks=playbooks,
             similar_reports=reports,
             raw_alarm=alarm,
         )
@@ -241,7 +183,6 @@ def run_scoping(
         blast_radius=output.blast_radius,
         initial_severity=output.initial_severity,
         metric_snapshot=output.metric_snapshot,
-        similar_playbooks=playbooks,
         similar_reports=reports,
         raw_alarm=alarm,
     )

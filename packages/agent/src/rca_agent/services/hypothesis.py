@@ -16,7 +16,6 @@ from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisGenerationResult,
-    PlaybookMatch,
     ReportMatch,
     ScopingResult,
 )
@@ -63,17 +62,6 @@ def _build_report_context(reports: list[ReportMatch]) -> str:
     return "\n".join(lines)
 
 
-def _build_playbook_context(playbooks: list[PlaybookMatch]) -> str:
-    if not playbooks:
-        return "No similar playbooks found."
-    lines = ["## Similar Playbooks (from past incidents)"]
-    for i, pb in enumerate(playbooks, 1):
-        lines.append(f"{i}. **{pb.title}** (similarity: {pb.similarity:.2f}, id: {pb.playbook_id})")
-        if pb.root_cause_summary:
-            lines.append(f"   Root cause: {pb.root_cause_summary}")
-    return "\n".join(lines)
-
-
 def _build_metric_snapshot_text(metric_snapshot: dict) -> str:
     if not metric_snapshot:
         return "No metric data available."
@@ -94,7 +82,6 @@ def _build_user_prompt(scoping: ScopingResult) -> str:
         initial_severity=scoping.initial_severity,
         metric_snapshot=_build_metric_snapshot_text(scoping.metric_snapshot),
         report_context=_build_report_context(scoping.similar_reports),
-        playbook_context=_build_playbook_context(scoping.similar_playbooks),
     )
 
 

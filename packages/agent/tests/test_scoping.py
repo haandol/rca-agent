@@ -1,12 +1,12 @@
 from unittest.mock import MagicMock, patch
 
 from rca_agent.models import AlarmPayload, ScopingResult
-from rca_agent.services.scoping import ScopingOutput, run_scoping, search_similar_playbooks
+from rca_agent.services.scoping import ScopingOutput, run_scoping, search_similar_reports
 
 
-class TestSearchSimilarPlaybooks:
+class TestSearchSimilarReports:
     def test_returns_empty_when_no_client(self, sample_alarm: AlarmPayload):
-        result = search_similar_playbooks(sample_alarm, s3_vectors_client=None)
+        result = search_similar_reports(sample_alarm, s3_vectors_client=None)
         assert result == []
 
     @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
@@ -16,28 +16,33 @@ class TestSearchSimilarPlaybooks:
         mock_client.query_vectors.return_value = {
             "vectors": [
                 {
-                    "key": "playbook-001",
+                    "key": "rca-001",
                     "distance": 0.85,
-                    "metadata": {"title": "ECS CPU spike", "root_cause_summary": "Task count too low"},
+                    "metadata": {
+                        "root_cause": "Task count too low",
+                        "incident_summary": "CPU spike",
+                        "confirmed": "true",
+                    },
                 },
                 {
-                    "key": "playbook-002",
+                    "key": "rca-002",
                     "distance": 0.5,
-                    "metadata": {"title": "Irrelevant playbook"},
+                    "metadata": {"root_cause": "Irrelevant"},
                 },
             ]
         }
-        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client)
+        result = search_similar_reports(sample_alarm, s3_vectors_client=mock_client)
         assert len(result) == 1
-        assert result[0].playbook_id == "playbook-001"
+        assert result[0].rca_id == "rca-001"
         assert result[0].similarity == 0.85
+        assert result[0].confirmed is True
 
     @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
     @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_handles_api_error_gracefully(self, _mock_embed, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("S3 Vectors unavailable")
-        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
+        result = search_similar_reports(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
         assert result == []
 
     @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
@@ -46,11 +51,11 @@ class TestSearchSimilarPlaybooks:
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = [
             RuntimeError("transient error"),
-            {"vectors": [{"key": "pb-1", "distance": 0.9, "metadata": {"title": "Found it"}}]},
+            {"vectors": [{"key": "rca-1", "distance": 0.9, "metadata": {"root_cause": "Found"}}]},
         ]
-        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
+        result = search_similar_reports(sample_alarm, s3_vectors_client=mock_client, base_delay=0.01)
         assert len(result) == 1
-        assert result[0].playbook_id == "pb-1"
+        assert result[0].rca_id == "rca-1"
         assert mock_client.query_vectors.call_count == 2
 
     @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
@@ -58,7 +63,7 @@ class TestSearchSimilarPlaybooks:
     def test_exhausts_all_retries(self, _mock_embed, sample_alarm: AlarmPayload):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("persistent failure")
-        result = search_similar_playbooks(sample_alarm, s3_vectors_client=mock_client, max_retries=2, base_delay=0.01)
+        result = search_similar_reports(sample_alarm, s3_vectors_client=mock_client, max_retries=2, base_delay=0.01)
         assert result == []
         assert mock_client.query_vectors.call_count == 2
 
@@ -117,7 +122,7 @@ class TestRunScoping:
 
     @patch("rca_agent.services.scoping.embed_query", return_value=[0.1] * 1024)
     @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_includes_playbooks_in_result(self, _mock_embed, sample_alarm: AlarmPayload):
+    def test_includes_reports_in_result(self, _mock_embed, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")
         mock_agent = self._make_mock_agent(output)
 
@@ -125,16 +130,20 @@ class TestRunScoping:
         mock_s3v.query_vectors.return_value = {
             "vectors": [
                 {
-                    "key": "pb-1",
+                    "key": "rca-1",
                     "distance": 0.9,
-                    "metadata": {"failure_type": "Past CPU incident", "symptom_pattern": "Memory leak"},
+                    "metadata": {
+                        "root_cause": "Past CPU incident",
+                        "incident_summary": "Memory leak",
+                        "confirmed": "true",
+                    },
                 }
             ]
         }
 
         result = run_scoping(sample_alarm, mock_agent, s3_vectors_client=mock_s3v)
-        assert len(result.similar_playbooks) == 1
-        assert result.similar_playbooks[0].title == "Past CPU incident"
+        assert len(result.similar_reports) == 1
+        assert result.similar_reports[0].root_cause == "Past CPU incident"
 
     def test_prompt_contains_alarm_details(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")

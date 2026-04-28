@@ -24,7 +24,7 @@ adr/
 
 ### Agent
 
-- [ADR 0001: 초기 스코핑 전략 — 얕은 스코핑 + 유사 플레이북 검색](agent/0001-initial-scoping-strategy.md)
+- [ADR 0001: 초기 스코핑 전략 — 얕은 스코핑 + 유사 보고서 검색](agent/0001-initial-scoping-strategy.md)
 - [ADR 0002: 가설 생성 — 스코핑 기반 초기 가설 트리 구성](agent/0002-hypothesis-generation.md)
 - [ADR 0003: 가설 우선순위 — 신뢰도 기반 검증 순서 결정](agent/0003-hypothesis-prioritization.md)
 - [ADR 0004: 가설 검증/기각 — 증거 기반 가설 상태 전이](agent/0004-hypothesis-validation-pruning.md)

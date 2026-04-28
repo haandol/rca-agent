@@ -112,7 +112,7 @@ class TestScopingResult:
         assert result.alarm_summary == "CPU spike on web service"
         assert result.blast_radius == "single"
         assert result.initial_severity == "medium"
-        assert result.similar_playbooks == []
+        assert result.similar_reports == []
         assert result.metric_snapshot == {}
 
     def test_full(self, sample_alarm: AlarmPayload):

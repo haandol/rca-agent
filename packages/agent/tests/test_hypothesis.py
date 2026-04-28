@@ -6,7 +6,7 @@ import pytest
 from rca_agent.hypothesis import (
     HypothesisOutput,
     _build_metric_snapshot_text,
-    _build_playbook_context,
+    _build_report_context,
     _build_user_prompt,
     _HypothesisItem,
     run_hypothesis_generation,
@@ -14,7 +14,7 @@ from rca_agent.hypothesis import (
 from rca_agent.models import (
     HypothesisCategory,
     HypothesisGenerationResult,
-    PlaybookMatch,
+    ReportMatch,
     ScopingResult,
 )
 
@@ -26,12 +26,14 @@ def sample_scoping_result() -> ScopingResult:
         blast_radius="single",
         initial_severity="high",
         metric_snapshot={"CPUUtilization": {"current": 92.5, "baseline": 45.0, "unit": "Percent"}},
-        similar_playbooks=[
-            PlaybookMatch(
-                playbook_id="pb-001",
-                title="ECS CPU spike",
+        similar_reports=[
+            ReportMatch(
+                rca_id="rca-001",
                 similarity=0.85,
-                root_cause_summary="Task count too low after deployment",
+                incident_summary="ECS CPU spike",
+                root_cause="Task count too low after deployment",
+                hypothesis_path="DEPLOYMENT → task count",
+                confirmed=True,
             )
         ],
     )
@@ -61,19 +63,26 @@ def _make_mock_agent(output: HypothesisOutput) -> MagicMock:
     return mock_agent
 
 
-class TestBuildPlaybookContext:
-    def test_empty_playbooks(self):
-        result = _build_playbook_context([])
-        assert result == "No similar playbooks found."
+class TestBuildReportContext:
+    def test_empty_reports(self):
+        result = _build_report_context([])
+        assert result == "No similar past RCA reports found."
 
-    def test_with_playbooks(self):
-        playbooks = [
-            PlaybookMatch(playbook_id="pb-1", title="CPU issue", similarity=0.9, root_cause_summary="Memory leak"),
+    def test_with_reports(self):
+        reports = [
+            ReportMatch(
+                rca_id="rca-1",
+                similarity=0.9,
+                incident_summary="CPU spike",
+                root_cause="Memory leak",
+                hypothesis_path="INFRASTRUCTURE → memory",
+                confirmed=True,
+            ),
         ]
-        result = _build_playbook_context(playbooks)
-        assert "CPU issue" in result
-        assert "pb-1" in result
+        result = _build_report_context(reports)
         assert "Memory leak" in result
+        assert "CPU spike" in result
+        assert "confirmed" in result
 
 
 class TestBuildMetricSnapshotText:
@@ -95,7 +104,7 @@ class TestBuildUserPrompt:
         assert "single" in prompt
         assert "high" in prompt
         assert "CPUUtilization" in prompt
-        assert "ECS CPU spike" in prompt
+        assert "Task count too low after deployment" in prompt
 
 
 class TestRunHypothesisGeneration:
@@ -152,7 +161,7 @@ class TestRunHypothesisGeneration:
 
         prompt = mock_agent.call_args[0][0]
         assert "CPU utilization on web-service exceeded 80%" in prompt
-        assert "ECS CPU spike" in prompt
+        assert "Task count too low after deployment" in prompt
 
     def test_retries_on_failure(self, sample_scoping_result: ScopingResult):
         output = _make_hypothesis_output(3)
