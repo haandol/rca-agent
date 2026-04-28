@@ -110,6 +110,15 @@ class PlaybookMatch(BaseModel):
     root_cause_summary: str = ""
 
 
+class ReportMatch(BaseModel):
+    rca_id: str
+    similarity: float
+    incident_summary: str = ""
+    root_cause: str = ""
+    hypothesis_path: str = ""
+    confirmed: bool = False
+
+
 class ScopingResult(BaseModel):
     alarm_summary: str
     anomaly_start_time: datetime | None = None
@@ -117,6 +126,7 @@ class ScopingResult(BaseModel):
     initial_severity: str = "medium"
     metric_snapshot: dict = Field(default_factory=dict)
     similar_playbooks: list[PlaybookMatch] = Field(default_factory=list)
+    similar_reports: list[ReportMatch] = Field(default_factory=list)
     raw_alarm: AlarmPayload | None = None
 
 
@@ -194,6 +204,9 @@ class TerminationDecision(BaseModel):
 class RcaReport(BaseModel):
     rca_id: str
     incident_summary: str
+    severity: str = "medium"
+    impact_summary: str = ""
+    detection_method: str = ""
     root_cause: str
     root_cause_confirmed: bool = True
     confidence_score: float = Field(ge=0.0, le=1.0)
@@ -201,6 +214,8 @@ class RcaReport(BaseModel):
     evidence_list: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
+    action_items: list[str] = Field(default_factory=list)
+    lessons_learned: str = ""
     timeline: list[str] = Field(default_factory=list)
     rejected_hypotheses: list[str] = Field(default_factory=list)
 
@@ -209,10 +224,13 @@ class Playbook(BaseModel):
     playbook_id: str
     failure_type: str
     symptom_pattern: str
+    severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
+    escalation_criteria: str = ""
     prevention_measures: list[str] = Field(default_factory=list)
+    related_metrics: list[str] = Field(default_factory=list)
     rca_id: str = ""
     tags: list[str] = Field(default_factory=list)
 

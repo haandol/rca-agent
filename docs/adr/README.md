@@ -39,6 +39,7 @@ adr/
 - [ADR 0013: Beam Search 탐색 전략 — 우선순위 상위 N개 가설 선택적 검증](agent/0013-beam-search-traversal.md)
 - [ADR 0014: 계층형 증거 수집 세션 격리 — 가설별 독립 컨텍스트 윈도우 관리](agent/0014-hierarchical-evidence-session-isolation.md)
 - [ADR 0015: Hexagonal Architecture — Ports & Adapters 기반 패키지 구조 전환](agent/0015-hexagonal-architecture.md)
+- [ADR 0016: 보고서 기반 유사도 검색 — RCA 보고서 벡터 인덱싱으로 가설 생성 정확도 향상](agent/0016-report-similarity-search.md)
 
 ### Tools
 

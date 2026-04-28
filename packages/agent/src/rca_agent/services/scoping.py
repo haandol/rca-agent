@@ -13,12 +13,15 @@ from pydantic import BaseModel, Field
 from rca_agent.config.settings import (
     PLAYBOOK_SIMILARITY_THRESHOLD,
     PLAYBOOK_TOP_K,
+    REPORT_SIMILARITY_THRESHOLD,
+    REPORT_TOP_K,
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
+    S3_VECTOR_REPORT_INDEX,
     SCOPING_TIMEOUT_SECONDS,
 )
 from rca_agent.embeddings import embed_query
-from rca_agent.ports.dto.models import AlarmPayload, PlaybookMatch, ScopingResult
+from rca_agent.ports.dto.models import AlarmPayload, PlaybookMatch, ReportMatch, ScopingResult
 from rca_agent.prompts import SCOPING_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
@@ -123,6 +126,62 @@ def search_similar_playbooks(
     return matches
 
 
+def search_similar_reports(
+    alarm: AlarmPayload,
+    *,
+    s3_vectors_client=None,
+    max_retries: int = _PLAYBOOK_SEARCH_MAX_RETRIES,
+    base_delay: float = _PLAYBOOK_SEARCH_BASE_DELAY,
+) -> list[ReportMatch]:
+    if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
+        logger.info("S3 Vectors not configured, skipping report search")
+        return []
+
+    reason = alarm.new_state_reason[:80] if alarm.new_state_reason else ""
+    metric = alarm.trigger.metric_name[:80] if alarm.trigger else ""
+    query_text = f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
+    try:
+        query_vector = embed_query(query_text)
+    except Exception:
+        logger.exception("Failed to embed query text, skipping report search")
+        return []
+
+    for attempt in range(max_retries):
+        try:
+            response = s3_vectors_client.query_vectors(
+                vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                indexName=S3_VECTOR_REPORT_INDEX,
+                queryVector={"float32": query_vector},
+                topK=REPORT_TOP_K,
+            )
+            break
+        except Exception:
+            if attempt == max_retries - 1:
+                logger.exception("Failed to search reports after %d attempts", max_retries)
+                return []
+            delay = base_delay * (2**attempt)
+            logger.warning("Report search attempt %d failed, retrying in %.1fs", attempt + 1, delay)
+            time.sleep(delay)
+
+    matches = []
+    for item in response.get("vectors", []):
+        similarity = item.get("distance", 0.0)
+        if similarity < REPORT_SIMILARITY_THRESHOLD:
+            continue
+        metadata = item.get("metadata", {})
+        matches.append(
+            ReportMatch(
+                rca_id=item.get("key", ""),
+                similarity=similarity,
+                incident_summary=metadata.get("incident_summary", ""),
+                root_cause=metadata.get("root_cause", ""),
+                hypothesis_path=metadata.get("hypothesis_path", ""),
+                confirmed=metadata.get("confirmed", "false") == "true",
+            )
+        )
+    return matches
+
+
 def _invoke_scoping_agent(
     agent: Agent,
     user_prompt: str,
@@ -139,6 +198,7 @@ def run_scoping(
     timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
 ) -> ScopingResult:
     playbooks = search_similar_playbooks(alarm, s3_vectors_client=s3_vectors_client)
+    reports = search_similar_reports(alarm, s3_vectors_client=s3_vectors_client)
     user_prompt = _build_user_prompt(alarm, playbooks)
 
     logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)
@@ -160,6 +220,7 @@ def run_scoping(
             blast_radius="single",
             initial_severity="medium",
             similar_playbooks=playbooks,
+            similar_reports=reports,
             raw_alarm=alarm,
         )
 
@@ -181,5 +242,6 @@ def run_scoping(
         initial_severity=output.initial_severity,
         metric_snapshot=output.metric_snapshot,
         similar_playbooks=playbooks,
+        similar_reports=reports,
         raw_alarm=alarm,
     )

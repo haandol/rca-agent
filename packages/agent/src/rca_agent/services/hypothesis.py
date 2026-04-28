@@ -17,6 +17,7 @@ from rca_agent.ports.dto.models import (
     HypothesisCategory,
     HypothesisGenerationResult,
     PlaybookMatch,
+    ReportMatch,
     ScopingResult,
 )
 from rca_agent.prompts import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
@@ -46,6 +47,20 @@ class _HypothesisItem(BaseModel):
 
 # Re-declare HypothesisOutput after _HypothesisItem is defined (forward ref)
 HypothesisOutput.model_rebuild()
+
+
+def _build_report_context(reports: list[ReportMatch]) -> str:
+    if not reports:
+        return "No similar past RCA reports found."
+    lines = ["## Similar Past RCA Reports"]
+    for i, r in enumerate(reports, 1):
+        status = "confirmed" if r.confirmed else "unconfirmed"
+        lines.append(f"{i}. **{r.root_cause}** (similarity: {r.similarity:.2f}, {status})")
+        if r.incident_summary:
+            lines.append(f"   Incident: {r.incident_summary}")
+        if r.hypothesis_path:
+            lines.append(f"   Hypothesis path: {r.hypothesis_path}")
+    return "\n".join(lines)
 
 
 def _build_playbook_context(playbooks: list[PlaybookMatch]) -> str:
@@ -78,6 +93,7 @@ def _build_user_prompt(scoping: ScopingResult) -> str:
         blast_radius=scoping.blast_radius,
         initial_severity=scoping.initial_severity,
         metric_snapshot=_build_metric_snapshot_text(scoping.metric_snapshot),
+        report_context=_build_report_context(scoping.similar_reports),
         playbook_context=_build_playbook_context(scoping.similar_playbooks),
     )
 

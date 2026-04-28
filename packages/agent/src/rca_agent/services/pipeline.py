@@ -215,18 +215,21 @@ class PipelineOrchestrator:
             s.output_summary = (
                 f"심각도={scoping_result.initial_severity},"
                 f" 영향범위={scoping_result.blast_radius},"
-                f" 유사 플레이북={len(scoping_result.similar_playbooks)}건"
+                f" 유사 플레이북={len(scoping_result.similar_playbooks)}건,"
+                f" 유사 보고서={len(scoping_result.similar_reports)}건"
             )
             s.metadata = {
                 "심각도": scoping_result.initial_severity,
                 "영향범위": scoping_result.blast_radius,
                 "유사_플레이북": len(scoping_result.similar_playbooks),
+                "유사_보고서": len(scoping_result.similar_reports),
             }
         logger.info(
-            "Scoping: severity=%s, blast_radius=%s, playbooks=%d",
+            "Scoping: severity=%s, blast_radius=%s, playbooks=%d, reports=%d",
             scoping_result.initial_severity,
             scoping_result.blast_radius,
             len(scoping_result.similar_playbooks),
+            len(scoping_result.similar_reports),
         )
         return scoping_result
 
@@ -662,6 +665,7 @@ class PipelineOrchestrator:
         logger.info("RCA report generated: %s", rca_report.rca_id)
 
         report_s3_key = c.report_store.save(rca_report)
+        c.report_store.save_vectors(rca_report, scoping_result=scoping_result)
 
         # F8: Playbook
         playbook: Playbook | None = None

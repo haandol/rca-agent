@@ -11,6 +11,11 @@ You are an SRE assistant converting an RCA report into a reusable **playbook**.
 - Write actionable steps that a future SRE can follow if the same symptoms appear.
 - Include both temporary mitigation and permanent remediation.
 - Add prevention measures to avoid recurrence.
+- In `failure_type` and `symptom_pattern`, describe the pattern qualitatively \
+without specific numbers, thresholds, percentages, or timestamps. \
+Use phrases like "abnormally high", "exceeds threshold", "sustained spike" \
+instead of exact values. This ensures similarity search works across incidents \
+with different numeric details but the same failure pattern.
 """
 
 PLAYBOOK_USER_PROMPT_TEMPLATE = """\
@@ -47,6 +52,8 @@ that are NOT already in the existing playbook, merge them.
 set needs_update to false.
 - Do NOT remove existing content — only add or refine.
 - Preserve the existing playbook's structure and language style.
+- In `failure_type` and `symptom_pattern`, describe the pattern qualitatively \
+without specific numbers, thresholds, percentages, or timestamps.
 """
 
 PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE = """\

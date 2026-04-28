@@ -94,7 +94,7 @@ class AppContainer(Container):
         if self._report_store is None:
             from rca_agent.adapters.secondary.report.s3_report_store import S3ReportStore
 
-            self._report_store = S3ReportStore(self.s3_client)
+            self._report_store = S3ReportStore(self.s3_client, self.s3_vectors_client, self.embedding)
         return self._report_store
 
     @property
