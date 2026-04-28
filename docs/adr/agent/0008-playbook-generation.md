@@ -4,9 +4,9 @@ Date: 2026-04-21
 
 ## Status
 
-Accepted (ADR 0016으로 사용처 개정: 스코핑 소비 제거 → Remediation/플레이북 업데이트 전용)
+Accepted (ADR 0001으로 사용처 개정: 스코핑 소비 제거 → Remediation/플레이북 업데이트 전용)
 
-> 2026-04-28 업데이트: 초기 스코핑 단계의 유사도 검색이 플레이북에서 **RCA 보고서**로 전환되었다(ADR 0016).
+> 2026-04-28 업데이트: 초기 스코핑 단계의 유사도 검색이 플레이북에서 **RCA 보고서**로 전환되었다(ADR 0001).
 > 플레이북 인덱싱은 유지되지만, 소비처는 (a) 플레이북 업데이트의 Search-First 중복 방지와 (b) 향후 Remediation Agent(ADR 0012)로 한정된다.
 
 ## Context
@@ -37,7 +37,7 @@ Accepted (ADR 0016으로 사용처 개정: 스코핑 소비 제거 → Remediati
    ```
    장애유형: {failure_type} | 증상: {symptom_pattern} | 메트릭: {metric_name}
    ```
-   각 필드는 80자로 truncate하여 임베딩 품질을 유지한다. 저장 시 `input_type=search_document`, 검색 시 `input_type=search_query`를 사용한다. 동일 템플릿을 RCA 보고서 인덱스(ADR 0016)에도 적용하여 두 인덱스 간 임베딩 공간 일관성을 보장한다.
+   각 필드는 80자로 truncate하여 임베딩 품질을 유지한다. 저장 시 `input_type=search_document`, 검색 시 `input_type=search_query`를 사용한다. 동일 템플릿을 RCA 보고서 인덱스(ADR 0001)에도 적용하여 두 인덱스 간 임베딩 공간 일관성을 보장한다.
 
 3. **업데이트 판단 LLM**: `PlaybookUpdateOutput` Pydantic 모델(`needs_update`, 플레이북 전체 필드)을 `structured_output_model`로 지정하여 LLM이 기존 플레이북 대비 새 RCA에서 추가된 점이 있는지 판단한다. `needs_update=false`이면 기존 플레이북을 그대로 유지한다.
 
@@ -73,16 +73,16 @@ Accepted (ADR 0016으로 사용처 개정: 스코핑 소비 제거 → Remediati
 ## Implementation Status
 
 - **플레이북 생성/저장/인덱싱**: 구현 완료 (Strands F8 단계, CC Headless 9단계). Cohere Embed V4(1536차원) + `float32` 벡터 직접 저장 방식으로 E2E 검증 완료. 양쪽 엔진 모두 S3 Vectors에 벡터 저장 성공 확인.
-- **스코핑 단계 플레이북 검색**: **제거** (ADR 0016) — 2026-04-28부로 스코핑 경로에서 플레이북 인덱스를 더 이상 조회하지 않는다. 가설 생성에는 유사 RCA 보고서가 주입된다.
+- **스코핑 단계 플레이북 검색**: **제거** (ADR 0001) — 2026-04-28부로 스코핑 경로에서 플레이북 인덱스를 더 이상 조회하지 않는다. 가설 생성에는 유사 RCA 보고서가 주입된다.
 - **플레이북 업데이트 Search-First**: 구현 유지 — F8 플레이북 생성 시 유사도 0.86 이상의 기존 플레이북이 있으면 LLM이 업데이트 여부를 판단하여 중복 생성을 방지한다.
 - **플레이북 기반 자동 복구**: **미구현** — ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 플레이북의 복구 절차를 실행하도록 설계되었으나, Remediation Agent가 아직 배포되지 않음. `remediation.py`(복구 실행)와 `verification.py`(복구 검증) 모듈은 준비됨
 - **대시보드 표시**: 구현 완료 (전용 플레이북 페이지 `/playbook/:id`, 세션 목록 및 트레이스 뷰에서 링크)
 
-현재 플레이북은 생성 → Cohere Embed V4 임베딩 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행된다. 스코핑 단계에서는 더 이상 플레이북을 조회하지 않으며(ADR 0017로 보고서로 교체됨), 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동 실행하는 경로는 향후 Remediation Agent에서 처리한다.
+현재 플레이북은 생성 → Cohere Embed V4 임베딩 → S3 Vectors 인덱싱 → SNS 알림 포함까지 수행된다. 스코핑 단계에서는 더 이상 플레이북을 조회하지 않으며(ADR 0001로 보고서로 교체됨), 플레이북의 복구 절차(temporary_mitigation, permanent_remediation)를 자동 실행하는 경로는 향후 Remediation Agent에서 처리한다.
 
 ## Related
 
+- [ADR agent/0001: 초기 스코핑 + RCA 보고서 유사도 검색](0001-initial-scoping-and-report-similarity.md) — 스코핑 단계의 유사도 검색은 보고서로 교체됨
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 플레이북의 입력인 RCA 보고서를 생성하는 단계
-- [ADR agent/0017: 초기 스코핑 + RCA 보고서 유사도 검색](0017-initial-scoping-and-report-similarity.md) — 스코핑 단계의 유사도 검색은 보고서로 교체됨
 - [ADR agent/0012: 자동 복구](0012-automated-remediation.md) — 플레이북 기반 복구를 별도 에이전트로 분리 (미구현)
 - [ADR infra/0002: 증거 저장](../infra/0002-evidence-storage.md) — 플레이북도 S3 + S3 Vectors에 저장

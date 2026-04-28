@@ -1,10 +1,10 @@
-# ADR 0017: 초기 스코핑 + RCA 보고서 유사도 검색 (Roll-up)
+# ADR 0001: 초기 스코핑 + RCA 보고서 유사도 검색 (Roll-up)
 
 Date: 2026-04-28
 
 ## Status
 
-Accepted (Roll-up of 0001, 0016)
+Accepted (Roll-up — 체인 내 최소 번호로 재사용)
 
 ## Context
 
@@ -102,16 +102,16 @@ flowchart TD
 
 ## Evolution History
 
-| ADR | 주요 내용 | 현재 반영 여부 |
+| 원본 ADR | 주요 내용 | 현재 반영 여부 |
 |---|---|---|
-| 0001 | 얕은 스코핑 + 유사 **플레이북** 검색 + 5분 타임아웃 + CloudWatch MCP + Haiku 4.5 티어 | 부분 반영 — 스코핑 전략과 인프라는 유지, 검색 대상만 보고서로 교체 |
-| 0016 | 유사도 검색 대상을 플레이북 → RCA 보고서로 교체, 보고서 벡터 인덱싱 도입, 정성적 요약 전략 | 완전 반영 |
+| 구 0001 (초기 스코핑 전략) | 얕은 스코핑 + 유사 **플레이북** 검색 + 5분 타임아웃 + CloudWatch MCP + Haiku 4.5 티어 | 부분 반영 — 스코핑 전략과 인프라는 유지, 검색 대상만 보고서로 교체 |
+| 구 0016 (보고서 기반 유사도 검색) | 유사도 검색 대상을 플레이북 → RCA 보고서로 교체, 보고서 벡터 인덱싱 도입, 정성적 요약 전략 | 완전 반영 |
 
 ## Related
 
+- [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 스코핑 결과를 소비하는 가설 트리 단계
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 벡터 인덱싱의 입력인 보고서 생성
 - [ADR agent/0008: 플레이북 생성](0008-playbook-generation.md) — 동일 임베딩 템플릿을 공유하는 플레이북 인덱싱 (스코핑 경로에서는 비사용)
 - [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — 스코핑에 적용된 Execution 티어
-- [ADR agent/0018: 가설 트리 라이프사이클](0018-hypothesis-tree-lifecycle.md) — 스코핑 결과를 소비하는 가설 트리 단계
 - [ADR infra/0001: 알람 수신 아키텍처](../infra/0001-alarm-ingestion-sns-sqs-fargate.md) — 스코핑의 입력인 알람 페이로드 전달 경로
 - [ADR infra/0002: 증거 저장](../infra/0002-evidence-storage.md) — 보고서와 플레이북을 S3 Vectors에 저장

@@ -1,10 +1,10 @@
-# ADR 0018: 가설 트리 라이프사이클 — 생성·우선순위·검증·분기·Beam 탐색 (Roll-up)
+# ADR 0002: 가설 트리 라이프사이클 — 생성·우선순위·검증·분기·Beam 탐색 (Roll-up)
 
 Date: 2026-04-28
 
 ## Status
 
-Accepted (Roll-up of 0002, 0003, 0004, 0005, 0013)
+Accepted (Roll-up — 체인 내 최소 번호로 재사용)
 
 ## Context
 
@@ -60,7 +60,7 @@ flowchart TD
 - **LLM 구조화 출력**: Strands SDK `structured_output_model`로 `HypothesisOutput` Pydantic 모델을 지정한다. SDK가 파싱을 처리하므로 프롬프트에 JSON 포맷 지시가 불필요하다. 비스트리밍 모드로 호출한다.
 - **개수 제한**: 루트 레벨 3~5개. Pydantic `max_length=5` 제약으로 하드 제한하며, 초과 시 방어적으로 잘라낸다.
 - **카테고리 필수**: 각 가설은 5개 카테고리 중 하나에 분류되어 검증 전략을 체계화한다.
-- **유사 보고서 주입**: 스코핑에서 전달된 유사 RCA 보고서(`root_cause`, `incident_summary`, `hypothesis_path`, `confirmed`)를 프롬프트에 포함하여 과거 경험을 우선 반영한다. 확정된 보고서의 근본 원인에 더 높은 신뢰도를 부여하도록 지시한다(ADR 0017).
+- **유사 보고서 주입**: 스코핑에서 전달된 유사 RCA 보고서(`root_cause`, `incident_summary`, `hypothesis_path`, `confirmed`)를 프롬프트에 포함하여 과거 경험을 우선 반영한다. 확정된 보고서의 근본 원인에 더 높은 신뢰도를 부여하도록 지시한다(ADR 0001).
 - **재시도**: 시도당 3분 타임아웃, 최대 3회 재시도. 모두 실패 시 빈 가설 목록 반환.
 - **전체 기각 후 재생성**: 검증 결과 모든 가설이 REJECTED이면 가설 생성으로 루프백한다. 최대 `RCA_MAX_REGENERATION_ROUNDS=2`회 제한.
 - **모델 티어**: Planning 티어 (Sonnet 4.6 + adaptive thinking).
@@ -162,18 +162,18 @@ flowchart TD
 
 ## Evolution History
 
-| ADR | 주요 내용 | 현재 반영 여부 |
+| 원본 ADR | 주요 내용 | 현재 반영 여부 |
 |---|---|---|
-| 0002 | LLM 구조화 가설 생성, 카테고리 분류, 루트 3~5개, 3회 재시도 | 완전 반영 (단, 유사 플레이북 주입 → 유사 보고서로 교체, ADR 0017) |
-| 0003 | LLM 동적 우선순위, 검증 계획 수립, 병렬 그룹 판단, 카테고리 fallback | 완전 반영 |
-| 0004 | confidence_score 기반 3단 판정, score 기반 재분류, 전체 기각 재생성(최대 2회), 증거 실패 시 CONFIRMED 금지, 루프 종료 시 CLOSED 정리 | 완전 반영 |
-| 0005 | NEEDS_INVESTIGATION 분기, 부모당 최대 3개, 깊이 제한 3, 중복 방지 | 완전 반영 |
-| 0013 | Beam Search (상위 N), 비선택 가설 보존, 증거 재사용, 기각된 가설 컨텍스트 제공 | 완전 반영 |
+| 구 0002 (가설 생성) | LLM 구조화 가설 생성, 카테고리 분류, 루트 3~5개, 3회 재시도 | 완전 반영 (단, 유사 플레이북 주입 → 유사 보고서로 교체, ADR 0001) |
+| 구 0003 (가설 우선순위) | LLM 동적 우선순위, 검증 계획 수립, 병렬 그룹 판단, 카테고리 fallback | 완전 반영 |
+| 구 0004 (가설 검증/기각) | confidence_score 기반 3단 판정, score 기반 재분류, 전체 기각 재생성(최대 2회), 증거 실패 시 CONFIRMED 금지, 루프 종료 시 CLOSED 정리 | 완전 반영 |
+| 구 0005 (하위 가설 분기) | NEEDS_INVESTIGATION 분기, 부모당 최대 3개, 깊이 제한 3, 중복 방지 | 완전 반영 |
+| 구 0013 (Beam Search) | Beam Search (상위 N), 비선택 가설 보존, 증거 재사용, 기각된 가설 컨텍스트 제공 | 완전 반영 |
 
 ## Related
 
+- [ADR agent/0001: 초기 스코핑 + RCA 보고서 유사도 검색](0001-initial-scoping-and-report-similarity.md) — 가설 생성의 입력인 스코핑 결과와 유사 보고서 생성
 - [ADR agent/0006: 중단 조건](0006-termination-conditions.md) — 검증 루프 종료 판단 기준 (CONFIRMED / 타임 버짓 / 최대 루프 / 전체 기각 등)
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — best_hypothesis와 검증 판단 근거를 소비하여 보고서 생성
 - [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — 각 단계의 Planning/Execution 티어 매핑
 - [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집 실패의 근본 원인(컨텍스트 오버플로우) 해결 및 가설별 독립 세션 관리
-- [ADR agent/0017: 초기 스코핑 + RCA 보고서 유사도 검색](0017-initial-scoping-and-report-similarity.md) — 가설 생성의 입력인 스코핑 결과와 유사 보고서 생성

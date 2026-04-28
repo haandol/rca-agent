@@ -69,5 +69,5 @@ Accepted
 
 ## Related
 
-- [ADR agent/0017: 초기 스코핑 + RCA 보고서 유사도 검색](0017-initial-scoping-and-report-similarity.md) — 스코핑은 Execution 티어 사용
-- [ADR agent/0018: 가설 트리 라이프사이클](0018-hypothesis-tree-lifecycle.md) — 가설 생성·우선순위·분기는 Planning 티어, 검증은 Execution 티어 사용
+- [ADR agent/0001: 초기 스코핑 + RCA 보고서 유사도 검색](0001-initial-scoping-and-report-similarity.md) — 스코핑은 Execution 티어 사용
+- [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 가설 생성·우선순위·분기는 Planning 티어, 검증은 Execution 티어 사용

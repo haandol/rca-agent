@@ -66,4 +66,4 @@ Accepted
 
 ## Related
 
-- [ADR agent/0018: 가설 트리 라이프사이클](0018-hypothesis-tree-lifecycle.md) — 매 검증 루프 후 중단 조건을 평가
+- [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 매 검증 루프 후 중단 조건을 평가
