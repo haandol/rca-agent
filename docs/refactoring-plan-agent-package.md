@@ -236,9 +236,9 @@ from rca_agent.session_store import check_duplicate, create_session, ...  # noqa
 
 루트의 `scoping.py`(185줄), `evidence.py`(312줄), `report.py`(187줄), `playbook_gen.py`(335줄), `notification.py`(108줄) 실제 구현을 `services/*`로 이동. 루트 파일은 `services/*`에서 re-export하는 얇은 스텁(총 49줄)으로 전환. 테스트 import 및 `@patch` 경로를 `rca_agent.services.*`로 일괄 변경. `pipeline.py`의 `notification` inline import도 `services.notification`으로 변경.
 
-## Phase 3: 인프라 모듈을 adapters/로 통합 (예정)
+## Phase 3: 인프라 모듈을 adapters/로 통합 (완료)
 
-`trace_store.py`(496줄) → `adapters/secondary/trace/`, `session_store.py`(311줄) → 기존 `adapters/secondary/session/`에 병합.
+`trace_store.py`(496줄) → `adapters/secondary/trace/dynamodb_trace_store.py`로 이동. `session_store.py`(311줄)의 함수 기반 코드를 `adapters/secondary/session/dynamodb_session_store.py`에 병합. 루트 파일은 adapter에서 re-export하는 스텁(총 28줄)으로 전환. `pipeline.py`의 `trace_store` import를 adapter 경로로 변경.
 
 ## Phase 4: pipeline.py `_run_pipeline` 분할 (예정)
 

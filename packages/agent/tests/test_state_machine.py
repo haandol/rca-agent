@@ -6,6 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    _TERMINAL_STATES,
+    VALID_TRANSITIONS,
+    InvalidStateTransitionError,
+    SessionCancelledError,
+    _validate_transition,
+)
 from rca_agent.models import (
     Hypothesis,
     HypothesisCategory,
@@ -15,13 +22,6 @@ from rca_agent.models import (
     TerminationReason,
 )
 from rca_agent.services.evidence import EvidenceCollectionSummary
-from rca_agent.session_store import (
-    _TERMINAL_STATES,
-    VALID_TRANSITIONS,
-    InvalidStateTransitionError,
-    SessionCancelledError,
-    _validate_transition,
-)
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -94,22 +94,22 @@ class TestHappyPathTransitions:
     @pytest.mark.parametrize("current,target", HAPPY_PATH)
     def test_happy_path_allowed(self, current: str, target: str):
         ddb = _mock_ddb_state(current)
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
             _validate_transition("rca-1", target, dynamodb_client=ddb)
 
     def test_validation_to_prioritization_loop(self):
         ddb = _mock_ddb_state("HYPOTHESIS_VALIDATION")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
             _validate_transition("rca-1", "HYPOTHESIS_PRIORITIZATION", dynamodb_client=ddb)
 
     def test_validation_to_evidence_loop(self):
         ddb = _mock_ddb_state("HYPOTHESIS_VALIDATION")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
             _validate_transition("rca-1", "EVIDENCE_COLLECTION", dynamodb_client=ddb)
 
     def test_validation_to_hypothesis_generation_regeneration(self):
         ddb = _mock_ddb_state("HYPOTHESIS_VALIDATION")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
             _validate_transition("rca-1", "HYPOTHESIS_GENERATION", dynamodb_client=ddb)
 
 
@@ -130,7 +130,7 @@ class TestInvalidTransitions:
     def test_invalid_transition_raises(self, current: str, target: str):
         ddb = _mock_ddb_state(current)
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
             pytest.raises(InvalidStateTransitionError),
         ):
             _validate_transition("rca-1", target, dynamodb_client=ddb)
@@ -144,7 +144,7 @@ class TestTerminalStateAbort:
     def test_terminal_state_raises_session_cancelled(self, terminal: str):
         ddb = _mock_ddb_state(terminal)
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
             pytest.raises(SessionCancelledError),
         ):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=ddb)
@@ -152,7 +152,7 @@ class TestTerminalStateAbort:
     def test_completed_aborts_pipeline(self):
         ddb = _mock_ddb_state("COMPLETED")
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
             pytest.raises(SessionCancelledError),
         ):
             _validate_transition("rca-1", "REPORT_GENERATION", dynamodb_client=ddb)
@@ -160,7 +160,7 @@ class TestTerminalStateAbort:
     def test_failed_aborts_pipeline(self):
         ddb = _mock_ddb_state("FAILED")
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
             pytest.raises(SessionCancelledError),
         ):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=ddb)
@@ -168,7 +168,7 @@ class TestTerminalStateAbort:
     def test_outdated_aborts_pipeline(self):
         ddb = _mock_ddb_state("OUTDATED")
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
             pytest.raises(SessionCancelledError),
         ):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=ddb)
@@ -180,18 +180,18 @@ class TestTerminalStateAbort:
 class TestNoDdbSkipsValidation:
     def test_no_table_name_skips(self):
         ddb = MagicMock()
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=ddb)
         ddb.get_item.assert_not_called()
 
     def test_no_client_skips(self):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=None)
 
     def test_no_item_in_ddb_skips(self):
         ddb = MagicMock()
         ddb.get_item.return_value = {}
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "t"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
             _validate_transition("rca-1", "ANYTHING", dynamodb_client=ddb)
 
 

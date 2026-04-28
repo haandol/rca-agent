@@ -5,6 +5,7 @@ import logging
 import time
 from datetime import UTC, datetime
 
+from rca_agent.adapters.secondary.trace.dynamodb_trace_store import SpanStatus, SpanType, TraceStore
 from rca_agent.config.settings import (
     ALARM_STALENESS_SECONDS,
     RCA_BEAM_WIDTH,
@@ -27,7 +28,6 @@ from rca_agent.services.report import run_report_generation
 from rca_agent.services.scoping import run_scoping
 from rca_agent.services.termination import check_termination
 from rca_agent.services.validation import run_validation
-from rca_agent.trace_store import SpanStatus, SpanType, TraceStore
 
 logger = logging.getLogger(__name__)
 

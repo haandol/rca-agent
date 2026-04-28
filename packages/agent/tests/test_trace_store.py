@@ -5,17 +5,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from rca_agent.models import Hypothesis, HypothesisCategory, HypothesisStatus
-from rca_agent.trace_store import (
+from rca_agent.adapters.secondary.trace.dynamodb_trace_store import (
     SpanStatus,
     SpanType,
     TraceStore,
     _deserialize_hypothesis,
     _deserialize_span,
 )
+from rca_agent.models import Hypothesis, HypothesisCategory, HypothesisStatus
 
 TABLE_NAME = "rca-sessions"
-PATCH_TABLE = "rca_agent.trace_store.DYNAMODB_TABLE_NAME"
+PATCH_TABLE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store.DYNAMODB_TABLE_NAME"
 
 
 @pytest.fixture()

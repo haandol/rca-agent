@@ -7,8 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from rca_agent.models import AlarmPayload, AlarmTrigger, RcaSessionState
-from rca_agent.session_store import (
+from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     SessionCancelledError,
     build_idempotency_key,
     build_rca_id,
@@ -18,6 +17,7 @@ from rca_agent.session_store import (
     mark_failed,
     update_state,
 )
+from rca_agent.models import AlarmPayload, AlarmTrigger, RcaSessionState
 
 
 @pytest.fixture()
@@ -74,18 +74,18 @@ class TestBuildRcaId:
 
 class TestCreateSession:
     def test_returns_none_when_no_table_name(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
             result = create_session(alarm, dynamodb_client=dynamodb_client)
         assert result is None
         dynamodb_client.put_item.assert_not_called()
 
     def test_returns_none_when_no_client(self, alarm: AlarmPayload):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = create_session(alarm, dynamodb_client=None)
         assert result is None
 
     def test_creates_session_successfully(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             session = create_session(alarm, dynamodb_client=dynamodb_client)
 
         assert session is not None
@@ -97,35 +97,35 @@ class TestCreateSession:
         dynamodb_client.put_item.assert_called_once()
 
     def test_rca_id_is_deterministic(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             session = create_session(alarm, dynamodb_client=dynamodb_client)
 
         expected_rca_id = build_rca_id(build_idempotency_key(alarm))
         assert session.rca_id == expected_rca_id
 
     def test_put_item_uses_correct_table(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "my-table"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "my-table"):
             create_session(alarm, dynamodb_client=dynamodb_client)
 
         call_kwargs = dynamodb_client.put_item.call_args[1]
         assert call_kwargs["TableName"] == "my-table"
 
     def test_put_item_uses_engine_prefixed_sk(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             create_session(alarm, dynamodb_client=dynamodb_client)
 
         call_kwargs = dynamodb_client.put_item.call_args[1]
         assert call_kwargs["Item"]["SK"]["S"] == "strands#SESSION"
 
     def test_put_item_includes_engine_attribute(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             create_session(alarm, dynamodb_client=dynamodb_client)
 
         call_kwargs = dynamodb_client.put_item.call_args[1]
         assert call_kwargs["Item"]["engine"]["S"] == "strands"
 
     def test_put_item_includes_condition_expression(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             create_session(alarm, dynamodb_client=dynamodb_client)
 
         call_kwargs = dynamodb_client.put_item.call_args[1]
@@ -135,7 +135,7 @@ class TestCreateSession:
         error_response = {"Error": {"Code": "ConditionalCheckFailedException", "Message": "dup"}}
         dynamodb_client.put_item.side_effect = ClientError(error_response, "PutItem")
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = create_session(alarm, dynamodb_client=dynamodb_client)
 
         assert result is None
@@ -145,7 +145,7 @@ class TestCreateSession:
         dynamodb_client.put_item.side_effect = ClientError(error_response, "PutItem")
 
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
             pytest.raises(ClientError),
         ):
             create_session(alarm, dynamodb_client=dynamodb_client)
@@ -153,19 +153,19 @@ class TestCreateSession:
 
 class TestCheckDuplicate:
     def test_returns_false_when_no_table_name(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
             result = check_duplicate(alarm, dynamodb_client=dynamodb_client)
         assert result is False
 
     def test_returns_false_when_no_client(self, alarm: AlarmPayload):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = check_duplicate(alarm, dynamodb_client=None)
         assert result is False
 
     def test_returns_true_when_item_found(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         dynamodb_client.get_item.return_value = {"Item": {"PK": {"S": "RCA#abc"}, "SK": {"S": "strands#SESSION"}}}
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = check_duplicate(alarm, dynamodb_client=dynamodb_client)
 
         assert result is True
@@ -173,7 +173,7 @@ class TestCheckDuplicate:
     def test_returns_false_when_no_item(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         dynamodb_client.get_item.return_value = {}
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = check_duplicate(alarm, dynamodb_client=dynamodb_client)
 
         assert result is False
@@ -182,7 +182,7 @@ class TestCheckDuplicate:
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         dynamodb_client.get_item.side_effect = ClientError(error_response, "GetItem")
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = check_duplicate(alarm, dynamodb_client=dynamodb_client)
 
         assert result is False
@@ -190,7 +190,7 @@ class TestCheckDuplicate:
     def test_uses_get_item_with_correct_key(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         dynamodb_client.get_item.return_value = {}
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             check_duplicate(alarm, dynamodb_client=dynamodb_client)
 
         call_kwargs = dynamodb_client.get_item.call_args[1]
@@ -208,18 +208,18 @@ def _ddb_with_state(state: str) -> MagicMock:
 
 class TestUpdateState:
     def test_returns_false_when_no_table(self, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
             result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=dynamodb_client)
         assert result is False
 
     def test_returns_false_when_no_client(self):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=None)
         assert result is False
 
     def test_updates_state_successfully(self):
         ddb = _ddb_with_state("ALARM_RECEIVED")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
         assert result is True
@@ -231,7 +231,7 @@ class TestUpdateState:
 
     def test_includes_cancelled_condition(self):
         ddb = _ddb_with_state("ALARM_RECEIVED")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
         call_kwargs = ddb.update_item.call_args[1]
@@ -244,7 +244,7 @@ class TestUpdateState:
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
         with (
-            patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
             pytest.raises(SessionCancelledError),
         ):
             update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
@@ -254,7 +254,7 @@ class TestUpdateState:
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
 
         assert result is False
@@ -262,13 +262,13 @@ class TestUpdateState:
 
 class TestMarkCompleted:
     def test_returns_false_when_no_table(self, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
             result = mark_completed("rca-123", dynamodb_client=dynamodb_client)
         assert result is False
 
     def test_marks_completed_with_root_cause(self):
         ddb = _ddb_with_state("REPORT_GENERATION")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = mark_completed(
                 "rca-123",
                 root_cause="Bad deploy",
@@ -288,7 +288,7 @@ class TestMarkCompleted:
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = mark_completed("rca-123", dynamodb_client=ddb)
 
         assert result is False
@@ -296,13 +296,13 @@ class TestMarkCompleted:
 
 class TestMarkFailed:
     def test_returns_false_when_no_table(self, dynamodb_client: MagicMock):
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", ""):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
             result = mark_failed("rca-123", dynamodb_client=dynamodb_client)
         assert result is False
 
     def test_marks_failed_with_reason(self):
         ddb = _ddb_with_state("SCOPING")
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = mark_failed(
                 "rca-123",
                 error_reason="Pipeline crash",
@@ -320,7 +320,7 @@ class TestMarkFailed:
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
-        with patch("rca_agent.session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = mark_failed("rca-123", dynamodb_client=ddb)
 
         assert result is False
