@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 
 from botocore.exceptions import ClientError
 
-from rca_agent.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
-from rca_agent.models import AlarmPayload, RcaSession, RcaSessionState
+from rca_agent.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from rca_agent.ports.dto.models import AlarmPayload, RcaSession, RcaSessionState
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,8 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "REPORT_GENERATION": {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"},
 }
 
-_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
+TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
+_TERMINAL_STATES = TERMINAL_STATES
 
 
 def _get_current_state(
@@ -158,7 +159,7 @@ def _validate_transition(
     current = _get_current_state(rca_id, dynamodb_client=dynamodb_client)
     if current is None:
         return
-    if current in _TERMINAL_STATES:
+    if current in TERMINAL_STATES:
         raise SessionCancelledError(rca_id)
     allowed = VALID_TRANSITIONS.get(current, set())
     if target not in allowed:

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rca_agent.config import (
+from rca_agent.config.settings import (
     PLAYBOOK_SIMILARITY_THRESHOLD,
     PLAYBOOK_TOP_K,
     S3_VECTOR_BUCKET_NAME,
@@ -18,7 +18,7 @@ from rca_agent.config import (
     SCOPING_TIMEOUT_SECONDS,
 )
 from rca_agent.embeddings import embed_query
-from rca_agent.models import AlarmPayload, PlaybookMatch, ScopingResult
+from rca_agent.ports.dto.models import AlarmPayload, PlaybookMatch, ScopingResult
 from rca_agent.prompts import SCOPING_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
@@ -76,10 +76,6 @@ def search_similar_playbooks(
     max_retries: int = _PLAYBOOK_SEARCH_MAX_RETRIES,
     base_delay: float = _PLAYBOOK_SEARCH_BASE_DELAY,
 ) -> list[PlaybookMatch]:
-    """Search S3 Vectors for similar playbooks based on alarm context.
-
-    Retries with exponential backoff on transient failures.
-    """
     if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
         logger.info("S3 Vectors not configured, skipping playbook search")
         return []
@@ -142,16 +138,6 @@ def run_scoping(
     s3_vectors_client=None,
     timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
 ) -> ScopingResult:
-    """Run the initial scoping phase for an alarm.
-
-    1. Search S3 Vectors for similar playbooks
-    2. Build the prompt with alarm context + playbook references
-    3. Invoke the Strands agent with CloudWatch MCP tools (with timeout)
-    4. Parse structured output into ScopingResult
-
-    If the agent exceeds timeout_seconds, returns a fallback ScopingResult
-    built from the alarm payload alone.
-    """
     playbooks = search_similar_playbooks(alarm, s3_vectors_client=s3_vectors_client)
     user_prompt = _build_user_prompt(alarm, playbooks)
 

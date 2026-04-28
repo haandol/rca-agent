@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rca_agent.agent_factory import create_evidence_collection_agent
-from rca_agent.config import (
+from rca_agent.agent_factory import create_evidence_collection_agent  # noqa: F401
+from rca_agent.config.settings import (
     EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
     S3_EVIDENCE_BUCKET,
     S3_EVIDENCE_MAX_RETRIES,
 )
-from rca_agent.models import Hypothesis, HypothesisStatus, ScopingResult
+from rca_agent.ports.dto.models import Hypothesis, HypothesisStatus, ScopingResult
 from rca_agent.prompts import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:

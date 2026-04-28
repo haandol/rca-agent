@@ -10,7 +10,7 @@ from strands import Agent
 from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
-from rca_agent.config import (
+from rca_agent.config.settings import (
     BEDROCK_HAIKU_MAX_TOKENS,
     BEDROCK_HAIKU_MODEL_ID,
     BEDROCK_MAX_TOKENS,

@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rca_agent.config import LLM_DEFAULT_TIMEOUT_SECONDS, S3_REPORT_BUCKET
-from rca_agent.models import (
+from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS, S3_REPORT_BUCKET
+from rca_agent.ports.dto.models import (
     Hypothesis,
     RcaReport,
     ScopingResult,

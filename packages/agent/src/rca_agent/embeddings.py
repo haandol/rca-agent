@@ -1,50 +1,18 @@
-from __future__ import annotations
+from rca_agent.adapters.secondary.embedding.bedrock_embedding import BedrockEmbeddingAdapter
 
-import json
-import logging
-
-import boto3
-
-from rca_agent.config import BEDROCK_EMBEDDING_MODEL_ID, BEDROCK_REGION
-
-logger = logging.getLogger(__name__)
-
-_bedrock_client = None
+_default_adapter = BedrockEmbeddingAdapter()
 
 
-def _get_bedrock_client():
-    global _bedrock_client  # noqa: PLW0603
-    if _bedrock_client is None:
-        _bedrock_client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
-    return _bedrock_client
+def embed_texts(texts, *, input_type="search_document", bedrock_client=None):
+    adapter = BedrockEmbeddingAdapter(bedrock_client) if bedrock_client else _default_adapter
+    return [adapter._embed_texts(texts, input_type=input_type)]  # noqa: SLF001
 
 
-def embed_texts(
-    texts: list[str],
-    *,
-    input_type: str = "search_document",
-    bedrock_client=None,
-) -> list[list[float]]:
-    client = bedrock_client or _get_bedrock_client()
-    response = client.invoke_model(
-        modelId=BEDROCK_EMBEDDING_MODEL_ID,
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps(
-            {
-                "texts": texts,
-                "input_type": input_type,
-                "embedding_types": ["float"],
-            }
-        ),
-    )
-    result = json.loads(response["body"].read())
-    return result["embeddings"]["float"]
+def embed_query(text, *, bedrock_client=None):
+    adapter = BedrockEmbeddingAdapter(bedrock_client) if bedrock_client else _default_adapter
+    return adapter.embed_query(text)
 
 
-def embed_query(text: str, *, bedrock_client=None) -> list[float]:
-    return embed_texts([text], input_type="search_query", bedrock_client=bedrock_client)[0]
-
-
-def embed_document(text: str, *, bedrock_client=None) -> list[float]:
-    return embed_texts([text], input_type="search_document", bedrock_client=bedrock_client)[0]
+def embed_document(text, *, bedrock_client=None):
+    adapter = BedrockEmbeddingAdapter(bedrock_client) if bedrock_client else _default_adapter
+    return adapter.embed_document(text)

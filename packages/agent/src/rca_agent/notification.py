@@ -4,8 +4,8 @@ import json
 import logging
 import time
 
-from rca_agent.config import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
-from rca_agent.models import NotificationMessage, Playbook, RcaReport
+from rca_agent.config.settings import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
+from rca_agent.ports.dto.models import NotificationMessage, Playbook, RcaReport
 
 logger = logging.getLogger(__name__)
 
