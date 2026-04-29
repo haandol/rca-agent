@@ -19,7 +19,7 @@ from rca_agent.config.settings import (
 )
 from rca_agent.embeddings import embed_query
 from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
-from rca_agent.prompts import SCOPING_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

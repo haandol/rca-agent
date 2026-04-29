@@ -15,7 +15,7 @@ from rca_agent.config.settings import (
     S3_EVIDENCE_MAX_RETRIES,
 )
 from rca_agent.ports.dto.models import Hypothesis, HypothesisStatus, ScopingResult
-from rca_agent.prompts import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

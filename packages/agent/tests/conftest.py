@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from rca_agent.models import AlarmPayload, AlarmTrigger
+from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger
 
 
 @pytest.fixture()

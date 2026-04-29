@@ -6,7 +6,7 @@ from rca_agent.branching import (
     _is_duplicate,
     run_branching,
 )
-from rca_agent.models import (
+from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
 )

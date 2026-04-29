@@ -12,7 +12,7 @@ from rca_agent.adapters.secondary.trace.dynamodb_trace_store import (
     _deserialize_hypothesis,
     _deserialize_span,
 )
-from rca_agent.models import Hypothesis, HypothesisCategory, HypothesisStatus
+from rca_agent.ports.dto.models import Hypothesis, HypothesisCategory, HypothesisStatus
 
 TABLE_NAME = "rca-sessions"
 PATCH_TABLE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store.DYNAMODB_TABLE_NAME"

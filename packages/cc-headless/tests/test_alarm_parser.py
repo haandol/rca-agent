@@ -1,4 +1,4 @@
-from cc_headless.alarm_parser import AlarmContext, parse_alarm
+from cc_headless.ports.dto.models import AlarmContext, parse_alarm
 
 
 def test_parse_full_alarm():

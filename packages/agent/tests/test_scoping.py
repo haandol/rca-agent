@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from rca_agent.models import AlarmPayload, ScopingResult
+from rca_agent.ports.dto.models import AlarmPayload, ScopingResult
 from rca_agent.services.scoping import ScopingOutput, run_scoping, search_similar_reports
 
 

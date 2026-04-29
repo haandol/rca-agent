@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rca_agent.models import (
+from rca_agent.ports.dto.models import (
     AlarmPayload,
     AlarmTrigger,
     Hypothesis,

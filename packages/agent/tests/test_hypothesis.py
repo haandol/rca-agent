@@ -11,7 +11,7 @@ from rca_agent.hypothesis import (
     _HypothesisItem,
     run_hypothesis_generation,
 )
-from rca_agent.models import (
+from rca_agent.ports.dto.models import (
     HypothesisCategory,
     HypothesisGenerationResult,
     ReportMatch,

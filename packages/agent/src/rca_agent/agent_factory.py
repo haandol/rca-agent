@@ -19,16 +19,14 @@ from rca_agent.config.settings import (
     GITHUB_PERSONAL_ACCESS_TOKEN,
     THINKING_ENABLED,
 )
-from rca_agent.prompts import (
-    BRANCHING_SYSTEM_PROMPT,
-    EVIDENCE_COLLECTION_SYSTEM_PROMPT,
-    HYPOTHESIS_GENERATION_SYSTEM_PROMPT,
-    PLAYBOOK_SYSTEM_PROMPT,
-    PRIORITIZATION_SYSTEM_PROMPT,
-    REPORT_SYSTEM_PROMPT,
-    SCOPING_SYSTEM_PROMPT,
-    VALIDATION_SYSTEM_PROMPT,
-)
+from rca_agent.prompts.branching import BRANCHING_SYSTEM_PROMPT
+from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_SYSTEM_PROMPT
+from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_SYSTEM_PROMPT
+from rca_agent.prompts.playbook import PLAYBOOK_SYSTEM_PROMPT
+from rca_agent.prompts.prioritization import PRIORITIZATION_SYSTEM_PROMPT
+from rca_agent.prompts.report import REPORT_SYSTEM_PROMPT
+from rca_agent.prompts.scoping import SCOPING_SYSTEM_PROMPT
+from rca_agent.prompts.validation import VALIDATION_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 

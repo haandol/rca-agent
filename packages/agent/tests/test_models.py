@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from rca_agent.models import AlarmPayload, RcaSessionState, ScopingResult
+from rca_agent.ports.dto.models import AlarmPayload, RcaSessionState, ScopingResult
 
 
 class TestRcaSessionState:

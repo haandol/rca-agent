@@ -16,7 +16,7 @@ from rca_agent.ports.dto.models import (
     ScopingResult,
     ValidationPlan,
 )
-from rca_agent.prompts import PRIORITIZATION_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.prioritization import PRIORITIZATION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

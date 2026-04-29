@@ -18,7 +18,7 @@ from rca_agent.ports.dto.models import (
     ValidationJudgment,
     ValidationResult,
 )
-from rca_agent.prompts import VALIDATION_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.validation import VALIDATION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

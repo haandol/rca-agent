@@ -17,10 +17,10 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     SessionCancelledError,
 )
-from rca_agent.config import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from rca_agent.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
 
 if TYPE_CHECKING:
-    from rca_agent.models import Hypothesis
+    from rca_agent.ports.dto.models import Hypothesis
 
 logger = logging.getLogger(__name__)
 

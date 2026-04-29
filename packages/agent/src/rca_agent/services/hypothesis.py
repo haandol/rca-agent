@@ -19,7 +19,7 @@ from rca_agent.ports.dto.models import (
     ReportMatch,
     ScopingResult,
 )
-from rca_agent.prompts import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

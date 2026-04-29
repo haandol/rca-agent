@@ -7,12 +7,12 @@ import time
 import boto3
 import structlog
 
+from cc_headless.adapters.primary.health_server import start_health_server
 from cc_headless.config.settings import (
     SQS_POLL_WAIT_SECONDS,
     SQS_QUEUE_URL,
 )
 from cc_headless.di.app_container import AppContainer
-from cc_headless.healthz import start_health_server
 from cc_headless.logging import setup_logging
 from cc_headless.services.pipeline import PipelineOrchestrator
 

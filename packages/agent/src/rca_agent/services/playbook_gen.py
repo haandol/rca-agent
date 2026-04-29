@@ -17,7 +17,7 @@ from rca_agent.config.settings import (
 )
 from rca_agent.embeddings import embed_document, embed_query
 from rca_agent.ports.dto.models import Playbook, RcaReport, ScopingResult
-from rca_agent.prompts import (
+from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )

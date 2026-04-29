@@ -1,6 +1,6 @@
 import time
 
-from rca_agent.models import (
+from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,

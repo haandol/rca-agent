@@ -1,13 +1,13 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from cc_headless.alarm_parser import AlarmContext
-from cc_headless.prompt_builder import build_prompt
+from cc_headless.ports.dto.models import AlarmContext
+from cc_headless.services.prompt_builder import build_prompt
 
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 
-@patch("cc_headless.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
+@patch("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
 def test_build_prompt_contains_alarm_info():
     alarm = AlarmContext(
         alarm_name="TestAlarm",
@@ -26,7 +26,7 @@ def test_build_prompt_contains_alarm_info():
     assert "ClusterName=prod" in prompt
 
 
-@patch("cc_headless.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
+@patch("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
 def test_build_prompt_handles_missing_fields():
     alarm = AlarmContext(alarm_name="MinimalAlarm")
     prompt = build_prompt(alarm)
@@ -35,7 +35,7 @@ def test_build_prompt_handles_missing_fields():
     assert "N/A" in prompt
 
 
-@patch("cc_headless.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
+@patch("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
 def test_build_prompt_resolves_section_includes():
     alarm = AlarmContext(alarm_name="IncludeTest")
     prompt = build_prompt(alarm)

@@ -17,7 +17,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     mark_failed,
     update_state,
 )
-from rca_agent.models import AlarmPayload, AlarmTrigger, RcaSessionState
+from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger, RcaSessionState
 
 
 @pytest.fixture()

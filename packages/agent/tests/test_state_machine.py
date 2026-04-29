@@ -13,7 +13,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     SessionCancelledError,
     _validate_transition,
 )
-from rca_agent.models import (
+from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
@@ -372,7 +372,7 @@ class TestPipelineFinalizeBeforeReport:
     """
 
     def test_pipeline_closes_pending_on_confirmed_termination(self):
-        from rca_agent.models import (
+        from rca_agent.ports.dto.models import (
             HypothesisGenerationResult,
             RcaReport,
             RcaSession,

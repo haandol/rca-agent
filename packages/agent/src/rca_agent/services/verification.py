@@ -14,7 +14,7 @@ from rca_agent.ports.dto.models import (
     RemediationResult,
     VerificationResult,
 )
-from rca_agent.prompts import VERIFICATION_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.verification import VERIFICATION_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

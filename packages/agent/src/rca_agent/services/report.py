@@ -14,7 +14,7 @@ from rca_agent.ports.dto.models import (
     RcaReport,
     ScopingResult,
 )
-from rca_agent.prompts import REPORT_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.report import REPORT_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent

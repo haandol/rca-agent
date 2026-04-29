@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from rca_agent.models import NotificationMessage, RcaReport
+from rca_agent.ports.dto.models import NotificationMessage, RcaReport
 from rca_agent.services.notification import build_notification, send_notification
 
 

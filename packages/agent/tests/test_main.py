@@ -2,7 +2,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
-from rca_agent.models import (
+from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisGenerationResult,
@@ -335,7 +335,7 @@ class TestProcessAlarmFullPipeline:
         assert mock_hypo.call_count == 2
 
     def test_branching_on_needs_investigation(self):
-        from rca_agent.models import BranchingResult
+        from rca_agent.ports.dto.models import BranchingResult
 
         h1 = _make_hypothesis("h-1", 0.5)
         hr = _hypo_result([h1])

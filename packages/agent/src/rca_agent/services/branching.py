@@ -15,7 +15,7 @@ from rca_agent.ports.dto.models import (
     HypothesisCategory,
     HypothesisStatus,
 )
-from rca_agent.prompts import BRANCHING_USER_PROMPT_TEMPLATE
+from rca_agent.prompts.branching import BRANCHING_USER_PROMPT_TEMPLATE
 
 if TYPE_CHECKING:
     from strands import Agent
