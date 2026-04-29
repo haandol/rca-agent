@@ -3,6 +3,7 @@ from __future__ import annotations
 import signal
 import sys
 import time
+from threading import Event
 
 import boto3
 import structlog
@@ -18,20 +19,9 @@ from cc_headless.services.pipeline import PipelineOrchestrator
 
 logger = structlog.get_logger()
 
-_running = True
-
-
-def _handle_signal(signum, _frame):
-    global _running  # noqa: PLW0603
-    logger.info("shutdown_signal_received", signal=signum)
-    _running = False
-
 
 def main() -> None:
     setup_logging()
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
 
     if not SQS_QUEUE_URL:
         logger.error("sqs_queue_url_missing")
@@ -41,12 +31,20 @@ def main() -> None:
     logger.info("health_server_started", port=8080)
 
     container = AppContainer()
-    orchestrator = PipelineOrchestrator(container)
+    shutdown_event = Event()
+    orchestrator = PipelineOrchestrator(container, shutdown_event=shutdown_event)
+
+    def _handle_signal(signum, _frame):
+        logger.info("shutdown_signal_received", signal=signum)
+        shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     sqs = boto3.client("sqs")
     logger.info("sqs_polling_started", queue_url=SQS_QUEUE_URL)
 
-    while _running:
+    while not shutdown_event.is_set():
         try:
             resp = sqs.receive_message(
                 QueueUrl=SQS_QUEUE_URL,

@@ -5,6 +5,7 @@ import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event
 
 import structlog
 
@@ -43,8 +44,9 @@ def should_process(alarm_data: dict) -> bool:
 
 
 class PipelineOrchestrator:
-    def __init__(self, container: Container):
+    def __init__(self, container: Container, shutdown_event: Event | None = None):
         self._c = container
+        self._shutdown_event = shutdown_event or Event()
 
     def process_message(self, message_body: str) -> bool:
         from cc_headless.adapters.secondary.session.dynamodb_session_store import build_rca_id
@@ -126,11 +128,19 @@ class PipelineOrchestrator:
 
             watcher_thread, watcher_stop = start_watcher(artifact_dir, rca_id, c.dynamodb_client)
 
-            cc_result = c.cc_runner.run(prompt, cancel_checker=lambda: store.is_terminated(rca_id))
+            def _should_cancel() -> bool:
+                return self._shutdown_event.is_set() or store.is_terminated(rca_id)
+
+            cc_result = c.cc_runner.run(prompt, cancel_checker=_should_cancel)
             elapsed_seconds = int(time.time() - start_time)
 
             watcher_stop.set()
             watcher_thread.join(timeout=10)
+
+            if self._shutdown_event.is_set():
+                log.info("session_aborted_on_shutdown", elapsed_seconds=elapsed_seconds)
+                store.mark_failed(rca_id, "Aborted due to SIGTERM shutdown")
+                return True
 
             if store.is_terminated(rca_id):
                 log.info("session_terminated_after_cc", elapsed_seconds=elapsed_seconds)
