@@ -1,6 +1,7 @@
 # ADR 0006: SQS Visibility Timeout 기반 미완료 RCA 세션 자동 복구
 
 Date: 2026-04-23
+Updated: 2026-04-29
 
 ## Status
 
@@ -56,6 +57,19 @@ flowchart TD
 
 - SQS 큐의 Visibility Timeout을 CC Headless의 최대 처리 시간(`CC_TIMEOUT_SECONDS`, 기본 600초)보다 충분히 크게 설정한다 (예: 900초).
 - 처리 중 다른 컨슈머가 같은 메시지를 받지 않도록 보장한다.
+
+### Graceful Shutdown on SIGTERM
+
+ECS 롤링 배포나 수동 중지 시 SIGTERM이 도착하면 에이전트는 단순히 루프를 탈출하는 것만으로 충분하지 않다. 진행 중인 RCA 세션이 `ANALYZING` 등 비종료 상태로 DDB에 남으면 대시보드에서 "분석중"으로 영구 고착되고, 동일 알람이 재전달되어도 멱등성 체크에 걸려 재시도되지 않는다.
+
+따라서 SIGTERM 수신 시 다음 규칙을 따른다:
+
+1. **Shutdown 신호 전파**: 시그널 핸들러는 공유 이벤트만 set한다 (DDB/네트워크 호출 금지 — 시그널 안전성 확보).
+2. **긴 블로킹 작업 중단**: 에이전트 실행(CC subprocess, Bedrock agent 호출 등) 중에는 주기적으로 shutdown 이벤트를 감지할 수 있는 체크 지점을 둔다. 체크 지점은 파이프라인의 주요 단계 사이와 반복 루프 내(예: 가설별 증거 수집 사이)에 배치한다.
+3. **세션 마킹 1회**: 중단이 확인되면 해당 세션을 한 번만 `FAILED`로 전이하고, 에이전트를 정상 종료시킨다. 재시도 루프는 두지 않는다.
+4. **ECS stopTimeout 여유 확보**: Bedrock 호출 등 단일 체크 지점 사이의 블로킹이 30초를 초과할 수 있으므로, ECS 컨테이너의 `stopTimeout`을 120초로 설정하여 SIGKILL 전에 graceful 경로가 완결될 시간을 확보한다.
+
+이 경로가 동작한 뒤에는 SQS 재전달 메커니즘(상단의 복구 흐름)과 결합되어, 재전달된 메시지는 기존 `FAILED` 세션과 다른 새 세션으로 정상 재처리된다.
 
 ## Consequences
 

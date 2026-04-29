@@ -51,7 +51,7 @@ adr/
 - [ADR 0003: CC Headless 스택 — ECS Fargate 기반 RCA 실행 인프라](infra/0003-lambda-cc-headless-stack.md)
 - [ADR 0004: RDS PostgreSQL + Healthcare 서비스 배포 — RCA 검증용 데모 인프라](infra/0004-rds-healthcare-deployment.md)
 - [ADR 0005: 파이프라인 실행 트레이스 — DynamoDB 기반 단계별 추적](infra/0005-execution-trace-dynamodb.md)
-- [ADR 0006: SQS Visibility Timeout 기반 미완료 RCA 세션 자동 복구](infra/0006-session-recovery-on-restart.md)
+- [ADR 0006: SQS Visibility Timeout 기반 미완료 RCA 세션 자동 복구](infra/0006-session-recovery-on-restart.md) — SQS 재전달 + SIGTERM graceful shutdown 결합
 
 ### Web
 
