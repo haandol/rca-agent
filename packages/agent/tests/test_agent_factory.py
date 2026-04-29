@@ -56,7 +56,9 @@ class TestAgentTierMapping:
     @patch("rca_agent.agent_factory.THINKING_ENABLED", True)
     def test_scoping_uses_execution_tier(self):
         agent = create_scoping_agent()
-        assert "haiku" in agent.model.config["model_id"]
+        # Execution 티어는 thinking 없이 Sonnet 4.6 사용 (ADR 0010 업데이트)
+        assert "sonnet" in agent.model.config["model_id"]
+        assert "additional_request_fields" not in agent.model.config
 
     @patch("rca_agent.agent_factory.THINKING_ENABLED", True)
     def test_hypothesis_uses_planning_tier(self):
@@ -73,7 +75,8 @@ class TestAgentTierMapping:
     @patch("rca_agent.agent_factory.THINKING_ENABLED", True)
     def test_validation_uses_execution_tier(self):
         agent = create_validation_agent()
-        assert "haiku" in agent.model.config["model_id"]
+        assert "sonnet" in agent.model.config["model_id"]
+        assert "additional_request_fields" not in agent.model.config
 
     @patch("rca_agent.agent_factory.THINKING_ENABLED", True)
     def test_playbook_uses_planning_tier(self):

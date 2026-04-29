@@ -11,8 +11,6 @@ from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from rca_agent.config.settings import (
-    BEDROCK_HAIKU_MAX_TOKENS,
-    BEDROCK_HAIKU_MODEL_ID,
     BEDROCK_MAX_TOKENS,
     BEDROCK_MODEL_ID,
     BEDROCK_REGION,
@@ -57,9 +55,9 @@ def create_planning_model(
 
 def create_execution_model(
     *,
-    model_id: str = BEDROCK_HAIKU_MODEL_ID,
+    model_id: str = BEDROCK_MODEL_ID,
     region: str = BEDROCK_REGION,
-    max_tokens: int = BEDROCK_HAIKU_MAX_TOKENS,
+    max_tokens: int = BEDROCK_MAX_TOKENS,
 ) -> BedrockModel:
     return BedrockModel(
         model_id=model_id,

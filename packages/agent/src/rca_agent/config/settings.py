@@ -8,11 +8,9 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[4] / "env" / "local.env", override=False)
 
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-4-6")
-BEDROCK_HAIKU_MODEL_ID = os.environ.get("BEDROCK_HAIKU_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 BEDROCK_EMBEDDING_MODEL_ID = os.environ.get("BEDROCK_EMBEDDING_MODEL_ID", "cohere.embed-v4:0")
 BEDROCK_REGION = os.environ.get("AWS_REGION", "us-east-1")
 BEDROCK_MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "16384"))
-BEDROCK_HAIKU_MAX_TOKENS = int(os.environ.get("BEDROCK_HAIKU_MAX_TOKENS", "16384"))
 
 THINKING_ENABLED = os.environ.get("THINKING_ENABLED", "false").lower() in ("true", "1", "yes")
 
