@@ -3,18 +3,23 @@ import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 const OPEN_HYPO_STATES = new Set(['PENDING', 'NEEDS_INVESTIGATION'])
 
 async function closeOpenHypotheses(ddb: ReturnType<typeof useDynamoDB>, tableName: string, rcaId: string, now: string) {
-  const resp = await ddb.send(
-    new QueryCommand({
-      TableName: tableName,
-      KeyConditionExpression: 'PK = :pk',
-      FilterExpression: 'contains(SK, :hypo)',
-      ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':hypo': '#HYPO#' },
-      ProjectionExpression: 'PK, SK, #st',
-      ExpressionAttributeNames: { '#st': 'status' },
-    }),
+  const engines = ['strands', 'cc-headless']
+  const queries = await Promise.all(
+    engines.map((engine) =>
+      ddb.send(
+        new QueryCommand({
+          TableName: tableName,
+          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+          ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': `${engine}#HYPO#` },
+          ProjectionExpression: 'PK, SK, #st',
+          ExpressionAttributeNames: { '#st': 'status' },
+        }),
+      ),
+    ),
   )
 
-  const updates = (resp.Items || [])
+  const items = queries.flatMap((resp) => resp.Items || [])
+  const updates = items
     .filter((item) => OPEN_HYPO_STATES.has(item.status))
     .map((item) =>
       ddb.send(
