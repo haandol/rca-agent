@@ -18,30 +18,38 @@ RCA Agent는 스코핑 결과를 바탕으로 **가설 트리**를 생성하고,
 
 ## Decision
 
-**구조화된 가설 트리 + LLM 기반 판단 + Beam Search** 전략을 채택한다. 가설의 생성·우선순위 결정·검증·분기 네 단계가 공통 도메인 모델을 공유하며, 검증 루프는 우선순위 상위 N개만 선택적으로 검증하는 Beam Search 방식으로 운영된다.
+**구조화된 가설 트리 + LLM 기반 판단 + Beam Search + Accepted Review Gate** 전략을 채택한다. 가설의 생성·우선순위 결정·검증·분기 네 단계가 공통 도메인 모델을 공유하며, 검증 루프는 우선순위 상위 N개만 선택적으로 검증하는 Beam Search 방식으로 운영된다. 매 검증 루프 진입 시 **Accepted Review Gate**가 먼저 기존 채택 가설을 리뷰하여 추가 탐색 필요 여부를 판단한다.
+
+### 상태 용어 (Terminology)
+
+문서·UI·프롬프트 전반에서 확정된 가설을 **"채택(Accepted)"**로 표기한다. 기존 "확정(Confirmed)" 표현은 더 이상 사용하지 않는다. 단 하위 호환을 위해 **DDB/S3/API 페이로드에 저장되는 status 문자열 값은 `CONFIRMED`를 유지**한다. 코드 상수명(`HypothesisStatus.CONFIRMED`, `TerminationReason.CONFIRMED`)도 그대로 둔다. 변경 범위를 "사용자가 보는 표현"으로 제한하여 레거시 세션·보고서 조회를 깨지 않는다.
 
 ### 가설 트리 라이프사이클
 
 ```mermaid
 flowchart TD
     Start["스코핑 완료"] --> GEN["F2: 가설 생성<br/>(루트 3~5개, depth=0)"]
-    GEN --> PRIO["F3: 우선순위 결정<br/>(priority_rank, parallel_group,<br/>validation_plan)"]
+    GEN --> GATE["Accepted Review Gate<br/>(이전 루프의 채택 가설 리뷰)"]
+    GATE -->|"max≥0.9"| FIN
+    GATE -->|"0.8≤max<0.9"| PRIO_BLOCKED["PRIO (비확장 모드)<br/>증거 보강만, 분기·신규 금지"]
+    GATE -->|"그 외"| PRIO
     PRIO --> BEAM["Beam 선택<br/>상위 N개 (RCA_BEAM_WIDTH=3)"]
+    PRIO_BLOCKED --> BEAM
     BEAM --> EVID["F4: 증거 수집<br/>(beam 내 가설만)"]
     EVID --> VAL["F5: 검증<br/>(confidence_score 산출)"]
     VAL --> CLS{판정}
-    CLS -->|"≥0.8"| CONF["CONFIRMED"]
+    CLS -->|"≥0.8"| ACC["채택 (status=CONFIRMED)"]
     CLS -->|"≤0.3"| REJ["REJECTED<br/>+ 하위 subtree pruning"]
     CLS -->|"0.3~0.8"| NI["NEEDS_INVESTIGATION"]
     NI --> BR["F6: 분기<br/>(자식 2~3개, depth+1)"]
-    BR --> PRIO
-    CONF --> TERM{종료 조건}
+    BR --> GATE
+    ACC --> TERM{종료 조건}
     REJ --> ALLREJ{전체 기각?}
     ALLREJ -->|Yes| REGEN["가설 재생성<br/>(최대 2회)"]
     ALLREJ -->|No| TERM
     REGEN --> GEN
     TERM -->|종료| FIN["미검증 가설 CLOSED 처리<br/>→ 보고서 생성"]
-    TERM -->|계속| PRIO
+    TERM -->|계속| GATE
 ```
 
 ### 공통 도메인 모델
@@ -65,7 +73,35 @@ flowchart TD
 - **전체 기각 후 재생성**: 검증 결과 모든 가설이 REJECTED이면 가설 생성으로 루프백한다. 최대 `RCA_MAX_REGENERATION_ROUNDS=2`회 제한.
 - **모델 티어**: Planning 티어 (Sonnet 4.6 + adaptive thinking).
 
-### 2. 우선순위 결정 (F3)
+### 2. Accepted Review Gate (매 검증 루프 진입 시)
+
+가설 생성 또는 직전 루프의 분기 이후, 우선순위 결정으로 진입하기 **직전에** 실행되는 게이트. 이전 루프에서 채택된(CONFIRMED 상태) 가설이 있을 때 추가 탐색이 필요한지 판정한다. 도입 이유는 게이트 부재 시 관측된 문제다 — 동일 원인 영역의 자식 가설이 반복 분기되면서 루프가 자연스럽게 수렴하지 못하고 최대 루프 한도까지 돌진하는 경향.
+
+**입력**: 현재 가설 목록, 누적 judgment, 현재 루프 인덱스.
+
+**판정 로직** (순수 코드, LLM 미사용):
+
+| 조건 | 액션 |
+|------|------|
+| CONFIRMED 가설 중 max confidence ≥ 0.9 | `early_exit=True` 반환 → 루프 즉시 종료, 보고서 생성으로 전환 |
+| CONFIRMED 가설 존재하나 0.8 ≤ max < 0.9 | `expansion_blocked=True` 반환 → 증거 보강만 허용, 새 분기·재생성 금지. 그 다음 루프에서도 0.9 돌파 실패 시 종료 |
+| CONFIRMED 가설 없음 | gate 통과, 기존 흐름대로 진행 |
+
+**Accepted-유사 자동 기각**: CONFIRMED 가설이 하나라도 존재하면, PENDING/NEEDS_INVESTIGATION 상태 가설 중 다음을 만족하는 것은 REJECTED로 자동 전환한다(`reasoning="이미 채택된 {accepted_id}와 동일 원인 영역 — 게이트 자동 기각"`):
+
+- 같은 `category`
+- description 토큰 기반 Jaccard similarity ≥ 0.6 (소문자화·불용어 제외)
+
+동일 영역 분기 누적을 근원에서 억제하는 가드레일이다. subtree pruning과 달리 부모가 REJECTED되지 않았어도 **채택된 형제** 기준으로 prune한다.
+
+**비확장 모드(`expansion_blocked`) 세부**:
+
+- BRANCHING(F6) 호출 생략 — NEEDS_INVESTIGATION 가설이 있어도 자식 생성 금지
+- 전체 기각 시 재생성 생략 — `RCA_MAX_REGENERATION_ROUNDS`와 무관하게 스킵
+- 증거 수집 + 검증은 계속 수행하여 max confidence를 0.9 이상으로 끌어올리는 것만 목표
+- 해당 루프 종료 후 gate 재실행. 여전히 0.8~0.9이면 다음 루프도 비확장. 연속 2회(`RCA_EXPANSION_BLOCKED_GRACE_LOOPS=2`) 비확장에도 0.9 미도달이면 `early_exit=True`로 전환.
+
+### 3. 우선순위 결정 (F3)
 
 - **LLM 동적 우선순위**: `PrioritizationOutput` Pydantic 모델로 LLM이 각 가설의 `priority_rank`, `tools`(필요 도구 목록), `estimated_seconds`, `parallel_group`을 반환한다.
 - **컨텍스트 기반 판단**: 알람 유형, 스코핑 결과, 가설 카테고리를 종합해 순서를 결정한다(예: 최근 배포 확인 시 배포 가설 우선).
@@ -73,14 +109,14 @@ flowchart TD
 - **Fallback**: LLM 실패 시 카테고리 기본 순서(DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION)로 정렬한다. 120초 타임아웃을 `ThreadPoolExecutor`로 강제한다.
 - **모델 티어**: Planning 티어.
 
-### 3. Beam Search — 상위 N개 선택적 검증
+### 4. Beam Search — 상위 N개 선택적 검증
 
 - **Beam 선택**: 우선순위 결정 후 `priority_rank` 기준 상위 N개만 증거 수집·검증·분기에 참여시킨다. `RCA_BEAM_WIDTH` 기본 3.
 - **상태 필터**: CONFIRMED/REJECTED는 beam 후보에서 제외한다. PENDING/NEEDS_INVESTIGATION만 후보.
 - **비선택 가설 보존**: beam에 포함되지 않은 가설은 삭제하지 않고 목록에 유지한다. 다음 루프에서 우선순위가 재평가되어 beam에 진입할 수 있어 한 번 배제된 가설도 복귀 가능하다(DFS 백트래킹과 구분되는 특성).
 - **증거 재사용**: beam 진입 가설 중 이전 루프에서 이미 증거가 수집된 가설은 재수집하지 않는다.
 
-### 4. 증거 수집 및 검증 (F4, F5)
+### 5. 증거 수집 및 검증 (F4, F5)
 
 - **LLM 신뢰도 기반 3단 판정**: `ValidationOutput` Pydantic 모델로 `status`, `confidence_score`, `reasoning`, `evidence_summary`를 반환받는다.
 - **Score 기반 재분류**: LLM이 반환한 status는 참고만 하고, **confidence_score를 기준으로 코드에서 status를 재분류**한다:
@@ -93,7 +129,7 @@ flowchart TD
 - **REJECTED subtree pruning**: 가설이 REJECTED로 판정되면 해당 노드의 하위 subtree 전체를 REJECTED로 전파한다.
 - **모델 티어**: Execution 티어 (Haiku 4.5). 증거-가설 일치도 판정은 단순 분류 작업이므로 경량 모델로 충분하다.
 
-### 5. 하위 가설 분기 (F6)
+### 6. 하위 가설 분기 (F6)
 
 - **NEEDS_INVESTIGATION 대상**: 판정이 NEEDS_INVESTIGATION인 가설만 분기한다.
 - **LLM 구조화 자식 생성**: `BranchingOutput` Pydantic 모델로 자식 가설 목록을 반환한다. 부모 가설, 수집된 증거, 기각된 가설 목록을 LLM에 전달한다.
@@ -103,7 +139,7 @@ flowchart TD
 - **중복 방지**: 부모 가설과 기각된 가설과 대소문자 무시 비교로 중복 자식을 자동 제거한다.
 - **모델 티어**: Planning 티어.
 
-### 6. 루프 종료 시 정리
+### 7. 루프 종료 시 정리
 
 검증 루프가 종료되면(CONFIRMED 발견, 타임 버짓 소진, 최대 루프 도달 등) PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설을 **CLOSED**로 처리한다. REJECTED는 증거에 의해 명시적으로 기각된 가설에만 사용하고, 예산 소진/미검증으로 종료된 가설은 CLOSED로 구분한다. best_hypothesis로 선택된 가설은 제외한다. 모든 가설이 CONFIRMED/REJECTED/CLOSED 중 하나의 최종 상태를 갖게 하여 세션 완료 시 상태 일관성을 보장한다. CC Headless에서도 산출물 파싱과 프롬프트로 동일 동작을 구현한다.
 
@@ -145,6 +181,7 @@ flowchart TD
 - 깊이/폭 제한으로 무한 탐색 방지
 - 증거 수집 실패 시 CONFIRMED 금지 가드레일로 증거 없는 오확정 방지
 - 루프 종료 시 CLOSED 처리로 모든 가설이 최종 상태를 가져 세션 일관성 확보
+- **Accepted Review Gate**로 중간에 결론이 난 경우 조기 종료, 동일 원인 영역의 중복 분기를 선제 차단하여 루프가 무의미하게 연장되는 현상 방지
 
 ### Negative
 
@@ -152,6 +189,7 @@ flowchart TD
 - LLM 판단 일관성이 완벽하지 않아 동일 증거에 다른 결과 가능 — confidence_score 재분류로 부분 완화
 - Beam width가 너무 작으면 유효 가설이 검증 기회를 얻지 못할 수 있음
 - 우선순위 결정(F3) 정확도에 대한 의존도 높음 — 우선순위 오류가 탐색 실패로 직결 가능
+- Accepted-유사 자동 기각이 공격적이면 **독립적이지만 유사한 원인**도 묶여서 기각될 수 있음 — 유사도 임계치 0.6으로 보수 설정, 운영 데이터로 조정
 
 ### Risks
 

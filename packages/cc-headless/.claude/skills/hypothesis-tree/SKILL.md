@@ -5,6 +5,11 @@ description: 가설 트리 관리 — 카테고리, 상태 전이, 분기 규칙
 
 # 가설 트리 관리
 
+## 상태 용어
+
+- 문서·프롬프트·UI에서는 **"채택(Accepted)"**, **"기각(Rejected)"**, **"추가조사(Needs Investigation)"**, **"종료(Closed)"**로 표기한다.
+- JSON `status` 값은 하위 호환을 위해 **`CONFIRMED` / `REJECTED` / `NEEDS_INVESTIGATION` / `CLOSED`를 그대로 사용**한다. "채택"은 `CONFIRMED` 상태의 의미론적 표기일 뿐이다.
+
 ## 가설 카테고리
 
 | 카테고리 | 설명 | 대표적 근본원인 |
@@ -18,18 +23,19 @@ description: 가설 트리 관리 — 카테고리, 상태 전이, 분기 규칙
 ## 가설 상태 전이
 
 ```
-PENDING ──(증거 수집)──> NEEDS_INVESTIGATION ──(추가 증거)──> CONFIRMED
+PENDING ──(증거 수집)──> NEEDS_INVESTIGATION ──(추가 증거)──> CONFIRMED (채택)
                                       │                          ↑
                                       │                  (신뢰도 ≥ 0.8)
                                       │
                                       └──(하위 가설 생성)──> [하위 가설들]
 
-PENDING ──(증거 수집)──> REJECTED (신뢰도 ≤ 0.3)
+PENDING ──(증거 수집)──> REJECTED (기각, 신뢰도 ≤ 0.3)
+PENDING/NEEDS_INVESTIGATION ──(Accepted Review Gate 자동)──> REJECTED (기각)
 
-PENDING / NEEDS_INVESTIGATION ──(루프 종료, 예산 소진)──> CLOSED
+PENDING / NEEDS_INVESTIGATION ──(루프 종료, 예산 소진)──> CLOSED (종료)
 ```
 
-종료 상태는 3가지: **CONFIRMED**, **REJECTED**, **CLOSED**. 보고서 생성 전 모든 가설이 이 셋 중 하나여야 한다. CLOSED는 예산 소진 등으로 검증이 완료되지 못한 가설에 사용한다.
+종료 상태는 3가지: **CONFIRMED(채택)**, **REJECTED(기각)**, **CLOSED(종료)**. 보고서 생성 전 모든 가설이 이 셋 중 하나여야 한다. CLOSED는 예산 소진 등으로 검증이 완료되지 못한 가설에 사용한다.
 
 ## 가설 분기 규칙
 
@@ -50,15 +56,29 @@ PENDING / NEEDS_INVESTIGATION ──(루프 종료, 예산 소진)──> CLOSED
 └── [CONFIGURATION] 배포 시 CPU 제한/메모리 설정 변경 (신뢰도: 0.3)
 ```
 
-## 종료 조건 (5가지)
+## 종료 조건 (6가지, OR)
 
 | 조건 | 설명 | 행동 |
 |------|------|------|
-| **CONFIRMED** | 가설 신뢰도 ≥ 0.9 | 루프 종료 → 보고서 생성 |
-| **ALL_REJECTED** | 모든 가설 기각, 새 단서 없음 | 재생성 시도 (최대 2회), 소진 시 최고 신뢰도 가설 선정 |
+| **REVIEW_GATE_EARLY_EXIT** | Accepted Review Gate: 채택 가설 최고 신뢰도 ≥ 0.9 | 매 루프 진입 직전 평가 → 즉시 종료 → 보고서 생성 |
+| **REVIEW_GATE_GRACE_EXHAUSTED** | 비확장 모드 2회 연속에도 < 0.9 | 즉시 종료 → 현재 채택 가설로 보고서 |
+| **CONFIRMED** | 검증 후 가설 신뢰도 ≥ 0.9 | 루프 종료 → 보고서 생성 |
+| **ALL_REJECTED** | 모든 가설 기각, 새 단서 없음 | 재생성 시도 (최대 2회). 비확장 모드에서는 재생성 스킵하고 채택 가설 기반 보고서 |
 | **TIMEOUT** | 분석 8분 초과 | 루프 종료 → 현재 최선 결과로 보고서 |
 | **MAX_LOOPS** | 검증 루프 3회 완료 | 루프 종료 → 현재 최선 결과로 보고서 |
 | **MAX_DEPTH** | 가설 트리 깊이 3 도달 | 더 이상 분기하지 않음, 현재 가설로 판단 |
+
+## Accepted Review Gate
+
+매 루프 **진입 직전**에 메인 에이전트가 순수 로직으로 평가하는 게이트. 기존 채택 가설이 있을 때 추가 탐색 필요성을 판단한다.
+
+| 채택 가설 최고 신뢰도 | 결과 |
+|---|---|
+| ≥ 0.9 | `early_exit` — 즉시 보고서 생성 |
+| 0.8 ~ 0.9 | `expansion_blocked` — 증거 보강만 허용, 새 분기·재생성 금지 |
+| < 0.8 or 없음 | 통상 진행 |
+
+**Accepted-유사 자동 기각**: 채택 가설이 존재하면 PENDING/NEEDS_INVESTIGATION 중 (같은 category + description Jaccard ≥ 0.6)인 항목은 자동 REJECTED 처리. 동일 원인 영역의 중복 분기를 억제한다.
 
 ## 우선순위 결정 기준
 

@@ -16,12 +16,13 @@ Accepted
 
 ### 중단 조건
 
-1. **신뢰도 임계치**: CONFIRMED 가설의 confidence_score가 0.9 이상
-2. **시간 예산**: RCA 시작 후 20분 경과 (`RCA_TIME_BUDGET_SECONDS=1200`)
-3. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과 — `TerminationReason.TOKEN_BUDGET` enum이 정의되어 있으나, Strands SDK의 토큰 사용량 추적 API가 확정되면 구현 예정 (현재 보류)
-4. **최대 깊이**: 가설 트리 깊이가 5를 초과 (`RCA_MAX_TREE_DEPTH=5`)
-5. **최대 반복**: 검증 루프가 3회를 초과 (`RCA_MAX_VALIDATION_LOOPS=3`)
-6. **외부 취소 및 terminal 상태 강제 중단**: 대시보드에서 관리자가 세션 상태를 `CANCELLED`로 변경하거나, 세션이 `COMPLETED`, `FAILED`, `OUTDATED` 등 terminal 상태에 진입하면, 다음 `update_state()` 호출 시점에 파이프라인이 즉시 종료된다. `_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}` 중 하나라도 해당되면 `SessionCancelledError`가 발생한다.
+1. **신뢰도 임계치**: 채택 가설(status=CONFIRMED)의 confidence_score가 0.9 이상
+2. **Accepted Review Gate early exit**: 채택 가설이 있고 max confidence가 0.9 이상이면 **검증 루프 진입 전에** early exit. 0.8~0.9 범위에서 비확장 모드를 연속 2회 돌았음에도 0.9를 돌파하지 못하면 early exit (ADR agent/0002 참조).
+3. **시간 예산**: RCA 시작 후 20분 경과 (`RCA_TIME_BUDGET_SECONDS=1200`)
+4. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과 — `TerminationReason.TOKEN_BUDGET` enum이 정의되어 있으나, Strands SDK의 토큰 사용량 추적 API가 확정되면 구현 예정 (현재 보류)
+5. **최대 깊이**: 가설 트리 깊이가 5를 초과 (`RCA_MAX_TREE_DEPTH=5`)
+6. **최대 반복**: 검증 루프가 3회를 초과 (`RCA_MAX_VALIDATION_LOOPS=3`)
+7. **외부 취소 및 terminal 상태 강제 중단**: 대시보드에서 관리자가 세션 상태를 `CANCELLED`로 변경하거나, 세션이 `COMPLETED`, `FAILED`, `OUTDATED` 등 terminal 상태에 진입하면, 다음 `update_state()` 호출 시점에 파이프라인이 즉시 종료된다. `_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}` 중 하나라도 해당되면 `SessionCancelledError`가 발생한다.
 
 ### 핵심 결정사항
 
@@ -33,7 +34,7 @@ Accepted
 
 4. **전체 기각 시 재생성**: 모든 가설이 기각되면 `check_termination()`에서 종료하지 않고, `main.py`의 검증 루프가 가설을 재생성한다(최대 2회, `RCA_MAX_REGENERATION_ROUNDS`). 재생성 한도를 초과하면 루프가 종료되고 "근본 원인 미확정" 상태로 보고서를 생성한다.
 
-5. **OR 평가 순서**: CONFIRMED → TIME_BUDGET → MAX_DEPTH → MAX_LOOPS 순서로 평가하며, 첫 번째로 충족된 조건에서 즉시 반환한다. 전체 기각(ALL_REJECTED)은 `check_termination()`이 아닌 메인 루프에서 재생성 로직으로 처리한다.
+5. **OR 평가 순서**: Accepted Review Gate → CONFIRMED → TIME_BUDGET → MAX_DEPTH → MAX_LOOPS 순서로 평가하며, 첫 번째로 충족된 조건에서 즉시 반환한다. 전체 기각(ALL_REJECTED)은 `check_termination()`이 아닌 메인 루프에서 재생성 로직으로 처리한다. Accepted Review Gate는 검증 루프 진입 **전**에 실행되므로, 재분기·재생성 없이도 조기 종료되어 루프 폭주를 차단한다.
 
 6. **Cooperative Cancellation**: `update_state()`에 DynamoDB ConditionExpression(`#st <> CANCELLED`)을 추가하여, 세션이 CANCELLED 상태이면 `SessionCancelledError`를 발생시킨다. 파이프라인은 이 예외를 잡아 `mark_failed` 없이 조용히 종료한다. 별도 폴링 없이 매 단계 전환 시 자연스럽게 취소가 감지된다.
 

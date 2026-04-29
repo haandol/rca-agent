@@ -25,6 +25,7 @@ from rca_agent.services.hypothesis import run_hypothesis_generation
 from rca_agent.services.playbook_gen import run_playbook_generation
 from rca_agent.services.prioritization import run_prioritization
 from rca_agent.services.report import run_report_generation
+from rca_agent.services.review_gate import run_review_gate
 from rca_agent.services.scoping import run_scoping
 from rca_agent.services.termination import check_termination
 from rca_agent.services.validation import run_validation
@@ -272,6 +273,7 @@ class PipelineOrchestrator:
         timeline.append(f"Initial hypotheses: {len(hypotheses)}")
 
         termination = None
+        consecutive_blocked_loops = 0
 
         while True:
             validation_loop_count += 1
@@ -285,6 +287,45 @@ class PipelineOrchestrator:
                 loop_index=validation_loop_count,
                 input_summary=f"가설={len(hypotheses)}개",
             )
+
+            # Accepted Review Gate (ADR agent/0002)
+            gate = run_review_gate(
+                hypotheses,
+                all_judgments,
+                consecutive_blocked_loops=consecutive_blocked_loops,
+            )
+            if gate.auto_rejected_ids:
+                for hid in gate.auto_rejected_ids:
+                    trace.update_hypothesis_status(
+                        hid,
+                        status=HypothesisStatus.REJECTED.value,
+                        judgment_reasoning=("Review gate: 이미 채택된 가설과 동일 원인 영역으로 자동 기각"),
+                    )
+            if gate.early_exit:
+                logger.info("Review gate early exit: %s", gate.reason)
+                timeline.append(f"Loop {validation_loop_count}: review gate early exit ({gate.reason})")
+                termination = check_termination(
+                    judgments=all_judgments,
+                    hypotheses=hypotheses,
+                    start_time=start_time,
+                    validation_loop_count=validation_loop_count,
+                )
+                trace.end_span(
+                    loop_span,
+                    output_summary=f"review gate early exit: {gate.reason}",
+                    metadata={"루프_번호": validation_loop_count, "review_gate": gate.reason},
+                )
+                break
+            if gate.expansion_blocked:
+                consecutive_blocked_loops += 1
+                logger.info(
+                    "Review gate expansion blocked (loop=%d, streak=%d)",
+                    validation_loop_count,
+                    consecutive_blocked_loops,
+                )
+                timeline.append(f"Loop {validation_loop_count}: expansion blocked ({gate.reason})")
+            else:
+                consecutive_blocked_loops = 0
 
             # F3: Prioritization
             store.update_state(
@@ -446,7 +487,19 @@ class PipelineOrchestrator:
                 )
                 break
 
-            # All rejected → regeneration
+            # All rejected → regeneration (skip when expansion is blocked by review gate)
+            if validation_result.all_rejected and gate.expansion_blocked:
+                logger.info(
+                    "All rejected but expansion blocked → relying on accepted hypothesis, skipping regeneration",
+                )
+                timeline.append(f"Loop {validation_loop_count}: regeneration skipped (expansion blocked)")
+                trace.end_span(
+                    loop_span,
+                    output_summary="expansion blocked, regeneration skipped",
+                    metadata={"루프_번호": validation_loop_count, "review_gate": gate.reason},
+                )
+                continue
+
             if validation_result.all_rejected:
                 regeneration_count += 1
                 if regeneration_count > RCA_MAX_REGENERATION_ROUNDS:
@@ -514,9 +567,25 @@ class PipelineOrchestrator:
                 )
                 continue
 
-            # Branching
+            # Branching (skip when expansion is blocked by review gate)
             new_children = []
             ni_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.NEEDS_INVESTIGATION)
+            if gate.expansion_blocked:
+                logger.info(
+                    "Branching skipped: expansion blocked by review gate (ni=%d)",
+                    ni_count,
+                )
+                timeline.append(f"Loop {validation_loop_count}: branching skipped (expansion blocked)")
+                trace.end_span(
+                    loop_span,
+                    output_summary=f"expansion blocked, branching skipped (ni={ni_count})",
+                    metadata={
+                        "루프_번호": validation_loop_count,
+                        "review_gate": gate.reason,
+                        "ni_count": ni_count,
+                    },
+                )
+                continue
             with trace.span(
                 SpanType.BRANCHING,
                 parent_span_id=loop_span.span_id,
