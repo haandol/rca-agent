@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
+from threading import Event
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     InvalidStateTransitionError,
@@ -114,9 +115,18 @@ class ValidationLoopState:
     termination: TerminationDecision | None = None
 
 
+class ShutdownRequestedError(Exception):
+    pass
+
+
 class PipelineOrchestrator:
-    def __init__(self, container):
+    def __init__(self, container, shutdown_event: Event | None = None):
         self._container = container
+        self._shutdown_event = shutdown_event or Event()
+
+    def _check_shutdown(self) -> None:
+        if self._shutdown_event.is_set():
+            raise ShutdownRequestedError
 
     def process_alarm(self, body: dict) -> None:
         start_time = time.monotonic()
@@ -160,6 +170,17 @@ class PipelineOrchestrator:
                 start_time=start_time,
                 trace=trace,
             )
+        except ShutdownRequestedError:
+            logger.info(
+                "Pipeline aborted by SIGTERM for alarm %s (rca_id=%s)",
+                alarm.alarm_name,
+                rca_id,
+            )
+            if rca_id:
+                store.mark_failed(
+                    rca_id,
+                    error_reason="Aborted due to SIGTERM shutdown",
+                )
         except SessionCancelledError:
             logger.info(
                 "Pipeline cancelled for alarm %s (rca_id=%s)",
@@ -203,8 +224,10 @@ class PipelineOrchestrator:
     def _run_pipeline(self, alarm, *, rca_id, start_time, trace):
         store = self._container.session_store
 
+        self._check_shutdown()
         scoping_result = self._run_scoping(alarm, rca_id=rca_id, trace=trace)
 
+        self._check_shutdown()
         hypotheses = self._run_hypothesis_generation(
             scoping_result,
             rca_id=rca_id,
@@ -222,6 +245,8 @@ class PipelineOrchestrator:
             start_time=start_time,
             trace=trace,
         )
+
+        self._check_shutdown()
 
         best_hypothesis, confirmed = self._finalize_hypotheses(
             state.hypotheses,
@@ -313,6 +338,7 @@ class PipelineOrchestrator:
         state.timeline.append(f"Initial hypotheses: {len(hypotheses)}")
 
         while True:
+            self._check_shutdown()
             state.loop_count += 1
             logger.info(
                 "Validation loop %d, hypotheses=%d",
