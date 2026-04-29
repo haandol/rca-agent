@@ -91,6 +91,7 @@ export default defineEventHandler(async (event) => {
         treeId: (i.tree_id as string) || '',
         parentId: (i.parent_id as string) || null,
         depth: (i.depth as number) ?? 0,
+        title: (i.title as string) || '',
         description: (i.description as string) || '',
         category: (i.category as string) || '',
         confidenceScore: (i.confidence_score as number) ?? 0,

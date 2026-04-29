@@ -21,6 +21,7 @@ interface HypothesisItem {
   treeId: string
   parentId: string | null
   depth: number
+  title?: string
   description: string
   category: string
   confidenceScore: number
@@ -48,6 +49,7 @@ export interface NodeData {
   confidenceScore?: number
   loopIndex?: number | null
   hypothesisId?: string
+  title?: string
   description?: string
   evidenceSummary?: string
   judgmentReasoning?: string
@@ -119,18 +121,25 @@ export function buildTraceGraph(spans: SpanItem[], hypotheses: HypothesisItem[])
   for (const h of hypotheses) hypoById.set(h.hypothesisId, h)
 
   for (const h of hypotheses) {
+    const firstLine = h.description.split('\n')[0] ?? h.description
+    const nodeLabel = h.title?.trim()
+      ? h.title
+      : firstLine.length > 60
+        ? firstLine.slice(0, 57) + '...'
+        : firstLine
     nodes.push({
       id: `hypo-${h.hypothesisId}`,
       type: 'hypoNode',
       position: { x: 0, y: 0 },
       data: {
         nodeType: 'hypothesis',
-        label: h.description.length > 60 ? h.description.slice(0, 57) + '...' : h.description,
+        label: nodeLabel,
         status: h.status,
         detail: h.evidenceSummary || h.judgmentReasoning,
         category: h.category,
         confidenceScore: h.confidenceScore,
         hypothesisId: h.hypothesisId,
+        title: h.title,
         description: h.description,
         evidenceSummary: h.evidenceSummary,
         judgmentReasoning: h.judgmentReasoning,

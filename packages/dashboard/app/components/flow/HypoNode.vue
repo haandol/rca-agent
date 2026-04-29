@@ -12,6 +12,14 @@ const statusClass: Record<string, string> = {
   PENDING: 'border-base-content/10 bg-base-100',
 }
 
+const statusLabel: Record<string, string> = {
+  CONFIRMED: '채택',
+  REJECTED: '기각',
+  CLOSED: '종료',
+  NEEDS_INVESTIGATION: '추가 조사',
+  PENDING: '대기',
+}
+
 const categoryBadge: Record<string, string> = {
   DEPLOYMENT: 'badge-info',
   INFRASTRUCTURE: 'badge-warning',
@@ -29,6 +37,9 @@ const categoryBadge: Record<string, string> = {
     <div class="flex items-center gap-1 mb-1">
       <span v-if="data.category" class="badge badge-xs" :class="categoryBadge[data.category] || 'badge-ghost'">
         {{ data.category }}
+      </span>
+      <span v-if="data.status" class="badge badge-xs badge-ghost">
+        {{ statusLabel[data.status] || data.status }}
       </span>
       <span
         v-if="data.confidenceScore !== undefined"

@@ -55,9 +55,9 @@ useHead({ title: () => `Report ${id.slice(0, 8)}` })
         <div class="text-sm font-mono mt-1">{{ session.engine }}</div>
       </div>
       <div>
-        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">확정 여부</div>
+        <div class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider">채택 여부</div>
         <span class="badge badge-sm mt-1" :class="session.confirmed ? 'badge-success' : 'badge-ghost'">
-          {{ session.confirmed ? '예' : '아니오' }}
+          {{ session.confirmed ? '채택' : '미채택' }}
         </span>
       </div>
     </div>

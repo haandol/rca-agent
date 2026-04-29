@@ -37,7 +37,13 @@ class HypothesisOutput(BaseModel):
 
 
 class _HypothesisItem(BaseModel):
-    description: str
+    title: str = Field(
+        default="",
+        description=("짧은 한 줄 제목 (~60자). 대시보드 카드·그래프 노드에 노출되므로 장애 원인이 한눈에 보여야 한다."),
+    )
+    description: str = Field(
+        description=("상세 설명. 이 가설을 세운 근거와 검증 방향을 2~4문장으로 기술."),
+    )
     category: HypothesisCategory
     confidence_score: float = Field(ge=0.0, le=1.0)
     required_evidence: list[str] = Field(default_factory=list)
@@ -154,6 +160,7 @@ def _convert_output_to_hypotheses(output: HypothesisOutput, tree_id: str) -> lis
         hypotheses.append(
             Hypothesis(
                 hypothesis_id=str(uuid.uuid4()),
+                title=(item.title or item.description.splitlines()[0])[:80],
                 description=item.description,
                 category=item.category,
                 confidence_score=item.confidence_score,

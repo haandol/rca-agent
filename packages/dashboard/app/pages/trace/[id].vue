@@ -49,6 +49,14 @@ const stateStyle: Record<string, { bg: string; text: string }> = {
   OUTDATED: { bg: 'bg-base-content/5', text: 'text-base-content/40' },
 }
 
+const hypoStatusLabel: Record<string, string> = {
+  CONFIRMED: '채택',
+  REJECTED: '기각',
+  CLOSED: '종료',
+  NEEDS_INVESTIGATION: '추가 조사',
+  PENDING: '대기',
+}
+
 const STATE_LABEL: Record<string, string> = {
   ALARM_RECEIVED: '알람 수신',
   SCOPING: '스코핑',
@@ -313,7 +321,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                     'badge-error': selectedNode.status === 'REJECTED',
                     'badge-ghost': selectedNode.status === 'CLOSED',
                     'badge-warning': selectedNode.status === 'NEEDS_INVESTIGATION',
-                  }">{{ selectedNode.status }}</span>
+                  }">{{ hypoStatusLabel[selectedNode.status as string] || selectedNode.status }}</span>
                   <span
                     v-if="selectedNode.confidenceScore !== undefined"
                     class="text-xs font-mono ml-auto"
@@ -323,7 +331,11 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` })
                   </span>
                 </div>
 
-                <div class="prose prose-sm max-w-none mt-3" v-html="md(selectedNode.description || selectedNode.label)" />
+                <div v-if="selectedNode.title" class="mt-3 text-sm font-semibold leading-tight">
+                  {{ selectedNode.title }}
+                </div>
+
+                <div class="prose prose-sm max-w-none mt-2" v-html="md(selectedNode.description || selectedNode.label)" />
 
                 <div v-if="selectedNode.evidenceSummary" class="mt-3">
                   <div class="flex items-center justify-between mb-1.5">

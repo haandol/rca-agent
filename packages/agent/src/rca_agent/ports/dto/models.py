@@ -131,6 +131,7 @@ class ScopingResult(BaseModel):
 
 class Hypothesis(BaseModel):
     hypothesis_id: str = ""
+    title: str = ""  # 짧은 한 줄 제목 (~60자). 없으면 description 첫 줄이 fallback.
     description: str
     category: HypothesisCategory
     confidence_score: float = Field(ge=0.0, le=1.0)

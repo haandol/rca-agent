@@ -22,7 +22,8 @@
     {
       "hypothesis_id": "새 UUID (기존과 다른 값)",
       "tree_id": "hypotheses.json의 tree_id와 동일",
-      "description": "새 가설 설명 (한글, 필수)",
+      "title": "짧은 한 줄 제목 (≤60자, 한글, 필수)",
+      "description": "상세 설명 — 부모 가설을 어떻게 좁혔는지 근거 포함 (한글, 필수)",
       "category": "INFRASTRUCTURE | DEPLOYMENT | TRAFFIC | DEPENDENCY | APPLICATION",
       "confidence_score": 0.5,
       "required_evidence": ["필요한 증거"],
@@ -53,5 +54,5 @@
 
 **주의사항:**
 - `confirmed`/`rejected`/`closed`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
-- `new_hypotheses`의 각 항목에는 반드시 `description`과 `category`를 포함한다.
+- `new_hypotheses`의 각 항목에는 반드시 `title`, `description`, `category`를 포함한다.
 - 모든 가설은 `hypotheses.json`에서 이미 생성된 `hypothesis_id`를 참조해야 한다.

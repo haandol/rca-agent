@@ -24,7 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 class _ChildItem(BaseModel):
-    description: str
+    title: str = Field(
+        default="",
+        description="짧은 한 줄 제목 (~60자). 부모보다 구체적이어야 한다.",
+    )
+    description: str = Field(
+        description="상세 설명. 부모 가설에서 한 단계 구체화된 근거와 검증 방향.",
+    )
     category: HypothesisCategory
     confidence_score: float = Field(ge=0.0, le=1.0)
     required_evidence: list[str] = Field(default_factory=list)
@@ -102,6 +108,7 @@ def run_branching(
         children.append(
             Hypothesis(
                 hypothesis_id=str(uuid.uuid4()),
+                title=(item.title or item.description.splitlines()[0])[:80],
                 description=item.description,
                 category=item.category,
                 confidence_score=item.confidence_score,
