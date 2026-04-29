@@ -164,6 +164,7 @@ def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict) -> None:
                     "engine": {"S": ENGINE},
                     "tree_id": {"S": h.get("tree_id", "")},
                     "depth": {"N": str(h.get("depth", 0))},
+                    "title": {"S": h.get("title", "")[:120]},
                     "description": {"S": h.get("description", "")[:500]},
                     "category": {"S": h.get("category", "")},
                     "confidence_score": {"N": str(h.get("confidence_score", 0))},
