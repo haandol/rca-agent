@@ -6,7 +6,7 @@ from rca_agent.ports.dto.models import (
     PrioritizationResult,
     ScopingResult,
 )
-from rca_agent.prioritization import (
+from rca_agent.services.prioritization import (
     PrioritizationOutput,
     _apply_fallback_order,
     _PrioritizedItem,

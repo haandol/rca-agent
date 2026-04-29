@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 
 from rca_agent.config.settings import (
     ENGINE,
@@ -14,11 +13,11 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import RcaReport, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.report_store import ReportStorePort
+from rca_agent.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 _SEARCH_MAX_RETRIES = 3
-_SEARCH_BASE_DELAY = 1.0
 _EMBED_FIELD_MAX = 80
 _HYPOTHESIS_PATH_MAX = 200
 
@@ -60,22 +59,21 @@ class S3ReportStore(ReportStorePort):
             logger.exception("Failed to embed query text, skipping report search")
             return []
 
-        for attempt in range(_SEARCH_MAX_RETRIES):
-            try:
-                response = self._s3v.query_vectors(
-                    vectorBucketName=S3_VECTOR_BUCKET_NAME,
-                    indexName=S3_VECTOR_REPORT_INDEX,
-                    queryVector={"float32": query_vector},
-                    topK=REPORT_TOP_K,
-                )
-                break
-            except Exception:
-                if attempt == _SEARCH_MAX_RETRIES - 1:
-                    logger.exception("Failed to search reports after %d attempts", _SEARCH_MAX_RETRIES)
-                    return []
-                delay = _SEARCH_BASE_DELAY * (2**attempt)
-                logger.warning("Report search attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-                time.sleep(delay)
+        def query() -> dict:
+            return self._s3v.query_vectors(
+                vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                indexName=S3_VECTOR_REPORT_INDEX,
+                queryVector={"float32": query_vector},
+                topK=REPORT_TOP_K,
+            )
+
+        response = retry_with_backoff(
+            query,
+            max_retries=_SEARCH_MAX_RETRIES,
+            operation="report search",
+        )
+        if response is None:
+            return []
 
         matches = []
         for item in response.get("vectors", []):

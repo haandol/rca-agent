@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import UTC
@@ -17,9 +16,10 @@ from rca_agent.config.settings import (
     S3_VECTOR_REPORT_INDEX,
     SCOPING_TIMEOUT_SECONDS,
 )
-from rca_agent.embeddings import embed_query
 from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
+from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
+from rca_agent.utils.retry import retry_with_backoff
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -73,6 +73,7 @@ def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
 def search_similar_reports(
     alarm: AlarmPayload,
     *,
+    embedding: EmbeddingPort,
     s3_vectors_client=None,
     max_retries: int = _REPORT_SEARCH_MAX_RETRIES,
     base_delay: float = _REPORT_SEARCH_BASE_DELAY,
@@ -85,27 +86,27 @@ def search_similar_reports(
     metric = alarm.trigger.metric_name[:80] if alarm.trigger else ""
     query_text = f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
     try:
-        query_vector = embed_query(query_text)
+        query_vector = embedding.embed_query(query_text)
     except Exception:
         logger.exception("Failed to embed query text, skipping report search")
         return []
 
-    for attempt in range(max_retries):
-        try:
-            response = s3_vectors_client.query_vectors(
-                vectorBucketName=S3_VECTOR_BUCKET_NAME,
-                indexName=S3_VECTOR_REPORT_INDEX,
-                queryVector={"float32": query_vector},
-                topK=REPORT_TOP_K,
-            )
-            break
-        except Exception:
-            if attempt == max_retries - 1:
-                logger.exception("Failed to search reports after %d attempts", max_retries)
-                return []
-            delay = base_delay * (2**attempt)
-            logger.warning("Report search attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-            time.sleep(delay)
+    def query() -> dict:
+        return s3_vectors_client.query_vectors(
+            vectorBucketName=S3_VECTOR_BUCKET_NAME,
+            indexName=S3_VECTOR_REPORT_INDEX,
+            queryVector={"float32": query_vector},
+            topK=REPORT_TOP_K,
+        )
+
+    response = retry_with_backoff(
+        query,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        operation="report search",
+    )
+    if response is None:
+        return []
 
     matches = []
     for item in response.get("vectors", []):
@@ -138,10 +139,11 @@ def run_scoping(
     alarm: AlarmPayload,
     agent: Agent,
     *,
+    embedding: EmbeddingPort,
     s3_vectors_client=None,
     timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
 ) -> ScopingResult:
-    reports = search_similar_reports(alarm, s3_vectors_client=s3_vectors_client)
+    reports = search_similar_reports(alarm, embedding=embedding, s3_vectors_client=s3_vectors_client)
     user_prompt = _build_user_prompt(alarm, reports)
 
     logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)

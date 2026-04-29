@@ -3,8 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum, auto
 
+from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    InvalidStateTransitionError,
+    SessionCancelledError,
+)
 from rca_agent.adapters.secondary.trace.dynamodb_trace_store import SpanStatus, SpanType, TraceStore
 from rca_agent.config.settings import (
     ALARM_STALENESS_SECONDS,
@@ -14,23 +20,44 @@ from rca_agent.config.settings import (
 )
 from rca_agent.ports.dto.models import (
     AlarmPayload,
+    Hypothesis,
     HypothesisStatus,
     Playbook,
     RcaSessionState,
+    TerminationDecision,
     TerminationReason,
+    ValidationJudgment,
+    ValidationResult,
 )
 from rca_agent.services.branching import run_branching
 from rca_agent.services.evidence import run_evidence_collection
 from rca_agent.services.hypothesis import run_hypothesis_generation
+from rca_agent.services.notification import build_notification
 from rca_agent.services.playbook_gen import run_playbook_generation
 from rca_agent.services.prioritization import run_prioritization
 from rca_agent.services.report import run_report_generation
-from rca_agent.services.review_gate import run_review_gate
+from rca_agent.services.review_gate import ReviewGateResult, run_review_gate
 from rca_agent.services.scoping import run_scoping
 from rca_agent.services.termination import check_termination
 from rca_agent.services.validation import run_validation
 
 logger = logging.getLogger(__name__)
+
+
+class _LoopAction(Enum):
+    CONTINUE = auto()
+    BREAK = auto()
+    PROCEED = auto()
+
+
+_CLOSE_REASON_MAP: dict[TerminationReason, str] = {
+    TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 기각",
+    TerminationReason.TIME_BUDGET: "시간 예산 소진",
+    TerminationReason.TOKEN_BUDGET: "토큰 예산 소진",
+    TerminationReason.MAX_DEPTH: "최대 트리 깊이 초과",
+    TerminationReason.MAX_LOOPS: "최대 검증 루프 초과",
+    TerminationReason.ALL_REJECTED: "전체 가설 기각",
+}
 
 
 def parse_sns_envelope(body: dict) -> dict:
@@ -73,16 +100,25 @@ def prune_subtree(rejected_id: str, hypotheses: list) -> list[str]:
     return pruned
 
 
+@dataclass
+class ValidationLoopState:
+    hypotheses: list[Hypothesis]
+    all_judgments: list[ValidationJudgment] = field(default_factory=list)
+    rejected_descriptions: list[str] = field(default_factory=list)
+    evidence_map: dict[str, str] = field(default_factory=dict)
+    evidence_failed_ids: set[str] = field(default_factory=set)
+    timeline: list[str] = field(default_factory=list)
+    loop_count: int = 0
+    regeneration_count: int = 0
+    consecutive_blocked_loops: int = 0
+    termination: TerminationDecision | None = None
+
+
 class PipelineOrchestrator:
     def __init__(self, container):
         self._container = container
 
     def process_alarm(self, body: dict) -> None:
-        from rca_agent.adapters.secondary.session.dynamodb_session_store import (
-            InvalidStateTransitionError,
-            SessionCancelledError,
-        )
-
         start_time = time.monotonic()
         alarm_data = parse_sns_envelope(body)
 
@@ -107,22 +143,8 @@ class PipelineOrchestrator:
             logger.info("Skipping duplicate alarm: %s", alarm.alarm_name)
             return
 
-        if alarm.state_change_time:
-            age_seconds = (datetime.now(UTC) - alarm.state_change_time).total_seconds()
-            if age_seconds > ALARM_STALENESS_SECONDS:
-                logger.info(
-                    "Skipping stale alarm: %s (age=%.0fs > %ds)",
-                    alarm.alarm_name,
-                    age_seconds,
-                    ALARM_STALENESS_SECONDS,
-                )
-                session = store.create_session(alarm)
-                if session:
-                    store.mark_outdated(
-                        session.rca_id,
-                        reason=(f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold"),
-                    )
-                return
+        if self._skip_if_stale(alarm, store):
+            return
 
         session = store.create_session(alarm)
         rca_id = session.rca_id if session else ""
@@ -158,6 +180,26 @@ class PipelineOrchestrator:
                     error_reason="Unhandled pipeline exception",
                 )
 
+    def _skip_if_stale(self, alarm: AlarmPayload, store) -> bool:
+        if not alarm.state_change_time:
+            return False
+        age_seconds = (datetime.now(UTC) - alarm.state_change_time).total_seconds()
+        if age_seconds <= ALARM_STALENESS_SECONDS:
+            return False
+        logger.info(
+            "Skipping stale alarm: %s (age=%.0fs > %ds)",
+            alarm.alarm_name,
+            age_seconds,
+            ALARM_STALENESS_SECONDS,
+        )
+        session = store.create_session(alarm)
+        if session:
+            store.mark_outdated(
+                session.rca_id,
+                reason=(f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold"),
+            )
+        return True
+
     def _run_pipeline(self, alarm, *, rca_id, start_time, trace):
         store = self._container.session_store
 
@@ -172,7 +214,7 @@ class PipelineOrchestrator:
             store.mark_failed(rca_id, error_reason="No hypotheses generated")
             return
 
-        termination, all_judgments, evidence_map, rejected_descriptions, timeline = self._run_validation_loop(
+        state = self._run_validation_loop(
             alarm,
             scoping_result,
             hypotheses,
@@ -182,9 +224,9 @@ class PipelineOrchestrator:
         )
 
         best_hypothesis, confirmed = self._finalize_hypotheses(
-            hypotheses,
-            termination,
-            all_judgments,
+            state.hypotheses,
+            state.termination,
+            state.all_judgments,
             trace=trace,
         )
 
@@ -193,9 +235,9 @@ class PipelineOrchestrator:
             best_hypothesis,
             confirmed,
             hypothesis_path=[best_hypothesis.description] if best_hypothesis else [],
-            evidence_texts=[e for e in evidence_map.values() if e],
-            rejected_descriptions=rejected_descriptions,
-            timeline=timeline,
+            evidence_texts=[e for e in state.evidence_map.values() if e],
+            rejected_descriptions=state.rejected_descriptions,
+            timeline=state.timeline,
             rca_id=rca_id,
             start_time=start_time,
             trace=trace,
@@ -211,6 +253,7 @@ class PipelineOrchestrator:
             scoping_result = run_scoping(
                 alarm,
                 c.scoping_agent,
+                embedding=c.embedding,
                 s3_vectors_client=c.s3_vectors_client,
             )
             s.output_summary = (
@@ -254,404 +297,456 @@ class PipelineOrchestrator:
         trace.put_hypotheses(hypotheses)
         return hypotheses
 
-    def _run_validation_loop(self, alarm, scoping_result, hypotheses, *, rca_id, start_time, trace):
-        c = self._container
-        store = c.session_store
-
-        all_judgments = []
-        rejected_descriptions: list[str] = []
-        validation_loop_count = 0
-        regeneration_count = 0
-        timeline: list[str] = []
-        evidence_map: dict[str, str] = {}
-        evidence_failed_ids: set[str] = set()
-
-        timeline.append(f"Alarm received: {alarm.alarm_name}")
-        timeline.append(
-            f"Scoping complete: severity={scoping_result.initial_severity}",
-        )
-        timeline.append(f"Initial hypotheses: {len(hypotheses)}")
-
-        termination = None
-        consecutive_blocked_loops = 0
+    def _run_validation_loop(
+        self,
+        alarm,
+        scoping_result,
+        hypotheses,
+        *,
+        rca_id,
+        start_time,
+        trace,
+    ) -> ValidationLoopState:
+        state = ValidationLoopState(hypotheses=hypotheses)
+        state.timeline.append(f"Alarm received: {alarm.alarm_name}")
+        state.timeline.append(f"Scoping complete: severity={scoping_result.initial_severity}")
+        state.timeline.append(f"Initial hypotheses: {len(hypotheses)}")
 
         while True:
-            validation_loop_count += 1
+            state.loop_count += 1
             logger.info(
                 "Validation loop %d, hypotheses=%d",
-                validation_loop_count,
-                len(hypotheses),
+                state.loop_count,
+                len(state.hypotheses),
             )
             loop_span = trace.start_span(
                 SpanType.VALIDATION_LOOP,
-                loop_index=validation_loop_count,
-                input_summary=f"가설={len(hypotheses)}개",
+                loop_index=state.loop_count,
+                input_summary=f"가설={len(state.hypotheses)}개",
             )
 
-            # Accepted Review Gate (ADR agent/0002)
-            gate = run_review_gate(
-                hypotheses,
-                all_judgments,
-                consecutive_blocked_loops=consecutive_blocked_loops,
-            )
-            if gate.auto_rejected_ids:
-                for hid in gate.auto_rejected_ids:
-                    trace.update_hypothesis_status(
-                        hid,
-                        status=HypothesisStatus.REJECTED.value,
-                        judgment_reasoning=("Review gate: 이미 채택된 가설과 동일 원인 영역으로 자동 기각"),
-                    )
+            gate = self._apply_review_gate(state, trace, start_time, loop_span)
             if gate.early_exit:
-                logger.info("Review gate early exit: %s", gate.reason)
-                timeline.append(f"Loop {validation_loop_count}: review gate early exit ({gate.reason})")
-                termination = check_termination(
-                    judgments=all_judgments,
-                    hypotheses=hypotheses,
-                    start_time=start_time,
-                    validation_loop_count=validation_loop_count,
-                )
-                trace.end_span(
-                    loop_span,
-                    output_summary=f"review gate early exit: {gate.reason}",
-                    metadata={"루프_번호": validation_loop_count, "review_gate": gate.reason},
-                )
                 break
-            if gate.expansion_blocked:
-                consecutive_blocked_loops += 1
-                logger.info(
-                    "Review gate expansion blocked (loop=%d, streak=%d)",
-                    validation_loop_count,
-                    consecutive_blocked_loops,
-                )
-                timeline.append(f"Loop {validation_loop_count}: expansion blocked ({gate.reason})")
-            else:
-                consecutive_blocked_loops = 0
 
-            # F3: Prioritization
-            store.update_state(
-                rca_id,
-                RcaSessionState.HYPOTHESIS_PRIORITIZATION,
-            )
-            with trace.span(
-                SpanType.PRIORITIZATION,
-                parent_span_id=loop_span.span_id,
-                input_summary=f"가설={len(hypotheses)}개",
-            ) as s:
-                prioritization_result = run_prioritization(
-                    scoping_result,
-                    hypotheses,
-                    c.prioritization_agent,
-                )
-                s.output_summary = f"가설 {len(hypotheses)}개 우선순위 결정"
-
-            active_hypotheses = select_beam(
-                hypotheses,
-                prioritization_result,
-                RCA_BEAM_WIDTH,
-            )
+            prioritization_result = self._loop_prioritization(state, scoping_result, rca_id, trace, loop_span)
+            active_hypotheses = select_beam(state.hypotheses, prioritization_result, RCA_BEAM_WIDTH)
             logger.info(
                 "Beam selection: %d/%d hypotheses",
                 len(active_hypotheses),
-                len(hypotheses),
+                len(state.hypotheses),
             )
 
-            # F4: Evidence collection
-            store.update_state(rca_id, RcaSessionState.EVIDENCE_COLLECTION)
-            new_hypotheses = [h for h in active_hypotheses if h.hypothesis_id not in evidence_map]
-            with trace.span(
-                SpanType.EVIDENCE_COLLECTION,
-                parent_span_id=loop_span.span_id,
-                input_summary=(f"beam={len(active_hypotheses)}개, 신규={len(new_hypotheses)}개"),
-            ) as s:
-                if new_hypotheses:
-                    ev_summary = run_evidence_collection(
-                        new_hypotheses,
-                        scoping_result,
-                        mcp_clients=c.evidence_mcp_clients,
-                        rca_id=rca_id,
-                        trace=trace,
-                        s3_client=c.s3_client,
-                        existing_evidence_map=evidence_map,
-                        all_hypotheses=hypotheses,
-                    )
-                    evidence_map.update(ev_summary.evidence_map)
-                    evidence_failed_ids.update(ev_summary.failed_ids)
-                s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
-                s.metadata = {
-                    "신규_가설_수": len(new_hypotheses),
-                    "beam_width": RCA_BEAM_WIDTH,
-                }
-            timeline.append(
-                f"Loop {validation_loop_count}:"
-                f" evidence for {len(new_hypotheses)} hypotheses"
-                f" (beam={len(active_hypotheses)})"
-            )
+            self._loop_evidence(state, scoping_result, active_hypotheses, rca_id, trace, loop_span)
+            validation_result = self._loop_validation(state, active_hypotheses, rca_id, trace, loop_span)
+            self._apply_judgments(state, trace)
+            self._loop_termination_check(state, start_time, trace, loop_span)
 
-            # F5: Validation
-            store.update_state(
+            if state.termination and state.termination.should_terminate:
+                logger.info("Termination: %s", state.termination.reason)
+                state.timeline.append(f"Terminated: {state.termination.reason}")
+                trace.end_span(
+                    loop_span,
+                    output_summary=f"종료: {state.termination.reason}",
+                    metadata={"루프_번호": state.loop_count},
+                )
+                break
+
+            regen_action = self._maybe_regenerate(
+                state,
+                scoping_result,
+                validation_result,
+                gate,
                 rca_id,
-                RcaSessionState.HYPOTHESIS_VALIDATION,
+                trace,
+                loop_span,
             )
-            with trace.span(
-                SpanType.VALIDATION,
-                parent_span_id=loop_span.span_id,
-                input_summary=(f"beam={len(active_hypotheses)}개, 증거={len(evidence_map)}건"),
-            ) as s:
-                validation_result = run_validation(
-                    active_hypotheses,
-                    evidence_map,
-                    c.validation_agent,
-                    evidence_failed_ids=evidence_failed_ids,
-                )
-                all_judgments = validation_result.judgments
-                confirmed_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.CONFIRMED)
-                rejected_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.REJECTED)
-                s.output_summary = (
-                    f"판정={len(all_judgments)}건,"
-                    f" 확정={confirmed_count},"
-                    f" 기각={rejected_count},"
-                    f" 전체기각={validation_result.all_rejected}"
-                )
-                s.metadata = {
-                    "판정_수": len(all_judgments),
-                    "확정": confirmed_count,
-                    "기각": rejected_count,
-                    "전체기각": validation_result.all_rejected,
-                    "beam_width": RCA_BEAM_WIDTH,
-                }
-            timeline.append(
-                f"Loop {validation_loop_count}:"
-                f" validated {len(all_judgments)} hypotheses"
-                f" (beam={len(active_hypotheses)})"
-            )
+            if regen_action == _LoopAction.CONTINUE:
+                continue
+            if regen_action == _LoopAction.BREAK:
+                break
 
-            for j in all_judgments:
+            if not self._loop_branching(state, gate, trace, loop_span):
+                break
+
+        return state
+
+    def _apply_review_gate(
+        self,
+        state: ValidationLoopState,
+        trace,
+        start_time: float,
+        loop_span,
+    ) -> ReviewGateResult:
+        gate = run_review_gate(
+            state.hypotheses,
+            state.all_judgments,
+            consecutive_blocked_loops=state.consecutive_blocked_loops,
+        )
+        if gate.auto_rejected_ids:
+            for hid in gate.auto_rejected_ids:
                 trace.update_hypothesis_status(
-                    j.hypothesis_id,
-                    status=j.status.value,
-                    confidence=j.confidence_score,
-                    judgment_reasoning=j.reasoning[:500],
+                    hid,
+                    status=HypothesisStatus.REJECTED.value,
+                    judgment_reasoning=("Review gate: 이미 채택된 가설과 동일 원인 영역으로 자동 기각"),
                 )
-                h = next(
-                    (h for h in hypotheses if h.hypothesis_id == j.hypothesis_id),
-                    None,
-                )
-                if h:
-                    h.status = j.status
-
-            for j in all_judgments:
-                if j.status == HypothesisStatus.REJECTED:
-                    h = next(
-                        (h for h in hypotheses if h.hypothesis_id == j.hypothesis_id),
-                        None,
-                    )
-                    if h and h.description not in rejected_descriptions:
-                        rejected_descriptions.append(h.description)
-                    pruned = prune_subtree(j.hypothesis_id, hypotheses)
-                    if pruned:
-                        logger.info(
-                            "Pruned %d descendant hypotheses of %s",
-                            len(pruned),
-                            j.hypothesis_id,
-                        )
-                        for pid in pruned:
-                            trace.update_hypothesis_status(
-                                pid,
-                                status=HypothesisStatus.REJECTED.value,
-                            )
-
-            # Termination check
-            with trace.span(
-                SpanType.TERMINATION,
-                parent_span_id=loop_span.span_id,
-                input_summary=(f"루프={validation_loop_count}, 판정={len(all_judgments)}건"),
-            ) as s:
-                termination = check_termination(
-                    judgments=all_judgments,
-                    hypotheses=hypotheses,
-                    start_time=start_time,
-                    validation_loop_count=validation_loop_count,
-                )
-                s.output_summary = f"종료={termination.should_terminate}, 사유={termination.reason}"
-                s.metadata = {"종료여부": termination.should_terminate}
-                if termination.reason:
-                    s.metadata["사유"] = termination.reason.value
-
-            if termination.should_terminate:
-                logger.info("Termination: %s", termination.reason)
-                timeline.append(f"Terminated: {termination.reason}")
-                trace.end_span(
-                    loop_span,
-                    output_summary=f"종료: {termination.reason}",
-                    metadata={"루프_번호": validation_loop_count},
-                )
-                break
-
-            # All rejected → regeneration (skip when expansion is blocked by review gate)
-            if validation_result.all_rejected and gate.expansion_blocked:
-                logger.info(
-                    "All rejected but expansion blocked → relying on accepted hypothesis, skipping regeneration",
-                )
-                timeline.append(f"Loop {validation_loop_count}: regeneration skipped (expansion blocked)")
-                trace.end_span(
-                    loop_span,
-                    output_summary="expansion blocked, regeneration skipped",
-                    metadata={"루프_번호": validation_loop_count, "review_gate": gate.reason},
-                )
-                continue
-
-            if validation_result.all_rejected:
-                regeneration_count += 1
-                if regeneration_count > RCA_MAX_REGENERATION_ROUNDS:
-                    logger.warning("Max regeneration rounds exceeded")
-                    timeline.append("Max regeneration rounds exceeded")
-                    trace.end_span(
-                        loop_span,
-                        output_summary="최대 재생성 라운드 초과",
-                        status=SpanStatus.FAILED,
-                    )
-                    break
-                logger.info(
-                    "All rejected, regenerating hypotheses (round %d)",
-                    regeneration_count,
-                )
-                for h in hypotheses:
-                    if h.status in (
-                        HypothesisStatus.PENDING,
-                        HypothesisStatus.NEEDS_INVESTIGATION,
-                    ):
-                        h.status = HypothesisStatus.REJECTED
-                        trace.update_hypothesis_status(
-                            h.hypothesis_id,
-                            status=HypothesisStatus.REJECTED.value,
-                            judgment_reasoning=("전체 기각으로 가설 재생성 — 이전 라운드 자동 기각"),
-                        )
-                store.update_state(
-                    rca_id,
-                    RcaSessionState.HYPOTHESIS_GENERATION,
-                )
-                with trace.span(
-                    SpanType.HYPOTHESIS_GENERATION,
-                    parent_span_id=loop_span.span_id,
-                    input_summary=f"재생성 라운드 {regeneration_count}",
-                ) as s:
-                    hypothesis_result = run_hypothesis_generation(
-                        scoping_result,
-                        c.hypothesis_agent,
-                    )
-                    hypotheses = list(hypothesis_result.hypotheses)
-                    s.output_summary = f"가설 {len(hypotheses)}개 재생성"
-                    s.metadata = {
-                        "재생성_라운드": regeneration_count,
-                        "가설_수": len(hypotheses),
-                    }
-                if not hypotheses:
-                    logger.error("Regeneration produced no hypotheses")
-                    trace.end_span(
-                        loop_span,
-                        output_summary="재생성 결과 가설 없음",
-                        status=SpanStatus.FAILED,
-                    )
-                    break
-                trace.put_hypotheses(hypotheses)
-                timeline.append(
-                    f"Regenerated hypotheses: {len(hypotheses)}",
-                )
-                trace.end_span(
-                    loop_span,
-                    output_summary=f"가설 {len(hypotheses)}개 재생성",
-                    metadata={
-                        "루프_번호": validation_loop_count,
-                        "재생성_라운드": regeneration_count,
-                    },
-                )
-                continue
-
-            # Branching (skip when expansion is blocked by review gate)
-            new_children = []
-            ni_count = sum(1 for j in all_judgments if j.status == HypothesisStatus.NEEDS_INVESTIGATION)
-            if gate.expansion_blocked:
-                logger.info(
-                    "Branching skipped: expansion blocked by review gate (ni=%d)",
-                    ni_count,
-                )
-                timeline.append(f"Loop {validation_loop_count}: branching skipped (expansion blocked)")
-                trace.end_span(
-                    loop_span,
-                    output_summary=f"expansion blocked, branching skipped (ni={ni_count})",
-                    metadata={
-                        "루프_번호": validation_loop_count,
-                        "review_gate": gate.reason,
-                        "ni_count": ni_count,
-                    },
-                )
-                continue
-            with trace.span(
-                SpanType.BRANCHING,
-                parent_span_id=loop_span.span_id,
-                input_summary=f"추가조사필요={ni_count}건",
-            ) as s:
-                for j in all_judgments:
-                    if j.status != HypothesisStatus.NEEDS_INVESTIGATION:
-                        continue
-                    parent = next(
-                        (h for h in hypotheses if h.hypothesis_id == j.hypothesis_id),
-                        None,
-                    )
-                    if parent is None:
-                        continue
-                    evidence_text = evidence_map.get(
-                        parent.hypothesis_id,
-                        "",
-                    )
-                    branching_result = run_branching(
-                        parent,
-                        evidence_text,
-                        rejected_descriptions,
-                        c.branching_agent,
-                    )
-                    new_children.extend(branching_result.children)
-                s.output_summary = f"신규_하위가설={len(new_children)}개"
-                s.metadata = {"신규_하위가설_수": len(new_children)}
-
-            if not new_children:
-                logger.info("No new child hypotheses, terminating")
-                timeline.append("No new child hypotheses")
-                trace.end_span(
-                    loop_span,
-                    output_summary="신규 하위가설 없음, 종료",
-                )
-                break
-
-            trace.put_hypotheses(new_children)
-            hypotheses.extend(new_children)
-            logger.info(
-                "Added %d child hypotheses, total=%d",
-                len(new_children),
-                len(hypotheses),
+        if gate.early_exit:
+            logger.info("Review gate early exit: %s", gate.reason)
+            state.timeline.append(f"Loop {state.loop_count}: review gate early exit ({gate.reason})")
+            state.termination = check_termination(
+                judgments=state.all_judgments,
+                hypotheses=state.hypotheses,
+                start_time=start_time,
+                validation_loop_count=state.loop_count,
             )
             trace.end_span(
                 loop_span,
-                output_summary=(f"하위가설 {len(new_children)}개 추가, 총 {len(hypotheses)}개"),
+                output_summary=f"review gate early exit: {gate.reason}",
+                metadata={"루프_번호": state.loop_count, "review_gate": gate.reason},
+            )
+            return gate
+        if gate.expansion_blocked:
+            state.consecutive_blocked_loops += 1
+            logger.info(
+                "Review gate expansion blocked (loop=%d, streak=%d)",
+                state.loop_count,
+                state.consecutive_blocked_loops,
+            )
+            state.timeline.append(f"Loop {state.loop_count}: expansion blocked ({gate.reason})")
+        else:
+            state.consecutive_blocked_loops = 0
+        return gate
+
+    def _loop_prioritization(self, state: ValidationLoopState, scoping_result, rca_id, trace, loop_span):
+        c = self._container
+        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_PRIORITIZATION)
+        with trace.span(
+            SpanType.PRIORITIZATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"가설={len(state.hypotheses)}개",
+        ) as s:
+            prioritization_result = run_prioritization(
+                scoping_result,
+                state.hypotheses,
+                c.prioritization_agent,
+            )
+            s.output_summary = f"가설 {len(state.hypotheses)}개 우선순위 결정"
+        return prioritization_result
+
+    def _loop_evidence(
+        self,
+        state: ValidationLoopState,
+        scoping_result,
+        active_hypotheses,
+        rca_id,
+        trace,
+        loop_span,
+    ) -> None:
+        c = self._container
+        c.session_store.update_state(rca_id, RcaSessionState.EVIDENCE_COLLECTION)
+        new_hypotheses = [h for h in active_hypotheses if h.hypothesis_id not in state.evidence_map]
+        with trace.span(
+            SpanType.EVIDENCE_COLLECTION,
+            parent_span_id=loop_span.span_id,
+            input_summary=(f"beam={len(active_hypotheses)}개, 신규={len(new_hypotheses)}개"),
+        ) as s:
+            if new_hypotheses:
+                ev_summary = run_evidence_collection(
+                    new_hypotheses,
+                    scoping_result,
+                    mcp_clients=c.evidence_mcp_clients,
+                    rca_id=rca_id,
+                    trace=trace,
+                    s3_client=c.s3_client,
+                    existing_evidence_map=state.evidence_map,
+                    all_hypotheses=state.hypotheses,
+                )
+                state.evidence_map.update(ev_summary.evidence_map)
+                state.evidence_failed_ids.update(ev_summary.failed_ids)
+            s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
+            s.metadata = {
+                "신규_가설_수": len(new_hypotheses),
+                "beam_width": RCA_BEAM_WIDTH,
+            }
+        state.timeline.append(
+            f"Loop {state.loop_count}: evidence for {len(new_hypotheses)} hypotheses (beam={len(active_hypotheses)})"
+        )
+
+    def _loop_validation(
+        self,
+        state: ValidationLoopState,
+        active_hypotheses,
+        rca_id,
+        trace,
+        loop_span,
+    ) -> ValidationResult:
+        c = self._container
+        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_VALIDATION)
+        with trace.span(
+            SpanType.VALIDATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=(f"beam={len(active_hypotheses)}개, 증거={len(state.evidence_map)}건"),
+        ) as s:
+            validation_result = run_validation(
+                active_hypotheses,
+                state.evidence_map,
+                c.validation_agent,
+                evidence_failed_ids=state.evidence_failed_ids,
+            )
+            state.all_judgments = validation_result.judgments
+            confirmed_count = sum(1 for j in state.all_judgments if j.status == HypothesisStatus.CONFIRMED)
+            rejected_count = sum(1 for j in state.all_judgments if j.status == HypothesisStatus.REJECTED)
+            s.output_summary = (
+                f"판정={len(state.all_judgments)}건,"
+                f" 확정={confirmed_count},"
+                f" 기각={rejected_count},"
+                f" 전체기각={validation_result.all_rejected}"
+            )
+            s.metadata = {
+                "판정_수": len(state.all_judgments),
+                "확정": confirmed_count,
+                "기각": rejected_count,
+                "전체기각": validation_result.all_rejected,
+                "beam_width": RCA_BEAM_WIDTH,
+            }
+        state.timeline.append(
+            f"Loop {state.loop_count}: validated {len(state.all_judgments)} hypotheses (beam={len(active_hypotheses)})"
+        )
+        return validation_result
+
+    def _apply_judgments(self, state: ValidationLoopState, trace) -> None:
+        for j in state.all_judgments:
+            trace.update_hypothesis_status(
+                j.hypothesis_id,
+                status=j.status.value,
+                confidence=j.confidence_score,
+                judgment_reasoning=j.reasoning[:500],
+            )
+            h = next(
+                (h for h in state.hypotheses if h.hypothesis_id == j.hypothesis_id),
+                None,
+            )
+            if h:
+                h.status = j.status
+
+        for j in state.all_judgments:
+            if j.status != HypothesisStatus.REJECTED:
+                continue
+            h = next(
+                (h for h in state.hypotheses if h.hypothesis_id == j.hypothesis_id),
+                None,
+            )
+            if h and h.description not in state.rejected_descriptions:
+                state.rejected_descriptions.append(h.description)
+            pruned = prune_subtree(j.hypothesis_id, state.hypotheses)
+            if pruned:
+                logger.info(
+                    "Pruned %d descendant hypotheses of %s",
+                    len(pruned),
+                    j.hypothesis_id,
+                )
+                for pid in pruned:
+                    trace.update_hypothesis_status(
+                        pid,
+                        status=HypothesisStatus.REJECTED.value,
+                    )
+
+    def _loop_termination_check(
+        self,
+        state: ValidationLoopState,
+        start_time: float,
+        trace,
+        loop_span,
+    ) -> None:
+        with trace.span(
+            SpanType.TERMINATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=(f"루프={state.loop_count}, 판정={len(state.all_judgments)}건"),
+        ) as s:
+            state.termination = check_termination(
+                judgments=state.all_judgments,
+                hypotheses=state.hypotheses,
+                start_time=start_time,
+                validation_loop_count=state.loop_count,
+            )
+            s.output_summary = f"종료={state.termination.should_terminate}, 사유={state.termination.reason}"
+            s.metadata = {"종료여부": state.termination.should_terminate}
+            if state.termination.reason:
+                s.metadata["사유"] = state.termination.reason.value
+
+    def _maybe_regenerate(
+        self,
+        state: ValidationLoopState,
+        scoping_result,
+        validation_result: ValidationResult,
+        gate: ReviewGateResult,
+        rca_id,
+        trace,
+        loop_span,
+    ) -> _LoopAction:
+        if not validation_result.all_rejected:
+            return _LoopAction.PROCEED
+
+        if gate.expansion_blocked:
+            logger.info(
+                "All rejected but expansion blocked → relying on accepted hypothesis, skipping regeneration",
+            )
+            state.timeline.append(f"Loop {state.loop_count}: regeneration skipped (expansion blocked)")
+            trace.end_span(
+                loop_span,
+                output_summary="expansion blocked, regeneration skipped",
+                metadata={"루프_번호": state.loop_count, "review_gate": gate.reason},
+            )
+            return _LoopAction.CONTINUE
+
+        state.regeneration_count += 1
+        if state.regeneration_count > RCA_MAX_REGENERATION_ROUNDS:
+            logger.warning("Max regeneration rounds exceeded")
+            state.timeline.append("Max regeneration rounds exceeded")
+            trace.end_span(
+                loop_span,
+                output_summary="최대 재생성 라운드 초과",
+                status=SpanStatus.FAILED,
+            )
+            return _LoopAction.BREAK
+
+        logger.info(
+            "All rejected, regenerating hypotheses (round %d)",
+            state.regeneration_count,
+        )
+        for h in state.hypotheses:
+            if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
+                h.status = HypothesisStatus.REJECTED
+                trace.update_hypothesis_status(
+                    h.hypothesis_id,
+                    status=HypothesisStatus.REJECTED.value,
+                    judgment_reasoning=("전체 기각으로 가설 재생성 — 이전 라운드 자동 기각"),
+                )
+
+        c = self._container
+        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION)
+        with trace.span(
+            SpanType.HYPOTHESIS_GENERATION,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"재생성 라운드 {state.regeneration_count}",
+        ) as s:
+            hypothesis_result = run_hypothesis_generation(
+                scoping_result,
+                c.hypothesis_agent,
+            )
+            new_hypotheses = list(hypothesis_result.hypotheses)
+            s.output_summary = f"가설 {len(new_hypotheses)}개 재생성"
+            s.metadata = {
+                "재생성_라운드": state.regeneration_count,
+                "가설_수": len(new_hypotheses),
+            }
+        if not new_hypotheses:
+            logger.error("Regeneration produced no hypotheses")
+            trace.end_span(
+                loop_span,
+                output_summary="재생성 결과 가설 없음",
+                status=SpanStatus.FAILED,
+            )
+            return _LoopAction.BREAK
+
+        state.hypotheses = new_hypotheses
+        trace.put_hypotheses(new_hypotheses)
+        state.timeline.append(f"Regenerated hypotheses: {len(new_hypotheses)}")
+        trace.end_span(
+            loop_span,
+            output_summary=f"가설 {len(new_hypotheses)}개 재생성",
+            metadata={
+                "루프_번호": state.loop_count,
+                "재생성_라운드": state.regeneration_count,
+            },
+        )
+        return _LoopAction.CONTINUE
+
+    def _loop_branching(
+        self,
+        state: ValidationLoopState,
+        gate: ReviewGateResult,
+        trace,
+        loop_span,
+    ) -> bool:
+        """Returns True to continue the loop, False to break."""
+        c = self._container
+        ni_count = sum(1 for j in state.all_judgments if j.status == HypothesisStatus.NEEDS_INVESTIGATION)
+
+        if gate.expansion_blocked:
+            logger.info(
+                "Branching skipped: expansion blocked by review gate (ni=%d)",
+                ni_count,
+            )
+            state.timeline.append(f"Loop {state.loop_count}: branching skipped (expansion blocked)")
+            trace.end_span(
+                loop_span,
+                output_summary=f"expansion blocked, branching skipped (ni={ni_count})",
                 metadata={
-                    "루프_번호": validation_loop_count,
-                    "신규_하위가설": len(new_children),
+                    "루프_번호": state.loop_count,
+                    "review_gate": gate.reason,
+                    "ni_count": ni_count,
                 },
             )
+            return True
 
-        return termination, all_judgments, evidence_map, rejected_descriptions, timeline
+        new_children: list[Hypothesis] = []
+        with trace.span(
+            SpanType.BRANCHING,
+            parent_span_id=loop_span.span_id,
+            input_summary=f"추가조사필요={ni_count}건",
+        ) as s:
+            for j in state.all_judgments:
+                if j.status != HypothesisStatus.NEEDS_INVESTIGATION:
+                    continue
+                parent = next(
+                    (h for h in state.hypotheses if h.hypothesis_id == j.hypothesis_id),
+                    None,
+                )
+                if parent is None:
+                    continue
+                evidence_text = state.evidence_map.get(parent.hypothesis_id, "")
+                branching_result = run_branching(
+                    parent,
+                    evidence_text,
+                    state.rejected_descriptions,
+                    c.branching_agent,
+                )
+                new_children.extend(branching_result.children)
+            s.output_summary = f"신규_하위가설={len(new_children)}개"
+            s.metadata = {"신규_하위가설_수": len(new_children)}
+
+        if not new_children:
+            logger.info("No new child hypotheses, terminating")
+            state.timeline.append("No new child hypotheses")
+            trace.end_span(
+                loop_span,
+                output_summary="신규 하위가설 없음, 종료",
+            )
+            return False
+
+        trace.put_hypotheses(new_children)
+        state.hypotheses.extend(new_children)
+        logger.info(
+            "Added %d child hypotheses, total=%d",
+            len(new_children),
+            len(state.hypotheses),
+        )
+        trace.end_span(
+            loop_span,
+            output_summary=(f"하위가설 {len(new_children)}개 추가, 총 {len(state.hypotheses)}개"),
+            metadata={
+                "루프_번호": state.loop_count,
+                "신규_하위가설": len(new_children),
+            },
+        )
+        return True
 
     def _finalize_hypotheses(self, hypotheses, termination, all_judgments, *, trace):
-        close_reason_map = {
-            TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 기각",
-            TerminationReason.TIME_BUDGET: "시간 예산 소진",
-            TerminationReason.TOKEN_BUDGET: "토큰 예산 소진",
-            TerminationReason.MAX_DEPTH: "최대 트리 깊이 초과",
-            TerminationReason.MAX_LOOPS: "최대 검증 루프 초과",
-            TerminationReason.ALL_REJECTED: "전체 가설 기각",
-        }
         close_reason = (
-            close_reason_map.get(termination.reason, "분석 종료") if termination and termination.reason else "분석 종료"
+            _CLOSE_REASON_MAP.get(termination.reason, "분석 종료")
+            if termination and termination.reason
+            else "분석 종료"
         )
         best_hid = termination.best_hypothesis.hypothesis_id if termination and termination.best_hypothesis else None
         terminated_by_confirmed = termination and termination.reason == TerminationReason.CONFIRMED
@@ -709,7 +804,6 @@ class PipelineOrchestrator:
         store = c.session_store
         elapsed = int(time.monotonic() - start_time)
 
-        # F7: Report
         store.update_state(rca_id, RcaSessionState.REPORT_GENERATION)
         with trace.span(
             SpanType.REPORT,
@@ -733,55 +827,7 @@ class PipelineOrchestrator:
         report_s3_key = c.report_store.save(rca_report)
         c.report_store.save_vectors(rca_report, scoping_result=scoping_result)
 
-        # F8: Playbook
-        playbook: Playbook | None = None
-        playbook_span = trace.start_span(
-            SpanType.PLAYBOOK,
-            input_summary=f"rca_id={rca_report.rca_id}",
-        )
-        try:
-            playbook = run_playbook_generation(
-                rca_report,
-                c.playbook_agent,
-                scoping_result=scoping_result,
-                s3_vectors_client=c.s3_vectors_client,
-            )
-            c.playbook_store.save(playbook, scoping_result=scoping_result)
-            pb_meta = {
-                "playbook_id": playbook.playbook_id,
-                "failure_type": playbook.failure_type,
-                "symptom_pattern": playbook.symptom_pattern,
-                "severity_criteria": playbook.severity_criteria,
-                "verification_steps": playbook.verification_steps,
-                "temporary_mitigation": playbook.temporary_mitigation,
-                "permanent_remediation": playbook.permanent_remediation,
-                "escalation_criteria": playbook.escalation_criteria,
-                "prevention_measures": playbook.prevention_measures,
-                "related_metrics": playbook.related_metrics,
-                "tags": playbook.tags,
-            }
-            trace.end_span(
-                playbook_span,
-                output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),
-                metadata=pb_meta,
-            )
-            logger.info(
-                "Playbook %s: %s",
-                playbook.playbook_id,
-                playbook.failure_type,
-            )
-        except Exception:
-            logger.exception(
-                "Playbook generation failed, continuing pipeline",
-            )
-            trace.end_span(
-                playbook_span,
-                status=SpanStatus.FAILED,
-                error="Playbook generation failed",
-            )
-
-        # F9: Notification
-        from rca_agent.services.notification import build_notification
+        playbook = self._run_playbook(rca_report, scoping_result, trace)
 
         with trace.span(
             SpanType.NOTIFICATION,
@@ -806,3 +852,50 @@ class PipelineOrchestrator:
             rca_report.rca_id,
             elapsed,
         )
+
+    def _run_playbook(self, rca_report, scoping_result, trace) -> Playbook | None:
+        c = self._container
+        playbook_span = trace.start_span(
+            SpanType.PLAYBOOK,
+            input_summary=f"rca_id={rca_report.rca_id}",
+        )
+        try:
+            playbook = run_playbook_generation(
+                rca_report,
+                c.playbook_agent,
+                embedding=c.embedding,
+                scoping_result=scoping_result,
+                s3_vectors_client=c.s3_vectors_client,
+            )
+            c.playbook_store.save(playbook, scoping_result=scoping_result)
+            trace.end_span(
+                playbook_span,
+                output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),
+                metadata={
+                    "playbook_id": playbook.playbook_id,
+                    "failure_type": playbook.failure_type,
+                    "symptom_pattern": playbook.symptom_pattern,
+                    "severity_criteria": playbook.severity_criteria,
+                    "verification_steps": playbook.verification_steps,
+                    "temporary_mitigation": playbook.temporary_mitigation,
+                    "permanent_remediation": playbook.permanent_remediation,
+                    "escalation_criteria": playbook.escalation_criteria,
+                    "prevention_measures": playbook.prevention_measures,
+                    "related_metrics": playbook.related_metrics,
+                    "tags": playbook.tags,
+                },
+            )
+            logger.info(
+                "Playbook %s: %s",
+                playbook.playbook_id,
+                playbook.failure_type,
+            )
+            return playbook
+        except Exception:
+            logger.exception("Playbook generation failed, continuing pipeline")
+            trace.end_span(
+                playbook_span,
+                status=SpanStatus.FAILED,
+                error="Playbook generation failed",
+            )
+            return None

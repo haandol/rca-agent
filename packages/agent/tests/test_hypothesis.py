@@ -3,19 +3,19 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from rca_agent.hypothesis import (
+from rca_agent.ports.dto.models import (
+    HypothesisCategory,
+    HypothesisGenerationResult,
+    ReportMatch,
+    ScopingResult,
+)
+from rca_agent.services.hypothesis import (
     HypothesisOutput,
     _build_metric_snapshot_text,
     _build_report_context,
     _build_user_prompt,
     _HypothesisItem,
     run_hypothesis_generation,
-)
-from rca_agent.ports.dto.models import (
-    HypothesisCategory,
-    HypothesisGenerationResult,
-    ReportMatch,
-    ScopingResult,
 )
 
 

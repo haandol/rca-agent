@@ -7,7 +7,7 @@ from rca_agent.ports.dto.models import (
     TerminationReason,
     ValidationJudgment,
 )
-from rca_agent.termination import check_termination
+from rca_agent.services.termination import check_termination
 
 
 def _make_hypothesis(hid="h-1", depth=0) -> Hypothesis:

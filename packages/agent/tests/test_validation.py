@@ -5,7 +5,7 @@ from rca_agent.ports.dto.models import (
     HypothesisCategory,
     HypothesisStatus,
 )
-from rca_agent.validation import (
+from rca_agent.services.validation import (
     ValidationOutput,
     _classify_status,
     _JudgmentItem,

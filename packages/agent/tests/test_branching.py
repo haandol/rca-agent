@@ -1,14 +1,14 @@
 from unittest.mock import MagicMock
 
-from rca_agent.branching import (
+from rca_agent.ports.dto.models import (
+    Hypothesis,
+    HypothesisCategory,
+)
+from rca_agent.services.branching import (
     BranchingOutput,
     _ChildItem,
     _is_duplicate,
     run_branching,
-)
-from rca_agent.ports.dto.models import (
-    Hypothesis,
-    HypothesisCategory,
 )
 
 

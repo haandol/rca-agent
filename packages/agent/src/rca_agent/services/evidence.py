@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
@@ -16,6 +15,7 @@ from rca_agent.config.settings import (
 )
 from rca_agent.ports.dto.models import Hypothesis, HypothesisStatus, ScopingResult
 from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
+from rca_agent.utils.retry import retry_with_backoff
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -23,7 +23,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_S3_BASE_DELAY = 1.0
 _SUMMARY_MAX_LEN = 500
 
 
@@ -256,7 +255,7 @@ def _save_single_evidence_to_s3(
     *,
     s3_client=None,
     max_retries: int = S3_EVIDENCE_MAX_RETRIES,
-    base_delay: float = _S3_BASE_DELAY,
+    base_delay: float = 1.0,
 ) -> str | None:
     if not S3_EVIDENCE_BUCKET or s3_client is None:
         return None
@@ -264,24 +263,23 @@ def _save_single_evidence_to_s3(
         return None
 
     key = f"rca/{rca_id}/evidence/{hypothesis_id}/combined.md"
-    for attempt in range(max_retries):
-        try:
-            s3_client.put_object(
-                Bucket=S3_EVIDENCE_BUCKET,
-                Key=key,
-                Body=evidence_text,
-                ContentType="text/markdown",
-            )
-            logger.info("Evidence saved: s3://%s/%s", S3_EVIDENCE_BUCKET, key)
-            return key
-        except Exception:
-            if attempt == max_retries - 1:
-                logger.exception("Failed to save evidence for %s after %d attempts", hypothesis_id, max_retries)
-            else:
-                delay = base_delay * (2**attempt)
-                logger.warning("Evidence save attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-                time.sleep(delay)
-    return None
+
+    def put() -> str:
+        s3_client.put_object(
+            Bucket=S3_EVIDENCE_BUCKET,
+            Key=key,
+            Body=evidence_text,
+            ContentType="text/markdown",
+        )
+        logger.info("Evidence saved: s3://%s/%s", S3_EVIDENCE_BUCKET, key)
+        return key
+
+    return retry_with_backoff(
+        put,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        operation=f"evidence save for {hypothesis_id}",
+    )
 
 
 def save_evidence_to_s3(
@@ -290,7 +288,7 @@ def save_evidence_to_s3(
     *,
     s3_client=None,
     max_retries: int = S3_EVIDENCE_MAX_RETRIES,
-    base_delay: float = _S3_BASE_DELAY,
+    base_delay: float = 1.0,
 ) -> list[str]:
     if not S3_EVIDENCE_BUCKET or s3_client is None:
         logger.info("S3 evidence bucket not configured, skipping upload")

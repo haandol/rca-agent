@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 
 from rca_agent.config.settings import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
 from rca_agent.ports.dto.models import NotificationMessage, Playbook, RcaReport
+from rca_agent.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -90,21 +90,22 @@ def send_notification(
     if notification.playbook:
         message_body["playbook"] = notification.playbook
 
-    for attempt in range(max_retries):
-        try:
-            sns_client.publish(
-                TopicArn=SNS_NOTIFICATION_TOPIC_ARN,
-                Subject=f"RCA Complete: {notification.rca_id}",
-                Message=json.dumps(message_body),
-            )
-            logger.info("Notification sent for RCA %s", notification.rca_id)
-            return True
-        except Exception:
-            if attempt == max_retries - 1:
-                logger.exception("Failed to send notification after %d attempts", max_retries)
-                return False
-            delay = base_delay * (2**attempt)
-            logger.warning("Notification attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-            time.sleep(delay)
+    def publish() -> bool:
+        sns_client.publish(
+            TopicArn=SNS_NOTIFICATION_TOPIC_ARN,
+            Subject=f"RCA Complete: {notification.rca_id}",
+            Message=json.dumps(message_body),
+        )
+        logger.info("Notification sent for RCA %s", notification.rca_id)
+        return True
+
+    result = retry_with_backoff(
+        publish,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        operation="notification",
+        default=False,
+    )
+    return bool(result)
 
     return False

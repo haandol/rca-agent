@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -15,12 +14,13 @@ from rca_agent.config.settings import (
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
 )
-from rca_agent.embeddings import embed_document, embed_query
 from rca_agent.ports.dto.models import Playbook, RcaReport, ScopingResult
+from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
+from rca_agent.utils.retry import retry_with_backoff
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -139,6 +139,7 @@ def search_existing_playbooks(
     report: RcaReport,
     scoping_result: ScopingResult | None,
     *,
+    embedding: EmbeddingPort,
     s3_vectors_client=None,
     threshold: float = PLAYBOOK_UPDATE_THRESHOLD,
     max_retries: int = _SEARCH_MAX_RETRIES,
@@ -149,29 +150,25 @@ def search_existing_playbooks(
 
     query_text = _build_embed_key(report, scoping_result)
     try:
-        query_vector = embed_query(query_text)
+        query_vector = embedding.embed_query(query_text)
     except Exception:
         logger.exception("Failed to embed query text, skipping playbook search")
         return []
 
-    response = None
-    for attempt in range(max_retries):
-        try:
-            response = s3_vectors_client.query_vectors(
-                vectorBucketName=S3_VECTOR_BUCKET_NAME,
-                indexName=S3_VECTOR_PLAYBOOK_INDEX,
-                queryVector={"float32": query_vector},
-                topK=3,
-            )
-            break
-        except Exception:
-            if attempt == max_retries - 1:
-                logger.exception("Failed to search playbooks after %d attempts", max_retries)
-                return []
-            delay = base_delay * (2**attempt)
-            logger.warning("Playbook search attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-            time.sleep(delay)
+    def query() -> dict:
+        return s3_vectors_client.query_vectors(
+            vectorBucketName=S3_VECTOR_BUCKET_NAME,
+            indexName=S3_VECTOR_PLAYBOOK_INDEX,
+            queryVector={"float32": query_vector},
+            topK=3,
+        )
 
+    response = retry_with_backoff(
+        query,
+        max_retries=max_retries,
+        base_delay=base_delay,
+        operation="playbook search",
+    )
     if response is None:
         return []
 
@@ -248,6 +245,7 @@ def run_playbook_generation(
     report: RcaReport,
     agent: Agent,
     *,
+    embedding: EmbeddingPort,
     scoping_result: ScopingResult | None = None,
     s3_vectors_client=None,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
@@ -255,6 +253,7 @@ def run_playbook_generation(
     existing_hits = search_existing_playbooks(
         report,
         scoping_result,
+        embedding=embedding,
         s3_vectors_client=s3_vectors_client,
     )
 
@@ -307,6 +306,7 @@ def run_playbook_generation(
 def save_playbook_to_s3_vectors(
     playbook: Playbook,
     *,
+    embedding: EmbeddingPort,
     scoping_result: ScopingResult | None = None,
     s3_vectors_client=None,
 ) -> bool:
@@ -325,7 +325,7 @@ def save_playbook_to_s3_vectors(
     }
     embed_text = " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
     try:
-        vector = embed_document(embed_text)
+        vector = embedding.embed_document(embed_text)
     except Exception:
         logger.exception("Failed to embed playbook text")
         return False

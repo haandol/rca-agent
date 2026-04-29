@@ -75,7 +75,7 @@ def _make_hit(**overrides) -> _ExistingPlaybookHit:
 
 
 class TestBuildEmbedKey:
-    def test_includes_all_parts(self):
+    def test_includes_all_parts(self, fake_embedding):
         report = _make_report()
         scoping = _make_scoping()
         key = _build_embed_key(report, scoping)
@@ -83,7 +83,7 @@ class TestBuildEmbedKey:
         assert "CPUUtilization" in key
         assert "CPU spike on web-service" in key
 
-    def test_without_scoping(self):
+    def test_without_scoping(self, fake_embedding):
         report = _make_report()
         key = _build_embed_key(report, None)
         assert "Memory leak in worker" in key
@@ -92,13 +92,12 @@ class TestBuildEmbedKey:
 
 
 class TestSearchExistingPlaybooks:
-    def test_skips_when_not_configured(self):
-        result = search_existing_playbooks(_make_report(), None)
+    def test_skips_when_not_configured(self, fake_embedding):
+        result = search_existing_playbooks(_make_report(), None, embedding=fake_embedding)
         assert result == []
 
-    @patch("rca_agent.services.playbook_gen.embed_query", return_value=[0.1] * 1024)
     @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_returns_hits_above_threshold(self, _mock_embed):
+    def test_returns_hits_above_threshold(self, fake_embedding):
         mock_client = MagicMock()
         mock_client.query_vectors.return_value = {
             "vectors": [
@@ -120,19 +119,20 @@ class TestSearchExistingPlaybooks:
         hits = search_existing_playbooks(
             _make_report(),
             _make_scoping(),
+            embedding=fake_embedding,
             s3_vectors_client=mock_client,
         )
         assert len(hits) == 1
         assert hits[0].playbook_id == "pb-1"
 
-    @patch("rca_agent.services.playbook_gen.embed_query", return_value=[0.1] * 1024)
     @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_handles_search_failure(self, _mock_embed):
+    def test_handles_search_failure(self, fake_embedding):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = RuntimeError("fail")
         hits = search_existing_playbooks(
             _make_report(),
             None,
+            embedding=fake_embedding,
             s3_vectors_client=mock_client,
             max_retries=1,
             base_delay=0,
@@ -141,7 +141,7 @@ class TestSearchExistingPlaybooks:
 
 
 class TestTryUpdateExisting:
-    def test_returns_updated_playbook(self):
+    def test_returns_updated_playbook(self, fake_embedding):
         hit = _make_hit()
         update_output = PlaybookUpdateOutput(
             needs_update=True,
@@ -165,7 +165,7 @@ class TestTryUpdateExisting:
         assert result.escalation_criteria == "Escalate to infra if not resolved in 5 min"
         assert len(result.related_metrics) == 3
 
-    def test_returns_none_when_no_update_needed(self):
+    def test_returns_none_when_no_update_needed(self, fake_embedding):
         hit = _make_hit()
         update_output = PlaybookUpdateOutput(needs_update=False)
         agent = _make_mock_agent(update_output)
@@ -174,7 +174,7 @@ class TestTryUpdateExisting:
 
         assert result is None
 
-    def test_returns_none_on_failure(self):
+    def test_returns_none_on_failure(self, fake_embedding):
         hit = _make_hit()
         agent = MagicMock(side_effect=RuntimeError("fail"))
 
@@ -184,7 +184,7 @@ class TestTryUpdateExisting:
 
 
 class TestRunPlaybookGeneration:
-    def test_updates_existing_when_found(self):
+    def test_updates_existing_when_found(self, fake_embedding):
         hit = _make_hit()
         update_output = PlaybookUpdateOutput(
             needs_update=True,
@@ -198,12 +198,12 @@ class TestRunPlaybookGeneration:
             "rca_agent.services.playbook_gen.search_existing_playbooks",
             return_value=[hit],
         ):
-            playbook = run_playbook_generation(_make_report(), agent)
+            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
 
         assert playbook.playbook_id == "existing-1"
         assert playbook.failure_type == "Memory leak (updated)"
 
-    def test_creates_new_when_no_existing(self):
+    def test_creates_new_when_no_existing(self, fake_embedding):
         new_output = PlaybookOutput(
             failure_type="Memory leak",
             symptom_pattern="CPU spike",
@@ -218,7 +218,7 @@ class TestRunPlaybookGeneration:
             "rca_agent.services.playbook_gen.search_existing_playbooks",
             return_value=[],
         ):
-            playbook = run_playbook_generation(_make_report(), agent)
+            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
 
         assert playbook.failure_type == "Memory leak"
         assert playbook.severity_criteria == "High if sustained over 5 min"
@@ -226,7 +226,7 @@ class TestRunPlaybookGeneration:
         assert playbook.related_metrics == ["CPUUtilization"]
         assert playbook.rca_id == "rca-1"
 
-    def test_creates_new_when_existing_needs_no_update(self):
+    def test_creates_new_when_existing_needs_no_update(self, fake_embedding):
         hit = _make_hit()
         no_update = PlaybookUpdateOutput(needs_update=False)
         new_output = PlaybookOutput(
@@ -252,23 +252,23 @@ class TestRunPlaybookGeneration:
             "rca_agent.services.playbook_gen.search_existing_playbooks",
             return_value=[hit],
         ):
-            playbook = run_playbook_generation(_make_report(), agent)
+            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
 
         assert playbook.failure_type == "New playbook"
 
-    def test_fallback_on_failure(self):
+    def test_fallback_on_failure(self, fake_embedding):
         agent = MagicMock(side_effect=RuntimeError("fail"))
 
         with patch(
             "rca_agent.services.playbook_gen.search_existing_playbooks",
             return_value=[],
         ):
-            playbook = run_playbook_generation(_make_report(), agent)
+            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
 
         assert playbook.failure_type == "unknown"
         assert playbook.rca_id == "rca-1"
 
-    def test_uses_structured_output(self):
+    def test_uses_structured_output(self, fake_embedding):
         output = PlaybookOutput(failure_type="test", symptom_pattern="test")
         agent = _make_mock_agent(output)
 
@@ -276,20 +276,19 @@ class TestRunPlaybookGeneration:
             "rca_agent.services.playbook_gen.search_existing_playbooks",
             return_value=[],
         ):
-            run_playbook_generation(_make_report(), agent)
+            run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
 
         _, kwargs = agent.call_args
         assert kwargs["structured_output_model"] is PlaybookOutput
 
 
 class TestSavePlaybookToS3Vectors:
-    def test_skips_when_not_configured(self):
+    def test_skips_when_not_configured(self, fake_embedding):
         playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
-        assert not save_playbook_to_s3_vectors(playbook)
+        assert not save_playbook_to_s3_vectors(playbook, embedding=fake_embedding)
 
-    @patch("rca_agent.services.playbook_gen.embed_document", return_value=[0.1] * 1024)
     @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_indexes_with_embed_key(self, _mock_embed):
+    def test_indexes_with_embed_key(self, fake_embedding):
         playbook = Playbook(
             playbook_id="p-1",
             failure_type="Memory leak",
@@ -302,6 +301,7 @@ class TestSavePlaybookToS3Vectors:
 
         result = save_playbook_to_s3_vectors(
             playbook,
+            embedding=fake_embedding,
             scoping_result=scoping,
             s3_vectors_client=mock_client,
         )
@@ -314,13 +314,12 @@ class TestSavePlaybookToS3Vectors:
         assert vector["metadata"]["tags"] == "memory"
         assert "verification_steps" not in vector["metadata"]
 
-    @patch("rca_agent.services.playbook_gen.embed_document", return_value=[0.1] * 1024)
     @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_handles_error(self, _mock_embed):
+    def test_handles_error(self, fake_embedding):
         playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
         mock_client = MagicMock()
         mock_client.put_vectors.side_effect = RuntimeError("fail")
 
-        result = save_playbook_to_s3_vectors(playbook, s3_vectors_client=mock_client)
+        result = save_playbook_to_s3_vectors(playbook, embedding=fake_embedding, s3_vectors_client=mock_client)
 
         assert result is False

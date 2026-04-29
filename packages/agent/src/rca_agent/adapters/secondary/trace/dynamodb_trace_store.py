@@ -28,6 +28,22 @@ _SUMMARY_MAX_LEN = 500
 _BATCH_WRITE_CHUNK = 25
 
 
+def _pk(rca_id: str) -> dict:
+    return {"S": f"RCA#{rca_id}"}
+
+
+def _session_sk() -> dict:
+    return {"S": f"{ENGINE}#SESSION"}
+
+
+def _span_sk(span_id: str) -> dict:
+    return {"S": f"{ENGINE}#SPAN#{span_id}"}
+
+
+def _hypo_sk(hypothesis_id: str) -> dict:
+    return {"S": f"{ENGINE}#HYPO#{hypothesis_id}"}
+
+
 class SpanType(StrEnum):
     SCOPING = "SCOPING"
     HYPOTHESIS_GENERATION = "HYPOTHESIS_GENERATION"
@@ -107,10 +123,7 @@ class TraceStore:
         try:
             resp = self._dynamodb.get_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={
-                    "PK": {"S": f"RCA#{self._rca_id}"},
-                    "SK": {"S": f"{ENGINE}#SESSION"},
-                },
+                Key={"PK": _pk(self._rca_id), "SK": _session_sk()},
                 ProjectionExpression="#st",
                 ExpressionAttributeNames={"#st": "state"},
             )
@@ -206,8 +219,8 @@ class TraceStore:
             item = {
                 "PutRequest": {
                     "Item": {
-                        "PK": {"S": f"RCA#{self._rca_id}"},
-                        "SK": {"S": f"{ENGINE}#HYPO#{h.hypothesis_id}"},
+                        "PK": _pk(self._rca_id),
+                        "SK": _hypo_sk(h.hypothesis_id),
                         "engine": {"S": ENGINE},
                         "tree_id": {"S": h.tree_id},
                         "depth": {"N": str(h.depth)},
@@ -242,6 +255,31 @@ class TraceStore:
             except ClientError:
                 logger.exception("Failed to batch write %d hypothesis nodes", len(chunk))
 
+    def _update_hypothesis_item(
+        self,
+        hypothesis_id: str,
+        *,
+        set_parts: list[str],
+        attr_values: dict,
+        attr_names: dict | None = None,
+        error_log: str,
+    ) -> None:
+        if not self._enabled:
+            return
+        self.check_cancelled()
+        kwargs = {
+            "TableName": DYNAMODB_TABLE_NAME,
+            "Key": {"PK": _pk(self._rca_id), "SK": _hypo_sk(hypothesis_id)},
+            "UpdateExpression": "SET " + ", ".join(set_parts),
+            "ExpressionAttributeValues": attr_values,
+        }
+        if attr_names:
+            kwargs["ExpressionAttributeNames"] = attr_names
+        try:
+            self._dynamodb.update_item(**kwargs)
+        except ClientError:
+            logger.exception(error_log, hypothesis_id)
+
     def update_hypothesis_status(
         self,
         hypothesis_id: str,
@@ -250,36 +288,25 @@ class TraceStore:
         confidence: float | None = None,
         judgment_reasoning: str = "",
     ) -> None:
-        if not self._enabled:
-            return
-
-        self.check_cancelled()
         now = datetime.now(UTC).isoformat()
-        expr_parts = ["#st = :status", "updated_at = :now", "judgment_reasoning = :jr"]
-        attr_names = {"#st": "status"}
-        attr_values = {
+        set_parts = ["#st = :status", "updated_at = :now", "judgment_reasoning = :jr"]
+        attr_values: dict = {
             ":status": {"S": status},
             ":now": {"S": now},
             ":jr": {"S": judgment_reasoning[:_SUMMARY_MAX_LEN]},
         }
         if confidence is not None:
-            expr_parts.append("judgment_confidence = :jc")
-            expr_parts.append("confidence_score = :jc")
+            set_parts.append("judgment_confidence = :jc")
+            set_parts.append("confidence_score = :jc")
             attr_values[":jc"] = {"N": str(confidence)}
 
-        try:
-            self._dynamodb.update_item(
-                TableName=DYNAMODB_TABLE_NAME,
-                Key={
-                    "PK": {"S": f"RCA#{self._rca_id}"},
-                    "SK": {"S": f"{ENGINE}#HYPO#{hypothesis_id}"},
-                },
-                UpdateExpression="SET " + ", ".join(expr_parts),
-                ExpressionAttributeNames=attr_names,
-                ExpressionAttributeValues=attr_values,
-            )
-        except ClientError:
-            logger.exception("Failed to update hypothesis status for %s", hypothesis_id)
+        self._update_hypothesis_item(
+            hypothesis_id,
+            set_parts=set_parts,
+            attr_values=attr_values,
+            attr_names={"#st": "status"},
+            error_log="Failed to update hypothesis status for %s",
+        )
 
     def update_hypothesis_evidence(
         self,
@@ -287,26 +314,16 @@ class TraceStore:
         *,
         evidence_summary: str,
     ) -> None:
-        if not self._enabled:
-            return
-
-        self.check_cancelled()
         now = datetime.now(UTC).isoformat()
-        try:
-            self._dynamodb.update_item(
-                TableName=DYNAMODB_TABLE_NAME,
-                Key={
-                    "PK": {"S": f"RCA#{self._rca_id}"},
-                    "SK": {"S": f"{ENGINE}#HYPO#{hypothesis_id}"},
-                },
-                UpdateExpression="SET evidence_summary = :es, updated_at = :now",
-                ExpressionAttributeValues={
-                    ":es": {"S": evidence_summary[:_SUMMARY_MAX_LEN]},
-                    ":now": {"S": now},
-                },
-            )
-        except ClientError:
-            logger.exception("Failed to update hypothesis evidence for %s", hypothesis_id)
+        self._update_hypothesis_item(
+            hypothesis_id,
+            set_parts=["evidence_summary = :es", "updated_at = :now"],
+            attr_values={
+                ":es": {"S": evidence_summary[:_SUMMARY_MAX_LEN]},
+                ":now": {"S": now},
+            },
+            error_log="Failed to update hypothesis evidence for %s",
+        )
 
     # ── Query ───────────────────────────────────────────────────────
 
@@ -319,7 +336,7 @@ class TraceStore:
             result = dynamodb_client.query(
                 TableName=DYNAMODB_TABLE_NAME,
                 KeyConditionExpression="PK = :pk",
-                ExpressionAttributeValues={":pk": {"S": f"RCA#{rca_id}"}},
+                ExpressionAttributeValues={":pk": _pk(rca_id)},
             )
         except ClientError:
             logger.exception("Failed to query trace for %s", rca_id)
@@ -349,8 +366,8 @@ class TraceStore:
 
         ttl = int(time.time()) + SESSION_TTL_DAYS * 86400
         item: dict = {
-            "PK": {"S": f"RCA#{span.rca_id}"},
-            "SK": {"S": f"{ENGINE}#SPAN#{span.span_id}"},
+            "PK": _pk(span.rca_id),
+            "SK": _span_sk(span.span_id),
             "engine": {"S": ENGINE},
             "span_type": {"S": span.span_type.value},
             "span_status": {"S": span.status.value},
@@ -395,10 +412,7 @@ class TraceStore:
         try:
             self._dynamodb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={
-                    "PK": {"S": f"RCA#{span.rca_id}"},
-                    "SK": {"S": f"{ENGINE}#SPAN#{span.span_id}"},
-                },
+                Key={"PK": _pk(span.rca_id), "SK": _span_sk(span.span_id)},
                 UpdateExpression="SET " + ", ".join(expr_parts),
                 ExpressionAttributeValues=attr_values,
             )

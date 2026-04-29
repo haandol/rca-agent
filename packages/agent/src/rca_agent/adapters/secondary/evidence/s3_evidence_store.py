@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import logging
-import time
 
 from rca_agent.config.settings import S3_EVIDENCE_BUCKET, S3_EVIDENCE_MAX_RETRIES
 from rca_agent.ports.interfaces.evidence_store import EvidenceStorePort
+from rca_agent.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
-
-_S3_BASE_DELAY = 1.0
 
 
 class S3EvidenceStore(EvidenceStorePort):
@@ -22,25 +20,19 @@ class S3EvidenceStore(EvidenceStorePort):
             return None
 
         key = f"rca/{rca_id}/evidence/{hypothesis_id}/combined.md"
-        for attempt in range(S3_EVIDENCE_MAX_RETRIES):
-            try:
-                self._s3.put_object(
-                    Bucket=S3_EVIDENCE_BUCKET,
-                    Key=key,
-                    Body=evidence_text,
-                    ContentType="text/markdown",
-                )
-                logger.info("Evidence saved: s3://%s/%s", S3_EVIDENCE_BUCKET, key)
-                return key
-            except Exception:
-                if attempt == S3_EVIDENCE_MAX_RETRIES - 1:
-                    logger.exception(
-                        "Failed to save evidence for %s after %d attempts",
-                        hypothesis_id,
-                        S3_EVIDENCE_MAX_RETRIES,
-                    )
-                else:
-                    delay = _S3_BASE_DELAY * (2**attempt)
-                    logger.warning("Evidence save attempt %d failed, retrying in %.1fs", attempt + 1, delay)
-                    time.sleep(delay)
-        return None
+
+        def put() -> str:
+            self._s3.put_object(
+                Bucket=S3_EVIDENCE_BUCKET,
+                Key=key,
+                Body=evidence_text,
+                ContentType="text/markdown",
+            )
+            logger.info("Evidence saved: s3://%s/%s", S3_EVIDENCE_BUCKET, key)
+            return key
+
+        return retry_with_backoff(
+            put,
+            max_retries=S3_EVIDENCE_MAX_RETRIES,
+            operation=f"evidence save for {hypothesis_id}",
+        )
