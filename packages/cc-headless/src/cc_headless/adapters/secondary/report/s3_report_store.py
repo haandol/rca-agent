@@ -16,7 +16,7 @@ class S3ReportStore(ReportStorePort):
         self._sns = sns_client
 
     def save_report(self, rca_id: str, report_markdown: str) -> str:
-        key = f"reports/{rca_id}.md"
+        key = f"reports/{ENGINE}/{rca_id}.md"
         if not S3_REPORT_BUCKET or not self._s3:
             return key
         self._s3.put_object(

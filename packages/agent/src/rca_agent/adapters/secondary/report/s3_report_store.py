@@ -4,6 +4,7 @@ import logging
 import time
 
 from rca_agent.config.settings import (
+    ENGINE,
     REPORT_SIMILARITY_THRESHOLD,
     REPORT_TOP_K,
     S3_REPORT_BUCKET,
@@ -40,7 +41,7 @@ class S3ReportStore(ReportStorePort):
         if not S3_REPORT_BUCKET or self._s3 is None:
             logger.info("S3 report bucket not configured, skipping upload")
             return ""
-        key = f"reports/{report.rca_id}.md"
+        key = f"reports/{ENGINE}/{report.rca_id}.md"
         body = _render_markdown(report)
         try:
             self._s3.put_object(Bucket=S3_REPORT_BUCKET, Key=key, Body=body, ContentType="text/markdown")

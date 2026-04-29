@@ -5,7 +5,9 @@ const route = useRoute()
 const id = route.params.id as string
 const engine = (route.query.engine as string) || ''
 
-const { data: report, status, error } = useFetch(`/api/reports/${id}`)
+const { data: report, status, error } = useFetch(`/api/reports/${id}`, {
+  query: engine ? { engine } : undefined,
+})
 const { data: sessions } = useFetch('/api/sessions')
 
 const session = computed(() => {
