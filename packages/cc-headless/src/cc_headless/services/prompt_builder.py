@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from cc_headless.ports.dto.models import AlarmContext
@@ -15,10 +16,29 @@ def _find_prompts_dir() -> Path:
 
 
 _PROMPTS_DIR = _find_prompts_dir()
+_INCLUDE_PATTERN = re.compile(r"\{\{\s*include:\s*([^}\s]+\.md)\s*\}\}")
+_MAX_INCLUDE_DEPTH = 8
+
+
+def _resolve_includes(text: str, base_dir: Path, depth: int = 0) -> str:
+    if depth >= _MAX_INCLUDE_DEPTH:
+        raise RuntimeError(f"Prompt include depth exceeded {_MAX_INCLUDE_DEPTH}")
+
+    def _replace(match: re.Match[str]) -> str:
+        relative = match.group(1).strip()
+        target = (base_dir / relative).resolve()
+        prompts_root = _PROMPTS_DIR.resolve()
+        if prompts_root not in target.parents and target != prompts_root:
+            raise RuntimeError(f"Include target outside prompts dir: {relative}")
+        content = target.read_text()
+        return _resolve_includes(content, target.parent, depth + 1)
+
+    return _INCLUDE_PATTERN.sub(_replace, text)
 
 
 def build_prompt(alarm: AlarmContext) -> str:
-    system_prompt = (_PROMPTS_DIR / "rca-system.md").read_text()
+    system_raw = (_PROMPTS_DIR / "rca-system.md").read_text()
+    system_prompt = _resolve_includes(system_raw, _PROMPTS_DIR)
     user_template = (_PROMPTS_DIR / "rca-user.md").read_text()
 
     dimensions_str = ", ".join(f"{k}={v}" for k, v in alarm.dimensions.items()) if alarm.dimensions else "N/A"

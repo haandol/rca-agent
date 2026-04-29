@@ -37,10 +37,17 @@ _PLAYBOOK_STR_FIELDS = (
     "playbook_id",
     "failure_type",
     "symptom_pattern",
+    "severity_criteria",
     "temporary_mitigation",
     "permanent_remediation",
+    "escalation_criteria",
 )
-_PLAYBOOK_LIST_FIELDS = ("verification_steps", "prevention_measures", "tags")
+_PLAYBOOK_LIST_FIELDS = (
+    "verification_steps",
+    "prevention_measures",
+    "related_metrics",
+    "tags",
+)
 
 
 def _build_playbook_metadata(artifact: dict) -> dict:

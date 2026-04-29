@@ -27,8 +27,13 @@ src/cc_headless/
 ├── report_store.py   # S3 report storage + SNS notification
 └── healthz.py        # HTTP health check server
 prompts/
-├── rca-system.md     # RCA workflow system prompt
-└── rca-user.md       # Alarm details user prompt template
+├── rca-system.md     # 루트 시스템 프롬프트 (include 지시자로 sections/ 조립)
+├── rca-user.md       # 알람 정보 user prompt 템플릿
+└── sections/         # 빌드 시 {{include: ...}}로 합성되는 프롬프트 조각
+    ├── README.md         # 섹션 구조·편집 규칙
+    ├── core/             # 공통 레이어 (artifacts-overview, pipeline-overview, principles)
+    ├── artifacts/        # JSON 스키마 (scoping, hypotheses, validation, playbook)
+    └── stages/           # 11단계 개별 절차 (1-scoping ~ 11-verification)
 tests/
 ├── test_alarm_parser.py
 └── test_prompt_builder.py
