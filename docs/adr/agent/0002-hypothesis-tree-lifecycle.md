@@ -127,7 +127,7 @@ flowchart TD
 - **증거 수집 실패 시 CONFIRMED 금지**: 증거 수집이 타임아웃/예외로 실패한 가설은 `required_evidence`가 비어있지 않으면 CONFIRMED를 금지하고 최대 NEEDS_INVESTIGATION까지만 허용한다. LLM이 description과 초기 confidence_score만으로 증거 없이 확정하는 문제를 방지하는 가드레일이다. `required_evidence`가 비어있는 가설은 증거 없이도 확정 가능하다.
 - **판단 근거 기록**: `reasoning`과 `evidence_summary`를 `ValidationJudgment`에 기록하여 보고서와 사후 검토에 활용한다.
 - **REJECTED subtree pruning**: 가설이 REJECTED로 판정되면 해당 노드의 하위 subtree 전체를 REJECTED로 전파한다.
-- **모델 티어**: Execution 티어 (Haiku 4.5). 증거-가설 일치도 판정은 단순 분류 작업이므로 경량 모델로 충분하다.
+- **모델 티어**: Execution 티어. 증거-가설 일치도 판정은 단순 분류 작업이므로 thinking 없이 호출한다. 모델은 단일 Sonnet 4.6이며 Planning/Execution 차이는 thinking 유무로 결정된다(ADR 0010).
 
 ### 6. 하위 가설 분기 (F6)
 

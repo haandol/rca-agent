@@ -6,7 +6,7 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 
 | Package | Description | Tech |
 |---------|-------------|------|
-| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (2-tier 모델 아키텍처) | Python, Strands Agents SDK, Amazon Bedrock |
+| [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet 모델 + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | Python, Claude Code CLI, ECS Fargate |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, DynamoDB, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, PostgreSQL |
@@ -21,7 +21,7 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 - DynamoDB `engine` 필드로 실행 엔진 구분, `IDEMP#` 키로 멱등성 보장
 
 ### Strands Agent Stack
-- 2-tier 모델 아키텍처: Planning(Sonnet 4.6 + adaptive thinking) / Execution(Haiku 4.5)
+- 단일 모델(Sonnet 4.6) + Planning/Execution 행동 분리 (Planning은 adaptive thinking, Execution은 thinking 없음)
 - 가설별 독립 Agent 인스턴스로 증거 수집 세션 격리 (컨텍스트 오버플로우 방지)
 - 계층적 부모 요약 주입으로 하위 가설 증거 수집 컨텍스트 강화
 - Beam Search 탐색: 우선순위 상위 N개(기본 3) 가설만 선택적 검증
@@ -276,17 +276,16 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `BEDROCK_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Planning 티어 모델 |
-| `BEDROCK_HAIKU_MODEL_ID` | `global.anthropic.claude-haiku-4-5-20251001-v1:0` | Execution 티어 모델 |
-| `THINKING_ENABLED` | `false` | Adaptive thinking 피처플래그 |
+| `BEDROCK_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Planning/Execution 공용 모델 (단일 Sonnet 4.6) |
+| `BEDROCK_MAX_TOKENS` | `16384` | 모델 최대 토큰 |
+| `THINKING_ENABLED` | `false` | Planning 호출 시 adaptive thinking 피처플래그 |
 | `SQS_QUEUE_URL` | - | SQS 큐 URL (필수) |
 | `S3_VECTOR_BUCKET_NAME` | - | S3 Vectors 버킷 |
 | `S3_REPORT_BUCKET` | - | 보고서 저장 S3 버킷 |
 | `SNS_NOTIFICATION_TOPIC_ARN` | - | RCA 완료 알림 SNS 토픽 |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | - | GitHub MCP 인증 (Secrets Manager에서 주입) |
-| `REMEDIATION_ENABLED` | `false` | 자동 복구 활성화 여부 |
 
-전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요.
+전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요. 자동 복구(Remediation) 활성화는 별도 에이전트의 desired count로 제어하며, 현재 설계 단계(ADR 0012)입니다.
 
 ### CC Headless (packages/cc-headless)
 

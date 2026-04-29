@@ -66,7 +66,7 @@ flowchart TD
 
 13. **별도 인덱스 운영**: 보고서(`S3_VECTOR_REPORT_INDEX`, 기본 `report`)와 플레이북(`S3_VECTOR_PLAYBOOK_INDEX`, 기본 `playbook`) 인덱스를 분리하여 독립 관리한다. 스코핑 경로에서는 보고서 인덱스만 조회하고, 플레이북 인덱스는 플레이북 생성의 Search-First 업데이트와 향후 Remediation Agent 전용으로 사용된다(ADR 0008).
 
-14. **모델 티어**: 스코핑 에이전트는 **Execution 티어**(Haiku 4.5)를 사용한다. MCP 도구 호출과 얕은 분석으로 구성되어 고도의 추론이 불필요하며, 비용 효율을 우선한다. 상세는 [ADR 0010](0010-model-tier-architecture.md) 참조.
+14. **모델 티어**: 스코핑 에이전트는 **Execution 티어**를 사용한다. MCP 도구 호출과 얕은 분석으로 구성되어 고도의 추론이 불필요하므로 adaptive thinking 없이 호출한다. 실제 모델은 단일 Sonnet 4.6이며, Planning/Execution 구분은 thinking 유무로 차등화된다. 상세는 [ADR 0010](0010-model-tier-architecture.md) 참조.
 
 ### 대안 검토
 

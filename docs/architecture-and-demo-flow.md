@@ -19,7 +19,7 @@ flowchart TD
 
     subgraph F1["F1: Scoping"]
         S_RPT["S3 Vectors<br/>유사 보고서 검색"]
-        S_AGENT["Scoping Agent<br/>(Execution 티어: Haiku 4.5)<br/>AWS Knowledge + CW + CT MCP"]
+        S_AGENT["Scoping Agent<br/>(Execution 티어: Sonnet 4.6 (thinking 없음))<br/>AWS Knowledge + CW + CT MCP"]
         S_OUT["ScopingResult<br/>(severity, blast_radius,<br/>anomaly_start_time, similar_reports)"]
         S_RPT --> S_AGENT --> S_OUT
     end
@@ -44,7 +44,7 @@ flowchart TD
         end
 
         subgraph F4["F4: Evidence Collection"]
-            E_AGENT["Evidence Agent<br/>(Execution 티어: Haiku 4.5)<br/>가설별 독립 Agent 인스턴스"]
+            E_AGENT["Evidence Agent<br/>(Execution 티어: Sonnet 4.6 (thinking 없음))<br/>가설별 독립 Agent 인스턴스"]
             E_MCP["AWS Knowledge + CW + CT + GitHub MCP<br/>· 메트릭/로그 수집<br/>· 배포/변경 이력<br/>· 코드 diff 분석"]
             E_PARENT["부모 가설 요약 주입<br/>(depth > 0인 경우)"]
             E_SAVE["DDB: evidence_summary<br/>S3: full evidence 저장"]
@@ -56,7 +56,7 @@ flowchart TD
         end
 
         subgraph F5["F5: Validation"]
-            V_AGENT["Validation Agent<br/>(Execution 티어: Haiku 4.5)<br/>ThreadPoolExecutor 병렬 실행"]
+            V_AGENT["Validation Agent<br/>(Execution 티어: Sonnet 4.6 (thinking 없음))<br/>ThreadPoolExecutor 병렬 실행"]
             V_CLASSIFY["신뢰도 기반 재분류<br/>≥0.8 → CONFIRMED<br/>≤0.3 → REJECTED<br/>그 외 → NEEDS_INVESTIGATION"]
             V_GUARD["증거 수집 실패 시<br/>CONFIRMED 방지 가드레일"]
             V_OUT["ValidationJudgment[]<br/>+ all_rejected 플래그"]
@@ -200,7 +200,7 @@ flowchart LR
         PLAYBOOK["F8: Playbook"]
     end
 
-    subgraph Execution["Execution 티어<br/>(Haiku 4.5)"]
+    subgraph Execution["Execution 티어<br/>(Sonnet 4.6, thinking 없음)"]
         SCOPING["F1: Scoping"]
         EVIDENCE["F4: Evidence Collection"]
         VALIDATION["F5: Validation"]
@@ -456,7 +456,7 @@ flowchart TD
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
 | **RCA 방식** | 9단계 코드 기반 파이프라인 | 단일 프롬프트 + 11단계 자율 수행 |
-| **모델** | 2-tier (Sonnet 4.6 + Haiku 4.5) | CC 기본 모델 (Sonnet 4.6) |
+| **모델** | 단일 Sonnet 4.6 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 4.6) |
 | **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
 | **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
 | **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
@@ -552,7 +552,7 @@ sequenceDiagram
 
     Note over Agent,Bedrock: Loop 1: F5 가설 검증
     Agent->>DDB: state = HYPOTHESIS_VALIDATION
-    Agent->>Bedrock: 가설 A + 증거 요약 → 검증 (Haiku 4.5)
+    Agent->>Bedrock: 가설 A + 증거 요약 → 검증 (Execution: Sonnet 4.6)
     Bedrock-->>Agent: A: NEEDS_INVESTIGATION (0.75)<br/>배포 상관관계 높으나 구체적 코드 결함 미확인
     Agent->>Bedrock: 가설 B + 증거 요약 → 검증
     Bedrock-->>Agent: B: REJECTED (0.1)
@@ -584,9 +584,9 @@ sequenceDiagram
     end
 
     Agent->>DDB: state = HYPOTHESIS_VALIDATION
-    Agent->>Bedrock: A-1 + 증거 → 검증 (Haiku 4.5)
+    Agent->>Bedrock: A-1 + 증거 → 검증 (Execution: Sonnet 4.6)
     Bedrock-->>Agent: A-1: REJECTED (0.2)
-    Agent->>Bedrock: A-2 + 증거 → 검증 (Haiku 4.5)
+    Agent->>Bedrock: A-2 + 증거 → 검증 (Execution: Sonnet 4.6)
     Bedrock-->>Agent: A-2: CONFIRMED (0.92)
 
     Note over Agent,Bedrock: 종료 → confidence ≥ 0.9 (CONFIRMED)
