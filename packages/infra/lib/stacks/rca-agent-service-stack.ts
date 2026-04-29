@@ -72,6 +72,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
         `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/rca-agent:${props.imageTag}`,
       ),
       essential: true,
+      stopTimeout: cdk.Duration.seconds(120),
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         SQS_QUEUE_URL: props.alarmQueue.queueUrl,

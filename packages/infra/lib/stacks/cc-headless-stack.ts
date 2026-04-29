@@ -108,6 +108,7 @@ export class CcHeadlessStack extends cdk.Stack {
         `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/cc-headless:${props.imageTag}`,
       ),
       essential: true,
+      stopTimeout: cdk.Duration.seconds(120),
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         CLAUDE_CODE_USE_BEDROCK: '1',

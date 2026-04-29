@@ -214,6 +214,7 @@ def run_evidence_collection(
     s3_client=None,
     existing_evidence_map: dict[str, str] | None = None,
     all_hypotheses: list[Hypothesis] | None = None,
+    cancel_checker=None,
 ) -> EvidenceCollectionSummary:
     lookup_map: dict[str, str] = {}
     if existing_evidence_map:
@@ -224,6 +225,8 @@ def run_evidence_collection(
     hypotheses_by_id = {h.hypothesis_id: h for h in source}
 
     for h in hypotheses:
+        if cancel_checker is not None:
+            cancel_checker()
         result = collect_evidence(
             h,
             scoping_result,

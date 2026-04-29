@@ -486,6 +486,7 @@ class PipelineOrchestrator:
                     s3_client=c.s3_client,
                     existing_evidence_map=state.evidence_map,
                     all_hypotheses=state.hypotheses,
+                    cancel_checker=self._check_shutdown,
                 )
                 state.evidence_map.update(ev_summary.evidence_map)
                 state.evidence_failed_ids.update(ev_summary.failed_ids)
