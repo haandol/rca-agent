@@ -1,5 +1,7 @@
 # RCA Agent — AWS 기반 자동 RCA 분석 에이전트
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 수행하는 closed-loop 에이전트 시스템입니다. 두 가지 실행 엔진(Strands Agents SDK 9단계 파이프라인 / CC on Bedrock headless 프롬프트 주도)을 지원하며, MCP 서버를 통해 CloudWatch, CloudTrail, GitHub 데이터 소스를 자동 분석합니다.
 
 ## 패키지 구성
@@ -343,3 +345,7 @@ uv run pytest tests/
 ## 기여하기
 
 커밋 메시지, 브랜치 전략, PR 규칙 등 기여 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md)를 따릅니다.
+
+## License
+
+이 프로젝트는 [MIT License](./LICENSE) 하에 배포됩니다.
