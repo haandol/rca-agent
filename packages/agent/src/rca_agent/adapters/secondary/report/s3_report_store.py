@@ -168,6 +168,11 @@ def _render_markdown(report: RcaReport) -> str:
             "",
         ]
     )
+    if report.five_whys:
+        lines.append("## 5 Whys")
+        for step in report.five_whys:
+            lines.append(f"- {step}")
+        lines.append("")
     if report.hypothesis_path:
         lines.append("## Hypothesis Path")
         for p in report.hypothesis_path:

@@ -211,6 +211,7 @@ class RcaReport(BaseModel):
     root_cause_confirmed: bool = True
     confidence_score: float = Field(ge=0.0, le=1.0)
     hypothesis_path: list[str] = Field(default_factory=list)
+    five_whys: list[str] = Field(default_factory=list)
     evidence_list: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""

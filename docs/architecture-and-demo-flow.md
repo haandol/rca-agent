@@ -409,7 +409,7 @@ flowchart TD
     end
 
     subgraph Direct2["메인 에이전트 직접 수행"]
-        S8["8. 보고서 생성<br/>· Markdown RCA 보고서 작성<br/>· 인시던트 요약, 근본원인, 증거,<br/>  가설 경로, 조치 방안, 타임라인"]
+        S8["8. 보고서 생성<br/>· Markdown RCA 보고서 작성<br/>· 인시던트 요약, 근본원인, 5 Whys,<br/>  증거, 가설 경로, 조치 방안, 타임라인"]
         S8_OUT["save_artifact('report.md')"]
         S9["9. 플레이북 생성<br/>· failure_type, symptom_pattern<br/>· verification_steps, mitigation, remediation"]
         S9_OUT["save_artifact('playbook.json')"]

@@ -33,6 +33,7 @@ class ReportOutput(BaseModel):
     action_items: list[str] = Field(default_factory=list)
     lessons_learned: str = ""
     timeline: list[str] = Field(default_factory=list)
+    five_whys: list[str] = Field(default_factory=list)
 
 
 def _build_user_prompt(
@@ -137,6 +138,7 @@ def run_report_generation(
         action_items=output.action_items,
         lessons_learned=output.lessons_learned,
         timeline=output.timeline,
+        five_whys=output.five_whys,
         rejected_hypotheses=rejected_descriptions,
     )
 
@@ -185,6 +187,12 @@ def _render_markdown(report: RcaReport) -> str:
             "",
         ]
     )
+
+    if report.five_whys:
+        lines.append("## 5 Whys")
+        for step in report.five_whys:
+            lines.append(f"- {step}")
+        lines.append("")
 
     if report.hypothesis_path:
         lines.append("## Hypothesis Path")
