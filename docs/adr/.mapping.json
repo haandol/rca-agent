@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/haandol/alps-writer-mcp/main/templates/adr/mapping.schema.json",
+  "categories": {
+    "agent": {
+      "feature": "Strands Agents SDK 기반 RCA 파이프라인",
+      "codePaths": [
+        "packages/agent/src/**",
+        "packages/agent/tests/**"
+      ],
+      "adrs": [
+        "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
+        "docs/adr/agent/0002-hypothesis-tree-lifecycle.md",
+        "docs/adr/agent/0006-termination-conditions.md",
+        "docs/adr/agent/0007-rca-report-generation.md",
+        "docs/adr/agent/0008-playbook-generation.md",
+        "docs/adr/agent/0009-notification.md",
+        "docs/adr/agent/0010-model-tier-architecture.md",
+        "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
+        "docs/adr/agent/0012-automated-remediation.md",
+        "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
+        "docs/adr/agent/0015-hexagonal-architecture.md"
+      ],
+      "lastSyncedAt": "2026-05-25T00:00:00Z"
+    },
+    "tools": {
+      "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",
+      "codePaths": [
+        "packages/agent/src/rca_agent/agent_factory.py",
+        "packages/agent/src/rca_agent/di/**",
+        "packages/cc-headless/mcp-config.json",
+        "packages/cc-headless/.mcp.json",
+        "packages/cc-headless/src/cc_headless/mcp_server.py"
+      ],
+      "adrs": [
+        "docs/adr/tools/0001-metrics-collection.md",
+        "docs/adr/tools/0002-log-search.md",
+        "docs/adr/tools/0003-trace-analysis.md",
+        "docs/adr/tools/0004-deploy-history.md",
+        "docs/adr/tools/0005-code-change-analysis.md"
+      ],
+      "lastSyncedAt": "2026-05-25T00:00:00Z"
+    },
+    "infra": {
+      "feature": "AWS CDK 인프라 — ECS Fargate / SNS·SQS / S3·DynamoDB / VPC",
+      "codePaths": [
+        "packages/infra/lib/**",
+        "packages/infra/bin/**",
+        "packages/infra/cdk.json"
+      ],
+      "adrs": [
+        "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
+        "docs/adr/infra/0002-evidence-storage.md",
+        "docs/adr/infra/0003-lambda-cc-headless-stack.md",
+        "docs/adr/infra/0004-rds-healthcare-deployment.md",
+        "docs/adr/infra/0005-execution-trace-dynamodb.md",
+        "docs/adr/infra/0006-session-recovery-on-restart.md"
+      ],
+      "lastSyncedAt": "2026-05-25T00:00:00Z"
+    }
+  }
+}

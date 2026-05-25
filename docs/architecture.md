@@ -195,7 +195,7 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 - **단일 모델 + Planning/Execution 행동 분리**: 모든 단계가 Sonnet 4.6을 사용하되, Planning은 adaptive thinking을 활성화하고 Execution은 thinking 없이 호출(ADR agent/0010, 2026-04-29 업데이트)
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: 전체 기각 시 가설 재생성(최대 2회)
-- **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용 (ADR agent/0016)
+- **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용 (ADR agent/0001)
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
 - **Remediation 분리 (미구현)**: 플레이북 포함 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독(ADR agent/0012)하도록 설계되었으나 미배포
 

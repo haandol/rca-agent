@@ -25,9 +25,9 @@ adr/
 ### Agent
 
 - [ADR 0001: 초기 스코핑 + RCA 보고서 유사도 검색 (Roll-up)](agent/0001-initial-scoping-and-report-similarity.md) — 얕은 스코핑 + S3 Vectors 유사 보고서 검색으로 가설 생성 컨텍스트 확보 (구 0001, 0016 통합)
-- [ADR 0002: 가설 트리 라이프사이클 (Roll-up)](agent/0002-hypothesis-tree-lifecycle.md) — 가설 생성·우선순위·검증·분기·Beam 탐색 + Accepted Review Gate 통합 아키텍처
+- [ADR 0002: 가설 트리 라이프사이클 (Roll-up)](agent/0002-hypothesis-tree-lifecycle.md) — 가설 생성·우선순위·검증·분기·Beam 탐색 + Accepted Review Gate + Toyota/AWS COE 5 Whys 가드레일
 - [ADR 0006: 종료 조건 — RCA 분석 자동 종료 판단](agent/0006-termination-conditions.md) — Accepted Review Gate · 신뢰도 · 시간 · 깊이 · 루프 한도 기반 OR 평가
-- [ADR 0007: RCA 보고서 생성 — 구조화된 분석 결과 보고](agent/0007-rca-report-generation.md)
+- [ADR 0007: RCA 보고서 생성 — 구조화된 분석 결과 보고](agent/0007-rca-report-generation.md) — Toyota/AWS COE 5 Whys 가드레일 + `five_whys` 필드 포함
 - [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
 - [ADR 0009: 알림 — RCA 진행/완료 알림 전달](agent/0009-notification.md)
 - [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
