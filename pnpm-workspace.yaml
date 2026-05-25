@@ -4,9 +4,9 @@ overrides:
   'axios@<1.15.1': ^1.16.1
   '@babel/plugin-transform-modules-systemjs@<7.29.4': ^7.29.4
 allowBuilds:
-  '@parcel/watcher': set this to true or false
-  '@swc/core': set this to true or false
-  esbuild: set this to true or false
-  nx: set this to true or false
-  unrs-resolver: set this to true or false
-  vue-demi: set this to true or false
+  '@parcel/watcher': true
+  '@swc/core': true
+  esbuild: true
+  nx: true
+  unrs-resolver: true
+  vue-demi: true
