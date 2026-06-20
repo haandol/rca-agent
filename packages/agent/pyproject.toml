@@ -10,7 +10,7 @@ dependencies = [
     "strands-agents>=0.1",
     "strands-agents-tools>=0.1",
     "pydantic>=2.0",
-    "pydantic-settings>=2.7",
+    "pydantic-settings>=2.14.2",
     "boto3>=1.35",
     "python-dotenv>=1.0",
 ]
