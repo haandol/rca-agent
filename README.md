@@ -52,6 +52,34 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 - SNS 알림 전송 (Presigned URL 보고서 링크 포함)
 - DynamoDB 기반 파이프라인 실행 트레이스 (단계별 추적)
 
+## 대시보드로 보는 동작 흐름
+
+RCA 결과는 로컬 전용 Nuxt 대시보드(`packages/dashboard`, `http://localhost:3100`)에서 확인합니다. DynamoDB 세션 상태와 S3 보고서/증거를 로컬 AWS 크레덴셜(`~/.aws`)로 직접 조회하며, Strands / CC Headless 두 엔진의 결과를 나란히 비교할 수 있습니다.
+
+### 1. 세션 목록
+
+알람별 RCA 실행 이력을 상태(완료/실패/진행 중) 통계와 함께 나열합니다. 각 행에서 엔진(strands / cc-headless), 근본 원인 요약, 트레이스·보고서·플레이북으로의 바로가기를 제공합니다.
+
+![세션 목록](./docs/images/dashboard-sessions.png)
+
+### 2. 실행 트레이스 그래프
+
+9단계 파이프라인의 실행 과정을 Vue Flow DAG로 시각화합니다. 스코핑 → 가설 생성 → 가설별 검증 → 보고서 → 플레이북 → 알림 흐름을 노드로 표현하며, 가설 노드를 클릭하면 신뢰도·증거 요약·상세 분석이 우측 패널에 표시됩니다.
+
+![실행 트레이스 그래프](./docs/images/dashboard-trace.png)
+
+### 3. RCA 보고서
+
+근본 원인, 영향 범위, 조치 방안을 담은 Markdown 보고서를 렌더링합니다. Incident Summary, Impact Assessment 등 구조화된 섹션으로 구성됩니다.
+
+![RCA 보고서](./docs/images/dashboard-report.png)
+
+### 4. 플레이북
+
+재사용 가능한 대응 플레이북을 조회합니다. 장애 유형, 증상 패턴, 심각도 판단 기준, 임시 완화 조치(실행 가능한 명령 포함)를 제공합니다.
+
+![플레이북](./docs/images/dashboard-playbook.png)
+
 ## 사전 요구사항
 
 - Node.js 20+, pnpm
