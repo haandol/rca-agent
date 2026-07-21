@@ -4,6 +4,7 @@ import logging
 
 import boto3
 
+from rca_agent.config.aws_sdk import SIDE_EFFECT_AWS_CLIENT_CONFIG
 from rca_agent.config.settings import (
     DYNAMODB_TABLE_NAME,
     GITHUB_PERSONAL_ACCESS_TOKEN,
@@ -35,6 +36,7 @@ class AppContainer(Container):
         self._s3_client = None
         self._s3_vectors_client = None
         self._sns_client = None
+        self._cloudwatch_clients = {}
 
         self._session_store: SessionStorePort | None = None
         self._report_store: ReportStorePort | None = None
@@ -54,33 +56,58 @@ class AppContainer(Container):
         self._verification_agent = None
         self._scoping_mcp_clients = None
         self._evidence_mcp_clients = None
-        self._verification_mcp_clients = None
 
     # ── AWS Clients (lazy) ─────────────────────────────────────────
 
     @property
     def dynamodb_client(self):
         if self._dynamodb_client is None and DYNAMODB_TABLE_NAME:
-            self._dynamodb_client = boto3.client("dynamodb")
+            self._dynamodb_client = boto3.client(
+                "dynamodb",
+                config=SIDE_EFFECT_AWS_CLIENT_CONFIG,
+            )
         return self._dynamodb_client
 
     @property
     def s3_client(self):
         if self._s3_client is None and (S3_REPORT_BUCKET or S3_EVIDENCE_BUCKET):
-            self._s3_client = boto3.client("s3")
+            self._s3_client = boto3.client(
+                "s3",
+                config=SIDE_EFFECT_AWS_CLIENT_CONFIG,
+            )
         return self._s3_client
 
     @property
     def s3_vectors_client(self):
         if self._s3_vectors_client is None and S3_VECTOR_BUCKET_NAME:
-            self._s3_vectors_client = boto3.client("s3vectors", region_name=S3_VECTOR_REGION)
+            self._s3_vectors_client = boto3.client(
+                "s3vectors",
+                region_name=S3_VECTOR_REGION,
+                config=SIDE_EFFECT_AWS_CLIENT_CONFIG,
+            )
         return self._s3_vectors_client
 
     @property
     def sns_client(self):
         if self._sns_client is None and SNS_NOTIFICATION_TOPIC_ARN:
-            self._sns_client = boto3.client("sns")
+            self._sns_client = boto3.client(
+                "sns",
+                config=SIDE_EFFECT_AWS_CLIENT_CONFIG,
+            )
         return self._sns_client
+
+    @property
+    def cloudwatch_client(self):
+        return self.cloudwatch_client_for_region("")
+
+    def cloudwatch_client_for_region(self, region: str):
+        region_key = region.strip()
+        if region_key not in self._cloudwatch_clients:
+            kwargs = {"config": SIDE_EFFECT_AWS_CLIENT_CONFIG}
+            if region_key:
+                kwargs["region_name"] = region_key
+            self._cloudwatch_clients[region_key] = boto3.client("cloudwatch", **kwargs)
+        return self._cloudwatch_clients[region_key]
 
     # ── Port implementations (lazy) ────────────────────────────────
 
@@ -228,21 +255,11 @@ class AppContainer(Container):
     # ── Remediation Agent (별도 배포 — ADR agent/0012) ─────────────
 
     @property
-    def verification_mcp_clients(self):
-        if self._verification_mcp_clients is None:
-            from rca_agent.agent_factory import create_cloudwatch_mcp_client
-
-            self._verification_mcp_clients = [create_cloudwatch_mcp_client()]
-        return self._verification_mcp_clients
-
-    @property
     def verification_agent(self):
         if self._verification_agent is None:
             from rca_agent.agent_factory import create_verification_agent
 
-            self._verification_agent = create_verification_agent(
-                mcp_clients=self.verification_mcp_clients,
-            )
+            self._verification_agent = create_verification_agent()
         return self._verification_agent
 
     @property

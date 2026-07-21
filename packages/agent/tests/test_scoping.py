@@ -1,3 +1,5 @@
+from threading import Event
+from time import perf_counter
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -184,16 +186,17 @@ class TestRunScoping:
         assert "AWS/ECS" in prompt
 
     def test_timeout_returns_fallback_result(self, sample_alarm: AlarmPayload, fake_embedding):
-        import time as _time
-
         def slow_agent(prompt, **kwargs):
-            _time.sleep(5)
+            Event().wait(0.35)
             return MagicMock(structured_output=ScopingOutput(alarm_summary="too late"))
 
         mock_agent = MagicMock(side_effect=slow_agent)
 
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding, timeout_seconds=1)
+        started = perf_counter()
+        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding, timeout_seconds=0)
+        elapsed = perf_counter() - started
 
+        assert elapsed < 0.15
         assert isinstance(result, ScopingResult)
         assert result.alarm_summary.startswith("[Timeout]")
         assert "HighCPU-web-service" in result.alarm_summary

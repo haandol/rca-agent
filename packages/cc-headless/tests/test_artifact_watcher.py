@@ -151,6 +151,50 @@ def test_validation_loop_index_is_derived_from_filename(tmp_path, monkeypatch, f
     assert write_span.call_args.kwargs["loop_index"] == expected_index
 
 
+def test_validation_artifacts_are_processed_in_numeric_loop_order(tmp_path, monkeypatch):
+    for loop_index in (10, 2):
+        (tmp_path / f"validation-{loop_index}.json").write_text(
+            json.dumps({"loop_index": loop_index, "summary": "validation"})
+        )
+    processed: list[int] = []
+    monkeypatch.setattr(artifact_watcher, "_write_span", Mock(return_value="span-id"))
+    monkeypatch.setattr(
+        artifact_watcher,
+        "validate_validation_artifacts",
+        lambda base, *, through_loop_index: (
+            base / f"validation-{through_loop_index}.json",
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        artifact_watcher,
+        "_update_hypotheses_from_validation",
+        lambda ddb, rca_id, artifact, *, claim_token: processed.append(artifact["loop_index"]),
+    )
+
+    _scan(tmp_path)
+
+    assert processed == [2, 10]
+
+
+def test_invalid_validation_does_not_update_hypotheses(tmp_path, monkeypatch):
+    (tmp_path / "validation-1.json").write_text('{"summary": "invalid"}')
+    write_span = Mock(return_value="span-id")
+    update_hypotheses = Mock()
+    monkeypatch.setattr(artifact_watcher, "_write_span", write_span)
+    monkeypatch.setattr(artifact_watcher, "_update_hypotheses_from_validation", update_hypotheses)
+    monkeypatch.setattr(
+        artifact_watcher,
+        "validate_validation_artifacts",
+        Mock(side_effect=artifact_watcher.ArtifactValidationError("unknown parent")),
+    )
+
+    _scan(tmp_path)
+
+    assert write_span.call_args.args[3]["error"] == "unknown parent"
+    update_hypotheses.assert_not_called()
+
+
 def test_watcher_write_uses_transactional_current_claim_condition(monkeypatch):
     monkeypatch.setattr(artifact_watcher, "DYNAMODB_TABLE_NAME", "sessions")
     ddb = Mock()

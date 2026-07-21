@@ -19,6 +19,9 @@ from cc_headless.config.settings import (
     CLOUDWATCH_VERIFY_INTERVAL_SECONDS,
     DYNAMODB_TABLE_NAME,
     ENGINE,
+    HEALTHCARE_ECS_CLUSTER_NAME,
+    HEALTHCARE_ECS_SERVICE_NAME,
+    HEALTHCARE_RDS_INSTANCE_IDENTIFIER,
     HEALTHCARE_RESET_TIMEOUT_SECONDS,
     HEALTHCARE_SERVICE_HOST,
     SIDE_EFFECT_LEASE_SECONDS,
@@ -39,6 +42,7 @@ from cc_headless.services.remediation_policy import (
     RESET_PATHS,
     HealthcareFaultType,
     parse_fault_type,
+    validate_healthcare_alarm_target,
 )
 
 mcp = FastMCP("rca-progress")
@@ -170,7 +174,7 @@ def _session_store():
 
 def _load_claimed_alarm_data(ddb, rca_id: str, claim_token: str) -> dict:
     if not DYNAMODB_TABLE_NAME or not ddb:
-        return {}
+        raise SideEffectLeaseUnavailableError("server-owned alarm data is unavailable")
     response = ddb.get_item(
         TableName=DYNAMODB_TABLE_NAME,
         Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
@@ -269,18 +273,6 @@ def execute_healthcare_reset(fault_type: str) -> str:
             ),
         )
 
-    if not HEALTHCARE_SERVICE_HOST or _HEALTHCARE_HOST.fullmatch(HEALTHCARE_SERVICE_HOST) is None:
-        return _save_remediation_result(
-            base,
-            _remediation_result(
-                status="FAILED",
-                fault_type=fault_type,
-                reason="Healthcare service host is not configured",
-                validation_artifact=validation_artifact,
-                confirmed_hypothesis_ids=hypothesis_ids,
-            ),
-        )
-
     claim_context = _claim_context()
     if claim_context is None:
         return _save_remediation_result(
@@ -296,6 +288,50 @@ def execute_healthcare_reset(fault_type: str) -> str:
     rca_id, claim_token = claim_context
     try:
         store, ddb = _session_store()
+        alarm_data = _load_claimed_alarm_data(ddb, rca_id, claim_token)
+    except Exception as exc:
+        return _save_remediation_result(
+            base,
+            _remediation_result(
+                status="BLOCKED",
+                fault_type=fault_type,
+                reason=f"server-owned alarm data could not be validated: {type(exc).__name__}",
+                validation_artifact=validation_artifact,
+                confirmed_hypothesis_ids=hypothesis_ids,
+            ),
+        )
+
+    target_error = validate_healthcare_alarm_target(
+        alarm_data,
+        requested_fault_type,
+        ecs_cluster_name=HEALTHCARE_ECS_CLUSTER_NAME,
+        ecs_service_name=HEALTHCARE_ECS_SERVICE_NAME,
+        rds_instance_identifier=HEALTHCARE_RDS_INSTANCE_IDENTIFIER,
+    )
+    if target_error:
+        return _save_remediation_result(
+            base,
+            _remediation_result(
+                status="BLOCKED",
+                fault_type=fault_type,
+                reason=f"server-owned alarm target validation failed: {target_error}",
+                validation_artifact=validation_artifact,
+                confirmed_hypothesis_ids=hypothesis_ids,
+            ),
+        )
+    if not HEALTHCARE_SERVICE_HOST or _HEALTHCARE_HOST.fullmatch(HEALTHCARE_SERVICE_HOST) is None:
+        return _save_remediation_result(
+            base,
+            _remediation_result(
+                status="FAILED",
+                fault_type=fault_type,
+                reason="Healthcare service host is not configured",
+                validation_artifact=validation_artifact,
+                confirmed_hypothesis_ids=hypothesis_ids,
+            ),
+        )
+
+    try:
         lease_token = store.acquire_side_effect_lease(
             rca_id,
             claim_token=claim_token,
@@ -340,7 +376,6 @@ def execute_healthcare_reset(fault_type: str) -> str:
             )
         else:
             try:
-                alarm_data = _load_claimed_alarm_data(ddb, rca_id, claim_token)
                 trigger = alarm_data.get("Trigger") if isinstance(alarm_data.get("Trigger"), dict) else {}
                 can_query = bool(
                     trigger.get("Namespace")

@@ -7,7 +7,13 @@ from rca_agent.ports.dto.models import RcaReport, ReportMatch, ScopingResult
 
 class ReportStorePort(ABC):
     @abstractmethod
-    def save(self, report: RcaReport) -> str: ...
+    def save(
+        self,
+        report: RcaReport,
+        *,
+        claim_token: str | None = None,
+        attempt: int | None = None,
+    ) -> str: ...
 
     @abstractmethod
     def search_similar(self, query_text: str) -> list[ReportMatch]: ...

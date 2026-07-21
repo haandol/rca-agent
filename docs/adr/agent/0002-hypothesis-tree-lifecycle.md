@@ -125,12 +125,17 @@ flowchart TD
 
 ### 5. 증거 수집 및 검증 (F4, F5)
 
-- **LLM 신뢰도 기반 3단 판정**: `ValidationOutput` Pydantic 모델로 `status`, `confidence_score`, `reasoning`, `evidence_summary`를 반환받는다.
+- **LLM 신뢰도 기반 3단 판정**: `ValidationOutput` Pydantic 모델로 `status`, `confidence_score`, `reasoning`, `evidence_summary`, `validated_fault_type`을 반환받는다.
 - **Score 기반 재분류**: LLM이 반환한 status는 참고만 하고, **confidence_score를 기준으로 코드에서 status를 재분류**한다:
   - `≥ 0.8` → **CONFIRMED**
   - `≤ 0.3` → **REJECTED**
   - 그 사이 → **NEEDS_INVESTIGATION**
   이는 LLM status 판단의 일관성 부족을 보완한다.
+- **복구 유형 독립 검증**: 가설 생성·분기 단계의 `fault_type`은 조사 힌트일 뿐
+  자동 복구의 권위가 아니다. 검증 단계가 실제 수집 증거를 기준으로 허용 목록
+  원인 유형을 독립 분류하고, `CONFIRMED` 판정과 함께 저장된
+  `validated_fault_type`만 후속 복구가 사용할 수 있다. 확정되지 않았거나 증거가
+  부족하거나 설명·증거와 유형이 일치하지 않으면 `UNSUPPORTED`로 저장한다.
 - **증거 수집 실패 시 CONFIRMED 금지**: 증거 수집이 타임아웃/예외로 실패한 가설은 `required_evidence`가 비어있지 않으면 CONFIRMED를 금지하고 최대 NEEDS_INVESTIGATION까지만 허용한다. LLM이 description과 초기 confidence_score만으로 증거 없이 확정하는 문제를 방지하는 가드레일이다. `required_evidence`가 비어있는 가설은 증거 없이도 확정 가능하다.
 - **판단 근거 기록**: `reasoning`과 `evidence_summary`를 `ValidationJudgment`에 기록하여 보고서와 사후 검토에 활용한다.
 - **REJECTED subtree pruning**: 가설이 REJECTED로 판정되면 해당 노드의 하위 subtree 전체를 REJECTED로 전파한다.

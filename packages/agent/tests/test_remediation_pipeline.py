@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, PropertyMock
 
 import pytest
 
@@ -7,14 +7,15 @@ from rca_agent.ports.dto.models import (
     RcaSessionState,
     RemediationAction,
     RemediationContext,
+    RemediationHandoff,
     RemediationResult,
     VerificationResult,
+    VerificationStatus,
 )
 from rca_agent.services import remediation_pipeline
 from rca_agent.services.remediation_pipeline import (
     RemediationOrchestrator,
-    _alarm_for_verification,
-    _parse_alarm_context,
+    RemediationPublicationContendedError,
 )
 
 
@@ -39,10 +40,13 @@ def _context(**overrides) -> RemediationContext:
     data = {
         "rca_id": "rca-1",
         "state": RcaSessionState.COMPLETED,
+        "alarm_name": "Session-RdsHighConnections",
+        "region": "ap-northeast-2",
         "root_cause": "database connection pool exhausted",
         "confirmed": True,
         "selected_hypothesis_id": "h-selected",
         "fault_type": FaultType.DB_CONNECTION_LEAK,
+        "validated_fault_type": FaultType.DB_CONNECTION_LEAK,
         "validated_root_cause": "database connection pool exhausted",
         "evidence_summary": "DatabaseConnections exceeded the pool limit",
     }
@@ -55,18 +59,37 @@ class _Container:
         self.notification = Mock()
         self.notification.send.return_value = True
         self.verification_agent = Mock()
+        self.cloudwatch_client = Mock()
+        self.cloudwatch_client_for_region = Mock(return_value=self.cloudwatch_client)
         self.healthcare_service_host = "healthcare.local"
         self.session_store = Mock()
         self.context = context or _context()
         self.session_store.get_remediation_context.return_value = self.context
         self.session_store.claim_remediation.return_value = "claim-1"
         self.session_store.release_remediation.return_value = True
+        self.session_store.claim_remediation_publication.return_value = "publication-claim-1"
+        self.session_store.release_remediation_publication.return_value = True
+        self.handoff = None
+        self.session_store.get_remediation_handoff.side_effect = lambda _rca_id: self.handoff
 
-        def complete_remediation(*_args):
+        def complete_remediation(_rca_id, _claim_token, result, verification, notification):
             self.context.remediation_status = "COMPLETED"
+            self.handoff = RemediationHandoff(
+                rca_id=self.context.rca_id,
+                remediation_status="COMPLETED",
+                publication_status="PENDING",
+                notification=notification,
+                result=result,
+                verification=verification,
+            )
+            return True
+
+        def mark_remediation_published(_rca_id, _publication_claim_token):
+            self.handoff.publication_status = "SENT"
             return True
 
         self.session_store.complete_remediation.side_effect = complete_remediation
+        self.session_store.mark_remediation_published.side_effect = mark_remediation_published
 
 
 def test_unconfirmed_rca_is_not_auto_remediated():
@@ -97,7 +120,7 @@ def test_confirmed_rca_executes_remediation_and_notifies(monkeypatch):
     run_verification = Mock(
         return_value=VerificationResult(
             rca_id="rca-1",
-            metrics_normalized=True,
+            status=VerificationStatus.NORMALIZED,
             verification_summary="normalized",
         )
     )
@@ -110,14 +133,24 @@ def test_confirmed_rca_executes_remediation_and_notifies(monkeypatch):
     assert result is executed
     # 확정 원인 → 복구 실행 후 검증까지 수행
     run_verification.assert_called_once()
+    assert run_verification.call_args.kwargs["cloudwatch_client"] is container.cloudwatch_client
+    container.cloudwatch_client_for_region.assert_called_once_with("ap-northeast-2")
+    assert run_verification.call_args.kwargs["alarm_name"] == "Session-RdsHighConnections"
     # 복구 결과 알림은 remediation_complete 로 발행되어 큐로 되돌아오지 않는다
     sent = container.notification.send.call_args[0][0]
     assert sent.event_type == "remediation_complete"
+    assert sent.verification_status is VerificationStatus.NORMALIZED
+    assert sent.severity == "medium"
     container.session_store.complete_remediation.assert_called_once_with(
         "rca-1",
         "claim-1",
         executed,
         run_verification.return_value,
+        sent,
+    )
+    container.session_store.claim_remediation_publication.assert_called_once_with(
+        "rca-1",
+        lease_seconds=remediation_pipeline.PUBLICATION_LEASE_SECONDS,
     )
 
 
@@ -136,26 +169,20 @@ def test_verification_skipped_when_no_action_executed(monkeypatch):
     orch.process_notification(_notification())
 
     run_verification.assert_not_called()
-    orch._container.session_store.complete_remediation.assert_called_once_with(
+    container = orch._container
+    sent = container.notification.send.call_args.args[0]
+    container.session_store.complete_remediation.assert_called_once_with(
         "rca-1",
         "claim-1",
         skipped,
         None,
+        sent,
     )
+    assert sent.verification_status is VerificationStatus.PENDING
+    assert sent.severity == "high"
 
 
-def test_alarm_context_round_trips_into_verification_payload():
-    ctx = _parse_alarm_context(_notification())
-    assert ctx is not None
-    assert ctx.metric_name == "DatabaseConnections"
-
-    alarm = _alarm_for_verification(ctx)
-    assert alarm.trigger is not None
-    assert alarm.trigger.namespace == "AWS/RDS"
-    assert alarm.trigger.threshold == 30.0
-
-
-def test_alarm_context_only_affects_read_only_verification(monkeypatch):
+def test_raw_alarm_context_cannot_override_session_alarm_binding(monkeypatch):
     executed = RemediationResult(
         rca_id="rca-1",
         actions_taken=[
@@ -170,20 +197,26 @@ def test_alarm_context_only_affects_read_only_verification(monkeypatch):
         summary="[SUCCESS] reset database connections",
     )
     execute = Mock(return_value=executed)
-    verify = Mock(
-        return_value=VerificationResult(
+
+    def evaluate_session_alarm(**kwargs):
+        kwargs["cloudwatch_client"].describe_alarms(
+            AlarmNames=[kwargs["alarm_name"]],
+        )
+        return VerificationResult(
             rca_id="rca-1",
-            metrics_normalized=True,
+            status=VerificationStatus.NORMALIZED,
             verification_summary="normalized",
         )
-    )
+
+    verify = Mock(side_effect=evaluate_session_alarm)
     monkeypatch.setattr(remediation_pipeline, "execute_remediation", execute)
     monkeypatch.setattr(remediation_pipeline, "run_verification", verify)
 
-    RemediationOrchestrator(_Container()).process_notification(
+    container = _Container()
+    RemediationOrchestrator(container).process_notification(
         _notification(
             alarm_context={
-                "alarm_name": "UntrustedHighCpuAlarm",
+                "alarm_name": "Other-Normal-Alarm",
                 "namespace": "AWS/ECS",
                 "metric_name": "CPUUtilization",
                 "threshold": 95.0,
@@ -196,10 +229,12 @@ def test_alarm_context_only_affects_read_only_verification(monkeypatch):
     assert set(execute.call_args.kwargs) == {"report", "fault_type", "service_host"}
     assert execute.call_args.kwargs["fault_type"] == FaultType.DB_CONNECTION_LEAK
 
-    verification_alarm = verify.call_args.kwargs["alarm"]
-    assert verification_alarm.trigger is not None
-    assert verification_alarm.trigger.metric_name == "CPUUtilization"
-    assert verification_alarm.trigger.namespace == "AWS/ECS"
+    container.cloudwatch_client_for_region.assert_called_once_with("ap-northeast-2")
+    assert verify.call_args.kwargs["cloudwatch_client"] is container.cloudwatch_client
+    assert verify.call_args.kwargs["alarm_name"] == "Session-RdsHighConnections"
+    container.cloudwatch_client.describe_alarms.assert_called_once_with(
+        AlarmNames=["Session-RdsHighConnections"],
+    )
 
 
 def test_verification_failure_is_reflected_in_final_notification(monkeypatch):
@@ -218,7 +253,7 @@ def test_verification_failure_is_reflected_in_final_notification(monkeypatch):
     )
     verification = VerificationResult(
         rca_id="rca-1",
-        metrics_normalized=False,
+        status=VerificationStatus.FAILED,
         verification_summary="Metric remains above threshold",
         remaining_issues=["DatabaseConnections remains high"],
     )
@@ -230,8 +265,153 @@ def test_verification_failure_is_reflected_in_final_notification(monkeypatch):
 
     sent = container.notification.send.call_args.args[0]
     assert sent.severity == "high"
+    assert sent.verification_status is VerificationStatus.FAILED
     assert "verification" in sent.root_cause_summary.lower()
     assert "metric remains above threshold" in sent.root_cause_summary.lower()
+
+
+def test_pending_verification_keeps_final_notification_high_severity(monkeypatch):
+    executed = RemediationResult(
+        rca_id="rca-1",
+        actions_taken=[
+            RemediationAction(
+                action_type="fault_reset_api",
+                description="reset",
+                executed=True,
+                success=True,
+            )
+        ],
+        overall_success=True,
+        summary="[SUCCESS] reset",
+    )
+    verification = VerificationResult(
+        rca_id="rca-1",
+        status=VerificationStatus.PENDING,
+        verification_summary="Insufficient CloudWatch datapoints",
+    )
+    monkeypatch.setattr(
+        remediation_pipeline,
+        "execute_remediation",
+        Mock(return_value=executed),
+    )
+    monkeypatch.setattr(
+        remediation_pipeline,
+        "run_verification",
+        Mock(return_value=verification),
+    )
+
+    container = _Container()
+    RemediationOrchestrator(container).process_notification(_notification())
+
+    sent = container.notification.send.call_args.args[0]
+    assert sent.severity == "high"
+    assert sent.verification_status is VerificationStatus.PENDING
+    assert "verification pending" in sent.root_cause_summary.lower()
+
+
+@pytest.mark.parametrize(
+    "status",
+    [VerificationStatus.PENDING, VerificationStatus.NORMALIZED],
+)
+def test_verification_agent_initialization_failure_does_not_block_result(
+    monkeypatch,
+    status,
+):
+    executed = RemediationResult(
+        rca_id="rca-1",
+        actions_taken=[
+            RemediationAction(
+                action_type="fault_reset_api",
+                description="reset",
+                executed=True,
+                success=True,
+            )
+        ],
+        overall_success=True,
+        summary="[SUCCESS] reset",
+    )
+    verification = VerificationResult(
+        rca_id="rca-1",
+        status=status,
+        verification_summary=f"CloudWatch status is {status.value}",
+    )
+    verify = Mock(return_value=verification)
+    monkeypatch.setattr(
+        remediation_pipeline,
+        "execute_remediation",
+        Mock(return_value=executed),
+    )
+    monkeypatch.setattr(remediation_pipeline, "run_verification", verify)
+
+    container = _Container()
+    monkeypatch.setattr(
+        type(container),
+        "verification_agent",
+        PropertyMock(side_effect=RuntimeError("model initialization failed")),
+        raising=False,
+    )
+
+    result = RemediationOrchestrator(container).process_notification(_notification())
+
+    assert result is executed
+    assert verify.call_args.kwargs["agent"] is None
+    sent = container.notification.send.call_args.args[0]
+    assert sent.verification_status is status
+    container.session_store.complete_remediation.assert_called_once_with(
+        "rca-1",
+        "claim-1",
+        executed,
+        verification,
+        sent,
+    )
+    container.session_store.release_remediation.assert_not_called()
+
+
+def test_cloudwatch_client_initialization_failure_is_persisted_as_pending(
+    monkeypatch,
+):
+    executed = RemediationResult(
+        rca_id="rca-1",
+        actions_taken=[
+            RemediationAction(
+                action_type="fault_reset_api",
+                description="reset",
+                executed=True,
+                success=True,
+            )
+        ],
+        overall_success=True,
+        summary="[SUCCESS] reset",
+    )
+    pending = VerificationResult(
+        rca_id="rca-1",
+        status=VerificationStatus.PENDING,
+        verification_summary="CloudWatch client is unavailable.",
+    )
+    verify = Mock(return_value=pending)
+    monkeypatch.setattr(
+        remediation_pipeline,
+        "execute_remediation",
+        Mock(return_value=executed),
+    )
+    monkeypatch.setattr(remediation_pipeline, "run_verification", verify)
+
+    container = _Container()
+    container.cloudwatch_client_for_region.side_effect = RuntimeError("client initialization failed")
+
+    result = RemediationOrchestrator(container).process_notification(_notification())
+
+    assert result is executed
+    assert verify.call_args.kwargs["cloudwatch_client"] is None
+    sent = container.notification.send.call_args.args[0]
+    assert sent.verification_status is VerificationStatus.PENDING
+    container.session_store.complete_remediation.assert_called_once_with(
+        "rca-1",
+        "claim-1",
+        executed,
+        pending,
+        sent,
+    )
 
 
 def test_duplicate_remediation_notification_is_idempotent(monkeypatch):
@@ -252,7 +432,7 @@ def test_duplicate_remediation_notification_is_idempotent(monkeypatch):
     verify = Mock(
         return_value=VerificationResult(
             rca_id="rca-1",
-            metrics_normalized=True,
+            status=VerificationStatus.NORMALIZED,
             verification_summary="normalized",
         )
     )
@@ -268,6 +448,51 @@ def test_duplicate_remediation_notification_is_idempotent(monkeypatch):
     execute.assert_called_once()
     verify.assert_called_once()
     container.notification.send.assert_called_once()
+
+
+def test_publish_exception_releases_publication_claim_without_releasing_completed_remediation(
+    monkeypatch,
+):
+    executed = RemediationResult(
+        rca_id="rca-1",
+        actions_taken=[],
+        overall_success=False,
+        summary="no action",
+    )
+    monkeypatch.setattr(remediation_pipeline, "execute_remediation", Mock(return_value=executed))
+    container = _Container()
+    container.notification.send.side_effect = RuntimeError("SNS unavailable")
+
+    with pytest.raises(RuntimeError, match="SNS unavailable"):
+        RemediationOrchestrator(container).process_notification(_notification())
+
+    container.session_store.release_remediation_publication.assert_called_once_with(
+        "rca-1",
+        "publication-claim-1",
+    )
+    container.session_store.release_remediation.assert_not_called()
+
+
+def test_contended_publication_claim_is_retryable_and_does_not_publish():
+    container = _Container()
+    notification = remediation_pipeline._build_remediation_notification(
+        remediation_pipeline._report_from_context(container.context),
+        RemediationResult(rca_id="rca-1", summary="persisted"),
+    )
+    container.context.remediation_status = "COMPLETED"
+    container.handoff = RemediationHandoff(
+        rca_id="rca-1",
+        remediation_status="COMPLETED",
+        publication_status="PUBLISHING",
+        notification=notification,
+    )
+    container.session_store.claim_remediation_publication.return_value = None
+
+    with pytest.raises(RemediationPublicationContendedError, match="already in progress"):
+        RemediationOrchestrator(container).process_notification(_notification())
+
+    container.notification.send.assert_not_called()
+    container.session_store.release_remediation.assert_not_called()
 
 
 def test_event_root_cause_and_confirmation_do_not_override_authoritative_context(
@@ -310,6 +535,55 @@ def test_missing_confirmed_evidence_fails_before_claim():
         RemediationOrchestrator(container).process_notification(_notification())
 
     container.session_store.claim_remediation.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        _context(
+            fault_type=FaultType.DB_CONNECTION_LEAK,
+            validated_fault_type=FaultType.HIGH_CPU,
+        ),
+        _context(validated_fault_type=FaultType.UNSUPPORTED),
+    ],
+)
+def test_mismatched_or_missing_validated_type_fails_before_claim_and_reset(
+    monkeypatch,
+    context,
+):
+    execute = Mock()
+    monkeypatch.setattr(remediation_pipeline, "execute_remediation", execute)
+    container = _Container(context)
+
+    with pytest.raises(RuntimeError, match="no supported validated fault type"):
+        RemediationOrchestrator(container).process_notification(_notification())
+
+    container.session_store.claim_remediation.assert_not_called()
+    execute.assert_not_called()
+
+
+def test_independently_validated_high_cpu_is_the_only_executed_type(monkeypatch):
+    executed = RemediationResult(
+        rca_id="rca-1",
+        actions_taken=[],
+        overall_success=False,
+        summary="captured",
+    )
+    execute = Mock(return_value=executed)
+    monkeypatch.setattr(remediation_pipeline, "execute_remediation", execute)
+    container = _Container(
+        _context(
+            root_cause="initial DB_CONNECTION_LEAK suggestion",
+            fault_type=FaultType.HIGH_CPU,
+            validated_fault_type=FaultType.HIGH_CPU,
+            validated_root_cause="sustained CPU saturation",
+            evidence_summary="CPUUtilization remained above 95%",
+        )
+    )
+
+    RemediationOrchestrator(container).process_notification(_notification())
+
+    assert execute.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU
 
 
 def test_processing_exception_releases_claim_and_propagates(monkeypatch):

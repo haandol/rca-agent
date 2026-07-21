@@ -82,6 +82,35 @@ def test_gate_promotes_to_early_exit_after_grace_loops():
     result = run_review_gate(hypotheses, judgments, consecutive_blocked_loops=2)
     assert result.early_exit is True
     assert "grace_loops_exhausted" in result.reason
+    assert result.accepted_hypothesis_id == "a"
+
+
+def test_gate_selects_confirmed_hypothesis_with_highest_latest_confidence():
+    hypotheses = [
+        _hypo(
+            "older-best",
+            description="older best",
+            status=HypothesisStatus.CONFIRMED,
+            confidence=0.88,
+        ),
+        _hypo(
+            "latest-best",
+            description="latest best",
+            status=HypothesisStatus.CONFIRMED,
+            confidence=0.81,
+        ),
+    ]
+    judgments = [
+        _judgment("latest-best", HypothesisStatus.CONFIRMED, 0.83),
+        _judgment("older-best", HypothesisStatus.CONFIRMED, 0.84),
+        _judgment("latest-best", HypothesisStatus.CONFIRMED, 0.89),
+    ]
+
+    result = run_review_gate(hypotheses, judgments, consecutive_blocked_loops=2)
+
+    assert result.early_exit is True
+    assert result.accepted_max_confidence == 0.89
+    assert result.accepted_hypothesis_id == "latest-best"
 
 
 def test_gate_auto_rejects_similar_pending_hypothesis():

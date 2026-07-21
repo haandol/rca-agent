@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import boto3
 import pytest
 from botocore.exceptions import ClientError
+from moto import mock_aws
 
+from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
 from rca_agent.adapters.secondary.trace.dynamodb_trace_store import (
     SpanStatus,
     SpanType,
@@ -13,6 +16,7 @@ from rca_agent.adapters.secondary.trace.dynamodb_trace_store import (
     _deserialize_span,
 )
 from rca_agent.ports.dto.models import FaultType, Hypothesis, HypothesisCategory, HypothesisStatus
+from rca_agent.ports.interfaces.session_store import SessionOwnershipCheckError
 
 TABLE_NAME = "rca-sessions"
 PATCH_TABLE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store.DYNAMODB_TABLE_NAME"
@@ -203,6 +207,7 @@ class TestPutHypotheses:
 
         item = dynamodb_client.batch_write_item.call_args[1]["RequestItems"][TABLE_NAME][0]
         assert item["PutRequest"]["Item"]["fault_type"]["S"] == "HIGH_MEMORY"
+        assert item["PutRequest"]["Item"]["validated_fault_type"]["S"] == "UNSUPPORTED"
 
     def test_sets_parent_id_null_for_root(self, trace: TraceStore, dynamodb_client: MagicMock):
         with patch(PATCH_TABLE, TABLE_NAME):
@@ -251,6 +256,8 @@ class TestUpdateHypothesisStatus:
                 status="CONFIRMED",
                 confidence=0.95,
                 judgment_reasoning="Strong log evidence",
+                validated_fault_type="HIGH_CPU",
+                validation_evidence_summary="CPU remained above 95%",
             )
 
         call_kwargs = dynamodb_client.update_item.call_args[1]
@@ -258,7 +265,11 @@ class TestUpdateHypothesisStatus:
         assert ":status" in call_kwargs["ExpressionAttributeValues"]
         assert call_kwargs["ExpressionAttributeValues"][":status"]["S"] == "CONFIRMED"
         assert call_kwargs["ExpressionAttributeValues"][":jc"]["N"] == "0.95"
+        assert call_kwargs["ExpressionAttributeValues"][":vft"]["S"] == "HIGH_CPU"
+        assert call_kwargs["ExpressionAttributeValues"][":ves"]["S"] == "CPU remained above 95%"
         assert "judgment_confidence" in call_kwargs["UpdateExpression"]
+        assert "validated_fault_type = :vft" in call_kwargs["UpdateExpression"]
+        assert "validation_evidence_summary = :ves" in call_kwargs["UpdateExpression"]
 
     def test_updates_without_confidence(self, trace: TraceStore, dynamodb_client: MagicMock):
         with patch(PATCH_TABLE, TABLE_NAME):
@@ -297,6 +308,81 @@ class TestUpdateHypothesisEvidence:
 
         with patch(PATCH_TABLE, TABLE_NAME):
             trace.update_hypothesis_evidence("h-1", evidence_summary="test")
+
+
+@mock_aws
+def test_previous_claim_cannot_overwrite_trace_or_hypothesis():
+    ddb = boto3.client("dynamodb", region_name="us-east-1")
+    ddb.create_table(
+        TableName=TABLE_NAME,
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    session_key = {
+        "PK": {"S": "RCA#rca-123"},
+        "SK": {"S": "strands#SESSION"},
+    }
+    ddb.put_item(
+        TableName=TABLE_NAME,
+        Item={
+            **session_key,
+            "state": {"S": "SCOPING"},
+            "claim_token": {"S": "claim-1"},
+        },
+    )
+
+    with patch(PATCH_TABLE, TABLE_NAME):
+        stale_trace = TraceStore(
+            "rca-123",
+            claim_token="claim-1",
+            attempt=1,
+            dynamodb_client=ddb,
+        )
+        span = stale_trace.start_span(SpanType.SCOPING)
+        stale_trace.put_hypotheses([_make_hypothesis("h-1")])
+        ddb.update_item(
+            TableName=TABLE_NAME,
+            Key=session_key,
+            UpdateExpression="SET claim_token = :claim",
+            ExpressionAttributeValues={":claim": {"S": "claim-2"}},
+        )
+
+        with pytest.raises(SessionOwnershipCheckError):
+            stale_trace.end_span(span, output_summary="late result")
+        with pytest.raises(SessionCancelledError):
+            stale_trace.update_hypothesis_status(
+                "h-1",
+                status="CONFIRMED",
+                confidence=0.99,
+            )
+        with pytest.raises(SessionOwnershipCheckError):
+            stale_trace.start_span(SpanType.REPORT)
+
+    span_item = ddb.get_item(
+        TableName=TABLE_NAME,
+        Key={
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": f"strands#SPAN#{span.span_id}"},
+        },
+    )["Item"]
+    hypothesis_item = ddb.get_item(
+        TableName=TABLE_NAME,
+        Key={
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": "strands#HYPO#h-1"},
+        },
+    )["Item"]
+    assert span_item["span_status"]["S"] == "RUNNING"
+    assert "end_time" not in span_item
+    assert hypothesis_item["status"]["S"] == "PENDING"
+    assert hypothesis_item["confidence_score"]["N"] == "0.7"
 
 
 class TestGetTrace:
@@ -486,11 +572,13 @@ class TestDeserializeHypothesis:
             "description": {"S": "Child hypothesis"},
             "category": {"S": "INFRASTRUCTURE"},
             "fault_type": {"S": "HIGH_CPU"},
+            "validated_fault_type": {"S": "HIGH_MEMORY"},
             "confidence_score": {"N": "0.6"},
             "status": {"S": "NEEDS_INVESTIGATION"},
             "engine": {"S": "strands"},
             "required_evidence": {"L": [{"S": "metrics"}, {"S": "traces"}]},
             "evidence_summary": {"S": ""},
+            "validation_evidence_summary": {"S": "Memory usage stayed above 90%"},
             "judgment_reasoning": {"S": ""},
             "created_at": {"S": "2025-06-01T12:02:00"},
             "updated_at": {"S": "2025-06-01T12:02:00"},
@@ -501,6 +589,8 @@ class TestDeserializeHypothesis:
         assert result["depth"] == 1
         assert result["required_evidence"] == ["metrics", "traces"]
         assert result["fault_type"] == "HIGH_CPU"
+        assert result["validated_fault_type"] == "HIGH_MEMORY"
+        assert result["validation_evidence_summary"] == "Memory usage stayed above 90%"
         assert result["judgment_confidence"] is None
         assert result["engine"] == "strands"
 
@@ -524,4 +614,6 @@ class TestDeserializeHypothesis:
         result = _deserialize_hypothesis(item)
         assert result["hypothesis_id"] == "h-2"
         assert result["fault_type"] == "UNSUPPORTED"
+        assert result["validated_fault_type"] == "UNSUPPORTED"
+        assert result["validation_evidence_summary"] == ""
         assert result["engine"] == "strands"

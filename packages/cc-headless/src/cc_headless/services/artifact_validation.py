@@ -65,6 +65,13 @@ class RemediationEvidence:
     confirmed_hypothesis_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _HypothesisContext:
+    fault_type: HealthcareFaultType
+    tree_id: str
+    depth: int
+
+
 def _load_object(path: Path, label: str) -> dict:
     try:
         value = json.loads(path.read_text())
@@ -99,13 +106,13 @@ def _validate_scoping(base: Path) -> None:
         raise ArtifactValidationError("scoping.json metric_snapshot must be an object")
 
 
-def _validate_hypotheses(base: Path) -> tuple[dict[str, HealthcareFaultType], str]:
+def _validate_hypotheses(base: Path) -> tuple[dict[str, _HypothesisContext], str]:
     artifact = _load_object(base / "hypotheses.json", "hypotheses.json")
     _require_fields(artifact, strings=("stage", "tree_id", "summary", "output_summary"), lists=("hypotheses",))
     if artifact["stage"] != "HYPOTHESIS_GENERATION" or not artifact["hypotheses"]:
         raise ArtifactValidationError("hypotheses.json must contain generated hypotheses")
 
-    hypotheses_by_id: dict[str, HealthcareFaultType] = {}
+    hypotheses_by_id: dict[str, _HypothesisContext] = {}
     parent_by_id: dict[str, str | None] = {}
     for hypothesis in artifact["hypotheses"]:
         if not isinstance(hypothesis, dict):
@@ -133,31 +140,37 @@ def _validate_hypotheses(base: Path) -> tuple[dict[str, HealthcareFaultType], st
         parent_id = hypothesis.get("parent_id")
         if parent_id is not None and (not isinstance(parent_id, str) or not parent_id.strip()):
             raise ArtifactValidationError("hypothesis parent_id must be null or a non-empty string")
-        hypotheses_by_id[hypothesis["hypothesis_id"]] = fault_type
+        hypotheses_by_id[hypothesis["hypothesis_id"]] = _HypothesisContext(
+            fault_type=fault_type,
+            tree_id=hypothesis["tree_id"],
+            depth=depth,
+        )
         parent_by_id[hypothesis["hypothesis_id"]] = parent_id
     if any(parent_id not in hypotheses_by_id for parent_id in parent_by_id.values() if parent_id is not None):
         raise ArtifactValidationError("hypothesis parent_id references an unknown hypothesis")
     return hypotheses_by_id, artifact["tree_id"]
 
 
-def _latest_validation(base: Path) -> tuple[Path, dict]:
+def _validation_candidates(base: Path, through_loop_index: int | None = None) -> list[tuple[int, Path]]:
     candidates: list[tuple[int, Path]] = []
     for path in base.iterdir():
         match = _VALIDATION_NAME.fullmatch(path.name)
-        if match:
-            candidates.append((int(match.group(1)), path))
+        if not match:
+            continue
+        loop_index = int(match.group(1))
+        if through_loop_index is None or loop_index <= through_loop_index:
+            candidates.append((loop_index, path))
     if not candidates:
         raise ArtifactValidationError("validation-{N}.json is missing")
-    path = max(candidates)[1]
-    return path, _load_object(path, path.name)
+    return sorted(candidates)
 
 
-def _validate_validation(
-    base: Path,
-    hypotheses_by_id: dict[str, HealthcareFaultType],
+def _validate_validation_loop(
+    path: Path,
+    artifact: dict,
+    hypotheses_by_id: dict[str, _HypothesisContext],
     tree_id: str,
-) -> tuple[Path, dict]:
-    path, artifact = _latest_validation(base)
+) -> dict[str, _HypothesisContext]:
     _require_fields(
         artifact,
         strings=("stage", "summary", "output_summary"),
@@ -192,13 +205,13 @@ def _validate_validation(
                 confirmed_fault = parse_fault_type(entry.get("fault_type"))
                 if confirmed_fault is None:
                     raise ArtifactValidationError(f"{path.name} confirmed fault_type is invalid")
-                if confirmed_fault is not hypotheses_by_id[hypothesis_id]:
+                if confirmed_fault is not hypotheses_by_id[hypothesis_id].fault_type:
                     raise ArtifactValidationError(f"{path.name} confirmed fault_type disagrees with hypothesis")
     confirmed_fault_types = {parse_fault_type(entry["fault_type"]) for entry in artifact["confirmed"]}
     if len(confirmed_fault_types) > 1:
         raise ArtifactValidationError(f"{path.name} confirmed entries disagree on fault_type")
 
-    new_hypothesis_ids: set[str] = set()
+    new_hypotheses: dict[str, _HypothesisContext] = {}
     for hypothesis in artifact["new_hypotheses"]:
         if not isinstance(hypothesis, dict):
             raise ArtifactValidationError(f"{path.name} new_hypotheses entries must be objects")
@@ -217,11 +230,12 @@ def _validate_validation(
             lists=("required_evidence",),
         )
         hypothesis_id = hypothesis["hypothesis_id"]
-        if hypothesis_id in hypotheses_by_id or hypothesis_id in new_hypothesis_ids:
+        if hypothesis_id in hypotheses_by_id or hypothesis_id in new_hypotheses:
             raise ArtifactValidationError(f"{path.name} new hypothesis IDs must be unique")
         if hypothesis["tree_id"] != tree_id:
             raise ArtifactValidationError(f"{path.name} new hypothesis tree_id is invalid")
-        if hypothesis["parent_id"] not in hypotheses_by_id:
+        parent = hypotheses_by_id.get(hypothesis["parent_id"])
+        if parent is None:
             raise ArtifactValidationError(f"{path.name} new hypothesis parent_id is unknown")
         if parse_fault_type(hypothesis["fault_type"]) is None:
             raise ArtifactValidationError(f"{path.name} new hypothesis fault_type is invalid")
@@ -229,14 +243,50 @@ def _validate_validation(
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
             raise ArtifactValidationError(f"{path.name} new hypothesis confidence_score must be between 0 and 1")
         depth = hypothesis.get("depth")
-        if isinstance(depth, bool) or not isinstance(depth, int) or depth < 1:
-            raise ArtifactValidationError(f"{path.name} new hypothesis depth must be a positive integer")
+        if isinstance(depth, bool) or not isinstance(depth, int) or depth != parent.depth + 1:
+            raise ArtifactValidationError(f"{path.name} new hypothesis depth must equal parent depth + 1")
         if any(not isinstance(item, str) or not item.strip() for item in hypothesis["required_evidence"]):
             raise ArtifactValidationError(
                 f"{path.name} new hypothesis required_evidence entries must be non-empty strings"
             )
-        new_hypothesis_ids.add(hypothesis_id)
-    return path, artifact
+        new_hypotheses[hypothesis_id] = _HypothesisContext(
+            fault_type=parse_fault_type(hypothesis["fault_type"]),
+            tree_id=hypothesis["tree_id"],
+            depth=depth,
+        )
+    return new_hypotheses
+
+
+def _validate_validation(
+    base: Path,
+    hypotheses_by_id: dict[str, _HypothesisContext],
+    tree_id: str,
+    *,
+    through_loop_index: int | None = None,
+) -> tuple[Path, dict]:
+    latest: tuple[Path, dict] | None = None
+    for _, path in _validation_candidates(base, through_loop_index):
+        artifact = _load_object(path, path.name)
+        new_hypotheses = _validate_validation_loop(path, artifact, hypotheses_by_id, tree_id)
+        hypotheses_by_id.update(new_hypotheses)
+        latest = path, artifact
+    if latest is None:
+        raise ArtifactValidationError("validation-{N}.json is missing")
+    return latest
+
+
+def validate_validation_artifacts(
+    base: Path,
+    *,
+    through_loop_index: int | None = None,
+) -> tuple[Path, dict]:
+    hypotheses_by_id, tree_id = _validate_hypotheses(base)
+    return _validate_validation(
+        base,
+        hypotheses_by_id,
+        tree_id,
+        through_loop_index=through_loop_index,
+    )
 
 
 def validate_remediation_evidence(base: Path) -> RemediationEvidence:

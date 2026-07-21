@@ -1,3 +1,5 @@
+import time
+from time import perf_counter
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -207,6 +209,28 @@ class TestTryUpdateExisting:
 
         assert result is None
 
+    def test_timeout_interrupts_update_without_late_mutation(self):
+        state = []
+
+        def slow_agent(*args, **kwargs):  # noqa: ARG001
+            state.append("started")
+            time.sleep(0.25)
+            state.append("finished")
+
+        started = perf_counter()
+        result = _try_update_existing(
+            _make_hit(),
+            _make_report(),
+            MagicMock(side_effect=slow_agent),
+            timeout_seconds=0.04,
+        )
+        elapsed = perf_counter() - started
+
+        assert elapsed < 0.2
+        assert result is None
+        time.sleep(0.1)
+        assert state == ["started"]
+
 
 class TestRunPlaybookGeneration:
     def test_updates_existing_when_found(self, fake_embedding):
@@ -292,6 +316,48 @@ class TestRunPlaybookGeneration:
 
         assert playbook.failure_type == "unknown"
         assert playbook.rca_id == "rca-1"
+
+    def test_zero_timeout_returns_fallback_without_starting_generation(self, fake_embedding):
+        agent = MagicMock()
+
+        with patch(
+            "rca_agent.services.playbook_gen.search_existing_playbooks",
+            return_value=[],
+        ):
+            started = perf_counter()
+            playbook = run_playbook_generation(
+                _make_report(),
+                agent,
+                embedding=fake_embedding,
+                timeout_seconds=0,
+            )
+            elapsed = perf_counter() - started
+
+        assert elapsed < 0.15
+        agent.assert_not_called()
+        assert playbook.failure_type == "unknown"
+        assert playbook.rca_id == "rca-1"
+
+    def test_uses_one_deadline_for_updates_and_generation(self, fake_embedding):
+        hits = [_make_hit(playbook_id=f"existing-{index}") for index in range(3)]
+        agent = MagicMock(side_effect=lambda *args, **kwargs: time.sleep(0.2))
+
+        with patch(
+            "rca_agent.services.playbook_gen.search_existing_playbooks",
+            return_value=hits,
+        ):
+            started = perf_counter()
+            playbook = run_playbook_generation(
+                _make_report(),
+                agent,
+                embedding=fake_embedding,
+                timeout_seconds=0.05,
+            )
+            elapsed = perf_counter() - started
+
+        assert elapsed < 0.2
+        assert agent.call_count == 1
+        assert playbook.failure_type == "unknown"
 
     def test_uses_structured_output(self, fake_embedding):
         output = PlaybookOutput(failure_type="test", symptom_pattern="test")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from rca_agent.config.aws_sdk import EVIDENCE_SAVE_BASE_DELAY_SECONDS
 from rca_agent.config.settings import S3_EVIDENCE_BUCKET, S3_EVIDENCE_MAX_RETRIES
 from rca_agent.ports.interfaces.evidence_store import EvidenceStorePort
 from rca_agent.utils.retry import retry_with_backoff
@@ -34,5 +35,6 @@ class S3EvidenceStore(EvidenceStorePort):
         return retry_with_backoff(
             put,
             max_retries=S3_EVIDENCE_MAX_RETRIES,
+            base_delay=EVIDENCE_SAVE_BASE_DELAY_SECONDS,
             operation=f"evidence save for {hypothesis_id}",
         )

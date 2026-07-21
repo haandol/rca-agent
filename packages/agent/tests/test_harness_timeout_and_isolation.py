@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import signal
 import time
+from threading import Thread
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from rca_agent.di.app_container import AppContainer
 from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
-    RcaSession,
     ValidationJudgment,
 )
+from rca_agent.ports.interfaces.session_store import ClaimDisposition, SessionClaim
 from rca_agent.services.pipeline import PipelineOrchestrator, ValidationLoopState
 from rca_agent.services.validation import validate_hypothesis
+from rca_agent.utils.timeout import call_with_timeout
 
 
 def _hypothesis(hypothesis_id: str, confidence: float = 0.5) -> Hypothesis:
@@ -86,10 +91,9 @@ class TestExecutionStateIsolation:
 
     def test_each_alarm_receives_its_own_monotonic_start_time(self):
         container = MagicMock()
-        container.session_store.check_duplicate.return_value = False
-        container.session_store.create_session.side_effect = [
-            RcaSession(rca_id="rca-first", idempotency_key="first"),
-            RcaSession(rca_id="rca-second", idempotency_key="second"),
+        container.session_store.claim_session.side_effect = [
+            SessionClaim(ClaimDisposition.CLAIMED, "claim-first", 1),
+            SessionClaim(ClaimDisposition.CLAIMED, "claim-second", 1),
         ]
         orchestrator = PipelineOrchestrator(container)
 
@@ -102,26 +106,157 @@ class TestExecutionStateIsolation:
             orchestrator.process_alarm(_alarm_body("SecondAlarm"))
 
         assert [call.kwargs["start_time"] for call in run_pipeline.call_args_list] == [101.0, 202.0]
-        assert [call.kwargs["rca_id"] for call in run_pipeline.call_args_list] == ["rca-first", "rca-second"]
+        assert len({call.kwargs["rca_id"] for call in run_pipeline.call_args_list}) == 2
 
 
 class TestWallClockTimeoutContract:
-    def test_validation_timeout_returns_without_waiting_for_worker_completion(self):
-        hypothesis = _hypothesis("slow")
+    def test_timeout_helper_returns_result(self):
+        assert call_with_timeout(lambda: "completed", 0.1) == "completed"
 
-        def slow_agent(*args, **kwargs):  # noqa: ARG001
-            time.sleep(0.4)
+    def test_timeout_helper_reraises_operation_exception(self):
+        def fail():
+            raise ValueError("operation failed")
+
+        with pytest.raises(ValueError, match="operation failed"):
+            call_with_timeout(fail, 0.1)
+
+    def test_timeout_helper_interrupts_operation_without_late_mutation(self):
+        state = []
+
+        def slow_operation():
+            state.append("started")
+            time.sleep(0.25)
+            state.append("finished")
+
+        started = time.perf_counter()
+        with pytest.raises(TimeoutError, match="operation timed out"):
+            call_with_timeout(slow_operation, 0.04)
+        elapsed = time.perf_counter() - started
+
+        assert elapsed < 0.2
+        time.sleep(0.1)
+        assert state == ["started"]
+
+    def test_operation_cannot_swallow_timeout_with_exception_handler(self):
+        state = []
+
+        def slow_operation():
+            state.append("started")
+            try:
+                time.sleep(0.25)
+            except Exception:
+                state.append("caught")
+            state.append("finished")
+
+        with pytest.raises(TimeoutError, match="operation timed out"):
+            call_with_timeout(slow_operation, 0.04)
+
+        time.sleep(0.1)
+        assert state == ["started"]
+
+    def test_non_positive_timeout_does_not_start_operation(self):
+        operation = MagicMock()
+
+        with pytest.raises(TimeoutError, match="operation timed out"):
+            call_with_timeout(operation, 0)
+
+        operation.assert_not_called()
+
+    def test_non_main_thread_fails_closed_without_starting_operation(self):
+        operation = MagicMock()
+        errors = []
+
+        def invoke():
+            try:
+                call_with_timeout(operation, 0.1)
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = Thread(target=invoke)
+        thread.start()
+        thread.join()
+
+        operation.assert_not_called()
+        assert len(errors) == 1
+        assert isinstance(errors[0], RuntimeError)
+        assert "POSIX main thread" in str(errors[0])
+
+    def test_active_timer_fails_closed_without_changing_handler_or_timer(self):
+        original_handler = signal.getsignal(signal.SIGALRM)
+        original_timer = signal.getitimer(signal.ITIMER_REAL)
+        operation = MagicMock()
+
+        def existing_handler(signum, frame):  # noqa: ARG001
+            return None
+
+        try:
+            signal.signal(signal.SIGALRM, existing_handler)
+            signal.setitimer(signal.ITIMER_REAL, 0.5, 0.5)
+            before_delay, before_interval = signal.getitimer(signal.ITIMER_REAL)
+
+            with pytest.raises(RuntimeError, match="ITIMER_REAL is active"):
+                call_with_timeout(operation, 0.1)
+
+            after_delay, after_interval = signal.getitimer(signal.ITIMER_REAL)
+            operation.assert_not_called()
+            assert signal.getsignal(signal.SIGALRM) is existing_handler
+            assert 0 < after_delay <= before_delay
+            assert after_delay > before_delay - 0.1
+            assert after_interval == before_interval
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, original_handler)
+            if original_timer[0] > 0:
+                signal.setitimer(signal.ITIMER_REAL, *original_timer)
+
+    def test_existing_handler_without_timer_is_restored_after_timeout(self):
+        original_handler = signal.getsignal(signal.SIGALRM)
+        original_timer = signal.getitimer(signal.ITIMER_REAL)
+
+        def existing_handler(signum, frame):  # noqa: ARG001
+            return None
+
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, existing_handler)
+
+            with pytest.raises(TimeoutError, match="operation timed out"):
+                call_with_timeout(lambda: time.sleep(0.2), 0.03)
+
+            assert signal.getsignal(signal.SIGALRM) is existing_handler
+            assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, original_handler)
+            if original_timer[0] > 0:
+                signal.setitimer(signal.ITIMER_REAL, *original_timer)
+
+    def test_nested_timeout_fails_closed_before_starting_inner_operation(self):
+        inner_operation = MagicMock()
+
+        with pytest.raises(RuntimeError, match="ITIMER_REAL is active"):
+            call_with_timeout(
+                lambda: call_with_timeout(inner_operation, 0.1),
+                0.2,
+            )
+
+        inner_operation.assert_not_called()
+
+    def test_validation_zero_timeout_does_not_start_agent(self):
+        hypothesis = _hypothesis("slow")
+        agent = MagicMock()
 
         started = time.perf_counter()
         judgment = validate_hypothesis(
             hypothesis,
             "evidence",
-            MagicMock(side_effect=slow_agent),
+            agent,
             timeout_seconds=0,
         )
         elapsed = time.perf_counter() - started
 
         assert elapsed < 0.15
+        agent.assert_not_called()
         assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
         assert judgment.confidence_score == hypothesis.confidence_score
 

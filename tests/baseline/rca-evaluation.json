@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "approvedAt": "2026-07-21T10:50:27.604Z",
+  "approvedAt": "2026-07-21T14:15:25.751Z",
   "engines": ["cc-headless", "strands"],
   "contractInputs": [
     "tests/harness/evaluator.mjs",
@@ -17,7 +17,7 @@
     "packages/cc-headless/src/cc_headless/mcp_server.py",
     "packages/cc-headless/src/cc_headless/services/prompt_builder.py"
   ],
-  "inputDigest": "sha256:ed075c4a4a9cf3b8a915af554a4ec2049c3aeec01e19248ef0e0db50a6a83a5a",
+  "inputDigest": "sha256:de0eb18fd6b3956968cb6af35e4978a7def22752de547ba67f5c513eb2dc9023",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/prompts/__init__.py",

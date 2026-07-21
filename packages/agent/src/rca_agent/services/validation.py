@@ -11,6 +11,7 @@ from rca_agent.config.settings import (
     REJECTION_THRESHOLD,
 )
 from rca_agent.ports.dto.models import (
+    FaultType,
     Hypothesis,
     HypothesisStatus,
     ValidationJudgment,
@@ -30,6 +31,7 @@ class _JudgmentItem(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
     evidence_summary: list[str] = Field(default_factory=list)
+    validated_fault_type: FaultType = FaultType.UNSUPPORTED
 
 
 class ValidationOutput(BaseModel):
@@ -50,8 +52,6 @@ def _classify_status(score: float) -> HypothesisStatus:
 def _build_user_prompt(hypothesis: Hypothesis, evidence_text: str) -> str:
     return VALIDATION_USER_PROMPT_TEMPLATE.format(
         description=hypothesis.description,
-        category=hypothesis.category,
-        previous_confidence=hypothesis.confidence_score,
         evidence_text=evidence_text or "No evidence collected yet.",
     )
 
@@ -99,6 +99,17 @@ def validate_hypothesis(
         )
         status = HypothesisStatus.NEEDS_INVESTIGATION
 
+    evidence_summary = [summary for summary in output.judgment.evidence_summary if summary.strip()]
+    validated_fault_type = FaultType.UNSUPPORTED
+    if (
+        status == HypothesisStatus.CONFIRMED
+        and not evidence_failed
+        and evidence_text.strip()
+        and evidence_summary
+        and output.judgment.validated_fault_type != FaultType.UNSUPPORTED
+    ):
+        validated_fault_type = output.judgment.validated_fault_type
+
     logger.info(
         "Validation result for %s: %s (confidence=%.2f)",
         hypothesis.hypothesis_id,
@@ -111,7 +122,8 @@ def validate_hypothesis(
         status=status,
         confidence_score=output.judgment.confidence_score,
         reasoning=output.judgment.reasoning,
-        evidence_summary=output.judgment.evidence_summary,
+        evidence_summary=evidence_summary,
+        validated_fault_type=validated_fault_type,
     )
 
 

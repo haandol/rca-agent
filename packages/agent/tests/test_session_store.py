@@ -9,6 +9,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
+from rca_agent.adapters.secondary.session import dynamodb_session_store
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     DynamoDbSessionStore,
     SessionCancelledError,
@@ -20,6 +21,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     mark_failed,
     update_state,
 )
+from rca_agent.config.aws_sdk import REMEDIATION_CLAIM_SECONDS
 from rca_agent.ports.dto.models import (
     AlarmPayload,
     AlarmTrigger,
@@ -28,7 +30,16 @@ from rca_agent.ports.dto.models import (
     RcaSessionState,
     RemediationResult,
     VerificationResult,
+    VerificationStatus,
 )
+from rca_agent.ports.interfaces.session_store import (
+    ClaimDisposition,
+    SessionOwnershipCheckError,
+    SideEffectLeaseUnavailableError,
+)
+
+CLAIM_TOKEN = "claim-current"
+MESSAGE_ID = "message-a"
 
 
 @pytest.fixture()
@@ -83,6 +94,359 @@ class TestBuildRcaId:
         assert build_rca_id(key) == expected
 
 
+@pytest.fixture()
+def claim_store(monkeypatch):
+    with mock_aws():
+        table_name = "rca-sessions"
+        ddb = boto3.client("dynamodb", region_name="us-east-1")
+        ddb.create_table(
+            TableName=table_name,
+            AttributeDefinitions=[
+                {"AttributeName": "PK", "AttributeType": "S"},
+                {"AttributeName": "SK", "AttributeType": "S"},
+            ],
+            KeySchema=[
+                {"AttributeName": "PK", "KeyType": "HASH"},
+                {"AttributeName": "SK", "KeyType": "RANGE"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        monkeypatch.setattr(dynamodb_session_store, "DYNAMODB_TABLE_NAME", table_name)
+        yield DynamoDbSessionStore(ddb), ddb, table_name
+
+
+def _claim(
+    store: DynamoDbSessionStore,
+    alarm: AlarmPayload,
+    receive_count: int,
+    message_id: str = MESSAGE_ID,
+):
+    return store.claim_session(
+        alarm,
+        receive_count=receive_count,
+        message_id=message_id,
+    )
+
+
+def _claimed_token(store: DynamoDbSessionStore, alarm: AlarmPayload, receive_count: int) -> str:
+    claim = _claim(store, alarm, receive_count)
+    assert claim.acquired
+    assert claim.claim_token
+    return claim.claim_token
+
+
+def _claimed_item(ddb, table_name: str, alarm: AlarmPayload) -> dict:
+    rca_id = build_rca_id(build_idempotency_key(alarm))
+    return ddb.get_item(
+        TableName=table_name,
+        Key={
+            "PK": {"S": f"RCA#{rca_id}"},
+            "SK": {"S": "strands#SESSION"},
+        },
+        ConsistentRead=True,
+    )["Item"]
+
+
+def _advance_to(
+    store: DynamoDbSessionStore,
+    rca_id: str,
+    claim_token: str,
+    target: RcaSessionState,
+) -> None:
+    path = [
+        RcaSessionState.SCOPING,
+        RcaSessionState.HYPOTHESIS_GENERATION,
+        RcaSessionState.HYPOTHESIS_PRIORITIZATION,
+        RcaSessionState.EVIDENCE_COLLECTION,
+        RcaSessionState.HYPOTHESIS_VALIDATION,
+        RcaSessionState.REPORT_GENERATION,
+    ]
+    for state in path:
+        assert store.update_state(rca_id, state, claim_token=claim_token)
+        if state is target:
+            return
+
+
+class TestSessionClaim:
+    def test_first_delivery_claims_and_persists_metadata(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+
+        claim = _claim(store, alarm, 1)
+
+        assert claim.disposition is ClaimDisposition.CLAIMED
+        assert claim.attempt == 1
+        assert claim.claim_token
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["claim_token"]["S"] == claim.claim_token
+        assert item["receive_count"]["N"] == "1"
+        assert item["message_id"]["S"] == MESSAGE_ID
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            RcaSessionState.ALARM_RECEIVED,
+            RcaSessionState.SCOPING,
+            RcaSessionState.HYPOTHESIS_GENERATION,
+            RcaSessionState.HYPOTHESIS_PRIORITIZATION,
+            RcaSessionState.EVIDENCE_COLLECTION,
+            RcaSessionState.HYPOTHESIS_VALIDATION,
+            RcaSessionState.REPORT_GENERATION,
+            RcaSessionState.FAILED,
+        ],
+    )
+    def test_larger_receive_count_reclaims_nonterminal_state(self, claim_store, alarm, state):
+        store, ddb, table_name = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        first_token = _claimed_token(store, alarm, 1)
+        if state is RcaSessionState.FAILED:
+            assert store.mark_failed(rca_id, error_reason="transient", claim_token=first_token)
+        elif state is not RcaSessionState.ALARM_RECEIVED:
+            _advance_to(store, rca_id, first_token, state)
+
+        second = _claim(store, alarm, 2)
+
+        assert second.acquired
+        assert second.claim_token != first_token
+        assert second.attempt == 2
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["state"]["S"] == RcaSessionState.ALARM_RECEIVED.value
+        assert item["receive_count"]["N"] == "2"
+        assert item["claim_token"]["S"] == second.claim_token
+
+    def test_same_or_smaller_receive_count_cannot_steal_claim(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        first_token = _claimed_token(store, alarm, 2)
+
+        assert _claim(store, alarm, 2).disposition is ClaimDisposition.CONTENDED
+        assert _claim(store, alarm, 1).disposition is ClaimDisposition.CONTENDED
+        assert _claimed_item(ddb, table_name, alarm)["claim_token"]["S"] == first_token
+
+    def test_different_messages_cannot_alternate_reclaims(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        first = _claim(store, alarm, 1, "message-a")
+        assert first.acquired
+
+        assert _claim(store, alarm, 99, "message-b").disposition is ClaimDisposition.CONTENDED
+        second = _claim(store, alarm, 2, "message-a")
+        assert second.acquired
+        assert second.claim_token != first.claim_token
+        assert _claim(store, alarm, 100, "message-b").disposition is ClaimDisposition.CONTENDED
+
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["message_id"]["S"] == "message-a"
+        assert item["receive_count"]["N"] == "2"
+        assert item["claim_token"]["S"] == second.claim_token
+
+    @pytest.mark.parametrize(
+        "terminal_state",
+        [
+            RcaSessionState.COMPLETED,
+            RcaSessionState.OUTDATED,
+            RcaSessionState.CANCELLED,
+        ],
+    )
+    def test_terminal_session_is_duplicate(self, claim_store, alarm, terminal_state):
+        store, _, _ = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        token = _claimed_token(store, alarm, 1)
+        if terminal_state is RcaSessionState.COMPLETED:
+            _advance_to(store, rca_id, token, RcaSessionState.REPORT_GENERATION)
+            assert store.mark_completed(rca_id, claim_token=token)
+        elif terminal_state is RcaSessionState.OUTDATED:
+            assert store.mark_outdated(rca_id, reason="stale", claim_token=token)
+        else:
+            assert store.update_state(rca_id, RcaSessionState.CANCELLED, claim_token=token)
+
+        duplicate = _claim(store, alarm, 2)
+
+        assert duplicate.disposition is ClaimDisposition.TERMINAL_DUPLICATE
+        assert duplicate.claim_token == token
+
+    def test_reclaim_compare_and_swap_loses_to_competing_writer(
+        self,
+        claim_store,
+        alarm,
+        monkeypatch,
+    ):
+        store, ddb, table_name = claim_store
+        _claimed_token(store, alarm, 1)
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        original_put_item = ddb.put_item
+
+        def racing_put_item(**kwargs):
+            if kwargs.get("ConditionExpression", "").startswith("#st"):
+                ddb.update_item(
+                    TableName=table_name,
+                    Key={
+                        "PK": {"S": f"RCA#{rca_id}"},
+                        "SK": {"S": "strands#SESSION"},
+                    },
+                    UpdateExpression="SET claim_token = :claim, receive_count = :count",
+                    ExpressionAttributeValues={
+                        ":claim": {"S": "winning-claim"},
+                        ":count": {"N": "2"},
+                    },
+                )
+            return original_put_item(**kwargs)
+
+        monkeypatch.setattr(ddb, "put_item", racing_put_item)
+
+        assert _claim(store, alarm, 2).disposition is ClaimDisposition.CONTENDED
+        assert _claimed_item(ddb, table_name, alarm)["claim_token"]["S"] == "winning-claim"
+
+    def test_legacy_nonterminal_item_can_be_reclaimed(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        ddb.put_item(
+            TableName=table_name,
+            Item={
+                "PK": {"S": f"RCA#{rca_id}"},
+                "SK": {"S": "strands#SESSION"},
+                "state": {"S": RcaSessionState.SCOPING.value},
+            },
+        )
+
+        claim = _claim(store, alarm, 2)
+
+        assert claim.acquired
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["state"]["S"] == RcaSessionState.ALARM_RECEIVED.value
+        assert item["receive_count"]["N"] == "2"
+        assert item["claim_token"]["S"] == claim.claim_token
+        assert item["message_id"]["S"] == MESSAGE_ID
+
+    def test_active_side_effect_lease_blocks_reclaim_until_release(
+        self,
+        claim_store,
+        alarm,
+    ):
+        store, _, _ = claim_store
+        first_token = _claimed_token(store, alarm, 1)
+        lease_token = store.acquire_side_effect_lease(
+            build_rca_id(build_idempotency_key(alarm)),
+            first_token,
+            "playbook",
+            lease_seconds=60,
+        )
+
+        assert _claim(store, alarm, 2).disposition is ClaimDisposition.CONTENDED
+        assert store.release_side_effect_lease(
+            build_rca_id(build_idempotency_key(alarm)),
+            first_token,
+            lease_token,
+        )
+        assert _claim(store, alarm, 2).acquired
+
+    def test_stale_claim_cannot_acquire_or_release_side_effect_lease(
+        self,
+        claim_store,
+        alarm,
+    ):
+        store, _, _ = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        first_token = _claimed_token(store, alarm, 1)
+        second_token = _claimed_token(store, alarm, 2)
+
+        with pytest.raises(SideEffectLeaseUnavailableError):
+            store.acquire_side_effect_lease(
+                rca_id,
+                first_token,
+                "evidence:h-1",
+                lease_seconds=60,
+            )
+        current_lease = store.acquire_side_effect_lease(
+            rca_id,
+            second_token,
+            "evidence:h-1",
+            lease_seconds=60,
+        )
+        assert not store.release_side_effect_lease(
+            rca_id,
+            first_token,
+            current_lease,
+        )
+
+    def test_claim_fails_closed_without_store(self, alarm, monkeypatch):
+        monkeypatch.setattr(dynamodb_session_store, "DYNAMODB_TABLE_NAME", "")
+
+        claim = DynamoDbSessionStore(MagicMock()).claim_session(alarm, receive_count=1)
+
+        assert claim.disposition is ClaimDisposition.CONTENDED
+        assert not claim.acquired
+
+    def test_claim_read_error_fails_closed(self, alarm):
+        ddb = MagicMock()
+        ddb.put_item.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "ConditionalCheckFailedException",
+                    "Message": "existing item",
+                }
+            },
+            "PutItem",
+        )
+        ddb.get_item.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "InternalServerError",
+                    "Message": "read unavailable",
+                }
+            },
+            "GetItem",
+        )
+
+        with (
+            patch(
+                "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+                "rca-sessions",
+            ),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
+            DynamoDbSessionStore(ddb).claim_session(alarm, receive_count=2)
+
+    def test_previous_claim_cannot_finalize_state_report_or_notification(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        first_token = _claimed_token(store, alarm, 1)
+        assert store.update_state(rca_id, RcaSessionState.SCOPING, claim_token=first_token)
+        second_token = _claimed_token(store, alarm, 2)
+
+        with pytest.raises(SessionCancelledError):
+            store.update_state(
+                rca_id,
+                RcaSessionState.SCOPING,
+                claim_token=first_token,
+            )
+        with pytest.raises(SessionCancelledError):
+            store.mark_failed(rca_id, error_reason="late failure", claim_token=first_token)
+
+        _advance_to(store, rca_id, second_token, RcaSessionState.REPORT_GENERATION)
+        notification = NotificationMessage(
+            rca_id=rca_id,
+            root_cause_summary="current result",
+            severity="high",
+        )
+        with pytest.raises(SessionCancelledError):
+            store.mark_completed(
+                rca_id,
+                report_s3_key="reports/strands/stale/report.md",
+                claim_token=first_token,
+            )
+        current_key = f"reports/strands/{rca_id}/attempt-2-{second_token}/report.md"
+        assert store.mark_completed(
+            rca_id,
+            completion_notification=notification,
+            report_s3_key=current_key,
+            claim_token=second_token,
+        )
+        assert store.mark_completion_notified(rca_id, claim_token=first_token) is False
+        assert store.mark_completion_notified(rca_id, claim_token=second_token) is True
+
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["report_s3_key"]["S"] == current_key
+        assert item["completion_notification_status"]["S"] == "SENT"
+
+
 class TestCreateSession:
     def test_returns_none_when_no_table_name(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
@@ -134,6 +498,8 @@ class TestCreateSession:
 
         call_kwargs = dynamodb_client.put_item.call_args[1]
         assert call_kwargs["Item"]["engine"]["S"] == "strands"
+        assert call_kwargs["Item"]["alarm_name"]["S"] == "HighCPU"
+        assert call_kwargs["Item"]["region"]["S"] == "us-east-1"
 
     def test_put_item_includes_condition_expression(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
@@ -213,7 +579,12 @@ class TestCheckDuplicate:
 def _ddb_with_state(state: str) -> MagicMock:
     """Create a MagicMock DDB client that returns the given state for get_item."""
     ddb = MagicMock()
-    ddb.get_item.return_value = {"Item": {"state": {"S": state}}}
+    ddb.get_item.return_value = {
+        "Item": {
+            "state": {"S": state},
+            "claim_token": {"S": CLAIM_TOKEN},
+        }
+    }
     return ddb
 
 
@@ -231,7 +602,12 @@ class TestUpdateState:
     def test_updates_state_successfully(self):
         ddb = _ddb_with_state("ALARM_RECEIVED")
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
+            result = update_state(
+                "rca-123",
+                RcaSessionState.SCOPING,
+                claim_token=CLAIM_TOKEN,
+                dynamodb_client=ddb,
+            )
 
         assert result is True
         ddb.update_item.assert_called_once()
@@ -240,14 +616,23 @@ class TestUpdateState:
         assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "SCOPING"
 
-    def test_includes_cancelled_condition(self):
+    def test_includes_claim_and_expected_source_state_condition(self):
         ddb = _ddb_with_state("ALARM_RECEIVED")
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
+            update_state(
+                "rca-123",
+                RcaSessionState.SCOPING,
+                claim_token=CLAIM_TOKEN,
+                dynamodb_client=ddb,
+            )
 
         call_kwargs = ddb.update_item.call_args[1]
-        assert "ConditionExpression" in call_kwargs
-        assert call_kwargs["ExpressionAttributeValues"][":cancelled"]["S"] == "CANCELLED"
+        assert (
+            call_kwargs["ConditionExpression"]
+            == "attribute_exists(SK) AND claim_token = :claim AND #st = :expected_state"
+        )
+        assert call_kwargs["ExpressionAttributeValues"][":claim"]["S"] == CLAIM_TOKEN
+        assert call_kwargs["ExpressionAttributeValues"][":expected_state"]["S"] == "ALARM_RECEIVED"
 
     def test_raises_session_cancelled_error(self):
         ddb = _ddb_with_state("ALARM_RECEIVED")
@@ -258,17 +643,226 @@ class TestUpdateState:
             patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
             pytest.raises(SessionCancelledError),
         ):
-            update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
+            update_state(
+                "rca-123",
+                RcaSessionState.SCOPING,
+                claim_token=CLAIM_TOKEN,
+                dynamodb_client=ddb,
+            )
 
-    def test_returns_false_on_error(self):
+    def test_storage_error_fails_closed(self):
         ddb = _ddb_with_state("ALARM_RECEIVED")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
-        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = update_state("rca-123", RcaSessionState.SCOPING, dynamodb_client=ddb)
+        with (
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
+            update_state(
+                "rca-123",
+                RcaSessionState.SCOPING,
+                claim_token=CLAIM_TOKEN,
+                dynamodb_client=ddb,
+            )
 
-        assert result is False
+
+class TestExpectedStateFencing:
+    @pytest.mark.parametrize(
+        ("source_state", "write_kind", "target_state"),
+        [
+            ("ALARM_RECEIVED", "update", RcaSessionState.SCOPING),
+            ("SCOPING", "failed", RcaSessionState.FAILED),
+            ("SCOPING", "outdated", RcaSessionState.OUTDATED),
+            ("REPORT_GENERATION", "completed", RcaSessionState.COMPLETED),
+        ],
+    )
+    def test_every_session_state_write_checks_claim_and_exact_source(
+        self,
+        source_state,
+        write_kind,
+        target_state,
+    ):
+        ddb = _ddb_with_state(source_state)
+        store = DynamoDbSessionStore(ddb)
+
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            if write_kind == "update":
+                result = store.update_state(
+                    "rca-123",
+                    target_state,
+                    claim_token=CLAIM_TOKEN,
+                )
+            elif write_kind == "failed":
+                result = store.mark_failed(
+                    "rca-123",
+                    claim_token=CLAIM_TOKEN,
+                )
+            elif write_kind == "outdated":
+                result = store.mark_outdated(
+                    "rca-123",
+                    claim_token=CLAIM_TOKEN,
+                )
+            else:
+                result = store.mark_completed(
+                    "rca-123",
+                    claim_token=CLAIM_TOKEN,
+                )
+
+        assert result is True
+        call_kwargs = ddb.update_item.call_args.kwargs
+        assert (
+            call_kwargs["ConditionExpression"]
+            == "attribute_exists(SK) AND claim_token = :claim AND #st = :expected_state"
+        )
+        values = call_kwargs["ExpressionAttributeValues"]
+        assert values[":claim"]["S"] == CLAIM_TOKEN
+        assert values[":expected_state"]["S"] == source_state
+        assert values[":state"]["S"] == target_state.value
+
+    @pytest.mark.parametrize(
+        ("initial_state", "racing_state", "stale_write"),
+        [
+            (RcaSessionState.ALARM_RECEIVED, RcaSessionState.SCOPING, "failed"),
+            (RcaSessionState.ALARM_RECEIVED, RcaSessionState.FAILED, "scoping"),
+            (RcaSessionState.REPORT_GENERATION, RcaSessionState.COMPLETED, "failed"),
+        ],
+    )
+    def test_same_claim_interleaving_blocks_stale_state_write(
+        self,
+        claim_store,
+        alarm,
+        monkeypatch,
+        initial_state,
+        racing_state,
+        stale_write,
+    ):
+        store, ddb, table_name = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        claim_token = _claimed_token(store, alarm, 1)
+        if initial_state is RcaSessionState.REPORT_GENERATION:
+            _advance_to(
+                store,
+                rca_id,
+                claim_token,
+                RcaSessionState.REPORT_GENERATION,
+            )
+
+        original_update_item = ddb.update_item
+        race_injected = False
+
+        def racing_update_item(**kwargs):
+            nonlocal race_injected
+            if not race_injected:
+                race_injected = True
+                original_update_item(
+                    TableName=table_name,
+                    Key={
+                        "PK": {"S": f"RCA#{rca_id}"},
+                        "SK": {"S": "strands#SESSION"},
+                    },
+                    UpdateExpression="SET #st = :racing_state",
+                    ExpressionAttributeNames={"#st": "state"},
+                    ExpressionAttributeValues={
+                        ":racing_state": {"S": racing_state.value},
+                    },
+                )
+            return original_update_item(**kwargs)
+
+        monkeypatch.setattr(ddb, "update_item", racing_update_item)
+
+        with pytest.raises(SessionCancelledError):
+            if stale_write == "scoping":
+                store.update_state(
+                    rca_id,
+                    RcaSessionState.SCOPING,
+                    claim_token=claim_token,
+                )
+            else:
+                store.mark_failed(
+                    rca_id,
+                    error_reason="stale failure",
+                    claim_token=claim_token,
+                )
+
+        assert race_injected
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["state"]["S"] == racing_state.value
+        assert item["claim_token"]["S"] == claim_token
+
+    @pytest.mark.parametrize(
+        ("initial_state", "stale_write"),
+        [
+            (RcaSessionState.ALARM_RECEIVED, "scoping"),
+            (RcaSessionState.SCOPING, "failed"),
+            (RcaSessionState.REPORT_GENERATION, "completed"),
+        ],
+    )
+    def test_reclaim_after_validation_blocks_every_previous_claim_write(
+        self,
+        claim_store,
+        alarm,
+        monkeypatch,
+        initial_state,
+        stale_write,
+    ):
+        store, ddb, table_name = claim_store
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        previous_claim = _claimed_token(store, alarm, 1)
+        if initial_state is not RcaSessionState.ALARM_RECEIVED:
+            _advance_to(store, rca_id, previous_claim, initial_state)
+
+        original_update_item = ddb.update_item
+        reclaimed = None
+
+        def reclaim_before_stale_update(**kwargs):
+            nonlocal reclaimed
+            if reclaimed is None:
+                reclaimed = store.claim_session(
+                    alarm,
+                    receive_count=2,
+                    message_id=MESSAGE_ID,
+                )
+                assert reclaimed.acquired
+            return original_update_item(**kwargs)
+
+        monkeypatch.setattr(ddb, "update_item", reclaim_before_stale_update)
+
+        with pytest.raises(SessionCancelledError):
+            if stale_write == "scoping":
+                store.update_state(
+                    rca_id,
+                    RcaSessionState.SCOPING,
+                    claim_token=previous_claim,
+                )
+            elif stale_write == "failed":
+                store.mark_failed(
+                    rca_id,
+                    error_reason="stale failure",
+                    claim_token=previous_claim,
+                )
+            else:
+                store.mark_completed(
+                    rca_id,
+                    root_cause="stale result",
+                    report_s3_key="reports/stale/report.md",
+                    claim_token=previous_claim,
+                )
+
+        assert reclaimed is not None
+        assert reclaimed.claim_token
+        assert reclaimed.claim_token != previous_claim
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["state"]["S"] == RcaSessionState.ALARM_RECEIVED.value
+        assert item["claim_token"]["S"] == reclaimed.claim_token
+        assert item["receive_count"]["N"] == "2"
+        assert item["message_id"]["S"] == MESSAGE_ID
+        assert "error_reason" not in item
+        assert "root_cause" not in item
+        assert "report_s3_key" not in item
 
 
 class TestMarkCompleted:
@@ -284,6 +878,7 @@ class TestMarkCompleted:
                 "rca-123",
                 root_cause="Bad deploy",
                 confirmed=True,
+                claim_token=CLAIM_TOKEN,
                 dynamodb_client=ddb,
             )
 
@@ -311,6 +906,8 @@ class TestMarkCompleted:
                 selected_hypothesis_id="h-selected",
                 fault_type=FaultType.DB_CONNECTION_LEAK,
                 completion_notification=notification,
+                report_s3_key="reports/strands/rca-123/attempt-1/report.md",
+                claim_token=CLAIM_TOKEN,
                 dynamodb_client=ddb,
             )
 
@@ -320,16 +917,22 @@ class TestMarkCompleted:
         assert values[":fault_type"]["S"] == FaultType.DB_CONNECTION_LEAK.value
         assert values[":notification_pending"]["S"] == "PENDING"
         assert NotificationMessage.model_validate_json(values[":notification"]["S"]) == notification
+        assert values[":report_s3_key"]["S"] == "reports/strands/rca-123/attempt-1/report.md"
 
-    def test_returns_false_on_error(self):
+    def test_storage_error_fails_closed(self):
         ddb = _ddb_with_state("REPORT_GENERATION")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
-        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = mark_completed("rca-123", dynamodb_client=ddb)
-
-        assert result is False
+        with (
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
+            mark_completed(
+                "rca-123",
+                claim_token=CLAIM_TOKEN,
+                dynamodb_client=ddb,
+            )
 
 
 class TestRemediationPersistence:
@@ -339,6 +942,8 @@ class TestRemediationPersistence:
             {
                 "Item": {
                     "state": {"S": "COMPLETED"},
+                    "alarm_name": {"S": "Session-RdsHighConnections"},
+                    "region": {"S": "ap-northeast-2"},
                     "root_cause": {"S": "generated report wording"},
                     "confirmed": {"BOOL": True},
                     "selected_hypothesis_id": {"S": "h-selected"},
@@ -350,7 +955,8 @@ class TestRemediationPersistence:
                     "status": {"S": "CONFIRMED"},
                     "description": {"S": "exact selected database leak"},
                     "evidence_summary": {"S": "selected evidence only"},
-                    "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+                    "validation_evidence_summary": {"S": "validation confirmed selected evidence"},
+                    "validated_fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
                 }
             },
         ]
@@ -362,10 +968,13 @@ class TestRemediationPersistence:
             context = DynamoDbSessionStore(ddb).get_remediation_context("rca-123")
 
         assert context is not None
+        assert context.alarm_name == "Session-RdsHighConnections"
+        assert context.region == "ap-northeast-2"
         assert context.selected_hypothesis_id == "h-selected"
         assert context.validated_root_cause == "exact selected database leak"
-        assert context.evidence_summary == "selected evidence only"
+        assert context.evidence_summary == "validation confirmed selected evidence"
         assert context.fault_type == FaultType.DB_CONNECTION_LEAK
+        assert context.validated_fault_type == FaultType.DB_CONNECTION_LEAK
         exact_key = ddb.get_item.call_args_list[1].kwargs["Key"]
         assert exact_key["SK"]["S"] == "strands#HYPO#h-selected"
         ddb.query.assert_not_called()
@@ -382,6 +991,7 @@ class TestRemediationPersistence:
                 "state": {"S": "COMPLETED"},
                 "completion_notification_status": {"S": "PENDING"},
                 "completion_notification": {"S": notification.model_dump_json()},
+                "claim_token": {"S": CLAIM_TOKEN},
             }
         }
         with patch(
@@ -390,7 +1000,7 @@ class TestRemediationPersistence:
         ):
             store = DynamoDbSessionStore(ddb)
             handoff = store.get_completion_handoff("rca-123")
-            marked = store.mark_completion_notified("rca-123")
+            marked = store.mark_completion_notified("rca-123", claim_token=CLAIM_TOKEN)
 
         assert handoff is not None
         assert handoff.notification_status == "PENDING"
@@ -451,7 +1061,8 @@ class TestRemediationPersistence:
                     "status": {"S": "CONFIRMED"},
                     "description": {"S": "different structured action"},
                     "evidence_summary": {"S": "evidence"},
-                    "fault_type": {"S": FaultType.HIGH_CPU.value},
+                    "validation_evidence_summary": {"S": "validation evidence"},
+                    "validated_fault_type": {"S": FaultType.HIGH_CPU.value},
                 }
             },
         ]
@@ -466,12 +1077,16 @@ class TestRemediationPersistence:
         assert context.validated_root_cause == ""
         assert context.evidence_summary == ""
         assert context.fault_type == FaultType.DB_CONNECTION_LEAK
+        assert context.validated_fault_type == FaultType.UNSUPPORTED
 
     def test_claim_is_conditional_and_returns_token(self):
         ddb = MagicMock()
-        with patch(
-            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
-            "rca-sessions",
+        with (
+            patch(
+                "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+                "rca-sessions",
+            ),
+            patch.object(dynamodb_session_store.time, "time", return_value=1_000),
         ):
             token = DynamoDbSessionStore(ddb).claim_remediation("rca-123")
 
@@ -480,6 +1095,7 @@ class TestRemediationPersistence:
         assert "#state = :completed" in call["ConditionExpression"]
         assert "remediation_status = :processing" in call["UpdateExpression"]
         assert call["ExpressionAttributeValues"][":token"]["S"] == token
+        assert call["ExpressionAttributeValues"][":expires"]["N"] == str(1_000 + REMEDIATION_CLAIM_SECONDS)
 
     def test_duplicate_claim_returns_none(self):
         ddb = MagicMock()
@@ -502,6 +1118,13 @@ class TestRemediationPersistence:
 
     def test_completion_is_guarded_by_claim_token(self):
         ddb = MagicMock()
+        notification = NotificationMessage(
+            rca_id="rca-123",
+            publication_id="remediation-rca-123",
+            root_cause_summary="reset complete",
+            severity="medium",
+            event_type="remediation_complete",
+        )
         result = RemediationResult(
             rca_id="rca-123",
             overall_success=True,
@@ -509,7 +1132,7 @@ class TestRemediationPersistence:
         )
         verification = VerificationResult(
             rca_id="rca-123",
-            metrics_normalized=False,
+            status=VerificationStatus.FAILED,
             verification_summary="connections remain above threshold",
             remaining_issues=["DatabaseConnections is still high"],
         )
@@ -522,6 +1145,7 @@ class TestRemediationPersistence:
                 "claim-1",
                 result,
                 verification,
+                notification,
             )
 
         assert completed is True
@@ -533,9 +1157,54 @@ class TestRemediationPersistence:
         assert values[":metrics_normalized"]["BOOL"] is False
         assert values[":verification_summary"]["S"] == "connections remain above threshold"
         assert values[":verification_remaining_issues"]["L"] == [{"S": "DatabaseConnections is still high"}]
+        assert RemediationResult.model_validate_json(values[":remediation_result"]["S"]) == result
+        assert VerificationResult.model_validate_json(values[":remediation_verification"]["S"]) == verification
+        assert NotificationMessage.model_validate_json(values[":remediation_notification"]["S"]) == notification
+        assert values[":publication_pending"]["S"] == "PENDING"
+
+    def test_completion_persists_authoritative_pending_status_unchanged(self):
+        ddb = MagicMock()
+        notification = NotificationMessage(
+            rca_id="rca-123",
+            root_cause_summary="reset complete",
+            severity="high",
+            event_type="remediation_complete",
+        )
+        result = RemediationResult(
+            rca_id="rca-123",
+            overall_success=True,
+            summary="reset complete",
+        )
+        verification = VerificationResult(
+            rca_id="rca-123",
+            status=VerificationStatus.PENDING,
+            verification_summary="LLM says normalized, but datapoints are insufficient",
+        )
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            completed = DynamoDbSessionStore(ddb).complete_remediation(
+                "rca-123",
+                "claim-1",
+                result,
+                verification,
+                notification,
+            )
+
+        assert completed is True
+        values = ddb.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert values[":verification_status"]["S"] == "PENDING"
+        assert values[":metrics_normalized"]["BOOL"] is False
 
     def test_completion_persists_pending_when_verification_did_not_run(self):
         ddb = MagicMock()
+        notification = NotificationMessage(
+            rca_id="rca-123",
+            root_cause_summary="no action executed",
+            severity="high",
+            event_type="remediation_complete",
+        )
         result = RemediationResult(
             rca_id="rca-123",
             overall_success=False,
@@ -550,6 +1219,7 @@ class TestRemediationPersistence:
                 "claim-1",
                 result,
                 None,
+                notification,
             )
 
         assert completed is True
@@ -580,6 +1250,8 @@ class TestRemediationPersistence:
                 "PK": {"S": "RCA#rca-123"},
                 "SK": {"S": "strands#SESSION"},
                 "state": {"S": "COMPLETED"},
+                "alarm_name": {"S": "Session-RdsHighConnections"},
+                "region": {"S": "ap-northeast-2"},
                 "root_cause": {"S": "database connections exhausted"},
                 "confirmed": {"BOOL": True},
                 "selected_hypothesis_id": {"S": "h-1"},
@@ -594,7 +1266,8 @@ class TestRemediationPersistence:
                 "status": {"S": "CONFIRMED"},
                 "description": {"S": "database connection pool leak"},
                 "evidence_summary": {"S": "connections remained checked out"},
-                "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+                "validation_evidence_summary": {"S": "connections stayed above pool limit"},
+                "validated_fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
                 "updated_at": {"S": "2026-07-21T01:00:00+00:00"},
             },
         )
@@ -617,16 +1290,26 @@ class TestRemediationPersistence:
                 ),
                 VerificationResult(
                     rca_id="rca-123",
-                    metrics_normalized=True,
+                    status=VerificationStatus.NORMALIZED,
                     verification_summary="connections normalized",
+                ),
+                NotificationMessage(
+                    rca_id="rca-123",
+                    publication_id="remediation-rca-123",
+                    root_cause_summary="reset complete",
+                    severity="medium",
+                    event_type="remediation_complete",
                 ),
             )
             completed_context = store.get_remediation_context("rca-123")
 
         assert context is not None
+        assert context.alarm_name == "Session-RdsHighConnections"
+        assert context.region == "ap-northeast-2"
         assert context.selected_hypothesis_id == "h-1"
         assert context.validated_root_cause == "database connection pool leak"
         assert context.fault_type == FaultType.DB_CONNECTION_LEAK
+        assert context.validated_fault_type == FaultType.DB_CONNECTION_LEAK
         assert token
         assert duplicate_token is None
         assert completed is True
@@ -650,6 +1333,7 @@ class TestMarkFailed:
             result = mark_failed(
                 "rca-123",
                 error_reason="Pipeline crash",
+                claim_token=CLAIM_TOKEN,
                 dynamodb_client=ddb,
             )
 
@@ -659,12 +1343,17 @@ class TestMarkFailed:
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "FAILED"
         assert call_kwargs["ExpressionAttributeValues"][":err"]["S"] == "Pipeline crash"
 
-    def test_returns_false_on_error(self):
+    def test_storage_error_fails_closed(self):
         ddb = _ddb_with_state("SCOPING")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
         ddb.update_item.side_effect = ClientError(error_response, "UpdateItem")
 
-        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
-            result = mark_failed("rca-123", dynamodb_client=ddb)
-
-        assert result is False
+        with (
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
+            mark_failed(
+                "rca-123",
+                claim_token=CLAIM_TOKEN,
+                dynamodb_client=ddb,
+            )

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -21,6 +20,7 @@ from rca_agent.prompts.playbook import (
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
 from rca_agent.utils.retry import retry_with_backoff
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -202,7 +202,7 @@ def _try_update_existing(
     report: RcaReport,
     update_agent: Agent,
     *,
-    timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
+    timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> Playbook | None:
     prompt = _build_update_prompt(hit, report)
     logger.info(
@@ -212,12 +212,13 @@ def _try_update_existing(
     )
 
     output: PlaybookUpdateOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_update_agent, update_agent, prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("Playbook update check failed for %s", hit.playbook_id)
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_update_agent(update_agent, prompt),
+            timeout_seconds,
+        )
+    except Exception:
+        logger.warning("Playbook update check failed for %s", hit.playbook_id)
 
     if output is None or not output.needs_update:
         if output and not output.needs_update:
@@ -248,7 +249,7 @@ def run_playbook_generation(
     embedding: EmbeddingPort,
     scoping_result: ScopingResult | None = None,
     s3_vectors_client=None,
-    timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
+    timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> Playbook:
     existing_hits = search_existing_playbooks(
         report,
@@ -256,9 +257,16 @@ def run_playbook_generation(
         embedding=embedding,
         s3_vectors_client=s3_vectors_client,
     )
+    deadline = time.monotonic() + max(0, timeout_seconds)
 
     for hit in existing_hits:
-        updated = _try_update_existing(hit, report, agent, timeout_seconds=timeout_seconds)
+        remaining_seconds = max(0.0, deadline - time.monotonic())
+        updated = _try_update_existing(
+            hit,
+            report,
+            agent,
+            timeout_seconds=remaining_seconds,
+        )
         if updated is not None:
             return updated
 
@@ -271,12 +279,14 @@ def run_playbook_generation(
     logger.info("Generating new playbook from RCA %s", report.rca_id)
 
     output: PlaybookOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("Playbook generation failed")
+    try:
+        remaining_seconds = max(0.0, deadline - time.monotonic())
+        output = call_with_timeout(
+            lambda: _invoke_agent(agent, user_prompt),
+            remaining_seconds,
+        )
+    except Exception:
+        logger.warning("Playbook generation failed")
 
     if output is None:
         return Playbook(

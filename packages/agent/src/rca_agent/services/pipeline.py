@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
@@ -15,6 +16,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     build_rca_id,
 )
 from rca_agent.adapters.secondary.trace.dynamodb_trace_store import SpanStatus, SpanType, TraceStore
+from rca_agent.config.aws_sdk import SIDE_EFFECT_LEASE_SECONDS
 from rca_agent.config.settings import (
     ALARM_STALENESS_SECONDS,
     RCA_BEAM_WIDTH,
@@ -33,6 +35,10 @@ from rca_agent.ports.dto.models import (
     ValidationJudgment,
     ValidationResult,
 )
+from rca_agent.ports.interfaces.session_store import (
+    ClaimDisposition,
+    SideEffectLeaseUnavailableError,
+)
 from rca_agent.services.branching import run_branching
 from rca_agent.services.evidence import run_evidence_collection
 from rca_agent.services.hypothesis import run_hypothesis_generation
@@ -46,6 +52,8 @@ from rca_agent.services.termination import check_termination
 from rca_agent.services.validation import run_validation
 
 logger = logging.getLogger(__name__)
+
+_SIDE_EFFECT_LEASE_SECONDS = SIDE_EFFECT_LEASE_SECONDS
 
 
 class _LoopAction(Enum):
@@ -131,7 +139,28 @@ class PipelineOrchestrator:
         if self._shutdown_event.is_set():
             raise ShutdownRequestedError
 
-    def process_alarm(self, body: dict) -> bool:
+    @contextmanager
+    def _side_effect_lease(self, rca_id: str, claim_token: str, effect_name: str):
+        store = self._container.session_store
+        lease_token = store.acquire_side_effect_lease(
+            rca_id,
+            claim_token,
+            effect_name,
+            lease_seconds=_SIDE_EFFECT_LEASE_SECONDS,
+        )
+        try:
+            yield
+        finally:
+            if not store.release_side_effect_lease(rca_id, claim_token, lease_token):
+                raise SideEffectLeaseUnavailableError(f"{rca_id}: failed to release {effect_name} lease")
+
+    def process_alarm(
+        self,
+        body: dict,
+        *,
+        receive_count: int = 1,
+        message_id: str | None = None,
+    ) -> bool:
         start_time = time.monotonic()
         alarm_data = parse_sns_envelope(body)
 
@@ -152,23 +181,47 @@ class PipelineOrchestrator:
         )
 
         store = self._container.session_store
-        if store.check_duplicate(alarm):
-            logger.info("Skipping duplicate alarm: %s", alarm.alarm_name)
-            return self._flush_completion_handoff(
-                build_rca_id(build_idempotency_key(alarm)),
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        effective_receive_count = max(receive_count, 1)
+        effective_message_id = message_id or f"direct:{rca_id}"
+        try:
+            claim = store.claim_session(
+                alarm,
+                receive_count=effective_receive_count,
+                message_id=effective_message_id,
             )
+        except Exception:
+            logger.exception("Failed to claim RCA session for alarm %s", alarm.alarm_name)
+            return False
+        if claim.disposition is ClaimDisposition.TERMINAL_DUPLICATE:
+            logger.info("Acknowledging terminal duplicate alarm: %s", alarm.alarm_name)
+            try:
+                return self._flush_completion_handoff(rca_id, claim_token=claim.claim_token)
+            except Exception:
+                logger.exception("Failed to flush terminal RCA handoff: rca_id=%s", rca_id)
+                return False
+        if not claim.acquired or not claim.claim_token:
+            logger.info(
+                "RCA session claim contended: alarm=%s receive_count=%d",
+                alarm.alarm_name,
+                effective_receive_count,
+            )
+            return False
 
-        if self._skip_if_stale(alarm, store):
+        claim_token = claim.claim_token
+        attempt = claim.attempt or effective_receive_count
+        if effective_receive_count == 1 and self._skip_if_stale(
+            alarm,
+            store,
+            rca_id=rca_id,
+            claim_token=claim_token,
+        ):
             return True
 
-        session = store.create_session(alarm)
-        if session is None:
-            return self._flush_completion_handoff(
-                build_rca_id(build_idempotency_key(alarm)),
-            )
-        rca_id = session.rca_id
         trace = TraceStore(
             rca_id,
+            claim_token=claim_token,
+            attempt=attempt,
             dynamodb_client=self._container.dynamodb_client,
         )
 
@@ -178,6 +231,8 @@ class PipelineOrchestrator:
                 rca_id=rca_id,
                 start_time=start_time,
                 trace=trace,
+                claim_token=claim_token,
+                attempt=attempt,
             )
         except ShutdownRequestedError:
             logger.info(
@@ -185,19 +240,22 @@ class PipelineOrchestrator:
                 alarm.alarm_name,
                 rca_id,
             )
-            if rca_id:
+            try:
                 store.mark_failed(
                     rca_id,
                     error_reason="Aborted due to SIGTERM shutdown",
+                    claim_token=claim_token,
                 )
+            except Exception:
+                logger.exception("Failed to record shutdown for RCA session %s", rca_id)
             return False
-        except SessionCancelledError:
+        except (SessionCancelledError, SideEffectLeaseUnavailableError):
             logger.info(
-                "Pipeline cancelled for alarm %s (rca_id=%s)",
+                "Pipeline claim lost or cancelled for alarm %s (rca_id=%s)",
                 alarm.alarm_name,
                 rca_id,
             )
-            return True
+            return False
         except InvalidStateTransitionError:
             logger.exception(
                 "Invalid state transition for alarm %s (rca_id=%s)",
@@ -207,25 +265,28 @@ class PipelineOrchestrator:
             return False
         except Exception:
             logger.exception("Pipeline failed for alarm %s", alarm.alarm_name)
-            if rca_id:
+            try:
                 store.mark_failed(
                     rca_id,
                     error_reason="Unhandled pipeline exception",
+                    claim_token=claim_token,
                 )
+            except Exception:
+                logger.exception("Failed to record pipeline failure for RCA session %s", rca_id)
             return False
 
-    def _flush_completion_handoff(self, rca_id: str) -> bool:
+    def _flush_completion_handoff(self, rca_id: str, *, claim_token: str | None) -> bool:
         handoff = self._container.session_store.get_completion_handoff(rca_id)
         if handoff is None:
             logger.warning("Duplicate RCA %s has no persisted session handoff", rca_id)
             return False
         if handoff.state != RcaSessionState.COMPLETED:
-            logger.warning(
-                "Duplicate RCA %s is not complete: state=%s",
+            logger.info(
+                "Terminal duplicate RCA %s requires no completion handoff: state=%s",
                 rca_id,
                 handoff.state,
             )
-            return False
+            return handoff.state in (RcaSessionState.OUTDATED, RcaSessionState.CANCELLED)
         if handoff.notification_status in ("", "SENT"):
             return True
         if handoff.notification_status != "PENDING" or handoff.notification is None:
@@ -233,9 +294,19 @@ class PipelineOrchestrator:
             return False
         if not self._container.notification.send(handoff.notification):
             return False
-        return self._container.session_store.mark_completion_notified(rca_id)
+        return self._container.session_store.mark_completion_notified(
+            rca_id,
+            claim_token=claim_token,
+        )
 
-    def _skip_if_stale(self, alarm: AlarmPayload, store) -> bool:
+    def _skip_if_stale(
+        self,
+        alarm: AlarmPayload,
+        store,
+        *,
+        rca_id: str,
+        claim_token: str,
+    ) -> bool:
         if not alarm.state_change_time:
             return False
         age_seconds = (datetime.now(UTC) - alarm.state_change_time).total_seconds()
@@ -247,28 +318,37 @@ class PipelineOrchestrator:
             age_seconds,
             ALARM_STALENESS_SECONDS,
         )
-        session = store.create_session(alarm)
-        if session:
-            store.mark_outdated(
-                session.rca_id,
-                reason=(f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold"),
-            )
+        store.mark_outdated(
+            rca_id,
+            reason=(f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold"),
+            claim_token=claim_token,
+        )
         return True
 
-    def _run_pipeline(self, alarm, *, rca_id, start_time, trace) -> bool:
+    def _run_pipeline(self, alarm, *, rca_id, start_time, trace, claim_token, attempt) -> bool:
         store = self._container.session_store
 
         self._check_shutdown()
-        scoping_result = self._run_scoping(alarm, rca_id=rca_id, trace=trace)
+        scoping_result = self._run_scoping(
+            alarm,
+            rca_id=rca_id,
+            trace=trace,
+            claim_token=claim_token,
+        )
 
         self._check_shutdown()
         hypotheses = self._run_hypothesis_generation(
             scoping_result,
             rca_id=rca_id,
             trace=trace,
+            claim_token=claim_token,
         )
         if not hypotheses:
-            store.mark_failed(rca_id, error_reason="No hypotheses generated")
+            store.mark_failed(
+                rca_id,
+                error_reason="No hypotheses generated",
+                claim_token=claim_token,
+            )
             return False
 
         state = self._run_validation_loop(
@@ -278,6 +358,7 @@ class PipelineOrchestrator:
             rca_id=rca_id,
             start_time=start_time,
             trace=trace,
+            claim_token=claim_token,
         )
 
         self._check_shutdown()
@@ -301,11 +382,17 @@ class PipelineOrchestrator:
             rca_id=rca_id,
             start_time=start_time,
             trace=trace,
+            claim_token=claim_token,
+            attempt=attempt,
         )
 
-    def _run_scoping(self, alarm, *, rca_id, trace):
+    def _run_scoping(self, alarm, *, rca_id, trace, claim_token):
         c = self._container
-        c.session_store.update_state(rca_id, RcaSessionState.SCOPING)
+        c.session_store.update_state(
+            rca_id,
+            RcaSessionState.SCOPING,
+            claim_token=claim_token,
+        )
         with trace.span(
             SpanType.SCOPING,
             input_summary=f"알람={alarm.alarm_name}, 리전={alarm.region}",
@@ -334,9 +421,13 @@ class PipelineOrchestrator:
         )
         return scoping_result
 
-    def _run_hypothesis_generation(self, scoping_result, *, rca_id, trace):
+    def _run_hypothesis_generation(self, scoping_result, *, rca_id, trace, claim_token):
         c = self._container
-        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION)
+        c.session_store.update_state(
+            rca_id,
+            RcaSessionState.HYPOTHESIS_GENERATION,
+            claim_token=claim_token,
+        )
         with trace.span(
             SpanType.HYPOTHESIS_GENERATION,
             input_summary=(f"심각도={scoping_result.initial_severity}, 영향범위={scoping_result.blast_radius}"),
@@ -366,6 +457,7 @@ class PipelineOrchestrator:
         rca_id,
         start_time,
         trace,
+        claim_token,
     ) -> ValidationLoopState:
         state = ValidationLoopState(hypotheses=hypotheses)
         state.timeline.append(f"Alarm received: {alarm.alarm_name}")
@@ -390,7 +482,14 @@ class PipelineOrchestrator:
             if gate.early_exit:
                 break
 
-            prioritization_result = self._loop_prioritization(state, scoping_result, rca_id, trace, loop_span)
+            prioritization_result = self._loop_prioritization(
+                state,
+                scoping_result,
+                rca_id,
+                trace,
+                loop_span,
+                claim_token,
+            )
             active_hypotheses = select_beam(state.hypotheses, prioritization_result, RCA_BEAM_WIDTH)
             logger.info(
                 "Beam selection: %d/%d hypotheses",
@@ -398,8 +497,23 @@ class PipelineOrchestrator:
                 len(state.hypotheses),
             )
 
-            self._loop_evidence(state, scoping_result, active_hypotheses, rca_id, trace, loop_span)
-            validation_result = self._loop_validation(state, active_hypotheses, rca_id, trace, loop_span)
+            self._loop_evidence(
+                state,
+                scoping_result,
+                active_hypotheses,
+                rca_id,
+                trace,
+                loop_span,
+                claim_token,
+            )
+            validation_result = self._loop_validation(
+                state,
+                active_hypotheses,
+                rca_id,
+                trace,
+                loop_span,
+                claim_token,
+            )
             self._apply_judgments(state, trace)
             self._loop_termination_check(state, start_time, trace, loop_span)
 
@@ -421,6 +535,7 @@ class PipelineOrchestrator:
                 rca_id,
                 trace,
                 loop_span,
+                claim_token,
             )
             if regen_action == _LoopAction.CONTINUE:
                 continue
@@ -452,13 +567,33 @@ class PipelineOrchestrator:
                     judgment_reasoning=("Review gate: 이미 채택된 가설과 동일 원인 영역으로 자동 기각"),
                 )
         if gate.early_exit:
+            accepted = next(
+                (
+                    h
+                    for h in state.hypotheses
+                    if h.hypothesis_id == gate.accepted_hypothesis_id and h.status == HypothesisStatus.CONFIRMED
+                ),
+                None,
+            )
+            if accepted is None:
+                logger.error(
+                    "Review gate refused early exit without a current accepted hypothesis: %s",
+                    gate.reason,
+                )
+                return ReviewGateResult(
+                    early_exit=False,
+                    expansion_blocked=False,
+                    reason="invalid_accepted_selection",
+                    accepted_max_confidence=0.0,
+                    accepted_hypothesis_id=None,
+                    auto_rejected_ids=gate.auto_rejected_ids,
+                )
             logger.info("Review gate early exit: %s", gate.reason)
             state.timeline.append(f"Loop {state.loop_count}: review gate early exit ({gate.reason})")
-            state.termination = check_termination(
-                judgments=state.all_judgments,
-                hypotheses=state.hypotheses,
-                start_time=start_time,
-                validation_loop_count=state.loop_count,
+            state.termination = TerminationDecision(
+                should_terminate=True,
+                reason=TerminationReason.CONFIRMED,
+                best_hypothesis=accepted,
             )
             trace.end_span(
                 loop_span,
@@ -478,9 +613,21 @@ class PipelineOrchestrator:
             state.consecutive_blocked_loops = 0
         return gate
 
-    def _loop_prioritization(self, state: ValidationLoopState, scoping_result, rca_id, trace, loop_span):
+    def _loop_prioritization(
+        self,
+        state: ValidationLoopState,
+        scoping_result,
+        rca_id,
+        trace,
+        loop_span,
+        claim_token,
+    ):
         c = self._container
-        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_PRIORITIZATION)
+        c.session_store.update_state(
+            rca_id,
+            RcaSessionState.HYPOTHESIS_PRIORITIZATION,
+            claim_token=claim_token,
+        )
         with trace.span(
             SpanType.PRIORITIZATION,
             parent_span_id=loop_span.span_id,
@@ -502,9 +649,14 @@ class PipelineOrchestrator:
         rca_id,
         trace,
         loop_span,
+        claim_token,
     ) -> None:
         c = self._container
-        c.session_store.update_state(rca_id, RcaSessionState.EVIDENCE_COLLECTION)
+        c.session_store.update_state(
+            rca_id,
+            RcaSessionState.EVIDENCE_COLLECTION,
+            claim_token=claim_token,
+        )
         new_hypotheses = [h for h in active_hypotheses if h.hypothesis_id not in state.evidence_map]
         with trace.span(
             SpanType.EVIDENCE_COLLECTION,
@@ -522,6 +674,11 @@ class PipelineOrchestrator:
                     existing_evidence_map=state.evidence_map,
                     all_hypotheses=state.hypotheses,
                     cancel_checker=self._check_shutdown,
+                    save_lease=lambda effect_name: self._side_effect_lease(
+                        rca_id,
+                        claim_token,
+                        effect_name,
+                    ),
                 )
                 state.evidence_map.update(ev_summary.evidence_map)
                 state.evidence_failed_ids.update(ev_summary.failed_ids)
@@ -541,9 +698,14 @@ class PipelineOrchestrator:
         rca_id,
         trace,
         loop_span,
+        claim_token,
     ) -> ValidationResult:
         c = self._container
-        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_VALIDATION)
+        c.session_store.update_state(
+            rca_id,
+            RcaSessionState.HYPOTHESIS_VALIDATION,
+            claim_token=claim_token,
+        )
         with trace.span(
             SpanType.VALIDATION,
             parent_span_id=loop_span.span_id,
@@ -583,6 +745,8 @@ class PipelineOrchestrator:
                 status=j.status.value,
                 confidence=j.confidence_score,
                 judgment_reasoning=j.reasoning[:500],
+                validated_fault_type=j.validated_fault_type.value,
+                validation_evidence_summary="\n".join(j.evidence_summary),
             )
             h = next(
                 (h for h in state.hypotheses if h.hypothesis_id == j.hypothesis_id),
@@ -591,6 +755,8 @@ class PipelineOrchestrator:
             if h:
                 h.status = j.status
                 h.confidence_score = j.confidence_score
+                h.validated_fault_type = j.validated_fault_type
+                h.judgment_reasoning = j.reasoning
 
         for j in state.all_judgments:
             if j.status != HypothesisStatus.REJECTED:
@@ -646,6 +812,7 @@ class PipelineOrchestrator:
         rca_id,
         trace,
         loop_span,
+        claim_token,
     ) -> _LoopAction:
         if not validation_result.all_rejected:
             return _LoopAction.PROCEED
@@ -687,7 +854,11 @@ class PipelineOrchestrator:
                 )
 
         c = self._container
-        c.session_store.update_state(rca_id, RcaSessionState.HYPOTHESIS_GENERATION)
+        c.session_store.update_state(
+            rca_id,
+            RcaSessionState.HYPOTHESIS_GENERATION,
+            claim_token=claim_token,
+        )
         with trace.span(
             SpanType.HYPOTHESIS_GENERATION,
             parent_span_id=loop_span.span_id,
@@ -863,12 +1034,18 @@ class PipelineOrchestrator:
         rca_id,
         start_time,
         trace,
+        claim_token,
+        attempt,
     ) -> bool:
         c = self._container
         store = c.session_store
         elapsed = int(time.monotonic() - start_time)
 
-        store.update_state(rca_id, RcaSessionState.REPORT_GENERATION)
+        store.update_state(
+            rca_id,
+            RcaSessionState.REPORT_GENERATION,
+            claim_token=claim_token,
+        )
         with trace.span(
             SpanType.REPORT,
             input_summary=(f"최적가설={'있음' if best_hypothesis else '없음'}, 확정={confirmed}"),
@@ -888,15 +1065,26 @@ class PipelineOrchestrator:
             s.output_summary = f"rca_id={rca_report.rca_id}, 신뢰도={rca_report.confidence_score}"
         logger.info("RCA report generated: %s", rca_report.rca_id)
 
-        report_s3_key = c.report_store.save(rca_report)
-        c.report_store.save_vectors(rca_report, scoping_result=scoping_result)
+        trace.check_cancelled()
+        report_s3_key = c.report_store.save(
+            rca_report,
+            claim_token=claim_token,
+            attempt=attempt,
+        )
+        trace.check_cancelled()
 
-        playbook = self._run_playbook(rca_report, scoping_result, trace)
+        playbook = self._run_playbook(
+            rca_report,
+            scoping_result,
+            trace,
+            claim_token=claim_token,
+        )
 
         with trace.span(
             SpanType.NOTIFICATION,
             input_summary=f"rca_id={rca_report.rca_id}",
         ) as s:
+            validated_fault_type = best_hypothesis.validated_fault_type if best_hypothesis else FaultType.UNSUPPORTED
             notification = build_notification(
                 rca_report,
                 report_s3_key,
@@ -904,7 +1092,7 @@ class PipelineOrchestrator:
                 playbook=playbook,
                 alarm=alarm,
                 selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
-                fault_type=(best_hypothesis.fault_type if best_hypothesis else FaultType.UNSUPPORTED),
+                fault_type=validated_fault_type,
             )
 
             completed = store.mark_completed(
@@ -912,16 +1100,22 @@ class PipelineOrchestrator:
                 root_cause=rca_report.root_cause,
                 confirmed=confirmed,
                 selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
-                fault_type=(best_hypothesis.fault_type if best_hypothesis else FaultType.UNSUPPORTED),
+                fault_type=validated_fault_type,
                 completion_notification=notification,
+                report_s3_key=report_s3_key,
+                claim_token=claim_token,
             )
             if not completed:
                 s.output_summary = "완료 상태 및 알림 저장 실패"
                 return False
+            c.report_store.save_vectors(rca_report, scoping_result=scoping_result)
             if not c.notification.send(notification):
                 s.output_summary = "완료 알림 전송 대기"
                 return False
-            if not store.mark_completion_notified(rca_report.rca_id):
+            if not store.mark_completion_notified(
+                rca_report.rca_id,
+                claim_token=claim_token,
+            ):
                 s.output_summary = "완료 알림 전송 상태 저장 실패"
                 return False
             s.output_summary = f"소요시간={elapsed}초"
@@ -933,7 +1127,14 @@ class PipelineOrchestrator:
         )
         return True
 
-    def _run_playbook(self, rca_report, scoping_result, trace) -> Playbook | None:
+    def _run_playbook(
+        self,
+        rca_report,
+        scoping_result,
+        trace,
+        *,
+        claim_token: str,
+    ) -> Playbook | None:
         c = self._container
         playbook_span = trace.start_span(
             SpanType.PLAYBOOK,
@@ -947,7 +1148,12 @@ class PipelineOrchestrator:
                 scoping_result=scoping_result,
                 s3_vectors_client=c.s3_vectors_client,
             )
-            c.playbook_store.save(playbook, scoping_result=scoping_result)
+            with self._side_effect_lease(
+                rca_report.rca_id,
+                claim_token,
+                "playbook",
+            ):
+                c.playbook_store.save(playbook, scoping_result=scoping_result)
             trace.end_span(
                 playbook_span,
                 output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),
@@ -971,6 +1177,8 @@ class PipelineOrchestrator:
                 playbook.failure_type,
             )
             return playbook
+        except (SessionCancelledError, SideEffectLeaseUnavailableError):
+            raise
         except Exception:
             logger.exception("Playbook generation failed, continuing pipeline")
             trace.end_span(

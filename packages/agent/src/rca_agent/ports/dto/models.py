@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class RcaSessionState(StrEnum):
@@ -42,6 +42,12 @@ class FaultType(StrEnum):
     HIGH_MEMORY = "HIGH_MEMORY"
     SLOW_QUERY = "SLOW_QUERY"
     UNSUPPORTED = "UNSUPPORTED"
+
+
+class VerificationStatus(StrEnum):
+    NORMALIZED = "NORMALIZED"
+    FAILED = "FAILED"
+    PENDING = "PENDING"
 
 
 class AlarmTrigger(BaseModel):
@@ -146,6 +152,8 @@ class Hypothesis(BaseModel):
     required_evidence: list[str] = Field(default_factory=list)
     referenced_playbook_id: str | None = None
     fault_type: FaultType = FaultType.UNSUPPORTED
+    validated_fault_type: FaultType = FaultType.UNSUPPORTED
+    judgment_reasoning: str = ""
     status: HypothesisStatus = HypothesisStatus.PENDING
     tree_id: str = ""
     parent_id: str | None = None
@@ -181,6 +189,7 @@ class ValidationJudgment(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
     evidence_summary: list[str] = Field(default_factory=list)
+    validated_fault_type: FaultType = FaultType.UNSUPPORTED
 
 
 class ValidationResult(BaseModel):
@@ -265,10 +274,13 @@ class RemediationResult(BaseModel):
 class RemediationContext(BaseModel):
     rca_id: str
     state: RcaSessionState
+    alarm_name: str = ""
+    region: str = "us-east-1"
     root_cause: str = ""
     confirmed: bool = False
     selected_hypothesis_id: str = ""
     fault_type: FaultType = FaultType.UNSUPPORTED
+    validated_fault_type: FaultType = FaultType.UNSUPPORTED
     validated_root_cause: str = ""
     evidence_summary: str = ""
     remediation_status: str = ""
@@ -281,14 +293,22 @@ class RemediationContext(BaseModel):
 
 class VerificationResult(BaseModel):
     rca_id: str
-    metrics_normalized: bool = False
+    status: VerificationStatus
     verification_summary: str = ""
     remaining_issues: list[str] = Field(default_factory=list)
 
+    @computed_field
+    @property
+    def metrics_normalized(self) -> bool:
+        return self.status is VerificationStatus.NORMALIZED
+
 
 class AlarmContext(BaseModel):
-    """Minimal alarm metric context carried in the RCA notification so the
-    remediation agent can pick verification metrics without a session lookup."""
+    """Alarm context carried in the RCA notification.
+
+    Verification uses only alarm_name to load the authoritative CloudWatch
+    definition. The remaining fields are informational notification context.
+    """
 
     alarm_name: str = ""
     region: str = "us-east-1"
@@ -303,6 +323,7 @@ class AlarmContext(BaseModel):
 
 class NotificationMessage(BaseModel):
     rca_id: str
+    publication_id: str = ""
     root_cause_summary: str
     severity: str
     report_s3_key: str = ""
@@ -314,6 +335,7 @@ class NotificationMessage(BaseModel):
     selected_hypothesis_id: str = ""
     fault_type: FaultType = FaultType.UNSUPPORTED
     alarm_context: AlarmContext | None = None
+    verification_status: VerificationStatus = VerificationStatus.PENDING
     # SNS routing attribute — remediation queue subscribes to "rca_complete"
     # only, so remediation-result notifications never loop back.
     event_type: str = "rca_complete"
@@ -326,6 +348,15 @@ class CompletionHandoff(BaseModel):
     notification: NotificationMessage | None = None
 
 
+class RemediationHandoff(BaseModel):
+    rca_id: str
+    remediation_status: str = ""
+    publication_status: str = ""
+    notification: NotificationMessage | None = None
+    result: RemediationResult | None = None
+    verification: VerificationResult | None = None
+
+
 class RcaSession(BaseModel):
     rca_id: str
     idempotency_key: str
@@ -336,3 +367,6 @@ class RcaSession(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     ttl: int = 0
+    claim_token: str = ""
+    receive_count: int = 0
+    message_id: str = ""

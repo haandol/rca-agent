@@ -36,11 +36,21 @@ class S3ReportStore(ReportStorePort):
     def _vectors_enabled(self) -> bool:
         return bool(S3_VECTOR_BUCKET_NAME and self._s3v)
 
-    def save(self, report: RcaReport) -> str:
+    def save(
+        self,
+        report: RcaReport,
+        *,
+        claim_token: str | None = None,
+        attempt: int | None = None,
+    ) -> str:
         if not S3_REPORT_BUCKET or self._s3 is None:
             logger.info("S3 report bucket not configured, skipping upload")
             return ""
-        key = f"reports/{ENGINE}/{report.rca_id}.md"
+        if claim_token:
+            attempt_segment = f"attempt-{attempt or 1}-{claim_token}"
+            key = f"reports/{ENGINE}/{report.rca_id}/{attempt_segment}/report.md"
+        else:
+            key = f"reports/{ENGINE}/{report.rca_id}.md"
         body = _render_markdown(report)
         try:
             self._s3.put_object(Bucket=S3_REPORT_BUCKET, Key=key, Body=body, ContentType="text/markdown")

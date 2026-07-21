@@ -114,7 +114,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
         ),
         (
             VALIDATION_USER_PROMPT_TEMPLATE,
-            {"description", "category", "previous_confidence", "evidence_text"},
+            {"description", "evidence_text"},
         ),
         (
             BRANCHING_USER_PROMPT_TEMPLATE,
@@ -179,7 +179,6 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
             VERIFICATION_USER_PROMPT_TEMPLATE,
             {
                 "alarm_name",
-                "region",
                 "namespace",
                 "metric_name",
                 "dimensions",
@@ -187,6 +186,10 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "period",
                 "threshold",
                 "comparison_operator",
+                "evaluation_periods",
+                "datapoints_to_alarm",
+                "server_status",
+                "server_evaluation",
                 "remediation_summary",
                 "seconds_since_remediation",
             },

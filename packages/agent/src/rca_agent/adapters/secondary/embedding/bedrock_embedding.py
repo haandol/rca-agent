@@ -5,6 +5,7 @@ import logging
 
 import boto3
 
+from rca_agent.config.aws_sdk import SIDE_EFFECT_AWS_CLIENT_CONFIG
 from rca_agent.config.settings import BEDROCK_EMBEDDING_MODEL_ID, BEDROCK_REGION
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 
@@ -18,7 +19,11 @@ class BedrockEmbeddingAdapter(EmbeddingPort):
     @property
     def client(self):
         if self._client is None:
-            self._client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+            self._client = boto3.client(
+                "bedrock-runtime",
+                region_name=BEDROCK_REGION,
+                config=SIDE_EFFECT_AWS_CLIENT_CONFIG,
+            )
         return self._client
 
     def _embed_texts(self, texts: list[str], *, input_type: str = "search_document") -> list[list[float]]:

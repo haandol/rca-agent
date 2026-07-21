@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import structlog
+from structlog.testing import capture_logs
 
 from cc_headless.ports.dto.models import CcResult
 from cc_headless.ports.interfaces.session_store import ClaimDisposition, SessionClaim, SessionOwnershipCheckError
@@ -47,7 +48,10 @@ def _container(runner):
         path = artifact_dir / "playbook.json"
         return json.loads(path.read_text()) if path.is_file() else None
 
-    playbook_store = SimpleNamespace(load_playbook=Mock(side_effect=_load_playbook), save_to_s3_vectors=Mock())
+    playbook_store = SimpleNamespace(
+        load_playbook=Mock(side_effect=_load_playbook),
+        save_to_s3_vectors=Mock(return_value=True),
+    )
     return SimpleNamespace(
         session_store=store,
         report_store=report_store,
@@ -606,6 +610,74 @@ def test_notification_failure_does_not_finalize_completed_session(monkeypatch, t
     container.report_store.send_notification.assert_called_once()
     container.session_store.mark_failed.assert_called_once()
     container.session_store.mark_completed.assert_not_called()
+
+
+def test_playbook_save_false_releases_lease_and_keeps_message_for_redelivery(monkeypatch, tmp_path):
+    class ReportWriter:
+        def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
+            _write_required_report_artifacts(
+                artifact_dir_for_token(execution_token),
+                _valid_report("Connection leak"),
+            )
+            return CcResult(True, "complete", "{}")
+
+    container = _container(ReportWriter())
+    container.playbook_store.save_to_s3_vectors.return_value = False
+    _patch_runtime(monkeypatch, tmp_path)
+
+    with capture_logs() as logs:
+        result = PipelineOrchestrator(container).process_message(json.dumps(ALARM_DATA))
+
+    assert result is False
+    failed_rca_id = container.session_store.mark_failed.call_args.args[0]
+    container.session_store.release_side_effect_lease.assert_called_once_with(
+        failed_rca_id,
+        claim_token=CLAIM_TOKEN,
+        lease_token="lease-token",
+    )
+    container.session_store.mark_failed.assert_called_once_with(
+        failed_rca_id,
+        "Unhandled pipeline exception",
+        claim_token=CLAIM_TOKEN,
+    )
+    container.report_store.save_report.assert_not_called()
+    container.report_store.send_notification.assert_not_called()
+    container.session_store.mark_completed.assert_not_called()
+    assert all(entry["event"] != "playbook_saved" for entry in logs)
+
+
+def test_playbook_save_exception_releases_lease_and_keeps_message_for_redelivery(monkeypatch, tmp_path):
+    class ReportWriter:
+        def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
+            _write_required_report_artifacts(
+                artifact_dir_for_token(execution_token),
+                _valid_report("Connection leak"),
+            )
+            return CcResult(True, "complete", "{}")
+
+    container = _container(ReportWriter())
+    container.playbook_store.save_to_s3_vectors.side_effect = RuntimeError("S3 Vectors unavailable")
+    _patch_runtime(monkeypatch, tmp_path)
+
+    with capture_logs() as logs:
+        result = PipelineOrchestrator(container).process_message(json.dumps(ALARM_DATA))
+
+    assert result is False
+    failed_rca_id = container.session_store.mark_failed.call_args.args[0]
+    container.session_store.release_side_effect_lease.assert_called_once_with(
+        failed_rca_id,
+        claim_token=CLAIM_TOKEN,
+        lease_token="lease-token",
+    )
+    container.session_store.mark_failed.assert_called_once_with(
+        failed_rca_id,
+        "Unhandled pipeline exception",
+        claim_token=CLAIM_TOKEN,
+    )
+    container.report_store.save_report.assert_not_called()
+    container.report_store.send_notification.assert_not_called()
+    container.session_store.mark_completed.assert_not_called()
+    assert all(entry["event"] != "playbook_saved" for entry in logs)
 
 
 def test_terminated_session_does_not_publish_artifacts(monkeypatch, tmp_path):

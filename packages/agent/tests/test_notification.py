@@ -1,12 +1,12 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from rca_agent.ports.dto.models import NotificationMessage, RcaReport
-from rca_agent.services.notification import build_notification, send_notification
-from rca_agent.services.remediation_pipeline import (
-    _alarm_for_verification,
-    _parse_alarm_context,
+from rca_agent.ports.dto.models import (
+    NotificationMessage,
+    RcaReport,
+    VerificationStatus,
 )
+from rca_agent.services.notification import build_notification, send_notification
 
 
 def _make_report(confirmed=True) -> RcaReport:
@@ -56,41 +56,7 @@ class TestBuildNotification:
         assert msg.alarm_context is not None
         assert msg.alarm_context.metric_name == "DatabaseConnections"
         assert msg.alarm_context.threshold == 30.0
-
-    def test_alarm_context_preserves_complete_metric_query(self):
-        from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger
-
-        alarm = AlarmPayload(
-            alarm_name="Healthcare-RdsHighConnections",
-            trigger=AlarmTrigger(
-                metric_name="DatabaseConnections",
-                namespace="AWS/RDS",
-                dimensions={
-                    "DBInstanceIdentifier": "healthcare-db",
-                    "Role": "writer",
-                },
-                statistic="Maximum",
-                period=60,
-                threshold=30.0,
-                comparison_operator="GreaterThanThreshold",
-            ),
-        )
-
-        message = build_notification(
-            _make_report(confirmed=True),
-            "reports/rca-1.md",
-            600,
-            alarm=alarm,
-        )
-        context = _parse_alarm_context(message.model_dump())
-        verification_alarm = _alarm_for_verification(context)
-
-        assert verification_alarm.region == alarm.region
-        assert verification_alarm.trigger is not None
-        assert verification_alarm.trigger.dimensions == alarm.trigger.dimensions
-        assert verification_alarm.trigger.statistic == "Maximum"
-        assert verification_alarm.trigger.period == 60
-        assert verification_alarm.trigger.comparison_operator == "GreaterThanThreshold"
+        assert msg.verification_status is VerificationStatus.PENDING
 
 
 class TestSendNotification:
@@ -100,7 +66,13 @@ class TestSendNotification:
 
     @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
     def test_publishes_to_sns(self):
-        msg = NotificationMessage(rca_id="r-1", root_cause_summary="Memory leak", severity="high")
+        msg = NotificationMessage(
+            rca_id="r-1",
+            root_cause_summary="Memory leak",
+            severity="high",
+            verification_status=VerificationStatus.FAILED,
+            event_type="remediation_complete",
+        )
         mock_sns = MagicMock()
 
         result = send_notification(msg, sns_client=mock_sns)
@@ -111,6 +83,7 @@ class TestSendNotification:
         assert "rca-topic" in call_kwargs["TopicArn"]
         body = json.loads(call_kwargs["Message"])
         assert body["rca_id"] == "r-1"
+        assert body["verification_status"] == "FAILED"
 
     @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
     def test_retries_on_failure(self):

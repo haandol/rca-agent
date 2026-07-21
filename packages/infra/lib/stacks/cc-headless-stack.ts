@@ -133,6 +133,9 @@ export class CcHeadlessStack extends cdk.Stack {
         S3_REPORT_BUCKET: props.reportBucket,
         SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
         HEALTHCARE_SERVICE_HOST: props.healthcareServiceHost,
+        HEALTHCARE_ECS_CLUSTER_NAME: `${ns}Healthcare`,
+        HEALTHCARE_ECS_SERVICE_NAME: `${ns}Healthcare`,
+        HEALTHCARE_RDS_INSTANCE_IDENTIFIER: `${ns.toLowerCase()}-postgres`,
       },
       secrets: {
         GITHUB_PERSONAL_ACCESS_TOKEN:

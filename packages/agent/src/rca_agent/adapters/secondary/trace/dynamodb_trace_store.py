@@ -18,6 +18,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     SessionCancelledError,
 )
 from rca_agent.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from rca_agent.ports.interfaces.session_store import SessionOwnershipCheckError
 
 if TYPE_CHECKING:
     from rca_agent.ports.dto.models import Hypothesis
@@ -112,8 +113,17 @@ class Span:
 
 
 class TraceStore:
-    def __init__(self, rca_id: str, *, dynamodb_client=None):
+    def __init__(
+        self,
+        rca_id: str,
+        *,
+        claim_token: str | None = None,
+        attempt: int | None = None,
+        dynamodb_client=None,
+    ):
         self._rca_id = rca_id
+        self._claim_token = claim_token
+        self._attempt = attempt
         self._dynamodb = dynamodb_client
         self._enabled = bool(DYNAMODB_TABLE_NAME and dynamodb_client)
 
@@ -124,14 +134,23 @@ class TraceStore:
             resp = self._dynamodb.get_item(
                 TableName=DYNAMODB_TABLE_NAME,
                 Key={"PK": _pk(self._rca_id), "SK": _session_sk()},
-                ProjectionExpression="#st",
+                ConsistentRead=True,
+                ProjectionExpression="#st, claim_token",
                 ExpressionAttributeNames={"#st": "state"},
             )
-            state = resp.get("Item", {}).get("state", {}).get("S", "")
-            if state in _TERMINAL_STATES:
+            item = resp.get("Item")
+            if not item:
+                raise SessionOwnershipCheckError(f"{self._rca_id}: session item is missing")
+            state = item.get("state", {}).get("S", "")
+            owner = item.get("claim_token", {}).get("S")
+            if state in _TERMINAL_STATES or (self._claim_token and owner != self._claim_token):
                 raise SessionCancelledError(self._rca_id)
-        except ClientError:
+        except (SessionCancelledError, SessionOwnershipCheckError):
+            raise
+        except ClientError as exc:
             logger.exception("Failed to check cancellation for %s", self._rca_id)
+            if self._claim_token:
+                raise SessionOwnershipCheckError(self._rca_id) from exc
 
     # ── Span lifecycle ──────────────────────────────────────────────
 
@@ -228,11 +247,15 @@ class TraceStore:
                         "description": {"S": h.description[:_SUMMARY_MAX_LEN]},
                         "category": {"S": h.category.value},
                         "fault_type": {"S": h.fault_type.value},
+                        "validated_fault_type": {"S": h.validated_fault_type.value},
                         "confidence_score": {"N": str(h.confidence_score)},
                         "status": {"S": h.status.value},
                         "required_evidence": {"L": [{"S": e} for e in h.required_evidence]},
                         "evidence_summary": {"S": ""},
-                        "judgment_reasoning": {"S": ""},
+                        "validation_evidence_summary": {"S": ""},
+                        "judgment_reasoning": {
+                            "S": h.judgment_reasoning[:_SUMMARY_MAX_LEN],
+                        },
                         "created_at": {"S": now},
                         "updated_at": {"S": now},
                         "ttl": {"N": str(ttl)},
@@ -246,6 +269,11 @@ class TraceStore:
             if h.referenced_playbook_id:
                 item["PutRequest"]["Item"]["referenced_playbook_id"] = {"S": h.referenced_playbook_id}
             items.append(item)
+
+        if self._claim_token:
+            writes = [{"Put": request["PutRequest"] | {"TableName": DYNAMODB_TABLE_NAME}} for request in items]
+            self._transact_claimed(writes)
+            return
 
         for i in range(0, len(items), _BATCH_WRITE_CHUNK):
             chunk = items[i : i + _BATCH_WRITE_CHUNK]
@@ -276,6 +304,18 @@ class TraceStore:
         }
         if attr_names:
             kwargs["ExpressionAttributeNames"] = attr_names
+        if self._claim_token:
+            update = {
+                "TableName": DYNAMODB_TABLE_NAME,
+                "Key": kwargs["Key"],
+                "UpdateExpression": kwargs["UpdateExpression"],
+                "ConditionExpression": "attribute_exists(SK)",
+                "ExpressionAttributeValues": attr_values,
+            }
+            if attr_names:
+                update["ExpressionAttributeNames"] = attr_names
+            self._transact_claimed([{"Update": update}])
+            return
         try:
             self._dynamodb.update_item(**kwargs)
         except ClientError:
@@ -288,6 +328,8 @@ class TraceStore:
         status: str,
         confidence: float | None = None,
         judgment_reasoning: str = "",
+        validated_fault_type: str | None = None,
+        validation_evidence_summary: str | None = None,
     ) -> None:
         now = datetime.now(UTC).isoformat()
         set_parts = ["#st = :status", "updated_at = :now", "judgment_reasoning = :jr"]
@@ -300,6 +342,14 @@ class TraceStore:
             set_parts.append("judgment_confidence = :jc")
             set_parts.append("confidence_score = :jc")
             attr_values[":jc"] = {"N": str(confidence)}
+        if validated_fault_type is not None:
+            set_parts.append("validated_fault_type = :vft")
+            attr_values[":vft"] = {"S": validated_fault_type}
+        if validation_evidence_summary is not None:
+            set_parts.append("validation_evidence_summary = :ves")
+            attr_values[":ves"] = {
+                "S": validation_evidence_summary[:_SUMMARY_MAX_LEN],
+            }
 
         self._update_hypothesis_item(
             hypothesis_id,
@@ -377,11 +427,20 @@ class TraceStore:
             "output_summary": {"S": ""},
             "ttl": {"N": str(ttl)},
         }
+        if self._claim_token:
+            item["claim_token"] = {"S": self._claim_token}
+        if self._attempt is not None:
+            item["attempt"] = {"N": str(self._attempt)}
         if span.parent_span_id:
             item["parent_span_id"] = {"S": span.parent_span_id}
         if span.loop_index is not None:
             item["loop_index"] = {"N": str(span.loop_index)}
 
+        if self._claim_token:
+            self._transact_claimed(
+                [{"Put": {"TableName": DYNAMODB_TABLE_NAME, "Item": item}}],
+            )
+            return
         try:
             self._dynamodb.put_item(TableName=DYNAMODB_TABLE_NAME, Item=item)
         except ClientError:
@@ -410,6 +469,24 @@ class TraceStore:
             expr_parts.append("metadata = :meta")
             attr_values[":meta"] = {"M": _serialize_metadata(span.metadata)}
 
+        if self._claim_token:
+            self._transact_claimed(
+                [
+                    {
+                        "Update": {
+                            "TableName": DYNAMODB_TABLE_NAME,
+                            "Key": {
+                                "PK": _pk(span.rca_id),
+                                "SK": _span_sk(span.span_id),
+                            },
+                            "UpdateExpression": "SET " + ", ".join(expr_parts),
+                            "ConditionExpression": "attribute_exists(SK)",
+                            "ExpressionAttributeValues": attr_values,
+                        },
+                    }
+                ],
+            )
+            return
         try:
             self._dynamodb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
@@ -419,6 +496,36 @@ class TraceStore:
             )
         except ClientError:
             logger.exception("Failed to update span end %s", span.span_id)
+
+    def _claim_check(self) -> dict:
+        return {
+            "ConditionCheck": {
+                "TableName": DYNAMODB_TABLE_NAME,
+                "Key": {
+                    "PK": _pk(self._rca_id),
+                    "SK": _session_sk(),
+                },
+                "ConditionExpression": "attribute_exists(SK) AND claim_token = :claim",
+                "ExpressionAttributeValues": {
+                    ":claim": {"S": self._claim_token},
+                },
+            },
+        }
+
+    def _transact_claimed(self, writes: list[dict]) -> None:
+        if not self._enabled or not self._claim_token:
+            raise SessionOwnershipCheckError(f"{self._rca_id}: claimed trace store is unavailable")
+        try:
+            for index in range(0, len(writes), 24):
+                self._dynamodb.transact_write_items(
+                    TransactItems=[
+                        self._claim_check(),
+                        *writes[index : index + 24],
+                    ],
+                )
+        except ClientError as exc:
+            logger.exception("Claim-fenced trace write failed for %s", self._rca_id)
+            raise SessionOwnershipCheckError(self._rca_id) from exc
 
 
 def _serialize_metadata(meta: dict) -> dict:
@@ -487,11 +594,13 @@ def _deserialize_hypothesis(item: dict) -> dict:
         "description": item.get("description", {}).get("S", ""),
         "category": item.get("category", {}).get("S", ""),
         "fault_type": item.get("fault_type", {}).get("S", "UNSUPPORTED"),
+        "validated_fault_type": item.get("validated_fault_type", {}).get("S", "UNSUPPORTED"),
         "confidence_score": float(item.get("confidence_score", {}).get("N", "0")),
         "status": item.get("status", {}).get("S", "PENDING"),
         "required_evidence": required,
         "referenced_playbook_id": item.get("referenced_playbook_id", {}).get("S"),
         "evidence_summary": item.get("evidence_summary", {}).get("S", ""),
+        "validation_evidence_summary": item.get("validation_evidence_summary", {}).get("S", ""),
         "judgment_reasoning": item.get("judgment_reasoning", {}).get("S", ""),
         "judgment_confidence": float(item["judgment_confidence"]["N"]) if "judgment_confidence" in item else None,
         "created_at": item.get("created_at", {}).get("S", ""),

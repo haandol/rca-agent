@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
+import time
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from rca_agent.agent_factory import create_evidence_collection_agent  # noqa: F401
+from rca_agent.config.aws_sdk import EVIDENCE_SAVE_BASE_DELAY_SECONDS
 from rca_agent.config.settings import (
     EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
     S3_EVIDENCE_BUCKET,
@@ -16,6 +16,7 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import Hypothesis, HypothesisStatus, ScopingResult
 from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
 from rca_agent.utils.retry import retry_with_backoff
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -150,11 +151,10 @@ def collect_evidence(
     scoping_result: ScopingResult,
     *,
     mcp_clients: list[MCPClient] | None = None,
-    timeout_seconds: int = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
+    timeout_seconds: float = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
     hypotheses_by_id: dict[str, Hypothesis] | None = None,
     evidence_map: dict[str, str] | None = None,
 ) -> EvidenceCollectionResult:
-    agent = create_evidence_collection_agent(mcp_clients=mcp_clients)
     user_prompt = _build_user_prompt(
         hypothesis,
         scoping_result,
@@ -168,15 +168,18 @@ def collect_evidence(
     )
 
     output: EvidenceOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except FuturesTimeoutError:
-            logger.warning("Evidence collection timed out for %s", hypothesis.hypothesis_id)
-            future.cancel()
-        except Exception:
-            logger.exception("Evidence collection failed for %s", hypothesis.hypothesis_id)
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_agent(
+                create_evidence_collection_agent(mcp_clients=mcp_clients),
+                user_prompt,
+            ),
+            timeout_seconds,
+        )
+    except TimeoutError:
+        logger.warning("Evidence collection timed out for %s", hypothesis.hypothesis_id)
+    except Exception:
+        logger.exception("Evidence collection failed for %s", hypothesis.hypothesis_id)
 
     if output is None:
         return EvidenceCollectionResult(
@@ -208,13 +211,14 @@ def run_evidence_collection(
     scoping_result: ScopingResult,
     *,
     mcp_clients: list[MCPClient] | None = None,
-    timeout_seconds: int = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
+    timeout_seconds: float = EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
     rca_id: str = "",
     trace=None,
     s3_client=None,
     existing_evidence_map: dict[str, str] | None = None,
     all_hypotheses: list[Hypothesis] | None = None,
     cancel_checker=None,
+    save_lease=None,
 ) -> EvidenceCollectionSummary:
     lookup_map: dict[str, str] = {}
     if existing_evidence_map:
@@ -223,15 +227,17 @@ def run_evidence_collection(
     failed_ids: set[str] = set()
     source = all_hypotheses if all_hypotheses else hypotheses
     hypotheses_by_id = {h.hypothesis_id: h for h in source}
+    deadline = time.monotonic() + max(0, timeout_seconds)
 
     for h in hypotheses:
         if cancel_checker is not None:
             cancel_checker()
+        remaining_seconds = max(0.0, deadline - time.monotonic())
         result = collect_evidence(
             h,
             scoping_result,
             mcp_clients=mcp_clients,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=remaining_seconds,
             hypotheses_by_id=hypotheses_by_id,
             evidence_map=lookup_map,
         )
@@ -246,7 +252,21 @@ def run_evidence_collection(
             trace.update_hypothesis_evidence(h.hypothesis_id, evidence_summary=result.summary)
 
         if rca_id and not result.failed:
-            _save_single_evidence_to_s3(rca_id, h.hypothesis_id, result.full_evidence, s3_client=s3_client)
+            if save_lease is None:
+                _save_single_evidence_to_s3(
+                    rca_id,
+                    h.hypothesis_id,
+                    result.full_evidence,
+                    s3_client=s3_client,
+                )
+            else:
+                with save_lease(f"evidence:{h.hypothesis_id}"):
+                    _save_single_evidence_to_s3(
+                        rca_id,
+                        h.hypothesis_id,
+                        result.full_evidence,
+                        s3_client=s3_client,
+                    )
 
     return EvidenceCollectionSummary(evidence_map=new_evidence_map, failed_ids=failed_ids)
 
@@ -258,7 +278,7 @@ def _save_single_evidence_to_s3(
     *,
     s3_client=None,
     max_retries: int = S3_EVIDENCE_MAX_RETRIES,
-    base_delay: float = 1.0,
+    base_delay: float = EVIDENCE_SAVE_BASE_DELAY_SECONDS,
 ) -> str | None:
     if not S3_EVIDENCE_BUCKET or s3_client is None:
         return None
@@ -291,7 +311,7 @@ def save_evidence_to_s3(
     *,
     s3_client=None,
     max_retries: int = S3_EVIDENCE_MAX_RETRIES,
-    base_delay: float = 1.0,
+    base_delay: float = EVIDENCE_SAVE_BASE_DELAY_SECONDS,
 ) -> list[str]:
     if not S3_EVIDENCE_BUCKET or s3_client is None:
         logger.info("S3 evidence bucket not configured, skipping upload")

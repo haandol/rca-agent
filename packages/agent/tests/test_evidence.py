@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from time import perf_counter
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +14,7 @@ from rca_agent.ports.dto.models import (
     HypothesisStatus,
     ScopingResult,
 )
+from rca_agent.ports.interfaces.session_store import SideEffectLeaseUnavailableError
 from rca_agent.services.evidence import (
     EVIDENCE_FAILED_SENTINEL,
     EvidenceCollectionResult,
@@ -297,18 +300,25 @@ class TestCollectEvidence:
 
     @patch("rca_agent.services.evidence.create_evidence_collection_agent")
     def test_handles_timeout(self, mock_create, hypothesis, scoping_result):
-        import time as _time
+        state = []
 
         def slow_agent(prompt, **kwargs):
-            _time.sleep(5)
+            state.append("started")
+            time.sleep(0.25)
+            state.append("finished")
 
         mock_agent = MagicMock(side_effect=slow_agent)
         mock_create.return_value = mock_agent
 
-        result = collect_evidence(hypothesis, scoping_result, timeout_seconds=1)
+        started = perf_counter()
+        result = collect_evidence(hypothesis, scoping_result, timeout_seconds=0.04)
+        elapsed = perf_counter() - started
 
+        assert elapsed < 0.2
         assert result.failed
         assert result.summary == EVIDENCE_FAILED_SENTINEL
+        time.sleep(0.1)
+        assert state == ["started"]
 
     @patch("rca_agent.services.evidence.create_evidence_collection_agent")
     def test_handles_agent_exception(self, mock_create, hypothesis, scoping_result):
@@ -450,6 +460,43 @@ class TestRunEvidenceCollection:
 
     @patch("rca_agent.services.evidence._save_single_evidence_to_s3")
     @patch("rca_agent.services.evidence.collect_evidence")
+    def test_does_not_save_when_claim_is_lost_before_s3_write(
+        self,
+        mock_collect,
+        mock_s3_save,
+        scoping_result,
+    ):
+        hypothesis = Hypothesis(
+            hypothesis_id="h-1",
+            description="Hypothesis 1",
+            category=HypothesisCategory.DEPLOYMENT,
+            confidence_score=0.7,
+            tree_id="tree-1",
+        )
+        mock_collect.return_value = EvidenceCollectionResult(
+            hypothesis_id="h-1",
+            summary="Evidence summary",
+            full_evidence="Full evidence text",
+            evidence_types=["metrics"],
+        )
+        lease = MagicMock()
+        lease.__enter__.side_effect = SideEffectLeaseUnavailableError("claim lost")
+        save_lease = MagicMock(return_value=lease)
+
+        with pytest.raises(SideEffectLeaseUnavailableError):
+            run_evidence_collection(
+                [hypothesis],
+                scoping_result,
+                rca_id="rca-123",
+                s3_client=MagicMock(),
+                save_lease=save_lease,
+            )
+
+        save_lease.assert_called_once_with("evidence:h-1")
+        mock_s3_save.assert_not_called()
+
+    @patch("rca_agent.services.evidence._save_single_evidence_to_s3")
+    @patch("rca_agent.services.evidence.collect_evidence")
     def test_skips_s3_for_failed_evidence(self, mock_collect, mock_s3_save, scoping_result):
         h1 = Hypothesis(
             hypothesis_id="h-1",
@@ -527,7 +574,41 @@ class TestRunEvidenceCollection:
 
         _, kwargs = mock_collect.call_args
         assert kwargs["mcp_clients"] is mcp_clients
-        assert kwargs["timeout_seconds"] == 30
+        assert 0 < kwargs["timeout_seconds"] <= 30
+
+    @patch("rca_agent.services.evidence.create_evidence_collection_agent")
+    def test_uses_one_deadline_across_multiple_hypotheses(
+        self,
+        mock_create,
+        scoping_result,
+    ):
+        hypotheses = [
+            Hypothesis(
+                hypothesis_id=f"h-{index}",
+                description=f"Hypothesis {index}",
+                category=HypothesisCategory.DEPLOYMENT,
+                confidence_score=0.5,
+                tree_id="tree-1",
+            )
+            for index in range(3)
+        ]
+
+        def slow_agent(prompt, **kwargs):  # noqa: ARG001
+            time.sleep(0.2)
+
+        mock_create.return_value = MagicMock(side_effect=slow_agent)
+
+        started = perf_counter()
+        summary = run_evidence_collection(
+            hypotheses,
+            scoping_result,
+            timeout_seconds=0.05,
+        )
+        elapsed = perf_counter() - started
+
+        assert elapsed < 0.2
+        assert summary.failed_ids == {"h-0", "h-1", "h-2"}
+        assert mock_create.call_count == 1
 
     @patch("rca_agent.services.evidence.collect_evidence")
     def test_passes_existing_evidence_map_for_parent_lookup(self, mock_collect, scoping_result):

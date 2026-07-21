@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from rca_agent import remediation_main
+from rca_agent.services.remediation_pipeline import RemediationPublicationContendedError
 
 
 class _SingleIterationEvent:
@@ -15,12 +16,19 @@ class _SingleIterationEvent:
         self._checks = 2
 
 
-def test_failed_consumer_processing_is_not_acked():
+def test_contended_publication_is_not_acked():
     consumer = MagicMock()
-    consumer.poll.return_value = [({"rca_id": "rca-1", "confirmed": True}, "receipt-1")]
+    consumer.poll.return_value = [
+        (
+            {"rca_id": "rca-1", "confirmed": True},
+            "receipt-1",
+            2,
+            "message-1",
+        )
+    ]
     container = MagicMock(queue_consumer=consumer)
     orchestrator = MagicMock()
-    orchestrator.process_notification.side_effect = RuntimeError("processing failed")
+    orchestrator.process_notification.side_effect = RemediationPublicationContendedError("publication in progress")
 
     with (
         patch.dict(

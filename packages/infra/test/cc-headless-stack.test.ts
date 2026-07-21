@@ -116,7 +116,7 @@ function taskRoleStatements(template: Template): IamStatement[] {
     );
 }
 
-test('CC task receives the Healthcare service host', () => {
+test('CC task receives the allowlisted Healthcare target identity', () => {
   const { ccHeadless } = synthesize();
 
   ccHeadless.hasResourceProperties('AWS::ECS::TaskDefinition', {
@@ -127,6 +127,18 @@ test('CC task receives the Healthcare service host', () => {
           {
             Name: 'HEALTHCARE_SERVICE_HOST',
             Value: 'healthcare.rcaagentdev.local',
+          },
+          {
+            Name: 'HEALTHCARE_ECS_CLUSTER_NAME',
+            Value: 'RcaAgentDevHealthcare',
+          },
+          {
+            Name: 'HEALTHCARE_ECS_SERVICE_NAME',
+            Value: 'RcaAgentDevHealthcare',
+          },
+          {
+            Name: 'HEALTHCARE_RDS_INSTANCE_IDENTIFIER',
+            Value: 'rcaagentdev-postgres',
           },
         ]),
       }),

@@ -1,3 +1,5 @@
+from threading import Event
+from time import perf_counter
 from unittest.mock import MagicMock
 
 from rca_agent.ports.dto.models import (
@@ -94,5 +96,24 @@ class TestRunPrioritization:
 
         result = run_prioritization(_make_scoping(), hyps, agent)
 
+        assert len(result.prioritized) == 3
+        assert result.prioritized[0].priority_rank == 1
+
+    def test_timeout_returns_fallback_without_waiting_for_worker(self):
+        hyps = _make_hypotheses(3)
+
+        def slow_agent(*args, **kwargs):  # noqa: ARG001
+            Event().wait(0.35)
+
+        started = perf_counter()
+        result = run_prioritization(
+            _make_scoping(),
+            hyps,
+            MagicMock(side_effect=slow_agent),
+            timeout_seconds=0,
+        )
+        elapsed = perf_counter() - started
+
+        assert elapsed < 0.15
         assert len(result.prioritized) == 3
         assert result.prioritized[0].priority_rank == 1

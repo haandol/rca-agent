@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from rca_agent.ports.dto.models import (
+    FaultType,
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
@@ -25,13 +28,21 @@ def _make_hypothesis(hid="h-1", confidence=0.5, required_evidence=None) -> Hypot
     )
 
 
-def _make_mock_agent(status: HypothesisStatus, confidence: float, reasoning: str = "test") -> MagicMock:
+def _make_mock_agent(
+    status: HypothesisStatus,
+    confidence: float,
+    reasoning: str = "test",
+    *,
+    evidence_summary: list[str] | None = None,
+    validated_fault_type: FaultType = FaultType.UNSUPPORTED,
+) -> MagicMock:
     output = ValidationOutput(
         judgment=_JudgmentItem(
             status=status,
             confidence_score=confidence,
             reasoning=reasoning,
-            evidence_summary=["evidence-1"],
+            evidence_summary=evidence_summary if evidence_summary is not None else ["evidence-1"],
+            validated_fault_type=validated_fault_type,
         )
     )
     mock_result = MagicMock()
@@ -68,6 +79,65 @@ class TestValidateHypothesis:
         assert judgment.hypothesis_id == "h-1"
         assert judgment.status == HypothesisStatus.CONFIRMED
         assert judgment.confidence_score == 0.9
+
+    def test_validation_type_overrides_initial_fault_type(self):
+        h = _make_hypothesis()
+        h.fault_type = FaultType.DB_CONNECTION_LEAK
+        agent = _make_mock_agent(
+            HypothesisStatus.CONFIRMED,
+            0.9,
+            evidence_summary=["CPU remained above 95%"],
+            validated_fault_type=FaultType.HIGH_CPU,
+        )
+
+        judgment = validate_hypothesis(h, "CPUUtilization=98%", agent)
+
+        assert h.fault_type == FaultType.DB_CONNECTION_LEAK
+        assert judgment.validated_fault_type == FaultType.HIGH_CPU
+
+    @pytest.mark.parametrize(
+        ("evidence_text", "evidence_summary", "evidence_failed"),
+        [
+            ("", ["CPU remained above 95%"], False),
+            ("CPUUtilization=98%", [], False),
+            ("CPUUtilization=98%", ["CPU remained above 95%"], True),
+        ],
+    )
+    def test_allowlisted_type_requires_evidence_summary_and_success(
+        self,
+        evidence_text,
+        evidence_summary,
+        evidence_failed,
+    ):
+        h = _make_hypothesis()
+        agent = _make_mock_agent(
+            HypothesisStatus.CONFIRMED,
+            0.9,
+            evidence_summary=evidence_summary,
+            validated_fault_type=FaultType.HIGH_CPU,
+        )
+
+        judgment = validate_hypothesis(
+            h,
+            evidence_text,
+            agent,
+            evidence_failed=evidence_failed,
+        )
+
+        assert judgment.validated_fault_type == FaultType.UNSUPPORTED
+
+    def test_allowlisted_type_requires_code_confirmed_status(self):
+        h = _make_hypothesis()
+        agent = _make_mock_agent(
+            HypothesisStatus.CONFIRMED,
+            0.5,
+            validated_fault_type=FaultType.HIGH_CPU,
+        )
+
+        judgment = validate_hypothesis(h, "CPUUtilization=98%", agent)
+
+        assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
+        assert judgment.validated_fault_type == FaultType.UNSUPPORTED
 
     def test_uses_structured_output(self):
         h = _make_hypothesis()
@@ -111,6 +181,7 @@ class TestValidateHypothesis:
         judgment = validate_hypothesis(h, "Evidence collection timed out or failed.", agent, evidence_failed=True)
 
         assert judgment.status == HypothesisStatus.CONFIRMED
+        assert judgment.validated_fault_type == FaultType.UNSUPPORTED
 
     def test_no_cap_when_evidence_succeeded(self):
         h = _make_hypothesis(required_evidence=["deployment history"])

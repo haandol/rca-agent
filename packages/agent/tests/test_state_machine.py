@@ -11,24 +11,44 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     VALID_TRANSITIONS,
     InvalidStateTransitionError,
     SessionCancelledError,
-    _validate_transition,
+)
+from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    _validate_transition as _validate_claimed_transition,
 )
 from rca_agent.ports.dto.models import (
+    FaultType,
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
-    RcaSessionState,
     TerminationDecision,
     TerminationReason,
 )
+from rca_agent.ports.interfaces.session_store import SessionOwnershipCheckError
 from rca_agent.services.evidence import EvidenceCollectionSummary
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
+CLAIM_TOKEN = "claim-current"
+
+
+def _validate_transition(rca_id: str, target: str, *, dynamodb_client=None) -> None:
+    _validate_claimed_transition(
+        rca_id,
+        target,
+        claim_token=CLAIM_TOKEN,
+        dynamodb_client=dynamodb_client,
+    )
+
+
 def _mock_ddb_state(state: str) -> MagicMock:
     ddb = MagicMock()
-    ddb.get_item.return_value = {"Item": {"state": {"S": state}}}
+    ddb.get_item.return_value = {
+        "Item": {
+            "state": {"S": state},
+            "claim_token": {"S": CLAIM_TOKEN},
+        }
+    }
     return ddb
 
 
@@ -177,21 +197,30 @@ class TestTerminalStateAbort:
 # ── No DDB skips validation ─────────────────────────────────────────────
 
 
-class TestNoDdbSkipsValidation:
-    def test_no_table_name_skips(self):
+class TestNoDdbFailsClosed:
+    def test_no_table_name_fails_closed(self):
         ddb = MagicMock()
-        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""):
+        with (
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", ""),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=ddb)
         ddb.get_item.assert_not_called()
 
-    def test_no_client_skips(self):
-        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
+    def test_no_client_fails_closed(self):
+        with (
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
             _validate_transition("rca-1", "SCOPING", dynamodb_client=None)
 
-    def test_no_item_in_ddb_skips(self):
+    def test_no_item_in_ddb_fails_closed(self):
         ddb = MagicMock()
         ddb.get_item.return_value = {}
-        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"):
+        with (
+            patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "t"),
+            pytest.raises(SessionOwnershipCheckError),
+        ):
             _validate_transition("rca-1", "ANYTHING", dynamodb_client=ddb)
 
 
@@ -375,21 +404,29 @@ class TestPipelineFinalizeBeforeReport:
         from rca_agent.ports.dto.models import (
             HypothesisGenerationResult,
             RcaReport,
-            RcaSession,
             ScopingResult,
             ValidationJudgment,
             ValidationResult,
         )
+        from rca_agent.ports.interfaces.session_store import ClaimDisposition, SessionClaim
         from rca_agent.services.pipeline import PipelineOrchestrator
 
         confirmed_h = _make_hypothesis("h-1", HypothesisStatus.PENDING, 0.95)
+        confirmed_h.fault_type = FaultType.DB_CONNECTION_LEAK
         pending_h = _make_hypothesis("h-2", HypothesisStatus.PENDING, 0.4)
         sr = ScopingResult(alarm_summary="test")
         hr = HypothesisGenerationResult(tree_id="tree-1", hypotheses=[confirmed_h, pending_h], scoping_result=sr)
         vr = ValidationResult(
             tree_id="tree-1",
             judgments=[
-                ValidationJudgment(hypothesis_id="h-1", status=HypothesisStatus.CONFIRMED, confidence_score=0.95),
+                ValidationJudgment(
+                    hypothesis_id="h-1",
+                    status=HypothesisStatus.CONFIRMED,
+                    confidence_score=0.95,
+                    reasoning="CPU evidence independently confirms saturation",
+                    evidence_summary=["CPU remained above 95%"],
+                    validated_fault_type=FaultType.HIGH_CPU,
+                ),
             ],
         )
         td = TerminationDecision(
@@ -398,8 +435,6 @@ class TestPipelineFinalizeBeforeReport:
             best_hypothesis=confirmed_h,
         )
         rca = RcaReport(rca_id="rca-1", incident_summary="test", root_cause="test", confidence_score=0.95)
-        session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
-
         trace_update_calls = []
         original_trace_cls = MagicMock()
         mock_ctx = MagicMock(__enter__=MagicMock(return_value=MagicMock()), __exit__=MagicMock(return_value=False))
@@ -410,7 +445,14 @@ class TestPipelineFinalizeBeforeReport:
         original_trace_cls.return_value.update_hypothesis_evidence = MagicMock()
         original_trace_cls.return_value.check_cancelled = MagicMock()
 
-        def capture_status_update(hid, *, status, confidence=None, judgment_reasoning=""):
+        def capture_status_update(
+            hid,
+            *,
+            status,
+            confidence=None,
+            judgment_reasoning="",
+            **_kwargs,
+        ):
             trace_update_calls.append((hid, status, judgment_reasoning))
 
         original_trace_cls.return_value.update_hypothesis_status = capture_status_update
@@ -422,8 +464,12 @@ class TestPipelineFinalizeBeforeReport:
         }
 
         container = MagicMock()
-        container.session_store.check_duplicate.return_value = False
-        container.session_store.create_session.return_value = session
+        container.report_store.save.return_value = "reports/rca-1.md"
+        container.session_store.claim_session.return_value = SessionClaim(
+            ClaimDisposition.CLAIMED,
+            "claim-1",
+            1,
+        )
 
         pipeline = "rca_agent.services.pipeline"
         with (
@@ -435,7 +481,10 @@ class TestPipelineFinalizeBeforeReport:
             patch(f"{pipeline}.check_termination", return_value=td),
             patch(f"{pipeline}.run_report_generation", return_value=rca),
             patch(f"{pipeline}.run_playbook_generation", return_value=MagicMock()),
-            patch("rca_agent.services.notification.build_notification", return_value=MagicMock()),
+            patch(
+                f"{pipeline}.build_notification",
+                return_value=MagicMock(),
+            ) as notification_builder,
             patch(f"{pipeline}.TraceStore", original_trace_cls),
         ):
             orchestrator = PipelineOrchestrator(container)
@@ -446,3 +495,8 @@ class TestPipelineFinalizeBeforeReport:
 
         closed_updates = [hid for hid, st, _ in trace_update_calls if st == "CLOSED" and hid == "h-2"]
         assert closed_updates == [], "h-2 should be REJECTED, not CLOSED"
+        assert confirmed_h.fault_type == FaultType.DB_CONNECTION_LEAK
+        assert confirmed_h.validated_fault_type == FaultType.HIGH_CPU
+        assert confirmed_h.judgment_reasoning == "CPU evidence independently confirms saturation"
+        assert notification_builder.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU
+        assert container.session_store.mark_completed.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU

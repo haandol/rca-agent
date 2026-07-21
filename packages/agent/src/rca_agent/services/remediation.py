@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import urllib.request
 
+from rca_agent.config.settings import REMEDIATION_RESET_TIMEOUT_SECONDS
 from rca_agent.ports.dto.models import (
     FaultType,
     RcaReport,
@@ -20,7 +21,7 @@ def _call_fault_reset(service_host: str, endpoint: str) -> tuple[bool, str]:
     try:
         req = urllib.request.Request(url, method="POST", data=b"")
         req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=REMEDIATION_RESET_TIMEOUT_SECONDS) as resp:
             body = resp.read().decode()
             return True, body
     except Exception as e:

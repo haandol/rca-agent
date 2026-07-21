@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -17,6 +15,7 @@ from rca_agent.ports.dto.models import (
     ValidationPlan,
 )
 from rca_agent.prompts.prioritization import PRIORITIZATION_USER_PROMPT_TEMPLATE
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -90,12 +89,13 @@ def run_prioritization(
     logger.info("Prioritizing %d hypotheses (tree_id=%s)", len(hypotheses), tree_id)
 
     output: PrioritizationOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("Prioritization failed, applying category fallback order")
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_agent(agent, user_prompt),
+            timeout_seconds,
+        )
+    except Exception:
+        logger.warning("Prioritization failed, applying category fallback order")
 
     if output is None:
         return PrioritizationResult(

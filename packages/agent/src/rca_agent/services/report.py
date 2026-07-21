@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -15,6 +13,7 @@ from rca_agent.ports.dto.models import (
     ScopingResult,
 )
 from rca_agent.prompts.report import REPORT_USER_PROMPT_TEMPLATE
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -100,12 +99,13 @@ def run_report_generation(
     logger.info("Generating RCA report (rca_id=%s)", rca_id)
 
     output: ReportOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("Report generation failed, building minimal report")
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_agent(agent, user_prompt),
+            timeout_seconds,
+        )
+    except Exception:
+        logger.warning("Report generation failed, building minimal report")
 
     if output is None:
         return RcaReport(

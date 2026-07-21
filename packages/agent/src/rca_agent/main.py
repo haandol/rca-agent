@@ -44,9 +44,13 @@ def main() -> None:
     logger.info("Starting SQS long polling: %s", queue_url)
 
     while not shutdown_event.is_set():
-        for body, receipt_handle in consumer.poll():
+        for body, receipt_handle, receive_count, message_id in consumer.poll():
             try:
-                processed = orchestrator.process_alarm(body)
+                processed = orchestrator.process_alarm(
+                    body,
+                    receive_count=receive_count,
+                    message_id=message_id,
+                )
             except Exception:
                 logger.exception("Failed to process message")
                 continue

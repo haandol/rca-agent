@@ -119,6 +119,7 @@ def send_notification(
         "confirmed": notification.confirmed,
         "selected_hypothesis_id": notification.selected_hypothesis_id,
         "fault_type": notification.fault_type.value,
+        "verification_status": notification.verification_status.value,
     }
     if notification.playbook:
         message_body["playbook"] = notification.playbook

@@ -4,14 +4,15 @@ import json
 import logging
 import time
 
+from rca_agent.config.aws_sdk import (
+    NOTIFICATION_BASE_DELAY_SECONDS,
+    NOTIFICATION_MAX_RETRIES,
+)
 from rca_agent.config.settings import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
 from rca_agent.ports.dto.models import NotificationMessage
 from rca_agent.ports.interfaces.notification import NotificationPort
 
 logger = logging.getLogger(__name__)
-
-_MAX_RETRIES = 3
-_BASE_DELAY = 1.0
 
 
 class SnsNotificationAdapter(NotificationPort):
@@ -43,6 +44,7 @@ class SnsNotificationAdapter(NotificationPort):
 
         message_body = {
             "rca_id": notification.rca_id,
+            "publication_id": notification.publication_id,
             "root_cause_summary": notification.root_cause_summary,
             "severity": notification.severity,
             "report_url": report_url,
@@ -50,6 +52,7 @@ class SnsNotificationAdapter(NotificationPort):
             "confirmed": notification.confirmed,
             "selected_hypothesis_id": notification.selected_hypothesis_id,
             "fault_type": notification.fault_type.value,
+            "verification_status": notification.verification_status.value,
         }
         if notification.playbook:
             message_body["playbook"] = notification.playbook
@@ -58,7 +61,7 @@ class SnsNotificationAdapter(NotificationPort):
         if notification.alarm_context is not None:
             message_body["alarm_context"] = notification.alarm_context.model_dump()
 
-        for attempt in range(_MAX_RETRIES):
+        for attempt in range(NOTIFICATION_MAX_RETRIES):
             try:
                 self._sns.publish(
                     TopicArn=SNS_NOTIFICATION_TOPIC_ARN,
@@ -74,10 +77,13 @@ class SnsNotificationAdapter(NotificationPort):
                 logger.info("Notification sent for RCA %s", notification.rca_id)
                 return True
             except Exception:
-                if attempt == _MAX_RETRIES - 1:
-                    logger.exception("Failed to send notification after %d attempts", _MAX_RETRIES)
+                if attempt == NOTIFICATION_MAX_RETRIES - 1:
+                    logger.exception(
+                        "Failed to send notification after %d attempts",
+                        NOTIFICATION_MAX_RETRIES,
+                    )
                     return False
-                delay = _BASE_DELAY * (2**attempt)
+                delay = NOTIFICATION_BASE_DELAY_SECONDS * (2**attempt)
                 logger.warning("Notification attempt %d failed, retrying in %.1fs", attempt + 1, delay)
                 time.sleep(delay)
         return False

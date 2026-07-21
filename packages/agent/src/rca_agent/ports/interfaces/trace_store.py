@@ -31,6 +31,8 @@ class TraceStorePort(ABC):
         status: str,
         confidence: float | None = None,
         judgment_reasoning: str = "",
+        validated_fault_type: str | None = None,
+        validation_evidence_summary: str | None = None,
     ) -> None: ...
 
     @abstractmethod

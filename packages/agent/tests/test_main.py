@@ -1,8 +1,12 @@
 import json
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
 from rca_agent.ports.dto.models import (
+    BranchingResult,
     CompletionHandoff,
     FaultType,
     Hypothesis,
@@ -11,6 +15,7 @@ from rca_agent.ports.dto.models import (
     HypothesisStatus,
     NotificationMessage,
     Playbook,
+    PrioritizationResult,
     RcaReport,
     RcaSession,
     RcaSessionState,
@@ -19,6 +24,11 @@ from rca_agent.ports.dto.models import (
     TerminationReason,
     ValidationJudgment,
     ValidationResult,
+)
+from rca_agent.ports.interfaces.session_store import (
+    ClaimDisposition,
+    SessionClaim,
+    SideEffectLeaseUnavailableError,
 )
 from rca_agent.services.evidence import EvidenceCollectionSummary
 from rca_agent.services.pipeline import (
@@ -62,7 +72,11 @@ def _make_body(alarm_name="HighCPU"):
 def _make_container():
     container = MagicMock()
     container.session_store = MagicMock()
-    container.session_store.check_duplicate.return_value = False
+    container.session_store.claim_session.return_value = SessionClaim(
+        ClaimDisposition.CLAIMED,
+        "claim-1",
+        1,
+    )
     container.report_store = MagicMock()
     container.notification = MagicMock()
     container.playbook_store = MagicMock()
@@ -249,6 +263,12 @@ class TestProcessAlarmFullPipeline:
         assert completed.kwargs["selected_hypothesis_id"] == "h-1"
         assert completed.kwargs["fault_type"] == FaultType.UNSUPPORTED
         assert isinstance(completed.kwargs["completion_notification"], NotificationMessage)
+        assert completed.kwargs["report_s3_key"] == "reports/rca-1.md"
+        assert completed.kwargs["claim_token"] == "claim-1"
+        assert container.report_store.save.call_args.kwargs == {
+            "claim_token": "claim-1",
+            "attempt": 1,
+        }
         container.session_store.mark_completion_notified.assert_not_called()
 
     def test_early_exit_on_no_hypotheses(self):
@@ -362,8 +382,6 @@ class TestProcessAlarmFullPipeline:
         assert mock_hypo.call_count == 2
 
     def test_branching_on_needs_investigation(self):
-        from rca_agent.ports.dto.models import BranchingResult
-
         h1 = _make_hypothesis("h-1", 0.5)
         hr = _hypo_result([h1])
         vr_needs = ValidationResult(
@@ -441,6 +459,124 @@ class TestProcessAlarmFullPipeline:
 
         mock_branch.assert_called_once()
 
+    def test_review_gate_grace_exit_is_confirmed_end_to_end(self):
+        accepted = _make_hypothesis("accepted", 0.4)
+        accepted.description = "Validated CPU saturation"
+        investigate = _make_hypothesis("investigate", 0.4)
+        child = _make_hypothesis("child", 0.4)
+        child.parent_id = investigate.hypothesis_id
+        child.depth = 1
+        hr = _hypo_result([accepted, investigate])
+        first_validation = ValidationResult(
+            tree_id="tree-1",
+            judgments=[
+                ValidationJudgment(
+                    hypothesis_id=accepted.hypothesis_id,
+                    status=HypothesisStatus.CONFIRMED,
+                    confidence_score=0.85,
+                    reasoning="CPU evidence confirms the accepted cause",
+                ),
+                ValidationJudgment(
+                    hypothesis_id=investigate.hypothesis_id,
+                    status=HypothesisStatus.NEEDS_INVESTIGATION,
+                    confidence_score=0.6,
+                ),
+            ],
+        )
+        blocked_validation = ValidationResult(
+            tree_id="tree-1",
+            judgments=[
+                ValidationJudgment(
+                    hypothesis_id=investigate.hypothesis_id,
+                    status=HypothesisStatus.REJECTED,
+                    confidence_score=0.1,
+                ),
+                ValidationJudgment(
+                    hypothesis_id=child.hypothesis_id,
+                    status=HypothesisStatus.REJECTED,
+                    confidence_score=0.1,
+                ),
+            ],
+            all_rejected=True,
+        )
+        empty_blocked_validation = ValidationResult(
+            tree_id="tree-1",
+            judgments=[],
+            all_rejected=True,
+        )
+        branching = BranchingResult(
+            tree_id="tree-1",
+            parent_id=investigate.hypothesis_id,
+            children=[child],
+        )
+        prioritization = PrioritizationResult(tree_id="tree-1", prioritized=[])
+        playbook = Playbook(
+            playbook_id="pb-review-gate",
+            failure_type="cpu-spike",
+            symptom_pattern="CPU > 90%",
+        )
+        container = _make_container()
+        container.report_store.save.return_value = "reports/review-gate.md"
+        container.session_store.mark_completed.return_value = True
+        container.notification.send.return_value = True
+        container.session_store.mark_completion_notified.return_value = True
+
+        def build_report(_scoping, best, confirmed, *_args):
+            return RcaReport(
+                rca_id="rca-review-gate",
+                incident_summary="CPU spike",
+                root_cause=best.description,
+                root_cause_confirmed=confirmed,
+                confidence_score=best.confidence_score,
+            )
+
+        mock_trace = MagicMock(
+            span=MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+            start_span=MagicMock(return_value=MagicMock(span_id="s-1")),
+            end_span=MagicMock(),
+            put_hypotheses=MagicMock(),
+            update_hypothesis_status=MagicMock(),
+            update_hypothesis_evidence=MagicMock(),
+            check_cancelled=MagicMock(),
+        )
+
+        with (
+            patch(f"{_P}.run_scoping", return_value=_scoping()),
+            patch(f"{_P}.run_hypothesis_generation", return_value=hr),
+            patch(f"{_P}.run_prioritization", return_value=prioritization),
+            patch(f"{_P}.run_evidence_collection", return_value=EvidenceCollectionSummary()),
+            patch(
+                f"{_P}.run_validation",
+                side_effect=[
+                    first_validation,
+                    blocked_validation,
+                    empty_blocked_validation,
+                ],
+            ) as validation,
+            patch(f"{_P}.run_branching", return_value=branching) as branch,
+            patch(f"{_P}.run_report_generation", side_effect=build_report) as report,
+            patch(f"{_P}.run_playbook_generation", return_value=playbook),
+            patch(f"{_P}.TraceStore", return_value=mock_trace),
+        ):
+            result = PipelineOrchestrator(container).process_alarm(_make_body())
+
+        assert result is True
+        assert validation.call_count == 3
+        branch.assert_called_once()
+        assert report.call_args.args[1] is accepted
+        assert report.call_args.args[2] is True
+        completed = container.session_store.mark_completed.call_args.kwargs
+        assert completed["confirmed"] is True
+        assert completed["selected_hypothesis_id"] == accepted.hypothesis_id
+        notification = completed["completion_notification"]
+        assert notification.confirmed is True
+        assert notification.selected_hypothesis_id == accepted.hypothesis_id
+
     def test_handles_sns_wrapped_body(self):
         alarm_data = {
             "AlarmName": "HighLatency",
@@ -507,22 +643,60 @@ class TestProcessAlarmFullPipeline:
 
         assert mock_scoping.call_args[0][0].alarm_name == "HighLatency"
 
-    def test_skips_duplicate_alarm(self):
+    def test_contended_claim_does_not_run_or_ack(self):
         container = _make_container()
-        container.session_store.check_duplicate.return_value = True
+        container.session_store.claim_session.return_value = SessionClaim(ClaimDisposition.CONTENDED)
 
-        with (
-            patch(f"{_P}.run_scoping") as mock_scoping,
-        ):
+        with patch(f"{_P}.run_scoping") as mock_scoping:
             orchestrator = PipelineOrchestrator(container)
-            orchestrator.process_alarm(_make_body())
+            result = orchestrator.process_alarm(_make_body(), receive_count=2)
 
-        container.session_store.create_session.assert_not_called()
+        assert result is False
         mock_scoping.assert_not_called()
 
-    def test_duplicate_flushes_pending_completion_handoff(self):
+    def test_initial_stale_alarm_is_marked_outdated(self):
         container = _make_container()
-        container.session_store.check_duplicate.return_value = True
+        body = {
+            **_make_body(),
+            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+        }
+        orchestrator = PipelineOrchestrator(container)
+        orchestrator._run_pipeline = MagicMock(return_value=True)
+
+        result = orchestrator.process_alarm(body, receive_count=1)
+
+        assert result is True
+        container.session_store.mark_outdated.assert_called_once()
+        assert container.session_store.mark_outdated.call_args.kwargs["claim_token"] == "claim-1"
+        orchestrator._run_pipeline.assert_not_called()
+
+    def test_redelivery_bypasses_initial_staleness_check(self):
+        container = _make_container()
+        container.session_store.claim_session.return_value = SessionClaim(
+            ClaimDisposition.CLAIMED,
+            "claim-2",
+            2,
+        )
+        body = {
+            **_make_body(),
+            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+        }
+        orchestrator = PipelineOrchestrator(container)
+        orchestrator._run_pipeline = MagicMock(return_value=True)
+
+        result = orchestrator.process_alarm(body, receive_count=2)
+
+        assert result is True
+        container.session_store.mark_outdated.assert_not_called()
+        orchestrator._run_pipeline.assert_called_once()
+
+    def test_terminal_duplicate_flushes_pending_completion_handoff(self):
+        container = _make_container()
+        container.session_store.claim_session.return_value = SessionClaim(
+            ClaimDisposition.TERMINAL_DUPLICATE,
+            "claim-complete",
+            1,
+        )
         notification = NotificationMessage(
             rca_id="rca-1",
             root_cause_summary="complete",
@@ -541,20 +715,84 @@ class TestProcessAlarmFullPipeline:
 
         assert result is True
         container.notification.send.assert_called_once_with(notification)
-        container.session_store.mark_completion_notified.assert_called_once()
-
-    def test_duplicate_failed_session_is_not_successful(self):
-        container = _make_container()
-        container.session_store.check_duplicate.return_value = True
-        container.session_store.get_completion_handoff.return_value = CompletionHandoff(
-            rca_id="rca-1",
-            state=RcaSessionState.FAILED,
+        container.session_store.mark_completion_notified.assert_called_once_with(
+            container.session_store.get_completion_handoff.call_args.args[0],
+            claim_token="claim-complete",
         )
 
-        result = PipelineOrchestrator(container).process_alarm(_make_body())
+    def test_failed_first_attempt_is_reprocessed_and_second_attempt_completes(self):
+        container = _make_container()
+        container.session_store.claim_session.side_effect = [
+            SessionClaim(ClaimDisposition.CLAIMED, "claim-1", 1),
+            SessionClaim(ClaimDisposition.CLAIMED, "claim-2", 2),
+        ]
+        orchestrator = PipelineOrchestrator(container)
+        orchestrator._run_pipeline = MagicMock(side_effect=[RuntimeError("transient failure"), True])
 
-        assert result is False
-        container.notification.send.assert_not_called()
+        first = orchestrator.process_alarm(
+            _make_body(),
+            receive_count=1,
+            message_id="message-a",
+        )
+        second = orchestrator.process_alarm(
+            _make_body(),
+            receive_count=2,
+            message_id="message-a",
+        )
+
+        assert first is False
+        assert second is True
+        assert orchestrator._run_pipeline.call_count == 2
+        assert [call.kwargs["claim_token"] for call in orchestrator._run_pipeline.call_args_list] == [
+            "claim-1",
+            "claim-2",
+        ]
+        assert [call.kwargs["receive_count"] for call in container.session_store.claim_session.call_args_list] == [1, 2]
+        assert [call.kwargs["message_id"] for call in container.session_store.claim_session.call_args_list] == [
+            "message-a",
+            "message-a",
+        ]
+
+    def test_playbook_store_is_not_called_when_claim_is_lost_before_save(self):
+        container = _make_container()
+        container.session_store.acquire_side_effect_lease.side_effect = SideEffectLeaseUnavailableError("claim lost")
+        orchestrator = PipelineOrchestrator(container)
+        report = RcaReport(
+            rca_id="rca-1",
+            incident_summary="CPU spike",
+            root_cause="Bad deploy",
+            confidence_score=0.95,
+        )
+        playbook = Playbook(
+            playbook_id="pb-1",
+            failure_type="cpu-spike",
+            symptom_pattern="CPU > 90%",
+        )
+
+        with (
+            patch(f"{_P}.run_playbook_generation", return_value=playbook),
+            pytest.raises(SideEffectLeaseUnavailableError),
+        ):
+            orchestrator._run_playbook(
+                report,
+                _scoping(),
+                MagicMock(),
+                claim_token="claim-1",
+            )
+
+        container.playbook_store.save.assert_not_called()
+
+    def test_lease_release_failure_is_not_treated_as_success(self):
+        container = _make_container()
+        container.session_store.acquire_side_effect_lease.return_value = "lease-1"
+        container.session_store.release_side_effect_lease.return_value = False
+        orchestrator = PipelineOrchestrator(container)
+
+        with (
+            pytest.raises(SideEffectLeaseUnavailableError),
+            orchestrator._side_effect_lease("rca-1", "claim-1", "playbook"),
+        ):
+            pass
 
     def test_marks_failed_on_pipeline_exception(self):
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)
@@ -584,7 +822,7 @@ class TestProcessAlarmFullPipeline:
             orchestrator.process_alarm(_make_body())
 
         container.session_store.mark_failed.assert_called_once()
-        assert container.session_store.mark_failed.call_args[0][0] == "rca-1"
+        assert container.session_store.mark_failed.call_args.kwargs["claim_token"] == "claim-1"
 
     def test_state_transitions_in_full_pipeline(self):
         mocks = self._run()

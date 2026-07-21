@@ -10,6 +10,10 @@ from threading import Event, Thread
 import structlog
 
 from cc_headless.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from cc_headless.services.artifact_validation import (
+    ArtifactValidationError,
+    validate_validation_artifacts,
+)
 
 logger = structlog.get_logger()
 
@@ -191,6 +195,16 @@ def _parse_artifact(path: Path) -> dict | None:
     return artifact
 
 
+def _artifact_sort_key(path: Path) -> tuple[int, int, str]:
+    if path.name.startswith(VALIDATION_PATTERN) and path.suffix == ".json":
+        try:
+            loop_index = int(path.stem.removeprefix(VALIDATION_PATTERN))
+        except ValueError:
+            loop_index = 0
+        return 1, loop_index, path.name
+    return 0, 0, path.name
+
+
 def _claim_check(rca_id: str, claim_token: str) -> dict:
     return {
         "ConditionCheck": {
@@ -333,7 +347,7 @@ def _scan_once(
     if not artifact_dir.exists():
         return
 
-    for path in sorted(artifact_dir.iterdir()):
+    for path in sorted(artifact_dir.iterdir(), key=_artifact_sort_key):
         stat = path.stat()
         version = (stat.st_mtime_ns, stat.st_size)
         if seen.get(path.name) == version:
@@ -357,6 +371,25 @@ def _scan_once(
                 loop_index = int(idx_str)
             except ValueError:
                 loop_index = 0
+
+            if artifact and not artifact.get("error"):
+                try:
+                    validation_path, _ = validate_validation_artifacts(
+                        artifact_dir,
+                        through_loop_index=loop_index,
+                    )
+                    if validation_path != path:
+                        raise ArtifactValidationError(
+                            f"{path.name} is not the latest validation through loop {loop_index}"
+                        )
+                    validation_ctx[path.name] = {"valid": True}
+                except ArtifactValidationError as exc:
+                    validation_ctx[path.name] = {"valid": False, "error": str(exc)}
+                    artifact = {
+                        "summary": path.name,
+                        "output_summary": str(exc),
+                        "error": str(exc),
+                    }
 
             _write_span(
                 ddb,

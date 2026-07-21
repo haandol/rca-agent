@@ -54,6 +54,7 @@ class ReviewGateResult:
     expansion_blocked: bool
     reason: str
     accepted_max_confidence: float
+    accepted_hypothesis_id: str | None
     auto_rejected_ids: list[str]
 
 
@@ -75,23 +76,26 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 def _collect_accepted(
     hypotheses: list[Hypothesis],
     judgments: list[ValidationJudgment],
-) -> tuple[list[Hypothesis], float]:
-    """Return accepted hypotheses and max confidence from judgments."""
+) -> tuple[list[Hypothesis], float, str | None]:
+    """Return accepted hypotheses and the highest-confidence accepted choice."""
     # latest judgment per hypothesis
     latest: dict[str, ValidationJudgment] = {}
     for j in judgments:
         latest[j.hypothesis_id] = j
 
     accepted: list[Hypothesis] = []
-    max_conf = 0.0
+    best_hypothesis_id: str | None = None
+    max_conf = -1.0
     for h in hypotheses:
         if h.status != HypothesisStatus.CONFIRMED:
             continue
         accepted.append(h)
         j = latest.get(h.hypothesis_id)
         score = j.confidence_score if j is not None else h.confidence_score
-        max_conf = max(max_conf, score)
-    return accepted, max_conf
+        if score > max_conf:
+            max_conf = score
+            best_hypothesis_id = h.hypothesis_id
+    return accepted, max(max_conf, 0.0), best_hypothesis_id
 
 
 def run_review_gate(
@@ -111,7 +115,7 @@ def run_review_gate(
     Also auto-rejects PENDING/NEEDS_INVESTIGATION hypotheses that are highly
     similar to an accepted one (same category + Jaccard >= threshold).
     """
-    accepted, max_conf = _collect_accepted(hypotheses, judgments)
+    accepted, max_conf, accepted_hypothesis_id = _collect_accepted(hypotheses, judgments)
 
     if not accepted:
         return ReviewGateResult(
@@ -119,6 +123,7 @@ def run_review_gate(
             expansion_blocked=False,
             reason="no_accepted",
             accepted_max_confidence=0.0,
+            accepted_hypothesis_id=None,
             auto_rejected_ids=[],
         )
 
@@ -128,6 +133,7 @@ def run_review_gate(
             expansion_blocked=False,
             reason=f"accepted_confidence_met:{max_conf:.2f}",
             accepted_max_confidence=max_conf,
+            accepted_hypothesis_id=accepted_hypothesis_id,
             auto_rejected_ids=[],
         )
 
@@ -138,6 +144,7 @@ def run_review_gate(
             expansion_blocked=False,
             reason=f"grace_loops_exhausted:{max_conf:.2f}",
             accepted_max_confidence=max_conf,
+            accepted_hypothesis_id=accepted_hypothesis_id,
             auto_rejected_ids=[],
         )
 
@@ -147,6 +154,7 @@ def run_review_gate(
         expansion_blocked=True,
         reason=f"expansion_blocked:{max_conf:.2f}",
         accepted_max_confidence=max_conf,
+        accepted_hypothesis_id=accepted_hypothesis_id,
         auto_rejected_ids=auto_rejected,
     )
 

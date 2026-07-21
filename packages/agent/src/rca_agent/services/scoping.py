@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import UTC
 from typing import TYPE_CHECKING
 
@@ -20,6 +18,7 @@ from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
 from rca_agent.utils.retry import retry_with_backoff
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -149,15 +148,15 @@ def run_scoping(
     logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)
 
     output: ScopingOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_scoping_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except FuturesTimeoutError:
-            logger.warning("Scoping agent timed out after %ds, using alarm payload as fallback", timeout_seconds)
-            future.cancel()
-        except Exception:
-            logger.exception("Scoping agent failed")
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_scoping_agent(agent, user_prompt),
+            timeout_seconds,
+        )
+    except TimeoutError:
+        logger.warning("Scoping agent timed out after %ds, using alarm payload as fallback", timeout_seconds)
+    except Exception:
+        logger.exception("Scoping agent failed")
 
     if output is None:
         return ScopingResult(

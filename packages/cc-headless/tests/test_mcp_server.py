@@ -20,6 +20,60 @@ from cc_headless.services.execution_context import (
     ExecutionContext,
 )
 
+HEALTHCARE_CLUSTER = "healthcare-cluster"
+HEALTHCARE_SERVICE = "healthcare-service"
+HEALTHCARE_DATABASE = "healthcare-db"
+
+
+def _alarm_data_for_fault(fault_type: str) -> dict:
+    targets = {
+        "db-leak": (
+            "AWS/RDS",
+            "DatabaseConnections",
+            [{"name": "DBInstanceIdentifier", "value": HEALTHCARE_DATABASE}],
+        ),
+        "slow-query": (
+            "AWS/RDS",
+            "ReadLatency",
+            [{"name": "DBInstanceIdentifier", "value": HEALTHCARE_DATABASE}],
+        ),
+        "high-cpu": (
+            "AWS/ECS",
+            "CPUUtilization",
+            [
+                {"name": "ClusterName", "value": HEALTHCARE_CLUSTER},
+                {"name": "ServiceName", "value": HEALTHCARE_SERVICE},
+            ],
+        ),
+        "high-memory": (
+            "AWS/ECS",
+            "MemoryUtilization",
+            [
+                {"name": "ClusterName", "value": HEALTHCARE_CLUSTER},
+                {"name": "ServiceName", "value": HEALTHCARE_SERVICE},
+            ],
+        ),
+    }
+    namespace, metric_name, dimensions = targets[fault_type]
+    return {
+        "AlarmName": f"healthcare-{fault_type}",
+        "Region": "us-east-1",
+        "Trigger": {
+            "Namespace": namespace,
+            "MetricName": metric_name,
+            "Dimensions": dimensions,
+        },
+    }
+
+
+def _ddb_session_item(alarm_data: dict, *, claim_token: str = "claim-token") -> dict:
+    return {
+        "Item": {
+            "claim_token": {"S": claim_token},
+            "alarm_data": {"S": json.dumps(alarm_data)},
+        }
+    }
+
 
 @pytest.fixture
 def artifact_home(monkeypatch, tmp_path):
@@ -32,7 +86,13 @@ def artifact_home(monkeypatch, tmp_path):
     base = context.prepare()
     store = Mock()
     store.acquire_side_effect_lease.return_value = "lease-token"
-    monkeypatch.setattr(mcp_server, "_session_store", lambda: (store, None))
+    ddb = Mock()
+    ddb.get_item.return_value = _ddb_session_item(_alarm_data_for_fault("db-leak"))
+    monkeypatch.setattr(mcp_server, "DYNAMODB_TABLE_NAME", "rca-sessions")
+    monkeypatch.setattr(mcp_server, "HEALTHCARE_ECS_CLUSTER_NAME", HEALTHCARE_CLUSTER)
+    monkeypatch.setattr(mcp_server, "HEALTHCARE_ECS_SERVICE_NAME", HEALTHCARE_SERVICE)
+    monkeypatch.setattr(mcp_server, "HEALTHCARE_RDS_INSTANCE_IDENTIFIER", HEALTHCARE_DATABASE)
+    monkeypatch.setattr(mcp_server, "_session_store", lambda: (store, ddb))
     yield base
     context.cleanup()
 
@@ -237,6 +297,11 @@ def test_execute_healthcare_reset_allows_only_confirmed_fixed_endpoints(
     endpoint,
 ):
     _write_rca_artifacts(artifact_home, title=title, fault_type=fault_type)
+    monkeypatch.setattr(
+        mcp_server,
+        "_load_claimed_alarm_data",
+        Mock(return_value=_alarm_data_for_fault(fault_type)),
+    )
     monkeypatch.setattr(mcp_server, "HEALTHCARE_SERVICE_HOST", "healthcare.internal")
     urlopen = Mock(return_value=FakeHttpResponse())
     monkeypatch.setattr(mcp_server.request, "urlopen", urlopen)
@@ -254,6 +319,94 @@ def test_execute_healthcare_reset_allows_only_confirmed_fixed_endpoints(
     assert stored["verification"]["status"] == "PENDING"
 
 
+@pytest.mark.parametrize(
+    ("case", "alarm_data"),
+    [
+        (
+            "non-healthcare namespace",
+            {
+                "AlarmName": "custom-db-connections",
+                "Trigger": {
+                    "Namespace": "Custom/Application",
+                    "MetricName": "DatabaseConnections",
+                    "Dimensions": [
+                        {"name": "DBInstanceIdentifier", "value": HEALTHCARE_DATABASE},
+                    ],
+                },
+            },
+        ),
+        (
+            "same metric on another resource",
+            {
+                "AlarmName": "other-database-connections",
+                "Trigger": {
+                    "Namespace": "AWS/RDS",
+                    "MetricName": "DatabaseConnections",
+                    "Dimensions": [
+                        {"name": "DBInstanceIdentifier", "value": "other-database"},
+                    ],
+                },
+            },
+        ),
+        ("fault and metric mismatch", _alarm_data_for_fault("slow-query")),
+        ("missing alarm data", {}),
+    ],
+)
+def test_execute_healthcare_reset_blocks_untrusted_alarm_targets_before_side_effects(
+    artifact_home,
+    monkeypatch,
+    case,
+    alarm_data,
+):
+    _write_rca_artifacts(artifact_home, title="DB connection leak")
+    store = Mock()
+    monkeypatch.setattr(mcp_server, "_session_store", lambda: (store, Mock()))
+    monkeypatch.setattr(mcp_server, "_load_claimed_alarm_data", Mock(return_value=alarm_data))
+    urlopen = Mock()
+    monkeypatch.setattr(mcp_server.request, "urlopen", urlopen)
+
+    result = json.loads(mcp_server.execute_healthcare_reset("db-leak"))
+
+    assert result["status"] == "BLOCKED", case
+    assert "alarm target validation failed" in result["error"]
+    store.acquire_side_effect_lease.assert_not_called()
+    urlopen.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("fault_type", "setting_name"),
+    [
+        ("db-leak", "HEALTHCARE_RDS_INSTANCE_IDENTIFIER"),
+        ("high-cpu", "HEALTHCARE_ECS_CLUSTER_NAME"),
+        ("high-cpu", "HEALTHCARE_ECS_SERVICE_NAME"),
+    ],
+)
+def test_execute_healthcare_reset_blocks_missing_expected_resource_configuration(
+    artifact_home,
+    monkeypatch,
+    fault_type,
+    setting_name,
+):
+    _write_rca_artifacts(artifact_home, title=fault_type, fault_type=fault_type)
+    store = Mock()
+    monkeypatch.setattr(mcp_server, "_session_store", lambda: (store, Mock()))
+    monkeypatch.setattr(
+        mcp_server,
+        "_load_claimed_alarm_data",
+        Mock(return_value=_alarm_data_for_fault(fault_type)),
+    )
+    monkeypatch.setattr(mcp_server, setting_name, "")
+    urlopen = Mock()
+    monkeypatch.setattr(mcp_server.request, "urlopen", urlopen)
+
+    result = json.loads(mcp_server.execute_healthcare_reset(fault_type))
+
+    assert result["status"] == "BLOCKED"
+    assert "target configuration is incomplete" in result["error"]
+    store.acquire_side_effect_lease.assert_not_called()
+    urlopen.assert_not_called()
+
+
 def test_execute_healthcare_reset_signature_does_not_accept_url_or_endpoint():
     assert set(inspect.signature(mcp_server.execute_healthcare_reset).parameters) == {"fault_type"}
 
@@ -265,6 +418,11 @@ def test_execute_healthcare_reset_accepts_explicit_success_statuses(
     reset_status,
 ):
     _write_rca_artifacts(artifact_home, title="slow query timeout", fault_type="slow-query")
+    monkeypatch.setattr(
+        mcp_server,
+        "_load_claimed_alarm_data",
+        Mock(return_value=_alarm_data_for_fault("slow-query")),
+    )
     monkeypatch.setattr(mcp_server, "HEALTHCARE_SERVICE_HOST", "healthcare.internal")
     response = FakeHttpResponse(body=json.dumps({"status": reset_status}).encode())
     monkeypatch.setattr(mcp_server.request, "urlopen", Mock(return_value=response))
@@ -282,6 +440,11 @@ def test_execute_healthcare_reset_rejects_explicit_non_success_statuses(
     reset_status,
 ):
     _write_rca_artifacts(artifact_home, title="slow query timeout", fault_type="slow-query")
+    monkeypatch.setattr(
+        mcp_server,
+        "_load_claimed_alarm_data",
+        Mock(return_value=_alarm_data_for_fault("slow-query")),
+    )
     monkeypatch.setattr(mcp_server, "HEALTHCARE_SERVICE_HOST", "healthcare.internal")
     response = FakeHttpResponse(body=json.dumps({"status": reset_status}).encode())
     monkeypatch.setattr(mcp_server.request, "urlopen", Mock(return_value=response))
@@ -518,6 +681,9 @@ def test_reset_holds_claim_lease_through_server_verification(artifact_home, monk
                 "Trigger": {
                     "Namespace": "AWS/RDS",
                     "MetricName": "DatabaseConnections",
+                    "Dimensions": [
+                        {"name": "DBInstanceIdentifier", "value": HEALTHCARE_DATABASE},
+                    ],
                     "Threshold": 30,
                     "ComparisonOperator": "GreaterThanThreshold",
                 },
@@ -548,12 +714,43 @@ def test_reset_does_not_begin_http_after_claim_lease_rejection(artifact_home, mo
     store = Mock()
     store.acquire_side_effect_lease.side_effect = RuntimeError("reclaimed")
     monkeypatch.setattr(mcp_server, "_session_store", lambda: (store, Mock()))
+    monkeypatch.setattr(
+        mcp_server,
+        "_load_claimed_alarm_data",
+        Mock(return_value=_alarm_data_for_fault("db-leak")),
+    )
     urlopen = Mock()
     monkeypatch.setattr(mcp_server.request, "urlopen", urlopen)
 
     result = json.loads(mcp_server.execute_healthcare_reset("db-leak"))
 
     assert result["status"] == "BLOCKED"
+    urlopen.assert_not_called()
+
+
+def test_reset_checks_server_claim_before_acquiring_side_effect_lease(artifact_home, monkeypatch):
+    _write_rca_artifacts(artifact_home, title="DB connection leak")
+    monkeypatch.setattr(mcp_server, "HEALTHCARE_SERVICE_HOST", "healthcare.internal")
+    store = Mock()
+    ddb = Mock()
+    ddb.get_item.return_value = _ddb_session_item(
+        _alarm_data_for_fault("db-leak"),
+        claim_token="stale-claim",
+    )
+    monkeypatch.setattr(mcp_server, "_session_store", lambda: (store, ddb))
+    urlopen = Mock()
+    monkeypatch.setattr(mcp_server.request, "urlopen", urlopen)
+
+    result = json.loads(mcp_server.execute_healthcare_reset("db-leak"))
+
+    assert result["status"] == "BLOCKED"
+    assert "SideEffectLeaseUnavailableError" in result["error"]
+    ddb.get_item.assert_called_once_with(
+        TableName="rca-sessions",
+        Key={"PK": {"S": "RCA#rca-1"}, "SK": {"S": "cc-headless#SESSION"}},
+        ConsistentRead=True,
+    )
+    store.acquire_side_effect_lease.assert_not_called()
     urlopen.assert_not_called()
 
 

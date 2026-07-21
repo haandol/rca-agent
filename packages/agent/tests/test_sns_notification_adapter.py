@@ -2,7 +2,11 @@ import json
 from unittest.mock import MagicMock, patch
 
 from rca_agent.adapters.secondary.notification.sns_notification import SnsNotificationAdapter
-from rca_agent.ports.dto.models import AlarmContext, NotificationMessage
+from rca_agent.ports.dto.models import (
+    AlarmContext,
+    NotificationMessage,
+    VerificationStatus,
+)
 
 
 @patch(
@@ -42,8 +46,10 @@ def test_publishes_event_type_attribute_and_alarm_context():
 def test_remediation_result_uses_distinct_event_type():
     msg = NotificationMessage(
         rca_id="rca-1",
+        publication_id="remediation-rca-1",
         root_cause_summary="Remediation succeeded",
         severity="medium",
+        verification_status=VerificationStatus.NORMALIZED,
         event_type="remediation_complete",
     )
     mock_sns = MagicMock()
@@ -52,3 +58,6 @@ def test_remediation_result_uses_distinct_event_type():
 
     kwargs = mock_sns.publish.call_args[1]
     assert kwargs["MessageAttributes"]["event_type"]["StringValue"] == "remediation_complete"
+    body = json.loads(kwargs["Message"])
+    assert body["publication_id"] == "remediation-rca-1"
+    assert body["verification_status"] == "NORMALIZED"

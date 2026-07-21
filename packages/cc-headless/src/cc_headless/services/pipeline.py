@@ -314,9 +314,8 @@ class PipelineOrchestrator:
         alarm: AlarmContext,
         log: structlog.stdlib.BoundLogger,
     ) -> None:
-        try:
-            metric_name = alarm.metric_name or ""
-            self._c.playbook_store.save_to_s3_vectors(playbook, rca_id, metric_name=metric_name)
-            log.info("playbook_saved", playbook_id=playbook.get("playbook_id"))
-        except Exception:
-            log.exception("playbook_processing_failed")
+        metric_name = alarm.metric_name or ""
+        saved = self._c.playbook_store.save_to_s3_vectors(playbook, rca_id, metric_name=metric_name)
+        if not saved:
+            raise RuntimeError("Playbook persistence failed")
+        log.info("playbook_saved", playbook_id=playbook.get("playbook_id"))
