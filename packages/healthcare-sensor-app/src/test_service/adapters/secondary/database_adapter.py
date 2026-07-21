@@ -1,15 +1,23 @@
-import contextlib
 import logging
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from test_service.config import AppSettings
 from test_service.ports.interfaces.database import DatabasePort
+from test_service.services.fault_state import (
+    begin_environment_database_leak,
+    close_environment_leaked_connections,
+    environment_leaked_connections,
+    finish_environment_database_leak,
+    register_environment_database_leak,
+    retain_close_failed_environment_connection,
+    retain_environment_leaked_connection,
+)
 
 logger = logging.getLogger(__name__)
 
-_leaked_connections: list[AsyncConnection] = []
+_leaked_connections = environment_leaked_connections
 
 
 class SqlAlchemyDatabaseAdapter(DatabasePort):
@@ -22,6 +30,7 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         )
         self._session_factory = async_sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
         self._fault_db_leak = settings.fault_db_leak
+        register_environment_database_leak(self)
 
     @property
     def engine(self):
@@ -41,13 +50,22 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
             raise
         finally:
             await session.close()
-            if self._fault_db_leak:
-                conn = await self._engine.connect()
-                _leaked_connections.append(conn)
-                logger.warning(
-                    "DB connection not returned (FAULT_DB_LEAK enabled)",
-                    extra={"pool_checked_out": self._engine.pool.checkedout()},
-                )
+            if begin_environment_database_leak(self):
+                try:
+                    conn = await self._engine.connect()
+                    if retain_environment_leaked_connection(self, conn):
+                        logger.warning(
+                            "DB connection not returned (FAULT_DB_LEAK enabled)",
+                            extra={"pool_checked_out": self._engine.pool.checkedout()},
+                        )
+                    else:
+                        try:
+                            await conn.close()
+                        except Exception:
+                            retain_close_failed_environment_connection(conn)
+                            logger.exception("Failed to close DB connection acquired during fault reset")
+                finally:
+                    finish_environment_database_leak()
 
     async def leaky_session(self) -> AsyncGenerator[AsyncSession]:
         session = self._session_factory()
@@ -60,8 +78,5 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         return self._engine.pool.size()
 
     async def dispose(self) -> None:
-        for c in _leaked_connections:
-            with contextlib.suppress(Exception):
-                await c.close()
-        _leaked_connections.clear()
+        await close_environment_leaked_connections()
         await self._engine.dispose()

@@ -1,24 +1,65 @@
-import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
+import {
+  GetCommand,
+  QueryCommand,
+  UpdateCommand,
+  type QueryCommandInput,
+} from '@aws-sdk/lib-dynamodb';
 
-const OPEN_HYPO_STATES = new Set(['PENDING', 'NEEDS_INVESTIGATION'])
+const ALLOWED_ENGINES = new Set(['strands', 'cc-headless']);
+const OPEN_HYPO_STATES = new Set(['PENDING', 'NEEDS_INVESTIGATION']);
 
-async function closeOpenHypotheses(ddb: ReturnType<typeof useDynamoDB>, tableName: string, rcaId: string, now: string) {
-  const engines = ['strands', 'cc-headless']
-  const queries = await Promise.all(
-    engines.map((engine) =>
-      ddb.send(
-        new QueryCommand({
-          TableName: tableName,
-          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-          ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': `${engine}#HYPO#` },
-          ProjectionExpression: 'PK, SK, #st',
-          ExpressionAttributeNames: { '#st': 'status' },
-        }),
-      ),
-    ),
-  )
+async function findSessionKey(
+  ddb: ReturnType<typeof useDynamoDB>,
+  tableName: string,
+  rcaId: string,
+  engine: string,
+): Promise<string | null> {
+  const sessionKeys =
+    engine === 'strands'
+      ? ['strands#SESSION', 'SESSION']
+      : [`${engine}#SESSION`];
 
-  const items = queries.flatMap((resp) => resp.Items || [])
+  for (const sessionKey of sessionKeys) {
+    const result = await ddb.send(
+      new GetCommand({
+        TableName: tableName,
+        Key: { PK: `RCA#${rcaId}`, SK: sessionKey },
+        ProjectionExpression: 'PK',
+      }),
+    );
+    if (result.Item) return sessionKey;
+  }
+
+  return null;
+}
+
+async function closeOpenHypotheses(
+  ddb: ReturnType<typeof useDynamoDB>,
+  tableName: string,
+  rcaId: string,
+  engine: string,
+  sessionKey: string,
+  now: string,
+) {
+  const prefix = sessionKey === 'SESSION' ? 'HYPO#' : `${engine}#HYPO#`;
+  const items = [];
+  let exclusiveStartKey: QueryCommandInput['ExclusiveStartKey'];
+
+  do {
+    const result = await ddb.send(
+      new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': prefix },
+        ProjectionExpression: 'PK, SK, #st',
+        ExpressionAttributeNames: { '#st': 'status' },
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    items.push(...(result.Items ?? []));
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
   const updates = items
     .filter((item) => OPEN_HYPO_STATES.has(item.status))
     .map((item) =>
@@ -26,7 +67,8 @@ async function closeOpenHypotheses(ddb: ReturnType<typeof useDynamoDB>, tableNam
         new UpdateCommand({
           TableName: tableName,
           Key: { PK: item.PK, SK: item.SK },
-          UpdateExpression: 'SET #st = :closed, judgment_reasoning = :reason, updated_at = :now',
+          UpdateExpression:
+            'SET #st = :closed, judgment_reasoning = :reason, updated_at = :now',
           ExpressionAttributeNames: { '#st': 'status' },
           ExpressionAttributeValues: {
             ':closed': 'CLOSED',
@@ -35,53 +77,49 @@ async function closeOpenHypotheses(ddb: ReturnType<typeof useDynamoDB>, tableNam
           },
         }),
       ),
-    )
+    );
 
-  await Promise.allSettled(updates)
-  return updates.length
+  await Promise.allSettled(updates);
+  return updates.length;
 }
 
 export default defineEventHandler(async (event) => {
-  const id = getRouterParam(event, 'id')
+  const id = getRouterParam(event, 'id');
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing session id' })
+    throw createError({ statusCode: 400, statusMessage: 'Missing session id' });
   }
 
-  const config = useRuntimeConfig()
-  const ddb = useDynamoDB()
+  const query = getQuery(event);
+  const engine = typeof query.engine === 'string' ? query.engine : '';
+  if (!ALLOWED_ENGINES.has(engine)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Missing or invalid engine',
+    });
+  }
 
-  const engines = ['strands', 'cc-headless']
-  const now = new Date().toISOString()
+  const config = useRuntimeConfig();
+  const ddb = useDynamoDB();
+  const sessionKey = await findSessionKey(
+    ddb,
+    config.dynamodbTableName,
+    id,
+    engine,
+  );
+  if (!sessionKey) {
+    throw createError({ statusCode: 404, statusMessage: 'Session not found' });
+  }
 
-  const results = await Promise.allSettled(
-    engines.map((engine) =>
-      ddb.send(
-        new UpdateCommand({
-          TableName: config.dynamodbTableName,
-          Key: { PK: `RCA#${id}`, SK: `${engine}#SESSION` },
-          UpdateExpression: 'SET #st = :cancelled, updated_at = :now',
-          ConditionExpression: 'attribute_exists(PK) AND #st <> :completed AND #st <> :failed AND #st <> :cancelled AND #st <> :outdated',
-          ExpressionAttributeNames: { '#st': 'state' },
-          ExpressionAttributeValues: {
-            ':cancelled': 'CANCELLED',
-            ':completed': 'COMPLETED',
-            ':failed': 'FAILED',
-            ':outdated': 'OUTDATED',
-            ':now': now,
-          },
-        }),
-      ),
-    ),
-  )
+  const now = new Date().toISOString();
 
-  // Also try the legacy bare SESSION key
-  const legacyResult = await Promise.allSettled([
-    ddb.send(
+  try {
+    await ddb.send(
       new UpdateCommand({
         TableName: config.dynamodbTableName,
-        Key: { PK: `RCA#${id}`, SK: 'SESSION' },
+        Key: { PK: `RCA#${id}`, SK: sessionKey },
         UpdateExpression: 'SET #st = :cancelled, updated_at = :now',
-        ConditionExpression: 'attribute_exists(PK) AND #st <> :completed AND #st <> :failed AND #st <> :cancelled AND #st <> :outdated',
+        ConditionExpression:
+          'attribute_exists(PK) AND #st <> :completed AND #st <> :failed AND #st <> :cancelled AND #st <> :outdated',
         ExpressionAttributeNames: { '#st': 'state' },
         ExpressionAttributeValues: {
           ':cancelled': 'CANCELLED',
@@ -91,24 +129,28 @@ export default defineEventHandler(async (event) => {
           ':now': now,
         },
       }),
-    ),
-  ])
-
-  const allResults = [...results, ...legacyResult]
-  const succeeded = allResults.filter((r) => r.status === 'fulfilled').length
-
-  // Re-throw unexpected errors
-  for (const r of allResults) {
-    if (r.status === 'rejected' && (r.reason as { name?: string })?.name !== 'ConditionalCheckFailedException') {
-      throw r.reason
+    );
+  } catch (error) {
+    if (
+      (error as { name?: string })?.name === 'ConditionalCheckFailedException'
+    ) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          'Session cannot be cancelled (already terminal or not found)',
+      });
     }
+    throw error;
   }
 
-  if (succeeded === 0) {
-    throw createError({ statusCode: 409, statusMessage: 'Session cannot be cancelled (already terminal or not found)' })
-  }
+  const closedCount = await closeOpenHypotheses(
+    ddb,
+    config.dynamodbTableName,
+    id,
+    engine,
+    sessionKey,
+    now,
+  );
 
-  const closedCount = await closeOpenHypotheses(ddb, config.dynamodbTableName, id, now)
-
-  return { cancelled: true, rcaId: id, closedHypotheses: closedCount }
-})
+  return { cancelled: true, rcaId: id, engine, closedHypotheses: closedCount };
+});

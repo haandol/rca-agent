@@ -11,6 +11,7 @@ from rca_agent.config.settings import (
     HYPOTHESIS_GENERATION_TIMEOUT_SECONDS,
 )
 from rca_agent.ports.dto.models import (
+    FaultType,
     Hypothesis,
     HypothesisCategory,
     HypothesisGenerationResult,
@@ -47,6 +48,10 @@ class _HypothesisItem(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     required_evidence: list[str] = Field(default_factory=list)
     referenced_playbook_id: str | None = None
+    fault_type: FaultType = Field(
+        default=FaultType.UNSUPPORTED,
+        description="Allowlisted remediation fault type; use UNSUPPORTED unless the evidence target is exact.",
+    )
 
 
 # Re-declare HypothesisOutput after _HypothesisItem is defined (forward ref)
@@ -165,6 +170,7 @@ def _convert_output_to_hypotheses(output: HypothesisOutput, tree_id: str) -> lis
                 confidence_score=item.confidence_score,
                 required_evidence=item.required_evidence,
                 referenced_playbook_id=item.referenced_playbook_id,
+                fault_type=item.fault_type,
                 tree_id=tree_id,
                 parent_id=None,
                 depth=0,

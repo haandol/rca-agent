@@ -3,7 +3,7 @@ ns = "RcaAgent"
 stage = "Dev"
 
 [aws]
-region = "ap-northeast-2"
+region = "us-east-1"
 
 [alarm]
 notificationEmail = "dongkyl@amazon.com"
@@ -19,7 +19,7 @@ imageTag = "latest"
 
 [remediation]
 imageTag = "latest"
-# 0 = 복구 에이전트 미배포(알림만), 1 = 자동 복구 활성화 (ADR agent/0012)
+# 0 = 복구 에이전트 미배포(알림만), 1 = 자동 복구 활성화
 desiredCount = 0
 
 [storage]

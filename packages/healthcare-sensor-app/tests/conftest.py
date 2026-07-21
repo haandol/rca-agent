@@ -8,8 +8,36 @@ from test_service.adapters.secondary.sensor_repository.sqlalchemy_sensor_reposit
     SqlAlchemySensorReadingRepository,
 )
 from test_service.ports.interfaces.database import DatabasePort
+from test_service.services import fault
+from test_service.services.fault_state import reset_environment_database_leak_state_for_testing
 
 TEST_DB_URL = "sqlite+aiosqlite://"
+
+
+def _clear_fault_state() -> None:
+    fault._cpu_stop_event.set()
+    for thread in fault._cpu_threads:
+        if thread.is_alive():
+            thread.join(timeout=0.1)
+    fault._cpu_threads.clear()
+
+    fault._slow_query_stop_event.set()
+    if fault._slow_query_thread and fault._slow_query_thread.is_alive():
+        fault._slow_query_thread.join(timeout=0.1)
+    fault._slow_query_thread = None
+
+    fault._leaked_sessions.clear()
+    fault._memory_ballast.clear()
+    reset_environment_database_leak_state_for_testing()
+    fault._cpu_stop_event.clear()
+    fault._slow_query_stop_event.clear()
+
+
+@pytest.fixture(autouse=True)
+def clean_fault_state():
+    _clear_fault_state()
+    yield
+    _clear_fault_state()
 
 
 class InMemoryDatabaseAdapter(DatabasePort):

@@ -19,8 +19,12 @@ Verify whether the remediation was successful.
 
 ## Original Alarm
 - **Alarm Name**: {alarm_name}
+- **Region**: {region}
 - **Metric**: {namespace}/{metric_name}
-- **Threshold**: {threshold}
+- **Dimensions**: {dimensions}
+- **Statistic**: {statistic}
+- **Period**: {period}s
+- **Threshold**: {threshold} ({comparison_operator})
 
 ## Remediation Actions Taken
 {remediation_summary}

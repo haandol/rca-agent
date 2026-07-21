@@ -27,6 +27,7 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'packages/agent/src/rca_agent/prompts',
   'packages/agent/src/rca_agent/agent_factory.py',
   'packages/cc-headless/CLAUDE.md',
+  'packages/cc-headless/.claude/agents',
   'packages/cc-headless/prompts',
   'packages/cc-headless/.claude/skills',
   'packages/cc-headless/.mcp.json',

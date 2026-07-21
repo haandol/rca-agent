@@ -50,6 +50,7 @@ def main() -> None:
                 QueueUrl=SQS_QUEUE_URL,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=SQS_POLL_WAIT_SECONDS,
+                AttributeNames=["ApproximateReceiveCount"],
             )
         except Exception:
             logger.exception("sqs_receive_failed")
@@ -62,7 +63,11 @@ def main() -> None:
 
         for msg in messages:
             try:
-                success = orchestrator.process_message(msg.get("Body", "{}"))
+                receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
+                success = orchestrator.process_message(
+                    msg.get("Body", "{}"),
+                    receive_count=receive_count,
+                )
             except Exception:
                 logger.exception("message_processing_failed")
                 success = False

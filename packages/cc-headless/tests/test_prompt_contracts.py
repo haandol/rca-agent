@@ -10,6 +10,7 @@ from cc_headless.services.prompt_builder import build_prompt
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PROMPTS_DIR = PACKAGE_ROOT / "prompts"
 SKILLS_DIR = PACKAGE_ROOT / ".claude" / "skills"
+AGENTS_DIR = PACKAGE_ROOT / ".claude" / "agents"
 MCP_CONFIG = json.loads((PACKAGE_ROOT / "mcp-config.json").read_text())
 
 EXPECTED_SKILLS = {
@@ -19,36 +20,73 @@ EXPECTED_SKILLS = {
     "hypothesis-validation",
     "progress-reporting",
     "remediation",
+    "reporting",
 }
+EXPECTED_AGENTS = {"orchestrator", "rca-specialist", "remediation-specialist", "report-specialist"}
 EXPECTED_SERVERS = {"aws-knowledge", "cloudwatch", "cloudtrail", "github", "rca-progress"}
 EXPECTED_CATEGORIES = {"DEPLOYMENT", "INFRASTRUCTURE", "TRAFFIC", "DEPENDENCY", "CONFIGURATION"}
 CANONICAL_ARTIFACTS = {
     "scoping.json",
     "hypotheses.json",
     "validation-{N}.json",
+    "remediation.json",
     "playbook.json",
     "report.md",
 }
 
 
-def _skill_name(path: Path) -> str:
-    match = re.search(r"^name:\s*(\S+)\s*$", path.read_text(), re.MULTILINE)
-    assert match, f"missing skill name in {path}"
+def _frontmatter_value(path: Path, key: str) -> str:
+    match = re.search(rf"^{re.escape(key)}:\s*(.+?)\s*$", path.read_text(), re.MULTILINE)
+    assert match, f"missing {key} in {path}"
     return match.group(1)
 
 
 def _all_guidance() -> str:
-    paths = [PACKAGE_ROOT / "CLAUDE.md", *sorted(PROMPTS_DIR.rglob("*.md")), *sorted(SKILLS_DIR.rglob("SKILL.md"))]
+    paths = [
+        PACKAGE_ROOT / "CLAUDE.md",
+        *sorted(PROMPTS_DIR.rglob("*.md")),
+        *sorted(SKILLS_DIR.rglob("SKILL.md")),
+        *sorted(AGENTS_DIR.glob("*.md")),
+    ]
     return "\n".join(path.read_text() for path in paths)
 
 
 def test_skill_directories_have_unique_matching_frontmatter_names():
     paths = sorted(SKILLS_DIR.glob("*/SKILL.md"))
-    names = [_skill_name(path) for path in paths]
+    names = [_frontmatter_value(path, "name") for path in paths]
 
     assert set(names) == EXPECTED_SKILLS
     assert len(names) == len(set(names))
-    assert all(path.parent.name == _skill_name(path) for path in paths)
+    assert all(path.parent.name == _frontmatter_value(path, "name") for path in paths)
+
+
+def test_role_agents_have_unique_matching_frontmatter_names():
+    paths = sorted(AGENTS_DIR.glob("*.md"))
+    names = [_frontmatter_value(path, "name") for path in paths]
+
+    assert set(names) == EXPECTED_AGENTS
+    assert len(names) == len(set(names))
+    assert all(path.stem == _frontmatter_value(path, "name") for path in paths)
+
+
+def test_role_agents_enforce_distinct_tool_boundaries():
+    orchestrator_tools = _frontmatter_value(AGENTS_DIR / "orchestrator.md", "tools")
+    rca_tools = set(_frontmatter_value(AGENTS_DIR / "rca-specialist.md", "tools").split(", "))
+    remediation_tools = set(_frontmatter_value(AGENTS_DIR / "remediation-specialist.md", "tools").split(", "))
+    report_tools = set(_frontmatter_value(AGENTS_DIR / "report-specialist.md", "tools").split(", "))
+
+    assert orchestrator_tools == "Agent(rca-specialist, remediation-specialist, report-specialist), Skill"
+    assert "execute_healthcare_reset" not in orchestrator_tools
+    assert rca_tools == {
+        "Skill",
+        "mcp__aws-knowledge__*",
+        "mcp__cloudwatch__*",
+        "mcp__cloudtrail__*",
+        "mcp__github__*",
+        "mcp__rca-progress__save_artifact",
+    }
+    assert remediation_tools == {"Skill", "mcp__rca-progress__execute_healthcare_reset"}
+    assert report_tools == {"Skill", "mcp__rca-progress__save_artifact"}
 
 
 def test_mcp_server_set_is_explicit_and_stable():
@@ -58,9 +96,19 @@ def test_mcp_server_set_is_explicit_and_stable():
 def test_rca_progress_mcp_points_to_packaged_server():
     config = MCP_CONFIG["mcpServers"]["rca-progress"]
 
-    assert config["command"] == "python"
-    assert config["args"][:3] == ["-m", "fastmcp", "run"]
-    assert config["args"][3].endswith("/src/cc_headless/mcp_server.py:mcp")
+    assert config["command"] == "fastmcp"
+    assert config["args"][0] == "run"
+    assert config["args"][1].endswith("/src/cc_headless/mcp_server.py:mcp")
+
+
+def test_mcp_servers_do_not_require_offline_uv_dependency_resolution():
+    knowledge = MCP_CONFIG["mcpServers"]["aws-knowledge"]
+    progress = MCP_CONFIG["mcpServers"]["rca-progress"]
+
+    assert knowledge["command"] == "fastmcp"
+    assert progress["command"] == "fastmcp"
+    assert "uvx" not in {knowledge["command"], progress["command"]}
+    assert "-m" not in progress["args"]
 
 
 def test_github_mcp_is_limited_to_read_only_toolsets():
@@ -95,7 +143,6 @@ def test_prompt_and_skills_use_canonical_artifact_extensions():
     [
         "prompts/sections/artifacts/hypotheses.md",
         "prompts/sections/artifacts/validation.md",
-        "prompts/sections/stages/2-hypothesis-generation.md",
         ".claude/skills/hypothesis-generation/SKILL.md",
         ".claude/skills/hypothesis-tree/SKILL.md",
     ],
@@ -107,18 +154,20 @@ def test_hypothesis_guidance_uses_shared_category_vocabulary(relative_path):
     assert EXPECTED_CATEGORIES.issubset(set(re.findall(r"\b[A-Z][A-Z_]+\b", text)))
 
 
-def test_rca_progress_skill_only_documents_implemented_tool_names():
+def test_rca_progress_skill_only_documents_implemented_storage_tool():
     text = (SKILLS_DIR / "progress-reporting" / "SKILL.md").read_text()
     documented = set(re.findall(r"^### `([a-z_]+)\(", text, re.MULTILINE))
 
     assert documented == {"save_artifact"}
 
 
-def test_prompt_forbids_shell_and_unmanaged_file_writes():
+def test_prompt_forbids_shell_arbitrary_http_ecs_and_unmanaged_file_writes():
     workspace_guidance = (PACKAGE_ROOT / "CLAUDE.md").read_text()
 
     assert "셸 명령 금지" in workspace_guidance
-    assert "그 외 파일 생성·수정·삭제 불가" in workspace_guidance
+    assert "임의 HTTP 요청 금지" in workspace_guidance
+    assert "ECS `UpdateService`" in workspace_guidance
+    assert "임의 파일 생성·수정·삭제" in workspace_guidance
 
 
 def test_guidance_requires_fresh_execution_artifacts_and_forbids_prior_run_reuse():
@@ -127,82 +176,102 @@ def test_guidance_requires_fresh_execution_artifacts_and_forbids_prior_run_reuse
     assert "각 호출은 빈 실행별 산출물 디렉터리에서 시작하는 독립 RCA이다" in guidance
     assert "이전 호출의 산출물을 재사용하지 않는다" in guidance
     assert "기존 산출물이 있는지 확인" not in guidance
-    assert "이전 단계의 산출물이 있으면 해당 내용을 기반으로 이어서 작업" not in guidance
     assert "/tmp/rca-{RCA_ID}" not in guidance
 
 
-def test_remediation_has_no_registered_write_capability_and_does_not_require_execution(monkeypatch):
+def test_main_prompt_orders_rca_conditional_remediation_and_mandatory_report(monkeypatch):
+    monkeypatch.setattr("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
+    prompt = build_prompt(AlarmContext(alarm_name="OrchestrationContract"))
+
+    rca_index = prompt.index("1단계: RCA 전문 에이전트")
+    remediation_index = prompt.index("2단계: 조건부 Remediation 전문 에이전트")
+    report_index = prompt.index("3단계: Report 전문 에이전트")
+
+    assert rca_index < remediation_index < report_index
+    assert "Remediation이 `BLOCKED` 또는 `FAILED`를 반환해도 Report를 반드시 호출한다" in prompt
+    assert "최신 validation의 `confirmed`가 비어 있지 않을 때만" in prompt
+
+
+def test_remediation_capability_is_narrow_and_has_no_fallback():
     from cc_headless.adapters.secondary.cc.cc_subprocess_runner import _ALLOWED_TOOLS
 
-    registered = set(MCP_CONFIG["mcpServers"])
-    write_servers = {"remediation", "healthcare-remediation", "ecs", "http"}
-    write_tools = {"update_service", "force_new_deployment", "post", "remediate"}
-    assert registered.isdisjoint(write_servers)
-    assert not any(any(marker in tool.lower() for marker in write_tools) for tool in _ALLOWED_TOOLS)
+    write_tools = {tool for tool in _ALLOWED_TOOLS if "rca-progress" in tool and "save_artifact" not in tool}
+    guidance = (SKILLS_DIR / "remediation" / "SKILL.md").read_text()
 
-    monkeypatch.setattr("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
-    prompt = build_prompt(AlarmContext(alarm_name="ReadOnlyRemediationContract"))
-    forbidden_directives = {
-        "자동 복구 (직접 수행)",
-        "복구 검증 (직접 수행)",
-        "자동 복구를 시도",
-        "엔드포인트를 호출한다",
-        "ECS 강제 새 배포를 시도",
-        "복구 후 30초 대기",
-        "실제 실행한 즉각 조치",
-    }
-
-    assert all(directive not in prompt for directive in forbidden_directives)
-    assert "서비스·인프라 변경, 대기, 사후 검증을 실행하지 않는다" in prompt
-    assert "실행 상태: CC Headless 미실행" in prompt
+    assert write_tools == {"mcp__rca-progress__execute_healthcare_reset"}
+    assert "URL이나 endpoint path를 인자로 전달하지 않는다" in guidance
+    assert "unsupported 원인에" in guidance
+    assert "대체 액션은 없다" in guidance
+    assert "자유 텍스트에서 fault type을 추론하지 않는다" in guidance
+    assert 'execute_healthcare_reset("unsupported")' in guidance
+    assert "미확정이면 도구를 호출하지 않으며" in guidance
+    assert "ECS `UpdateService`" in guidance
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    [
-        "CLAUDE.md",
-        ".claude/skills/remediation/SKILL.md",
-        "prompts/sections/stages/8-report.md",
-        "prompts/sections/stages/9-playbook.md",
-        "prompts/sections/stages/10-remediation.md",
-        "prompts/sections/artifacts/playbook.md",
-    ],
-)
-def test_remediation_guidance_records_required_recommendation_controls(relative_path):
-    text = (PACKAGE_ROOT / relative_path).read_text()
+def test_hypothesis_and_validation_contract_require_matching_fault_enum():
+    hypotheses = (PROMPTS_DIR / "sections" / "artifacts" / "hypotheses.md").read_text()
+    validation = (PROMPTS_DIR / "sections" / "artifacts" / "validation.md").read_text()
+    rca_agent = (AGENTS_DIR / "rca-specialist.md").read_text()
 
-    for required in ("제안할 액션", "사전조건", "승인 필요", "롤백 조건"):
-        assert required in text
+    for fault_type in ("db-leak", "high-cpu", "high-memory", "slow-query", "unsupported"):
+        assert fault_type in hypotheses
+        assert fault_type in rca_agent
+    assert "참조하는 hypothesis의 구조화 enum과 정확히" in validation
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    [
-        ".claude/skills/remediation/SKILL.md",
-        "prompts/sections/stages/8-report.md",
-        "prompts/sections/stages/9-playbook.md",
-        "prompts/sections/stages/11-verification.md",
-        "prompts/sections/artifacts/playbook.md",
-    ],
-)
-def test_verification_guidance_records_metrics_and_quantitative_decision_criteria(relative_path):
-    text = (PACKAGE_ROOT / relative_path).read_text()
+def test_cc_completion_event_cannot_enter_strands_external_remediation_queue():
+    report_store = (
+        PACKAGE_ROOT / "src" / "cc_headless" / "adapters" / "secondary" / "report" / "s3_report_store.py"
+    ).read_text()
 
-    assert "검증 메트릭" in text
-    assert "Pass" in text
-    assert "Fail" in text
+    assert '"StringValue": "cc_headless_complete"' in report_store
+    assert '"StringValue": "rca_complete"' not in report_store
 
 
-def test_verification_plan_uses_registered_observability_capability_without_running_remediation():
-    verification = (PROMPTS_DIR / "sections" / "stages" / "11-verification.md").read_text()
+def test_report_guidance_records_actual_remediation_states_and_verification_wait():
+    guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
+    playbook = (PROMPTS_DIR / "sections" / "artifacts" / "playbook.md").read_text()
 
-    assert "cloudwatch" in MCP_CONFIG["mcpServers"]
-    assert "메트릭" in verification
-    assert "사후 검증을 직접 수행하지 않는다" in verification
+    for status in ("NOT_ATTEMPTED", "SUCCEEDED", "FAILED", "BLOCKED"):
+        assert status in guidance
+        assert status in playbook
+    assert "검증 메트릭" in playbook
+    assert "Pass" in playbook
+    assert "Fail" in playbook
+    assert "관측 대기" in guidance
+    for status in ("NORMALIZED", "FAILED", "PENDING"):
+        assert status in guidance
+        assert status in playbook
+    assert "remediation.json" in guidance
+
+
+def test_report_contract_separates_current_and_historical_evidence_windows():
+    guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
+    agent = (AGENTS_DIR / "report-specialist.md").read_text()
+    principles = (PROMPTS_DIR / "sections" / "core" / "principles.md").read_text()
+    rca_agent = (AGENTS_DIR / "rca-specialist.md").read_text()
+    evidence = (SKILLS_DIR / "evidence-patterns" / "SKILL.md").read_text()
+    combined = "\n".join((guidance, agent, principles, rca_agent, evidence))
+
+    assert "Current alarm window" in combined
+    assert "Historical comparison window" in combined
+    assert "ISO-8601" in guidance
+    assert "수동 테스트 로그" in combined
+    assert "현재 장애 증거" in combined
+    assert "시각이 없거나 window를" in guidance
+    assert "현재 장애 증거에서 제외" in guidance
+    assert "current alarm window 이전의 수동 테스트" in rca_agent
+    assert "현재 장애의 발생, 원인, 지속 증거로 사용하지 않는다" in evidence
 
 
 def test_required_artifact_contract_matches_watcher():
     from cc_headless.services.artifact_watcher import ARTIFACT_SPAN_MAP
 
-    assert set(ARTIFACT_SPAN_MAP) == {"scoping.json", "hypotheses.json", "playbook.json", "report.md"}
+    assert set(ARTIFACT_SPAN_MAP) == {
+        "scoping.json",
+        "hypotheses.json",
+        "remediation.json",
+        "playbook.json",
+        "report.md",
+    }
     assert "validation-{N}.json" in _all_guidance()

@@ -4,7 +4,7 @@ Date: 2026-04-21
 
 ## Status
 
-Rejected
+Deprecated (2026-04-21)
 
 ## Context
 

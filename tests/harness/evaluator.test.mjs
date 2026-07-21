@@ -57,6 +57,22 @@ test('normalized result loader reads both engines independently of scenarios', a
   results.forEach(validateResult);
 });
 
+test('input digest protects CC Headless agent definitions', async () => {
+  const { inputFiles } = await computeInputDigest();
+
+  assert.deepEqual(
+    inputFiles.filter((file) =>
+      file.startsWith('packages/cc-headless/.claude/agents/'),
+    ),
+    [
+      'packages/cc-headless/.claude/agents/orchestrator.md',
+      'packages/cc-headless/.claude/agents/rca-specialist.md',
+      'packages/cc-headless/.claude/agents/remediation-specialist.md',
+      'packages/cc-headless/.claude/agents/report-specialist.md',
+    ],
+  );
+});
+
 test('mandatory gate rejects missing evidence and artifacts', async () => {
   const [scenario] = await loadScenarios(scenariosDirectory);
   const result = (await loadResults(fixturesDirectory)).find(

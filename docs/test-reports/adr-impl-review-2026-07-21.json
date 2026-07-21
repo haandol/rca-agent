@@ -1,0 +1,159 @@
+{
+  "adr": "docs/adr/agent/0011, agent/0012, infra/0003, infra/0006",
+  "status": "Accepted",
+  "verdict": "FIX_REQUIRED",
+  "scope": [
+    "packages/cc-headless",
+    "packages/agent",
+    "packages/healthcare-sensor-app",
+    "packages/infra"
+  ],
+  "conventions": "AGENTS.md, packages/cc-headless/AGENTS.md, packages/infra/AGENTS.md",
+  "findings": [
+    {
+      "category": "Spec violation",
+      "summary": "Strands remediation trusts the event's confirmed flag instead of reloading the latest validation artifact.",
+      "confidence": "high",
+      "adrQuote": "모델이 전달한 확정 여부를 신뢰하지 않고 산출물을 직접 검증한다.",
+      "code": "packages/agent/src/rca_agent/services/remediation_pipeline.py:79 — if not raw.get(\"confirmed\", False):",
+      "fix": "Load the latest validation and completed session from the authoritative stores before allowing remediation.",
+      "impact": "critical"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "The dormant Strands remediation path still falls back to a general ECS force deployment.",
+      "confidence": "high",
+      "adrQuote": "지원하지 않는 원인은 임의 대체 조치 없이 fail-closed하며 일반 ECS 변경을 금지한다.",
+      "code": "packages/agent/src/rca_agent/services/remediation.py:83,121 — _force_ecs_deployment(... forceNewDeployment=True)",
+      "fix": "Remove the ECS fallback and return BLOCKED for unsupported causes; remove its IAM permissions.",
+      "impact": "critical"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "A reclaimed session does not fence the previous attempt before reset, report upload, notification, or watcher writes.",
+      "confidence": "high",
+      "adrQuote": "이전 실행은 소유권을 잃은 뒤 복구 결과를 확정할 수 없어야 하며 모든 상태 전이와 완료 기록은 claim token이 일치할 때만 허용한다.",
+      "code": "packages/cc-headless/src/cc_headless/mcp_server.py:237,310; packages/cc-headless/src/cc_headless/services/pipeline.py:154-203; packages/cc-headless/src/cc_headless/services/artifact_watcher.py:121",
+      "fix": "Fence every external side effect with the active claim and use attempt-scoped artifacts plus conditional publication.",
+      "impact": "high"
+    },
+    {
+      "category": "Best practice",
+      "summary": "Session ownership checks fail open when DynamoDB reads fail.",
+      "confidence": "high",
+      "adrQuote": "모든 상태 전이와 완료 기록은 현재 claim token이 일치할 때만 허용한다.",
+      "basis": "Fail-closed ownership fencing",
+      "code": "packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py:268 — exception logs and returns False",
+      "fix": "Treat ownership-check failure as cancellation or a retryable processing error and do not acknowledge the message.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "The root CC process retains direct analysis and remediation MCP tools instead of being capability-limited to orchestration.",
+      "confidence": "high",
+      "adrQuote": "메인 에이전트는 직접 분석하거나 복구하지 않는 오케스트레이터다.",
+      "code": "packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py:36 — root allowed tools include CloudWatch and execute_healthcare_reset",
+      "fix": "Restrict the root process to agent delegation and enforce role-specific MCP capability profiles.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "Remediation selection uses free-text regex matching instead of a structured fault type from validation.",
+      "confidence": "high",
+      "adrQuote": "지원하지 않는 원인은 fail-closed하고 허용된 장애 리셋만 실행한다.",
+      "code": "packages/cc-headless/src/cc_headless/mcp_server.py:150-163 — concatenates title/reasoning and applies re.search",
+      "fix": "Require and validate a fault_type enum in the latest confirmed validation artifact.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "Pipeline completion accepts minimally valid report and playbook files without semantic schema or remediation-result checks.",
+      "confidence": "high",
+      "adrQuote": "복구 결과가 없으면 미실행으로, 실패 결과가 있으면 실패로 기록하도록 산출물 계약을 강제한다.",
+      "code": "packages/cc-headless/src/cc_headless/services/pipeline.py:165; packages/cc-headless/src/cc_headless/adapters/secondary/playbook/s3_vectors_playbook_store.py:26",
+      "fix": "Validate required RCA/report sections and cross-check playbook and remediation schemas against server-owned results before completion.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "The completion gate does not prove that RCA, conditional remediation, and report agents actually ran in order.",
+      "confidence": "high",
+      "adrQuote": "실행 순서는 RCA → 조건부 Remediation → Report다.",
+      "code": "packages/cc-headless/tests/test_pipeline.py:61 — success fixture can complete with only report.md and playbook.json",
+      "fix": "Require scoping, hypotheses, latest validation, and a server-owned remediation outcome before report completion.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "Strands remediation has no durable session-level idempotency claim.",
+      "confidence": "high",
+      "adrQuote": "리셋 API의 멱등성과 세션 멱등성 키를 함께 사용한다.",
+      "code": "packages/agent/tests/test_remediation_pipeline.py:157 — duplicate-event contract remains strict xfail",
+      "fix": "Add an engine + rca_id + action conditional claim and persist the terminal remediation result.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "Strands post-remediation verification is not persisted or included in final notifications and reports.",
+      "confidence": "high",
+      "adrQuote": "복구 후 관측 결과는 정상화, 실패, 관측 대기로 구분한다.",
+      "code": "packages/agent/src/rca_agent/services/remediation_pipeline.py:91-98",
+      "fix": "Persist the verification state and include it in the terminal notification and report.",
+      "impact": "high"
+    },
+    {
+      "category": "Spec violation",
+      "summary": "Claim rejection is always acknowledged even when it may represent transient contention rather than a terminal duplicate.",
+      "confidence": "medium",
+      "adrQuote": "성공 또는 이미 완료된 중복으로 판정된 경우에만 확인 처리한다.",
+      "code": "packages/cc-headless/src/cc_headless/services/pipeline.py:77; packages/cc-headless/src/cc_headless/main.py:75",
+      "fix": "Return CLAIMED, TERMINAL_DUPLICATE, or CONTENDED and acknowledge only terminal outcomes.",
+      "impact": "medium"
+    },
+    {
+      "category": "Best practice",
+      "summary": "The Strands remediation consumer acknowledges messages even after an unhandled transient exception.",
+      "confidence": "high",
+      "adrQuote": "복구 실패도 관찰 가능한 결과로 남는다.",
+      "basis": "SQS at-least-once retry contract",
+      "code": "packages/agent/src/rca_agent/remediation_main.py:67 — finally: consumer.ack(...)",
+      "fix": "Acknowledge only successful or explicitly terminal outcomes; leave transient failures for retry/DLQ.",
+      "impact": "medium"
+    },
+    {
+      "category": "Test gap",
+      "summary": "No deterministic tests exercise reclaim races at reset, report publication, watcher writes, and SQS acknowledgement.",
+      "confidence": "high",
+      "code": "packages/cc-headless/tests/test_pipeline.py:252 only checks termination once after the CC process returns",
+      "fix": "Swap the claim immediately before each side effect and assert no stale attempt can publish or acknowledge.",
+      "impact": "high-effort/high-payoff"
+    },
+    {
+      "category": "Test gap",
+      "summary": "Prompt text ordering is tested, but actual sub-agent invocation order and failure continuity are not.",
+      "confidence": "high",
+      "code": "packages/cc-headless/tests/test_prompt_contracts.py:173 — prompt.index(...)",
+      "fix": "Add tool-call event contract tests for RCA, remediation, report ordering and report-after-remediation-failure behavior.",
+      "impact": "medium-effort/high-payoff"
+    },
+    {
+      "category": "Test gap",
+      "summary": "The required save_report → mark_completed → delete_message acknowledgement boundary is not asserted.",
+      "confidence": "high",
+      "adrQuote": "필수 보고서가 저장되고 세션이 완료된 뒤에만 확인 처리한다.",
+      "code": "packages/cc-headless/tests/test_pipeline.py:120 checks calls but not their ordering relative to SQS delete",
+      "fix": "Add an ordered integration contract for report persistence, terminal session CAS, and SQS deletion.",
+      "impact": "low-effort/high-payoff"
+    },
+    {
+      "category": "Best practice",
+      "summary": "Production code contains direct ADR identifiers, coupling runtime modules to ADR numbering.",
+      "confidence": "high",
+      "basis": "ADR R17 code-to-ADR back-reference rule",
+      "code": "packages/agent/src/rca_agent/services/remediation_pipeline.py:69; settings.py:60; app_container.py:230; models.py:285",
+      "fix": "Remove ADR identifiers from production comments while retaining the behavior.",
+      "impact": "low"
+    }
+  ],
+  "notes": "ADR 0003 passed with a missing order test. ADR 0011, 0012, and 0006 require fixes. Review was static and read-only."
+}

@@ -4,7 +4,7 @@ Date: 2026-04-22
 
 ## Status
 
-Accepted (2026-04-29 업데이트 — Haiku Execution 티어 제거, 단일 Sonnet 4.6로 통합)
+Accepted (2026-04-22)
 
 ## Context
 

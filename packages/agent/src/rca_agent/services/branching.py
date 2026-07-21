@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS, MAX_BRANCHING_DEPTH
 from rca_agent.ports.dto.models import (
     BranchingResult,
+    FaultType,
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
@@ -33,6 +34,10 @@ class _ChildItem(BaseModel):
     category: HypothesisCategory
     confidence_score: float = Field(ge=0.0, le=1.0)
     required_evidence: list[str] = Field(default_factory=list)
+    fault_type: FaultType = Field(
+        default=FaultType.UNSUPPORTED,
+        description="Allowlisted remediation fault type; use UNSUPPORTED unless the child is an exact match.",
+    )
 
 
 MAX_CHILDREN_PER_BRANCH = 3
@@ -51,6 +56,7 @@ def _build_user_prompt(parent: Hypothesis, evidence_text: str, rejected_descript
         parent_description=parent.description,
         parent_category=parent.category,
         parent_confidence=parent.confidence_score,
+        parent_fault_type=parent.fault_type.value,
         evidence_text=evidence_text or "No evidence collected yet.",
         rejected_text=rejected_text,
     )
@@ -113,6 +119,7 @@ def run_branching(
                 category=item.category,
                 confidence_score=item.confidence_score,
                 required_evidence=item.required_evidence,
+                fault_type=item.fault_type,
                 status=HypothesisStatus.PENDING,
                 tree_id=parent.tree_id,
                 parent_id=parent.hypothesis_id,

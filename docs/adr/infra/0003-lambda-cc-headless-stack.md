@@ -1,4 +1,4 @@
-# ADR 0003: CC Headless 스택 — ECS Fargate 기반 RCA 실행 인프라
+# ADR 0003: CC Headless 오케스트레이터 실행 인프라
 
 Date: 2026-04-22
 Updated: 2026-07-21
@@ -9,87 +9,77 @@ Accepted (2026-07-21)
 
 ## Context
 
-CC on Bedrock headless 기반 프롬프트 주도 RCA(agent/0011)를 실행할 인프라가 필요하다. 초기 설계(2026-04-22)에서는 Lambda Container Image를 채택했으나, 다음 문제가 확인되어 ECS Fargate로 전환한다:
+CC Headless는 장시간 RCA와 전문 서브 에이전트 호출을 수행하므로 짧은 서버리스
+실행보다 상시 워커가 적합하다. 동시에 RCA 읽기 도구와 자동 복구 쓰기 도구를
+같은 런타임에 제공해야 하므로, 네트워크와 도구 권한은 최소 범위로 제한되어야
+한다.
 
-1. **Lambda 15분 타임아웃**: CC headless가 30턴까지 MCP 도구를 호출하며 분석하면 10분을 초과하는 경우가 빈번하다. 프롬프트 지시로 제한하더라도 복잡한 알람에서는 타임아웃 리스크가 높다
-2. **CC CLI 콜드스타트**: Lambda 컨테이너 이미지에서 CC CLI + MCP 서버 초기화에 10-20초가 소요되어, 호출마다 반복되는 오버헤드가 크다
-3. **아키텍처 통일**: 기존 Strands Agent가 이미 ECS Fargate + SQS Long Polling 패턴(infra/0001)을 사용하므로, CC Headless도 동일 패턴을 사용하면 운영/배포 스크립트를 통일할 수 있다
+별도 Remediation 워커를 CC 전용으로 추가하면 분석 컨텍스트를 이벤트로 다시
+직렬화해야 하고 복구 시작이 늦어진다. 반면 CC 태스크에 일반적인 변경 권한을
+부여하면 오케스트레이터나 RCA 서브 에이전트가 의도하지 않은 변경을 수행할 수
+있다.
 
-ECS Fargate로 전환하면 Lambda의 15분 제한을 피하고, 상시 실행 worker가 알람마다 격리된 CC CLI 프로세스를 시작할 수 있으며, 배포 스크립트(`deploy-service.sh`)를 공유할 수 있다.
+## Decision Drivers
+
+- 장시간 RCA와 서브 에이전트 실행에 플랫폼 타임아웃이 없어야 한다.
+- 알람 전달 실패와 태스크 재시작에도 메시지가 보존되어야 한다.
+- CC의 자동 복구는 Healthcare 서비스의 허용된 리셋으로 한정되어야 한다.
+- RCA 읽기 도구와 복구 쓰기 도구의 노출 범위를 역할별로 제한해야 한다.
+- 실행별 파일·대화·설정이 다음 알람으로 누출되지 않아야 한다.
 
 ## Decision
 
-**SNS → SQS → ECS Fargate (Long Polling)** 아키텍처를 채택한다. Strands Agent 스택(infra/0001)과 동일한 패턴이되, 별도 ECS 클러스터/서비스로 독립 운영한다.
+CC Headless는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 운영한다.
+알람마다 격리된 Claude Code 실행을 만들고 메인 에이전트가 RCA, Remediation,
+Report 서브 에이전트를 조정한다.
 
-### 알람 전달 경로
+태스크에는 AWS 관측·변경 이력·코드 조회용 읽기 도구, 산출물 저장 도구, 제한된
+Healthcare 복구 도구만 제공한다. 복구 도구는 임의 네트워크 요청을 제공하지 않고
+확정 산출물에 매칭되는 허용된 리셋만 수행한다. 태스크 역할에는 일반 ECS 변경
+권한을 부여하지 않는다.
 
-```mermaid
-flowchart LR
-    CWA["CloudWatch Alarm"] -->|알람 발행| SNS["SNS Alarm Topic\n(기존 공유)"]
-    SNS -->|구독| SQS_CC["SQS Queue\n(CC Headless 전용)"]
-    SQS_CC -->|Long Polling| Fargate_CC["ECS Fargate\n(CC Headless)"]
-    SQS_CC -.->|처리 실패 시| DLQ["SQS DLQ"]
-    Fargate_CC -->|세션 기록| DDB["DynamoDB\n(기존 공유)"]
-    Fargate_CC -->|보고서| S3["S3\n(기존 공유)"]
-    Fargate_CC -->|완료 알림| SNS_N["SNS Notification\n(기존 공유)"]
-```
+CC 서비스에서 Healthcare 서비스 포트로의 네트워크 접근만 허용한다. 다른 외부
+쓰기 대상은 자동 복구 경로에 포함하지 않는다.
 
-### 핵심 결정사항
+산출물 디렉터리와 Claude 작업·홈 디렉터리는 실행마다 새로 만들고 종료 후
+정리한다. wrapper는 산출물 생성을 감지하여 세션 트레이스를 기록한다. SQS 메시지는
+필수 보고서가 저장되고 세션이 완료된 뒤에만 확인 처리한다.
 
-1. **SQS Long Polling**: Fargate Task가 상시 실행되며 SQS를 20초 간격으로 Long Polling한다. Strands Agent와 동일한 패턴이다.
+## 대안 검토
 
-2. **컨테이너 이미지**: `python:3.12-slim` base에 Node.js(`node:22-slim`에서 바이너리 복사), CC CLI(`@anthropic-ai/claude-code`), GitHub MCP 서버(Go 바이너리), uv를 포함한다. Docker 멀티스테이지 빌드로 최적화한다.
-
-3. **ECS 설정**:
-   - CPU: 1024 (1 vCPU)
-   - Memory: 2048MB
-   - 아키텍처: ARM64 (Graviton, 비용 최적화)
-   - Desired Count: 1 (한 번에 하나의 RCA만 실행)
-   - Health Check: `GET /healthz` (HTTP 8080)
-
-4. **MCP 서버 연결**: 컨테이너 내 MCP 설정에 CloudWatch MCP, CloudTrail MCP, AWS Knowledge MCP, 읽기 전용 GitHub MCP, rca-progress MCP를 정의한다. CC headless는 엄격한 MCP 설정과 명시적 도구 허용 목록으로 이 서버만 연결한다. rca-progress MCP는 `save_artifact` 도구만 제공하며 실행 토큰별 격리 디렉터리에 허용된 산출물만 원자적으로 저장한다.
-
-5. **산출물 파일 기반 트레이싱**: Python wrapper의 `artifact_watcher` 스레드가 현재 실행에만 할당된 산출물 디렉터리를 3초 간격으로 폴링한다. 새 파일이 감지되면 JSON을 파싱하여 DDB에 스팬/가설 아이템을 자동 기록한다. CC CLI는 `save_artifact`로 파일만 저장하면 되고, 트레이싱 로직을 알 필요가 없다. 실행별 산출물 디렉터리와 CC 작업·홈 디렉터리는 매번 새로 만들고 종료 후 정리한다. 상세는 infra/0005를 참조한다.
-
-6. **세션 상태 관리**: 기존 DynamoDB 테이블에 세션을 기록한다. `engine` 필드를 `cc-headless`로 설정하여 Strands Agent(`strands`)와 구분한다. SK 접두사에 엔진명을 포함하여 엔진별 트레이스를 분리한다.
-
-7. **멱등성**: DynamoDB Conditional Write 기반 이중 멱등성 체크(idempotency key + session creation)를 사용한다.
-
-8. **구조화 로깅**: structlog 라이브러리로 구조화된 로그를 출력한다. ECS 환경(`ECS_CONTAINER_METADATA_URI_V4` 존재)에서는 JSON 포맷, 로컬에서는 plain text 포맷을 자동 선택한다.
-
-9. **파일 경로 탐색**: 프롬프트 파일(`prompts/`)과 MCP 설정(`mcp-config.json`)은 `Path.parents` 순회 방식으로 탐색한다. 컨테이너(`/app/src/cc_headless/`)와 로컬 개발 환경 모두에서 동작한다.
-
-### 공유 인프라
-
-Strands Agent 스택과 다음 인프라를 공유한다:
-- SNS Alarm Topic (동일 알람을 양쪽에서 수신)
-- DynamoDB RCA 세션 테이블
-- S3 보고서 버킷
-- SNS 알림 Topic
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 알람마다 서버리스 함수 실행 | 유휴 비용이 적고 운영 단위가 작다. | 장시간 분석과 다중 서브 에이전트 호출이 플랫폼 시간 제한에 걸릴 수 있다. |
+| CC 분석 서비스와 별도 CC 복구 서비스 | 런타임과 권한이 물리적으로 분리된다. | 컨텍스트 직렬화, 별도 큐, 중복 실행 제어가 추가되고 복구 지연이 커진다. |
+| 단일 Fargate 오케스트레이터 + 제한된 복구 도구 | 분석 컨텍스트를 유지하면서 복구 대상을 도구 경계에서 제한할 수 있다. | 논리적 역할 분리를 보강하기 위해 도구 자체의 서버 측 검증이 필요하다. |
 
 ## Consequences
 
 ### Positive
 
-- 타임아웃 제약 없이 복잡한 RCA를 끝까지 수행할 수 있다
-- Strands Agent와 동일한 ECS 패턴으로 배포 스크립트(`deploy-service.sh`), 모니터링, 운영 절차를 통일할 수 있다
-- 상시 실행으로 콜드스타트 없이 알람 수신 즉시 분석을 시작할 수 있다
-- A/B 비교 가능 — 동일 알람에 대해 Strands vs CC Headless 결과를 비교할 수 있다
+- 장시간 분석과 복구를 하나의 격리 실행에서 완료할 수 있다.
+- CC 전용 Remediation 큐와 서비스가 필요하지 않다.
+- 일반 ECS 변경 권한 없이 Healthcare 리셋만 자동화할 수 있다.
+- SQS 재전달과 ECS 자동 재시작을 이용할 수 있다.
 
 ### Negative
 
-- 상시 실행으로 알람이 없는 시간에도 컴퓨팅 비용이 발생한다 (Lambda 대비 비용 증가)
-- SQS Long Polling 기반이므로 최대 20초의 폴링 간격 지연이 발생할 수 있다
+- CC 태스크가 분석과 제한된 복구의 공통 장애 도메인이 된다.
+- 서브 에이전트와 MCP 서버를 포함한 컨테이너 이미지가 커진다.
+- 역할별 권한이 프로세스 수준 격리가 아니라 도구 허용 정책에 의존한다.
 
 ### Risks
 
-- Fargate Task가 비정상 종료되면 진행 중인 RCA가 유실된다. SQS Visibility Timeout 후 메시지가 재처리되지만, DynamoDB에 `ANALYZING` 상태로 남은 세션에 대한 복구 메커니즘이 필요하다
-- CC headless가 프롬프트 지시를 무시하고 과도한 도구 호출을 수행할 수 있다. 프로세스 실행 시간 제한, 내장 도구 허용 목록, 엄격한 MCP 설정, 세션 비영속화로 완화한다
-- 두 스택이 동일 DynamoDB 테이블을 공유하므로, 멱등성 체크 없이 양쪽이 동시에 같은 알람을 처리하면 충돌이 발생한다. DynamoDB Conditional Write로 원자적 세션 생성을 보장한다
+- CC 프로세스 종료 시 복구 결과가 보고서에 반영되지 않을 수 있다. 필수 보고서
+  계약과 SQS 재처리로 완화한다.
+- 도구 허용 정책이 잘못 구성되면 RCA 에이전트가 쓰기 도구를 볼 수 있다.
+  서브 에이전트 계약 테스트와 복구 도구의 자체 검증을 함께 적용한다.
+- Healthcare 연결 실패 시 복구가 실패할 수 있다. RCA 결과는 유지하고 보고서에
+  수동 조치 필요성을 기록한다.
 
 ## Related
 
-- [ADR agent/0011: CC headless 기반 프롬프트 주도 RCA](../agent/0011-cc-headless-prompt-driven-rca.md) — CC Headless RCA 에이전트 설계
-- [ADR infra/0001: 알람 수신 아키텍처 (Fargate)](0001-alarm-ingestion-sns-sqs-fargate.md) — Strands Agent의 동일 패턴
-- [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — 공유 저장소 아키텍처
-- [ADR infra/0005: 실행 트레이스 DynamoDB](0005-execution-trace-dynamodb.md) — 산출물 파일 기반 트레이싱 상세
+- [ADR agent/0011: CC Headless 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md)
+- [ADR agent/0012: 자동 복구 실행 경계](../agent/0012-automated-remediation.md)
+- [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md)
+- [ADR infra/0005: 실행 트레이스](0005-execution-trace-dynamodb.md)

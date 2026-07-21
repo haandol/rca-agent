@@ -15,6 +15,8 @@ interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
   readonly alarmTopic: sns.ITopic;
   readonly notificationTopic: sns.ITopic;
+  readonly healthcareService: ecs.FargateService;
+  readonly healthcareServiceHost: string;
   readonly rcaSessionTable: dynamodb.ITable;
   readonly evidenceBucket: s3.IBucket;
   readonly vectorBucketName: string;
@@ -29,10 +31,20 @@ export class CcHeadlessStack extends cdk.Stack {
     const ns = this.node.tryGetContext('ns') as string;
 
     const deadLetterQueue = this.newDeadLetterQueue(ns);
-    const alarmQueue = this.newAlarmQueue(ns, props.alarmTopic, deadLetterQueue);
+    const alarmQueue = this.newAlarmQueue(
+      ns,
+      props.alarmTopic,
+      deadLetterQueue,
+    );
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props, alarmQueue);
-    this.newService(ns, cluster, taskDefinition);
+    const service = this.newService(ns, cluster, taskDefinition);
+
+    props.healthcareService.connections.allowFrom(
+      service,
+      ec2.Port.tcp(8000),
+      'CC Headless allowlisted Healthcare reset API calls',
+    );
   }
 
   private newDeadLetterQueue(ns: string): sqs.Queue {
@@ -112,16 +124,19 @@ export class CcHeadlessStack extends cdk.Stack {
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         CLAUDE_CODE_USE_BEDROCK: '1',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'global.anthropic.claude-sonnet-4-6[1m]',
+        ANTHROPIC_DEFAULT_SONNET_MODEL:
+          'global.anthropic.claude-sonnet-4-6[1m]',
         SQS_QUEUE_URL: alarmQueue.queueUrl,
         DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
         S3_EVIDENCE_BUCKET: props.evidenceBucket.bucketName,
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
         S3_REPORT_BUCKET: props.reportBucket,
         SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
+        HEALTHCARE_SERVICE_HOST: props.healthcareServiceHost,
       },
       secrets: {
-        GITHUB_PERSONAL_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(githubPatSecret),
+        GITHUB_PERSONAL_ACCESS_TOKEN:
+          ecs.Secret.fromSecretsManager(githubPatSecret),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'cc-headless',
@@ -191,7 +206,9 @@ export class CcHeadlessStack extends cdk.Stack {
     );
 
     taskDef.taskRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudTrail_ReadOnlyAccess'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        'AWSCloudTrail_ReadOnlyAccess',
+      ),
     );
 
     taskDef.taskRole.addToPrincipalPolicy(
@@ -212,16 +229,6 @@ export class CcHeadlessStack extends cdk.Stack {
         }),
       );
     }
-
-    taskDef.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'ecs:UpdateService',
-          'ecs:DescribeServices',
-        ],
-        resources: ['*'],
-      }),
-    );
   }
 
   private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {

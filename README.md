@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 수행하는 closed-loop 에이전트 시스템입니다. 두 가지 실행 엔진(Strands Agents SDK 9단계 파이프라인 / CC on Bedrock headless 프롬프트 주도)을 지원하며, MCP 서버를 통해 CloudWatch, CloudTrail, GitHub 데이터 소스를 자동 분석합니다.
+AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 수행하는 closed-loop 에이전트 시스템입니다. 두 가지 실행 엔진(Strands Agents SDK 9단계 파이프라인 / CC on Bedrock headless 전문 서브 에이전트 오케스트레이션)을 지원하며, MCP 서버를 통해 CloudWatch, CloudTrail, GitHub 데이터 소스를 자동 분석합니다.
 
 ## 패키지 구성
 
 | Package | Description | Tech |
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet 모델 + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
-| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | Python, Claude Code CLI, ECS Fargate |
+| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 오케스트레이터 — RCA → 조건부 Remediation → Report 전문 서브 에이전트 실행 | Python, Claude Code CLI, ECS Fargate |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, DynamoDB, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, PostgreSQL |
 | [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, Vue Flow |
@@ -18,7 +18,7 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 
 ### Dual-Stack RCA 실행
 - **Fargate Stack (Strands)**: CloudWatch Alarm → SNS → SQS → ECS Fargate, 9단계 closed-loop 파이프라인 (Scoping → Hypothesis → Prioritization → Beam Selection → Evidence → Validation → Branching → Report → Playbook → Notification)
-- **Fargate Stack (CC Headless)**: CloudWatch Alarm → SNS → SQS → ECS Fargate, 단일 프롬프트 주도 RCA
+- **Fargate Stack (CC Headless)**: CloudWatch Alarm → SNS → SQS → ECS Fargate, 역할별 전문 서브 에이전트 오케스트레이션
 - 동일 SNS 토픽을 독립 구독하여 A/B 비교 가능
 - DynamoDB `engine` 필드로 실행 엔진 구분, `IDEMP#` 키로 멱등성 보장
 
@@ -35,9 +35,9 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 
 ### CC Headless Stack
 - Claude Code CLI headless 모드 + Bedrock 백엔드 (ECS Fargate)
-- 단일 프롬프트에 11단계 RCA 워크플로우 정의 (스코핑 ~ 검증 ~ 복구 ~ 보고서)
-- MCP 서버 구성: AWS Knowledge, CloudWatch, CloudTrail, GitHub (`mcp-config.json`)
-- CC가 MCP 도구를 자율적으로 호출
+- RCA, 조건부 Remediation, Report 전문 서브 에이전트를 순차 호출
+- RCA는 읽기 전용 MCP만 사용하고, Remediation은 확정 원인에 매칭되는 Healthcare reset만 실행
+- Report는 실제 복구 결과를 포함한 `report.md`와 `playbook.json` 생성
 
 ### 공통 — Hexagonal Architecture
 - 양쪽 패키지(agent, cc-headless) 모두 Ports & Adapters 패턴 적용
@@ -261,7 +261,7 @@ CloudWatch Alarm → SNS → SQS 경로로 알람이 전달되면, RCA 에이전
 8. **Playbook**: 재사용 가능한 대응 플레이북 생성 및 S3 Vectors 인덱싱
 9. **Notification**: SNS 알림 발행 (presigned URL + 플레이북 포함)
 
-**CC Headless Agent (프롬프트 주도)**: 동일한 알람을 독립적으로 수신하여 단일 프롬프트로 전체 RCA를 자율 수행합니다.
+**CC Headless Agent (서브 에이전트 오케스트레이션)**: 동일한 알람을 독립적으로 수신하여 RCA → 조건부 Remediation → Report 역할을 순서대로 실행합니다.
 
 ### Step 3. 결과 확인
 
@@ -315,7 +315,7 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 | `SNS_NOTIFICATION_TOPIC_ARN` | - | RCA 완료 알림 SNS 토픽 |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | - | GitHub MCP 인증 (Secrets Manager에서 주입) |
 
-전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요. 자동 복구(Remediation) 활성화는 별도 에이전트의 desired count로 제어하며, 현재 설계 단계입니다.
+전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요. Strands 자동 복구는 별도 Remediation Agent의 desired count로 제어하며 기본값은 0입니다.
 
 ### CC Headless (packages/cc-headless)
 

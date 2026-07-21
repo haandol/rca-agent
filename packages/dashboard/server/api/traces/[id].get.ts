@@ -1,65 +1,58 @@
-import { QueryCommand } from '@aws-sdk/lib-dynamodb'
+import { QueryCommand, type QueryCommandInput } from '@aws-sdk/lib-dynamodb';
 
 function parseEngine(sk: string): string {
-  if (sk === 'SESSION' || sk.startsWith('SPAN#') || sk.startsWith('HYPO#')) return 'strands'
-  return sk.split('#')[0] ?? 'strands'
+  if (sk === 'SESSION' || sk.startsWith('SPAN#') || sk.startsWith('HYPO#'))
+    return 'strands';
+  return sk.split('#')[0] ?? 'strands';
 }
 
 export default defineEventHandler(async (event) => {
-  const id = getRouterParam(event, 'id')
+  const id = getRouterParam(event, 'id');
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing RCA id' })
+    throw createError({ statusCode: 400, statusMessage: 'Missing RCA id' });
   }
 
-  const query = getQuery(event)
-  const engineFilter = (query.engine as string) || ''
+  const query = getQuery(event);
+  const engineFilter = (query.engine as string) || '';
 
-  const config = useRuntimeConfig()
-  const ddb = useDynamoDB()
+  const config = useRuntimeConfig();
+  const ddb = useDynamoDB();
 
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `RCA#${id}` },
-    }),
-  )
+  const items = [];
+  let exclusiveStartKey: QueryCommandInput['ExclusiveStartKey'];
 
-  const items = result.Items ?? []
+  do {
+    const result = await ddb.send(
+      new QueryCommand({
+        TableName: config.dynamodbTableName,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': `RCA#${id}` },
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    items.push(...(result.Items ?? []));
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
 
   function matchesEngine(sk: string): boolean {
-    if (!engineFilter) return true
-    const itemEngine = parseEngine(sk)
-    return itemEngine === engineFilter
+    if (!engineFilter) return true;
+    const itemEngine = parseEngine(sk);
+    return itemEngine === engineFilter;
   }
-
-  const session = items.find((i) => {
-    const sk = i.SK as string
-    const isSession = sk.endsWith('#SESSION') || sk === 'SESSION'
-    return isSession && matchesEngine(sk)
-  })
-  const sessionData = session
-    ? {
-        state: (session.state as string) || 'UNKNOWN',
-        alarmName: (session.alarm_name as string) || '',
-        alarmArn: (session.alarm_arn as string) || '',
-        rootCause: (session.root_cause as string) || '',
-        confirmed: (session.confirmed as boolean) ?? false,
-        errorReason: (session.error_reason as string) || '',
-        createdAt: (session.created_at as string) || '',
-        updatedAt: (session.updated_at as string) || '',
-        engine: (session.engine as string) || parseEngine(session.SK as string),
-      }
-    : null
 
   const spans = items
     .filter((i) => {
-      const sk = (i.SK as string) || ''
-      return (sk.includes('#SPAN#') || sk.startsWith('SPAN#')) && matchesEngine(sk)
+      const sk = (i.SK as string) || '';
+      return (
+        (sk.includes('#SPAN#') || sk.startsWith('SPAN#')) && matchesEngine(sk)
+      );
     })
     .map((i) => {
-      const sk = i.SK as string
-      const spanId = sk.includes('#SPAN#') ? (sk.split('#SPAN#')[1] ?? '') : sk.replace('SPAN#', '')
+      const sk = i.SK as string;
+      const spanId = sk.includes('#SPAN#')
+        ? (sk.split('#SPAN#')[1] ?? '')
+        : sk.replace('SPAN#', '');
+      const remediation = readSpanRemediation(i);
       return {
         spanId,
         spanType: (i.span_type as string) || '',
@@ -74,18 +67,95 @@ export default defineEventHandler(async (event) => {
         error: (i.error as string) || null,
         metadata: (i.metadata as Record<string, unknown>) || null,
         engine: (i.engine as string) || parseEngine(sk),
-      }
+        remediationStatus: remediation.remediationStatus,
+        remediationSuccess: remediation.remediationSuccess,
+        remediationSummary: remediation.remediationSummary,
+        remediationError: remediation.remediationError,
+        remediationCompletedAt: remediation.remediationCompletedAt,
+        verificationStatus: remediation.verificationStatus,
+        metricsNormalized: remediation.metricsNormalized,
+        verificationSummary: remediation.verificationSummary,
+        remainingIssues: remediation.remainingIssues,
+        remediationFaultType: remediation.remediationFaultType,
+        remediationEndpoint: remediation.remediationEndpoint,
+      };
     })
-    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  const session = items.find((i) => {
+    const sk = i.SK as string;
+    const isSession = sk.endsWith('#SESSION') || sk === 'SESSION';
+    return isSession && matchesEngine(sk);
+  });
+  const selectedSessionEngine = session
+    ? (session.engine as string) || parseEngine(session.SK as string)
+    : engineFilter;
+  const remediationSpan = [...spans]
+    .reverse()
+    .find(
+      (span) =>
+        span.spanType === 'REMEDIATION' &&
+        span.engine === selectedSessionEngine,
+    );
+  const sessionRemediation = session
+    ? mergeRemediationDetails(
+        readSessionRemediation(session),
+        remediationSpan
+          ? {
+              remediationStatus: remediationSpan.remediationStatus,
+              remediationSuccess: remediationSpan.remediationSuccess,
+              remediationSummary: remediationSpan.remediationSummary,
+              remediationError: remediationSpan.remediationError,
+              remediationCompletedAt: remediationSpan.remediationCompletedAt,
+              verificationStatus: remediationSpan.verificationStatus,
+              metricsNormalized: remediationSpan.metricsNormalized,
+              verificationSummary: remediationSpan.verificationSummary,
+              remainingIssues: remediationSpan.remainingIssues,
+              remediationFaultType: remediationSpan.remediationFaultType,
+              remediationEndpoint: remediationSpan.remediationEndpoint,
+            }
+          : readSpanRemediation({}),
+      )
+    : null;
+  const sessionData =
+    session && sessionRemediation
+      ? {
+          state: (session.state as string) || 'UNKNOWN',
+          alarmName: (session.alarm_name as string) || '',
+          alarmArn: (session.alarm_arn as string) || '',
+          rootCause: (session.root_cause as string) || '',
+          confirmed: (session.confirmed as boolean) ?? false,
+          errorReason: (session.error_reason as string) || '',
+          createdAt: (session.created_at as string) || '',
+          updatedAt: (session.updated_at as string) || '',
+          engine:
+            (session.engine as string) || parseEngine(session.SK as string),
+          remediationStatus: sessionRemediation.remediationStatus,
+          remediationSuccess: sessionRemediation.remediationSuccess,
+          remediationSummary: sessionRemediation.remediationSummary,
+          remediationError: sessionRemediation.remediationError,
+          remediationCompletedAt: sessionRemediation.remediationCompletedAt,
+          verificationStatus: sessionRemediation.verificationStatus,
+          metricsNormalized: sessionRemediation.metricsNormalized,
+          verificationSummary: sessionRemediation.verificationSummary,
+          remainingIssues: sessionRemediation.remainingIssues,
+          remediationFaultType: sessionRemediation.remediationFaultType,
+          remediationEndpoint: sessionRemediation.remediationEndpoint,
+        }
+      : null;
 
   const hypotheses = items
     .filter((i) => {
-      const sk = (i.SK as string) || ''
-      return (sk.includes('#HYPO#') || sk.startsWith('HYPO#')) && matchesEngine(sk)
+      const sk = (i.SK as string) || '';
+      return (
+        (sk.includes('#HYPO#') || sk.startsWith('HYPO#')) && matchesEngine(sk)
+      );
     })
     .map((i) => {
-      const sk = i.SK as string
-      const hypothesisId = sk.includes('#HYPO#') ? (sk.split('#HYPO#')[1] ?? '') : sk.replace('HYPO#', '')
+      const sk = i.SK as string;
+      const hypothesisId = sk.includes('#HYPO#')
+        ? (sk.split('#HYPO#')[1] ?? '')
+        : sk.replace('HYPO#', '');
       return {
         hypothesisId,
         treeId: (i.tree_id as string) || '',
@@ -104,8 +174,8 @@ export default defineEventHandler(async (event) => {
         createdAt: (i.created_at as string) || '',
         updatedAt: (i.updated_at as string) || '',
         engine: (i.engine as string) || parseEngine(sk),
-      }
-    })
+      };
+    });
 
-  return { rcaId: id, session: sessionData, spans, hypotheses }
-})
+  return { rcaId: id, session: sessionData, spans, hypotheses };
+});

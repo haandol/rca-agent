@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "aws-knowledge": {
-      "command": "uvx",
-      "args": ["fastmcp", "run", "https://knowledge-mcp.global.api.aws"],
+      "command": "fastmcp",
+      "args": ["run", "https://knowledge-mcp.global.api.aws"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
@@ -30,10 +30,8 @@
       }
     },
     "rca-progress": {
-      "command": "python",
+      "command": "fastmcp",
       "args": [
-        "-m",
-        "fastmcp",
         "run",
         "/app/src/cc_headless/mcp_server.py:mcp"
       ],

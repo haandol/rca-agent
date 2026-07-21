@@ -188,8 +188,18 @@ def test_runner_exposes_only_agent_skill_and_strict_mcp_tools(monkeypatch):
         "mcp__cloudtrail__*",
         "mcp__github__*",
         "mcp__rca-progress__save_artifact",
+        "mcp__rca-progress__execute_healthcare_reset",
     }
     assert allowed.isdisjoint(dangerous)
+
+
+def test_runner_uses_restricted_orchestrator_as_the_root_agent(monkeypatch):
+    calls = _capture_processes(monkeypatch)
+
+    CcSubprocessRunner().run("investigate", execution_token=EXECUTION_TOKEN)
+
+    args = calls[0]["args"]
+    assert args[args.index("--agent") + 1] == "orchestrator"
 
 
 def test_runner_disables_session_persistence_and_passes_execution_token(monkeypatch):
@@ -199,3 +209,20 @@ def test_runner_disables_session_persistence_and_passes_execution_token(monkeypa
 
     assert "--no-session-persistence" in calls[0]["args"]
     assert calls[0]["env"]["RCA_EXECUTION_TOKEN"] == EXECUTION_TOKEN
+
+
+def test_runner_passes_claim_context_only_to_the_isolated_child(monkeypatch):
+    calls = _capture_processes(monkeypatch)
+
+    CcSubprocessRunner().run(
+        "investigate",
+        execution_token=EXECUTION_TOKEN,
+        rca_id="rca-1",
+        claim_token="claim-1",
+        attempt=3,
+    )
+
+    env = calls[0]["env"]
+    assert env["RCA_SESSION_ID"] == "rca-1"
+    assert env["RCA_CLAIM_TOKEN"] == "claim-1"
+    assert env["RCA_ATTEMPT"] == "3"

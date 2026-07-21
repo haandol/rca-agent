@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response, status
 
 from test_service.adapters.primary.schemas import (
     FaultMemoryRequest,
@@ -31,9 +31,12 @@ class FaultController:
         self._require_enabled()
         return await self._service.leak_connections(req.count)
 
-    async def db_leak_reset(self):
+    async def db_leak_reset(self, response: Response):
         self._require_enabled()
-        return await self._service.reset_leaked_connections()
+        result = await self._service.reset_leaked_connections()
+        if result.get("status") == "failed":
+            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return result
 
     async def high_cpu(self):
         self._require_enabled()
@@ -41,7 +44,7 @@ class FaultController:
 
     async def high_cpu_reset(self):
         self._require_enabled()
-        return self._service.stop_high_cpu()
+        return await self._service.stop_high_cpu()
 
     async def high_memory(self, req: FaultMemoryRequest):
         self._require_enabled()
@@ -57,4 +60,4 @@ class FaultController:
 
     async def slow_query_reset(self):
         self._require_enabled()
-        return self._service.stop_slow_query()
+        return await self._service.stop_slow_query()

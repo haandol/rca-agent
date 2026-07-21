@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -37,7 +38,11 @@ def _build_user_prompt(
 ) -> str:
     namespace = alarm.trigger.namespace if alarm.trigger else "Unknown"
     metric_name = alarm.trigger.metric_name if alarm.trigger else "Unknown"
+    dimensions = alarm.trigger.dimensions if alarm.trigger else {}
+    statistic = alarm.trigger.statistic if alarm.trigger else "Average"
+    period = alarm.trigger.period if alarm.trigger else 300
     threshold = alarm.trigger.threshold if alarm.trigger else "Unknown"
+    comparison_operator = alarm.trigger.comparison_operator if alarm.trigger else "Unknown"
 
     action_lines = []
     for a in remediation.actions_taken:
@@ -46,9 +51,14 @@ def _build_user_prompt(
 
     return VERIFICATION_USER_PROMPT_TEMPLATE.format(
         alarm_name=alarm.alarm_name,
+        region=alarm.region,
         namespace=namespace,
         metric_name=metric_name,
+        dimensions=json.dumps(dimensions, sort_keys=True),
+        statistic=statistic,
+        period=period,
         threshold=threshold,
+        comparison_operator=comparison_operator,
         remediation_summary="\n".join(action_lines) or "No actions taken",
         seconds_since_remediation=seconds_since,
     )

@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from rca_agent.ports.dto.models import (
     AlarmPayload,
     AlarmTrigger,
@@ -96,6 +98,10 @@ class TestSearchExistingPlaybooks:
         result = search_existing_playbooks(_make_report(), None, embedding=fake_embedding)
         assert result == []
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Known defect: service-level playbook search treats cosine distance as similarity",
+    )
     @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
     def test_returns_hits_above_threshold(self, fake_embedding):
         mock_client = MagicMock()
@@ -103,7 +109,7 @@ class TestSearchExistingPlaybooks:
             "vectors": [
                 {
                     "key": "pb-1",
-                    "distance": 0.9,
+                    "distance": 0.1,
                     "metadata": {
                         "failure_type": "Memory leak",
                         "symptom_pattern": "CPU spike",
@@ -111,7 +117,7 @@ class TestSearchExistingPlaybooks:
                 },
                 {
                     "key": "pb-2",
-                    "distance": 0.5,
+                    "distance": 0.8,
                     "metadata": {"failure_type": "Other"},
                 },
             ]
@@ -124,6 +130,25 @@ class TestSearchExistingPlaybooks:
         )
         assert len(hits) == 1
         assert hits[0].playbook_id == "pb-1"
+        assert hits[0].similarity == pytest.approx(0.9)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Known defect: service-level playbook search does not request S3 Vectors metadata",
+    )
+    @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
+    def test_requests_metadata(self, fake_embedding):
+        mock_client = MagicMock()
+        mock_client.query_vectors.return_value = {"vectors": []}
+
+        search_existing_playbooks(
+            _make_report(),
+            _make_scoping(),
+            embedding=fake_embedding,
+            s3_vectors_client=mock_client,
+        )
+
+        assert mock_client.query_vectors.call_args.kwargs["returnMetadata"] is True
 
     @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
     def test_handles_search_failure(self, fake_embedding):

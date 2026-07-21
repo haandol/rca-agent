@@ -7,6 +7,7 @@ from rca_agent.config.settings import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_A
 from rca_agent.ports.dto.models import (
     AlarmContext,
     AlarmPayload,
+    FaultType,
     NotificationMessage,
     Playbook,
     RcaReport,
@@ -25,9 +26,14 @@ def _build_alarm_context(alarm: AlarmPayload | None) -> AlarmContext | None:
     trigger = alarm.trigger
     return AlarmContext(
         alarm_name=alarm.alarm_name,
+        region=alarm.region,
         namespace=trigger.namespace if trigger else "",
         metric_name=trigger.metric_name if trigger else "",
+        dimensions=trigger.dimensions if trigger else {},
+        statistic=trigger.statistic if trigger else "Average",
+        period=trigger.period if trigger else 300,
         threshold=trigger.threshold if trigger else None,
+        comparison_operator=trigger.comparison_operator if trigger else None,
     )
 
 
@@ -39,6 +45,8 @@ def build_notification(
     playbook: Playbook | None = None,
     dashboard_url: str = "",
     alarm: AlarmPayload | None = None,
+    selected_hypothesis_id: str = "",
+    fault_type: FaultType = FaultType.UNSUPPORTED,
 ) -> NotificationMessage:
     playbook_data = None
     if playbook:
@@ -66,6 +74,8 @@ def build_notification(
         confirmed=report.root_cause_confirmed,
         playbook=playbook_data,
         root_cause=report.root_cause,
+        selected_hypothesis_id=selected_hypothesis_id,
+        fault_type=fault_type,
         alarm_context=_build_alarm_context(alarm),
     )
 
@@ -107,6 +117,8 @@ def send_notification(
         "report_url": report_url,
         "elapsed_seconds": notification.elapsed_seconds,
         "confirmed": notification.confirmed,
+        "selected_hypothesis_id": notification.selected_hypothesis_id,
+        "fault_type": notification.fault_type.value,
     }
     if notification.playbook:
         message_body["playbook"] = notification.playbook

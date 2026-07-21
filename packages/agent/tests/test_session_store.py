@@ -4,10 +4,13 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import boto3
 import pytest
 from botocore.exceptions import ClientError
+from moto import mock_aws
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    DynamoDbSessionStore,
     SessionCancelledError,
     build_idempotency_key,
     build_rca_id,
@@ -17,7 +20,15 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     mark_failed,
     update_state,
 )
-from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger, RcaSessionState
+from rca_agent.ports.dto.models import (
+    AlarmPayload,
+    AlarmTrigger,
+    FaultType,
+    NotificationMessage,
+    RcaSessionState,
+    RemediationResult,
+    VerificationResult,
+)
 
 
 @pytest.fixture()
@@ -283,6 +294,33 @@ class TestMarkCompleted:
         assert call_kwargs["ExpressionAttributeValues"][":rc"]["S"] == "Bad deploy"
         assert call_kwargs["ExpressionAttributeValues"][":cf"]["BOOL"] is True
 
+    def test_completion_persists_selected_hypothesis_and_pending_notification(self):
+        ddb = _ddb_with_state("REPORT_GENERATION")
+        notification = NotificationMessage(
+            rca_id="rca-123",
+            root_cause_summary="database connection leak",
+            severity="high",
+            selected_hypothesis_id="h-selected",
+            fault_type=FaultType.DB_CONNECTION_LEAK,
+        )
+        with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
+            result = mark_completed(
+                "rca-123",
+                root_cause="database connection leak",
+                confirmed=True,
+                selected_hypothesis_id="h-selected",
+                fault_type=FaultType.DB_CONNECTION_LEAK,
+                completion_notification=notification,
+                dynamodb_client=ddb,
+            )
+
+        assert result is True
+        values = ddb.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert values[":hid"]["S"] == "h-selected"
+        assert values[":fault_type"]["S"] == FaultType.DB_CONNECTION_LEAK.value
+        assert values[":notification_pending"]["S"] == "PENDING"
+        assert NotificationMessage.model_validate_json(values[":notification"]["S"]) == notification
+
     def test_returns_false_on_error(self):
         ddb = _ddb_with_state("REPORT_GENERATION")
         error_response = {"Error": {"Code": "InternalServerError", "Message": "boom"}}
@@ -292,6 +330,312 @@ class TestMarkCompleted:
             result = mark_completed("rca-123", dynamodb_client=ddb)
 
         assert result is False
+
+
+class TestRemediationPersistence:
+    def test_loads_exact_selected_hypothesis_and_fault_type(self):
+        ddb = MagicMock()
+        ddb.get_item.side_effect = [
+            {
+                "Item": {
+                    "state": {"S": "COMPLETED"},
+                    "root_cause": {"S": "generated report wording"},
+                    "confirmed": {"BOOL": True},
+                    "selected_hypothesis_id": {"S": "h-selected"},
+                    "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+                }
+            },
+            {
+                "Item": {
+                    "status": {"S": "CONFIRMED"},
+                    "description": {"S": "exact selected database leak"},
+                    "evidence_summary": {"S": "selected evidence only"},
+                    "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+                }
+            },
+        ]
+
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            context = DynamoDbSessionStore(ddb).get_remediation_context("rca-123")
+
+        assert context is not None
+        assert context.selected_hypothesis_id == "h-selected"
+        assert context.validated_root_cause == "exact selected database leak"
+        assert context.evidence_summary == "selected evidence only"
+        assert context.fault_type == FaultType.DB_CONNECTION_LEAK
+        exact_key = ddb.get_item.call_args_list[1].kwargs["Key"]
+        assert exact_key["SK"]["S"] == "strands#HYPO#h-selected"
+        ddb.query.assert_not_called()
+
+    def test_loads_and_marks_completion_handoff(self):
+        ddb = MagicMock()
+        notification = NotificationMessage(
+            rca_id="rca-123",
+            root_cause_summary="completed",
+            severity="high",
+        )
+        ddb.get_item.return_value = {
+            "Item": {
+                "state": {"S": "COMPLETED"},
+                "completion_notification_status": {"S": "PENDING"},
+                "completion_notification": {"S": notification.model_dump_json()},
+            }
+        }
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            store = DynamoDbSessionStore(ddb)
+            handoff = store.get_completion_handoff("rca-123")
+            marked = store.mark_completion_notified("rca-123")
+
+        assert handoff is not None
+        assert handoff.notification_status == "PENDING"
+        assert handoff.notification == notification
+        assert marked is True
+        update = ddb.update_item.call_args.kwargs
+        assert "completion_notification_status = :sent" in update["UpdateExpression"]
+        assert update["ExpressionAttributeValues"][":sent"]["S"] == "SENT"
+
+    def test_legacy_session_without_exact_selection_fails_closed(self):
+        ddb = MagicMock()
+        ddb.get_item.return_value = {
+            "Item": {
+                "state": {"S": "COMPLETED"},
+                "root_cause": {"S": "database connections exhausted"},
+                "confirmed": {"BOOL": True},
+            }
+        }
+        ddb.query.return_value = {
+            "Items": [
+                {
+                    "description": {"S": "database connection pool leak"},
+                    "evidence_summary": {"S": "connections remained checked out"},
+                    "updated_at": {"S": "2026-07-21T01:00:00+00:00"},
+                }
+            ]
+        }
+
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            context = DynamoDbSessionStore(ddb).get_remediation_context("rca-123")
+
+        assert context is not None
+        assert context.state == RcaSessionState.COMPLETED
+        assert context.root_cause == "database connections exhausted"
+        assert context.validated_root_cause == ""
+        assert context.evidence_summary == ""
+        assert ddb.get_item.call_args.kwargs["ConsistentRead"] is True
+        ddb.query.assert_not_called()
+
+    def test_selected_hypothesis_must_be_confirmed_and_match_session_fault_type(self):
+        ddb = MagicMock()
+        session = {
+            "Item": {
+                "state": {"S": "COMPLETED"},
+                "root_cause": {"S": "generated report wording"},
+                "confirmed": {"BOOL": True},
+                "selected_hypothesis_id": {"S": "h-selected"},
+                "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+            }
+        }
+        ddb.get_item.side_effect = [
+            session,
+            {
+                "Item": {
+                    "status": {"S": "CONFIRMED"},
+                    "description": {"S": "different structured action"},
+                    "evidence_summary": {"S": "evidence"},
+                    "fault_type": {"S": FaultType.HIGH_CPU.value},
+                }
+            },
+        ]
+
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            context = DynamoDbSessionStore(ddb).get_remediation_context("rca-123")
+
+        assert context is not None
+        assert context.validated_root_cause == ""
+        assert context.evidence_summary == ""
+        assert context.fault_type == FaultType.DB_CONNECTION_LEAK
+
+    def test_claim_is_conditional_and_returns_token(self):
+        ddb = MagicMock()
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            token = DynamoDbSessionStore(ddb).claim_remediation("rca-123")
+
+        assert token
+        call = ddb.update_item.call_args.kwargs
+        assert "#state = :completed" in call["ConditionExpression"]
+        assert "remediation_status = :processing" in call["UpdateExpression"]
+        assert call["ExpressionAttributeValues"][":token"]["S"] == token
+
+    def test_duplicate_claim_returns_none(self):
+        ddb = MagicMock()
+        ddb.update_item.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "ConditionalCheckFailedException",
+                    "Message": "duplicate",
+                }
+            },
+            "UpdateItem",
+        )
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            token = DynamoDbSessionStore(ddb).claim_remediation("rca-123")
+
+        assert token is None
+
+    def test_completion_is_guarded_by_claim_token(self):
+        ddb = MagicMock()
+        result = RemediationResult(
+            rca_id="rca-123",
+            overall_success=True,
+            summary="reset complete",
+        )
+        verification = VerificationResult(
+            rca_id="rca-123",
+            metrics_normalized=False,
+            verification_summary="connections remain above threshold",
+            remaining_issues=["DatabaseConnections is still high"],
+        )
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            completed = DynamoDbSessionStore(ddb).complete_remediation(
+                "rca-123",
+                "claim-1",
+                result,
+                verification,
+            )
+
+        assert completed is True
+        call = ddb.update_item.call_args.kwargs
+        assert "remediation_claim_token = :token" in call["ConditionExpression"]
+        assert call["ExpressionAttributeValues"][":token"]["S"] == "claim-1"
+        values = call["ExpressionAttributeValues"]
+        assert values[":verification_status"]["S"] == "FAILED"
+        assert values[":metrics_normalized"]["BOOL"] is False
+        assert values[":verification_summary"]["S"] == "connections remain above threshold"
+        assert values[":verification_remaining_issues"]["L"] == [{"S": "DatabaseConnections is still high"}]
+
+    def test_completion_persists_pending_when_verification_did_not_run(self):
+        ddb = MagicMock()
+        result = RemediationResult(
+            rca_id="rca-123",
+            overall_success=False,
+            summary="no action executed",
+        )
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            completed = DynamoDbSessionStore(ddb).complete_remediation(
+                "rca-123",
+                "claim-1",
+                result,
+                None,
+            )
+
+        assert completed is True
+        values = ddb.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert values[":verification_status"]["S"] == "PENDING"
+        assert values[":metrics_normalized"]["BOOL"] is False
+        assert values[":verification_summary"]["S"] == ""
+        assert values[":verification_remaining_issues"]["L"] == []
+
+    @mock_aws
+    def test_claim_lifecycle_against_dynamodb(self):
+        ddb = boto3.client("dynamodb", region_name="us-east-1")
+        ddb.create_table(
+            TableName="rca-sessions",
+            AttributeDefinitions=[
+                {"AttributeName": "PK", "AttributeType": "S"},
+                {"AttributeName": "SK", "AttributeType": "S"},
+            ],
+            KeySchema=[
+                {"AttributeName": "PK", "KeyType": "HASH"},
+                {"AttributeName": "SK", "KeyType": "RANGE"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        ddb.put_item(
+            TableName="rca-sessions",
+            Item={
+                "PK": {"S": "RCA#rca-123"},
+                "SK": {"S": "strands#SESSION"},
+                "state": {"S": "COMPLETED"},
+                "root_cause": {"S": "database connections exhausted"},
+                "confirmed": {"BOOL": True},
+                "selected_hypothesis_id": {"S": "h-1"},
+                "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+            },
+        )
+        ddb.put_item(
+            TableName="rca-sessions",
+            Item={
+                "PK": {"S": "RCA#rca-123"},
+                "SK": {"S": "strands#HYPO#h-1"},
+                "status": {"S": "CONFIRMED"},
+                "description": {"S": "database connection pool leak"},
+                "evidence_summary": {"S": "connections remained checked out"},
+                "fault_type": {"S": FaultType.DB_CONNECTION_LEAK.value},
+                "updated_at": {"S": "2026-07-21T01:00:00+00:00"},
+            },
+        )
+        store = DynamoDbSessionStore(ddb)
+
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            context = store.get_remediation_context("rca-123")
+            token = store.claim_remediation("rca-123")
+            duplicate_token = store.claim_remediation("rca-123")
+            completed = store.complete_remediation(
+                "rca-123",
+                token or "",
+                RemediationResult(
+                    rca_id="rca-123",
+                    overall_success=True,
+                    summary="reset complete",
+                ),
+                VerificationResult(
+                    rca_id="rca-123",
+                    metrics_normalized=True,
+                    verification_summary="connections normalized",
+                ),
+            )
+            completed_context = store.get_remediation_context("rca-123")
+
+        assert context is not None
+        assert context.selected_hypothesis_id == "h-1"
+        assert context.validated_root_cause == "database connection pool leak"
+        assert context.fault_type == FaultType.DB_CONNECTION_LEAK
+        assert token
+        assert duplicate_token is None
+        assert completed is True
+        assert completed_context is not None
+        assert completed_context.remediation_status == "COMPLETED"
+        assert completed_context.verification_status == "NORMALIZED"
+        assert completed_context.metrics_normalized is True
+        assert completed_context.verification_summary == "connections normalized"
+        assert completed_context.verification_remaining_issues == []
 
 
 class TestMarkFailed:

@@ -5,7 +5,7 @@ Updated: 2026-04-24
 
 ## Status
 
-Accepted (Updated — State Machine 기반 상태 전이 검증 추가)
+Accepted (2026-04-21)
 
 ## Context
 

@@ -3,10 +3,13 @@ from unittest.mock import MagicMock, patch
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
 from rca_agent.ports.dto.models import (
+    CompletionHandoff,
+    FaultType,
     Hypothesis,
     HypothesisCategory,
     HypothesisGenerationResult,
     HypothesisStatus,
+    NotificationMessage,
     Playbook,
     RcaReport,
     RcaSession,
@@ -107,7 +110,14 @@ _P = "rca_agent.services.pipeline"
 class TestProcessAlarmFullPipeline:
     """Test the full F1-F9 pipeline orchestration."""
 
-    def _run(self, *, hypo_result=None, validation_result=None, termination=None):
+    def _run(
+        self,
+        *,
+        hypo_result=None,
+        validation_result=None,
+        termination=None,
+        notification_success=True,
+    ):
         """Helper that patches all pipeline functions and runs process_alarm."""
         sr = _scoping()
         hr = hypo_result or _hypo_result()
@@ -145,6 +155,10 @@ class TestProcessAlarmFullPipeline:
 
         container = _make_container()
         container.session_store.create_session.return_value = session
+        container.report_store.save.return_value = "reports/rca-1.md"
+        container.session_store.mark_completed.return_value = True
+        container.notification.send.return_value = notification_success
+        container.session_store.mark_completion_notified.return_value = True
 
         names = [
             "run_scoping",
@@ -207,8 +221,9 @@ class TestProcessAlarmFullPipeline:
 
         try:
             orchestrator = PipelineOrchestrator(container)
-            orchestrator.process_alarm(_make_body())
+            result = orchestrator.process_alarm(_make_body())
             active["_container"] = container
+            active["_result"] = result
             return active
         finally:
             for p in stack:
@@ -223,6 +238,18 @@ class TestProcessAlarmFullPipeline:
         assert mocks["check_termination"].called
         assert mocks["run_report_generation"].called
         assert mocks["run_playbook_generation"].called
+        assert mocks["_result"] is True
+
+    def test_completion_is_persisted_before_failed_notification_delivery(self):
+        mocks = self._run(notification_success=False)
+        container = mocks["_container"]
+
+        assert mocks["_result"] is False
+        completed = container.session_store.mark_completed.call_args
+        assert completed.kwargs["selected_hypothesis_id"] == "h-1"
+        assert completed.kwargs["fault_type"] == FaultType.UNSUPPORTED
+        assert isinstance(completed.kwargs["completion_notification"], NotificationMessage)
+        container.session_store.mark_completion_notified.assert_not_called()
 
     def test_early_exit_on_no_hypotheses(self):
         empty_hr = HypothesisGenerationResult(
@@ -492,6 +519,42 @@ class TestProcessAlarmFullPipeline:
 
         container.session_store.create_session.assert_not_called()
         mock_scoping.assert_not_called()
+
+    def test_duplicate_flushes_pending_completion_handoff(self):
+        container = _make_container()
+        container.session_store.check_duplicate.return_value = True
+        notification = NotificationMessage(
+            rca_id="rca-1",
+            root_cause_summary="complete",
+            severity="high",
+        )
+        container.session_store.get_completion_handoff.return_value = CompletionHandoff(
+            rca_id="rca-1",
+            state=RcaSessionState.COMPLETED,
+            notification_status="PENDING",
+            notification=notification,
+        )
+        container.notification.send.return_value = True
+        container.session_store.mark_completion_notified.return_value = True
+
+        result = PipelineOrchestrator(container).process_alarm(_make_body())
+
+        assert result is True
+        container.notification.send.assert_called_once_with(notification)
+        container.session_store.mark_completion_notified.assert_called_once()
+
+    def test_duplicate_failed_session_is_not_successful(self):
+        container = _make_container()
+        container.session_store.check_duplicate.return_value = True
+        container.session_store.get_completion_handoff.return_value = CompletionHandoff(
+            rca_id="rca-1",
+            state=RcaSessionState.FAILED,
+        )
+
+        result = PipelineOrchestrator(container).process_alarm(_make_body())
+
+        assert result is False
+        container.notification.send.assert_not_called()
 
     def test_marks_failed_on_pipeline_exception(self):
         session = RcaSession(rca_id="rca-1", idempotency_key="k", state=RcaSessionState.ALARM_RECEIVED)

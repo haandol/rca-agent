@@ -5,7 +5,7 @@ Updated: 2026-05-25 (Toyota / AWS COE 5 Whys 사고 프레임 도입)
 
 ## Status
 
-Accepted (Updated — 5 Whys 섹션 추가)
+Accepted (2026-04-21)
 
 ## Context
 

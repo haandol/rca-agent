@@ -11,6 +11,8 @@ from threading import Event
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     InvalidStateTransitionError,
     SessionCancelledError,
+    build_idempotency_key,
+    build_rca_id,
 )
 from rca_agent.adapters.secondary.trace.dynamodb_trace_store import SpanStatus, SpanType, TraceStore
 from rca_agent.config.settings import (
@@ -21,6 +23,7 @@ from rca_agent.config.settings import (
 )
 from rca_agent.ports.dto.models import (
     AlarmPayload,
+    FaultType,
     Hypothesis,
     HypothesisStatus,
     Playbook,
@@ -128,7 +131,7 @@ class PipelineOrchestrator:
         if self._shutdown_event.is_set():
             raise ShutdownRequestedError
 
-    def process_alarm(self, body: dict) -> None:
+    def process_alarm(self, body: dict) -> bool:
         start_time = time.monotonic()
         alarm_data = parse_sns_envelope(body)
 
@@ -138,7 +141,7 @@ class PipelineOrchestrator:
                 alarm_data.get("AlarmName"),
                 alarm_data.get("NewStateValue"),
             )
-            return
+            return True
 
         alarm = AlarmPayload.from_cloudwatch_sns(alarm_data)
         logger.info(
@@ -151,20 +154,26 @@ class PipelineOrchestrator:
         store = self._container.session_store
         if store.check_duplicate(alarm):
             logger.info("Skipping duplicate alarm: %s", alarm.alarm_name)
-            return
+            return self._flush_completion_handoff(
+                build_rca_id(build_idempotency_key(alarm)),
+            )
 
         if self._skip_if_stale(alarm, store):
-            return
+            return True
 
         session = store.create_session(alarm)
-        rca_id = session.rca_id if session else ""
+        if session is None:
+            return self._flush_completion_handoff(
+                build_rca_id(build_idempotency_key(alarm)),
+            )
+        rca_id = session.rca_id
         trace = TraceStore(
             rca_id,
             dynamodb_client=self._container.dynamodb_client,
         )
 
         try:
-            self._run_pipeline(
+            return self._run_pipeline(
                 alarm,
                 rca_id=rca_id,
                 start_time=start_time,
@@ -181,18 +190,21 @@ class PipelineOrchestrator:
                     rca_id,
                     error_reason="Aborted due to SIGTERM shutdown",
                 )
+            return False
         except SessionCancelledError:
             logger.info(
                 "Pipeline cancelled for alarm %s (rca_id=%s)",
                 alarm.alarm_name,
                 rca_id,
             )
+            return True
         except InvalidStateTransitionError:
             logger.exception(
                 "Invalid state transition for alarm %s (rca_id=%s)",
                 alarm.alarm_name,
                 rca_id,
             )
+            return False
         except Exception:
             logger.exception("Pipeline failed for alarm %s", alarm.alarm_name)
             if rca_id:
@@ -200,6 +212,28 @@ class PipelineOrchestrator:
                     rca_id,
                     error_reason="Unhandled pipeline exception",
                 )
+            return False
+
+    def _flush_completion_handoff(self, rca_id: str) -> bool:
+        handoff = self._container.session_store.get_completion_handoff(rca_id)
+        if handoff is None:
+            logger.warning("Duplicate RCA %s has no persisted session handoff", rca_id)
+            return False
+        if handoff.state != RcaSessionState.COMPLETED:
+            logger.warning(
+                "Duplicate RCA %s is not complete: state=%s",
+                rca_id,
+                handoff.state,
+            )
+            return False
+        if handoff.notification_status in ("", "SENT"):
+            return True
+        if handoff.notification_status != "PENDING" or handoff.notification is None:
+            logger.error("RCA %s has an invalid pending completion handoff", rca_id)
+            return False
+        if not self._container.notification.send(handoff.notification):
+            return False
+        return self._container.session_store.mark_completion_notified(rca_id)
 
     def _skip_if_stale(self, alarm: AlarmPayload, store) -> bool:
         if not alarm.state_change_time:
@@ -221,7 +255,7 @@ class PipelineOrchestrator:
             )
         return True
 
-    def _run_pipeline(self, alarm, *, rca_id, start_time, trace):
+    def _run_pipeline(self, alarm, *, rca_id, start_time, trace) -> bool:
         store = self._container.session_store
 
         self._check_shutdown()
@@ -235,7 +269,7 @@ class PipelineOrchestrator:
         )
         if not hypotheses:
             store.mark_failed(rca_id, error_reason="No hypotheses generated")
-            return
+            return False
 
         state = self._run_validation_loop(
             alarm,
@@ -255,7 +289,7 @@ class PipelineOrchestrator:
             trace=trace,
         )
 
-        self._run_report_and_notify(
+        return self._run_report_and_notify(
             scoping_result,
             best_hypothesis,
             confirmed,
@@ -829,7 +863,7 @@ class PipelineOrchestrator:
         rca_id,
         start_time,
         trace,
-    ):
+    ) -> bool:
         c = self._container
         store = c.session_store
         elapsed = int(time.monotonic() - start_time)
@@ -869,20 +903,35 @@ class PipelineOrchestrator:
                 elapsed,
                 playbook=playbook,
                 alarm=alarm,
+                selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
+                fault_type=(best_hypothesis.fault_type if best_hypothesis else FaultType.UNSUPPORTED),
             )
-            c.notification.send(notification)
+
+            completed = store.mark_completed(
+                rca_report.rca_id,
+                root_cause=rca_report.root_cause,
+                confirmed=confirmed,
+                selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
+                fault_type=(best_hypothesis.fault_type if best_hypothesis else FaultType.UNSUPPORTED),
+                completion_notification=notification,
+            )
+            if not completed:
+                s.output_summary = "완료 상태 및 알림 저장 실패"
+                return False
+            if not c.notification.send(notification):
+                s.output_summary = "완료 알림 전송 대기"
+                return False
+            if not store.mark_completion_notified(rca_report.rca_id):
+                s.output_summary = "완료 알림 전송 상태 저장 실패"
+                return False
             s.output_summary = f"소요시간={elapsed}초"
 
-        store.mark_completed(
-            rca_report.rca_id,
-            root_cause=rca_report.root_cause,
-            confirmed=confirmed,
-        )
         logger.info(
             "RCA complete: rca_id=%s, elapsed=%ds",
             rca_report.rca_id,
             elapsed,
         )
+        return True
 
     def _run_playbook(self, rca_report, scoping_result, trace) -> Playbook | None:
         c = self._container

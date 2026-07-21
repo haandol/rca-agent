@@ -14,6 +14,17 @@ interface SpanItem {
   outputSummary: string
   error: string | null
   metadata: Record<string, unknown> | null
+  remediationStatus: string
+  remediationSuccess: boolean | null
+  remediationSummary: string
+  remediationError: string
+  remediationCompletedAt: string
+  verificationStatus: string
+  metricsNormalized: boolean | null
+  verificationSummary: string
+  remainingIssues: string[]
+  remediationFaultType: string
+  remediationEndpoint: string
 }
 
 interface HypothesisItem {
@@ -53,17 +64,42 @@ export interface NodeData {
   description?: string
   evidenceSummary?: string
   judgmentReasoning?: string
+  remediationStatus?: string
+  remediationSuccess?: boolean | null
+  remediationSummary?: string
+  remediationError?: string
+  remediationCompletedAt?: string
+  verificationStatus?: string
+  metricsNormalized?: boolean | null
+  verificationSummary?: string
+  remainingIssues?: string[]
+  remediationFaultType?: string
+  remediationEndpoint?: string
 }
 
 const SPAN_LABEL: Record<string, string> = {
   SCOPING: '스코핑',
   HYPOTHESIS_GENERATION: '가설 생성',
-  REPORT: '보고서',
-  PLAYBOOK: '플레이북',
   REMEDIATION: '자동 복구',
   VERIFICATION: '복구 검증',
+  PLAYBOOK: '플레이북',
+  REPORT: '보고서',
   NOTIFICATION: '알림',
 }
+
+const PIPELINE_STAGE_ORDER = [
+  'SCOPING',
+  'HYPOTHESIS_GENERATION',
+  'REMEDIATION',
+  'VERIFICATION',
+  'PLAYBOOK',
+  'REPORT',
+  'NOTIFICATION',
+] as const
+
+const SPAN_ORDER = new Map<string, number>(
+  PIPELINE_STAGE_ORDER.map((spanType, index) => [spanType, index]),
+)
 
 // Internal loop steps — hide from the graph
 const HIDDEN_SPAN_TYPES = new Set([
@@ -79,7 +115,11 @@ export function buildTraceGraph(spans: SpanItem[], hypotheses: HypothesisItem[])
   const nodes: Node<NodeData>[] = []
   const edges: Edge[] = []
 
-  const sorted = [...spans].sort((a, b) => a.startTime.localeCompare(b.startTime))
+  const sorted = [...spans].sort((a, b) => {
+    const orderA = SPAN_ORDER.get(a.spanType) ?? PIPELINE_STAGE_ORDER.length
+    const orderB = SPAN_ORDER.get(b.spanType) ?? PIPELINE_STAGE_ORDER.length
+    return orderA - orderB || a.startTime.localeCompare(b.startTime)
+  })
   const visible = sorted.filter(s => !HIDDEN_SPAN_TYPES.has(s.spanType))
 
   // Span nodes — top-level pipeline steps only
@@ -101,6 +141,17 @@ export function buildTraceGraph(spans: SpanItem[], hypotheses: HypothesisItem[])
         spanId: s.spanId,
         spanType: s.spanType,
         loopIndex: s.loopIndex,
+        remediationStatus: s.remediationStatus,
+        remediationSuccess: s.remediationSuccess,
+        remediationSummary: s.remediationSummary,
+        remediationError: s.remediationError,
+        remediationCompletedAt: s.remediationCompletedAt,
+        verificationStatus: s.verificationStatus,
+        metricsNormalized: s.metricsNormalized,
+        verificationSummary: s.verificationSummary,
+        remainingIssues: s.remainingIssues,
+        remediationFaultType: s.remediationFaultType,
+        remediationEndpoint: s.remediationEndpoint,
       },
     })
   }

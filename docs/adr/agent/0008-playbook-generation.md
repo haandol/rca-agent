@@ -4,7 +4,7 @@ Date: 2026-04-21
 
 ## Status
 
-Accepted (ADR 0001으로 사용처 개정: 스코핑 소비 제거 → Remediation/플레이북 업데이트 전용)
+Accepted (2026-04-21)
 
 > 2026-04-28 업데이트: 초기 스코핑 단계의 유사도 검색이 플레이북에서 **RCA 보고서**로 전환되었다(ADR 0001).
 > 플레이북 인덱싱은 유지되지만, 소비처는 (a) 플레이북 업데이트의 Search-First 중복 방지와 (b) 향후 Remediation Agent(ADR 0012)로 한정된다.

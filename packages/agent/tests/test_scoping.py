@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from rca_agent.ports.dto.models import AlarmPayload, ScopingResult
 from rca_agent.services.scoping import ScopingOutput, run_scoping, search_similar_reports
 
@@ -9,6 +11,10 @@ class TestSearchSimilarReports:
         result = search_similar_reports(sample_alarm, embedding=fake_embedding, s3_vectors_client=None)
         assert result == []
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Known defect: service-level report search treats cosine distance as similarity",
+    )
     @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_returns_matches_above_threshold(self, sample_alarm: AlarmPayload, fake_embedding):
         mock_client = MagicMock()
@@ -16,7 +22,7 @@ class TestSearchSimilarReports:
             "vectors": [
                 {
                     "key": "rca-001",
-                    "distance": 0.85,
+                    "distance": 0.15,
                     "metadata": {
                         "root_cause": "Task count too low",
                         "incident_summary": "CPU spike",
@@ -25,7 +31,7 @@ class TestSearchSimilarReports:
                 },
                 {
                     "key": "rca-002",
-                    "distance": 0.5,
+                    "distance": 0.8,
                     "metadata": {"root_cause": "Irrelevant"},
                 },
             ]
@@ -36,6 +42,23 @@ class TestSearchSimilarReports:
         assert result[0].similarity == 0.85
         assert result[0].confirmed is True
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Known defect: service-level report search does not request S3 Vectors metadata",
+    )
+    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
+    def test_requests_metadata(self, sample_alarm: AlarmPayload, fake_embedding):
+        mock_client = MagicMock()
+        mock_client.query_vectors.return_value = {"vectors": []}
+
+        search_similar_reports(
+            sample_alarm,
+            embedding=fake_embedding,
+            s3_vectors_client=mock_client,
+        )
+
+        assert mock_client.query_vectors.call_args.kwargs["returnMetadata"] is True
+
     @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_handles_api_error_gracefully(self, sample_alarm: AlarmPayload, fake_embedding):
         mock_client = MagicMock()
@@ -45,12 +68,13 @@ class TestSearchSimilarReports:
         )
         assert result == []
 
+    @patch("rca_agent.services.scoping.REPORT_SIMILARITY_THRESHOLD", 0.4)
     @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_retries_with_exponential_backoff(self, sample_alarm: AlarmPayload, fake_embedding):
         mock_client = MagicMock()
         mock_client.query_vectors.side_effect = [
             RuntimeError("transient error"),
-            {"vectors": [{"key": "rca-1", "distance": 0.9, "metadata": {"root_cause": "Found"}}]},
+            {"vectors": [{"key": "rca-1", "distance": 0.5, "metadata": {"root_cause": "Found"}}]},
         ]
         result = search_similar_reports(
             sample_alarm, embedding=fake_embedding, s3_vectors_client=mock_client, base_delay=0.01
@@ -122,6 +146,7 @@ class TestRunScoping:
         result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
         assert result.anomaly_start_time is None
 
+    @patch("rca_agent.services.scoping.REPORT_SIMILARITY_THRESHOLD", 0.4)
     @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
     def test_includes_reports_in_result(self, sample_alarm: AlarmPayload, fake_embedding):
         output = ScopingOutput(alarm_summary="test")
@@ -132,7 +157,7 @@ class TestRunScoping:
             "vectors": [
                 {
                     "key": "rca-1",
-                    "distance": 0.9,
+                    "distance": 0.5,
                     "metadata": {
                         "root_cause": "Past CPU incident",
                         "incident_summary": "Memory leak",

@@ -8,7 +8,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/AGENTS.md) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
-| [`packages/cc-headless`](./packages/cc-headless/AGENTS.md) | CC on Bedrock headless 기반 RCA 에이전트 — ECS Fargate에서 SQS Long Polling + CC CLI로 단일 프롬프트 RCA 수행 | Python, Claude Code CLI, ECS Fargate |
+| [`packages/cc-headless`](./packages/cc-headless/AGENTS.md) | CC on Bedrock headless 오케스트레이터 — RCA → 조건부 Remediation → Report 전문 서브 에이전트 실행 | Python, Claude Code CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/AGENTS.md) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
 | [`packages/dashboard`](./packages/dashboard/AGENTS.md) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
 
@@ -59,7 +59,7 @@ pnpm nx run-many -t test
 pnpm nx affected -t test
 ```
 
-> CDK 스택 구성(9개), 패키지별 배포, RCA 정확도 테스트 지표는 **[docs/deployment.md](./docs/deployment.md)** 참조.
+> CDK 스택 구성(10개), 패키지별 배포, RCA 정확도 테스트 지표는 **[docs/deployment.md](./docs/deployment.md)** 참조.
 
 ## Reference Documents
 

@@ -10,6 +10,7 @@
       "tree_id": "공유 UUID",
       "title": "짧은 한 줄 제목 (≤60자, 한글, 필수)",
       "description": "상세 설명. 왜 이 가설을 제기하는지 근거와 검증 방향을 2-4문장 (한글)",
+      "fault_type": "db-leak | high-cpu | high-memory | slow-query | unsupported",
       "category": "DEPLOYMENT | INFRASTRUCTURE | TRAFFIC | DEPENDENCY | CONFIGURATION",
       "confidence_score": 0.6,
       "required_evidence": ["필요한 증거 목록"],
@@ -26,4 +27,7 @@
 **필드 규칙**:
 - `title`: 대시보드 카드/그래프 노드에 노출. "Healthcare 앱 커넥션 누수" 같은 **명사구**로 간결히. 물음표·마침표 지양.
 - `description`: 가설을 세운 근거와 기대하는 검증 증거를 서술형으로 기술.
-- `validation-{N}.json`의 `new_hypotheses`에도 동일하게 `title`·`description` 쌍을 채운다.
+- `fault_type`: Healthcare reset 허용 목록과 직접 대응하는 구조화 enum. 네 유형에
+  해당하지 않으면 반드시 `unsupported`.
+- `validation-{N}.json`의 `new_hypotheses`에도 동일하게 `title`, `description`,
+  `fault_type`을 채운다.

@@ -264,7 +264,7 @@ graph LR
     subgraph CcStack["🟧 CC Headless Stack (ECS Fargate)"]
         direction TB
         L_ENV["ECS Fargate<br/>Node.js 22"]
-        L_SDK["Claude Code CLI<br/>프롬프트 주도"]
+        L_SDK["Claude Code CLI<br/>전문 서브 에이전트 오케스트레이션"]
         L_MODEL["단일 모델<br/>Sonnet 4.6"]
         L_TIME["프로세스 타임아웃<br/>(30분)"]
         L_PLAY["✅ 플레이북 생성 (프롬프트)"]
@@ -278,11 +278,11 @@ graph LR
 |------|-------------------|---------------------|
 | **실행 환경** | ECS Fargate (항시 실행) | ECS Fargate (항시 실행) |
 | **에이전트 프레임워크** | Strands Agents SDK (Python) | Claude Code CLI (Node.js) |
-| **RCA 방식** | 9단계 파이프라인 (코드로 정의) | 프롬프트에 워크플로우 정의, CC가 자율 실행 |
+| **RCA 방식** | 9단계 파이프라인 (코드로 정의) | RCA·Remediation·Report 전문 에이전트 순차 실행 |
 | **AI 모델** | Sonnet 4.6 (Planning은 adaptive thinking) | Sonnet 4.6 |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
-| **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | 생성 (프롬프트 기반, 9단계) |
-| **자동 복구** | 별도 에이전트로 분리 설계 (미구현) | 직접 실행하지 않음 — 복구 권고·검증 계획 작성 |
+| **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | Report 전문 에이전트가 생성 |
+| **자동 복구** | 별도 워커, 기본 비활성 | 확정 원인의 허용된 Healthcare reset만 실행 |
 | **이벤트 수신** | SQS Long Polling | SQS Long Polling |
 | **타임아웃** | 20분 시간 예산 + 종료조건 | 30분 프로세스 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
@@ -292,7 +292,9 @@ graph LR
 
 ## 6. Fargate 엔진 — 9단계 파이프라인
 
-Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 자동 복구(Remediation)는 별도 에이전트로 분리되며, 현재 RCA 에이전트는 분석 → 보고서 → 플레이북 → 알림까지만 담당합니다.
+Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 자동 복구는
+별도 워커로 분리되며 기본 desired count는 0입니다. 활성화 시에도 서버 소유 RCA
+결과와 허용된 Healthcare reset만 사용합니다.
 
 ```mermaid
 flowchart TD
@@ -394,31 +396,30 @@ graph TB
 
 ## 7. CC Headless 엔진 — ECS Fargate
 
-Claude Code CLI를 ECS Fargate에서 headless 모드로 실행하여, 프롬프트 하나로 전체 RCA를 수행합니다.
+Claude Code CLI를 ECS Fargate에서 headless 모드로 실행하고, 메인 에이전트는
+오케스트레이터로서 RCA, 조건부 Remediation, Report 전문 에이전트를 순차 호출합니다.
 
 ```mermaid
 flowchart TD
-    subgraph EcsHandler["ECS Handler (Node.js)"]
+    subgraph EcsHandler["ECS Handler (Python)"]
         SQS["SQS Event 수신"]
         PARSE["알람 파싱"]
-        IDEMP["멱등성 체크<br/>(DynamoDB)"]
-        SESSION["세션 생성"]
+        IDEMP["claim/reclaim<br/>(DynamoDB)"]
+        SESSION["격리 실행 생성"]
         SQS --> PARSE --> IDEMP --> SESSION
     end
 
     subgraph CCProcess["Claude Code CLI (서브프로세스)"]
         CC["claude -p &lt;prompt&gt;<br/>--output-format json<br/>--strict-mcp-config<br/>--no-session-persistence"]
 
-        subgraph Prompt["프롬프트 내 11단계 RCA 워크플로우"]
-            S1["1: 스코핑"]
-            S2["2: 가설 생성 (서브에이전트)"]
-            S3["3~6: 우선순위 → 증거 수집 → 검증 → 분기 (검증 루프 서브에이전트)"]
-            S7["7: 종료 판단"]
-            S8["8: 보고서 작성"]
-            S9["9: 플레이북 생성"]
-            S10["10: 복구 권고"]
-            S11["11: 검증 계획"]
-            S1 --> S2 --> S3 --> S7 --> S8 --> S9 --> S10 --> S11
+        subgraph Prompt["전문 서브 에이전트"]
+            S1["RCA specialist<br/>스코핑·가설·증거·검증"]
+            GATE{{"확정 원인?"}}
+            S2["Remediation specialist<br/>허용된 reset + CloudWatch 사후 검증"]
+            S3["Report specialist<br/>보고서 + 플레이북"]
+            S1 --> GATE
+            GATE -->|Yes| S2 --> S3
+            GATE -->|No| S3
         end
 
         CC --> Prompt
@@ -431,8 +432,8 @@ flowchart TD
     end
 
     subgraph Output["결과 처리"]
-        RESULT["JSON 결과 파싱"]
-        S3_SAVE["S3 보고서 저장"]
+        RESULT["산출물 계약 교차 검증"]
+        S3_SAVE["claim 격리 S3 보고서 저장"]
         SNS_SEND["SNS 알림 발송"]
         DDB_UP["DynamoDB 상태 갱신"]
         RESULT --> S3_SAVE --> SNS_SEND --> DDB_UP
@@ -449,8 +450,9 @@ flowchart TD
 
 **Fargate와의 차이점**:
 - Fargate는 각 단계를 **Python 코드로** 명시적으로 구현
-- CC Headless는 모든 단계를 **프롬프트로 설명**하고, Claude Code가 자율적으로 실행
-- 따라서 CC Headless 엔진은 코드가 훨씬 간단하지만, 동작이 덜 예측 가능함
+- CC Headless는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 쓰기
+  권한, 사후 검증 결과, 완료 조건을 강제
+- claim을 잃거나 DynamoDB 소유권을 확인하지 못한 실행은 외부 쓰기를 시작하지 않음
 
 ---
 
@@ -511,12 +513,14 @@ graph TB
 
 | MCP 서버 | 실행 방식 | 비고 |
 |----------|----------|------|
-| AWS Knowledge | `uvx fastmcp run https://...` (stdio) | AWS 공식 문서/SOP 검색 |
+| AWS Knowledge | `fastmcp run https://...` (stdio) | AWS 공식 문서/SOP 검색 |
 | CloudWatch | `uvx --from awslabs-cloudwatch-mcp-server awslabs.cloudwatch-mcp-server` (stdio) | 메트릭·로그 조회 |
 | CloudTrail | `uvx --from awslabs-cloudtrail-mcp-server awslabs.cloudtrail-mcp-server` (stdio) | 배포·변경 이력 |
 | GitHub | `github-mcp-server stdio` (Go 바이너리, 컨테이너 내장) | 커밋 diff·PR 조회 |
 
-AWS 관련 MCP 서버는 `uvx` (Python 패키지 런처)로 실행됩니다. GitHub MCP 서버는 Go 바이너리로, Docker 이미지 빌드 시 GitHub Releases에서 다운로드하여 포함합니다.
+AWS Knowledge 서버는 컨테이너에 설치된 FastMCP로 실행하고, CloudWatch와
+CloudTrail 서버는 컨테이너에 준비된 Python 패키지를 사용합니다. GitHub MCP
+서버는 Go 바이너리로 이미지에 포함합니다.
 
 ---
 

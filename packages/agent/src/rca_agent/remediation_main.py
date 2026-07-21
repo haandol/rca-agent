@@ -66,8 +66,8 @@ def main() -> None:
                     logger.warning("Empty or unparseable notification, skipping")
             except Exception:
                 logger.exception("Failed to process remediation message")
-            finally:
-                consumer.ack(receipt_handle)
+                continue
+            consumer.ack(receipt_handle)
 
     logger.info("Shutdown complete")
 

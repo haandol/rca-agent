@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR Impl Review — docs/adr/agent/0011, agent/0012, infra/0003, infra/0006</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+    --paper: #e6eaee;
+    --card: #fcfdfe;
+    --ink: #1b2431;
+    --ink-2: #586372;
+    --line: #d3dae1;
+    --adr-wash: #e9eff5;   /* cool — the intended design (blueprint) */
+    --code-wash: #f5f0e9;  /* warm — the thing as built (material)   */
+    --focus: #1f5fa8;
+    --verdict: #b4690e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14171b;
+      --card: #1e232a;
+      --ink: #e4e8ed;
+      --ink-2: #9aa4b0;
+      --line: #2c333c;
+      --adr-wash: #1b2530;
+      --code-wash: #2a2620;
+      --focus: #5b9bd8;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 15px/1.6 var(--sans);
+    padding-bottom: 96px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 32px; }
+
+  /* ── docket header ─────────────────────────────────────────────── */
+  .doc {
+    display: flex; flex-wrap: wrap; gap: 18px 24px;
+    align-items: flex-start; justify-content: space-between;
+    padding-bottom: 18px; margin-bottom: 8px;
+    border-bottom: 2px solid var(--verdict);
+  }
+  .doc__id { min-width: 0; flex: 1 1 320px; }
+  .eyebrow {
+    font: 600 11px/1 var(--mono); letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-2); margin: 0 0 10px;
+  }
+  .doc__path {
+    font: 500 15px/1.45 var(--mono); color: var(--ink);
+    word-break: break-all; margin: 0;
+  }
+  .doc__status { font: 500 12px/1 var(--mono); color: var(--ink-2); margin-top: 8px; }
+  .doc__meta { margin-top: 12px; font-size: 12.5px; color: var(--ink-2); }
+  .doc__meta div { margin-top: 3px; }
+  .doc__meta code {
+    font: 12px/1.5 var(--mono);
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    padding: 1px 5px; border-radius: 4px;
+  }
+
+  /* verdict stamp */
+  .stamp {
+    flex: 0 0 auto; text-align: center;
+    border: 2px solid var(--verdict); border-radius: 8px;
+    padding: 10px 16px; box-shadow: inset 0 0 0 2px var(--card), inset 0 0 0 3px var(--verdict);
+    background: color-mix(in srgb, var(--verdict) 8%, var(--card));
+  }
+  .stamp__k { font: 600 9px/1 var(--mono); letter-spacing: 0.24em; color: var(--ink-2); }
+  .stamp__v { font: 700 20px/1.1 var(--mono); letter-spacing: 0.06em; color: var(--verdict); margin-top: 6px; }
+  .vnote { flex: 1 1 100%; font-size: 13px; color: var(--ink-2); margin: 2px 0 0; }
+
+  .count { font: 600 11px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase;
+           color: var(--ink-2); margin: 22px 0 12px; }
+
+  /* ── finding ───────────────────────────────────────────────────── */
+  .finding {
+    background: var(--card); border: 1px solid var(--line);
+    border-left: 3px solid var(--sev); border-radius: 10px;
+    padding: 16px 18px 14px; margin-bottom: 14px;
+  }
+  .finding__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .tag {
+    font: 600 10.5px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+    color: #fff; background: var(--sev); padding: 4px 9px; border-radius: 5px;
+  }
+  .finding__head-right { display: inline-flex; align-items: center; gap: 10px; }
+  .finding__idx { font: 600 12px/1 var(--mono); color: var(--sev); }
+  .finding__idx-total { color: var(--ink-2); font-weight: 500; }
+  .conf { font: 600 9.5px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
+          padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
+  .conf--high { color: #2e7d4f; border-color: color-mix(in srgb, #2e7d4f 45%, var(--line)); }
+  .conf--medium { color: #b4690e; border-color: color-mix(in srgb, #b4690e 45%, var(--line)); }
+  .conf--low { color: #c0362c; border-color: color-mix(in srgb, #c0362c 45%, var(--line)); }
+  .finding__title {
+    font: 660 17px/1.35 var(--sans); letter-spacing: -0.01em;
+    margin: 11px 0 5px;
+  }
+  .finding__blurb { font-size: 13px; color: var(--ink-2); margin: 0 0 14px; }
+
+  /* confrontation: ADR decision vs code as built */
+  .confront {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch;
+    gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .confront--single { grid-template-columns: 1fr; }
+  .side { padding: 11px 13px; min-width: 0; }
+  .side--adr { background: var(--adr-wash); }
+  .side--code { background: var(--code-wash); }
+  .side__label {
+    display: block; font: 600 10px/1 var(--mono); letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-2); margin-bottom: 7px;
+  }
+  .side__body { margin: 0; font-size: 13.5px; }
+  .side__body--quote { font-style: normal; color: var(--ink); }
+  .side__body--mono { font: 12.5px/1.5 var(--mono); color: var(--ink); word-break: break-word; }
+  .rel {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; padding: 8px 12px; background: var(--card);
+    border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+  }
+  .rel__glyph { font: 600 18px/1 var(--mono); color: var(--sev); }
+  .rel__label { font: 600 9px/1.1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+                color: var(--ink-2); text-align: center; white-space: nowrap; }
+
+  .meta { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+  .meta__row { display: flex; gap: 10px; font-size: 13px; }
+  .meta__k { flex: 0 0 42px; font: 600 11px/1.5 var(--mono); letter-spacing: 0.08em;
+             text-transform: uppercase; color: var(--ink-2); }
+  .meta__v { flex: 1; }
+  .meta__v--mono { font: 12.5px/1.5 var(--mono); }
+
+  /* ruling — segmented control + note */
+  .ruling { border-top: 1px dashed var(--line); padding-top: 12px; }
+  .ruling__label { display: block; font: 600 10px/1 var(--mono); letter-spacing: 0.16em;
+                   text-transform: uppercase; color: var(--ink-2); margin-bottom: 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px;
+         overflow: hidden; margin-bottom: 10px; }
+  .seg__input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg__label {
+    font: 600 13px/1 var(--sans); padding: 8px 18px; cursor: pointer;
+    color: var(--ink-2); background: var(--card); border-left: 1px solid var(--line);
+    transition: background 0.12s, color 0.12s;
+  }
+  .seg__label:first-of-type { border-left: none; }
+  .seg__input:checked + .seg__label { background: var(--ink); color: var(--card); }
+  .seg__input:focus-visible + .seg__label { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .seg__label:hover { color: var(--ink); }
+  .seg__input:checked + .seg__label:hover { color: var(--card); }
+  .ruling__note {
+    display: block; width: 100%; font: 13.5px/1.5 var(--sans);
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper); color: var(--ink); resize: vertical;
+  }
+  .ruling__note:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--focus); }
+
+  /* notes footer */
+  .notes { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+           padding: 14px 18px; margin-top: 4px; }
+  .notes__k { font: 600 10px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase;
+              color: var(--ink-2); }
+  .notes__v { font-size: 13.5px; color: var(--ink); margin: 8px 0 0; }
+
+  /* conforming (empty) state */
+  .conforms { text-align: center; padding: 48px 24px; }
+  .conforms__stamp {
+    display: inline-block; font: 700 22px/1 var(--mono); letter-spacing: 0.1em;
+    color: var(--verdict); border: 2px solid var(--verdict); border-radius: 10px;
+    padding: 14px 28px; box-shadow: inset 0 0 0 2px var(--card), inset 0 0 0 3px var(--verdict);
+    background: color-mix(in srgb, var(--verdict) 8%, var(--card));
+  }
+  .conforms__lead { font: 660 17px/1.4 var(--sans); margin: 20px 0 4px; }
+  .conforms__sub { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+
+  /* ── action bar ────────────────────────────────────────────────── */
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    backdrop-filter: saturate(180%) blur(8px);
+    border-top: 1px solid var(--line);
+    padding: 12px 20px;
+  }
+  .bar__inner { max-width: 860px; margin: 0 auto; display: flex; align-items: center;
+                justify-content: space-between; gap: 16px; }
+  .hint { font-size: 12.5px; color: var(--ink-2); }
+  button.export {
+    font: 600 14px/1 var(--sans); padding: 11px 22px; border: 1px solid var(--ink);
+    border-radius: 8px; background: var(--ink); color: var(--card); cursor: pointer;
+    transition: opacity 0.12s;
+  }
+  button.export:hover { opacity: 0.88; }
+  button.export:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  button.export.done { background: #2e7d4f; border-color: #2e7d4f; }
+
+  @media (max-width: 620px) {
+    .confront, .confront--single { grid-template-columns: 1fr; }
+    .rel { flex-direction: row; gap: 8px; border-left: none; border-right: none;
+           border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .rel__glyph { transform: rotate(90deg); }
+    .bar__inner { flex-direction: column; align-items: stretch; }
+    .bar .hint { text-align: center; }
+    button.export { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="doc">
+    <div class="doc__id">
+      <p class="eyebrow">ADR IMPL REVIEW</p>
+      <p class="doc__path">docs/adr/agent/0011, agent/0012, infra/0003, infra/0006</p>
+      <div class="doc__status">Accepted</div>
+      <div class="doc__meta">
+        <div>검토 범위 · <code>packages/cc-headless</code> <code>packages/agent</code> <code>packages/healthcare-sensor-app</code> <code>packages/infra</code></div>
+        <div>프로젝트 규약 · <code>AGENTS.md, packages/cc-headless/AGENTS.md, packages/infra/AGENTS.md</code></div>
+
+
+      </div>
+    </div>
+    <div class="stamp">
+      <div class="stamp__k">VERDICT</div>
+      <div class="stamp__v">FIX_REQUIRED</div>
+    </div>
+    <p class="vnote">후속 조치 필요 — 불필요한 변경 제거, 코드 수정, ADR 정정, 테스트 보강 또는 사람 판정.</p>
+  </header>
+
+  <p class="count">지적 16건 · 항목마다 판정하세요</p>
+
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">01<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Strands remediation trusts the event's confirmed flag instead of reloading the latest validation artifact.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">모델이 전달한 확정 여부를 신뢰하지 않고 산출물을 직접 검증한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/agent/src/rca_agent/services/remediation_pipeline.py:79 — if not raw.get(&quot;confirmed&quot;, False):</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Load the latest validation and completed session from the authoritative stores before allowing remediation.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">critical</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Strands remediation trusts the event's confirmed flag instead of reloading the latest validation artifact. 판정">
+        <input type="radio" class="seg__input" id="r-0-fix" name="dec-0" value="fix" checked><label class="seg__label" for="r-0-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-0-skip" name="dec-0" value="skip"><label class="seg__label" for="r-0-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-0-defer" name="dec-0" value="defer"><label class="seg__label" for="r-0-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="0" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">02<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">The dormant Strands remediation path still falls back to a general ECS force deployment.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">지원하지 않는 원인은 임의 대체 조치 없이 fail-closed하며 일반 ECS 변경을 금지한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/agent/src/rca_agent/services/remediation.py:83,121 — _force_ecs_deployment(... forceNewDeployment=True)</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Remove the ECS fallback and return BLOCKED for unsupported causes; remove its IAM permissions.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">critical</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="The dormant Strands remediation path still falls back to a general ECS force deployment. 판정">
+        <input type="radio" class="seg__input" id="r-1-fix" name="dec-1" value="fix" checked><label class="seg__label" for="r-1-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-1-skip" name="dec-1" value="skip"><label class="seg__label" for="r-1-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-1-defer" name="dec-1" value="defer"><label class="seg__label" for="r-1-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="1" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">03<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">A reclaimed session does not fence the previous attempt before reset, report upload, notification, or watcher writes.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">이전 실행은 소유권을 잃은 뒤 복구 결과를 확정할 수 없어야 하며 모든 상태 전이와 완료 기록은 claim token이 일치할 때만 허용한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/src/cc_headless/mcp_server.py:237,310; packages/cc-headless/src/cc_headless/services/pipeline.py:154-203; packages/cc-headless/src/cc_headless/services/artifact_watcher.py:121</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Fence every external side effect with the active claim and use attempt-scoped artifacts plus conditional publication.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="A reclaimed session does not fence the previous attempt before reset, report upload, notification, or watcher writes. 판정">
+        <input type="radio" class="seg__input" id="r-2-fix" name="dec-2" value="fix" checked><label class="seg__label" for="r-2-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-2-skip" name="dec-2" value="skip"><label class="seg__label" for="r-2-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-2-defer" name="dec-2" value="defer"><label class="seg__label" for="r-2-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="2" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">04<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">The root CC process retains direct analysis and remediation MCP tools instead of being capability-limited to orchestration.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">메인 에이전트는 직접 분석하거나 복구하지 않는 오케스트레이터다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py:36 — root allowed tools include CloudWatch and execute_healthcare_reset</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Restrict the root process to agent delegation and enforce role-specific MCP capability profiles.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="The root CC process retains direct analysis and remediation MCP tools instead of being capability-limited to orchestration. 판정">
+        <input type="radio" class="seg__input" id="r-3-fix" name="dec-3" value="fix" checked><label class="seg__label" for="r-3-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-3-skip" name="dec-3" value="skip"><label class="seg__label" for="r-3-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-3-defer" name="dec-3" value="defer"><label class="seg__label" for="r-3-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="3" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">05<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Remediation selection uses free-text regex matching instead of a structured fault type from validation.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">지원하지 않는 원인은 fail-closed하고 허용된 장애 리셋만 실행한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/src/cc_headless/mcp_server.py:150-163 — concatenates title/reasoning and applies re.search</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Require and validate a fault_type enum in the latest confirmed validation artifact.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Remediation selection uses free-text regex matching instead of a structured fault type from validation. 판정">
+        <input type="radio" class="seg__input" id="r-4-fix" name="dec-4" value="fix" checked><label class="seg__label" for="r-4-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-4-skip" name="dec-4" value="skip"><label class="seg__label" for="r-4-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-4-defer" name="dec-4" value="defer"><label class="seg__label" for="r-4-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="4" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">06<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Pipeline completion accepts minimally valid report and playbook files without semantic schema or remediation-result checks.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">복구 결과가 없으면 미실행으로, 실패 결과가 있으면 실패로 기록하도록 산출물 계약을 강제한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/src/cc_headless/services/pipeline.py:165; packages/cc-headless/src/cc_headless/adapters/secondary/playbook/s3_vectors_playbook_store.py:26</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Validate required RCA/report sections and cross-check playbook and remediation schemas against server-owned results before completion.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Pipeline completion accepts minimally valid report and playbook files without semantic schema or remediation-result checks. 판정">
+        <input type="radio" class="seg__input" id="r-5-fix" name="dec-5" value="fix" checked><label class="seg__label" for="r-5-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-5-skip" name="dec-5" value="skip"><label class="seg__label" for="r-5-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-5-defer" name="dec-5" value="defer"><label class="seg__label" for="r-5-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="5" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">07<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">The completion gate does not prove that RCA, conditional remediation, and report agents actually ran in order.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">실행 순서는 RCA → 조건부 Remediation → Report다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/tests/test_pipeline.py:61 — success fixture can complete with only report.md and playbook.json</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Require scoping, hypotheses, latest validation, and a server-owned remediation outcome before report completion.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="The completion gate does not prove that RCA, conditional remediation, and report agents actually ran in order. 판정">
+        <input type="radio" class="seg__input" id="r-6-fix" name="dec-6" value="fix" checked><label class="seg__label" for="r-6-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-6-skip" name="dec-6" value="skip"><label class="seg__label" for="r-6-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-6-defer" name="dec-6" value="defer"><label class="seg__label" for="r-6-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="6" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">08<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Strands remediation has no durable session-level idempotency claim.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">리셋 API의 멱등성과 세션 멱등성 키를 함께 사용한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/agent/tests/test_remediation_pipeline.py:157 — duplicate-event contract remains strict xfail</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Add an engine + rca_id + action conditional claim and persist the terminal remediation result.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Strands remediation has no durable session-level idempotency claim. 판정">
+        <input type="radio" class="seg__input" id="r-7-fix" name="dec-7" value="fix" checked><label class="seg__label" for="r-7-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-7-skip" name="dec-7" value="skip"><label class="seg__label" for="r-7-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-7-defer" name="dec-7" value="defer"><label class="seg__label" for="r-7-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="7" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">09<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Strands post-remediation verification is not persisted or included in final notifications and reports.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">복구 후 관측 결과는 정상화, 실패, 관측 대기로 구분한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/agent/src/rca_agent/services/remediation_pipeline.py:91-98</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Persist the verification state and include it in the terminal notification and report.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Strands post-remediation verification is not persisted or included in final notifications and reports. 판정">
+        <input type="radio" class="seg__input" id="r-8-fix" name="dec-8" value="fix" checked><label class="seg__label" for="r-8-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-8-skip" name="dec-8" value="skip"><label class="seg__label" for="r-8-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-8-defer" name="dec-8" value="defer"><label class="seg__label" for="r-8-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="8" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#c0362c">
+    <header class="finding__head">
+      <span class="tag">Spec violation</span>
+      <span class="finding__head-right"><span class="conf conf--medium" title="증거 강도">medium</span><span class="finding__idx">10<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Claim rejection is always acknowledged even when it may represent transient contention rather than a terminal duplicate.</h3>
+    <p class="finding__blurb">코드가 ADR 결정을 지키지 않았다 — ADR이 스펙이므로 코드를 고칠 일.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">성공 또는 이미 완료된 중복으로 판정된 경우에만 확인 처리한다.</p>
+         </div><div class="rel" title="코드가 결정을 따라야 함">
+             <span class="rel__glyph">→</span>
+             <span class="rel__label">ADR 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/src/cc_headless/services/pipeline.py:77; packages/cc-headless/src/cc_headless/main.py:75</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Return CLAIMED, TERMINAL_DUPLICATE, or CONTENDED and acknowledge only terminal outcomes.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">medium</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Claim rejection is always acknowledged even when it may represent transient contention rather than a terminal duplicate. 판정">
+        <input type="radio" class="seg__input" id="r-9-fix" name="dec-9" value="fix" checked><label class="seg__label" for="r-9-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-9-skip" name="dec-9" value="skip"><label class="seg__label" for="r-9-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-9-defer" name="dec-9" value="defer"><label class="seg__label" for="r-9-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="9" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#1f5fa8">
+    <header class="finding__head">
+      <span class="tag">Best practice</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">11<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Session ownership checks fail open when DynamoDB reads fail.</h3>
+    <p class="finding__blurb">프로젝트 규약(1차)/일반 패턴(2차) 위반 — 코드 개선 후보.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">모든 상태 전이와 완료 기록은 현재 claim token이 일치할 때만 허용한다.</p>
+         </div><div class="rel" title="프로젝트 규약과 대조">
+             <span class="rel__glyph">▸</span>
+             <span class="rel__label">규약 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py:268 — exception logs and returns False</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Treat ownership-check failure as cancellation or a retryable processing error and do not acknowledge the message.</span></div><div class="meta__row"><span class="meta__k">근거</span><span class="meta__v">Fail-closed ownership fencing</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Session ownership checks fail open when DynamoDB reads fail. 판정">
+        <input type="radio" class="seg__input" id="r-10-fix" name="dec-10" value="fix" checked><label class="seg__label" for="r-10-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-10-skip" name="dec-10" value="skip"><label class="seg__label" for="r-10-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-10-defer" name="dec-10" value="defer"><label class="seg__label" for="r-10-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="10" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#1f5fa8">
+    <header class="finding__head">
+      <span class="tag">Best practice</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">12<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">The Strands remediation consumer acknowledges messages even after an unhandled transient exception.</h3>
+    <p class="finding__blurb">프로젝트 규약(1차)/일반 패턴(2차) 위반 — 코드 개선 후보.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">복구 실패도 관찰 가능한 결과로 남는다.</p>
+         </div><div class="rel" title="프로젝트 규약과 대조">
+             <span class="rel__glyph">▸</span>
+             <span class="rel__label">규약 기준</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/agent/src/rca_agent/remediation_main.py:67 — finally: consumer.ack(...)</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Acknowledge only successful or explicitly terminal outcomes; leave transient failures for retry/DLQ.</span></div><div class="meta__row"><span class="meta__k">근거</span><span class="meta__v">SQS at-least-once retry contract</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">medium</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="The Strands remediation consumer acknowledges messages even after an unhandled transient exception. 판정">
+        <input type="radio" class="seg__input" id="r-11-fix" name="dec-11" value="fix" checked><label class="seg__label" for="r-11-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-11-skip" name="dec-11" value="skip"><label class="seg__label" for="r-11-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-11-defer" name="dec-11" value="defer"><label class="seg__label" for="r-11-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="11" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#1f5fa8">
+    <header class="finding__head">
+      <span class="tag">Best practice</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">13<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Production code contains direct ADR identifiers, coupling runtime modules to ADR numbering.</h3>
+    <p class="finding__blurb">프로젝트 규약(1차)/일반 패턴(2차) 위반 — 코드 개선 후보.</p>
+    <div class="confront confront--single"><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/agent/src/rca_agent/services/remediation_pipeline.py:69; settings.py:60; app_container.py:230; models.py:285</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Remove ADR identifiers from production comments while retaining the behavior.</span></div><div class="meta__row"><span class="meta__k">근거</span><span class="meta__v">ADR R17 code-to-ADR back-reference rule</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">low</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Production code contains direct ADR identifiers, coupling runtime modules to ADR numbering. 판정">
+        <input type="radio" class="seg__input" id="r-12-fix" name="dec-12" value="fix" checked><label class="seg__label" for="r-12-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-12-skip" name="dec-12" value="skip"><label class="seg__label" for="r-12-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-12-defer" name="dec-12" value="defer"><label class="seg__label" for="r-12-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="12" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#566173">
+    <header class="finding__head">
+      <span class="tag">Test gap</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">14<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">No deterministic tests exercise reclaim races at reset, report publication, watcher writes, and SQS acknowledgement.</h3>
+    <p class="finding__blurb">결정한 동작이 테스트로 검증되지 않았다.</p>
+    <div class="confront confront--single"><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/tests/test_pipeline.py:252 only checks termination once after the CC process returns</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Swap the claim immediately before each side effect and assert no stale attempt can publish or acknowledge.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">high-effort/high-payoff</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="No deterministic tests exercise reclaim races at reset, report publication, watcher writes, and SQS acknowledgement. 판정">
+        <input type="radio" class="seg__input" id="r-13-fix" name="dec-13" value="fix"><label class="seg__label" for="r-13-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-13-skip" name="dec-13" value="skip"><label class="seg__label" for="r-13-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-13-defer" name="dec-13" value="defer" checked><label class="seg__label" for="r-13-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="13" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#566173">
+    <header class="finding__head">
+      <span class="tag">Test gap</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">15<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">Prompt text ordering is tested, but actual sub-agent invocation order and failure continuity are not.</h3>
+    <p class="finding__blurb">결정한 동작이 테스트로 검증되지 않았다.</p>
+    <div class="confront confront--single"><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/tests/test_prompt_contracts.py:173 — prompt.index(...)</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Add tool-call event contract tests for RCA, remediation, report ordering and report-after-remediation-failure behavior.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">medium-effort/high-payoff</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="Prompt text ordering is tested, but actual sub-agent invocation order and failure continuity are not. 판정">
+        <input type="radio" class="seg__input" id="r-14-fix" name="dec-14" value="fix"><label class="seg__label" for="r-14-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-14-skip" name="dec-14" value="skip"><label class="seg__label" for="r-14-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-14-defer" name="dec-14" value="defer" checked><label class="seg__label" for="r-14-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="14" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" style="--sev:#566173">
+    <header class="finding__head">
+      <span class="tag">Test gap</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="증거 강도">high</span><span class="finding__idx">16<span class="finding__idx-total"> / 16</span></span></span>
+    </header>
+    <h3 class="finding__title">The required save_report → mark_completed → delete_message acknowledgement boundary is not asserted.</h3>
+    <p class="finding__blurb">결정한 동작이 테스트로 검증되지 않았다.</p>
+    <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">필수 보고서가 저장되고 세션이 완료된 뒤에만 확인 처리한다.</p>
+         </div><div class="rel" title="결정-중립">
+             <span class="rel__glyph">·</span>
+             <span class="rel__label">권고</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/cc-headless/tests/test_pipeline.py:120 checks calls but not their ordering relative to SQS delete</p>
+         </div></div>
+    <div class="meta"><div class="meta__row"><span class="meta__k">제안</span><span class="meta__v">Add an ordered integration contract for report persistence, terminal session CAS, and SQS deletion.</span></div><div class="meta__row"><span class="meta__k">효과</span><span class="meta__v">low-effort/high-payoff</span></div></div>
+    <footer class="ruling">
+      <span class="ruling__label">판정</span>
+      <div class="seg" role="radiogroup" aria-label="The required save_report → mark_completed → delete_message acknowledgement boundary is not asserted. 판정">
+        <input type="radio" class="seg__input" id="r-15-fix" name="dec-15" value="fix"><label class="seg__label" for="r-15-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-15-skip" name="dec-15" value="skip"><label class="seg__label" for="r-15-skip">무시</label>
+        <input type="radio" class="seg__input" id="r-15-defer" name="dec-15" value="defer" checked><label class="seg__label" for="r-15-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="15" rows="2" placeholder="note (선택) — 판정 근거나 수정 방향"></textarea>
+    </footer>
+  </article>
+
+  <section class="notes"><div class="notes__k">부기</div><p class="notes__v">ADR 0003 passed with a missing order test. ADR 0011, 0012, and 0006 require fixes. Review was static and read-only.</p></section>
+</div>
+
+<div class="bar">
+  <div class="bar__inner">
+    <span class="hint">각 지적에 판정을 내리고 필요하면 note를 남긴 뒤 내보내세요.</span>
+    <button class="export" id="export">판정 내보내기</button>
+  </div>
+</div>
+
+<script>
+  const EMBED = {"adr":"docs/adr/agent/0011, agent/0012, infra/0003, infra/0006","verdict":"FIX_REQUIRED","findings":[{"id":"f1","category":"Spec violation","unknownCat":false,"summary":"Strands remediation trusts the event's confirmed flag instead of reloading the latest validation artifact.","adrQuote":"모델이 전달한 확정 여부를 신뢰하지 않고 산출물을 직접 검증한다.","code":"packages/agent/src/rca_agent/services/remediation_pipeline.py:79 — if not raw.get(\"confirmed\", False):","fix":"Load the latest validation and completed session from the authoritative stores before allowing remediation.","route":"","basis":"","weight":"","impact":"critical","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f2","category":"Spec violation","unknownCat":false,"summary":"The dormant Strands remediation path still falls back to a general ECS force deployment.","adrQuote":"지원하지 않는 원인은 임의 대체 조치 없이 fail-closed하며 일반 ECS 변경을 금지한다.","code":"packages/agent/src/rca_agent/services/remediation.py:83,121 — _force_ecs_deployment(... forceNewDeployment=True)","fix":"Remove the ECS fallback and return BLOCKED for unsupported causes; remove its IAM permissions.","route":"","basis":"","weight":"","impact":"critical","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f3","category":"Spec violation","unknownCat":false,"summary":"A reclaimed session does not fence the previous attempt before reset, report upload, notification, or watcher writes.","adrQuote":"이전 실행은 소유권을 잃은 뒤 복구 결과를 확정할 수 없어야 하며 모든 상태 전이와 완료 기록은 claim token이 일치할 때만 허용한다.","code":"packages/cc-headless/src/cc_headless/mcp_server.py:237,310; packages/cc-headless/src/cc_headless/services/pipeline.py:154-203; packages/cc-headless/src/cc_headless/services/artifact_watcher.py:121","fix":"Fence every external side effect with the active claim and use attempt-scoped artifacts plus conditional publication.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f5","category":"Spec violation","unknownCat":false,"summary":"The root CC process retains direct analysis and remediation MCP tools instead of being capability-limited to orchestration.","adrQuote":"메인 에이전트는 직접 분석하거나 복구하지 않는 오케스트레이터다.","code":"packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py:36 — root allowed tools include CloudWatch and execute_healthcare_reset","fix":"Restrict the root process to agent delegation and enforce role-specific MCP capability profiles.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f6","category":"Spec violation","unknownCat":false,"summary":"Remediation selection uses free-text regex matching instead of a structured fault type from validation.","adrQuote":"지원하지 않는 원인은 fail-closed하고 허용된 장애 리셋만 실행한다.","code":"packages/cc-headless/src/cc_headless/mcp_server.py:150-163 — concatenates title/reasoning and applies re.search","fix":"Require and validate a fault_type enum in the latest confirmed validation artifact.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f7","category":"Spec violation","unknownCat":false,"summary":"Pipeline completion accepts minimally valid report and playbook files without semantic schema or remediation-result checks.","adrQuote":"복구 결과가 없으면 미실행으로, 실패 결과가 있으면 실패로 기록하도록 산출물 계약을 강제한다.","code":"packages/cc-headless/src/cc_headless/services/pipeline.py:165; packages/cc-headless/src/cc_headless/adapters/secondary/playbook/s3_vectors_playbook_store.py:26","fix":"Validate required RCA/report sections and cross-check playbook and remediation schemas against server-owned results before completion.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f8","category":"Spec violation","unknownCat":false,"summary":"The completion gate does not prove that RCA, conditional remediation, and report agents actually ran in order.","adrQuote":"실행 순서는 RCA → 조건부 Remediation → Report다.","code":"packages/cc-headless/tests/test_pipeline.py:61 — success fixture can complete with only report.md and playbook.json","fix":"Require scoping, hypotheses, latest validation, and a server-owned remediation outcome before report completion.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f9","category":"Spec violation","unknownCat":false,"summary":"Strands remediation has no durable session-level idempotency claim.","adrQuote":"리셋 API의 멱등성과 세션 멱등성 키를 함께 사용한다.","code":"packages/agent/tests/test_remediation_pipeline.py:157 — duplicate-event contract remains strict xfail","fix":"Add an engine + rca_id + action conditional claim and persist the terminal remediation result.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f10","category":"Spec violation","unknownCat":false,"summary":"Strands post-remediation verification is not persisted or included in final notifications and reports.","adrQuote":"복구 후 관측 결과는 정상화, 실패, 관측 대기로 구분한다.","code":"packages/agent/src/rca_agent/services/remediation_pipeline.py:91-98","fix":"Persist the verification state and include it in the terminal notification and report.","route":"","basis":"","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f11","category":"Spec violation","unknownCat":false,"summary":"Claim rejection is always acknowledged even when it may represent transient contention rather than a terminal duplicate.","adrQuote":"성공 또는 이미 완료된 중복으로 판정된 경우에만 확인 처리한다.","code":"packages/cc-headless/src/cc_headless/services/pipeline.py:77; packages/cc-headless/src/cc_headless/main.py:75","fix":"Return CLAIMED, TERMINAL_DUPLICATE, or CONTENDED and acknowledge only terminal outcomes.","route":"","basis":"","weight":"","impact":"medium","confidence":"medium","perspective":"","evidence":"","test":"","testResult":""},{"id":"f4","category":"Best practice","unknownCat":false,"summary":"Session ownership checks fail open when DynamoDB reads fail.","adrQuote":"모든 상태 전이와 완료 기록은 현재 claim token이 일치할 때만 허용한다.","code":"packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py:268 — exception logs and returns False","fix":"Treat ownership-check failure as cancellation or a retryable processing error and do not acknowledge the message.","route":"","basis":"Fail-closed ownership fencing","weight":"","impact":"high","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f12","category":"Best practice","unknownCat":false,"summary":"The Strands remediation consumer acknowledges messages even after an unhandled transient exception.","adrQuote":"복구 실패도 관찰 가능한 결과로 남는다.","code":"packages/agent/src/rca_agent/remediation_main.py:67 — finally: consumer.ack(...)","fix":"Acknowledge only successful or explicitly terminal outcomes; leave transient failures for retry/DLQ.","route":"","basis":"SQS at-least-once retry contract","weight":"","impact":"medium","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f16","category":"Best practice","unknownCat":false,"summary":"Production code contains direct ADR identifiers, coupling runtime modules to ADR numbering.","adrQuote":"","code":"packages/agent/src/rca_agent/services/remediation_pipeline.py:69; settings.py:60; app_container.py:230; models.py:285","fix":"Remove ADR identifiers from production comments while retaining the behavior.","route":"","basis":"ADR R17 code-to-ADR back-reference rule","weight":"","impact":"low","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f13","category":"Test gap","unknownCat":false,"summary":"No deterministic tests exercise reclaim races at reset, report publication, watcher writes, and SQS acknowledgement.","adrQuote":"","code":"packages/cc-headless/tests/test_pipeline.py:252 only checks termination once after the CC process returns","fix":"Swap the claim immediately before each side effect and assert no stale attempt can publish or acknowledge.","route":"","basis":"","weight":"","impact":"high-effort/high-payoff","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f14","category":"Test gap","unknownCat":false,"summary":"Prompt text ordering is tested, but actual sub-agent invocation order and failure continuity are not.","adrQuote":"","code":"packages/cc-headless/tests/test_prompt_contracts.py:173 — prompt.index(...)","fix":"Add tool-call event contract tests for RCA, remediation, report ordering and report-after-remediation-failure behavior.","route":"","basis":"","weight":"","impact":"medium-effort/high-payoff","confidence":"high","perspective":"","evidence":"","test":"","testResult":""},{"id":"f15","category":"Test gap","unknownCat":false,"summary":"The required save_report → mark_completed → delete_message acknowledgement boundary is not asserted.","adrQuote":"필수 보고서가 저장되고 세션이 완료된 뒤에만 확인 처리한다.","code":"packages/cc-headless/tests/test_pipeline.py:120 checks calls but not their ordering relative to SQS delete","fix":"Add an ordered integration contract for report persistence, terminal session CAS, and SQS deletion.","route":"","basis":"","weight":"","impact":"low-effort/high-payoff","confidence":"high","perspective":"","evidence":"","test":"","testResult":""}]};
+  document.getElementById("export").addEventListener("click", () => {
+    const reviews = EMBED.findings.map((f, index) => {
+      const picked = document.querySelector('input[name="dec-' + index + '"]:checked');
+      const note = document.querySelector('textarea.ruling__note[data-finding-index="' + index + '"]');
+      // Echo the whole finding back (route/fix/adrQuote/code/basis/weight/…)
+      // and add the ruling, so feedback.json is a self-contained handoff: the
+      // main session can route follow-ups from the file alone even after a
+      // context compaction dropped the original findings.json.
+      return {
+        ...f,
+        finding_id: f.id,
+        decision: picked ? picked.value : "defer",
+        comment: note ? note.value.trim() : "",
+      };
+    });
+    const out = { adr: EMBED.adr, verdict: EMBED.verdict, reviews, status: "complete" };
+    const blob = new Blob([JSON.stringify(out, null, 2) + "\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "feedback.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const btn = document.getElementById("export");
+    btn.textContent = "저장됨 · feedback.json";
+    btn.classList.add("done");
+  });
+</script>
+</body>
+</html>

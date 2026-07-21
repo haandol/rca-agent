@@ -14,7 +14,13 @@ import structlog
 from cc_headless.config.settings import CC_TIMEOUT_SECONDS
 from cc_headless.ports.dto.models import CcResult
 from cc_headless.ports.interfaces.cc_runner import CcRunnerPort
-from cc_headless.services.execution_context import RUN_TOKEN_ENV, artifact_dir_for_token
+from cc_headless.services.execution_context import (
+    ATTEMPT_ENV,
+    CLAIM_TOKEN_ENV,
+    RCA_ID_ENV,
+    RUN_TOKEN_ENV,
+    artifact_dir_for_token,
+)
 
 logger = structlog.get_logger()
 
@@ -32,6 +38,7 @@ def _find_file(name: str) -> str:
 
 _MCP_CONFIG_PATH = _find_file("mcp-config.json")
 _WORKSPACE_SOURCE = Path(_MCP_CONFIG_PATH).parent
+_ROOT_AGENT = "orchestrator"
 _BUILTIN_TOOLS = ("Agent", "Skill")
 _ALLOWED_TOOLS = (
     *_BUILTIN_TOOLS,
@@ -40,6 +47,7 @@ _ALLOWED_TOOLS = (
     "mcp__cloudtrail__*",
     "mcp__github__*",
     "mcp__rca-progress__save_artifact",
+    "mcp__rca-progress__execute_healthcare_reset",
 )
 
 
@@ -76,6 +84,9 @@ class CcSubprocessRunner(CcRunnerPort):
         execution_token: str,
         mcp_config: str | None = None,
         cancel_checker: Callable[[], bool] | None = None,
+        rca_id: str | None = None,
+        claim_token: str | None = None,
+        attempt: int | None = None,
     ) -> CcResult:
         artifact_dir_for_token(execution_token)
         args = [
@@ -89,6 +100,8 @@ class CcSubprocessRunner(CcRunnerPort):
             mcp_config or _MCP_CONFIG_PATH,
             "--strict-mcp-config",
             "--no-session-persistence",
+            "--agent",
+            _ROOT_AGENT,
             "--tools",
             ",".join(_BUILTIN_TOOLS),
             "--allowedTools",
@@ -109,6 +122,12 @@ class CcSubprocessRunner(CcRunnerPort):
                 "CLAUDE_CONFIG_DIR": str(Path(home) / ".claude"),
                 RUN_TOKEN_ENV: execution_token,
             }
+            if rca_id:
+                env[RCA_ID_ENV] = rca_id
+            if claim_token:
+                env[CLAIM_TOKEN_ENV] = claim_token
+            if attempt is not None:
+                env[ATTEMPT_ENV] = str(attempt)
 
             try:
                 proc = subprocess.Popen(

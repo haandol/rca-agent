@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 RUN_TOKEN_ENV = "RCA_EXECUTION_TOKEN"
+RCA_ID_ENV = "RCA_SESSION_ID"
+CLAIM_TOKEN_ENV = "RCA_CLAIM_TOKEN"
+ATTEMPT_ENV = "RCA_ATTEMPT"
 
 _ARTIFACT_ROOT = Path(tempfile.gettempdir()) / "cc-headless-artifacts"
 _TOKEN_PATTERN = re.compile(r"[0-9a-f]{32}")

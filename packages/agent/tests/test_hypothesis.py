@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from rca_agent.ports.dto.models import (
+    FaultType,
     HypothesisCategory,
     HypothesisGenerationResult,
     ReportMatch,
@@ -50,6 +51,7 @@ def _make_hypothesis_output(count: int = 3) -> HypothesisOutput:
                 confidence_score=round(0.8 - i * 0.1, 1),
                 required_evidence=[f"evidence-{i + 1}a", f"evidence-{i + 1}b"],
                 referenced_playbook_id="pb-001" if i == 0 else None,
+                fault_type=FaultType.HIGH_CPU if i == 0 else FaultType.UNSUPPORTED,
             )
         )
     return HypothesisOutput(hypotheses=items)
@@ -143,6 +145,7 @@ class TestRunHypothesisGeneration:
         assert h.confidence_score == 0.8
         assert h.required_evidence == ["evidence-1a", "evidence-1b"]
         assert h.referenced_playbook_id == "pb-001"
+        assert h.fault_type == FaultType.HIGH_CPU
 
     def test_passes_structured_output_model(self, sample_scoping_result: ScopingResult):
         output = _make_hypothesis_output(3)

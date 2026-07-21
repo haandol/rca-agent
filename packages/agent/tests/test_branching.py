@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 from rca_agent.ports.dto.models import (
+    FaultType,
     Hypothesis,
     HypothesisCategory,
 )
@@ -54,7 +55,12 @@ class TestRunBranching:
         parent = _make_parent()
         output = BranchingOutput(
             children=[
-                _ChildItem(description="Child 1", category=HypothesisCategory.DEPLOYMENT, confidence_score=0.4),
+                _ChildItem(
+                    description="Child 1",
+                    category=HypothesisCategory.DEPLOYMENT,
+                    confidence_score=0.4,
+                    fault_type=FaultType.HIGH_CPU,
+                ),
                 _ChildItem(description="Child 2", category=HypothesisCategory.DEPLOYMENT, confidence_score=0.3),
             ]
         )
@@ -68,6 +74,7 @@ class TestRunBranching:
         for child in result.children:
             assert child.parent_id == "parent-1"
             assert child.depth == 1
+        assert result.children[0].fault_type == FaultType.HIGH_CPU
 
     def test_uses_structured_output(self):
         parent = _make_parent()

@@ -10,7 +10,7 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 |---|---|---|
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 9단계 closed-loop 파이프라인 | 단일 프롬프트 + MCP 도구 자율 호출 |
+| **RCA 방식** | 9단계 closed-loop 파이프라인 | 전문 서브 에이전트 오케스트레이션 |
 | **모델** | 단일 Sonnet 4.6 (Planning/Execution 행동 분리) | CC 기본 모델 (Sonnet 4.6) |
 | **타임아웃** | 종료 조건 및 시간 예산 | CC 프로세스 30분 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
@@ -39,7 +39,7 @@ graph TB
     subgraph LLM["LLM 추론"]
         BEDROCK_PLAN["Amazon Bedrock<br/>Sonnet 4.6 + Adaptive Thinking<br/>(Planning: 가설·보고서·플레이북·분기·우선순위)"]
         BEDROCK_EXEC["Amazon Bedrock<br/>Sonnet 4.6 (thinking 없음)<br/>(Execution: 스코핑·증거 수집·검증)"]
-        BEDROCK_CC["Amazon Bedrock<br/>Sonnet 4.6<br/>(CC Headless 프롬프트 주도)"]
+        BEDROCK_CC["Amazon Bedrock<br/>Sonnet 4.6<br/>(CC Headless 오케스트레이터)"]
     end
 
     subgraph DataTools["데이터 수집 도구 (MCP)"]
@@ -95,7 +95,9 @@ graph TB
 
 에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북을 포함한 SNS 알림을 발행합니다.
 
-**플레이북은 생성/저장/인덱싱만 수행되며, 자동 복구(Remediation)는 아직 미구현입니다.** 별도 Remediation Agent가 SNS → SQS로 구독하여 수행하도록 설계되었으나, 해당 에이전트는 아직 배포되지 않았습니다. `remediation.py`와 `verification.py` 모듈이 준비되어 있습니다.
+Strands 자동 복구는 별도 SNS → SQS 워커로 구현되어 있으며 기본 desired count는
+0입니다. 활성화해도 서버 소유 RCA 결과와 허용된 Healthcare reset만 사용하며,
+일반 ECS 강제 배포는 수행하지 않습니다.
 
 ```mermaid
 stateDiagram-v2
@@ -129,25 +131,37 @@ stateDiagram-v2
 
 단계별 timeout/재시도, 증거 소스, 플레이북 검색 우선(≥0.86) 등 세부 동작은 `packages/agent/` 소스와 관련 ADR을 참조하세요.
 
-## Agent Pipeline — Fargate (CC Headless, 프롬프트 주도)
+## Agent Pipeline — Fargate (CC Headless 오케스트레이터)
 
-CC on Bedrock headless 모드에서 단일 프롬프트로 RCA 전체 워크플로우를 수행합니다. CC가 MCP 도구를 자율적으로 호출합니다.
+CC on Bedrock headless 메인 에이전트는 직접 RCA나 복구를 수행하지 않고, 한 실행
+안에서 RCA, 조건부 Remediation, Report 전문 서브 에이전트를 순서대로 호출합니다.
+읽기 도구와 쓰기 도구는 역할별로 분리되고, 제한된 복구 도구가 확정 산출물과
+허용 목록을 서버 측에서 다시 검증합니다.
 
 ```mermaid
 stateDiagram-v2
     [*] --> SQS_RECEIVED: SQS Long Polling
-    SQS_RECEIVED --> IDEMPOTENCY_CHECK: AlarmPayload 파싱
-    IDEMPOTENCY_CHECK --> SESSION_CREATED: 신규 세션 생성
-    IDEMPOTENCY_CHECK --> SKIP: 중복 → 즉시 반환
-    SESSION_CREATED --> ANALYZING: CC CLI subprocess 시작
-    ANALYZING --> COMPLETED: 보고서 S3 저장 + SNS 알림
+    SQS_RECEIVED --> CLAIM: 세션 claim 요청
+    CLAIM --> ANALYZING: 신규 claim 또는 안전한 reclaim
+    CLAIM --> SKIP: 완료 세션 중복
+    CLAIM --> RETRY: 경합 또는 소유권 확인 실패
+    ANALYZING --> RCA: 읽기 전용 RCA specialist
+    RCA --> REMEDIATION: 확정 원인
+    RCA --> REPORT: 미확정 원인
+    REMEDIATION --> REPORT: 서버 소유 복구·검증 결과
+    REPORT --> COMPLETION_GATE: 산출물 교차 검증
+    COMPLETION_GATE --> COMPLETED: 보고서 저장 + 알림
     ANALYZING --> FAILED: CC 오류 / 타임아웃
     COMPLETED --> [*]
     FAILED --> [*]
     SKIP --> [*]
+    RETRY --> [*]
 ```
 
-CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출되며, 프롬프트 내에 11단계 RCA 워크플로우(스코핑~검증~보고서~플레이북~복구 권고~검증 계획)가 정의되어 있습니다.
+CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션 claim을 잃은 실행은
+상태와 trace를 기록할 수 없고, reset·S3·SNS 같은 외부 쓰기는 claim에 종속된
+부작용 lease 안에서만 시작합니다. 완료 게이트는 서버 소유 복구 결과와 보고서,
+플레이북의 상태·원인·검증 참조가 일치하는지 확인합니다.
 
 ## Data Flow — Fargate (모듈 간 데이터 흐름)
 
@@ -197,14 +211,19 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 - **검증 루프**: 전체 기각 시 가설 재생성(최대 2회)
 - **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
-- **Remediation 분리 (미구현)**: 플레이북 포함 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독하도록 설계되었으나 미배포
+- **Remediation 분리**: 별도 Strands 복구 워커로 구현되며 기본 비활성. 서버 소유
+  RCA 결과와 Healthcare reset 허용 목록만 사용
 
 ### Fargate Stack (CC Headless)
 
-- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 11단계 워크플로우 정의 (스코핑 ~ 보고서 ~ 플레이북 ~ 복구 권고 ~ 검증 계획), CC가 읽기 전용 MCP 도구를 자율적으로 호출하며 서비스·인프라 변경은 실행하지 않음
+- **전문 서브 에이전트**: RCA → 조건부 Remediation → Report 순서로 호출하고
+  역할별 도구 권한과 산출물 계약을 분리
 - **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
+- **서버 검증형 복구**: 확정 산출물과 허용 목록을 확인한 Healthcare reset만
+  실행하고 CloudWatch 사후 상태를 서버 결과로 기록
+- **reclaim fencing**: claim 조건부 trace와 부작용 lease로 이전 실행의 늦은 쓰기를 차단
 - **실행 시간 제한**: Lambda 15분 제한은 없지만 CC 프로세스는 30분 후 종료
-- **멱등성**: DynamoDB `IDEMP#` 키로 Strands 스택과의 중복 처리 방지
+- **멱등성**: 알람별 안정 세션 키와 receive count/claim token으로 재전달을 제어
 - **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
 
 ## Technology Stack
@@ -214,7 +233,7 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 | 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (Python) |
 | 실행 환경 | AWS ECS Fargate | AWS ECS Fargate |
 | 이벤트 수신 | SQS Long Polling | SQS Long Polling |
-| LLM 추론 | Bedrock — 단일 Sonnet 4.6 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 4.6 (CC 프롬프트 주도) |
+| LLM 추론 | Bedrock — 단일 Sonnet 4.6 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 4.6 (CC 전문 서브 에이전트) |
 | MCP 도구 | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP |
 | 환경 설정 | python-dotenv (`env/local.env`) | ECS 환경변수 |
 

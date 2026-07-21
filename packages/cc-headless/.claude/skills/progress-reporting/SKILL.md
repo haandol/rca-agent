@@ -24,6 +24,9 @@ DynamoDB를 직접 수정하지 않는다. Python watcher가 저장된 산출물
 - `playbook.json`
 - `report.md`
 
+`remediation.json`은 `execute_healthcare_reset` 서버가 직접 저장한다. 어떤 에이전트도
+`save_artifact`로 이 파일을 생성하거나 덮어쓰지 않는다.
+
 JSON 산출물은 각 prompt section에 정의된 스키마를 따라야 한다. 경로, 하위
 디렉터리, 임의 확장자는 사용할 수 없다.
 

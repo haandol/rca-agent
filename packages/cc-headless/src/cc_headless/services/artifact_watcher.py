@@ -18,6 +18,7 @@ _POLL_INTERVAL = 3
 ARTIFACT_SPAN_MAP: dict[str, str] = {
     "scoping.json": "SCOPING",
     "hypotheses.json": "HYPOTHESIS_GENERATION",
+    "remediation.json": "REMEDIATION",
     "playbook.json": "PLAYBOOK",
     "report.md": "REPORT",
 }
@@ -48,6 +49,7 @@ _PLAYBOOK_LIST_FIELDS = (
     "related_metrics",
     "tags",
 )
+_REMEDIATION_STATUSES = {"SUCCEEDED", "FAILED", "BLOCKED"}
 
 
 def _build_playbook_metadata(artifact: dict) -> dict:
@@ -63,12 +65,48 @@ def _build_playbook_metadata(artifact: dict) -> dict:
     return meta
 
 
+def _safe_metadata_string(value, *, max_length: int) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, (str, int, float, bool)):
+        return ""
+    return str(value)[:max_length]
+
+
+def _build_remediation_metadata(artifact: dict) -> dict:
+    verification = artifact.get("verification")
+    verification = verification if isinstance(verification, dict) else {}
+    metadata = {
+        "fault_type": {
+            "S": _safe_metadata_string(artifact.get("fault_type"), max_length=128),
+        },
+        "endpoint_path": {
+            "S": _safe_metadata_string(artifact.get("endpoint_path"), max_length=256),
+        },
+        "verification": {
+            "M": {
+                "status": {
+                    "S": _safe_metadata_string(verification.get("status"), max_length=32),
+                },
+                "reason": {
+                    "S": _safe_metadata_string(verification.get("reason"), max_length=500),
+                },
+            }
+        },
+    }
+    status = artifact.get("status")
+    if status in _REMEDIATION_STATUSES:
+        metadata["status"] = {"S": status}
+    return metadata
+
+
 def _write_span(
     ddb,
     rca_id: str,
     span_type: str,
     artifact: dict | None,
     *,
+    claim_token: str,
     parent_span_id: str | None = None,
     loop_index: int | None = None,
 ) -> str:
@@ -116,9 +154,16 @@ def _write_span(
         meta = _build_playbook_metadata(artifact)
         if meta:
             item["metadata"] = {"M": meta}
+    elif span_type == "REMEDIATION" and artifact:
+        item["metadata"] = {"M": _build_remediation_metadata(artifact)}
 
     try:
-        ddb.put_item(TableName=DYNAMODB_TABLE_NAME, Item=item)
+        _transact_claimed(
+            ddb,
+            rca_id,
+            claim_token,
+            [{"Put": {"TableName": DYNAMODB_TABLE_NAME, "Item": item}}],
+        )
     except Exception:
         logger.exception("span_write_failed", span_id=span_id, span_type=span_type)
 
@@ -146,7 +191,33 @@ def _parse_artifact(path: Path) -> dict | None:
     return artifact
 
 
-def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict) -> None:
+def _claim_check(rca_id: str, claim_token: str) -> dict:
+    return {
+        "ConditionCheck": {
+            "TableName": DYNAMODB_TABLE_NAME,
+            "Key": {
+                "PK": {"S": f"RCA#{rca_id}"},
+                "SK": {"S": f"{ENGINE}#SESSION"},
+            },
+            "ConditionExpression": "attribute_exists(SK) AND claim_token = :claim",
+            "ExpressionAttributeValues": {":claim": {"S": claim_token}},
+        }
+    }
+
+
+def _transact_claimed(ddb, rca_id: str, claim_token: str, writes: list[dict]) -> None:
+    if not DYNAMODB_TABLE_NAME or not ddb:
+        return
+    for index in range(0, len(writes), 24):
+        ddb.transact_write_items(
+            TransactItems=[
+                _claim_check(rca_id, claim_token),
+                *writes[index : index + 24],
+            ]
+        )
+
+
+def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict, *, claim_token: str) -> None:
     if not DYNAMODB_TABLE_NAME or not ddb:
         return
 
@@ -157,47 +228,49 @@ def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict) -> None:
     now = _now_iso()
     ttl = _ttl()
 
-    items = []
+    writes = []
     for h in hypotheses:
         hid = h.get("hypothesis_id", str(uuid.uuid4()))
         item = {
-            "PutRequest": {
-                "Item": {
-                    "PK": {"S": f"RCA#{rca_id}"},
-                    "SK": {"S": f"{ENGINE}#HYPO#{hid}"},
-                    "engine": {"S": ENGINE},
-                    "tree_id": {"S": h.get("tree_id", "")},
-                    "depth": {"N": str(h.get("depth", 0))},
-                    "title": {"S": h.get("title", "")[:120]},
-                    "description": {"S": h.get("description", "")[:500]},
-                    "category": {"S": h.get("category", "")},
-                    "confidence_score": {"N": str(h.get("confidence_score", 0))},
-                    "status": {"S": h.get("status", "PENDING")},
-                    "required_evidence": {"L": [{"S": e} for e in h.get("required_evidence", [])]},
-                    "parent_id": {"S": h["parent_id"]} if h.get("parent_id") else {"NULL": True},
-                    "evidence_summary": {"S": ""},
-                    "judgment_reasoning": {"S": ""},
-                    "created_at": {"S": now},
-                    "updated_at": {"S": now},
-                    "ttl": {"N": ttl},
-                },
-            },
+            "PK": {"S": f"RCA#{rca_id}"},
+            "SK": {"S": f"{ENGINE}#HYPO#{hid}"},
+            "engine": {"S": ENGINE},
+            "tree_id": {"S": h.get("tree_id", "")},
+            "depth": {"N": str(h.get("depth", 0))},
+            "title": {"S": h.get("title", "")[:120]},
+            "description": {"S": h.get("description", "")[:500]},
+            "category": {"S": h.get("category", "")},
+            "confidence_score": {"N": str(h.get("confidence_score", 0))},
+            "status": {"S": h.get("status", "PENDING")},
+            "required_evidence": {"L": [{"S": e} for e in h.get("required_evidence", [])]},
+            "parent_id": {"S": h["parent_id"]} if h.get("parent_id") else {"NULL": True},
+            "evidence_summary": {"S": ""},
+            "judgment_reasoning": {"S": ""},
+            "created_at": {"S": now},
+            "updated_at": {"S": now},
+            "ttl": {"N": ttl},
         }
-        items.append(item)
+        writes.append(
+            {
+                "Put": {
+                    "TableName": DYNAMODB_TABLE_NAME,
+                    "Item": item,
+                }
+            },
+        )
 
-    for i in range(0, len(items), 25):
-        chunk = items[i : i + 25]
-        try:
-            ddb.batch_write_item(RequestItems={DYNAMODB_TABLE_NAME: chunk})
-        except Exception:
-            logger.exception("hypothesis_batch_write_failed", count=len(chunk))
+    try:
+        _transact_claimed(ddb, rca_id, claim_token, writes)
+    except Exception:
+        logger.exception("hypothesis_batch_write_failed", count=len(writes))
 
 
-def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict) -> None:
+def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict, *, claim_token: str) -> None:
     if not DYNAMODB_TABLE_NAME or not ddb:
         return
 
     now = _now_iso()
+    writes: list[dict] = []
     for bucket in ("confirmed", "rejected", "closed", "needs_investigation"):
         status_map = {
             "confirmed": "CONFIRMED",
@@ -211,31 +284,42 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict) -> None
             reasoning = h.get("reasoning", "") if isinstance(h, dict) else ""
             if not hid:
                 continue
-            try:
-                ddb.update_item(
-                    TableName=DYNAMODB_TABLE_NAME,
-                    Key={
-                        "PK": {"S": f"RCA#{rca_id}"},
-                        "SK": {"S": f"{ENGINE}#HYPO#{hid}"},
-                    },
-                    UpdateExpression=(
-                        "SET #st = :status, confidence_score = :cs, judgment_reasoning = :jr, updated_at = :now"
-                    ),
-                    ConditionExpression="attribute_exists(SK)",
-                    ExpressionAttributeNames={"#st": "status"},
-                    ExpressionAttributeValues={
-                        ":status": {"S": status_map[bucket]},
-                        ":cs": {"N": str(confidence)},
-                        ":jr": {"S": str(reasoning)[:500]},
-                        ":now": {"S": now},
-                    },
-                )
-            except Exception:
-                logger.warning("hypothesis_update_skipped", hypothesis_id=hid, bucket=bucket)
+            writes.append(
+                {
+                    "Update": {
+                        "TableName": DYNAMODB_TABLE_NAME,
+                        "Key": {
+                            "PK": {"S": f"RCA#{rca_id}"},
+                            "SK": {"S": f"{ENGINE}#HYPO#{hid}"},
+                        },
+                        "UpdateExpression": (
+                            "SET #st = :status, confidence_score = :cs, judgment_reasoning = :jr, updated_at = :now"
+                        ),
+                        "ConditionExpression": "attribute_exists(SK)",
+                        "ExpressionAttributeNames": {"#st": "status"},
+                        "ExpressionAttributeValues": {
+                            ":status": {"S": status_map[bucket]},
+                            ":cs": {"N": str(confidence)},
+                            ":jr": {"S": str(reasoning)[:500]},
+                            ":now": {"S": now},
+                        },
+                    }
+                }
+            )
+
+    try:
+        _transact_claimed(ddb, rca_id, claim_token, writes)
+    except Exception:
+        logger.warning("hypothesis_updates_skipped", count=len(writes))
 
     new_hypotheses = artifact.get("new_hypotheses", [])
     if new_hypotheses:
-        _save_hypotheses_to_ddb(ddb, rca_id, {"hypotheses": new_hypotheses})
+        _save_hypotheses_to_ddb(
+            ddb,
+            rca_id,
+            {"hypotheses": new_hypotheses},
+            claim_token=claim_token,
+        )
 
 
 def _scan_once(
@@ -244,6 +328,7 @@ def _scan_once(
     ddb,
     seen: dict[str, tuple[int, int]],
     validation_ctx: dict,
+    claim_token: str,
 ) -> None:
     if not artifact_dir.exists():
         return
@@ -260,9 +345,9 @@ def _scan_once(
         span_type = ARTIFACT_SPAN_MAP.get(path.name)
 
         if span_type:
-            _write_span(ddb, rca_id, span_type, artifact)
+            _write_span(ddb, rca_id, span_type, artifact, claim_token=claim_token)
             if span_type == "HYPOTHESIS_GENERATION" and artifact and not artifact.get("error"):
-                _save_hypotheses_to_ddb(ddb, rca_id, artifact)
+                _save_hypotheses_to_ddb(ddb, rca_id, artifact, claim_token=claim_token)
             seen[path.name] = version
             logger.info("artifact_detected", file=path.name, span_type=span_type)
 
@@ -273,32 +358,44 @@ def _scan_once(
             except ValueError:
                 loop_index = 0
 
-            _write_span(ddb, rca_id, "VALIDATION_LOOP", artifact, loop_index=loop_index)
+            _write_span(
+                ddb,
+                rca_id,
+                "VALIDATION_LOOP",
+                artifact,
+                claim_token=claim_token,
+                loop_index=loop_index,
+            )
 
             if artifact and not artifact.get("error"):
-                _update_hypotheses_from_validation(ddb, rca_id, artifact)
+                _update_hypotheses_from_validation(
+                    ddb,
+                    rca_id,
+                    artifact,
+                    claim_token=claim_token,
+                )
 
             seen[path.name] = version
             logger.info("artifact_detected", file=path.name, span_type="VALIDATION_LOOP", loop_index=loop_index)
 
 
-def _watch_loop(artifact_dir: Path, rca_id: str, ddb, stop_event: Event) -> None:
+def _watch_loop(artifact_dir: Path, rca_id: str, claim_token: str, ddb, stop_event: Event) -> None:
     seen: dict[str, tuple[int, int]] = {}
     validation_ctx: dict = {}
 
     while not stop_event.is_set():
-        _scan_once(artifact_dir, rca_id, ddb, seen, validation_ctx)
+        _scan_once(artifact_dir, rca_id, ddb, seen, validation_ctx, claim_token)
         stop_event.wait(_POLL_INTERVAL)
 
-    _scan_once(artifact_dir, rca_id, ddb, seen, validation_ctx)
+    _scan_once(artifact_dir, rca_id, ddb, seen, validation_ctx, claim_token)
     logger.info("watcher_final_scan_complete", seen_count=len(seen))
 
 
-def start_watcher(artifact_dir: Path, rca_id: str, ddb) -> tuple[Thread, Event]:
+def start_watcher(artifact_dir: Path, rca_id: str, claim_token: str, ddb) -> tuple[Thread, Event]:
     stop_event = Event()
     thread = Thread(
         target=_watch_loop,
-        args=(artifact_dir, rca_id, ddb, stop_event),
+        args=(artifact_dir, rca_id, claim_token, ddb, stop_event),
         daemon=True,
     )
     thread.start()

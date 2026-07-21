@@ -46,10 +46,11 @@ def main() -> None:
     while not shutdown_event.is_set():
         for body, receipt_handle in consumer.poll():
             try:
-                orchestrator.process_alarm(body)
+                processed = orchestrator.process_alarm(body)
             except Exception:
                 logger.exception("Failed to process message")
-            finally:
+                continue
+            if processed:
                 consumer.ack(receipt_handle)
 
     logger.info("Shutdown complete")

@@ -260,18 +260,21 @@ flowchart LR
 
 ---
 
-## 2. Fargate Stack (CC Headless) — 프롬프트 주도
+## 2. Fargate Stack (CC Headless) — 전문 서브 에이전트 오케스트레이션
 
 ### 2.1. 전체 플로우
 
-CC on Bedrock headless 모드에서 단일 프롬프트로 전체 RCA를 수행합니다. Python 핸들러가 SQS 수신/세션 관리를 담당하고, CC CLI subprocess가 MCP 도구를 자율적으로 호출하며 RCA를 진행합니다. Artifact Watcher 스레드가 실행 토큰별 격리 디렉터리를 감시하여 산출물 파일이 생성될 때마다 DynamoDB에 트레이스를 기록합니다.
+Python 핸들러가 SQS 수신과 claim 기반 세션 소유권을 관리하고, CC Headless 메인
+에이전트가 RCA, 조건부 Remediation, Report 전문 서브 에이전트를 순차 호출합니다.
+Artifact Watcher는 실행 토큰별 격리 디렉터리를 감시하지만 현재 claim과 일치할
+때만 DynamoDB trace를 기록합니다.
 
 ```mermaid
 flowchart TD
     subgraph Input["입력 & 사전 검증"]
         SQS["SQS Long Polling<br/>(WaitTimeSeconds=20)"]
         PARSE["AlarmPayload 파싱<br/>(SNS envelope unwrap)"]
-        DEDUP["멱등성 체크<br/>(DynamoDB IDEMP# 키)"]
+        DEDUP["세션 claim<br/>(receive count + claim token)"]
         STALE["Stale 알람 체크<br/>(30분 초과 → OUTDATED)"]
         SESSION["세션 생성<br/>(engine: cc-headless)"]
         SQS --> PARSE --> DEDUP --> STALE --> SESSION
@@ -296,24 +299,23 @@ flowchart TD
         CW["CloudWatch MCP<br/>메트릭/로그 수집"]
         CT["CloudTrail MCP<br/>배포/변경 이력"]
         GH["GitHub MCP<br/>코드 변경 분석"]
-        PROGRESS["rca-progress MCP<br/>save_artifact() 도구"]
+        PROGRESS["rca-progress MCP<br/>산출물 저장 + 제한된 reset"]
     end
 
-    subgraph RCA["CC 프롬프트 내 11단계 RCA 워크플로우"]
+    subgraph RCA["전문 서브 에이전트"]
         direction TB
-        STEP1["1. 초기 스코핑<br/>→ scoping.json"]
-        STEP2["2. 가설 생성 (서브에이전트)<br/>→ hypotheses.json"]
-        STEP3["3-7. 검증 루프 (서브에이전트, 최대 3회)<br/>우선순위 → 빔 선택 → 증거 수집 →<br/>검증 → 분기 / 재생성<br/>→ validation-N.json"]
-        STEP4["8. 보고서 생성<br/>→ report.md"]
-        STEP5["9. 플레이북 생성<br/>→ playbook.json"]
-        STEP6["10. 복구 권고<br/>(후보 액션 / 승인·롤백 조건)"]
-        STEP7["11. 검증 계획<br/>(메트릭 / 정상화 기준)"]
-        STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5 --> STEP6 --> STEP7
+        STEP1["1. RCA specialist<br/>스코핑 → 가설 → 증거 → 검증"]
+        GATE{{"확정 원인?"}}
+        STEP2["2. Remediation specialist<br/>허용된 reset + 서버 사후 검증"]
+        STEP3["3. Report specialist<br/>report.md + playbook.json"]
+        STEP1 --> GATE
+        GATE -->|Yes| STEP2 --> STEP3
+        GATE -->|No| STEP3
     end
 
     subgraph WatcherDetail["Artifact Watcher (백그라운드)"]
-        W_DETECT["파일 감지<br/>(scoping.json, hypotheses.json,<br/>validation-N.json, report.md,<br/>playbook.json)"]
-        W_SPAN["DDB SPAN 레코드 생성"]
+        W_DETECT["파일 감지<br/>(RCA, remediation, report,<br/>playbook 산출물)"]
+        W_SPAN["claim 조건부 DDB SPAN 기록"]
         W_HYPO["DDB HYPO 레코드<br/>생성/갱신"]
         W_DETECT --> W_SPAN
         W_DETECT --> W_HYPO
@@ -321,12 +323,13 @@ flowchart TD
 
     subgraph Output["결과 처리"]
         REPORT_PARSE["report.md 읽기<br/>+ 근본원인 추출 (regex)"]
-        S3_REPORT["S3 보고서 저장<br/>(reports/{rca_id}.md)"]
+        CONTRACT["서버 소유 remediation 결과와<br/>보고서·플레이북 교차 검증"]
+        S3_REPORT["시도 격리 S3 보고서 저장"]
         PB_PARSE["playbook.json 파싱<br/>→ S3 Vectors 인덱싱"]
         SNS_NOTIFY["SNS 알림 발행<br/>(presigned URL + 플레이북)"]
         DDB_COMPLETE["DDB 세션 갱신<br/>(state → COMPLETED,<br/>root_cause 저장)"]
         DEL_MSG["SQS 메시지 삭제"]
-        REPORT_PARSE --> S3_REPORT --> PB_PARSE --> SNS_NOTIFY --> DDB_COMPLETE --> DEL_MSG
+        REPORT_PARSE --> CONTRACT --> S3_REPORT --> PB_PARSE --> SNS_NOTIFY --> DDB_COMPLETE --> DEL_MSG
     end
 
     SESSION --> Prepare
@@ -344,13 +347,16 @@ flowchart TD
 
 ### 2.2. 상태 전이 다이어그램
 
-CC Headless는 Strands와 달리 단 2개의 활성 상태만 갖습니다. 파이프라인 내부 진행 상황은 Artifact Watcher가 SPAN/HYPO 레코드로 DynamoDB에 기록합니다.
+CC Headless는 두 개의 활성 세션 상태를 유지하고 세부 단계는 claim 조건부
+SPAN/HYPO 레코드로 기록합니다. 완료 세션 중복만 ACK하며 claim 경합이나 소유권
+확인 실패는 SQS 재전달 대상으로 남깁니다.
 
 ```mermaid
 stateDiagram-v2
     [*] --> ALARM_RECEIVED: SQS Long Polling + 세션 생성
 
-    ALARM_RECEIVED --> [*]: 중복 감지 → 즉시 반환
+    ALARM_RECEIVED --> [*]: 완료 세션 중복 → ACK
+    ALARM_RECEIVED --> [*]: claim 경합/조회 실패 → 재전달
     ALARM_RECEIVED --> ANALYZING: 멱등성 체크 통과
     ALARM_RECEIVED --> OUTDATED: Stale 알람 (30분 초과)
 
@@ -367,6 +373,7 @@ stateDiagram-v2
         · scoping.json → SCOPING 스팬
         · hypotheses.json → HYPO 레코드
         · validation-N.json → VALIDATION_LOOP 스팬 + 가설 갱신
+        · remediation.json → REMEDIATION 스팬
         · report.md → REPORT 스팬
         · playbook.json → PLAYBOOK 스팬
     end note
@@ -376,66 +383,40 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
-### 2.3. CC 프롬프트 내 11단계 워크플로우 상세
+### 2.3. 전문 서브 에이전트 워크플로우
 
-CC CLI가 자율적으로 수행하는 파이프라인입니다. 메인 에이전트가 직접 수행하는 단계와 서브에이전트에게 위임하는 단계로 구분됩니다.
+CC 메인 에이전트는 오케스트레이션만 담당하고 모든 도메인 작업을 역할별 전문
+서브 에이전트에 위임합니다.
 
 ```mermaid
 flowchart TD
-    subgraph Direct1["메인 에이전트 직접 수행"]
-        S1["1. 초기 스코핑<br/>· AWS Knowledge MCP: 장애 패턴 검색<br/>· CloudWatch MCP: 알람 메트릭 30분 + 24시간 비교<br/>· 영향범위/심각도 판정"]
-        S1_OUT["save_artifact('scoping.json')"]
-        S1 --> S1_OUT
-    end
+    ORCH["Headless 오케스트레이터"]
+    RCA["RCA specialist<br/>읽기 전용 도구<br/>스코핑·가설·검증 산출물"]
+    CONFIRMED{{"확정 원인 존재?"}}
+    REM["Remediation specialist<br/>서버 검증형 reset<br/>CloudWatch 사후 판정"]
+    REPORT["Report specialist<br/>서버 결과 기반 보고서·플레이북"]
+    CHECK["완료 게이트<br/>산출물 스키마·상태 교차 검증"]
 
-    subgraph SubAgent1["서브에이전트 위임"]
-        S2["2. 가설 생성<br/>· Agent tool로 서브에이전트 스폰<br/>· 3-5개 가설 생성 (UUID 부여)"]
-        S2_OUT["save_artifact('hypotheses.json')"]
-        S2 --> S2_OUT
-    end
+    ORCH --> RCA --> CONFIRMED
+    CONFIRMED -->|Yes| REM --> REPORT
+    CONFIRMED -->|No| REPORT
+    REPORT --> CHECK
 
-    subgraph SubAgent2["서브에이전트 위임 (루프)"]
-        S37["3-7. 검증 루프 (최대 3회)<br/>매 루프마다 서브에이전트 스폰:<br/>· 우선순위 결정 + 빔 선택 (상위 3)<br/>· 증거 수집 (CW/CT/GH MCP)<br/>· 검증 (≥0.8 CONFIRMED, ≤0.3 REJECTED)<br/>· 분기 (NEEDS_INVESTIGATION → 하위 가설)"]
-        S37_OUT["save_artifact('validation-N.json')"]
-        S37_TERM{{"종료 조건?"}}
-        S37_REGEN["전체 기각 → 재생성 (최대 2회)"]
-        S37 --> S37_OUT --> S37_TERM
-        S37_TERM -->|신뢰도 ≥ 0.9| Direct2
-        S37_TERM -->|시간 > 8분| Direct2
-        S37_TERM -->|루프 3회 완료| Direct2
-        S37_TERM -->|all_rejected| S37_REGEN
-        S37_REGEN --> S37
-        S37_TERM -->|계속| S37
-    end
-
-    subgraph Direct2["메인 에이전트 직접 수행"]
-        S8["8. 보고서 생성<br/>· Markdown RCA 보고서 작성<br/>· 인시던트 요약, 근본원인, 5 Whys,<br/>  증거, 가설 경로, 조치 방안, 타임라인"]
-        S8_OUT["save_artifact('report.md')"]
-        S9["9. 플레이북 생성<br/>· failure_type, symptom_pattern<br/>· verification_steps, mitigation, remediation"]
-        S9_OUT["save_artifact('playbook.json')"]
-        S10["10. 복구 권고<br/>· 장애 유형별 후보 액션<br/>· 승인·사전조건·롤백 조건"]
-        S11["11. 검증 계획<br/>· 확인할 메트릭과 관찰 구간<br/>· 정상화·실패 판정 기준"]
-        S8 --> S8_OUT --> S9 --> S9_OUT --> S10 --> S11
-    end
-
-    S1_OUT --> SubAgent1
-    S2_OUT --> SubAgent2
-
-    style Direct1 fill:#e8f5e9,stroke:#2e7d32
-    style SubAgent1 fill:#e3f2fd,stroke:#1565c0
-    style SubAgent2 fill:#e3f2fd,stroke:#1565c0
-    style Direct2 fill:#e8f5e9,stroke:#2e7d32
+    style ORCH fill:#f5f5f5,stroke:#616161
+    style RCA fill:#e3f2fd,stroke:#1565c0
+    style REM fill:#ffebee,stroke:#c62828
+    style REPORT fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ### 2.4. MCP 서버 구성
 
 | MCP 서버 | 실행 방식 | 용도 |
 |---------|----------|------|
-| `aws-knowledge` | `uvx fastmcp run https://knowledge-mcp.global.api.aws` | AWS 서비스 문서 참조, 장애 패턴 검색 |
+| `aws-knowledge` | `fastmcp run https://knowledge-mcp.global.api.aws` | AWS 서비스 문서 참조, 장애 패턴 검색 |
 | `cloudwatch` | `uvx awslabs.cloudwatch-mcp-server` | 메트릭 조회, Logs Insights 쿼리, 알람 조회 |
 | `cloudtrail` | `uvx awslabs.cloudtrail-mcp-server` | 배포/변경 이벤트 조회, Lake SQL 분석 |
 | `github` | `github-mcp-server stdio` | 커밋 diff, PR diff, 파일 내용 조회 |
-| `rca-progress` | `python -m fastmcp run mcp_server.py:mcp` | `save_artifact(filename, content)` — 산출물 파일 저장 |
+| `rca-progress` | `fastmcp run` | 격리 산출물 저장과 서버 검증형 Healthcare reset |
 
 ### 2.5. Artifact Watcher 파일 → DDB 매핑
 
@@ -444,6 +425,7 @@ flowchart TD
 | `scoping.json` | `SCOPING` | — |
 | `hypotheses.json` | `HYPOTHESIS_GENERATION` | HYPO# 레코드 batch write (최대 25개) |
 | `validation-N.json` | `VALIDATION_LOOP` | HYPO# 레코드 상태 갱신 (confirmed/rejected/closed/needs_investigation) |
+| `remediation.json` | `REMEDIATION` | reset 결과와 CloudWatch 사후 검증 상태 |
 | `report.md` | `REPORT` | — |
 | `playbook.json` | `PLAYBOOK` | failure_type, tags 등 메타데이터 저장 |
 
@@ -455,12 +437,12 @@ flowchart TD
 |---|---|---|
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 9단계 코드 기반 파이프라인 | 단일 프롬프트 + 11단계 자율 수행 |
+| **RCA 방식** | 9단계 코드 기반 파이프라인 | RCA·Remediation·Report 전문 에이전트 오케스트레이션 |
 | **모델** | 단일 Sonnet 4.6 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 4.6) |
 | **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
 | **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
 | **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
-| **자동 복구** | 미구현 (모듈만 준비) | 직접 실행하지 않음 — 10~11단계에서 권고·검증 계획 작성 |
+| **자동 복구** | 별도 워커, 기본 비활성 | 확정 원인의 허용된 Healthcare reset만 실행 |
 | **타임아웃** | 20분 (RCA_TIME_BUDGET_SECONDS) | 30분 (CC_TIMEOUT_SECONDS) |
 | **취소 감지** | update_state() 시 ConditionExpression | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
 | **증거 격리** | 가설별 독립 Agent 인스턴스 | CC 자체 컨텍스트 관리 |
@@ -678,6 +660,7 @@ NOTIFICATION
 SCOPING (scoping.json 감지 시)
 HYPOTHESIS_GENERATION (hypotheses.json 감지 시)
 VALIDATION_LOOP (validation-N.json 감지 시, N=1,2,3)
+REMEDIATION (remediation.json 감지 시)
 REPORT (report.md 감지 시)
 PLAYBOOK (playbook.json 감지 시)
 ```

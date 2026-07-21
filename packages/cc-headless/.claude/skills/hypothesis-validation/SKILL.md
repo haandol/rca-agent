@@ -1,13 +1,13 @@
 ---
 name: hypothesis-validation
-description: 가설 검증 서브에이전트 가이드 — 증거 수집, 신뢰도 평가, 가설 분기, 종료 판단을 수행하고 JSON 산출물로 결과를 기록한다. Agent tool로 가설 검증 서브에이전트를 스폰할 때 이 스킬을 따른다.
+description: RCA 전문 에이전트의 가설 검증 가이드 — 읽기 전용 증거 수집, 신뢰도 평가, 가설 분기, 종료 판단을 수행하고 JSON 산출물로 기록한다.
 ---
 
 # 가설 검증 서브에이전트
 
 ## 서브에이전트 역할
 
-메인 에이전트가 Agent tool로 이 서브에이전트를 스폰한다. 서브에이전트는 **검증 루프 1회**를 수행한다:
+RCA 전문 에이전트는 검증 루프를 최대 3회 수행한다:
 
 1. 우선순위 결정 → 빔 선택 (상위 3개)
 2. 증거 수집 (CloudWatch, CloudTrail, GitHub MCP)
@@ -16,11 +16,11 @@ description: 가설 검증 서브에이전트 가이드 — 증거 수집, 신�
 5. 결과를 validation JSON 스키마로 정리
 6. `save_artifact("validation-{N}.json", ...)`로 산출물 저장 (Python watcher가 DDB에 반영)
 
-## 메인 에이전트로부터 전달받는 컨텍스트
+## 검증 컨텍스트
 
-스폰 시 프롬프트에 포함되어야 하는 필드:
+각 루프에서 유지해야 하는 필드:
 
-- 현재 가설 목록 (모든 상태, description, confidence_score 포함)
+- 현재 가설 목록 (모든 상태, description, confidence_score, fault_type 포함)
 - 스코핑 결과
 - 알람 상세
 - 루프 인덱스 (1-based)
@@ -60,6 +60,7 @@ PENDING/NEEDS_INVESTIGATION 상태의 가설을 우선순위로 정렬한다:
 | 0.3-0.8 | `NEEDS_INVESTIGATION` | 가설 분기 실행 |
 
 각 가설의 상태, 신뢰도, 판단 근거, 증거 요약을 validation JSON의 해당 배열에 포함한다.
+CONFIRMED 항목에는 참조 hypothesis와 같은 구조화 `fault_type`을 포함한다.
 
 ### 4. 가설 분기
 
@@ -72,6 +73,7 @@ NEEDS_INVESTIGATION 가설에 대해:
 - **이미 채택된 가설과 같은 카테고리 + description 유사도(Jaccard) ≥ 0.6인 하위 가설은 생성 금지** (중복 탐색 억제)
 - **최대 깊이 3레벨**
 - 하위 가설은 validation JSON의 `new_hypotheses` 배열에 포함한다
+- 하위 가설에도 `fault_type` enum을 포함한다
 
 ## 반환값
 
@@ -85,6 +87,7 @@ NEEDS_INVESTIGATION 가설에 대해:
       "hypothesis_id": "uuid",
       "status": "CONFIRMED|REJECTED|CLOSED|NEEDS_INVESTIGATION",
       "confidence_score": 0.85,
+      "fault_type": "db-leak|high-cpu|high-memory|slow-query|unsupported",
       "reasoning": "판단 근거"
     }
   ],
@@ -93,7 +96,8 @@ NEEDS_INVESTIGATION 가설에 대해:
   "confirmed_hypothesis": {
     "hypothesis_id": "uuid",
     "description": "확정된 근본원인",
-    "confidence_score": 0.92
+    "confidence_score": 0.92,
+    "fault_type": "db-leak"
   }
 }
 ```
@@ -106,9 +110,9 @@ NEEDS_INVESTIGATION 가설에 대해:
 검증 루프를 마치면 `save_artifact("validation-1.json", "<validation JSON>")`을
 한 번 호출한다. Python watcher가 파일을 감지해 span과 가설 상태를 DDB에 반영한다.
 
-## 종료 조건 (메인 에이전트가 판단)
+## 종료 조건
 
-서브에이전트는 루프 1회만 수행하고 결과를 반환한다. 다음 조건은 메인 에이전트가 판단:
+RCA 전문 에이전트는 각 루프 후 다음 조건을 판단한다:
 - **CONFIRMED**: 신뢰도 ≥ 0.9인 가설 확정 → 보고서 생성 진입
 - **TIMEOUT**: 8분 초과 → 현재 최선 결과로 보고서
 - **MAX_LOOPS**: 검증 루프 3회 완료 → 보고서 생성

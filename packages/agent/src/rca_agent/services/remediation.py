@@ -4,7 +4,7 @@ import logging
 import urllib.request
 
 from rca_agent.ports.dto.models import (
-    Playbook,
+    FaultType,
     RcaReport,
     RemediationAction,
     RemediationResult,
@@ -27,40 +27,27 @@ def _call_fault_reset(service_host: str, endpoint: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def _determine_reset_endpoint(root_cause: str, playbook: Playbook | None) -> str | None:
-    root_lower = root_cause.lower()
-    playbook_text = ""
-    if playbook:
-        playbook_text = (
-            playbook.failure_type + " " + playbook.symptom_pattern + " " + playbook.temporary_mitigation
-        ).lower()
+_RESET_ENDPOINTS = {
+    FaultType.DB_CONNECTION_LEAK: "/fault/db-leak/reset",
+    FaultType.HIGH_CPU: "/fault/high-cpu/reset",
+    FaultType.HIGH_MEMORY: "/fault/high-memory/reset",
+    FaultType.SLOW_QUERY: "/fault/slow-query/reset",
+}
 
-    combined = root_lower + " " + playbook_text
 
-    db_keywords = ["connection leak", "connection pool", "db leak", "too many connections", "database connection"]
-    if any(kw in combined for kw in db_keywords):
-        return "/fault/db-leak/reset"
-    if any(kw in combined for kw in ["cpu", "high cpu", "cpu utilization", "cpu spike"]):
-        return "/fault/high-cpu/reset"
-    if any(kw in combined for kw in ["memory", "high memory", "memory pressure", "oom"]):
-        return "/fault/high-memory/reset"
-    if any(kw in combined for kw in ["slow query", "query latency", "read latency", "pg_sleep"]):
-        return "/fault/slow-query/reset"
-
-    return None
+def _determine_reset_endpoint(fault_type: FaultType) -> str | None:
+    return _RESET_ENDPOINTS.get(fault_type)
 
 
 def execute_remediation(
     *,
     report: RcaReport,
-    playbook: Playbook | None,
+    fault_type: FaultType = FaultType.UNSUPPORTED,
     service_host: str,
-    ecs_cluster: str = "",
-    ecs_service: str = "",
 ) -> RemediationResult:
     actions: list[RemediationAction] = []
 
-    endpoint = _determine_reset_endpoint(report.root_cause, playbook)
+    endpoint = _determine_reset_endpoint(fault_type)
 
     if endpoint:
         action = RemediationAction(
@@ -80,17 +67,13 @@ def execute_remediation(
         )
         actions.append(action)
     else:
-        if ecs_cluster and ecs_service:
-            action = _force_ecs_deployment(ecs_cluster, ecs_service)
-            actions.append(action)
-        else:
-            actions.append(
-                RemediationAction(
-                    action_type="no_action",
-                    description="Could not determine remediation action from root cause",
-                    executed=False,
-                )
+        actions.append(
+            RemediationAction(
+                action_type="no_action",
+                description="Unsupported remediation action; manual intervention required",
+                executed=False,
             )
+        )
 
     executed_actions = [action for action in actions if action.executed]
     overall = bool(executed_actions) and all(action.success for action in executed_actions)
@@ -105,31 +88,3 @@ def execute_remediation(
         overall_success=overall,
         summary="; ".join(summary_parts),
     )
-
-
-def _force_ecs_deployment(cluster: str, service: str) -> RemediationAction:
-    import boto3
-
-    action = RemediationAction(
-        action_type="ecs_force_deploy",
-        description=f"Force new deployment on {cluster}/{service}",
-        target=f"{cluster}/{service}",
-        parameters={"cluster": cluster, "service": service},
-    )
-    try:
-        ecs = boto3.client("ecs")
-        ecs.update_service(
-            cluster=cluster,
-            service=service,
-            forceNewDeployment=True,
-        )
-        action.executed = True
-        action.success = True
-        logger.info("ECS force deployment triggered", extra={"cluster": cluster, "service": service})
-    except Exception as e:
-        action.executed = True
-        action.success = False
-        action.error = str(e)
-        logger.error("ECS force deployment failed", extra={"error": str(e)})
-
-    return action

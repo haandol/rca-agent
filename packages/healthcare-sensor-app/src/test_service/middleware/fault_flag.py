@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from test_service.config import AppSettings
+from test_service.services.fault_state import register_slow_query_delay
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class FaultFlagMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._error_rate = settings.fault_error_rate
         self._slow_query_ms = settings.fault_slow_query_ms
+        register_slow_query_delay(self)
 
     async def dispatch(self, request: Request, call_next) -> Response:
         if any(request.url.path.startswith(p) for p in _PASSTHROUGH_PREFIXES):

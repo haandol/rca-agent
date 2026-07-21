@@ -5,7 +5,7 @@ Updated: 2026-04-24
 
 ## Status
 
-Accepted (Phase 2 완료)
+Accepted (2026-04-24)
 
 ## Context
 

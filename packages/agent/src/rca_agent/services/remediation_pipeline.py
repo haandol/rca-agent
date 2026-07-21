@@ -7,8 +7,10 @@ from rca_agent.ports.dto.models import (
     AlarmContext,
     AlarmPayload,
     AlarmTrigger,
-    Playbook,
+    FaultType,
     RcaReport,
+    RcaSessionState,
+    RemediationContext,
     RemediationResult,
     VerificationResult,
 )
@@ -29,24 +31,14 @@ def _parse_alarm_context(raw: dict) -> AlarmContext | None:
         return None
 
 
-def _parse_playbook(raw: dict) -> Playbook | None:
-    data = raw.get("playbook")
-    if not isinstance(data, dict) or not data.get("playbook_id"):
-        return None
-    try:
-        return Playbook.model_validate(data)
-    except Exception:
-        logger.warning("Failed to parse playbook from notification, ignoring")
-        return None
-
-
-def _report_from_notification(raw: dict) -> RcaReport:
+def _report_from_context(context: RemediationContext) -> RcaReport:
     return RcaReport(
-        rca_id=raw.get("rca_id", ""),
-        incident_summary=raw.get("root_cause_summary", ""),
-        root_cause=raw.get("root_cause") or raw.get("root_cause_summary", ""),
-        root_cause_confirmed=bool(raw.get("confirmed", False)),
-        confidence_score=1.0 if raw.get("confirmed", False) else 0.5,
+        rca_id=context.rca_id,
+        incident_summary=context.root_cause,
+        root_cause=context.validated_root_cause,
+        root_cause_confirmed=True,
+        confidence_score=1.0,
+        evidence_list=[context.evidence_summary],
     )
 
 
@@ -58,16 +50,23 @@ def _alarm_for_verification(ctx: AlarmContext | None) -> AlarmPayload:
         trigger = AlarmTrigger(
             metric_name=ctx.metric_name,
             namespace=ctx.namespace,
+            dimensions=ctx.dimensions,
+            statistic=ctx.statistic,
+            period=ctx.period,
             threshold=ctx.threshold,
+            comparison_operator=ctx.comparison_operator,
         )
-    return AlarmPayload(alarm_name=ctx.alarm_name or "unknown", trigger=trigger)
+    return AlarmPayload(
+        alarm_name=ctx.alarm_name or "unknown",
+        region=ctx.region,
+        trigger=trigger,
+    )
 
 
 class RemediationOrchestrator:
     """Consumes RCA-completion notifications and drives execute → verify.
 
-    Analysis and remediation are separate lifecycles (ADR agent/0012): a
-    failure here never touches the RCA session state. Only confirmed root
+    A failure here never touches the RCA session state. Only confirmed root
     causes are auto-remediated; unconfirmed findings are left for humans.
     """
 
@@ -75,43 +74,86 @@ class RemediationOrchestrator:
         self._container = container
 
     def process_notification(self, raw: dict) -> RemediationResult | None:
-        rca_id = raw.get("rca_id", "")
-        if not raw.get("confirmed", False):
-            logger.info("Skipping remediation for unconfirmed RCA %s", rca_id)
-            return None
+        rca_id = raw.get("rca_id")
+        if not isinstance(rca_id, str) or not rca_id:
+            raise ValueError("Remediation notification is missing rca_id")
 
-        report = _report_from_notification(raw)
-        playbook = _parse_playbook(raw)
-        alarm_context = _parse_alarm_context(raw)
         c = self._container
+        context = c.session_store.get_remediation_context(rca_id)
+        if context is None:
+            raise RuntimeError(f"Authoritative RCA session not found: {rca_id}")
+        if context.remediation_status == "COMPLETED":
+            logger.info("Skipping duplicate remediation for %s", rca_id)
+            return None
+        if context.state != RcaSessionState.COMPLETED or not context.confirmed:
+            logger.info(
+                "Skipping remediation for unauthorized RCA %s: state=%s confirmed=%s",
+                rca_id,
+                context.state,
+                context.confirmed,
+            )
+            return None
+        if not context.root_cause or not context.validated_root_cause or not context.evidence_summary:
+            raise RuntimeError(f"RCA {rca_id} has no validated root cause evidence")
 
-        remediation_result = self._run_remediation(report, playbook)
-        remediation_time = time.time()
+        claim_token = c.session_store.claim_remediation(rca_id)
+        if claim_token is None:
+            current = c.session_store.get_remediation_context(rca_id)
+            if current is not None and current.remediation_status == "COMPLETED":
+                logger.info("Skipping duplicate remediation for %s", rca_id)
+                return None
+            raise RuntimeError(f"Remediation already in progress for {rca_id}")
 
-        self._run_verification(
-            report=report,
-            alarm_context=alarm_context,
-            remediation_result=remediation_result,
-            remediation_time=remediation_time,
-        )
+        report = _report_from_context(context)
+        alarm_context = _parse_alarm_context(raw)
+        try:
+            remediation_result = self._run_remediation(report, context.fault_type)
+            remediation_time = time.time()
 
-        c.notification.send(
-            _build_remediation_notification(report, remediation_result),
-        )
-        return remediation_result
+            verification_result = self._run_verification(
+                report=report,
+                alarm_context=alarm_context,
+                remediation_result=remediation_result,
+                remediation_time=remediation_time,
+            )
+
+            sent = c.notification.send(
+                _build_remediation_notification(
+                    report,
+                    remediation_result,
+                    verification_result,
+                ),
+            )
+            if not sent:
+                raise RuntimeError(f"Failed to publish remediation result for {rca_id}")
+            if not c.session_store.complete_remediation(
+                rca_id,
+                claim_token,
+                remediation_result,
+                verification_result,
+            ):
+                raise RuntimeError(f"Failed to complete remediation claim for {rca_id}")
+            return remediation_result
+        except Exception as exc:
+            released = c.session_store.release_remediation(
+                rca_id,
+                claim_token,
+                error_reason=str(exc),
+            )
+            if not released:
+                logger.error("Failed to release remediation claim for %s", rca_id)
+            raise
 
     def _run_remediation(
         self,
         report: RcaReport,
-        playbook: Playbook | None,
+        fault_type: FaultType,
     ) -> RemediationResult:
         c = self._container
         result = execute_remediation(
             report=report,
-            playbook=playbook,
+            fault_type=fault_type,
             service_host=c.healthcare_service_host,
-            ecs_cluster=c.ecs_cluster_name,
-            ecs_service=c.ecs_service_name,
         )
         logger.info(
             "Remediation for %s: overall_success=%s, %s",
@@ -149,13 +191,23 @@ class RemediationOrchestrator:
         return result
 
 
-def _build_remediation_notification(report: RcaReport, result: RemediationResult):
+def _build_remediation_notification(
+    report: RcaReport,
+    result: RemediationResult,
+    verification: VerificationResult | None = None,
+):
     from rca_agent.ports.dto.models import NotificationMessage
+
+    summary = f"Remediation {'succeeded' if result.overall_success else 'attempted'}: {result.summary}"
+    severity = "high" if not result.overall_success else "medium"
+    if verification is not None and not verification.metrics_normalized:
+        summary = f"{summary}; Verification failed: {verification.verification_summary}"
+        severity = "high"
 
     return NotificationMessage(
         rca_id=report.rca_id,
-        root_cause_summary=f"Remediation {'succeeded' if result.overall_success else 'attempted'}: {result.summary}",
-        severity="high" if not result.overall_success else "medium",
+        root_cause_summary=summary,
+        severity=severity,
         confirmed=report.root_cause_confirmed,
         event_type="remediation_complete",
     )

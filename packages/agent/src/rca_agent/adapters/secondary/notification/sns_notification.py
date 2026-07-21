@@ -48,6 +48,8 @@ class SnsNotificationAdapter(NotificationPort):
             "report_url": report_url,
             "elapsed_seconds": notification.elapsed_seconds,
             "confirmed": notification.confirmed,
+            "selected_hypothesis_id": notification.selected_hypothesis_id,
+            "fault_type": notification.fault_type.value,
         }
         if notification.playbook:
             message_body["playbook"] = notification.playbook

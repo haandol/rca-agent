@@ -8,7 +8,17 @@ from datetime import UTC, datetime
 from botocore.exceptions import ClientError
 
 from rca_agent.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
-from rca_agent.ports.dto.models import AlarmPayload, RcaSession, RcaSessionState
+from rca_agent.ports.dto.models import (
+    AlarmPayload,
+    CompletionHandoff,
+    FaultType,
+    NotificationMessage,
+    RcaSession,
+    RcaSessionState,
+    RemediationContext,
+    RemediationResult,
+    VerificationResult,
+)
 from rca_agent.ports.interfaces.session_store import SessionStorePort
 
 logger = logging.getLogger(__name__)
@@ -55,6 +65,9 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 
 TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
 _TERMINAL_STATES = TERMINAL_STATES
+_REMEDIATION_CLAIM_SECONDS = 300
+_REMEDIATION_SUMMARY_MAX_LEN = 1000
+_REMEDIATION_ISSUES_MAX_COUNT = 20
 
 
 class DynamoDbSessionStore(SessionStorePort):
@@ -211,14 +224,36 @@ class DynamoDbSessionStore(SessionStorePort):
             error_log="Failed to update session state for %s",
         )
 
-    def mark_completed(self, rca_id: str, *, root_cause: str = "", confirmed: bool = False) -> bool:
+    def mark_completed(
+        self,
+        rca_id: str,
+        *,
+        root_cause: str = "",
+        confirmed: bool = False,
+        selected_hypothesis_id: str = "",
+        fault_type: FaultType = FaultType.UNSUPPORTED,
+        completion_notification: NotificationMessage | None = None,
+    ) -> bool:
+        extra_sets = {
+            "root_cause": (":rc", {"S": root_cause}),
+            "confirmed": (":cf", {"BOOL": confirmed}),
+            "selected_hypothesis_id": (":hid", {"S": selected_hypothesis_id}),
+            "fault_type": (":fault_type", {"S": fault_type.value}),
+        }
+        if completion_notification is not None:
+            extra_sets.update(
+                {
+                    "completion_notification_status": (":notification_pending", {"S": "PENDING"}),
+                    "completion_notification": (
+                        ":notification",
+                        {"S": completion_notification.model_dump_json()},
+                    ),
+                }
+            )
         return self._update_with_state(
             rca_id,
             target_state=RcaSessionState.COMPLETED.value,
-            extra_sets={
-                "root_cause": (":rc", {"S": root_cause}),
-                "confirmed": (":cf", {"BOOL": confirmed}),
-            },
+            extra_sets=extra_sets,
             log_success="Session %s marked COMPLETED",
             error_log="Failed to mark session %s as completed",
         )
@@ -244,6 +279,250 @@ class DynamoDbSessionStore(SessionStorePort):
         if ok:
             logger.info("Session %s marked OUTDATED: %s", rca_id, reason)
         return ok
+
+    def get_completion_handoff(self, rca_id: str) -> CompletionHandoff | None:
+        if not self._enabled:
+            return None
+        response = self._dynamodb.get_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key=_session_key(rca_id),
+            ConsistentRead=True,
+            ProjectionExpression="#state, completion_notification_status, completion_notification",
+            ExpressionAttributeNames={"#state": "state"},
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+
+        notification = None
+        raw_notification = item.get("completion_notification", {}).get("S", "")
+        if raw_notification:
+            try:
+                notification = NotificationMessage.model_validate_json(raw_notification)
+            except Exception:
+                logger.exception("Invalid completion notification persisted for %s", rca_id)
+        return CompletionHandoff(
+            rca_id=rca_id,
+            state=item.get("state", {}).get("S", RcaSessionState.FAILED.value),
+            notification_status=item.get("completion_notification_status", {}).get("S", ""),
+            notification=notification,
+        )
+
+    def mark_completion_notified(self, rca_id: str) -> bool:
+        if not self._enabled:
+            return False
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression=("SET completion_notification_status = :sent, completion_notified_at = :now"),
+                ConditionExpression="#state = :completed AND completion_notification_status = :pending",
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":completed": {"S": RcaSessionState.COMPLETED.value},
+                    ":pending": {"S": "PENDING"},
+                    ":sent": {"S": "SENT"},
+                    ":now": {"S": datetime.now(UTC).isoformat()},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    def get_remediation_context(self, rca_id: str) -> RemediationContext | None:
+        if not self._enabled:
+            return None
+
+        response = self._dynamodb.get_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key=_session_key(rca_id),
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+
+        confirmed = item.get("confirmed", {}).get("BOOL", False)
+        selected_hypothesis_id = item.get("selected_hypothesis_id", {}).get("S", "")
+        fault_type_value = item.get("fault_type", {}).get("S", FaultType.UNSUPPORTED.value)
+        try:
+            fault_type = FaultType(fault_type_value)
+        except ValueError:
+            fault_type = FaultType.UNSUPPORTED
+        validated_root_cause = ""
+        evidence_summary = ""
+        if confirmed and selected_hypothesis_id:
+            hypothesis = self._dynamodb.get_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key={
+                    "PK": {"S": f"RCA#{rca_id}"},
+                    "SK": {"S": f"{ENGINE}#HYPO#{selected_hypothesis_id}"},
+                },
+                ConsistentRead=True,
+                ProjectionExpression="#status, description, evidence_summary, fault_type",
+                ExpressionAttributeNames={"#status": "status"},
+            ).get("Item")
+            if hypothesis and hypothesis.get("status", {}).get("S") == "CONFIRMED":
+                try:
+                    hypothesis_fault_type = FaultType(
+                        hypothesis.get("fault_type", {}).get("S", FaultType.UNSUPPORTED.value)
+                    )
+                except ValueError:
+                    hypothesis_fault_type = FaultType.UNSUPPORTED
+                if hypothesis_fault_type == fault_type:
+                    validated_root_cause = hypothesis.get("description", {}).get("S", "")
+                    evidence_summary = hypothesis.get("evidence_summary", {}).get("S", "")
+
+        return RemediationContext(
+            rca_id=rca_id,
+            state=item.get("state", {}).get("S", ""),
+            root_cause=item.get("root_cause", {}).get("S", ""),
+            confirmed=confirmed,
+            selected_hypothesis_id=selected_hypothesis_id,
+            fault_type=fault_type,
+            validated_root_cause=validated_root_cause,
+            evidence_summary=evidence_summary,
+            remediation_status=item.get("remediation_status", {}).get("S", ""),
+            remediation_claim_expires_at=int(item.get("remediation_claim_expires_at", {}).get("N", "0")),
+            verification_status=item.get("verification_status", {}).get("S", ""),
+            verification_summary=item.get("verification_summary", {}).get("S", ""),
+            verification_remaining_issues=[
+                issue["S"] for issue in item.get("verification_remaining_issues", {}).get("L", []) if "S" in issue
+            ],
+            metrics_normalized=item.get("metrics_normalized", {}).get("BOOL", False),
+        )
+
+    def claim_remediation(self, rca_id: str) -> str | None:
+        if not self._enabled:
+            return None
+
+        claim_token = str(uuid.uuid4())
+        now = int(time.time())
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression=(
+                    "SET remediation_status = :processing, "
+                    "remediation_claim_token = :token, "
+                    "remediation_claim_expires_at = :expires"
+                ),
+                ConditionExpression=(
+                    "#state = :completed AND confirmed = :true AND "
+                    "(attribute_not_exists(remediation_status) OR "
+                    "remediation_status = :failed OR "
+                    "(remediation_status = :processing AND remediation_claim_expires_at < :now))"
+                ),
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":completed": {"S": RcaSessionState.COMPLETED.value},
+                    ":true": {"BOOL": True},
+                    ":processing": {"S": "PROCESSING"},
+                    ":failed": {"S": "FAILED"},
+                    ":token": {"S": claim_token},
+                    ":now": {"N": str(now)},
+                    ":expires": {"N": str(now + _REMEDIATION_CLAIM_SECONDS)},
+                },
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return None
+            raise
+        return claim_token
+
+    def complete_remediation(
+        self,
+        rca_id: str,
+        claim_token: str,
+        result: RemediationResult,
+        verification: VerificationResult | None,
+    ) -> bool:
+        if not self._enabled:
+            return False
+        now = datetime.now(UTC).isoformat()
+        verification_status = (
+            "PENDING" if verification is None else "NORMALIZED" if verification.metrics_normalized else "FAILED"
+        )
+        verification_summary = verification.verification_summary if verification else ""
+        remaining_issues = verification.remaining_issues if verification else []
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression=(
+                    "SET remediation_status = :completed, "
+                    "remediation_success = :success, "
+                    "remediation_summary = :summary, "
+                    "remediation_completed_at = :now, "
+                    "verification_status = :verification_status, "
+                    "metrics_normalized = :metrics_normalized, "
+                    "verification_summary = :verification_summary, "
+                    "verification_remaining_issues = :verification_remaining_issues "
+                    "REMOVE remediation_claim_token, remediation_claim_expires_at"
+                ),
+                ConditionExpression=("remediation_status = :processing AND remediation_claim_token = :token"),
+                ExpressionAttributeValues={
+                    ":processing": {"S": "PROCESSING"},
+                    ":completed": {"S": "COMPLETED"},
+                    ":token": {"S": claim_token},
+                    ":success": {"BOOL": result.overall_success},
+                    ":summary": {
+                        "S": result.summary[:_REMEDIATION_SUMMARY_MAX_LEN],
+                    },
+                    ":now": {"S": now},
+                    ":verification_status": {"S": verification_status},
+                    ":metrics_normalized": {
+                        "BOOL": verification.metrics_normalized if verification else False,
+                    },
+                    ":verification_summary": {
+                        "S": verification_summary[:_REMEDIATION_SUMMARY_MAX_LEN],
+                    },
+                    ":verification_remaining_issues": {
+                        "L": [
+                            {"S": issue[:_REMEDIATION_SUMMARY_MAX_LEN]}
+                            for issue in remaining_issues[:_REMEDIATION_ISSUES_MAX_COUNT]
+                        ]
+                    },
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    def release_remediation(
+        self,
+        rca_id: str,
+        claim_token: str,
+        *,
+        error_reason: str,
+    ) -> bool:
+        if not self._enabled:
+            return False
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression=(
+                    "SET remediation_status = :failed, remediation_error = :error "
+                    "REMOVE remediation_claim_token, remediation_claim_expires_at"
+                ),
+                ConditionExpression=("remediation_status = :processing AND remediation_claim_token = :token"),
+                ExpressionAttributeValues={
+                    ":processing": {"S": "PROCESSING"},
+                    ":failed": {"S": "FAILED"},
+                    ":token": {"S": claim_token},
+                    ":error": {"S": error_reason[:_REMEDIATION_SUMMARY_MAX_LEN]},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
 
 
 # ── Module-level function API (delegates to DynamoDbSessionStore) ──────────────
@@ -274,9 +553,19 @@ def mark_completed(
     *,
     root_cause: str = "",
     confirmed: bool = False,
+    selected_hypothesis_id: str = "",
+    fault_type: FaultType = FaultType.UNSUPPORTED,
+    completion_notification: NotificationMessage | None = None,
     dynamodb_client=None,
 ) -> bool:
-    return DynamoDbSessionStore(dynamodb_client).mark_completed(rca_id, root_cause=root_cause, confirmed=confirmed)
+    return DynamoDbSessionStore(dynamodb_client).mark_completed(
+        rca_id,
+        root_cause=root_cause,
+        confirmed=confirmed,
+        selected_hypothesis_id=selected_hypothesis_id,
+        fault_type=fault_type,
+        completion_notification=completion_notification,
+    )
 
 
 def mark_outdated(rca_id: str, *, reason: str = "", dynamodb_client=None) -> bool:

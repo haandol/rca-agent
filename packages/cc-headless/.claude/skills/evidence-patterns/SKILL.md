@@ -5,6 +5,17 @@ description: AWS 서비스별 증거 수집 패턴 — CloudWatch 메트릭 조�
 
 # 증거 수집 패턴
 
+## 증거 시간 범위
+
+조사 시작 시 원본 알람의 상태 변경 시각과 메트릭 period를 사용해 current alarm
+window의 시작·종료를 ISO-8601로 고정한다. baseline은 동일 길이의 historical
+comparison window로 별도 조회한다. 메트릭·로그·변경 이벤트마다 window와 실제 관측
+시각을 기록한다.
+
+current alarm window보다 앞선 수동 테스트·수동 장애 주입 로그는 historical
+context로만 사용할 수 있다. 시각이 없거나 어느 window인지 판별할 수 없는 로그를
+현재 장애의 발생, 원인, 지속 증거로 사용하지 않는다.
+
 ## 서비스별 메트릭 수집 패턴
 
 ### ECS Fargate 서비스

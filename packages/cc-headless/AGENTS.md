@@ -1,6 +1,6 @@
 # CC Headless RCA Agent
 
-Claude Code on Bedrock headless 모드를 사용하는 RCA 에이전트입니다. ECS Fargate 컨테이너에서 SQS Long Polling으로 알람을 수신하고, CC CLI를 subprocess로 호출하여 단일 프롬프트로 전체 RCA 워크플로우를 수행합니다.
+Claude Code on Bedrock headless 모드를 사용하는 RCA 오케스트레이터입니다. ECS Fargate 컨테이너에서 SQS Long Polling으로 알람을 수신하고, CC CLI가 RCA → 조건부 Remediation → Report 전문 서브 에이전트를 순서대로 호출합니다.
 
 ## Tech Stack
 
@@ -9,7 +9,7 @@ Claude Code on Bedrock headless 모드를 사용하는 RCA 에이전트입니다
 | Language | Python 3.12 |
 | Runtime | python:3.12-slim + Node.js 22 (CC CLI용) on ECS Fargate |
 | Agent Engine | Claude Code CLI (headless, Bedrock backend) |
-| MCP Tools | CloudWatch MCP, CloudTrail MCP, GitHub MCP (Go binary) |
+| MCP Tools | 읽기 전용 CloudWatch/CloudTrail/GitHub MCP, 산출물 저장 및 제한된 Healthcare reset MCP |
 | Trigger | SQS Long Polling |
 | Package Manager | uv |
 
@@ -17,26 +17,23 @@ Claude Code on Bedrock headless 모드를 사용하는 RCA 에이전트입니다
 
 ```
 src/cc_headless/
-├── __init__.py
-├── main.py           # ECS SQS long polling entry point
-├── config.py         # Environment variable configuration
-├── cc_runner.py      # CC CLI subprocess wrapper
-├── prompt_builder.py # System + user prompt assembly
-├── alarm_parser.py   # CloudWatch SNS → AlarmContext
-├── session_store.py  # DynamoDB session management
-├── report_store.py   # S3 report storage + SNS notification
-└── healthz.py        # HTTP health check server
+├── main.py              # ECS SQS long polling entry point
+├── mcp_server.py        # 산출물 저장 + 서버 검증형 Healthcare reset
+├── adapters/            # CC, DynamoDB, S3/SNS, S3 Vectors adapters
+├── config/              # Environment variable configuration
+├── ports/               # DTO와 port interfaces
+└── services/            # Pipeline, prompt, artifact watcher, execution context
+.claude/
+├── agents/              # RCA, Remediation, Report 전문 에이전트
+└── skills/              # 역할별 실행 가이드
 prompts/
 ├── rca-system.md     # 루트 시스템 프롬프트 (include 지시자로 sections/ 조립)
 ├── rca-user.md       # 알람 정보 user prompt 템플릿
 └── sections/         # 빌드 시 {{include: ...}}로 합성되는 프롬프트 조각
     ├── README.md         # 섹션 구조·편집 규칙
     ├── core/             # 공통 레이어 (artifacts-overview, pipeline-overview, principles)
-    ├── artifacts/        # JSON 스키마 (scoping, hypotheses, validation, playbook)
-    └── stages/           # 11단계 개별 절차 (1-scoping ~ 11-verification)
-tests/
-├── test_alarm_parser.py
-└── test_prompt_builder.py
+    ├── artifacts/        # JSON 스키마 (RCA, remediation, playbook)
+    └── stages/           # 전문 에이전트 호출 순서
 mcp-config.json       # MCP server configuration for CC
 Dockerfile            # ECS Fargate container image
 pyproject.toml        # Python project configuration
@@ -65,4 +62,5 @@ docker build -t cc-headless .  # Build container
 | `S3_REPORT_BUCKET` | Shared report bucket |
 | `S3_VECTOR_BUCKET_NAME` | Shared S3 Vectors bucket |
 | `SNS_NOTIFICATION_TOPIC_ARN` | Notification topic |
+| `HEALTHCARE_SERVICE_HOST` | 허용된 Healthcare reset 대상의 Cloud Map host |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | GitHub MCP auth (optional) |

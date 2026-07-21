@@ -7,7 +7,12 @@
   "stage": "VALIDATION",
   "loop_index": 1,
   "confirmed": [
-    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.95, "reasoning": "확정 근거 (한글, 상세히)"}
+    {
+      "hypothesis_id": "hypotheses.json의 UUID",
+      "confidence": 0.95,
+      "fault_type": "참조 hypothesis와 동일한 fault_type enum",
+      "reasoning": "확정 근거 (한글, 상세히)"
+    }
   ],
   "rejected": [
     {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.1, "reasoning": "기각 근거 (한글, 상세히)"}
@@ -24,6 +29,7 @@
       "tree_id": "hypotheses.json의 tree_id와 동일",
       "title": "짧은 한 줄 제목 (≤60자, 한글, 필수)",
       "description": "상세 설명 — 부모 가설을 어떻게 좁혔는지 근거 포함 (한글, 필수)",
+      "fault_type": "db-leak | high-cpu | high-memory | slow-query | unsupported",
       "category": "DEPLOYMENT | INFRASTRUCTURE | TRAFFIC | DEPENDENCY | CONFIGURATION",
       "confidence_score": 0.5,
       "required_evidence": ["필요한 증거"],
@@ -54,5 +60,8 @@
 
 **주의사항:**
 - `confirmed`/`rejected`/`closed`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
-- `new_hypotheses`의 각 항목에는 반드시 `title`, `description`, `category`를 포함한다.
+- `confirmed`의 `fault_type`은 참조하는 hypothesis의 구조화 enum과 정확히
+  일치해야 한다. 자유 텍스트에서 Remediation 단계가 다시 추론하지 않는다.
+- `new_hypotheses`의 각 항목에는 반드시 `title`, `description`, `fault_type`,
+  `category`를 포함한다.
 - 모든 가설은 `hypotheses.json`에서 이미 생성된 `hypothesis_id`를 참조해야 한다.

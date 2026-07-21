@@ -1,13 +1,13 @@
 ---
 name: hypothesis-generation
-description: 가설 생성 서브에이전트 가이드 — 스코핑 결과로부터 3-5개 근본원인 가설을 생성하고, rca-progress MCP로 DDB에 저장하고 /tmp에 산출물을 남긴다. Agent tool로 가설 생성 서브에이전트를 스폰할 때 이 스킬을 따른다.
+description: RCA 전문 에이전트의 가설 생성 가이드 — 스코핑 결과로부터 3-5개 근본원인 가설을 생성하고 canonical 산출물로 저장한다.
 ---
 
 # 가설 생성 서브에이전트
 
 ## 서브에이전트 역할
 
-메인 에이전트가 Agent tool로 이 서브에이전트를 스폰한다. 서브에이전트는:
+RCA 전문 에이전트는:
 
 1. 스코핑 결과를 입력받아 **3-5개** 근본원인 가설을 생성한다
 2. 각 가설에 UUID를 부여한다
@@ -21,6 +21,8 @@ description: 가설 생성 서브에이전트 가이드 — 스코핑 결과로�
 - `tree_id`: 이 생성 라운드의 공유 UUID
 - `title`: 짧은 한 줄 제목 (≤60자, 한글). 대시보드 카드·그래프 노드에 표시되므로 명사구로 간결히 작성한다 (예: "Healthcare 앱 커넥션 누수").
 - `description`: 상세 설명 — 이 가설을 세운 근거와 어떤 증거로 검증할 계획인지 2~4문장으로 기술
+- `fault_type`: `db-leak`, `high-cpu`, `high-memory`, `slow-query`,
+  `unsupported` 중 하나. 네 Healthcare 장애 주입 유형이 아니면 `unsupported`
 - `category`: `DEPLOYMENT`, `INFRASTRUCTURE`, `TRAFFIC`, `DEPENDENCY`, `CONFIGURATION` 중 하나
 - `confidence_score`: 0.0-1.0 (초기 추정)
 - `required_evidence`: 검증에 필요한 증거 목록
@@ -70,6 +72,7 @@ save_artifact("hypotheses.json", '{
       "tree_id": "tree-uuid",
       "title": "Healthcare 앱 커넥션 누수",
       "description": "최근 배포 이후 ActiveConnections 지표가 선형 증가하고 있어 커넥션 누수가 의심된다. DB 커넥션 풀 지표와 배포 diff로 검증한다.",
+      "fault_type": "db-leak",
       "category": "DEPLOYMENT",
       "confidence_score": 0.6,
       "required_evidence": ["recent deployments", "DB connection metrics"],

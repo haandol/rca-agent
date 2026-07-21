@@ -36,6 +36,14 @@ class HypothesisStatus(StrEnum):
     NEEDS_INVESTIGATION = "NEEDS_INVESTIGATION"
 
 
+class FaultType(StrEnum):
+    DB_CONNECTION_LEAK = "DB_CONNECTION_LEAK"
+    HIGH_CPU = "HIGH_CPU"
+    HIGH_MEMORY = "HIGH_MEMORY"
+    SLOW_QUERY = "SLOW_QUERY"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
 class AlarmTrigger(BaseModel):
     metric_name: str
     namespace: str
@@ -137,6 +145,7 @@ class Hypothesis(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     required_evidence: list[str] = Field(default_factory=list)
     referenced_playbook_id: str | None = None
+    fault_type: FaultType = FaultType.UNSUPPORTED
     status: HypothesisStatus = HypothesisStatus.PENDING
     tree_id: str = ""
     parent_id: str | None = None
@@ -253,6 +262,23 @@ class RemediationResult(BaseModel):
     summary: str = ""
 
 
+class RemediationContext(BaseModel):
+    rca_id: str
+    state: RcaSessionState
+    root_cause: str = ""
+    confirmed: bool = False
+    selected_hypothesis_id: str = ""
+    fault_type: FaultType = FaultType.UNSUPPORTED
+    validated_root_cause: str = ""
+    evidence_summary: str = ""
+    remediation_status: str = ""
+    remediation_claim_expires_at: int = 0
+    verification_status: str = ""
+    verification_summary: str = ""
+    verification_remaining_issues: list[str] = Field(default_factory=list)
+    metrics_normalized: bool = False
+
+
 class VerificationResult(BaseModel):
     rca_id: str
     metrics_normalized: bool = False
@@ -265,9 +291,14 @@ class AlarmContext(BaseModel):
     remediation agent can pick verification metrics without a session lookup."""
 
     alarm_name: str = ""
+    region: str = "us-east-1"
     namespace: str = ""
     metric_name: str = ""
+    dimensions: dict[str, str] = Field(default_factory=dict)
+    statistic: str = "Average"
+    period: int = 300
     threshold: float | None = None
+    comparison_operator: str | None = None
 
 
 class NotificationMessage(BaseModel):
@@ -280,10 +311,19 @@ class NotificationMessage(BaseModel):
     confirmed: bool = True
     playbook: dict | None = None
     root_cause: str = ""
+    selected_hypothesis_id: str = ""
+    fault_type: FaultType = FaultType.UNSUPPORTED
     alarm_context: AlarmContext | None = None
     # SNS routing attribute — remediation queue subscribes to "rca_complete"
-    # only, so remediation-result notifications never loop back (ADR agent/0012).
+    # only, so remediation-result notifications never loop back.
     event_type: str = "rca_complete"
+
+
+class CompletionHandoff(BaseModel):
+    rca_id: str
+    state: RcaSessionState
+    notification_status: str = ""
+    notification: NotificationMessage | None = None
 
 
 class RcaSession(BaseModel):

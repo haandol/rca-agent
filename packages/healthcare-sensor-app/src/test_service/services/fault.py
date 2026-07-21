@@ -1,9 +1,16 @@
+import asyncio
 import logging
 import threading
 
 import asyncpg
 
 from test_service.ports.interfaces.database import DatabasePort
+from test_service.services.fault_state import (
+    close_environment_leaked_connections,
+    disable_environment_database_leaks,
+    reset_slow_query_delays,
+    wait_for_environment_database_leak_acquisitions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +44,33 @@ class FaultInjectionService:
         }
 
     async def reset_leaked_connections(self) -> dict:
+        await disable_environment_database_leaks()
         closed = 0
-        for conn in _leaked_sessions:
+        failed_sessions: list[asyncpg.Connection] = []
+        sessions = list(_leaked_sessions)
+        _leaked_sessions.clear()
+        for conn in sessions:
             try:
                 await conn.close()
                 closed += 1
             except Exception:
-                pass
-        _leaked_sessions.clear()
-        return {"closed": closed, "pool_checked_out": self._database.checked_out_connections()}
+                failed_sessions.append(conn)
+                logger.exception("Failed to close intentionally leaked DB connection")
+        _leaked_sessions.extend(failed_sessions)
+
+        environment_closed, _ = await close_environment_leaked_connections()
+        closed += environment_closed
+
+        # Existing leaks must be closed before waiting, otherwise an acquisition
+        # blocked by pool exhaustion can never resume and observe the reset.
+        await wait_for_environment_database_leak_acquisitions()
+        late_closed, late_failed = await close_environment_leaked_connections()
+        closed += late_closed
+        failed = len(failed_sessions) + late_failed
+        result = {"closed": closed, "pool_checked_out": self._database.checked_out_connections()}
+        if failed:
+            result.update({"status": "failed", "failed": failed})
+        return result
 
     def start_high_cpu(self) -> dict:
         global _cpu_stop_event
@@ -70,12 +95,11 @@ class FaultInjectionService:
         logger.error("High CPU fault injection started", extra={"threads": num_threads})
         return {"status": "started", "threads": num_threads}
 
-    def stop_high_cpu(self) -> dict:
+    async def stop_high_cpu(self) -> dict:
         if not _cpu_threads:
             return {"status": "not_running"}
         _cpu_stop_event.set()
-        for t in _cpu_threads:
-            t.join(timeout=5)
+        await asyncio.gather(*(asyncio.to_thread(t.join, 5) for t in _cpu_threads))
         count = len(_cpu_threads)
         _cpu_threads.clear()
         return {"status": "stopped", "threads_stopped": count}
@@ -128,11 +152,17 @@ class FaultInjectionService:
         logger.error("Slow query fault injection started", extra={"interval_seconds": seconds})
         return {"status": "started", "interval_seconds": seconds}
 
-    def stop_slow_query(self) -> dict:
+    async def stop_slow_query(self) -> dict:
         global _slow_query_thread
-        if not _slow_query_thread or not _slow_query_thread.is_alive():
+        reset_slow_query_delays()
+        if not _slow_query_thread:
+            return {"status": "not_running"}
+        if not _slow_query_thread.is_alive():
+            _slow_query_thread = None
             return {"status": "not_running"}
         _slow_query_stop_event.set()
-        _slow_query_thread.join(timeout=35)
+        await asyncio.to_thread(_slow_query_thread.join, 35)
+        if _slow_query_thread.is_alive():
+            return {"status": "stop_timeout"}
         _slow_query_thread = None
         return {"status": "stopped"}

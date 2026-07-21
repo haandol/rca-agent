@@ -3,6 +3,10 @@ from unittest.mock import MagicMock, patch
 
 from rca_agent.ports.dto.models import NotificationMessage, RcaReport
 from rca_agent.services.notification import build_notification, send_notification
+from rca_agent.services.remediation_pipeline import (
+    _alarm_for_verification,
+    _parse_alarm_context,
+)
 
 
 def _make_report(confirmed=True) -> RcaReport:
@@ -52,6 +56,41 @@ class TestBuildNotification:
         assert msg.alarm_context is not None
         assert msg.alarm_context.metric_name == "DatabaseConnections"
         assert msg.alarm_context.threshold == 30.0
+
+    def test_alarm_context_preserves_complete_metric_query(self):
+        from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger
+
+        alarm = AlarmPayload(
+            alarm_name="Healthcare-RdsHighConnections",
+            trigger=AlarmTrigger(
+                metric_name="DatabaseConnections",
+                namespace="AWS/RDS",
+                dimensions={
+                    "DBInstanceIdentifier": "healthcare-db",
+                    "Role": "writer",
+                },
+                statistic="Maximum",
+                period=60,
+                threshold=30.0,
+                comparison_operator="GreaterThanThreshold",
+            ),
+        )
+
+        message = build_notification(
+            _make_report(confirmed=True),
+            "reports/rca-1.md",
+            600,
+            alarm=alarm,
+        )
+        context = _parse_alarm_context(message.model_dump())
+        verification_alarm = _alarm_for_verification(context)
+
+        assert verification_alarm.region == alarm.region
+        assert verification_alarm.trigger is not None
+        assert verification_alarm.trigger.dimensions == alarm.trigger.dimensions
+        assert verification_alarm.trigger.statistic == "Maximum"
+        assert verification_alarm.trigger.period == 60
+        assert verification_alarm.trigger.comparison_operator == "GreaterThanThreshold"
 
 
 class TestSendNotification:

@@ -1,14 +1,10 @@
-## 파이프라인 개요
+## 오케스트레이션 순서
 
-| 순서 | 단계 | 수행 주체 | 산출물 |
-|------|------|----------|--------|
-| 1 | 초기 스코핑 | 메인 에이전트 (직접) | `scoping.json` |
-| 2 | 가설 생성 | 서브에이전트 | `hypotheses.json` |
-| 3-7 | 검증 루프 (최대 3회) | 서브에이전트 | `validation-{N}.json` |
-| 8 | 보고서 생성 | 메인 에이전트 (직접) | `report.md` |
-| 9 | 플레이북 생성 | 메인 에이전트 (직접) | `playbook.json` |
-| 10 | 복구 권고 작성 | 메인 에이전트 (문서화만) | `report.md`, `playbook.json` 보강 |
-| 11 | 검증 계획 작성 | 메인 에이전트 (문서화만) | `report.md`, `playbook.json` 보강 |
+| 순서 | 전문 에이전트 | 조건 | 필수 결과 |
+|------|-------------|------|----------|
+| 1 | `rca-specialist` | 항상 | RCA 산출물과 확정 여부 |
+| 2 | `remediation-specialist` | 최신 validation에 confirmed 존재 | 실제 복구 결과 |
+| 3 | `report-specialist` | 항상 | `report.md`, `playbook.json` |
 
-10-11단계에서는 서비스·인프라 변경, 대기, 사후 검증을 실행하지 않는다. 실제 복구와
-검증은 별도 Remediation Agent 또는 승인된 오퍼레이터가 담당한다.
+RCA가 미확정이면 Remediation 결과를 `NOT_ATTEMPTED`로 만들어 Report에 전달한다.
+Remediation이 `BLOCKED` 또는 `FAILED`를 반환해도 Report를 반드시 호출한다.

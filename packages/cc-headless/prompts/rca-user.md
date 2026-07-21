@@ -1,4 +1,4 @@
-아래 CloudWatch 알람이 발생했다. RCA 파이프라인을 실행하여 분석하라.
+아래 CloudWatch 알람에 대한 RCA 오케스트레이션을 실행하라.
 
 ## 알람 상세
 
@@ -15,8 +15,12 @@
 - **주기**: {period}초
 - **임계치**: {threshold} ({comparison_operator})
 
-위 알람을 분석하고 각 단계별 산출물을 `save_artifact`로 저장하라:
-1. `scoping.json` — 스코핑 결과 (JSON)
-2. `hypotheses.json` — 가설 목록 (JSON)
-3. `validation-{N}.json` — 검증 루프 결과 (JSON)
-4. `report.md` — 최종 한글 RCA 보고서 (Markdown)
+Agent tool로 `rca-specialist`를 먼저 호출하고, 확정 결과에만
+`remediation-specialist`를 호출한 뒤, 복구 결과와 무관하게 `report-specialist`를
+호출하라. 메인은 직접 분석하거나 산출물을 저장하지 않는다.
+
+최종적으로 현재 실행에 다음 산출물이 있어야 한다.
+
+1. RCA: `scoping.json`, `hypotheses.json`, `validation-{N}.json`
+2. narrow remediation MCP: 조건부 `remediation.json`
+3. Report: `report.md`, `playbook.json`

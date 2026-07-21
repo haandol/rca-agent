@@ -31,8 +31,8 @@ adr/
 - [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
 - [ADR 0009: 알림 — RCA 진행/완료 알림 전달](agent/0009-notification.md)
 - [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
-- [ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인](agent/0011-cc-headless-prompt-driven-rca.md)
-- [ADR 0012: 자동 복구(Remediation) — 별도 에이전트로 분리한 이벤트 기반 복구](agent/0012-automated-remediation.md) *(Proposed — Remediation Agent 미구현)*
+- [ADR 0011: CC Headless 전문 서브 에이전트 오케스트레이션](agent/0011-cc-headless-prompt-driven-rca.md)
+- [ADR 0012: 자동 복구 실행 경계](agent/0012-automated-remediation.md)
 - [ADR 0014: 계층형 증거 수집 세션 격리 — 가설별 독립 컨텍스트 윈도우 관리](agent/0014-hierarchical-evidence-session-isolation.md)
 - [ADR 0015: Hexagonal Architecture — Ports & Adapters 기반 패키지 구조 전환](agent/0015-hexagonal-architecture.md)
 - [ADR 0016: RCA 평가 테스트 하네스](agent/0016-rca-evaluation-test-harness.md) — 오프라인 계약 테스트, 엔진 중립 시나리오 평가, 선택적 AWS·실모델 평가 계층

@@ -45,7 +45,8 @@ RcaAgentDev
 ├── RdsStack                      # PostgreSQL 17.4 (Healthcare 서비스용)
 ├── RcaAgentServiceStack          # ECS Fargate — Strands RCA 에이전트
 ├── CcHeadlessStack               # ECS Fargate — CC headless RCA 에이전트
-└── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스 + Cloud Map DNS
+├── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스 + Cloud Map DNS
+└── RemediationAgentStack         # ECS Fargate — Strands 전용 복구 워커 (기본 desiredCount 0)
 ```
 
 ### Stack Dependencies
@@ -68,6 +69,10 @@ NetworkStack ─────────┼── HealthcareServiceStack
 RdsStack ─────────────┘
 
 NetworkStack ──────── RdsStack
+
+EcrStack ─────────────┐
+NetworkStack ─────────┼── RemediationAgentStack
+EventBusStack ────────┘
 ```
 
 ## Configuration
@@ -99,7 +104,6 @@ NetworkStack ──────── RdsStack
 - Bedrock: InvokeModel / InvokeModelWithResponseStream
 - X-Ray: BatchGetTraces, GetTraceSummaries, PutTraceSegments, PutTelemetryRecords
 - SNS: Publish (알림 토픽)
-- ECS: UpdateService, DescribeServices (Remediation용 force new deployment)
 
 ### CC Headless (Fargate Task Role)
 
@@ -111,7 +115,17 @@ NetworkStack ──────── RdsStack
 - S3 Vectors: 전체 CRUD
 - Bedrock: InvokeModel / InvokeModelWithResponseStream
 - SNS: Publish (알림 토픽)
-- ECS: UpdateService, DescribeServices (Remediation용 force new deployment)
+- Healthcare 서비스 8000/tcp 접근 (확정 원인의 허용된 reset API)
+
+### Remediation Agent (Fargate Task Role, Strands 전용)
+
+- SQS: ConsumeMessages
+- DynamoDB: RCA 세션 테이블 ReadWriteData
+- Bedrock: InvokeModel / InvokeModelWithResponseStream
+- CloudWatchReadOnlyAccess
+- SNS: Publish (알림 토픽)
+- Healthcare 서비스 8000/tcp 접근
+- ECS 서비스 조회·변경 권한 없음
 
 ### Healthcare (Fargate Task Role)
 

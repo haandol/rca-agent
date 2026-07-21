@@ -4,7 +4,7 @@ Date: 2026-04-28
 
 ## Status
 
-Accepted (Roll-up — 체인 내 최소 번호로 재사용)
+Accepted (2026-04-28)
 
 ## Context
 

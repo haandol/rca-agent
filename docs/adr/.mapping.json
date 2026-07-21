@@ -2,45 +2,137 @@
   "$schema": "https://raw.githubusercontent.com/haandol/alps-writer-mcp/main/templates/adr/mapping.schema.json",
   "categories": {
     "agent": {
-      "feature": "Strands와 Stateless CC의 RCA 파이프라인 및 공통 평가 하네스",
+      "feature": "Strands 파이프라인과 CC 전문 서브 에이전트 오케스트레이션 및 공통 평가 하네스",
+      "dependsOn": [],
       "adrs": [
-        "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
-        "docs/adr/agent/0002-hypothesis-tree-lifecycle.md",
-        "docs/adr/agent/0006-termination-conditions.md",
-        "docs/adr/agent/0007-rca-report-generation.md",
-        "docs/adr/agent/0008-playbook-generation.md",
-        "docs/adr/agent/0009-notification.md",
-        "docs/adr/agent/0010-model-tier-architecture.md",
-        "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-        "docs/adr/agent/0012-automated-remediation.md",
-        "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
-        "docs/adr/agent/0015-hexagonal-architecture.md",
-        "docs/adr/agent/0016-rca-evaluation-test-harness.md"
-      ],
-      "lastSyncedAt": "2026-07-21T00:00:01Z"
+        {
+          "path": "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
+          "status": "Accepted (2026-04-28)",
+          "summary": "초기 스코핑에서 유사 RCA 보고서를 검색해 가설 생성 컨텍스트로 사용한다."
+        },
+        {
+          "path": "docs/adr/agent/0002-hypothesis-tree-lifecycle.md",
+          "status": "Accepted (2026-04-28)",
+          "summary": "가설 트리를 우선순위·검증·분기·Beam 탐색으로 관리한다."
+        },
+        {
+          "path": "docs/adr/agent/0006-termination-conditions.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "신뢰도·시간·깊이·반복 한도로 RCA 탐색 종료를 판단한다."
+        },
+        {
+          "path": "docs/adr/agent/0007-rca-report-generation.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "검증 결과와 5 Whys를 포함한 구조화 RCA 보고서를 생성한다."
+        },
+        {
+          "path": "docs/adr/agent/0008-playbook-generation.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "RCA 결과를 재사용 가능한 플레이북으로 만들고 S3 Vectors에 인덱싱한다."
+        },
+        {
+          "path": "docs/adr/agent/0009-notification.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "RCA와 복구 완료 결과를 구분된 SNS 이벤트로 발행한다."
+        },
+        {
+          "path": "docs/adr/agent/0010-model-tier-architecture.md",
+          "status": "Accepted (2026-04-22)",
+          "summary": "단일 Sonnet 모델을 Planning과 Execution 행동으로 분리한다."
+        },
+        {
+          "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
+          "status": "Accepted (2026-07-21)",
+          "summary": "CC Headless가 RCA·조건부 Remediation·Report 전문 에이전트를 오케스트레이션한다."
+        },
+        {
+          "path": "docs/adr/agent/0012-automated-remediation.md",
+          "status": "Accepted (2026-07-21)",
+          "summary": "서버 소유 RCA와 허용 목록을 검증한 제한적 자동 복구만 실행한다."
+        },
+        {
+          "path": "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
+          "status": "Accepted (2026-04-24)",
+          "summary": "가설별 증거 수집 컨텍스트를 격리하고 계층적으로 관리한다."
+        },
+        {
+          "path": "docs/adr/agent/0015-hexagonal-architecture.md",
+          "status": "Accepted (2026-04-28)",
+          "summary": "에이전트 패키지를 Ports와 Adapters 중심의 Hexagonal 구조로 구성한다."
+        },
+        {
+          "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+          "status": "Accepted (2026-07-21)",
+          "summary": "엔진 중립 오프라인 계약과 선택적 라이브 평가 계층을 운영한다."
+        }
+      ]
     },
     "tools": {
       "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",
+      "dependsOn": [],
       "adrs": [
-        "docs/adr/tools/0001-metrics-collection.md",
-        "docs/adr/tools/0002-log-search.md",
-        "docs/adr/tools/0003-trace-analysis.md",
-        "docs/adr/tools/0004-deploy-history.md",
-        "docs/adr/tools/0005-code-change-analysis.md"
-      ],
-      "lastSyncedAt": "2026-05-25T00:00:00Z"
+        {
+          "path": "docs/adr/tools/0001-metrics-collection.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "CloudWatch MCP로 알람 관련 메트릭을 수집한다."
+        },
+        {
+          "path": "docs/adr/tools/0002-log-search.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "CloudWatch Logs Insights를 통해 장애 로그를 검색한다."
+        },
+        {
+          "path": "docs/adr/tools/0003-trace-analysis.md",
+          "status": "Deprecated (2026-04-21)",
+          "summary": "X-Ray 분산 트레이스 자동 분석은 현재 범위에서 사용하지 않는다."
+        },
+        {
+          "path": "docs/adr/tools/0004-deploy-history.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "CloudTrail MCP로 배포와 변경 이력을 조회한다."
+        },
+        {
+          "path": "docs/adr/tools/0005-code-change-analysis.md",
+          "status": "Accepted (2026-04-22)",
+          "summary": "GitHub MCP로 배포 코드 변경과 결함 후보를 분석한다."
+        }
+      ]
     },
     "infra": {
-      "feature": "AWS CDK 인프라 — ECS Fargate / SNS·SQS / S3·DynamoDB / VPC",
+      "feature": "AWS CDK 인프라 — ECS Fargate 오케스트레이터 / SNS·SQS / S3·DynamoDB / VPC",
+      "dependsOn": [],
       "adrs": [
-        "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
-        "docs/adr/infra/0002-evidence-storage.md",
-        "docs/adr/infra/0003-lambda-cc-headless-stack.md",
-        "docs/adr/infra/0004-rds-healthcare-deployment.md",
-        "docs/adr/infra/0005-execution-trace-dynamodb.md",
-        "docs/adr/infra/0006-session-recovery-on-restart.md"
-      ],
-      "lastSyncedAt": "2026-05-25T00:00:00Z"
+        {
+          "path": "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "SNS와 SQS로 알람을 각 ECS Fargate RCA 엔진에 전달한다."
+        },
+        {
+          "path": "docs/adr/infra/0002-evidence-storage.md",
+          "status": "Accepted (2026-04-21)",
+          "summary": "S3·S3 Vectors·DynamoDB에 RCA 증거와 결과를 저장한다."
+        },
+        {
+          "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
+          "status": "Accepted (2026-07-21)",
+          "summary": "CC Headless를 제한된 복구 권한의 단일 Fargate 오케스트레이터로 운영한다."
+        },
+        {
+          "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+          "status": "Accepted (2026-04-22)",
+          "summary": "RDS와 Healthcare 서비스를 RCA 검증용 데모 환경으로 배포한다."
+        },
+        {
+          "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
+          "status": "Accepted (2026-07-21)",
+          "summary": "파이프라인 단계와 가설 상태를 DynamoDB 실행 trace로 기록한다."
+        },
+        {
+          "path": "docs/adr/infra/0006-session-recovery-on-restart.md",
+          "status": "Accepted (2026-07-21)",
+          "summary": "SQS 재전달·세션 claim·부작용 lease로 중단 세션을 안전하게 복구한다."
+        }
+      ]
     }
   }
 }

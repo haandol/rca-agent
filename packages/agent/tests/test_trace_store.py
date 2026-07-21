@@ -12,7 +12,7 @@ from rca_agent.adapters.secondary.trace.dynamodb_trace_store import (
     _deserialize_hypothesis,
     _deserialize_span,
 )
-from rca_agent.ports.dto.models import Hypothesis, HypothesisCategory, HypothesisStatus
+from rca_agent.ports.dto.models import FaultType, Hypothesis, HypothesisCategory, HypothesisStatus
 
 TABLE_NAME = "rca-sessions"
 PATCH_TABLE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store.DYNAMODB_TABLE_NAME"
@@ -194,6 +194,15 @@ class TestPutHypotheses:
 
         item = dynamodb_client.batch_write_item.call_args[1]["RequestItems"][TABLE_NAME][0]
         assert item["PutRequest"]["Item"]["engine"]["S"] == "strands"
+
+    def test_persists_structured_fault_type(self, trace: TraceStore, dynamodb_client: MagicMock):
+        hypothesis = _make_hypothesis()
+        hypothesis.fault_type = FaultType.HIGH_MEMORY
+        with patch(PATCH_TABLE, TABLE_NAME):
+            trace.put_hypotheses([hypothesis])
+
+        item = dynamodb_client.batch_write_item.call_args[1]["RequestItems"][TABLE_NAME][0]
+        assert item["PutRequest"]["Item"]["fault_type"]["S"] == "HIGH_MEMORY"
 
     def test_sets_parent_id_null_for_root(self, trace: TraceStore, dynamodb_client: MagicMock):
         with patch(PATCH_TABLE, TABLE_NAME):
@@ -476,6 +485,7 @@ class TestDeserializeHypothesis:
             "depth": {"N": "1"},
             "description": {"S": "Child hypothesis"},
             "category": {"S": "INFRASTRUCTURE"},
+            "fault_type": {"S": "HIGH_CPU"},
             "confidence_score": {"N": "0.6"},
             "status": {"S": "NEEDS_INVESTIGATION"},
             "engine": {"S": "strands"},
@@ -490,6 +500,7 @@ class TestDeserializeHypothesis:
         assert result["parent_id"] == "h-1"
         assert result["depth"] == 1
         assert result["required_evidence"] == ["metrics", "traces"]
+        assert result["fault_type"] == "HIGH_CPU"
         assert result["judgment_confidence"] is None
         assert result["engine"] == "strands"
 
@@ -512,4 +523,5 @@ class TestDeserializeHypothesis:
         }
         result = _deserialize_hypothesis(item)
         assert result["hypothesis_id"] == "h-2"
+        assert result["fault_type"] == "UNSUPPORTED"
         assert result["engine"] == "strands"

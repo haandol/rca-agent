@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -13,11 +14,10 @@ interface IProps extends cdk.StackProps {
   readonly notificationTopic: sns.ITopic;
   readonly healthcareService: ecs.FargateService;
   readonly healthcareServiceHost: string;
-  readonly healthcareClusterName: string;
-  readonly healthcareServiceName: string;
+  readonly rcaSessionTable: dynamodb.ITable;
   readonly imageTag: string;
   // desiredCount 0 이면 파이프라인이 알림만 발행하고 복구는 실행되지 않는다
-  // (ADR agent/0012의 점진적 활성화 — 피처 플래그를 desired count로 제어).
+  // 피처 플래그를 desired count로 제어한다.
   readonly desiredCount: number;
 }
 
@@ -30,7 +30,12 @@ export class RemediationAgentStack extends cdk.Stack {
     const ns = this.node.tryGetContext('ns') as string;
 
     const deadLetterQueue = this.newDeadLetterQueue(ns);
-    const queue = this.newRemediationQueue(ns, props.notificationTopic, deadLetterQueue);
+    const queue = this.newRemediationQueue(
+      ns,
+      props.notificationTopic,
+      deadLetterQueue,
+      props.desiredCount > 0,
+    );
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props, queue);
     const service = this.newService(ns, cluster, taskDefinition, props);
@@ -55,6 +60,7 @@ export class RemediationAgentStack extends cdk.Stack {
     ns: string,
     notificationTopic: sns.ITopic,
     deadLetterQueue: sqs.Queue,
+    enabled: boolean,
   ): sqs.Queue {
     const queue = new sqs.Queue(this, 'RemediationQueue', {
       queueName: `${ns}RemediationQueue`,
@@ -66,18 +72,20 @@ export class RemediationAgentStack extends cdk.Stack {
       },
     });
 
-    // RCA 완료 이벤트만 구독 — 복구 결과 알림(remediation_complete)이 되돌아와
-    // 무한 루프가 되는 것을 메시지 속성 필터로 차단한다 (ADR agent/0012).
-    notificationTopic.addSubscription(
-      new snsSubscriptions.SqsSubscription(queue, {
-        rawMessageDelivery: false,
-        filterPolicy: {
-          event_type: sns.SubscriptionFilter.stringFilter({
-            allowlist: ['rca_complete'],
-          }),
-        },
-      }),
-    );
+    if (enabled) {
+      // RCA 완료 이벤트만 구독한다. 복구 결과 알림이 되돌아와 무한 루프가
+      // 되는 것을 메시지 속성 필터로 차단한다.
+      notificationTopic.addSubscription(
+        new snsSubscriptions.SqsSubscription(queue, {
+          rawMessageDelivery: false,
+          filterPolicy: {
+            event_type: sns.SubscriptionFilter.stringFilter({
+              allowlist: ['rca_complete'],
+            }),
+          },
+        }),
+      );
+    }
 
     return queue;
   }
@@ -122,10 +130,9 @@ export class RemediationAgentStack extends cdk.Stack {
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         REMEDIATION_QUEUE_URL: queue.queueUrl,
+        DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
         SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
         HEALTHCARE_SERVICE_HOST: props.healthcareServiceHost,
-        ECS_CLUSTER_NAME: props.healthcareClusterName,
-        ECS_SERVICE_NAME: props.healthcareServiceName,
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'remediation',
@@ -157,6 +164,8 @@ export class RemediationAgentStack extends cdk.Stack {
   ): void {
     queue.grantConsumeMessages(taskDef.taskRole);
 
+    props.rcaSessionTable.grantReadWriteData(taskDef.taskRole);
+
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: [
@@ -177,14 +186,6 @@ export class RemediationAgentStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ['sns:Publish'],
         resources: [props.notificationTopic.topicArn],
-      }),
-    );
-
-    // ECS 강제 새 배포(롤백) 및 상태 조회 — 복구 액션
-    taskDef.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: ['ecs:UpdateService', 'ecs:DescribeServices'],
-        resources: ['*'],
       }),
     );
   }

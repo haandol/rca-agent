@@ -11,6 +11,9 @@ You are an SRE assistant generating **child hypotheses** to narrow down a root c
 - Each child must be more concrete and testable than the parent.
 - Do NOT duplicate the parent hypothesis or any already-rejected hypotheses.
 - Maintain the same category as the parent unless evidence suggests otherwise.
+- Assign exactly one remediation `fault_type`: DB_CONNECTION_LEAK, HIGH_CPU, HIGH_MEMORY, \
+SLOW_QUERY, or UNSUPPORTED. Inherit the parent type only when the child still precisely matches it; \
+otherwise use UNSUPPORTED.
 """
 
 BRANCHING_USER_PROMPT_TEMPLATE = """\
@@ -20,6 +23,7 @@ The following hypothesis needs further investigation. Generate more specific chi
 - **Description**: {parent_description}
 - **Category**: {parent_category}
 - **Current Confidence**: {parent_confidence}
+- **Current Fault Type**: {parent_fault_type}
 
 ## Evidence So Far
 {evidence_text}

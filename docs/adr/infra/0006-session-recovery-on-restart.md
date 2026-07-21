@@ -1,97 +1,102 @@
-# ADR 0006: SQS Visibility Timeout 기반 미완료 RCA 세션 자동 복구
+# ADR 0006: SQS 재전달 기반 미완료 RCA 세션 복구
 
 Date: 2026-04-23
-Updated: 2026-04-29
+Updated: 2026-07-21
 
 ## Status
 
-Accepted
+Accepted (2026-07-21)
 
 ## Context
 
-ECS Fargate에서 실행되는 CC Headless는 다음 상황에서 재시작될 수 있다:
+CC Headless 태스크는 배포, 비정상 종료, 수동 중지 중에도 장시간 RCA를 수행할 수
+있다. 처리 중인 SQS 메시지를 먼저 삭제하면 태스크 장애 후 분석을 복구할 수 없다.
+반대로 재전달 메시지가 기존 진행 세션과 동시에 실행되면 복구 액션과 보고서가
+중복될 수 있다.
 
-1. **서비스 배포**: `deploy-service.sh`로 force new deployment 실행 시 기존 태스크가 SIGTERM → DRAINING → 종료
-2. **태스크 장애**: OOM, 헬스체크 실패, 인프라 이벤트 등으로 태스크가 비정상 종료
-3. **수동 재시작**: ECS 콘솔이나 CLI에서 태스크를 직접 중지
+같은 알람 이벤트는 엔진별로 안정된 세션 식별자를 사용하므로, 재전달 시 새 세션을
+만드는 대신 기존 미완료 세션의 실행 소유권을 안전하게 넘겨야 한다.
 
-기존 설계에서는 SQS 메시지를 처리 시작 시점에 즉시 삭제(`delete_message`)하고, DynamoDB에서 세션 상태를 관리했다. 이 경우:
+## Decision Drivers
 
-- 처리 중 태스크가 죽으면 SQS 메시지는 이미 삭제되어 재처리할 수 없다
-- DynamoDB에 진행 중 상태(`ANALYZING` 등)로 남은 세션이 영원히 미완료 상태가 된다
-- 멱등성 키가 이미 기록되어 같은 알람이 다시 와도 중복으로 스킵된다
-
-### 검토한 대안
-
-1. **Heartbeat + Scan + Claim**: 서비스 시작 시 DynamoDB를 스캔하여 stale 세션을 찾고, 조건부 쓰기로 복구를 클레임하는 방식. 그러나 heartbeat이 CPU 쓰로틀이나 GC 지연으로 늦어지면 정상 진행 중인 세션을 잘못 stale로 판단할 위험이 있고, heartbeat 스레드 관리가 복잡하다.
-
-2. **SQS Visibility Timeout 활용 (채택)**: 메시지 삭제를 처리 완료 시점으로 미뤄 SQS의 내장 재전달 메커니즘을 활용하는 방식.
+- 메시지는 전체 오케스트레이션이 성공한 뒤에만 삭제되어야 한다.
+- 실패하거나 중단된 실행은 SQS 재전달만으로 처음부터 다시 시작할 수 있어야 한다.
+- 이전 실행은 소유권을 잃은 뒤 상태, 보고서, 복구 결과를 확정할 수 없어야 한다.
+- 재전달과 별도 중복 이벤트가 동시에 도착해도 한 실행만 세션을 소유해야 한다.
+- heartbeat 시각에 의존한 stale 판정은 피해야 한다.
+- 소유권 저장소 장애가 쓰기 작업 허용으로 해석되어서는 안 된다.
 
 ## Decision
 
-SQS 메시지 삭제 시점을 **처리 성공 후**로 변경하여, 실패/크래시 시 SQS가 자동으로 메시지를 재전달하는 방식으로 복구한다.
+SQS 메시지는 성공 또는 이미 완료된 중복으로 판정된 경우에만 확인 처리한다.
+실패, 예외, 종료 신호로 중단된 경우에는 확인하지 않아 visibility timeout 후
+재전달되게 한다.
 
-### 핵심 변경사항
+세션은 알람 이벤트와 엔진에 대해 안정된 키를 유지한다. 각 수신은 SQS가 제공하는
+단조 증가 receive count와 새로운 claim token으로 실행 소유권을 요청한다.
 
-1. **메시지 삭제 시점 변경**: `finally` 블록(항상 삭제)에서 성공 시에만 삭제로 변경. 처리 실패 또는 태스크 크래시 시 메시지가 삭제되지 않아 visibility timeout 후 SQS에 다시 나타난다.
+- 세션이 없으면 첫 수신이 소유권을 얻는다.
+- 완료, 만료, 취소 상태는 최종 상태로 중복 처리한다.
+- 수신됨, 분석 중, 실패 상태는 더 큰 receive count를 가진 재전달만 원자적으로
+  reclaim할 수 있다.
+- 같은 receive count의 별도 중복이나 조건부 갱신 경합은 실행하지 않는다.
+- 모든 상태 전이와 완료 기록은 현재 claim token이 일치할 때만 허용한다.
+- 실행 중 소유권이 바뀌면 이전 실행을 취소 대상으로 보고 결과 발행을 중단한다.
+- 완료된 세션의 중복만 확인 처리하고, claim 경합이나 소유권 확인 실패는 확인하지
+  않아 다시 전달되게 한다.
 
-2. **멱등성 키 기록 시점 변경**: 세션 생성 시점이 아닌 **RCA 완료 시점**에 멱등성 키를 기록한다. 이를 통해 재전달된 메시지가 중복 체크에 걸리지 않고 재처리된다.
+종료 신호를 받은 실행은 가능하면 실패 상태를 남기되 메시지는 확인하지 않는다.
+visibility timeout은 정상 최대 실행 시간보다 길게 유지하여 정상 실행 중 불필요한
+reclaim 가능성을 낮춘다.
 
-3. **Heartbeat/Scan/Claim 제거**: DynamoDB 기반 복구 인프라(heartbeat 스레드, stale 세션 스캔, 조건부 클레임)를 모두 제거한다. SQS가 복구 메커니즘을 대체한다.
+세션 외부에 영향을 주는 복구, 보고서 저장, 알림 발행은 claim에 종속된 짧은
+부작용 lease를 획득한 실행만 시작할 수 있다. 유효한 lease가 있는 동안에는
+reclaim을 허용하지 않고, lease가 만료되거나 해제된 뒤에만 더 큰 receive count가
+소유권을 넘겨받을 수 있다. 소유권 또는 lease 확인을 읽을 수 없으면 해당 작업은
+fail-closed로 중단한다.
 
-### 복구 흐름
+시도별 보고서는 claim 단위로 격리하여 이전 실행의 늦은 업로드가 현재 실행의
+보고서를 덮어쓰지 못하게 한다. 실행 트레이스 쓰기는 세션 claim 확인과 같은
+원자적 경계에서 수행한다. 알림과 멱등 복구처럼 외부 시스템과 원자적으로 묶을 수
+없는 작업은 세션 식별자를 멱등성 키로 전달하고, 성공 확정까지 lease를 유지한다.
 
-```mermaid
-flowchart TD
-    RECV["SQS receive_message"] --> PROC["_process_message()"]
-    PROC -->|성공| DEL["delete_message\n+ 멱등성 키 기록"]
-    PROC -->|실패/예외| KEEP["메시지 삭제 안 함"]
-    KEEP --> VT["Visibility Timeout 만료"]
-    VT --> RECV
-    
-    CRASH["태스크 크래시"] --> VT2["Visibility Timeout 만료"]
-    VT2 --> RECV2["다른 태스크가 메시지 수신"]
-```
+## 대안 검토
 
-### SQS Visibility Timeout 설정
-
-- SQS 큐의 Visibility Timeout을 CC Headless의 최대 처리 시간(`CC_TIMEOUT_SECONDS`, 기본 600초)보다 충분히 크게 설정한다 (예: 900초).
-- 처리 중 다른 컨슈머가 같은 메시지를 받지 않도록 보장한다.
-
-### Graceful Shutdown on SIGTERM
-
-ECS 롤링 배포나 수동 중지 시 SIGTERM이 도착하면 에이전트는 단순히 루프를 탈출하는 것만으로 충분하지 않다. 진행 중인 RCA 세션이 `ANALYZING` 등 비종료 상태로 DDB에 남으면 대시보드에서 "분석중"으로 영구 고착되고, 동일 알람이 재전달되어도 멱등성 체크에 걸려 재시도되지 않는다.
-
-따라서 SIGTERM 수신 시 다음 규칙을 따른다:
-
-1. **Shutdown 신호 전파**: 시그널 핸들러는 공유 이벤트만 set한다 (DDB/네트워크 호출 금지 — 시그널 안전성 확보).
-2. **긴 블로킹 작업 중단**: 에이전트 실행(CC subprocess, Bedrock agent 호출 등) 중에는 주기적으로 shutdown 이벤트를 감지할 수 있는 체크 지점을 둔다. 체크 지점은 파이프라인의 주요 단계 사이와 반복 루프 내(예: 가설별 증거 수집 사이)에 배치한다.
-3. **세션 마킹 1회**: 중단이 확인되면 해당 세션을 한 번만 `FAILED`로 전이하고, 에이전트를 정상 종료시킨다. 재시도 루프는 두지 않는다.
-4. **ECS stopTimeout 여유 확보**: Bedrock 호출 등 단일 체크 지점 사이의 블로킹이 30초를 초과할 수 있으므로, ECS 컨테이너의 `stopTimeout`을 120초로 설정하여 SIGKILL 전에 graceful 경로가 완결될 시간을 확보한다.
-
-이 경로가 동작한 뒤에는 SQS 재전달 메커니즘(상단의 복구 흐름)과 결합되어, 재전달된 메시지는 기존 `FAILED` 세션과 다른 새 세션으로 정상 재처리된다.
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 처리 시작 즉시 메시지 삭제 | 중복 실행 가능성이 낮고 구현이 단순하다. | 태스크 장애 시 복구할 입력이 사라진다. |
+| heartbeat와 stale 세션 스캔 | 메시지 재전달 전에 복구를 시작할 수 있다. | 지연된 heartbeat를 장애로 오판할 수 있고 별도 스캐너가 필요하다. |
+| SQS 재전달 + 세션 claim | SQS의 전달 상태를 복구 신호로 사용하면서 조건부 소유권으로 중복을 막는다. | 재시도는 visibility timeout만큼 늦어지고 처음부터 분석을 반복한다. |
+| 세션 claim + 부작용 lease | 장시간 분석의 reclaim을 유지하면서 외부 쓰기 시작 구간까지 소유권을 확장한다. | lease 만료와 외부 호출 제한 시간을 함께 관리해야 하고 외부 소비자의 멱등성이 필요하다. |
 
 ## Consequences
 
 ### Positive
 
-- **단순성**: heartbeat 스레드, stale 스캔, 조건부 클레임 등 복잡한 복구 로직이 불필요하다
-- **신뢰성**: SQS의 검증된 재전달 메커니즘에 의존하므로 false positive(정상 세션을 stale로 오판)이 없다
-- **CPU 쓰로틀 내성**: heartbeat 방식과 달리 CPU 부하가 높아도 복구 판단에 영향을 주지 않는다
-- **다중 인스턴스 안전**: SQS가 메시지를 하나의 컨슈머에게만 전달하므로 경합이 발생하지 않는다
+- 태스크 장애와 배포 중단 후에도 원본 메시지로 자동 재시도한다.
+- claim을 잃은 실행이 늦게 완료되어 결과를 덮어쓰는 것을 차단한다.
+- reclaim과 외부 쓰기가 겹치는 구간을 부작용 lease로 차단한다.
+- 별도 heartbeat나 세션 스캐너 없이 다중 태스크 경합을 제어한다.
 
 ### Negative
 
-- **재처리 지연**: visibility timeout이 만료될 때까지 기다려야 하므로 크래시 후 복구까지 최대 visibility timeout만큼 지연된다
-- **처음부터 재실행**: 중간 상태를 복원할 수 없으므로 이미 수행한 분석이 반복된다 (CC Headless는 subprocess 기반이라 중간 상태 직렬화 불가)
-- **DDB에 FAILED 세션 누적**: 크래시 후 재처리 시 이전 세션이 FAILED로 남고 새 세션이 생성된다
+- 재처리는 visibility timeout 이후 시작된다.
+- 중간 분석 상태를 이어가지 않고 처음부터 재실행한다.
+- 동일 세션의 이전 시도 기록 일부는 reclaim 시 최신 시도로 대체된다.
+- lease 중 프로세스가 종료되면 만료 전까지 reclaim이 지연된다.
 
 ### Risks
 
-- Visibility timeout이 실제 처리 시간보다 짧으면 처리 중에 메시지가 재전달되어 중복 처리가 발생할 수 있다. `CC_TIMEOUT_SECONDS`보다 50% 이상 여유를 두고 설정한다.
+- visibility timeout이 최대 실행 시간보다 짧으면 정상 실행 중 reclaim이 발생할 수
+  있다. 실행 제한과 큐 timeout을 함께 관리하고 claim token으로 이전 실행의 확정을
+  차단한다.
+- 알림 발행 후 완료 상태 기록이 실패하면 재시도에서 알림이 중복될 수 있다.
+  소비자는 세션 식별자를 멱등성 키로 사용해야 한다.
+- 외부 호출이 lease보다 오래 지속되면 fencing이 약해질 수 있다. 외부 호출 제한
+  시간보다 긴 lease를 사용하고 만료 전에는 reclaim을 차단한다.
 
 ## Related
 
-- [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md) — SQS 메시지 처리 흐름
-- [ADR infra/0003: CC Headless 스택](0003-lambda-cc-headless-stack.md) — CC Headless ECS Fargate 인프라
-- [ADR infra/0005: 실행 트레이스 DynamoDB](0005-execution-trace-dynamodb.md) — 세션 상태 관리
+- [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md)
+- [ADR infra/0003: CC Headless 실행 인프라](0003-lambda-cc-headless-stack.md)
+- [ADR infra/0005: 실행 트레이스](0005-execution-trace-dynamodb.md)

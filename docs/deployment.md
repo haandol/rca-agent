@@ -9,7 +9,7 @@ pnpm cdk diff                 # 변경사항 확인
 pnpm cdk deploy <StackName>   # 특정 스택 배포
 ```
 
-### CDK Stacks (9개)
+### CDK Stacks (10개)
 
 | Stack | Description |
 |-------|-------------|
@@ -22,6 +22,7 @@ pnpm cdk deploy <StackName>   # 특정 스택 배포
 | RcaAgentServiceStack | ECS Fargate — Strands RCA 에이전트 |
 | CcHeadlessStack | ECS Fargate — CC headless RCA 에이전트 |
 | HealthcareServiceStack | ECS Fargate — Healthcare 센서 서비스 + Cloud Map Private DNS |
+| RemediationAgentStack | ECS Fargate — Strands 전용 복구 워커 (기본 desired count 0) |
 
 모든 서비스는 Private subnet에 배포되며, 인바운드 트래픽이 차단됩니다. 자세한 스택 의존관계와 IAM 권한은 [`packages/infra/AGENTS.md`](../packages/infra/AGENTS.md)를 참조하세요.
 
@@ -31,7 +32,7 @@ pnpm cdk deploy <StackName>   # 특정 스택 배포
 
 ## Agent — Fargate (CC Headless)
 
-CC Headless 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, CC CLI를 subprocess로 호출하여 RCA를 수행합니다.
+CC Headless 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, CC CLI가 RCA → 조건부 Remediation → Report 전문 서브 에이전트를 순서대로 호출합니다. 자동 복구는 확정 원인에 한해 Healthcare reset 허용 목록만 실행합니다.
 
 ```bash
 cd packages/cc-headless

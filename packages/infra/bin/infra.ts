@@ -98,6 +98,8 @@ const ccHeadlessStack = new CcHeadlessStack(
     vpc: networkStack.vpc,
     alarmTopic: eventBusStack.alarmTopic,
     notificationTopic: eventBusStack.alarmTopic,
+    healthcareService: healthcareServiceStack.service,
+    healthcareServiceHost: healthcareServiceStack.serviceHost,
     rcaSessionTable: databaseStack.rcaSessionTable,
     evidenceBucket: storageStack.evidenceBucket,
     vectorBucketName: Config.storage.vectorBucket,
@@ -110,6 +112,8 @@ ccHeadlessStack.addDependency(networkStack);
 ccHeadlessStack.addDependency(eventBusStack);
 ccHeadlessStack.addDependency(databaseStack);
 ccHeadlessStack.addDependency(storageStack);
+// Healthcare owns the ingress rule and therefore references the CC security
+// group. The host is a plain DNS string, so no reverse dependency is created.
 
 const remediationAgentStack = new RemediationAgentStack(
   app,
@@ -120,8 +124,7 @@ const remediationAgentStack = new RemediationAgentStack(
     notificationTopic: eventBusStack.alarmTopic,
     healthcareService: healthcareServiceStack.service,
     healthcareServiceHost: healthcareServiceStack.serviceHost,
-    healthcareClusterName: healthcareServiceStack.clusterName,
-    healthcareServiceName: healthcareServiceStack.serviceName,
+    rcaSessionTable: databaseStack.rcaSessionTable,
     imageTag: Config.remediation.imageTag,
     desiredCount: Config.remediation.desiredCount,
   },
@@ -129,10 +132,11 @@ const remediationAgentStack = new RemediationAgentStack(
 remediationAgentStack.addDependency(ecrStack);
 remediationAgentStack.addDependency(networkStack);
 remediationAgentStack.addDependency(eventBusStack);
+remediationAgentStack.addDependency(databaseStack);
 // NOTE: healthcareServiceStack에 명시적 의존을 두지 않는다. 복구 에이전트가
 // Healthcare 서비스의 SG 인그레스를 여는 순간 Healthcare 스택이 Remediation
-// 스택을 참조하게 되어, 반대 방향 의존을 추가하면 순환 참조가 된다. serviceHost·
-// cluster·service 이름은 모두 문자열이라 CFN 교차 참조를 만들지 않는다.
+// 스택을 참조하게 되어, 반대 방향 의존을 추가하면 순환 참조가 된다.
+// serviceHost는 일반 DNS 문자열이라 CFN 교차 참조를 만들지 않는다.
 
 const tags = cdk.Tags.of(app);
 tags.add('namespace', Config.app.ns);
