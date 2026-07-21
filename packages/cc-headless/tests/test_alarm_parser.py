@@ -18,6 +18,9 @@ def test_parse_full_alarm():
             "Period": 60,
             "Threshold": 80.0,
             "ComparisonOperator": "GreaterThanThreshold",
+            "EvaluationPeriods": 3,
+            "DatapointsToAlarm": 2,
+            "TreatMissingData": "notBreaching",
         },
     }
     alarm = parse_alarm(data)
@@ -33,6 +36,16 @@ def test_parse_full_alarm():
     assert alarm.period == 60
     assert alarm.threshold == 80.0
     assert alarm.comparison_operator == "GreaterThanThreshold"
+    assert alarm.evaluation_periods == 3
+    assert alarm.datapoints_to_alarm == 2
+    assert alarm.treat_missing_data == "notBreaching"
+
+
+def test_parse_defaults_datapoints_to_alarm_to_evaluation_periods():
+    alarm = parse_alarm({"Trigger": {"EvaluationPeriods": 4}})
+
+    assert alarm.evaluation_periods == 4
+    assert alarm.datapoints_to_alarm == 4
 
 
 def test_parse_minimal_alarm():
@@ -44,6 +57,9 @@ def test_parse_minimal_alarm():
     assert alarm.state_change_time is None
     assert alarm.metric_name is None
     assert alarm.dimensions == {}
+    assert alarm.evaluation_periods is None
+    assert alarm.datapoints_to_alarm is None
+    assert alarm.treat_missing_data is None
 
 
 def test_parse_empty_alarm():

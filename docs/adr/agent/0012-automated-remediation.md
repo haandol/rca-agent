@@ -62,6 +62,10 @@ dimensions를 배포 시 주입한 Healthcare ECS cluster/service 또는 RDS ins
 관측한다. 서버가 판정한 `NORMALIZED`, `FAILED`, `PENDING` 상태가 복구 결과의
 권위이며 Report 에이전트는 이를 그대로 반영한다. CloudWatch 조회 실패나 관측
 시간 부족은 성공으로 간주하지 않고 `PENDING`으로 남긴다.
+판정은 원본 알람의 period, evaluation periods, datapoints-to-alarm,
+missing-data 정책을 보존한 M-of-N 규칙을 따른다. 복구 이후의 완전한 period만
+사용하며, 필요한 관측 구간이 채워지지 않았거나 missing-data 정책으로 상태를
+확정할 수 없으면 정상화로 추정하지 않고 `PENDING`으로 남긴다.
 
 CC Headless 완료 이벤트는 Strands의 외부 복구 워커 진입 이벤트와 분리한다. 같은
 RCA에서 내부 복구와 외부 복구가 중복 실행되거나 외부 워커의 더 넓은 액션으로
@@ -120,6 +124,7 @@ Strands 검증기는 가설의 초기 복구 유형과 별도로 증거 기반
 - CC Headless 태스크는 Healthcare 서비스로의 제한된 네트워크 접근이 필요하다.
 - 메트릭 반영 지연 때문에 즉시 검증 결과가 관측 대기로 남을 수 있다.
 - 제한된 관측 시간만 사용하므로 늦게 정상화되는 장애는 후속 관측이 필요하다.
+- 원본 알람의 평가 구간이 길수록 M-of-N 정상화 판정까지 더 오래 걸릴 수 있다.
 - 표준 SNS의 at-least-once 전달 때문에 결과 이벤트 소비자는 `publication_id`
   중복 제거를 유지해야 한다.
 

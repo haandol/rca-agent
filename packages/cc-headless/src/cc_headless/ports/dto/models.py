@@ -17,12 +17,16 @@ class AlarmContext:
     period: int | None = None
     threshold: float | None = None
     comparison_operator: str | None = None
+    evaluation_periods: int | None = None
+    datapoints_to_alarm: int | None = None
+    treat_missing_data: str | None = None
 
 
 def parse_alarm(data: dict) -> AlarmContext:
     trigger = data.get("Trigger", {}) or {}
     dims_raw = trigger.get("Dimensions") or []
     dimensions = {d["name"]: d["value"] for d in dims_raw if "name" in d and "value" in d}
+    evaluation_periods = trigger.get("EvaluationPeriods")
 
     return AlarmContext(
         alarm_name=data.get("AlarmName", "UnknownAlarm"),
@@ -36,6 +40,9 @@ def parse_alarm(data: dict) -> AlarmContext:
         period=trigger.get("Period"),
         threshold=trigger.get("Threshold"),
         comparison_operator=trigger.get("ComparisonOperator"),
+        evaluation_periods=evaluation_periods,
+        datapoints_to_alarm=trigger.get("DatapointsToAlarm", evaluation_periods),
+        treat_missing_data=trigger.get("TreatMissingData"),
     )
 
 

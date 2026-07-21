@@ -43,17 +43,17 @@
 
 | ID | 영역 | 요약 | 상태 | 담당/PR |
 |---|---|---|---|---|
-| H-01 | Strands | 실패·중단 세션 재전달이 RCA를 재실행하지 못함 | VERIFIED | 로컬 변경(미커밋) |
-| H-02 | Strands | 상태 전이가 claim으로 fencing되지 않음 | VERIFIED | 로컬 변경(미커밋) |
-| H-03 | Strands Remediation | 복구 액션 유형이 검증 증거가 아닌 초기 모델 분류에 의존 | VERIFIED | 로컬 변경(미커밋) |
-| H-04 | Strands Remediation | LLM boolean을 정상화의 권위 있는 판정으로 사용 | VERIFIED | 로컬 변경(미커밋) |
-| H-05 | Strands | 선언된 LLM timeout이 실제 실행 시간을 제한하지 못함 | VERIFIED | 로컬 변경(미커밋) |
-| H-06 | Strands | accepted-review grace 경로가 확정 가설을 미확정으로 보고 가능 | VERIFIED | 로컬 변경(미커밋) |
-| H-07 | Strands Remediation | 복구 완료 저장 전에 결과 이벤트를 발행 | VERIFIED | 로컬 변경(미커밋) |
-| H-08 | CC Remediation | 복구가 서버 소유 알람 대상과 바인딩되지 않음 | VERIFIED | 로컬 변경(미커밋) |
-| H-09 | CC | 필수 플레이북 저장 실패 후에도 세션 완료·메시지 삭제 | VERIFIED | 로컬 변경(미커밋) |
-| H-10 | CC | 분기 가설을 후속 validation loop에서 확정할 수 없음 | VERIFIED | 로컬 변경(미커밋) |
-| H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | OPEN | - |
+| H-01 | Strands | 실패·중단 세션 재전달이 RCA를 재실행하지 못함 | VERIFIED | `e4e0776` |
+| H-02 | Strands | 상태 전이가 claim으로 fencing되지 않음 | VERIFIED | `e4e0776` |
+| H-03 | Strands Remediation | 복구 액션 유형이 검증 증거가 아닌 초기 모델 분류에 의존 | VERIFIED | `e4e0776` |
+| H-04 | Strands Remediation | LLM boolean을 정상화의 권위 있는 판정으로 사용 | VERIFIED | `e4e0776` |
+| H-05 | Strands | 선언된 LLM timeout이 실제 실행 시간을 제한하지 못함 | VERIFIED | `e4e0776` |
+| H-06 | Strands | accepted-review grace 경로가 확정 가설을 미확정으로 보고 가능 | VERIFIED | `e4e0776` |
+| H-07 | Strands Remediation | 복구 완료 저장 전에 결과 이벤트를 발행 | VERIFIED | `e4e0776` |
+| H-08 | CC Remediation | 복구가 서버 소유 알람 대상과 바인딩되지 않음 | VERIFIED | `e4e0776` |
+| H-09 | CC | 필수 플레이북 저장 실패 후에도 세션 완료·메시지 삭제 | VERIFIED | `e4e0776` |
+| H-10 | CC | 분기 가설을 후속 validation loop에서 확정할 수 없음 | VERIFIED | `e4e0776` |
+| H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | VERIFIED | 본 커밋 |
 | H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | OPEN | - |
 | H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | OPEN | - |
 | H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | OPEN | - |
@@ -77,7 +77,7 @@
     `FAILED → 재전달 → COMPLETED` 통합 테스트 통과
   - Agent tests: 429 passed, 4 xfailed
   - `pnpm verify`, infra build, dashboard build 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: expected state 원자 검증은 H-02, 알림 outbox는 H-07에서
   계속 추적한다.
 - **영향**: 일시적인 LLM, AWS API, 저장소 오류로 `FAILED`가 된 RCA는 SQS가
@@ -105,7 +105,7 @@
   - 이전 claim의 SCOPING, FAILED, COMPLETED 쓰기 차단 및 새 claim 상태 보존 확인
   - Agent tests: 439 passed, 4 xfailed
   - `pnpm verify`, Ruff, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 동일 claim에서 상태가 변경된 뒤 같은 source state로 되돌아오는
   ABA 경쟁은 별도 transition version 없이는 탐지할 수 없다. 현재 상태 머신은
   terminal 상태의 역전이를 금지하고 단일 claim 파이프라인을 전제로 한다.
@@ -135,7 +135,7 @@
     `UNSUPPORTED` fail-closed 테스트 통과
   - Agent tests: 448 passed, 4 xfailed
   - `pnpm verify`, 오프라인 평가 6건, Ruff, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 실제 Bedrock 모델과 AWS 데이터로 수행하는 선택적 라이브 평가는
   실행하지 않았다.
 - **영향**: 실제 CPU 원인 가설이 초기 생성 단계에서 DB leak로 잘못 라벨링되면,
@@ -167,7 +167,7 @@
     실패, 구조화 알림/저장 상태 전파 테스트 통과
   - Agent tests: 489 passed, 4 xfailed
   - `pnpm verify`, 오프라인 평가 6건, Ruff, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 실제 CloudWatch metric ingestion 지연과 Bedrock 모델을 포함한
   선택적 라이브 검증은 실행하지 않았다.
 - **영향**: CloudWatch 조회 실패, 도구 미호출, datapoint 부족 상황에서도 모델이
@@ -197,7 +197,7 @@
     signal handler 복구, 기존 timer 보존, 다중 호출 누적 deadline 테스트 통과
   - Agent tests: 505 passed, 4 xfailed
   - `pnpm verify`, 오프라인 평가 6건, Ruff, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: hard timeout은 배포 환경인 POSIX 메인 스레드를 전제로 한다.
   그 외 실행 환경은 제한 없는 background 실행 대신 명시적으로 실패한다.
 - **영향**: 시간 예산, SQS visibility timeout, remediation claim 시간을 초과해
@@ -227,7 +227,7 @@
     time-budget 종료 회귀 테스트 통과
   - Agent tests: 507 passed, 4 xfailed
   - `pnpm verify`, 오프라인 평가 6건, Ruff, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 없음
 - **영향**: review gate에서 수용된 고신뢰 가설이 최종 보고서와 복구 gate에서는
   미확정으로 처리될 수 있다.
@@ -258,7 +258,7 @@
     publication 경합 시 SQS ack 차단 확인
   - Agent tests: 516 passed, 4 xfailed
   - `pnpm verify`, Ruff, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 표준 SNS는 at-least-once이므로 publish 성공 직후 프로세스가
   종료되면 동일 payload가 재발행될 수 있다. 소비자는 결정적 `publication_id`를
   멱등성 키로 사용해야 한다.
@@ -287,7 +287,7 @@
   - CC tests: 190 passed
   - Infra 대상 tests: 5 passed, infra build 통과
   - 계약 테스트 16건, 오프라인 평가 6건, Ruff, typecheck, `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: slow-query `ReadLatency` 알람 자체의 배포 계약은 H-16에서 계속
   추적한다. 해당 알람이 없으면 자동 복구가 시작되지 않는다.
 - **영향**: Healthcare와 무관한 알람도 모델이 허용 fault로 분류하면 Healthcare
@@ -315,7 +315,7 @@
   - CC tests: 192 passed
   - `pnpm verify`, 계약 테스트 16건, 오프라인 평가 6건, Ruff,
     `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 없음
 - **영향**: ADR상 필수인 플레이북이 저장되지 않았는데도 세션이 `COMPLETED`가 되고
   SQS 메시지가 삭제된다.
@@ -342,7 +342,7 @@
   - CC tests: 211 passed
   - `pnpm verify`, 계약 테스트 16건, 오프라인 평가 6건, Ruff,
     `git diff --check` 통과
-- **커밋/PR**: 로컬 변경(미커밋)
+- **커밋/PR**: `e4e0776`
 - **남은 위험**: 없음
 - **영향**: 첫 validation loop에서 생성한 child hypothesis를 다음 loop에서
   확정하면 완료 검증이 실패한다.
@@ -359,13 +359,28 @@
 
 ### H-11 CC CloudWatch M-of-N 판정 누락
 
+- **상태**: `VERIFIED` (2026-07-21)
+- **수정**: SNS 알람 payload에서 evaluation periods, datapoints-to-alarm,
+  missing-data 정책을 보존하고, reset 이후 완전히 종료된 최신 N개 period만
+  원본 M-of-N 조건으로 평가한다. 누락 정책이 `breaching` 또는
+  `notBreaching`일 때만 누락 period를 채우며, 관측 구간 부족과 확정할 수 없는
+  정책은 `PENDING`으로 처리한다.
+- **검증**:
+  - `EvaluationPeriods=2`에서 정상 datapoint 하나만 관측된 회귀 테스트 통과
+  - M-of-N 정상화/실패, 누락 정책, partial·pre-reset·범위 밖 datapoint,
+    중복·정렬, strict threshold, 잘못된 M/N 테스트 통과
+  - CC Headless tests: 232 passed
+  - Ruff lint/format 및 `git diff --check` 통과
+- **커밋/PR**: 본 커밋
+- **남은 위험**: CloudWatch metric 수집 지연 또는 `ignore`/`missing` 정책에서는
+  제한된 재시도 안에 판정을 확정하지 못해 후속 관측이 필요할 수 있다.
 - **영향**: 실제 알람이 아직 OK 전환 조건을 충족하지 않았는데 복구 결과를
   `NORMALIZED`로 보고할 수 있다.
 - **원인**: `EvaluationPeriods`와 `DatapointsToAlarm`을 보존하지 않고 하나의
   non-breaching datapoint를 정상화로 처리한다.
 - **근거**:
-  - `packages/cc-headless/src/cc_headless/ports/dto/models.py:7`
-  - `packages/cc-headless/src/cc_headless/services/post_reset_verification.py:82`
+  - `packages/cc-headless/src/cc_headless/ports/dto/models.py:20`
+  - `packages/cc-headless/src/cc_headless/services/post_reset_verification.py:126`
   - `packages/infra/lib/stacks/healthcare-service-stack.ts:201`
 - **재현 결과**: `EvaluationPeriods=2`인 알람에서 정상 datapoint 하나만으로
   `NORMALIZED`가 반환됐다.
