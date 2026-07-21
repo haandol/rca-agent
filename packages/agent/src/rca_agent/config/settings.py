@@ -57,4 +57,11 @@ SESSION_TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "90"))
 
 ALARM_STALENESS_SECONDS = int(os.environ.get("ALARM_STALENESS_SECONDS", "1800"))
 
+# Remediation Agent (별도 배포 — ADR agent/0012)
+REMEDIATION_QUEUE_URL = os.environ.get("REMEDIATION_QUEUE_URL", "")
+REMEDIATION_SQS_POLL_WAIT_SECONDS = int(os.environ.get("REMEDIATION_SQS_POLL_WAIT_SECONDS", "20"))
+HEALTHCARE_SERVICE_HOST = os.environ.get("HEALTHCARE_SERVICE_HOST", "")
+ECS_CLUSTER_NAME = os.environ.get("ECS_CLUSTER_NAME", "")
+ECS_SERVICE_NAME = os.environ.get("ECS_SERVICE_NAME", "")
+
 ENGINE = "strands"

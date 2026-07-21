@@ -260,6 +260,16 @@ class VerificationResult(BaseModel):
     remaining_issues: list[str] = Field(default_factory=list)
 
 
+class AlarmContext(BaseModel):
+    """Minimal alarm metric context carried in the RCA notification so the
+    remediation agent can pick verification metrics without a session lookup."""
+
+    alarm_name: str = ""
+    namespace: str = ""
+    metric_name: str = ""
+    threshold: float | None = None
+
+
 class NotificationMessage(BaseModel):
     rca_id: str
     root_cause_summary: str
@@ -269,6 +279,11 @@ class NotificationMessage(BaseModel):
     elapsed_seconds: int = 0
     confirmed: bool = True
     playbook: dict | None = None
+    root_cause: str = ""
+    alarm_context: AlarmContext | None = None
+    # SNS routing attribute — remediation queue subscribes to "rca_complete"
+    # only, so remediation-result notifications never loop back (ADR agent/0012).
+    event_type: str = "rca_complete"
 
 
 class RcaSession(BaseModel):

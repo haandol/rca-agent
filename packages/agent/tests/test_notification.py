@@ -33,6 +33,26 @@ class TestBuildNotification:
         assert "manual review" in msg.root_cause_summary.lower()
         assert msg.severity == "medium"
 
+    def test_carries_alarm_context_for_remediation(self):
+        from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger
+
+        alarm = AlarmPayload(
+            alarm_name="Healthcare-RdsHighConnections",
+            trigger=AlarmTrigger(
+                metric_name="DatabaseConnections",
+                namespace="AWS/RDS",
+                threshold=30.0,
+            ),
+        )
+        report = _make_report(confirmed=True)
+        msg = build_notification(report, "reports/rca-1.md", 600, alarm=alarm)
+
+        assert msg.event_type == "rca_complete"
+        assert msg.root_cause == "Memory leak"
+        assert msg.alarm_context is not None
+        assert msg.alarm_context.metric_name == "DatabaseConnections"
+        assert msg.alarm_context.threshold == 30.0
+
 
 class TestSendNotification:
     def test_skips_when_not_configured(self):

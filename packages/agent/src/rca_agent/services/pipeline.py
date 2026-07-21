@@ -259,6 +259,7 @@ class PipelineOrchestrator:
             scoping_result,
             best_hypothesis,
             confirmed,
+            alarm=alarm,
             hypothesis_path=[best_hypothesis.description] if best_hypothesis else [],
             evidence_texts=[e for e in state.evidence_map.values() if e],
             rejected_descriptions=state.rejected_descriptions,
@@ -820,6 +821,7 @@ class PipelineOrchestrator:
         best_hypothesis,
         confirmed,
         *,
+        alarm=None,
         hypothesis_path,
         evidence_texts,
         rejected_descriptions,
@@ -866,6 +868,7 @@ class PipelineOrchestrator:
                 report_s3_key,
                 elapsed,
                 playbook=playbook,
+                alarm=alarm,
             )
             c.notification.send(notification)
             s.output_summary = f"소요시간={elapsed}초"

@@ -17,7 +17,7 @@
         "docs/adr/agent/0015-hexagonal-architecture.md",
         "docs/adr/agent/0016-rca-evaluation-test-harness.md"
       ],
-      "lastSyncedAt": "2026-07-21T00:00:00Z"
+      "lastSyncedAt": "2026-07-21T00:00:01Z"
     },
     "tools": {
       "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",

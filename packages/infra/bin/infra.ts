@@ -9,6 +9,7 @@ import { RcaAgentServiceStack } from '../lib/stacks/rca-agent-service-stack';
 import { RdsStack } from '../lib/stacks/rds-stack';
 import { HealthcareServiceStack } from '../lib/stacks/healthcare-service-stack';
 import { CcHeadlessStack } from '../lib/stacks/cc-headless-stack';
+import { RemediationAgentStack } from '../lib/stacks/remediation-agent-stack';
 import { Config } from '../config/loader';
 
 const app = new cdk.App({
@@ -109,6 +110,29 @@ ccHeadlessStack.addDependency(networkStack);
 ccHeadlessStack.addDependency(eventBusStack);
 ccHeadlessStack.addDependency(databaseStack);
 ccHeadlessStack.addDependency(storageStack);
+
+const remediationAgentStack = new RemediationAgentStack(
+  app,
+  `${Config.app.ns}RemediationAgentStack`,
+  {
+    env,
+    vpc: networkStack.vpc,
+    notificationTopic: eventBusStack.alarmTopic,
+    healthcareService: healthcareServiceStack.service,
+    healthcareServiceHost: healthcareServiceStack.serviceHost,
+    healthcareClusterName: healthcareServiceStack.clusterName,
+    healthcareServiceName: healthcareServiceStack.serviceName,
+    imageTag: Config.remediation.imageTag,
+    desiredCount: Config.remediation.desiredCount,
+  },
+);
+remediationAgentStack.addDependency(ecrStack);
+remediationAgentStack.addDependency(networkStack);
+remediationAgentStack.addDependency(eventBusStack);
+// NOTE: healthcareServiceStack에 명시적 의존을 두지 않는다. 복구 에이전트가
+// Healthcare 서비스의 SG 인그레스를 여는 순간 Healthcare 스택이 Remediation
+// 스택을 참조하게 되어, 반대 방향 의존을 추가하면 순환 참조가 된다. serviceHost·
+// cluster·service 이름은 모두 문자열이라 CFN 교차 참조를 만들지 않는다.
 
 const tags = cdk.Tags.of(app);
 tags.add('namespace', Config.app.ns);

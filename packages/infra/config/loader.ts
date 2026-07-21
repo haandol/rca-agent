@@ -35,6 +35,12 @@ const ConfigSchema = z.object({
       imageTag: z.string().default('latest'),
     })
     .required(),
+  remediation: z
+    .object({
+      imageTag: z.string().default('latest'),
+      desiredCount: z.number().int().min(0).max(1).default(0),
+    })
+    .required(),
   storage: z
     .object({
       evidenceBucket: z.string(),

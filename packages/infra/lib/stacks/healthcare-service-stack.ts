@@ -22,6 +22,7 @@ export class HealthcareServiceStack extends cdk.Stack {
   public readonly serviceName: string;
   public readonly clusterName: string;
   public readonly serviceHost: string;
+  public readonly service: ecs.FargateService;
 
   constructor(scope: Construct, id: string, props: IProps) {
     super(scope, id, props);
@@ -39,6 +40,7 @@ export class HealthcareServiceStack extends cdk.Stack {
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props);
     const service = this.newService(ns, cluster, taskDefinition, props, namespace);
+    this.service = service;
     this.newAlarms(ns, props, service);
   }
 

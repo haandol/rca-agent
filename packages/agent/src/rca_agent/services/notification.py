@@ -4,13 +4,31 @@ import json
 import logging
 
 from rca_agent.config.settings import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_ARN
-from rca_agent.ports.dto.models import NotificationMessage, Playbook, RcaReport
+from rca_agent.ports.dto.models import (
+    AlarmContext,
+    AlarmPayload,
+    NotificationMessage,
+    Playbook,
+    RcaReport,
+)
 from rca_agent.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _BASE_DELAY = 1.0
+
+
+def _build_alarm_context(alarm: AlarmPayload | None) -> AlarmContext | None:
+    if alarm is None:
+        return None
+    trigger = alarm.trigger
+    return AlarmContext(
+        alarm_name=alarm.alarm_name,
+        namespace=trigger.namespace if trigger else "",
+        metric_name=trigger.metric_name if trigger else "",
+        threshold=trigger.threshold if trigger else None,
+    )
 
 
 def build_notification(
@@ -20,6 +38,7 @@ def build_notification(
     *,
     playbook: Playbook | None = None,
     dashboard_url: str = "",
+    alarm: AlarmPayload | None = None,
 ) -> NotificationMessage:
     playbook_data = None
     if playbook:
@@ -46,6 +65,8 @@ def build_notification(
         elapsed_seconds=elapsed_seconds,
         confirmed=report.root_cause_confirmed,
         playbook=playbook_data,
+        root_cause=report.root_cause,
+        alarm_context=_build_alarm_context(alarm),
     )
 
 

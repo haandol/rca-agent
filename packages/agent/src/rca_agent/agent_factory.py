@@ -25,6 +25,7 @@ from rca_agent.prompts.prioritization import PRIORITIZATION_SYSTEM_PROMPT
 from rca_agent.prompts.report import REPORT_SYSTEM_PROMPT
 from rca_agent.prompts.scoping import SCOPING_SYSTEM_PROMPT
 from rca_agent.prompts.validation import VALIDATION_SYSTEM_PROMPT
+from rca_agent.prompts.verification import VERIFICATION_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -201,3 +202,22 @@ def create_playbook_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
         model = create_planning_model()
     return Agent(model=model, system_prompt=PLAYBOOK_SYSTEM_PROMPT)
+
+
+def create_verification_agent(
+    *,
+    model: BedrockModel | None = None,
+    mcp_clients: list[MCPClient] | None = None,
+) -> Agent:
+    if model is None:
+        model = create_execution_model()
+
+    tools: list = []
+    if mcp_clients:
+        tools.extend(mcp_clients)
+
+    return Agent(
+        model=model,
+        system_prompt=VERIFICATION_SYSTEM_PROMPT,
+        tools=tools,
+    )

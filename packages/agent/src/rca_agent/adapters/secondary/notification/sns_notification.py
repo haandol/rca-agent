@@ -51,6 +51,10 @@ class SnsNotificationAdapter(NotificationPort):
         }
         if notification.playbook:
             message_body["playbook"] = notification.playbook
+        if notification.root_cause:
+            message_body["root_cause"] = notification.root_cause
+        if notification.alarm_context is not None:
+            message_body["alarm_context"] = notification.alarm_context.model_dump()
 
         for attempt in range(_MAX_RETRIES):
             try:
@@ -58,6 +62,12 @@ class SnsNotificationAdapter(NotificationPort):
                     TopicArn=SNS_NOTIFICATION_TOPIC_ARN,
                     Subject=f"RCA Complete: {notification.rca_id}",
                     Message=json.dumps(message_body),
+                    MessageAttributes={
+                        "event_type": {
+                            "DataType": "String",
+                            "StringValue": notification.event_type,
+                        },
+                    },
                 )
                 logger.info("Notification sent for RCA %s", notification.rca_id)
                 return True

@@ -5,7 +5,7 @@ Updated: 2026-07-21
 
 ## Status
 
-Proposed
+Accepted (2026-07-21 — 진입점·인프라 배선 완료, 피처 플래그 기본 off)
 
 ## Context
 
@@ -54,6 +54,10 @@ Remediation과 Verification을 RCA 에이전트에서 제거하고, **별도 Rem
 
 7. **서비스 디스커버리**: Cloud Map Private DNS를 통해 Healthcare 서비스의 내부 엔드포인트를 해석한다.
 
+8. **알림 메시지 계약 확장**: RCA 완료 알림에 알람 메트릭 컨텍스트(알람명, 네임스페이스, 메트릭명, 임계값)를 포함한다. Remediation 에이전트는 이 컨텍스트로 복구 후 검증 대상 메트릭을 결정한다. 세션 레코드는 알람 트리거 상세를 보관하지 않으므로, 검증에 필요한 최소 정보를 알림 이벤트에 실어 전달한다.
+
+9. **확정 근본원인만 자동 복구**: `confirmed=false`(근본원인 미확정) 알림은 자동 복구 대상에서 제외하고 사람 검토로 넘긴다. 미확정 원인에 대한 쓰기 액션 자동 실행을 기본 차단한다.
+
 ### 전체 흐름
 
 ```mermaid
@@ -98,17 +102,24 @@ flowchart LR
 
 ## Implementation Status
 
-**미구현 — 설계만 완료된 상태.**
+**배선 완료 — 피처 플래그(desired count)로 기본 비활성.**
 
-현재 구현된 부분:
-- RCA 에이전트(Strands)가 F9(Notification)에서 플레이북을 포함한 SNS 알림을 발행 (**구현 완료**)
-- Healthcare 장애 리셋과 ECS 강제 배포를 수행하는 복구 서비스 로직 (**모듈 준비됨, 파이프라인 미연결**)
-- 복구 후 메트릭 정상화를 확인하는 검증 서비스 로직 (**모듈 준비됨, 파이프라인 미연결**)
+구현된 부분:
+- RCA 에이전트(Strands)가 Notification에서 플레이북·근본원인·알람 메트릭 컨텍스트를 포함한 SNS 알림을 발행 (**구현 완료**)
+- Healthcare 장애 리셋과 ECS 강제 배포를 수행하는 복구 서비스 로직 (**구현 완료, 파이프라인 연결됨**)
+- 복구 후 메트릭 정상화를 확인하는 검증 서비스 로직 (**구현 완료, 파이프라인 연결됨**)
+- SQS 폴링 → 복구 실행 → 검증 → 결과 알림을 연결하는 Remediation Agent 진입점 (**구현 완료**)
+- Remediation Agent ECS Fargate 서비스, 전용 SQS Queue + DLQ, SNS → SQS 구독 (**CDK 스택 작성 완료**)
 
-미구현 부분:
-- Remediation Agent ECS Fargate 서비스 및 전용 SQS Queue (인프라)
-- SNS → SQS 구독 설정
-- SQS 폴링 → 복구 실행 → 검증을 연결하는 Remediation Agent 진입점
+미배포/후속 과제:
+- Remediation Agent는 desired count 0으로 기본 배포되지 않는다 (`remediation.desiredCount=1`로 활성화). 실제 `cdk deploy`는 별도 단계로 남긴다.
+- 검증 결과를 DynamoDB 세션 파티션에 스팬으로 기록하는 트레이싱 연동은 후속 과제로 남긴다 (현재는 로그 + SNS 알림).
+
+### 결정 사항 (배선)
+
+- **루프 방지**: 복구 결과 알림은 `event_type=remediation_complete`로 발행하고, Remediation Queue의 SNS 구독은 `event_type=rca_complete`만 허용하는 필터 정책을 둔다. 같은 SNS Topic을 재사용하되 복구 결과가 큐로 되돌아오지 않는다.
+- **확정 원인만 자동 복구**: `confirmed=false` 알림은 복구 대상에서 제외한다.
+- **검증 대상 메트릭**: 세션 레코드가 알람 트리거를 보관하지 않으므로, 검증에 필요한 알람 컨텍스트를 알림 이벤트에 실어 Remediation Agent로 전달한다.
 
 CC Headless의 후반 단계는 복구 권고와 검증 계획만 작성한다. 실제 복구 실행과 사후 검증은 Strands와 동일하게 별도 Remediation Agent가 담당한다.
 

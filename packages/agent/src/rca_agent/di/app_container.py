@@ -6,7 +6,10 @@ import boto3
 
 from rca_agent.config.settings import (
     DYNAMODB_TABLE_NAME,
+    ECS_CLUSTER_NAME,
+    ECS_SERVICE_NAME,
     GITHUB_PERSONAL_ACCESS_TOKEN,
+    HEALTHCARE_SERVICE_HOST,
     S3_EVIDENCE_BUCKET,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
@@ -50,8 +53,10 @@ class AppContainer(Container):
         self._branching_agent = None
         self._report_agent = None
         self._playbook_agent = None
+        self._verification_agent = None
         self._scoping_mcp_clients = None
         self._evidence_mcp_clients = None
+        self._verification_mcp_clients = None
 
     # ── AWS Clients (lazy) ─────────────────────────────────────────
 
@@ -221,6 +226,38 @@ class AppContainer(Container):
 
             self._playbook_agent = create_playbook_agent()
         return self._playbook_agent
+
+    # ── Remediation Agent (별도 배포 — ADR agent/0012) ─────────────
+
+    @property
+    def verification_mcp_clients(self):
+        if self._verification_mcp_clients is None:
+            from rca_agent.agent_factory import create_cloudwatch_mcp_client
+
+            self._verification_mcp_clients = [create_cloudwatch_mcp_client()]
+        return self._verification_mcp_clients
+
+    @property
+    def verification_agent(self):
+        if self._verification_agent is None:
+            from rca_agent.agent_factory import create_verification_agent
+
+            self._verification_agent = create_verification_agent(
+                mcp_clients=self.verification_mcp_clients,
+            )
+        return self._verification_agent
+
+    @property
+    def healthcare_service_host(self) -> str:
+        return HEALTHCARE_SERVICE_HOST
+
+    @property
+    def ecs_cluster_name(self) -> str:
+        return ECS_CLUSTER_NAME
+
+    @property
+    def ecs_service_name(self) -> str:
+        return ECS_SERVICE_NAME
 
     def cleanup(self) -> None:
         pass

@@ -17,6 +17,11 @@ imageTag = "latest"
 [ccHeadless]
 imageTag = "latest"
 
+[remediation]
+imageTag = "latest"
+# 0 = 복구 에이전트 미배포(알림만), 1 = 자동 복구 활성화 (ADR agent/0012)
+desiredCount = 0
+
 [storage]
 evidenceBucket = "rca-agent-dev-evidence"
 vectorBucket = "rca-agent-dev-vectors"
