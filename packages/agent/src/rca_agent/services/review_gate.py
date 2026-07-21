@@ -1,4 +1,4 @@
-"""Accepted Review Gate — ADR agent/0002.
+"""Accepted Review Gate.
 
 매 검증 루프 진입 직전 실행되는 순수 로직 게이트.
 채택(CONFIRMED) 가설이 있을 때 추가 탐색이 필요한지 판정하여

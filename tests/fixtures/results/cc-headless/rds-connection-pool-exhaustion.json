@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "rds-connection-pool-exhaustion",
+  "engine": "cc-headless",
+  "rootCause": "Application requests saturated the database pool and reached the configured maximum.",
+  "evidenceIds": ["pool-timeout-logs", "db-connections-maxed"],
+  "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
+  "remediation": {
+    "summary": "Adjust connection pool capacity and enforce a bounded acquisition timeout.",
+    "safe": true,
+    "safeguards": {
+      "preconditions": "Confirm database capacity, current pool saturation, and the target service configuration.",
+      "approval": "Require the database or service owner to approve the capacity change.",
+      "rollback": "Restore the prior pool settings if database load, timeout rate, or errors worsen.",
+      "verification": "Verify pool utilization, acquisition timeouts, database connections, and request latency."
+    }
+  }
+}

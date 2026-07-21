@@ -1,11 +1,11 @@
 # ADR 0012: 자동 복구(Remediation) — 별도 에이전트로 분리한 이벤트 기반 복구
 
 Date: 2026-04-23
-Updated: 2026-04-24
+Updated: 2026-07-21
 
 ## Status
 
-Accepted
+Proposed
 
 ## Context
 
@@ -24,13 +24,21 @@ Accepted
 - **독립 배포 불가**: 복구 로직 변경 시 RCA 에이전트 전체를 재배포해야 함
 - **독립 스케일링 불가**: 복구 작업의 부하가 RCA 분석 리소스에 영향
 
+## Decision Drivers
+
+- 분석 완료 여부와 복구 성공 여부는 서로 독립적인 상태와 장애 경계를 가져야 한다.
+- 서비스·인프라 쓰기 권한은 읽기 중심 RCA 실행 엔진과 분리되어야 한다.
+- 중복 이벤트에도 같은 복구가 안전하게 재시도될 수 있어야 한다.
+- 복구 실행, 승인, 롤백, 사후 검증 정책을 RCA 엔진과 독립적으로 배포해야 한다.
+- Remediation Agent가 없는 환경에서도 RCA 보고서와 플레이북 생성은 정상 완료되어야 한다.
+
 ## Decision
 
 Remediation과 Verification을 RCA 에이전트에서 제거하고, **별도 Remediation 에이전트**로 분리한다. 두 시스템은 SNS → SQS 이벤트로 연결된다.
 
 ### 핵심 결정사항
 
-1. **RCA 에이전트 책임 축소**: RCA 에이전트는 분석(F1~F6) → 보고서(F7) → 플레이북(F8) → 알림(F9)까지만 수행한다. 알림 시 플레이북 정보를 SNS 메시지에 포함한다.
+1. **RCA 실행 엔진 책임 축소**: Strands와 CC Headless는 분석 → 보고서 → 플레이북 → 알림까지만 수행한다. 알림 시 플레이북과 복구 권고, 검증 계획을 포함하며 서비스·인프라 변경은 직접 실행하지 않는다.
 
 2. **이벤트 기반 연결**: RCA 완료 시 기존 SNS Notification Topic에 플레이북을 포함한 메시지를 발행한다. Remediation 에이전트는 전용 SQS Queue로 이 이벤트를 구독한다.
 
@@ -57,6 +65,14 @@ flowchart LR
     REM -->|메트릭 검증| CW["CloudWatch MCP"]
     REM -->|결과 기록| DDB["DynamoDB"]
 ```
+
+## 대안 검토
+
+| 대안 | Decision Drivers 대비 장점 | Decision Drivers 대비 단점 및 미채택 이유 |
+|------|---------------------------|-------------------------------------------|
+| 각 RCA 엔진이 복구와 검증까지 동기 실행 | 구현 경로가 짧고 분석 직후 복구를 시작할 수 있다. | 분석과 쓰기 권한이 결합되고 복구 실패가 RCA 세션에 전파되어 장애 격리와 독립 배포 요구를 충족하지 못한다. |
+| 운영자가 보고서를 보고 수동 복구 | 승인과 변경 통제가 명확하고 별도 실행 인프라가 필요 없다. | 야간 대응과 반복 장애에서 MTTR 병목이 유지되며 멱등 자동화 요구를 충족하지 못한다. |
+| SNS와 전용 SQS를 사용하는 별도 Remediation Agent | RCA 완료와 복구 실행을 비동기로 분리하고 독립 권한, 재시도, DLQ, 배포 주기를 적용할 수 있다. | 인프라와 상태 추적이 늘어나지만 모든 Decision Driver를 충족한다. |
 
 ## Consequences
 
@@ -86,15 +102,15 @@ flowchart LR
 
 현재 구현된 부분:
 - RCA 에이전트(Strands)가 F9(Notification)에서 플레이북을 포함한 SNS 알림을 발행 (**구현 완료**)
-- `remediation.py` 모듈: Healthcare 장애 리셋 API 호출, ECS 강제 배포 로직 (**모듈 준비됨, 파이프라인 미연결**)
-- `verification.py` 모듈: 복구 후 메트릭 정상화 검증 (**모듈 준비됨, 파이프라인 미연결**)
+- Healthcare 장애 리셋과 ECS 강제 배포를 수행하는 복구 서비스 로직 (**모듈 준비됨, 파이프라인 미연결**)
+- 복구 후 메트릭 정상화를 확인하는 검증 서비스 로직 (**모듈 준비됨, 파이프라인 미연결**)
 
 미구현 부분:
 - Remediation Agent ECS Fargate 서비스 및 전용 SQS Queue (인프라)
 - SNS → SQS 구독 설정
-- Remediation Agent의 `main.py` 진입점 (SQS 폴링 → 복구 실행 → 검증)
+- SQS 폴링 → 복구 실행 → 검증을 연결하는 Remediation Agent 진입점
 
-CC Headless는 프롬프트 내에서 직접 복구를 수행하므로(10~11단계) 별도 Remediation Agent가 불필요하다.
+CC Headless의 후반 단계는 복구 권고와 검증 계획만 작성한다. 실제 복구 실행과 사후 검증은 Strands와 동일하게 별도 Remediation Agent가 담당한다.
 
 ## Related
 

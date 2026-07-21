@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -20,6 +18,7 @@ from rca_agent.ports.dto.models import (
     ScopingResult,
 )
 from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -33,7 +32,7 @@ MAX_HYPOTHESES_PER_LEVEL = 5
 class HypothesisOutput(BaseModel):
     """Structured output model for the hypothesis generation agent."""
 
-    hypotheses: list[_HypothesisItem] = Field(max_length=MAX_HYPOTHESES_PER_LEVEL)
+    hypotheses: list[_HypothesisItem] = Field(min_length=3, max_length=MAX_HYPOTHESES_PER_LEVEL)
 
 
 class _HypothesisItem(BaseModel):
@@ -120,18 +119,18 @@ def run_hypothesis_generation(
     last_error: Exception | None = None
 
     for attempt in range(max_retries):
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_invoke_hypothesis_agent, agent, user_prompt)
-            try:
-                output = future.result(timeout=timeout_seconds)
-                break
-            except FuturesTimeoutError:
-                logger.warning("Hypothesis generation timed out (attempt %d/%d)", attempt + 1, max_retries)
-                future.cancel()
-                last_error = TimeoutError("Hypothesis generation timed out")
-            except Exception as exc:
-                logger.warning("Hypothesis generation failed (attempt %d/%d): %s", attempt + 1, max_retries, exc)
-                last_error = exc
+        try:
+            output = call_with_timeout(
+                lambda: _invoke_hypothesis_agent(agent, user_prompt),
+                timeout_seconds,
+            )
+            break
+        except TimeoutError as exc:
+            logger.warning("Hypothesis generation timed out (attempt %d/%d)", attempt + 1, max_retries)
+            last_error = exc
+        except Exception as exc:
+            logger.warning("Hypothesis generation failed (attempt %d/%d): %s", attempt + 1, max_retries, exc)
+            last_error = exc
 
     if output is None:
         logger.error("Hypothesis generation failed after %d attempts: %s", max_retries, last_error)

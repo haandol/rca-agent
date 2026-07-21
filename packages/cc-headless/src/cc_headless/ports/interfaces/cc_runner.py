@@ -12,6 +12,7 @@ class CcRunnerPort(ABC):
         self,
         prompt: str,
         *,
+        execution_token: str,
         mcp_config: str | None = None,
         cancel_checker: Callable[[], bool] | None = None,
     ) -> CcResult: ...

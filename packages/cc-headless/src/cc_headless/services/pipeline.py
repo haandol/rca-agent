@@ -13,21 +13,10 @@ from cc_headless.config.settings import ALARM_STALENESS_SECONDS
 from cc_headless.di.container import Container
 from cc_headless.ports.dto.models import AlarmContext, parse_alarm
 from cc_headless.services.artifact_watcher import start_watcher
+from cc_headless.services.execution_context import ExecutionContext
 from cc_headless.services.prompt_builder import build_prompt
 
 logger = structlog.get_logger()
-
-_SESSION_ID_PATH = Path("/tmp/rca-session-id")
-
-
-def _write_session_id(rca_id: str) -> None:
-    _SESSION_ID_PATH.write_text(rca_id)
-
-
-def _prepare_artifact_dir(rca_id: str) -> Path:
-    d = Path(f"/tmp/rca-{rca_id}")
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def parse_sns_envelope(body: str) -> dict:
@@ -118,10 +107,12 @@ class PipelineOrchestrator:
         store = c.session_store
         start_time = time.time()
         alarm = parse_alarm(alarm_data)
-        artifact_dir = _prepare_artifact_dir(rca_id)
+        execution = ExecutionContext.create(rca_id)
+        artifact_dir = execution.prepare()
+        watcher_thread = None
+        watcher_stop = None
 
         try:
-            _write_session_id(rca_id)
             store.update_state(rca_id, "ANALYZING")
             prompt = build_prompt(alarm)
             log.info("cc_analysis_started")
@@ -131,11 +122,17 @@ class PipelineOrchestrator:
             def _should_cancel() -> bool:
                 return self._shutdown_event.is_set() or store.is_terminated(rca_id)
 
-            cc_result = c.cc_runner.run(prompt, cancel_checker=_should_cancel)
+            cc_result = c.cc_runner.run(
+                prompt,
+                execution_token=execution.token,
+                cancel_checker=_should_cancel,
+            )
             elapsed_seconds = int(time.time() - start_time)
 
             watcher_stop.set()
             watcher_thread.join(timeout=10)
+            watcher_stop = None
+            watcher_thread = None
 
             if self._shutdown_event.is_set():
                 log.info("session_aborted_on_shutdown", elapsed_seconds=elapsed_seconds)
@@ -154,7 +151,11 @@ class PipelineOrchestrator:
             log.info("cc_analysis_completed", elapsed_seconds=elapsed_seconds)
 
             report_path = artifact_dir / "report.md"
-            report_markdown = report_path.read_text() if report_path.exists() else cc_result.result
+            if not report_path.is_file():
+                log.error("required_report_artifact_missing")
+                store.mark_failed(rca_id, "Required report.md artifact was not generated")
+                return False
+            report_markdown = report_path.read_text()
 
             report_key = c.report_store.save_report(rca_id, report_markdown)
 
@@ -187,6 +188,12 @@ class PipelineOrchestrator:
             log.exception("pipeline_failed")
             store.mark_failed(rca_id, "Unhandled pipeline exception")
             return False
+        finally:
+            if watcher_stop is not None:
+                watcher_stop.set()
+            if watcher_thread is not None:
+                watcher_thread.join(timeout=10)
+            execution.cleanup()
 
     def _process_playbook(
         self,

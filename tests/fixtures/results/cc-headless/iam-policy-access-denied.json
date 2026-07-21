@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "iam-policy-access-denied",
+  "engine": "cc-headless",
+  "rootCause": "A task role policy change caused AccessDenied by omitting logs:StartQuery.",
+  "evidenceIds": [
+    "policy-change-event",
+    "missing-action-diff",
+    "access-denied-logs"
+  ],
+  "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
+  "remediation": {
+    "summary": "Restore the least privilege policy permission for StartQuery and verify evidence collection.",
+    "safe": true,
+    "safeguards": {
+      "preconditions": "Confirm the task role and the missing logs:StartQuery action without broadening unrelated permissions.",
+      "approval": "Require the IAM or service owner to approve the policy update.",
+      "rollback": "Restore the previous policy document if access failures broaden or policy validation fails.",
+      "verification": "Verify StartQuery succeeds and no new AccessDenied events appear."
+    }
+  }
+}

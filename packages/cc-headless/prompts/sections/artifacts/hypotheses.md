@@ -10,7 +10,7 @@
       "tree_id": "공유 UUID",
       "title": "짧은 한 줄 제목 (≤60자, 한글, 필수)",
       "description": "상세 설명. 왜 이 가설을 제기하는지 근거와 검증 방향을 2-4문장 (한글)",
-      "category": "INFRASTRUCTURE | DEPLOYMENT | TRAFFIC | DEPENDENCY | APPLICATION",
+      "category": "DEPLOYMENT | INFRASTRUCTURE | TRAFFIC | DEPENDENCY | CONFIGURATION",
       "confidence_score": 0.6,
       "required_evidence": ["필요한 증거 목록"],
       "status": "PENDING",

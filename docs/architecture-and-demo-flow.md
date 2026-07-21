@@ -264,7 +264,7 @@ flowchart LR
 
 ### 2.1. 전체 플로우
 
-CC on Bedrock headless 모드에서 단일 프롬프트로 전체 RCA를 수행합니다. Python 핸들러가 SQS 수신/세션 관리를 담당하고, CC CLI subprocess가 MCP 도구를 자율적으로 호출하며 RCA를 진행합니다. Artifact Watcher 스레드가 `/tmp/rca-{id}/` 디렉토리를 감시하여 산출물 파일이 생성될 때마다 DynamoDB에 트레이스를 기록합니다.
+CC on Bedrock headless 모드에서 단일 프롬프트로 전체 RCA를 수행합니다. Python 핸들러가 SQS 수신/세션 관리를 담당하고, CC CLI subprocess가 MCP 도구를 자율적으로 호출하며 RCA를 진행합니다. Artifact Watcher 스레드가 실행 토큰별 격리 디렉터리를 감시하여 산출물 파일이 생성될 때마다 DynamoDB에 트레이스를 기록합니다.
 
 ```mermaid
 flowchart TD
@@ -278,7 +278,7 @@ flowchart TD
     end
 
     subgraph Prepare["실행 준비"]
-        ARTIFACT_DIR["/tmp/rca-{rca_id}/ 생성"]
+        ARTIFACT_DIR["실행 토큰별 산출물 디렉터리 생성"]
         ALARM_PARSE["AlarmContext 구성<br/>(alarm_name, region, metric,<br/>dimensions, threshold)"]
         PROMPT["프롬프트 조립<br/>system (rca-system.md)<br/>+ user (rca-user.md + 알람 데이터)"]
         WATCHER["Artifact Watcher 스레드 시작<br/>(3초 간격 폴링)"]
@@ -306,8 +306,8 @@ flowchart TD
         STEP3["3-7. 검증 루프 (서브에이전트, 최대 3회)<br/>우선순위 → 빔 선택 → 증거 수집 →<br/>검증 → 분기 / 재생성<br/>→ validation-N.json"]
         STEP4["8. 보고서 생성<br/>→ report.md"]
         STEP5["9. 플레이북 생성<br/>→ playbook.json"]
-        STEP6["10. 자동 복구<br/>(fault reset API / ECS 강제 배포)"]
-        STEP7["11. 복구 검증<br/>(메트릭 재조회)"]
+        STEP6["10. 복구 권고<br/>(후보 액션 / 승인·롤백 조건)"]
+        STEP7["11. 검증 계획<br/>(메트릭 / 정상화 기준)"]
         STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5 --> STEP6 --> STEP7
     end
 
@@ -413,8 +413,8 @@ flowchart TD
         S8_OUT["save_artifact('report.md')"]
         S9["9. 플레이북 생성<br/>· failure_type, symptom_pattern<br/>· verification_steps, mitigation, remediation"]
         S9_OUT["save_artifact('playbook.json')"]
-        S10["10. 자동 복구<br/>· 장애 유형별 fault reset API 호출<br/>· 매칭 없으면 ECS 강제 새 배포"]
-        S11["11. 복구 검증<br/>· 30초 대기 후 메트릭 재조회<br/>· 정상화 여부 확인<br/>· 보고서에 검증 결과 추가"]
+        S10["10. 복구 권고<br/>· 장애 유형별 후보 액션<br/>· 승인·사전조건·롤백 조건"]
+        S11["11. 검증 계획<br/>· 확인할 메트릭과 관찰 구간<br/>· 정상화·실패 판정 기준"]
         S8 --> S8_OUT --> S9 --> S9_OUT --> S10 --> S11
     end
 
@@ -460,7 +460,7 @@ flowchart TD
 | **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
 | **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
 | **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
-| **자동 복구** | 미구현 (ADR 0012, 모듈만 준비) | 프롬프트 내 10-11단계로 직접 수행 |
+| **자동 복구** | 미구현 (ADR 0012, 모듈만 준비) | 직접 실행하지 않음 — 10~11단계에서 권고·검증 계획 작성 |
 | **타임아웃** | 20분 (RCA_TIME_BUDGET_SECONDS) | 30분 (CC_TIMEOUT_SECONDS) |
 | **취소 감지** | update_state() 시 ConditionExpression | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
 | **증거 격리** | 가설별 독립 Agent 인스턴스 | CC 자체 컨텍스트 관리 |

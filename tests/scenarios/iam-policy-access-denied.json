@@ -1,0 +1,52 @@
+{
+  "id": "iam-policy-access-denied",
+  "category": "permissions",
+  "alarm": {
+    "name": "RcaAgent-EvidenceFailures",
+    "metric": "EvidenceCollectionErrors",
+    "stateReason": "Evidence collection failed for every active RCA session"
+  },
+  "observations": [
+    {
+      "id": "access-denied-logs",
+      "source": "logs",
+      "summary": "CloudWatch Logs Insights requests returned AccessDeniedException."
+    },
+    {
+      "id": "policy-change-event",
+      "source": "cloudtrail",
+      "summary": "The task role policy was replaced shortly before failures began."
+    },
+    {
+      "id": "missing-action-diff",
+      "source": "github",
+      "summary": "The replacement policy omitted the logs:StartQuery action."
+    }
+  ],
+  "expectation": {
+    "rootCauseTermGroups": [
+      ["iam", "task role", "policy"],
+      ["accessdenied", "permission", "startquery"]
+    ],
+    "requiredEvidenceIds": [
+      "access-denied-logs",
+      "policy-change-event",
+      "missing-action-diff"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "remediationTermGroups": [
+      ["policy", "permission", "role"],
+      ["restore", "startquery", "least privilege"]
+    ],
+    "semanticTermGroups": [
+      ["logs:startquery", "startquery"],
+      ["least privilege"]
+    ]
+  }
+}

@@ -24,7 +24,7 @@
       "tree_id": "hypotheses.json의 tree_id와 동일",
       "title": "짧은 한 줄 제목 (≤60자, 한글, 필수)",
       "description": "상세 설명 — 부모 가설을 어떻게 좁혔는지 근거 포함 (한글, 필수)",
-      "category": "INFRASTRUCTURE | DEPLOYMENT | TRAFFIC | DEPENDENCY | APPLICATION",
+      "category": "DEPLOYMENT | INFRASTRUCTURE | TRAFFIC | DEPENDENCY | CONFIGURATION",
       "confidence_score": 0.5,
       "required_evidence": ["필요한 증거"],
       "status": "PENDING",

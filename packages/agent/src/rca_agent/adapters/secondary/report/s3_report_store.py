@@ -65,6 +65,7 @@ class S3ReportStore(ReportStorePort):
                 indexName=S3_VECTOR_REPORT_INDEX,
                 queryVector={"float32": query_vector},
                 topK=REPORT_TOP_K,
+                returnMetadata=True,
             )
 
         response = retry_with_backoff(
@@ -77,7 +78,7 @@ class S3ReportStore(ReportStorePort):
 
         matches = []
         for item in response.get("vectors", []):
-            similarity = item.get("distance", 0.0)
+            similarity = 1.0 - float(item.get("distance", 1.0))
             if similarity < REPORT_SIMILARITY_THRESHOLD:
                 continue
             metadata = item.get("metadata", {})

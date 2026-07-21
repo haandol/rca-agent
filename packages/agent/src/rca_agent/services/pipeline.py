@@ -555,6 +555,7 @@ class PipelineOrchestrator:
             )
             if h:
                 h.status = j.status
+                h.confidence_score = j.confidence_score
 
         for j in state.all_judgments:
             if j.status != HypothesisStatus.REJECTED:

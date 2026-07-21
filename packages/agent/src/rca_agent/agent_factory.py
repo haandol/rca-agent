@@ -114,6 +114,7 @@ def create_github_mcp_client() -> MCPClient:
                 args=["stdio"],
                 env=_mcp_env(
                     GITHUB_PERSONAL_ACCESS_TOKEN=GITHUB_PERSONAL_ACCESS_TOKEN,
+                    GITHUB_READ_ONLY="1",
                     GITHUB_TOOLSETS="repos,pull_requests",
                 ),
             )

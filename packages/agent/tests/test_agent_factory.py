@@ -56,7 +56,7 @@ class TestAgentTierMapping:
     @patch("rca_agent.agent_factory.THINKING_ENABLED", True)
     def test_scoping_uses_execution_tier(self):
         agent = create_scoping_agent()
-        # Execution 티어는 thinking 없이 Sonnet 4.6 사용 (ADR 0010 업데이트)
+        # Execution 티어는 thinking 없이 Sonnet 4.6을 사용한다.
         assert "sonnet" in agent.model.config["model_id"]
         assert "additional_request_fields" not in agent.model.config
 

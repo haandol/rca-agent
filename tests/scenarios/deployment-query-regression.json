@@ -1,0 +1,52 @@
+{
+  "id": "deployment-query-regression",
+  "category": "code-change",
+  "alarm": {
+    "name": "HealthcareApi-P99Latency",
+    "metric": "TargetResponseTime",
+    "stateReason": "p99 latency increased immediately after a deployment"
+  },
+  "observations": [
+    {
+      "id": "deployment-correlation",
+      "source": "cloudtrail",
+      "summary": "The latency increase began within two minutes of a new task definition deployment."
+    },
+    {
+      "id": "query-volume-spike",
+      "source": "cloudwatch",
+      "summary": "Database query volume per request increased by more than an order of magnitude."
+    },
+    {
+      "id": "repository-diff",
+      "source": "github",
+      "summary": "The deployment introduced per-sensor history lookups inside a response loop."
+    }
+  ],
+  "expectation": {
+    "rootCauseTermGroups": [
+      ["n+1", "per-sensor query", "query loop"],
+      ["deployment", "code change", "release"]
+    ],
+    "requiredEvidenceIds": [
+      "deployment-correlation",
+      "query-volume-spike",
+      "repository-diff"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "remediationTermGroups": [
+      ["rollback", "revert", "batch"],
+      ["query", "deployment", "release"]
+    ],
+    "semanticTermGroups": [
+      ["sensor", "response path"],
+      ["batch", "batch-query"]
+    ]
+  }
+}

@@ -1,11 +1,11 @@
 # ADR 0011: CC on Bedrock headless 기반 프롬프트 주도 RCA 파이프라인
 
 Date: 2026-04-22
-Updated: 2026-04-24
+Updated: 2026-07-21
 
 ## Status
 
-Accepted (Updated — 산출물 파일 기반 트레이싱, JSON 중간 산출물, 서브에이전트 패턴)
+Accepted (2026-07-21)
 
 ## Context
 
@@ -21,6 +21,14 @@ Accepted (Updated — 산출물 파일 기반 트레이싱, JSON 중간 산출�
 
 추가로, CC headless의 **파이프라인 트레이싱**에 문제가 있었다. MCP 도구(`start_span`, `end_span`)로 CC CLI에게 직접 DDB 스팬을 기록하게 했으나, CC CLI가 "분석에 불필요한 도구"로 판단하여 호출을 건너뛰었다. 이를 해결하기 위해 **산출물 파일 기반 트레이싱**으로 전환하여, Python wrapper가 파일 생성을 감지하여 DDB에 스팬을 자동 기록한다.
 
+## Decision Drivers
+
+- 기존 Strands 실행 엔진과 독립적으로 배포하고 동일 알람에 대한 결과를 비교할 수 있어야 한다.
+- 프롬프트 주도 실행의 자율성을 유지하면서도 도구 권한과 실행 시간을 코드 경계에서 제한해야 한다.
+- 중간 산출물과 트레이스는 모델의 선택적 도구 호출에 의존하지 않고 누락 없이 수집되어야 한다.
+- Stateless 실행 간 대화, 설정, 파일 산출물이 재사용되어 결과를 오염시키지 않아야 한다.
+- 분석 엔진이 복구 실행 권한까지 소유하여 장애 영향을 확대하지 않아야 한다.
+
 ## Decision
 
 **Claude Code on Bedrock headless 모드**를 RCA 실행 엔진으로 사용하는 별도 ECS Fargate 스택을 추가한다. 기존 Strands SDK 기반 Fargate 스택과 **병렬로 공존**한다.
@@ -29,17 +37,17 @@ Accepted (Updated — 산출물 파일 기반 트레이싱, JSON 중간 산출�
 
 1. **실행 방식**: ECS Fargate Task에서 Python wrapper가 Claude Code CLI를 subprocess로 호출한다. `CLAUDE_CODE_USE_BEDROCK=1` 환경변수로 Bedrock 백엔드를 활성화하고, `--output-format json` 플래그로 구조화된 결과를 받는다. 인프라 상세는 infra/0003을 참조한다.
 
-2. **프롬프트 주도 파이프라인**: Python/SDK로 다단계를 오케스트레이션하는 대신, 단일 프롬프트에 RCA 전체 워크플로우를 지시한다. CC headless가 서브에이전트를 스폰하며 스코핑 → 가설 생성 → 검증 루프 → 보고서 → 자동 복구를 한 번의 호출로 수행한다.
+2. **프롬프트 주도 파이프라인**: Python/SDK로 다단계를 오케스트레이션하는 대신, 단일 프롬프트에 RCA 전체 워크플로우를 지시한다. CC headless가 서브에이전트를 스폰하며 스코핑 → 가설 생성 → 검증 루프 → 보고서 → 플레이북 → 복구 권고와 검증 계획을 한 번의 호출로 수행한다.
 
 3. **서브에이전트 패턴**: CC headless는 Agent tool을 사용하여 서브에이전트를 스폰한다:
    - **가설 생성 서브에이전트**: 스코핑 결과로부터 3-5개 근본원인 가설을 생성
    - **가설 검증 서브에이전트**: 검증 루프 1회를 수행 — 우선순위 결정, 증거 수집, 검증, 분기
    메인 에이전트는 서브에이전트 결과를 받아 `save_artifact`로 JSON 산출물을 저장한다.
 
-4. **MCP 서버 연결**: CC headless의 MCP 설정(`mcp-config.json` + `--mcp-config`)으로 AWS Knowledge MCP, CloudWatch MCP, CloudTrail MCP, GitHub MCP, rca-progress MCP를 등록한다. rca-progress MCP는 `save_artifact` 도구만 제공하며, 산출물 파일을 `/tmp/rca-{id}/`에 저장한다.
+4. **MCP 서버 연결**: CC headless는 AWS 지식·관측·변경 이력을 읽는 MCP와 산출물 저장 MCP만 사용한다. 분석 실행에는 셸·임의 파일 쓰기·인프라 변경 도구를 노출하지 않는다. 산출물은 실행마다 고유한 격리 디렉터리에 저장하며 실행 종료 후 정리한다.
 
 5. **프롬프트 구성**:
-   - **시스템 프롬프트**: RCA 워크플로우 정의 (스코핑 → 가설 생성 → 검증 루프 → 보고서 → 자동 복구 → 복구 검증), 종료 조건, JSON 산출물 스키마
+   - **시스템 프롬프트**: RCA 워크플로우 정의 (스코핑 → 가설 생성 → 검증 루프 → 보고서 → 플레이북 → 복구 권고 → 검증 계획), 종료 조건, JSON 산출물 스키마
    - **사용자 프롬프트**: 알람 페이로드 (AlarmName, StateReason, Trigger, Dimensions 등)를 템플릿에 주입
    - **워크스페이스 CLAUDE.md**: MCP 도구 사용 규칙, 트레이싱 데이터 흐름, 산출물 관리 규칙을 정의
 
@@ -53,13 +61,15 @@ Accepted (Updated — 산출물 파일 기반 트레이싱, JSON 중간 산출�
    | `playbook.json` | JSON | 플레이북 (장애유형, 증상패턴, 검증절차, 복구방안) |
    | `report.md` | Markdown | 최종 RCA 보고서 |
 
-7. **산출물 파일 기반 트레이싱**: CC CLI에게 MCP 도구로 직접 스팬을 기록하게 하는 방식은 CC CLI가 "분석에 불필요한 도구"로 판단하여 호출을 건너뛰는 문제가 있었다. 이를 해결하기 위해 Python wrapper의 `artifact_watcher`가 `/tmp/rca-{id}/` 디렉토리를 3초 간격으로 폴링하여 새 파일을 감지하고, JSON을 파싱하여 DDB에 스팬을 자동 기록한다. CC CLI는 분석에만 집중하고, 트레이싱은 Python wrapper가 전담한다. CC CLI 종료 후 `watcher_stop.set()` → 최종 `_scan_once()` 1회 추가 실행으로 마지막 산출물 누락을 방지한다. 상세는 infra/0005를 참조한다.
+7. **산출물 파일 기반 트레이싱**: CC CLI에게 MCP 도구로 직접 스팬을 기록하게 하는 방식은 CC CLI가 "분석에 불필요한 도구"로 판단하여 호출을 건너뛰는 문제가 있었다. 이를 해결하기 위해 Python wrapper의 `artifact_watcher`가 실행 토큰별 격리 디렉터리를 3초 간격으로 폴링하여 새 파일을 감지하고, JSON을 파싱하여 DDB에 스팬을 자동 기록한다. CC CLI는 분석에만 집중하고, 트레이싱은 Python wrapper가 전담한다. CC CLI 종료 후 마지막 스캔을 한 번 더 수행하여 종료 직전 산출물 누락을 방지하고, 실행이 끝나면 격리 디렉터리를 정리한다. 상세는 infra/0005를 참조한다.
 
 8. **출력 포맷**: 최종 출력은 `report.md`로 저장되는 한글 Markdown RCA 보고서이다. Python wrapper가 이 파일을 읽어서 S3에 업로드한다.
 
 9. **세션 상태 관리**: 기존 Fargate 스택과 동일한 DynamoDB 테이블에 세션을 기록한다. `engine` 필드로 실행 엔진을 구분한다 (`strands` vs `cc-headless`). SK 접두사에 엔진명을 포함하여 엔진별 트레이스를 분리한다. `update_item`에 `attribute_exists(SK)` 조건을 추가하여 phantom HYPO 레코드 생성을 방지한다. 상태 전이는 `VALID_TRANSITIONS` 딕셔너리 기반 state machine으로 검증한다. CC Headless의 상태 전이는 `ALARM_RECEIVED → {ANALYZING, FAILED, CANCELLED}`, `ANALYZING → {COMPLETED, FAILED, CANCELLED}`로 단순하다. DDB ConditionExpression 가드는 동시성 보호를 위해 병행 유지한다.
 
-10. **미검증 가설 자동 기각**: 검증 루프 종료 시 PENDING/NEEDS_INVESTIGATION 상태의 가설을 마지막 validation JSON의 `rejected`에 포함하도록 프롬프트에서 유도한다. Strands 엔진에서는 코드로 직접 REJECTED 상태를 기록한다. 이를 통해 세션 완료 시 모든 가설이 최종 상태(CONFIRMED/REJECTED)를 갖게 된다.
+10. **가설 최종 상태 보장**: 증거로 반증되거나 확정 근본원인과 경쟁하다 종료된 가설은 REJECTED로 기록한다. 시간·루프·탐색 한도로 검증하지 못했고 기각 근거도 부족한 잔여 가설은 CLOSED로 종료한다. 이를 통해 세션 완료 시 모든 가설이 CONFIRMED, REJECTED, CLOSED 중 하나의 최종 상태를 갖게 된다.
+
+11. **복구 실행 분리**: CC Headless는 복구 조치를 직접 실행하지 않는다. 확정된 근본원인에 대해 허용된 복구 후보, 사전 조건, 롤백 조건, 검증 메트릭을 보고서와 플레이북에 제안한다. 실제 서비스·인프라 변경은 독립 Remediation Agent가 승인 정책과 멱등성 경계 안에서 수행한다.
 
 ### 기존 Strands 스택과의 차이
 
@@ -81,6 +91,14 @@ Accepted (Updated — 산출물 파일 기반 트레이싱, JSON 중간 산출�
 - S3 보고서 버킷
 - SNS 알림 Topic
 
+## 대안 검토
+
+| 대안 | Decision Drivers 대비 장점 | Decision Drivers 대비 단점 및 미채택 이유 |
+|------|---------------------------|-------------------------------------------|
+| Strands 실행 엔진만 유지 | 상태 전이와 도구 호출을 Python에서 가장 세밀하게 통제할 수 있다. | 별도 자율 실행 엔진과의 결과 비교, 프롬프트 중심 실험, CC의 내장 에이전트 활용 요구를 충족하지 못한다. |
+| CC가 분석과 복구를 모두 직접 수행 | 하나의 실행에서 분석부터 조치까지 끝내므로 구조가 단순하고 복구 시작이 빠르다. | 읽기 권한과 쓰기 권한이 결합되고 분석 오류가 실제 서비스 변경으로 이어질 수 있어 안전 경계를 충족하지 못한다. |
+| CC 분석 실행과 산출물 감시 wrapper를 분리 | CC의 자율 분석을 유지하면서 실행 격리, 권한 제한, 시간 제한, 트레이스 수집을 결정적으로 강제할 수 있다. | CLI와 watcher의 수명주기 및 산출물 계약을 함께 유지해야 하지만 모든 Decision Driver를 충족한다. |
+
 ## Consequences
 
 ### Positive
@@ -97,10 +115,11 @@ Accepted (Updated — 산출물 파일 기반 트레이싱, JSON 중간 산출�
 - CC headless의 토큰 사용량과 도구 호출 횟수가 프롬프트 지시에 의존하여 비용 예측이 어려움
 - CC CLI가 malformed JSON을 출력하면 해당 단계의 트레이스가 에러로 기록된다
 - 플레이북 생성 실패 시 FAILED 스팬만 기록되고 파이프라인은 계속 진행 — 알림과 세션 완료에 영향 없음
+- RCA 완료만으로 복구가 실행되지 않으므로 Remediation Agent가 배포되지 않은 환경에서는 운영자의 수동 승인과 실행이 필요하다
 
 ### Risks
 
-- CC headless가 프롬프트 지시를 무시하고 과도한 도구 호출을 수행할 수 있다. `--max-turns` 플래그로 최대 턴 수를 제한하여 완화한다.
+- CC headless가 프롬프트 지시를 무시하고 과도한 도구 호출을 수행할 수 있다. 실행 시간 제한, 내장 도구 허용 목록, 엄격한 MCP 설정으로 완화한다.
 - 프롬프트 변경이 RCA 품질에 직접 영향을 미치므로, 프롬프트 버전 관리와 품질 회귀 테스트가 필수이다.
 - CC CLI가 `save_artifact`를 호출하지 않으면 트레이스가 생성되지 않는다. 시스템/사용자 프롬프트와 CLAUDE.md에서 반복적으로 산출물 저장을 강조하여 완화한다.
 

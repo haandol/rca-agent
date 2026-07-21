@@ -136,10 +136,14 @@ def _parse_artifact(path: Path) -> dict | None:
         return {"summary": raw[:500], "output_summary": raw[:500]}
 
     try:
-        return json.loads(raw)
+        artifact = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("artifact_json_malformed", path=str(path), raw=raw[:300])
-        return {"summary": raw[:500], "output_summary": raw[:500], "error": f"malformed JSON: {path.name}"}
+        return {"error": "Malformed JSON artifact"}
+    if not isinstance(artifact, dict):
+        logger.warning("artifact_json_not_object", path=str(path))
+        return {"error": "JSON artifact must be an object"}
+    return artifact
 
 
 def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict) -> None:
@@ -238,24 +242,28 @@ def _scan_once(
     artifact_dir: Path,
     rca_id: str,
     ddb,
-    seen: set[str],
+    seen: dict[str, tuple[int, int]],
     validation_ctx: dict,
 ) -> None:
     if not artifact_dir.exists():
         return
 
     for path in sorted(artifact_dir.iterdir()):
-        if path.name in seen:
+        stat = path.stat()
+        version = (stat.st_mtime_ns, stat.st_size)
+        if seen.get(path.name) == version:
             continue
 
         artifact = _parse_artifact(path)
+        if artifact is None:
+            continue
         span_type = ARTIFACT_SPAN_MAP.get(path.name)
 
         if span_type:
             _write_span(ddb, rca_id, span_type, artifact)
             if span_type == "HYPOTHESIS_GENERATION" and artifact and not artifact.get("error"):
                 _save_hypotheses_to_ddb(ddb, rca_id, artifact)
-            seen.add(path.name)
+            seen[path.name] = version
             logger.info("artifact_detected", file=path.name, span_type=span_type)
 
         elif path.name.startswith(VALIDATION_PATTERN) and path.suffix == ".json":
@@ -270,12 +278,12 @@ def _scan_once(
             if artifact and not artifact.get("error"):
                 _update_hypotheses_from_validation(ddb, rca_id, artifact)
 
-            seen.add(path.name)
+            seen[path.name] = version
             logger.info("artifact_detected", file=path.name, span_type="VALIDATION_LOOP", loop_index=loop_index)
 
 
 def _watch_loop(artifact_dir: Path, rca_id: str, ddb, stop_event: Event) -> None:
-    seen: set[str] = set()
+    seen: dict[str, tuple[int, int]] = {}
     validation_ctx: dict = {}
 
     while not stop_event.is_set():

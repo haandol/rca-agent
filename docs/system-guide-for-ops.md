@@ -257,7 +257,7 @@ graph LR
         F_ENV["ECS Fargate<br/>Python 3.12"]
         F_SDK["Strands Agents SDK<br/>9단계 파이프라인"]
         F_MODEL["단일 모델<br/>Sonnet 4.6 + Planning/Execution 행동 분리"]
-        F_TIME["시간 제한 없음<br/>(ECS 무제한)"]
+        F_TIME["시간 예산<br/>(기본 20분)"]
         F_PLAY["✅ 플레이북 생성/학습"]
     end
 
@@ -266,7 +266,7 @@ graph LR
         L_ENV["ECS Fargate<br/>Node.js 22"]
         L_SDK["Claude Code CLI<br/>프롬프트 주도"]
         L_MODEL["단일 모델<br/>Sonnet 4.6"]
-        L_TIME["타임아웃 없음<br/>(ECS 무제한)"]
+        L_TIME["프로세스 타임아웃<br/>(30분)"]
         L_PLAY["✅ 플레이북 생성 (프롬프트)"]
     end
 
@@ -282,9 +282,9 @@ graph LR
 | **AI 모델** | Sonnet 4.6 (Planning은 adaptive thinking) | Sonnet 4.6 |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
 | **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | 생성 (프롬프트 기반, 9단계) |
-| **자동 복구** | 별도 에이전트로 분리 설계 (ADR 0012, 미구현) | 프롬프트 내 10~11단계로 직접 수행 |
+| **자동 복구** | 별도 에이전트로 분리 설계 (ADR 0012, 미구현) | 직접 실행하지 않음 — 복구 권고·검증 계획 작성 |
 | **이벤트 수신** | SQS Long Polling | SQS Long Polling |
-| **타임아웃** | 없음 (종료조건 기반) | 없음 (ECS 무제한) |
+| **타임아웃** | 20분 시간 예산 + 종료조건 | 30분 프로세스 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
 | **비용 모델** | 항시 실행 비용 | 항시 실행 비용 |
 
@@ -407,7 +407,7 @@ flowchart TD
     end
 
     subgraph CCProcess["Claude Code CLI (서브프로세스)"]
-        CC["claude -p &lt;prompt&gt;<br/>--output-format json<br/>--mcp-config mcp-config.json<br/>--max-turns 30"]
+        CC["claude -p &lt;prompt&gt;<br/>--output-format json<br/>--strict-mcp-config<br/>--no-session-persistence"]
 
         subgraph Prompt["프롬프트 내 11단계 RCA 워크플로우"]
             S1["1: 스코핑"]
@@ -416,8 +416,8 @@ flowchart TD
             S7["7: 종료 판단"]
             S8["8: 보고서 작성"]
             S9["9: 플레이북 생성"]
-            S10["10: 자동 복구"]
-            S11["11: 복구 검증"]
+            S10["10: 복구 권고"]
+            S11["11: 검증 계획"]
             S1 --> S2 --> S3 --> S7 --> S8 --> S9 --> S10 --> S11
         end
 
@@ -931,8 +931,8 @@ sequenceDiagram
     SA->>DDB: UpdateItem SK=strands#SESSION (state=COMPLETED)
 
     Note over CCA,DDB: 3. 파이프라인 실행 (CC Headless)
-    CCA->>DDB: PutItem SK=cc-headless#SPAN#{id} (MCP start_span)
-    CCA->>DDB: UpdateItem SK=cc-headless#SPAN#{id} (MCP end_span)
+    CCA->>CCA: save_artifact로 실행별 산출물 저장
+    CCA->>DDB: artifact watcher가 SPAN/HYPO 아이템 기록
     CCA->>DDB: BatchWriteItem SK=cc-headless#HYPO#{id} × N
     CCA->>DDB: UpdateItem SK=cc-headless#SESSION (state=COMPLETED)
 
@@ -962,7 +962,7 @@ flowchart TD
     Q3 -->|"Yes"| Q4{"DynamoDB에<br/>세션이 생성되었는가?"}
     Q4 -->|"No"| A4["Fargate 로그 확인<br/>CloudWatch > Log groups"]
     Q4 -->|"Yes"| Q5{"세션 상태가<br/>FAILED인가?"}
-    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>CC Headless: 제한 없음)"]
+    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>CC Headless: 최대 30분)"]
     Q5 -->|"Yes"| A6["에러 원인 확인<br/>DDB의 error 필드 확인<br/>CloudWatch Logs 검색"]
 ```
 

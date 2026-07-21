@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -16,6 +14,7 @@ from rca_agent.ports.dto.models import (
     HypothesisStatus,
 )
 from rca_agent.prompts.branching import BRANCHING_USER_PROMPT_TEMPLATE
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -40,7 +39,7 @@ MAX_CHILDREN_PER_BRANCH = 3
 
 
 class BranchingOutput(BaseModel):
-    children: list[_ChildItem] = Field(max_length=MAX_CHILDREN_PER_BRANCH)
+    children: list[_ChildItem] = Field(min_length=2, max_length=MAX_CHILDREN_PER_BRANCH)
 
 
 BranchingOutput.model_rebuild()
@@ -89,13 +88,14 @@ def run_branching(
     user_prompt = _build_user_prompt(parent, evidence_text, rejected_descriptions)
     logger.info("Branching hypothesis %s at depth %d", parent.hypothesis_id, parent.depth)
 
-    output: BranchingOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("Branching failed for hypothesis %s", parent.hypothesis_id)
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_agent(agent, user_prompt),
+            timeout_seconds,
+        )
+    except Exception:
+        logger.warning("Branching failed for hypothesis %s", parent.hypothesis_id)
+        output = None
 
     if output is None:
         return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=[])

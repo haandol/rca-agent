@@ -344,20 +344,21 @@ pnpm dev   # http://localhost:3100
 ## 테스트
 
 ```bash
-# 전체 테스트
-pnpm nx run-many -t test
+# 테스트 환경 구성
+pnpm setup:test
 
-# 특정 패키지 테스트
-pnpm nx test agent
-pnpm nx test infra
+# 포맷, lint, 패키지 테스트, 공통 RCA 평가, typecheck
+pnpm verify
 
-# 영향받은 프로젝트만 테스트
-pnpm nx affected -t test
+# 공통 RCA 시나리오 오프라인 평가
+pnpm eval:offline
 
-# Agent 단독 테스트
-cd packages/agent
-uv run pytest tests/
+# AWS·실모델 라이브 평가 (명시적 환경 설정 필요)
+pnpm eval:live
 ```
+
+라이브 엔진 command 계약과 의미 기준선 승인 절차는
+[RCA Evaluation Harness](./tests/README.md)를 참조하세요.
 
 ## 문서
 

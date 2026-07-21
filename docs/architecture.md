@@ -12,7 +12,7 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
 | **RCA 방식** | 9단계 closed-loop 파이프라인 | 단일 프롬프트 + MCP 도구 자율 호출 |
 | **모델** | 단일 Sonnet 4.6 (Planning/Execution 행동 분리) | CC 기본 모델 (Sonnet 4.6) |
-| **타임아웃** | 제한 없음 | 제한 없음 |
+| **타임아웃** | 종료 조건 및 시간 예산 | CC 프로세스 30분 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
 | **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
 | **구분** | DynamoDB `engine` 필드: `strands` vs `cc-headless` |
@@ -147,7 +147,7 @@ stateDiagram-v2
     SKIP --> [*]
 ```
 
-CC CLI는 `claude -p <prompt> --output-format json --mcp-config mcp-config.json`으로 호출되며, 프롬프트 내에 11단계 RCA 워크플로우(스코핑~검증~보고서~플레이북~복구~검증)가 정의되어 있습니다.
+CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출되며, 프롬프트 내에 11단계 RCA 워크플로우(스코핑~검증~보고서~플레이북~복구 권고~검증 계획)가 정의되어 있습니다.
 
 ## Data Flow — Fargate (모듈 간 데이터 흐름)
 
@@ -201,9 +201,9 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 
 ### Fargate Stack (CC Headless)
 
-- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 11단계 워크플로우 정의 (스코핑 ~ 보고서 ~ 플레이북 ~ 복구 ~ 검증), CC가 자율적으로 MCP 도구 호출. Strands와 달리 복구를 프롬프트 내에서 직접 수행
+- **프롬프트 주도 RCA**: 단일 시스템 프롬프트에 11단계 워크플로우 정의 (스코핑 ~ 보고서 ~ 플레이북 ~ 복구 권고 ~ 검증 계획), CC가 읽기 전용 MCP 도구를 자율적으로 호출하며 서비스·인프라 변경은 실행하지 않음
 - **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
-- **타임아웃 없음**: ECS Fargate에서 실행되므로 Lambda 15분 제한 없음
+- **실행 시간 제한**: Lambda 15분 제한은 없지만 CC 프로세스는 30분 후 종료
 - **멱등성**: DynamoDB `IDEMP#` 키로 Strands 스택과의 중복 처리 방지
 - **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
 

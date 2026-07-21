@@ -72,7 +72,12 @@ class TestRunBranching:
     def test_uses_structured_output(self):
         parent = _make_parent()
         cat = HypothesisCategory.DEPLOYMENT
-        output = BranchingOutput(children=[_ChildItem(description="c", category=cat, confidence_score=0.3)])
+        output = BranchingOutput(
+            children=[
+                _ChildItem(description="c", category=cat, confidence_score=0.3),
+                _ChildItem(description="d", category=cat, confidence_score=0.2),
+            ]
+        )
         agent = _make_mock_agent(output)
 
         run_branching(parent, "", [], agent)

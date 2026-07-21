@@ -80,5 +80,6 @@ packages/card-news/.claude/settings.local.json
 # E2E test scripts (generated at runtime, contain credentials)
 packages/web/public/e2e-*.js
 packages/web/public/payment-e2e-*.js
+tests/results/live/
 packages/api-infra/config/loader.js
 packages/infra/config/loader.js

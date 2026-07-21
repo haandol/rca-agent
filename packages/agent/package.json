@@ -1,11 +1,11 @@
 {
   "name": "agent",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "scripts": {
-    "lint": "uv run ruff check src/ tests/",
-    "format": "uv run ruff format src/ tests/",
-    "format:check": "uv run ruff format --check src/ tests/",
-    "test": "uv run pytest"
+    "lint": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff check src/ tests/",
+    "format": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format src/ tests/",
+    "format:check": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format --check src/ tests/",
+    "test": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync pytest"
   }
 }

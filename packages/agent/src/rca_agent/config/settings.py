@@ -30,7 +30,7 @@ TERMINATION_CONFIDENCE_THRESHOLD = float(os.environ.get("TERMINATION_CONFIDENCE_
 MAX_BRANCHING_DEPTH = int(os.environ.get("MAX_BRANCHING_DEPTH", "3"))
 RCA_BEAM_WIDTH = int(os.environ.get("RCA_BEAM_WIDTH", "3"))
 
-# Accepted Review Gate (ADR agent/0002)
+# Accepted Review Gate
 RCA_ACCEPTED_SIMILARITY_THRESHOLD = float(os.environ.get("RCA_ACCEPTED_SIMILARITY_THRESHOLD", "0.6"))
 RCA_EXPANSION_BLOCKED_GRACE_LOOPS = int(os.environ.get("RCA_EXPANSION_BLOCKED_GRACE_LOOPS", "2"))
 

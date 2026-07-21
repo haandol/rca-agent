@@ -1,11 +1,11 @@
 # ADR 0005: 파이프라인 실행 트레이스 — DynamoDB 기반 단계별 추적
 
 Date: 2026-04-23
-Updated: 2026-04-24
+Updated: 2026-07-21
 
 ## Status
 
-Accepted (Updated — CC Headless 산출물 파일 기반 트레이싱 추가)
+Accepted (2026-07-21)
 
 ## Context
 
@@ -43,9 +43,10 @@ RCA 에이전트(Strands)의 파이프라인은 9단계(스코핑→가설 생�
 
 **CC Headless**: CC CLI가 MCP 도구로 직접 스팬을 기록하는 방식은 CC CLI가 "분석에 불필요한 도구"로 판단하여 호출을 건너뛰는 문제가 있었다. 이를 해결하기 위해 **산출물 파일 기반 트레이싱**을 도입했다:
 
-1. CC CLI가 `save_artifact` MCP 도구로 `/tmp/rca-{id}/`에 JSON 산출물을 저장한다
-2. Python wrapper의 `artifact_watcher` 스레드가 이 디렉토리를 3초 간격으로 폴링한다
+1. CC CLI가 `save_artifact` MCP 도구로 실행 토큰별 격리 디렉터리에 JSON 산출물을 원자적으로 저장한다
+2. Python wrapper의 `artifact_watcher` 스레드가 현재 실행의 디렉터리를 3초 간격으로 폴링한다
 3. 새 파일이 감지되면 JSON을 파싱하여 DDB에 스팬/가설 아이템을 기록한다
+4. 실행 종료 후 격리 디렉터리를 정리하여 다른 세션에서 재사용하지 못하게 한다
 
 산출물 파일과 스팬 타입의 매핑:
 

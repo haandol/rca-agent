@@ -2,10 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/haandol/alps-writer-mcp/main/templates/adr/mapping.schema.json",
   "categories": {
     "agent": {
-      "feature": "Strands Agents SDK 기반 RCA 파이프라인",
+      "feature": "Strands와 Stateless CC의 RCA 파이프라인 및 공통 평가 하네스",
       "codePaths": [
+        ".github/workflows/**",
+        "package.json",
+        "nx.json",
+        "packages/*/package.json",
         "packages/agent/src/**",
-        "packages/agent/tests/**"
+        "packages/agent/tests/**",
+        "packages/cc-headless/.claude/**",
+        "packages/cc-headless/prompts/**",
+        "packages/cc-headless/src/**",
+        "packages/cc-headless/tests/**",
+        "packages/infra/jest.config.cjs",
+        "packages/infra/test/**",
+        "tests/**"
       ],
       "adrs": [
         "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
@@ -18,9 +29,10 @@
         "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
         "docs/adr/agent/0012-automated-remediation.md",
         "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
-        "docs/adr/agent/0015-hexagonal-architecture.md"
+        "docs/adr/agent/0015-hexagonal-architecture.md",
+        "docs/adr/agent/0016-rca-evaluation-test-harness.md"
       ],
-      "lastSyncedAt": "2026-05-25T00:00:00Z"
+      "lastSyncedAt": "2026-07-21T00:00:00Z"
     },
     "tools": {
       "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",

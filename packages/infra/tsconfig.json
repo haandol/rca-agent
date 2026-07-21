@@ -15,10 +15,11 @@
     "noFallthroughCasesInSwitch": false,
     "inlineSourceMap": true,
     "inlineSources": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
     "esModuleInterop": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
-    "types": ["node"]
+    "types": ["node", "jest"]
   },
   "exclude": ["node_modules", "cdk.out"]
 }

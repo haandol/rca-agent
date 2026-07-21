@@ -47,6 +47,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                 indexName=S3_VECTOR_PLAYBOOK_INDEX,
                 queryVector={"float32": query_vector},
                 topK=PLAYBOOK_TOP_K,
+                returnMetadata=True,
             )
 
         response = retry_with_backoff(
@@ -59,7 +60,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
 
         matches = []
         for item in response.get("vectors", []):
-            similarity = item.get("distance", 0.0)
+            similarity = 1.0 - float(item.get("distance", 1.0))
             if similarity < PLAYBOOK_SIMILARITY_THRESHOLD:
                 continue
             metadata = item.get("metadata", {})

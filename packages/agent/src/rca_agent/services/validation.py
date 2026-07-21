@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -19,6 +17,7 @@ from rca_agent.ports.dto.models import (
     ValidationResult,
 )
 from rca_agent.prompts.validation import VALIDATION_USER_PROMPT_TEMPLATE
+from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -74,13 +73,14 @@ def validate_hypothesis(
 
     logger.info("Validating hypothesis %s: %s", hypothesis.hypothesis_id, hypothesis.description[:60])
 
-    output: ValidationOutput | None = None
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_invoke_agent, agent, user_prompt)
-        try:
-            output = future.result(timeout=timeout_seconds)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("Validation failed for hypothesis %s", hypothesis.hypothesis_id)
+    try:
+        output = call_with_timeout(
+            lambda: _invoke_agent(agent, user_prompt),
+            timeout_seconds,
+        )
+    except Exception:
+        logger.warning("Validation failed for hypothesis %s", hypothesis.hypothesis_id)
+        output = None
 
     if output is None:
         return ValidationJudgment(

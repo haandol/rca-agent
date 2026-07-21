@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "deployment-query-regression",
+  "engine": "strands",
+  "rootCause": "The deployment introduced an N+1 query loop in the sensor response path.",
+  "evidenceIds": [
+    "deployment-correlation",
+    "query-volume-spike",
+    "repository-diff"
+  ],
+  "artifacts": ["scoping", "hypotheses", "validation", "report", "playbook"],
+  "remediation": {
+    "summary": "Rollback the deployment, then replace the per-sensor query with a batched query.",
+    "safe": true,
+    "safeguards": {
+      "preconditions": "Confirm the latest deployment introduced the query regression and identify the last healthy revision.",
+      "approval": "Require the service owner or on-call SRE to approve the rollback.",
+      "rollback": "Stop or reverse the change if error rate or query latency increases.",
+      "verification": "Verify query volume, latency, and error rate across the configured observation window."
+    }
+  }
+}

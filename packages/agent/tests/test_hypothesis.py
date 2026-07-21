@@ -132,7 +132,7 @@ class TestRunHypothesisGeneration:
             assert h.hypothesis_id
 
     def test_hypotheses_preserve_fields(self, sample_scoping_result: ScopingResult):
-        output = _make_hypothesis_output(1)
+        output = _make_hypothesis_output(3)
         mock_agent = _make_mock_agent(output)
 
         result = run_hypothesis_generation(sample_scoping_result, mock_agent)

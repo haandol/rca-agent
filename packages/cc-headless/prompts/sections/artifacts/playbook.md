@@ -1,6 +1,9 @@
 #### playbook.json
 
-플레이북은 **사람 읽기용 문서가 아니라 다음 장애 발생 시 에이전트·오퍼레이터가 기계적으로 따라 실행하는 절차서**이다. 모든 단계는 "어떤 도구/명령을 호출한다 → 어떤 출력을 기대한다 → 어떤 조건으로 판정한다"가 명확해야 한다.
+플레이북은 **별도 Remediation Agent 또는 승인된 오퍼레이터가 검토하고 실행하는
+절차서**이다. CC Headless는 문서화만 하며 변경을 실행하지 않는다. 모든 단계는
+"어떤 액션을 제안한다 → 어떤 사전조건·승인이 필요하다 → 어떤 조건으로 롤백하고
+검증한다"가 명확해야 한다.
 
 ```json
 {
@@ -13,10 +16,10 @@
     "AWS/RDS DatabaseConnections (DBInstanceIdentifier=...) — 정상 <N, 장애 시 >M"
   ],
   "verification_steps": [
-    "### 1. 알람 메트릭 재조회\n- **Tool**: cloudwatch MCP `get_metric_data`\n- **Params**: `{namespace: 'AWS/RDS', metric: 'DatabaseConnections', dimensions: {DBInstanceIdentifier: '<id>'}, period: 60, range: '-30m..now'}`\n- **Expected**: 정상 시 50 이하, 장애 시 200 이상\n- **Pass**: 최근 3개 데이터포인트 < 임계치 → 장애 아님, 다른 플레이북 확인\n- **Fail → 다음 단계**",
-    "### 2. 변경 이력 조회\n- **Tool**: cloudtrail MCP `lookup_events`\n- **Params**: `{event_names: ['UpdateService','RegisterTaskDefinition'], time_range: '알람 -1h..알람', resource: '<service>'}`\n- **Expected**: 배포 이벤트 0-1건\n- **Pass 조건**: 이벤트 1건 이상이면 배포 상관 가설 우선, 없으면 커넥션 누수 가설"
+    "### 1. 알람 메트릭 정상화 판정\n- **검증 메트릭**: AWS/RDS DatabaseConnections (DBInstanceIdentifier=<id>)\n- **조회 후보**: cloudwatch MCP `get_metric_data`\n- **관측 조건**: 별도 실행 주체가 변경 성공을 확인한 뒤, period=60, 연속 3개 데이터포인트\n- **기준값**: 정상 50 이하, 알람 임계치 200\n- **Pass 판정**: 연속 3개 값이 200 미만이고 감소 추세\n- **Fail 판정**: 200 이상 지속 또는 증가 시 롤백 검토 후 DBA 온콜 에스컬레이션",
+    "### 2. 서비스 오류율 동반 판정\n- **검증 메트릭**: AWS/ApplicationELB HTTPCode_Target_5XX_Count (TargetGroup=<id>)\n- **조회 후보**: cloudwatch MCP `get_metric_data`\n- **관측 조건**: 동일 관측 구간, period=60\n- **기준값**: 장애 전 baseline < 1%\n- **Pass 판정**: 오류율이 baseline 범위\n- **Fail 판정**: 오류율 > 5%가 2개 구간 지속되면 롤백"
   ],
-  "temporary_mitigation": "### 즉각 조치 (목표: 5분 내 메트릭 정상화)\n1. **리셋 API 호출**\n   - `POST http://<HEALTHCARE_SERVICE_HOST>:8000/fault/db-leak/reset`\n   - **기대 응답**: HTTP 200 `{\"status\":\"reset\"}`\n2. **30초 대기 후 메트릭 확인** (1번 verification step 반복)\n3. **실패 시**: ECS 강제 배포 (`aws ecs update-service --force-new-deployment ...`)",
+  "temporary_mitigation": "### 복구 권고 후보\n- **제안할 액션**: 별도 실행 주체가 `POST http://<HEALTHCARE_SERVICE_HOST>:8000/fault/db-leak/reset` 검토\n- **사전조건**: 확정 가설 신뢰도 >= 0.8, 대상 환경과 fault 상태 확인, 정상 트래픽 경로와 분리 확인\n- **승인 필요**: 예 — 서비스 온콜\n- **기대 결과**: HTTP 200 및 reset 상태\n- **롤백 조건**: 5XX 오류율 > 5%가 2개 구간 지속되거나 DatabaseConnections 증가\n- **실행 상태**: CC Headless 미실행\n- **대체 후보**: 위 액션이 부적합하거나 별도 실행에서 실패한 경우 승인 후 `UpdateService(forceNewDeployment=true)` 검토",
   "permanent_remediation": "### 영구 개선\n1. 애플리케이션 커넥션 풀 설정 점검 (max=N, idle_timeout, leak_detection_threshold)\n2. `try-with-resources` / context manager로 커넥션 반납 보장\n3. RDS Performance Insights에서 Top wait events가 `client-read` 계열인지 확인\n4. CI에 leak detector 통합",
   "escalation_criteria": "임시 조치 2회 실패 또는 DatabaseConnections가 10분 내 정상화 안 될 때 DBA 온콜 호출. 데이터 손상 의심 시 SEV-1 선언.",
   "prevention_measures": [
@@ -31,9 +34,11 @@
 ```
 
 **플레이북 필드 필수 규칙**:
-- `verification_steps`, `temporary_mitigation`, `permanent_remediation` 각 항목은 위 예시처럼 `### 제목` → `Tool/Command/Params` → `Expected` → `Pass/Fail 조건` 순서를 따르는 **마크다운 블록**으로 작성한다.
-- 명령은 MCP 도구명, AWS CLI 명령, HTTP 메서드+엔드포인트, CloudWatch Logs Insights 쿼리 중 하나를 **그대로 복사해 실행 가능**한 형태로 기록한다. 모호한 한글 서술("연결 수 확인") 금지.
+- `temporary_mitigation`은 `제안할 액션` → `사전조건` → `승인 필요` → `기대 결과` → `롤백 조건` → `실행 상태` 순서를 따른다.
+- `verification_steps`는 `검증 메트릭` → `조회 후보` → `관측 조건` → `기준값` → `Pass 판정` → `Fail 판정` 순서를 따른다.
+- 변경 액션은 별도 실행 주체를 위한 후보로만 기록하고 `CC Headless 미실행`을 명시한다.
+- 조회 후보는 MCP 도구와 구체 파라미터를 포함한다. 모호한 한글 서술("연결 수 확인") 금지.
 - 타임스탬프·임계치·리소스 ID 등 수치는 placeholder(`<id>`)를 써서 재사용 가능하게 둔다. 구체 값은 `related_metrics`에 normal/abnormal 범위로 기록한다.
-- 각 단계는 **독립적으로 실행 가능**해야 한다 (직전 단계의 암묵적 상태 가정 금지).
+- 각 단계는 별도 실행 주체가 **독립적으로 검토 가능**해야 한다 (직전 단계의 암묵적 상태 가정 금지).
 
 **JSON은 반드시 valid해야 한다. 파싱 실패 시 해당 단계가 에러로 기록된다.**

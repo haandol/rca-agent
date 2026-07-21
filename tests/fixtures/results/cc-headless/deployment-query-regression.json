@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "deployment-query-regression",
+  "engine": "cc-headless",
+  "rootCause": "A code change in the latest release performs per-sensor queries, creating an N+1 pattern.",
+  "evidenceIds": [
+    "repository-diff",
+    "deployment-correlation",
+    "query-volume-spike"
+  ],
+  "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
+  "remediation": {
+    "summary": "Revert the release and deploy a batch-query implementation after verification.",
+    "safe": true,
+    "safeguards": {
+      "preconditions": "Confirm the latest deployment introduced the query regression and identify the last healthy revision.",
+      "approval": "Require the service owner or on-call SRE to approve the rollback.",
+      "rollback": "Stop or reverse the change if error rate or query latency increases.",
+      "verification": "Verify query volume, latency, and error rate across the configured observation window."
+    }
+  }
+}

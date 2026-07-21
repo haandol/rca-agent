@@ -7,7 +7,7 @@
 ```
 sections/
 ├── core/
-│   ├── artifacts-overview.md   # /tmp/rca-{id}/ 산출물 규칙
+│   ├── artifacts-overview.md   # 실행별 격리 산출물 규칙
 │   ├── pipeline-overview.md    # 11단계 개요 표
 │   └── principles.md           # 에이전트 공통 원칙
 ├── artifacts/

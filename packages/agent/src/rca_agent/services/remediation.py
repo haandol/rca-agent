@@ -92,7 +92,8 @@ def execute_remediation(
                 )
             )
 
-    overall = all(a.success for a in actions if a.executed)
+    executed_actions = [action for action in actions if action.executed]
+    overall = bool(executed_actions) and all(action.success for action in executed_actions)
     summary_parts = []
     for a in actions:
         status = "SUCCESS" if a.success else ("FAILED" if a.executed else "SKIPPED")

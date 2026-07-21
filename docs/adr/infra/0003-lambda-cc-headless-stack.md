@@ -1,11 +1,11 @@
 # ADR 0003: CC Headless 스택 — ECS Fargate 기반 RCA 실행 인프라
 
 Date: 2026-04-22
-Updated: 2026-04-24
+Updated: 2026-07-21
 
 ## Status
 
-Accepted (Updated — Lambda에서 ECS Fargate로 전환, 산출물 기반 트레이싱 추가)
+Accepted (2026-07-21)
 
 ## Context
 
@@ -15,7 +15,7 @@ CC on Bedrock headless 기반 프롬프트 주도 RCA(agent/0011)를 실행할 �
 2. **CC CLI 콜드스타트**: Lambda 컨테이너 이미지에서 CC CLI + MCP 서버 초기화에 10-20초가 소요되어, 호출마다 반복되는 오버헤드가 크다
 3. **아키텍처 통일**: 기존 Strands Agent가 이미 ECS Fargate + SQS Long Polling 패턴(infra/0001)을 사용하므로, CC Headless도 동일 패턴을 사용하면 운영/배포 스크립트를 통일할 수 있다
 
-ECS Fargate로 전환하면 타임아웃 제약이 없고, CC CLI가 상시 실행 환경에서 MCP 서버를 한 번만 초기화하며, 배포 스크립트(`deploy-service.sh`)를 공유할 수 있다.
+ECS Fargate로 전환하면 Lambda의 15분 제한을 피하고, 상시 실행 worker가 알람마다 격리된 CC CLI 프로세스를 시작할 수 있으며, 배포 스크립트(`deploy-service.sh`)를 공유할 수 있다.
 
 ## Decision
 
@@ -47,9 +47,9 @@ flowchart LR
    - Desired Count: 1 (한 번에 하나의 RCA만 실행)
    - Health Check: `GET /healthz` (HTTP 8080)
 
-4. **MCP 서버 연결**: 컨테이너 내 `mcp-config.json`에 CloudWatch MCP, CloudTrail MCP, AWS Knowledge MCP, GitHub MCP, rca-progress MCP를 정의한다. CC headless가 시작 시 `--mcp-config` 플래그로 이 설정을 읽어 MCP 서버를 자동 연결한다. rca-progress MCP는 `save_artifact` 도구만 제공하며, 산출물 파일을 `/tmp/rca-{id}/`에 저장한다.
+4. **MCP 서버 연결**: 컨테이너 내 MCP 설정에 CloudWatch MCP, CloudTrail MCP, AWS Knowledge MCP, 읽기 전용 GitHub MCP, rca-progress MCP를 정의한다. CC headless는 엄격한 MCP 설정과 명시적 도구 허용 목록으로 이 서버만 연결한다. rca-progress MCP는 `save_artifact` 도구만 제공하며 실행 토큰별 격리 디렉터리에 허용된 산출물만 원자적으로 저장한다.
 
-5. **산출물 파일 기반 트레이싱**: Python wrapper의 `artifact_watcher` 스레드가 `/tmp/rca-{id}/` 디렉토리를 3초 간격으로 폴링한다. 새 파일이 감지되면 JSON을 파싱하여 DDB에 스팬/가설 아이템을 자동 기록한다. CC CLI는 `save_artifact`로 파일만 저장하면 되고, 트레이싱 로직을 알 필요가 없다. 상세는 infra/0005를 참조한다.
+5. **산출물 파일 기반 트레이싱**: Python wrapper의 `artifact_watcher` 스레드가 현재 실행에만 할당된 산출물 디렉터리를 3초 간격으로 폴링한다. 새 파일이 감지되면 JSON을 파싱하여 DDB에 스팬/가설 아이템을 자동 기록한다. CC CLI는 `save_artifact`로 파일만 저장하면 되고, 트레이싱 로직을 알 필요가 없다. 실행별 산출물 디렉터리와 CC 작업·홈 디렉터리는 매번 새로 만들고 종료 후 정리한다. 상세는 infra/0005를 참조한다.
 
 6. **세션 상태 관리**: 기존 DynamoDB 테이블에 세션을 기록한다. `engine` 필드를 `cc-headless`로 설정하여 Strands Agent(`strands`)와 구분한다. SK 접두사에 엔진명을 포함하여 엔진별 트레이스를 분리한다.
 
@@ -84,7 +84,7 @@ Strands Agent 스택과 다음 인프라를 공유한다:
 ### Risks
 
 - Fargate Task가 비정상 종료되면 진행 중인 RCA가 유실된다. SQS Visibility Timeout 후 메시지가 재처리되지만, DynamoDB에 `ANALYZING` 상태로 남은 세션에 대한 복구 메커니즘이 필요하다
-- CC headless가 프롬프트 지시를 무시하고 과도한 도구 호출을 수행할 수 있다. `--max-turns` 플래그로 최대 턴 수를 제한하여 완화한다
+- CC headless가 프롬프트 지시를 무시하고 과도한 도구 호출을 수행할 수 있다. 프로세스 실행 시간 제한, 내장 도구 허용 목록, 엄격한 MCP 설정, 세션 비영속화로 완화한다
 - 두 스택이 동일 DynamoDB 테이블을 공유하므로, 멱등성 체크 없이 양쪽이 동시에 같은 알람을 처리하면 충돌이 발생한다. DynamoDB Conditional Write로 원자적 세션 생성을 보장한다
 
 ## Related

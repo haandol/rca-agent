@@ -7,7 +7,8 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1053.0",
@@ -22,6 +23,7 @@
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.0"
+    "@tailwindcss/vite": "^4.3.0",
+    "vue-tsc": "^3.3.7"
   }
 }

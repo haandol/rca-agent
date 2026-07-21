@@ -1,0 +1,43 @@
+{
+  "id": "rds-connection-pool-exhaustion",
+  "category": "database",
+  "alarm": {
+    "name": "HealthcareApi-Http5xx",
+    "metric": "HTTPCode_Target_5XX_Count",
+    "stateReason": "5xx responses exceeded the threshold for five minutes"
+  },
+  "observations": [
+    {
+      "id": "db-connections-maxed",
+      "source": "cloudwatch",
+      "summary": "DatabaseConnections remained at the configured maximum."
+    },
+    {
+      "id": "pool-timeout-logs",
+      "source": "logs",
+      "summary": "Requests failed while waiting for a connection from the application pool."
+    }
+  ],
+  "expectation": {
+    "rootCauseTermGroups": [
+      ["connection pool", "database pool"],
+      ["exhausted", "saturated", "maximum"]
+    ],
+    "requiredEvidenceIds": ["db-connections-maxed", "pool-timeout-logs"],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "remediationTermGroups": [
+      ["pool", "connection"],
+      ["limit", "timeout", "capacity"]
+    ],
+    "semanticTermGroups": [
+      ["traffic", "requests"],
+      ["bounded", "database capacity"]
+    ]
+  }
+}

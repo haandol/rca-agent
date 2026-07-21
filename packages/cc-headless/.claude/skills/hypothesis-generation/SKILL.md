@@ -11,7 +11,7 @@ description: 가설 생성 서브에이전트 가이드 — 스코핑 결과로�
 
 1. 스코핑 결과를 입력받아 **3-5개** 근본원인 가설을 생성한다
 2. 각 가설에 UUID를 부여한다
-3. rca-progress MCP의 `save_artifact`로 `hypotheses.json`을 저장한다 (자동으로 `/tmp/rca-{세션ID}/` 아래에 저장되고, Python watcher가 파일을 감지해 DDB에 스팬·HYPO 아이템을 기록한다)
+3. rca-progress MCP의 `save_artifact`로 `hypotheses.json`을 현재 실행에 저장한다 (Python watcher가 파일을 감지해 DDB에 스팬·HYPO 아이템을 기록한다)
 
 ## 가설 구조
 
