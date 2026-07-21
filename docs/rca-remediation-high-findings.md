@@ -55,8 +55,8 @@
 | H-10 | CC | 분기 가설을 후속 validation loop에서 확정할 수 없음 | VERIFIED | `e4e0776` |
 | H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | VERIFIED | `25570cd` |
 | H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | VERIFIED | `597eafd` |
-| H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | VERIFIED | 본 커밋 |
-| H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | OPEN | - |
+| H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | VERIFIED | `8c97524` |
+| H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | VERIFIED | 본 커밋 |
 | H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | OPEN | - |
 | H-16 | Healthcare/Infra | 일부 fault가 알람을 발생시키거나 정상화를 검증할 수 없음 | OPEN | - |
 | H-17 | Dashboard | 활성 세션 삭제가 claim/lease fencing을 제거 | OPEN | - |
@@ -427,7 +427,7 @@
   - injection cancellation 시 reset waiter와 acquisition count 정리 테스트 통과
   - Healthcare tests: 19 passed, 1 xfailed
   - Ruff lint/format 및 `git diff --check` 통과
-- **커밋/PR**: 본 커밋
+- **커밋/PR**: `8c97524`
 - **남은 위험**: PostgreSQL 연결 획득 자체가 무기한 반환되지 않으면 reset도 해당
   in-flight 요청을 기다린다. 운영 HTTP/DB timeout이 이 대기 시간의 외부 상한이다.
 - **영향**: reset API가 성공한 뒤에도 leak connection이 남아 장애가 지속될 수 있다.
@@ -443,15 +443,30 @@
 
 ### H-14 fault가 남아도 reset 성공 응답 가능
 
+- **상태**: `VERIFIED` (2026-07-21)
+- **수정**: CPU reset은 join 후 생존 thread를 확인해 `stop_timeout`과 잔존 수를
+  반환하고 참조를 유지한다. Healthcare controller는 `failed`/`stop_timeout`을
+  HTTP 500으로 전달한다. Strands는 CC와 동일하게 bounded JSON object 응답과
+  `stopped`/`not_running` status만 성공으로 인정한다.
+- **검증**:
+  - CPU thread 잔존 시 HTTP 500, 참조 유지, 후속 reset 성공 테스트 통과
+  - slow-query `stop_timeout` HTTP 500 테스트 통과
+  - Strands invalid/oversized/non-success 응답 실패 판정 테스트 통과
+  - CC non-success/invalid body 계약 회귀 테스트 통과
+  - Healthcare tests: 20 passed, 1 xfailed
+  - Agent tests: 530 passed, 4 xfailed
+- **커밋/PR**: 본 커밋
+- **남은 위험**: timeout 이후 살아 있는 daemon thread는 프로세스 안에 남으므로
+  후속 reset 재시도 또는 태스크 교체가 필요하다. 성공으로 오인되지는 않는다.
 - **영향**: 복구 엔진과 최종 보고서가 실제 장애 지속 상태를 성공으로 기록한다.
 - **원인**: CPU reset은 join timeout 후 thread 생존 여부를 확인하지 않는다.
   slow-query는 `stop_timeout` 결과도 HTTP 200으로 반환하며 Strands는 모든 2xx를
   성공으로 간주한다.
 - **근거**:
-  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:98`
-  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:164`
-  - `packages/healthcare-sensor-app/src/test_service/adapters/primary/fault/fault_controller.py:61`
-  - `packages/agent/src/rca_agent/services/remediation.py:18`
+  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:224`
+  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:289`
+  - `packages/healthcare-sensor-app/src/test_service/adapters/primary/fault/fault_controller.py:30`
+  - `packages/agent/src/rca_agent/services/remediation.py:22`
 - **완료 조건**: reset 응답은 실제 종료를 확인해야 하며 timeout/잔존 fault는
   비성공 상태와 적절한 HTTP 오류로 전달돼야 한다. 두 엔진이 응답 body와 status를
   동일하게 해석해야 한다.

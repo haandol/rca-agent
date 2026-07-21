@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import urllib.request
 
@@ -14,6 +15,8 @@ from rca_agent.ports.dto.models import (
 logger = logging.getLogger(__name__)
 
 HEALTHCARE_SERVICE_PORT = 8000
+_MAX_RESET_RESPONSE_BYTES = 64 * 1024
+_SUCCESSFUL_RESET_STATUSES = {"stopped", "not_running"}
 
 
 def _call_fault_reset(service_host: str, endpoint: str) -> tuple[bool, str]:
@@ -22,8 +25,21 @@ def _call_fault_reset(service_host: str, endpoint: str) -> tuple[bool, str]:
         req = urllib.request.Request(url, method="POST", data=b"")
         req.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(req, timeout=REMEDIATION_RESET_TIMEOUT_SECONDS) as resp:
-            body = resp.read().decode()
-            return True, body
+            payload = resp.read(_MAX_RESET_RESPONSE_BYTES + 1)
+            if len(payload) > _MAX_RESET_RESPONSE_BYTES:
+                return False, "response body exceeds size limit"
+            try:
+                response_text = payload.decode("utf-8")
+                body = json.loads(response_text)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return False, "response body is not valid JSON"
+            if not isinstance(body, dict):
+                return False, "response JSON must be an object"
+
+            reset_status = body.get("status")
+            if reset_status is not None and reset_status not in _SUCCESSFUL_RESET_STATUSES:
+                return False, f"non-success status: {reset_status}"
+            return True, response_text
     except Exception as e:
         return False, str(e)
 

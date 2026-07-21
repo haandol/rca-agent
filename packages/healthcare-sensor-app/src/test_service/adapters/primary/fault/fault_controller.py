@@ -27,6 +27,11 @@ class FaultController:
         if not self._enabled:
             raise HTTPException(status_code=403, detail="Fault injection is disabled")
 
+    @staticmethod
+    def _set_reset_status(response: Response, result: dict) -> None:
+        if result.get("status") in {"failed", "stop_timeout"}:
+            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
     async def db_leak(self, req: FaultRequest):
         self._require_enabled()
         return await self._service.leak_connections(req.count)
@@ -34,17 +39,18 @@ class FaultController:
     async def db_leak_reset(self, response: Response):
         self._require_enabled()
         result = await self._service.reset_leaked_connections()
-        if result.get("status") == "failed":
-            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        self._set_reset_status(response, result)
         return result
 
     async def high_cpu(self):
         self._require_enabled()
         return self._service.start_high_cpu()
 
-    async def high_cpu_reset(self):
+    async def high_cpu_reset(self, response: Response):
         self._require_enabled()
-        return await self._service.stop_high_cpu()
+        result = await self._service.stop_high_cpu()
+        self._set_reset_status(response, result)
+        return result
 
     async def high_memory(self, req: FaultMemoryRequest):
         self._require_enabled()
@@ -58,6 +64,8 @@ class FaultController:
         self._require_enabled()
         return self._service.start_slow_query(req.seconds)
 
-    async def slow_query_reset(self):
+    async def slow_query_reset(self, response: Response):
         self._require_enabled()
-        return await self._service.stop_slow_query()
+        result = await self._service.stop_slow_query()
+        self._set_reset_status(response, result)
+        return result

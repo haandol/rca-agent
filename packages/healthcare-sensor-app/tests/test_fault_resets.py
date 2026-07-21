@@ -346,6 +346,33 @@ async def test_high_cpu_reset_stops_threads_then_is_idempotent_noop(fault_client
 
 
 @pytest.mark.asyncio
+async def test_high_cpu_reset_retains_live_threads_and_allows_retry(fault_client: AsyncClient) -> None:
+    stopped_thread = FakeThread()
+    live_thread = FakeThread(stops_when_joined=False)
+    fault._cpu_threads.extend([stopped_thread, live_thread])
+
+    response = await fault_client.post("/fault/high-cpu/reset")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "status": "stop_timeout",
+        "threads_stopped": 1,
+        "threads_remaining": 1,
+    }
+    assert stopped_thread.is_alive() is False
+    assert live_thread.is_alive() is True
+    assert fault._cpu_threads == [live_thread]
+
+    live_thread._stops_when_joined = True
+    retry_response = await fault_client.post("/fault/high-cpu/reset")
+
+    assert retry_response.status_code == 200
+    assert retry_response.json() == {"status": "stopped", "threads_stopped": 1}
+    assert live_thread.join_timeouts == [5, 5]
+    assert fault._cpu_threads == []
+
+
+@pytest.mark.asyncio
 async def test_high_memory_reset_releases_ballasts_then_is_idempotent_noop(fault_client: AsyncClient) -> None:
     fault._memory_ballast.extend([b"first", b"second"])
 
@@ -390,6 +417,7 @@ async def test_slow_query_reset_does_not_report_stopped_while_query_thread_is_al
     response = await fault_client.post("/fault/slow-query/reset")
 
     assert thread.join_timeouts == [35]
+    assert response.status_code == 500
     assert response.json() == {"status": "stop_timeout"}
     assert thread.is_alive() is True
     assert fault._slow_query_thread is thread

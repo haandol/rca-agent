@@ -225,10 +225,18 @@ class FaultInjectionService:
         if not _cpu_threads:
             return {"status": "not_running"}
         _cpu_stop_event.set()
-        await asyncio.gather(*(asyncio.to_thread(t.join, 5) for t in _cpu_threads))
-        count = len(_cpu_threads)
-        _cpu_threads.clear()
-        return {"status": "stopped", "threads_stopped": count}
+        threads = list(_cpu_threads)
+        await asyncio.gather(*(asyncio.to_thread(thread.join, 5) for thread in threads))
+        remaining_threads = [thread for thread in threads if thread.is_alive()]
+        threads_stopped = len(threads) - len(remaining_threads)
+        _cpu_threads[:] = remaining_threads
+        if remaining_threads:
+            return {
+                "status": "stop_timeout",
+                "threads_stopped": threads_stopped,
+                "threads_remaining": len(remaining_threads),
+            }
+        return {"status": "stopped", "threads_stopped": threads_stopped}
 
     def allocate_memory(self, megabytes: int) -> dict:
         ballast = b"\x00" * (megabytes * 1024 * 1024)
