@@ -460,7 +460,7 @@ flowchart TD
 | **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
 | **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
 | **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
-| **자동 복구** | 미구현 (ADR 0012, 모듈만 준비) | 직접 실행하지 않음 — 10~11단계에서 권고·검증 계획 작성 |
+| **자동 복구** | 미구현 (모듈만 준비) | 직접 실행하지 않음 — 10~11단계에서 권고·검증 계획 작성 |
 | **타임아웃** | 20분 (RCA_TIME_BUDGET_SECONDS) | 30분 (CC_TIMEOUT_SECONDS) |
 | **취소 감지** | update_state() 시 ConditionExpression | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
 | **증거 격리** | 가설별 독립 Agent 인스턴스 | CC 자체 컨텍스트 관리 |

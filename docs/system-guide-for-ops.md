@@ -282,7 +282,7 @@ graph LR
 | **AI 모델** | Sonnet 4.6 (Planning은 adaptive thinking) | Sonnet 4.6 |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
 | **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | 생성 (프롬프트 기반, 9단계) |
-| **자동 복구** | 별도 에이전트로 분리 설계 (ADR 0012, 미구현) | 직접 실행하지 않음 — 복구 권고·검증 계획 작성 |
+| **자동 복구** | 별도 에이전트로 분리 설계 (미구현) | 직접 실행하지 않음 — 복구 권고·검증 계획 작성 |
 | **이벤트 수신** | SQS Long Polling | SQS Long Polling |
 | **타임아웃** | 20분 시간 예산 + 종료조건 | 30분 프로세스 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
@@ -292,7 +292,7 @@ graph LR
 
 ## 6. Fargate 엔진 — 9단계 파이프라인
 
-Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 자동 복구(Remediation)는 별도 에이전트로 분리된 설계(ADR 0012)이며, 현재 RCA 에이전트는 분석 → 보고서 → 플레이북 → 알림까지만 담당합니다.
+Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 자동 복구(Remediation)는 별도 에이전트로 분리되며, 현재 RCA 에이전트는 분석 → 보고서 → 플레이북 → 알림까지만 담당합니다.
 
 ```mermaid
 flowchart TD
@@ -356,7 +356,7 @@ graph LR
 
 ### 단일 모델 + Planning/Execution 행동 분리
 
-비용과 품질의 균형을 맞추기 위해 단일 Sonnet 4.6 모델을 사용하되, 단계별로 adaptive thinking 유무로 호출 특성을 구분합니다 (ADR 0010).
+비용과 품질의 균형을 맞추기 위해 단일 Sonnet 4.6 모델을 사용하되, 단계별로 adaptive thinking 유무로 호출 특성을 구분합니다.
 
 ```mermaid
 graph TB
@@ -388,7 +388,7 @@ graph TB
 - **Planning**: 추론·판단이 필요한 단계 → adaptive thinking 활성화 (`THINKING_ENABLED=true` 시)
 - **Execution**: 도구 호출·데이터 수집·검증 → thinking 없이 호출
 - **순수 로직**: AI 불필요 → 코드로 직접 처리
-- **모델 ID**: `BEDROCK_MODEL_ID`만 사용. Haiku 티어(`BEDROCK_HAIKU_MODEL_ID`)는 ADR 0010 업데이트(2026-04-29)로 제거됨
+- **모델 ID**: `BEDROCK_MODEL_ID`만 사용. Haiku 티어(`BEDROCK_HAIKU_MODEL_ID`)는 제거됨
 
 ---
 
@@ -984,7 +984,7 @@ flowchart TD
 | 중복 RCA 실행 | 멱등성 키 불일치 | DynamoDB GSI `idempotency-index` 확인 |
 | Bedrock API 오류 | 리전/모델 설정 오류 | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경변수 확인 |
 | 보고서 S3 업로드 실패 | IAM 권한 부족 | Task Role의 S3 PutObject 권한 확인 |
-| 세션이 "분석중"에서 멈춤 | 태스크 크래시/롤링 배포 중 SIGTERM | SQS Visibility Timeout 만료 후 자동 재처리 (ADR infra/0006). 이전 세션은 FAILED 마킹되고 새 세션이 생성됨 |
+| 세션이 "분석중"에서 멈춤 | 태스크 크래시/롤링 배포 중 SIGTERM | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨 |
 | 재처리가 너무 느림 | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음 | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, CC Headless 35분) |
 
 ---

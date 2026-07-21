@@ -3,21 +3,6 @@
   "categories": {
     "agent": {
       "feature": "Strands와 Stateless CC의 RCA 파이프라인 및 공통 평가 하네스",
-      "codePaths": [
-        ".github/workflows/**",
-        "package.json",
-        "nx.json",
-        "packages/*/package.json",
-        "packages/agent/src/**",
-        "packages/agent/tests/**",
-        "packages/cc-headless/.claude/**",
-        "packages/cc-headless/prompts/**",
-        "packages/cc-headless/src/**",
-        "packages/cc-headless/tests/**",
-        "packages/infra/jest.config.cjs",
-        "packages/infra/test/**",
-        "tests/**"
-      ],
       "adrs": [
         "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
         "docs/adr/agent/0002-hypothesis-tree-lifecycle.md",
@@ -36,13 +21,6 @@
     },
     "tools": {
       "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",
-      "codePaths": [
-        "packages/agent/src/rca_agent/agent_factory.py",
-        "packages/agent/src/rca_agent/di/**",
-        "packages/cc-headless/mcp-config.json",
-        "packages/cc-headless/.mcp.json",
-        "packages/cc-headless/src/cc_headless/mcp_server.py"
-      ],
       "adrs": [
         "docs/adr/tools/0001-metrics-collection.md",
         "docs/adr/tools/0002-log-search.md",
@@ -54,11 +32,6 @@
     },
     "infra": {
       "feature": "AWS CDK 인프라 — ECS Fargate / SNS·SQS / S3·DynamoDB / VPC",
-      "codePaths": [
-        "packages/infra/lib/**",
-        "packages/infra/bin/**",
-        "packages/infra/cdk.json"
-      ],
       "adrs": [
         "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
         "docs/adr/infra/0002-evidence-storage.md",

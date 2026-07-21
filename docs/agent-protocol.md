@@ -10,7 +10,7 @@
 
 - **New feature**: 관련 ADR을 먼저 읽거나 새로 작성한 후 구현을 시작합니다.
 - **Bug fix**: ADR 업데이트 불필요 (아키텍처 변경이 없는 경우).
-- **Before commit**: 구현이 ADR과 달라졌으면 ADR과 `docs/adr/README.md` 인덱스를 반드시 업데이트합니다.
+- **Before commit**: 구현이 ADR과 달라졌으면 ADR과 ADR 레지스트리를 반드시 업데이트합니다.
 - **Rollback**: 빌드/테스트 실패 시 `git stash` 또는 `git checkout -- <file>`로 복원. `git reset --hard`나 force push는 사용자 확인 없이 실행하지 않습니다.
 
 ## Principles
@@ -49,20 +49,20 @@
 
 ## ADR Workflow
 
-`docs/adr/` — 새로운 기능이나 주요 변경 시 ADR 작성이 필수입니다. ADR은 **한국어**로 작성합니다. 전체 인덱스: **[docs/adr/README.md](./adr/README.md)**
+`docs/adr/` — 새로운 기능이나 주요 변경 시 ADR 작성이 필수입니다. ADR은 **한국어**로 작성합니다. 전체 인덱스는 [ADR 레지스트리](./adr/.mapping.json)에서 관리합니다.
 
 ### Before Implementation (Required)
 
-1. **Check existing ADRs** — `docs/adr/README.md` 인덱스에서 관련 ADR 확인
+1. **Check existing ADRs** — ADR 레지스트리에서 관련 ADR 확인
 2. **Create or review ADR**
-   - 관련 ADR이 없으면 → `docs/adr/TEMPLATE.md` 기반으로 새 ADR 작성 (status: `Proposed`)
+   - 관련 ADR이 없으면 → ADR 템플릿을 기반으로 새 ADR 작성 (status: `Proposed`)
    - 관련 ADR이 있으면 → 읽고 현재 구현 방향과 일치하는지 확인
 3. **Scope implementation to ADR** — ADR에 기술된 결정을 따라 구현
 
 ### After Implementation (Required)
 
 1. **Sync ADR** — 아키텍처 결정 자체가 변경되었으면 ADR 업데이트 (status → `Accepted`). 구현 세부사항(파일 경로, 코드 스니펫, DB 필드 스키마)은 ADR에 넣지 않음
-2. **Update README index** — `docs/adr/README.md` 인덱스를 최신 상태로 유지
+2. **Update ADR registry** — ADR 레지스트리를 최신 상태로 유지
 3. **Cascade updates** — 변경이 다른 ADR에 영향을 주면 해당 ADR도 업데이트
 
 ### When ADR is Not Required
@@ -74,7 +74,7 @@
 
 ## Documentation Maintenance
 
-- ADR 인덱스 (`docs/adr/README.md`) 동기화 유지
+- ADR 레지스트리 동기화 유지
 - 주요 기능 추가나 프로젝트 구조 변경 시 관련 AGENTS.md 업데이트
 - DynamoDB 스키마 변경 시 관련 문서 업데이트
 - 프롬프트 변경 시 시나리오 테스트셋으로 정확도 검증

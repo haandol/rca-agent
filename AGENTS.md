@@ -35,7 +35,7 @@ pnpm nx run-many -t test
 - **Development Cycle**: Review/Create ADR → Implement → Build/lint → Test → Sync ADR → Commit
 - **New feature**: 관련 ADR을 먼저 읽거나 새로 작성한 후 구현
 - **Bug fix**: ADR 업데이트 불필요 (아키텍처 변경이 없는 경우)
-- **Before commit**: 구현이 ADR과 달라졌으면 ADR과 `docs/adr/README.md` 인덱스 업데이트
+- **Before commit**: 구현이 ADR과 달라졌으면 ADR과 ADR 레지스트리 업데이트
 - **Cross-package 순서**: Infra → Agent → Dashboard (의존성 하향)
 
 > 원칙, Sub-Agent 정의표, Orchestrator 책임, ADR Workflow 전체는 **[docs/agent-protocol.md](./docs/agent-protocol.md)** 참조.
@@ -44,7 +44,7 @@ pnpm nx run-many -t test
 
 `docs/adr/` — 새로운 기능이나 주요 변경 시 ADR 작성이 필수입니다. ADR은 **한국어**로 작성합니다.
 
-- 전체 인덱스: **[docs/adr/README.md](./docs/adr/README.md)**
+- 전체 인덱스: **[ADR 레지스트리](./docs/adr/.mapping.json)**
 - 작성 규칙 및 워크플로우: [docs/agent-protocol.md#adr-workflow](./docs/agent-protocol.md#adr-workflow)
 
 ## Deployment & Testing
@@ -70,6 +70,6 @@ pnpm nx affected -t test
 | [Deployment](./docs/deployment.md) | CDK 스택, 패키지별 배포, 테스트 가이드 |
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
-| [ADR Index](./docs/adr/README.md) | 아키텍처 결정 기록 인덱스 |
+| [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |

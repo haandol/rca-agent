@@ -95,7 +95,7 @@ graph TB
 
 에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북을 포함한 SNS 알림을 발행합니다.
 
-**플레이북은 생성/저장/인덱싱만 수행되며, 자동 복구(Remediation)는 아직 미구현입니다.** ADR agent/0012에 따라 별도 Remediation Agent가 SNS → SQS로 구독하여 수행하도록 설계되었으나, 해당 에이전트는 아직 배포되지 않았습니다. `remediation.py`와 `verification.py` 모듈이 준비되어 있습니다.
+**플레이북은 생성/저장/인덱싱만 수행되며, 자동 복구(Remediation)는 아직 미구현입니다.** 별도 Remediation Agent가 SNS → SQS로 구독하여 수행하도록 설계되었으나, 해당 에이전트는 아직 배포되지 않았습니다. `remediation.py`와 `verification.py` 모듈이 준비되어 있습니다.
 
 ```mermaid
 stateDiagram-v2
@@ -170,7 +170,7 @@ CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출되며, 프롬프
 
 ### Hexagonal Architecture (Ports & Adapters)
 
-agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비즈니스 로직과 인프라를 분리합니다 (ADR agent/0015).
+agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비즈니스 로직과 인프라를 분리합니다.
 
 ```
 패키지 구조 (agent, cc-headless 공통):
@@ -192,12 +192,12 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 ### Fargate Stack (Strands Agents SDK)
 
 - **9단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → [검증 루프: F3(Prioritization) → Beam Selection → F4(Evidence) → F5(Validation) → Termination Check → F6(Branching)] → F7(Report) → F8(Playbook) → F9(Notification)
-- **단일 모델 + Planning/Execution 행동 분리**: 모든 단계가 Sonnet 4.6을 사용하되, Planning은 adaptive thinking을 활성화하고 Execution은 thinking 없이 호출(ADR agent/0010, 2026-04-29 업데이트)
+- **단일 모델 + Planning/Execution 행동 분리**: 모든 단계가 Sonnet 4.6을 사용하되, Planning은 adaptive thinking을 활성화하고 Execution은 thinking 없이 호출
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: 전체 기각 시 가설 재생성(최대 2회)
-- **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용 (ADR agent/0001)
+- **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
-- **Remediation 분리 (미구현)**: 플레이북 포함 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독(ADR agent/0012)하도록 설계되었으나 미배포
+- **Remediation 분리 (미구현)**: 플레이북 포함 SNS 알림 발행까지 구현됨. 별도 Remediation Agent가 SNS → SQS로 구독하도록 설계되었으나 미배포
 
 ### Fargate Stack (CC Headless)
 

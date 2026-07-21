@@ -315,7 +315,7 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 | `SNS_NOTIFICATION_TOPIC_ARN` | - | RCA 완료 알림 SNS 토픽 |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | - | GitHub MCP 인증 (Secrets Manager에서 주입) |
 
-전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요. 자동 복구(Remediation) 활성화는 별도 에이전트의 desired count로 제어하며, 현재 설계 단계(ADR 0012)입니다.
+전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요. 자동 복구(Remediation) 활성화는 별도 에이전트의 desired count로 제어하며, 현재 설계 단계입니다.
 
 ### CC Headless (packages/cc-headless)
 
@@ -366,7 +366,7 @@ pnpm eval:live
 |------|------|
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
-| [ADR Index](./docs/adr/README.md) | 아키텍처 결정 기록 인덱스 |
+| [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |
 | 패키지별 AGENTS.md | 각 패키지의 AGENTS.md에서 세부 기술 가이드 확인 |
