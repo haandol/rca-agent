@@ -56,8 +56,8 @@
 | H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | VERIFIED | `25570cd` |
 | H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | VERIFIED | `597eafd` |
 | H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | VERIFIED | `8c97524` |
-| H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | VERIFIED | 본 커밋 |
-| H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | OPEN | - |
+| H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | VERIFIED | `573688b` |
+| H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | VERIFIED | `7b513a6` + 본 커밋 |
 | H-16 | Healthcare/Infra | 일부 fault가 알람을 발생시키거나 정상화를 검증할 수 없음 | OPEN | - |
 | H-17 | Dashboard | 활성 세션 삭제가 claim/lease fencing을 제거 | OPEN | - |
 | H-18 | Dashboard | 취소가 현재 claim과 late trace write를 fence하지 않음 | OPEN | - |
@@ -455,7 +455,7 @@
   - CC non-success/invalid body 계약 회귀 테스트 통과
   - Healthcare tests: 20 passed, 1 xfailed
   - Agent tests: 530 passed, 4 xfailed
-- **커밋/PR**: 본 커밋
+- **커밋/PR**: `573688b`
 - **남은 위험**: timeout 이후 살아 있는 daemon thread는 프로세스 안에 남으므로
   후속 reset 재시도 또는 태스크 교체가 필요하다. 성공으로 오인되지는 않는다.
 - **영향**: 복구 엔진과 최종 보고서가 실제 장애 지속 상태를 성공으로 기록한다.
@@ -473,13 +473,27 @@
 
 ### H-15 slow-query의 cross-event-loop AsyncEngine 사용
 
+- **상태**: `VERIFIED` (2026-07-21)
+- **수정**: slow-query worker thread가 자체 event loop에서 전용 asyncpg connection을
+  생성·사용·종료하도록 분리했다. 쿼리는 parameter binding을 사용하고, 연결·쿼리
+  실패를 로깅한 뒤 최대 2초 bounded backoff로 재시도한다.
+- **검증**:
+  - worker thread와 단일 전용 event loop에서 connect/execute/close 실행 확인
+  - 애플리케이션 `DatabasePort.session()` 미호출 확인
+  - `SELECT pg_sleep($1)` parameter binding과 오류 backoff 테스트 통과
+  - PostgreSQL 16에서 실제 `pg_sleep`를 `pg_stat_activity`로 관측하고 reset 후
+    worker connection 종료 확인: 1 passed
+  - Healthcare tests: 23 passed, 1 skipped, 1 xfailed
+- **커밋/PR**: `7b513a6` + 본 커밋
+- **남은 위험**: 실행 중인 `pg_sleep`는 즉시 취소하지 않으므로 stop 응답 시간은
+  현재 쿼리 interval과 join timeout의 영향을 받는다.
 - **영향**: 의도한 DB 부하 대신 loop-bound asyncpg 오류가 반복되거나, 예외를
   숨긴 CPU spin이 발생할 수 있다.
 - **원인**: 별도 thread event loop에서 애플리케이션 메인 loop의 pooled
   `AsyncEngine`을 사용하고 모든 예외를 무시한다.
 - **근거**:
-  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:127`
-  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:139`
+  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:31`
+  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:297`
 - **완료 조건**: 하나의 event loop에서 관리되는 task 또는 thread 전용 동기
   connection을 사용하고, 실제 PostgreSQL 통합 테스트로 query 실행과 reset을
   검증해야 한다.
