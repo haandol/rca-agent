@@ -24,6 +24,51 @@ _cpu_stop_event = threading.Event()
 _cpu_threads: list[threading.Thread] = []
 _slow_query_stop_event = threading.Event()
 _slow_query_thread: threading.Thread | None = None
+_SLOW_QUERY_RETRY_INITIAL_SECONDS = 0.1
+_SLOW_QUERY_RETRY_MAX_SECONDS = 2.0
+
+
+def _asyncpg_dsn(database: DatabasePort) -> str:
+    url = database.engine.url
+    if hasattr(url, "set") and hasattr(url, "render_as_string"):
+        return url.set(drivername="postgresql").render_as_string(hide_password=False)
+    return f"postgresql://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}"
+
+
+async def _run_slow_queries(stop: threading.Event, dsn: str, interval: int) -> None:
+    retry_delay = _SLOW_QUERY_RETRY_INITIAL_SECONDS
+    while not stop.is_set():
+        connection: asyncpg.Connection | None = None
+        try:
+            connection = await asyncpg.connect(dsn)
+            while not stop.is_set():
+                await connection.execute("SELECT pg_sleep($1)", interval)
+            return
+        except Exception:
+            logger.exception("Slow query fault injection failed")
+        finally:
+            if connection is not None:
+                try:
+                    await connection.close()
+                except Exception:
+                    logger.exception("Failed to close slow query fault connection")
+
+        if stop.wait(retry_delay):
+            return
+        retry_delay = min(retry_delay * 2, _SLOW_QUERY_RETRY_MAX_SECONDS)
+
+
+def _run_slow_query_worker(stop: threading.Event, dsn: str, interval: int) -> None:
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_run_slow_queries(stop, dsn, interval))
+    except Exception:
+        logger.exception("Slow query fault injection worker terminated unexpectedly")
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()
+        logger.error("Slow query fault injection stopped")
 
 
 async def _begin_explicit_database_leak() -> int:
@@ -256,30 +301,11 @@ class FaultInjectionService:
             return {"status": "already_running"}
 
         _slow_query_stop_event.clear()
-        self._slow_query_interval = seconds
-
-        def _repeat_slow_query(stop: threading.Event, db: DatabasePort, interval: int):
-            import asyncio
-
-            from sqlalchemy import text
-
-            loop = asyncio.new_event_loop()
-
-            async def _run():
-                while not stop.is_set():
-                    try:
-                        async for session in db.session():
-                            await session.execute(text(f"SELECT pg_sleep({interval})"))
-                    except Exception:
-                        pass
-                logger.error("Slow query fault injection stopped")
-
-            loop.run_until_complete(_run())
-            loop.close()
+        dsn = _asyncpg_dsn(self._database)
 
         _slow_query_thread = threading.Thread(
-            target=_repeat_slow_query,
-            args=(_slow_query_stop_event, self._database, seconds),
+            target=_run_slow_query_worker,
+            args=(_slow_query_stop_event, dsn, seconds),
             daemon=True,
         )
         _slow_query_thread.start()

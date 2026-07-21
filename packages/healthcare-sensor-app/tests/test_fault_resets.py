@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import threading
 from collections.abc import AsyncGenerator
 from dataclasses import replace
 from types import SimpleNamespace
@@ -20,6 +22,7 @@ from test_service.services.fault import FaultInjectionService
 class FakeDatabase(DatabasePort):
     def __init__(self) -> None:
         self.checked_out = 0
+        self.session_calls = 0
         self.engine = SimpleNamespace(
             url=SimpleNamespace(
                 username="unused",
@@ -31,6 +34,7 @@ class FakeDatabase(DatabasePort):
         )
 
     async def session(self) -> AsyncGenerator[Any]:
+        self.session_calls += 1
         if False:
             yield
 
@@ -145,6 +149,19 @@ class FakeThread:
         self.join_timeouts.append(timeout)
         if self._stops_when_joined:
             self.alive = False
+
+
+class RecordingStopEvent:
+    def __init__(self, *, stop_after_waits: int) -> None:
+        self.stop_after_waits = stop_after_waits
+        self.wait_timeouts: list[float] = []
+
+    def is_set(self) -> bool:
+        return False
+
+    def wait(self, timeout: float) -> bool:
+        self.wait_timeouts.append(timeout)
+        return len(self.wait_timeouts) >= self.stop_after_waits
 
 
 def make_settings(**overrides: object) -> AppSettings:
@@ -421,6 +438,106 @@ async def test_slow_query_reset_does_not_report_stopped_while_query_thread_is_al
     assert response.json() == {"status": "stop_timeout"}
     assert thread.is_alive() is True
     assert fault._slow_query_thread is thread
+
+
+def test_slow_query_uses_worker_owned_asyncpg_connection(
+    fake_database: FakeDatabase,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main_thread_id = threading.get_ident()
+    calls: list[tuple[object, ...]] = []
+    loop_ids: list[int] = []
+    thread_ids: list[int] = []
+
+    class WorkerConnection:
+        async def execute(self, query: str, interval: int) -> None:
+            calls.append(("execute", query, interval))
+            loop_ids.append(id(asyncio.get_running_loop()))
+            thread_ids.append(threading.get_ident())
+            fault._slow_query_stop_event.set()
+
+        async def close(self) -> None:
+            calls.append(("close",))
+            loop_ids.append(id(asyncio.get_running_loop()))
+            thread_ids.append(threading.get_ident())
+
+    async def connect(dsn: str) -> WorkerConnection:
+        calls.append(("connect", dsn))
+        loop_ids.append(id(asyncio.get_running_loop()))
+        thread_ids.append(threading.get_ident())
+        return WorkerConnection()
+
+    monkeypatch.setattr(fault.asyncpg, "connect", connect)
+
+    result = FaultInjectionService(fake_database).start_slow_query(7)
+    worker = fault._slow_query_thread
+    assert worker is not None
+    worker.join(timeout=1)
+
+    assert result == {"status": "started", "interval_seconds": 7}
+    assert worker.is_alive() is False
+    assert fake_database.session_calls == 0
+    assert calls == [
+        ("connect", "postgresql://unused:unused@localhost:5432/unused"),
+        ("execute", "SELECT pg_sleep($1)", 7),
+        ("close",),
+    ]
+    assert len(set(loop_ids)) == 1
+    assert len(set(thread_ids)) == 1
+    assert thread_ids[0] != main_thread_id
+
+
+@pytest.mark.asyncio
+async def test_slow_query_errors_are_logged_and_backoff_is_bounded_until_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    attempts = 0
+    stop = RecordingStopEvent(stop_after_waits=6)
+
+    async def failing_connect(_dsn: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(fault.asyncpg, "connect", failing_connect)
+
+    with caplog.at_level(logging.ERROR, logger=fault.__name__):
+        await fault._run_slow_queries(stop, "postgresql://unused", 3)
+
+    assert attempts == 6
+    assert stop.wait_timeouts == [0.1, 0.2, 0.4, 0.8, 1.6, 2.0]
+    assert all(delay <= fault._SLOW_QUERY_RETRY_MAX_SECONDS for delay in stop.wait_timeouts)
+    assert [record.getMessage() for record in caplog.records] == ["Slow query fault injection failed"] * attempts
+
+
+@pytest.mark.asyncio
+async def test_slow_query_query_error_closes_connection_before_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    stop = RecordingStopEvent(stop_after_waits=1)
+    connection_closed = False
+
+    class FailingConnection:
+        async def execute(self, _query: str, _interval: int) -> None:
+            raise RuntimeError("query failed")
+
+        async def close(self) -> None:
+            nonlocal connection_closed
+            connection_closed = True
+
+    async def connect(_dsn: str) -> FailingConnection:
+        return FailingConnection()
+
+    monkeypatch.setattr(fault.asyncpg, "connect", connect)
+
+    with caplog.at_level(logging.ERROR, logger=fault.__name__):
+        await fault._run_slow_queries(stop, "postgresql://unused", 3)
+
+    assert connection_closed is True
+    assert stop.wait_timeouts == [fault._SLOW_QUERY_RETRY_INITIAL_SECONDS]
+    assert [record.getMessage() for record in caplog.records] == ["Slow query fault injection failed"]
 
 
 @pytest.mark.asyncio
