@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +20,15 @@ from test_service.services.fault import FaultInjectionService
 class FakeDatabase(DatabasePort):
     def __init__(self) -> None:
         self.checked_out = 0
+        self.engine = SimpleNamespace(
+            url=SimpleNamespace(
+                username="unused",
+                password="unused",
+                host="localhost",
+                port=5432,
+                database="unused",
+            )
+        )
 
     async def session(self) -> AsyncGenerator[Any]:
         if False:
@@ -48,6 +58,19 @@ class FakeConnection:
         self.close_attempts += 1
         if self.close_fails:
             raise RuntimeError("close failed")
+        self.closed = True
+
+
+class BlockingCloseFakeConnection(FakeConnection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.close_started = asyncio.Event()
+        self.release_close = asyncio.Event()
+
+    async def close(self) -> None:
+        self.close_attempts += 1
+        self.close_started.set()
+        await self.release_close.wait()
         self.closed = True
 
 
@@ -196,6 +219,111 @@ async def test_db_leak_reset_closes_connections_then_is_idempotent_noop(
 
     assert second_response.status_code == 200
     assert second_response.json() == {"closed": 0, "pool_checked_out": 3}
+
+
+@pytest.mark.asyncio
+async def test_db_leak_reset_waits_for_in_flight_explicit_acquisition(
+    fault_service: FaultInjectionService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = FakeConnection()
+    connect_started = asyncio.Event()
+    release_connect = asyncio.Event()
+
+    async def blocking_connect(_dsn: str) -> FakeConnection:
+        connect_started.set()
+        await release_connect.wait()
+        return connection
+
+    monkeypatch.setattr(fault.asyncpg, "connect", blocking_connect)
+
+    leak_task = asyncio.create_task(fault_service.leak_connections(1))
+    await connect_started.wait()
+
+    reset_task = asyncio.create_task(fault_service.reset_leaked_connections())
+    await asyncio.sleep(0)
+
+    assert reset_task.done() is False
+
+    release_connect.set()
+    await leak_task
+    reset_result = await asyncio.wait_for(reset_task, timeout=1)
+
+    assert reset_result == {"closed": 1, "pool_checked_out": 0}
+    assert connection.closed is True
+    assert fault._leaked_sessions == []
+
+
+@pytest.mark.asyncio
+async def test_db_leak_injection_started_during_reset_waits_for_new_generation(
+    fault_service: FaultInjectionService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    existing_connection = BlockingCloseFakeConnection()
+    new_connection = FakeConnection()
+    new_connect_started = asyncio.Event()
+    fault._leaked_sessions.append(existing_connection)
+
+    async def connect_after_reset(_dsn: str) -> FakeConnection:
+        new_connect_started.set()
+        return new_connection
+
+    monkeypatch.setattr(fault.asyncpg, "connect", connect_after_reset)
+
+    reset_task = asyncio.create_task(fault_service.reset_leaked_connections())
+    await existing_connection.close_started.wait()
+
+    leak_task = asyncio.create_task(fault_service.leak_connections(1))
+    await asyncio.sleep(0)
+
+    assert new_connect_started.is_set() is False
+    assert leak_task.done() is False
+
+    existing_connection.release_close.set()
+    reset_result = await asyncio.wait_for(reset_task, timeout=1)
+    await asyncio.wait_for(new_connect_started.wait(), timeout=1)
+    leak_result = await asyncio.wait_for(leak_task, timeout=1)
+
+    assert reset_result == {"closed": 1, "pool_checked_out": 0}
+    assert existing_connection.closed is True
+    assert leak_result["leaked_total"] == 1
+    assert fault._leaked_sessions == [new_connection]
+
+    cleanup_result = await fault_service.reset_leaked_connections()
+
+    assert cleanup_result == {"closed": 1, "pool_checked_out": 0}
+    assert new_connection.closed is True
+    assert fault._leaked_sessions == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_explicit_acquisition_releases_reset_waiter(
+    fault_service: FaultInjectionService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connect_started = asyncio.Event()
+    block_connect = asyncio.Event()
+
+    async def cancelled_connect(_dsn: str) -> FakeConnection:
+        connect_started.set()
+        await block_connect.wait()
+        return FakeConnection()
+
+    monkeypatch.setattr(fault.asyncpg, "connect", cancelled_connect)
+
+    leak_task = asyncio.create_task(fault_service.leak_connections(1))
+    await connect_started.wait()
+    reset_task = asyncio.create_task(fault_service.reset_leaked_connections())
+    await asyncio.sleep(0)
+
+    leak_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await leak_task
+
+    reset_result = await asyncio.wait_for(reset_task, timeout=1)
+
+    assert reset_result == {"closed": 0, "pool_checked_out": 0}
+    assert fault._leaked_sessions == []
 
 
 @pytest.mark.asyncio

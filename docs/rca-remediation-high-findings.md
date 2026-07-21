@@ -54,8 +54,8 @@
 | H-09 | CC | 필수 플레이북 저장 실패 후에도 세션 완료·메시지 삭제 | VERIFIED | `e4e0776` |
 | H-10 | CC | 분기 가설을 후속 validation loop에서 확정할 수 없음 | VERIFIED | `e4e0776` |
 | H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | VERIFIED | `25570cd` |
-| H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | VERIFIED | 본 커밋 |
-| H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | OPEN | - |
+| H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | VERIFIED | `597eafd` |
+| H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | VERIFIED | 본 커밋 |
 | H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | OPEN | - |
 | H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | OPEN | - |
 | H-16 | Healthcare/Infra | 일부 fault가 알람을 발생시키거나 정상화를 검증할 수 없음 | OPEN | - |
@@ -401,7 +401,7 @@
   - MCP 통합 테스트에서 reset lease와 HTTP 호출 전 `BLOCKED` 확인
   - CC Headless tests: 246 passed
   - Ruff lint/format 및 `git diff --check` 통과
-- **커밋/PR**: 본 커밋
+- **커밋/PR**: `597eafd`
 - **남은 위험**: 가설의 fault type과 terminal 분류 자체는 모델 산출물이므로 서버는
   구조·상태 정합을 검증하지만 증거의 의미를 독립 재판정하지는 않는다. H-08의
   서버 소유 알람 대상·metric 바인딩이 잘못된 reset의 추가 안전 경계로 남는다.
@@ -416,12 +416,26 @@
 
 ### H-13 DB leak 주입/reset 경쟁 조건
 
+- **상태**: `VERIFIED` (2026-07-21)
+- **수정**: explicit DB leak 요청을 generation과 in-flight acquisition으로
+  추적한다. reset은 이전 generation을 fence하고 기존 연결을 먼저 닫은 뒤 진행 중
+  획득이 끝날 때까지 기다려 late connection도 닫는다. reset 중 시작한 새 injection은
+  reset 완료 후 새 generation에서 실행한다.
+- **검증**:
+  - connect 완료 전 reset이 시작되는 결정론적 경쟁 테스트 통과
+  - reset 중 신규 injection 직렬화 테스트 통과
+  - injection cancellation 시 reset waiter와 acquisition count 정리 테스트 통과
+  - Healthcare tests: 19 passed, 1 xfailed
+  - Ruff lint/format 및 `git diff --check` 통과
+- **커밋/PR**: 본 커밋
+- **남은 위험**: PostgreSQL 연결 획득 자체가 무기한 반환되지 않으면 reset도 해당
+  in-flight 요청을 기다린다. 운영 HTTP/DB timeout이 이 대기 시간의 외부 상한이다.
 - **영향**: reset API가 성공한 뒤에도 leak connection이 남아 장애가 지속될 수 있다.
 - **원인**: connection 획득 후 전역 목록 추가 전에 await 지점이 있고 reset은
   동기화 없이 목록을 snapshot/clear한다.
 - **근거**:
-  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:29`
-  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:46`
+  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:134`
+  - `packages/healthcare-sensor-app/src/test_service/services/fault.py:159`
 - **재현 결과**: reset은 `closed=0`을 반환했지만 완료 직후 leaked connection이
   1개 존재했다.
 - **완료 조건**: injection과 reset을 직렬화하거나 generation fencing을 적용하고,
