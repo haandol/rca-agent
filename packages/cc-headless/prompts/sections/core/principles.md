@@ -4,7 +4,8 @@
 - **증거 기반 RCA**: RCA 결과는 읽기 전용 MCP 증거에 근거한다.
 - **서버 측 복구 게이트**: 모델의 confirmed 주장을 신뢰하지 않는다. narrow MCP가
   최신 validation 산출물을 직접 재검증한다.
-- **Fail-closed**: 미확정, unsupported, ambiguous 원인에는 어떤 변경도 실행하지 않는다.
+- **Fail-closed**: 미확정, unsupported, ambiguous 원인이나 서로 다른 allowlisted 원인을
+  가리키는 미해소 경쟁 가설이 있으면 어떤 변경도 실행하지 않는다.
 - **제한된 변경**: Healthcare 네 reset 외 HTTP, Bash, ECS update를 실행하지 않는다.
 - **보고 연속성**: 복구 미실행·차단·실패에도 Report를 실행한다.
 - **실행 격리**: 현재 실행 정보만 사용하고 이전 실행을 재사용하지 않는다.

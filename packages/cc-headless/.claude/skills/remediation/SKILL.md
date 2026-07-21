@@ -18,10 +18,14 @@ Remediation 전문 에이전트는 임의 HTTP, Bash, ECS `UpdateService`, 배�
 - `confirmed`가 비어 있지 않은지
 - 각 confirmed 항목이 기존 hypothesis ID를 참조하고 confidence가 0.8 이상인지
 - confirmed validation의 fault type enum이 참조 hypothesis의 enum과 일치하는지
+- 모든 validation loop를 반영한 최신 hypothesis 상태에서, 확정 fault와 다른 allowlisted
+  fault type의 경쟁 가설이 `unclassified` 또는 `needs_investigation`으로 남아 있지 않은지
 - 요청한 fault type이 검증된 enum과 일치하는지
 - Healthcare 호스트가 서버 환경에 고정되어 있는지
 
 하나라도 실패하면 `BLOCKED`로 종료하고 변경하지 않는다.
+`rejected` 또는 `closed`인 경쟁 가설은 해소된 것으로 본다. 복수 가설이 확정되더라도
+모두 같은 reset action으로 수렴하면 충돌로 보지 않는다.
 
 ## 허용 액션
 

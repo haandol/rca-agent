@@ -26,6 +26,7 @@ _REPORT_SECTIONS = (
 )
 _REMEDIATION_STATUSES = {"SUCCEEDED", "FAILED", "BLOCKED"}
 _VERIFICATION_STATUSES = {"NORMALIZED", "FAILED", "PENDING"}
+_AMBIGUOUS_HYPOTHESIS_STATES = {"unclassified", "needs_investigation", "confirmed"}
 _PLAYBOOK_STRING_FIELDS = (
     "stage",
     "playbook_id",
@@ -170,7 +171,7 @@ def _validate_validation_loop(
     artifact: dict,
     hypotheses_by_id: dict[str, _HypothesisContext],
     tree_id: str,
-) -> dict[str, _HypothesisContext]:
+) -> tuple[dict[str, _HypothesisContext], dict[str, str]]:
     _require_fields(
         artifact,
         strings=("stage", "summary", "output_summary"),
@@ -187,6 +188,7 @@ def _validate_validation_loop(
         raise ArtifactValidationError(f"{path.name} has an invalid stage or loop_index")
 
     referenced_ids: set[str] = set()
+    classifications: dict[str, str] = {}
     for bucket in ("confirmed", "rejected", "needs_investigation", "closed"):
         for entry in artifact[bucket]:
             if not isinstance(entry, dict):
@@ -198,6 +200,7 @@ def _validate_validation_loop(
             if hypothesis_id in referenced_ids:
                 raise ArtifactValidationError(f"{path.name} references a hypothesis in multiple result buckets")
             referenced_ids.add(hypothesis_id)
+            classifications[hypothesis_id] = bucket
             confidence = entry.get("confidence")
             if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
                 raise ArtifactValidationError(f"{path.name} confidence must be between 0 and 1")
@@ -254,7 +257,7 @@ def _validate_validation_loop(
             tree_id=hypothesis["tree_id"],
             depth=depth,
         )
-    return new_hypotheses
+    return new_hypotheses, classifications
 
 
 def _validate_validation(
@@ -263,12 +266,17 @@ def _validate_validation(
     tree_id: str,
     *,
     through_loop_index: int | None = None,
+    classifications_by_id: dict[str, str] | None = None,
 ) -> tuple[Path, dict]:
     latest: tuple[Path, dict] | None = None
     for _, path in _validation_candidates(base, through_loop_index):
         artifact = _load_object(path, path.name)
-        new_hypotheses = _validate_validation_loop(path, artifact, hypotheses_by_id, tree_id)
+        new_hypotheses, classifications = _validate_validation_loop(path, artifact, hypotheses_by_id, tree_id)
         hypotheses_by_id.update(new_hypotheses)
+        if classifications_by_id is not None:
+            for hypothesis_id in new_hypotheses:
+                classifications_by_id[hypothesis_id] = "unclassified"
+            classifications_by_id.update(classifications)
         latest = path, artifact
     if latest is None:
         raise ArtifactValidationError("validation-{N}.json is missing")
@@ -291,7 +299,13 @@ def validate_validation_artifacts(
 
 def validate_remediation_evidence(base: Path) -> RemediationEvidence:
     hypotheses_by_id, tree_id = _validate_hypotheses(base)
-    validation_path, validation = _validate_validation(base, hypotheses_by_id, tree_id)
+    classifications_by_id = dict.fromkeys(hypotheses_by_id, "unclassified")
+    validation_path, validation = _validate_validation(
+        base,
+        hypotheses_by_id,
+        tree_id,
+        classifications_by_id=classifications_by_id,
+    )
     confirmed = validation["confirmed"]
     if not confirmed:
         raise ArtifactValidationError(f"{validation_path.name} has no confirmed root cause")
@@ -301,6 +315,15 @@ def validate_remediation_evidence(base: Path) -> RemediationEvidence:
     fault_type = parse_fault_type(confirmed[0]["fault_type"])
     if fault_type is None:
         raise ArtifactValidationError(f"{validation_path.name} confirmed fault_type is invalid")
+    for hypothesis_id, context in hypotheses_by_id.items():
+        state = classifications_by_id[hypothesis_id]
+        if context.fault_type is fault_type or context.fault_type not in RESET_PATHS:
+            continue
+        if state in _AMBIGUOUS_HYPOTHESIS_STATES:
+            raise ArtifactValidationError(
+                f"{validation_path.name} has unresolved competing hypothesis "
+                f"{hypothesis_id} for fault_type {context.fault_type.value}"
+            )
     return RemediationEvidence(
         validation_artifact=validation_path.name,
         fault_type=fault_type,

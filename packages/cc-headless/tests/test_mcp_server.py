@@ -497,6 +497,53 @@ def test_execute_healthcare_reset_blocks_unconfirmed_result_without_http(artifac
     urlopen.assert_not_called()
 
 
+def test_execute_healthcare_reset_blocks_unresolved_competing_fault_before_side_effects(
+    artifact_home,
+    monkeypatch,
+):
+    _write_rca_artifacts(artifact_home, title="DB connection leak")
+    hypotheses_path = artifact_home / "hypotheses.json"
+    hypotheses = json.loads(hypotheses_path.read_text())
+    hypotheses["hypotheses"].append(
+        {
+            "hypothesis_id": "hypothesis-2",
+            "tree_id": "tree-1",
+            "title": "High CPU",
+            "description": "CPU saturation may be the root cause",
+            "fault_type": "high-cpu",
+            "category": "INFRASTRUCTURE",
+            "confidence_score": 0.7,
+            "required_evidence": ["metric"],
+            "status": "PENDING",
+            "parent_id": None,
+            "depth": 0,
+        }
+    )
+    hypotheses_path.write_text(json.dumps(hypotheses))
+    validation_path = artifact_home / "validation-1.json"
+    validation = json.loads(validation_path.read_text())
+    validation["needs_investigation"] = [
+        {
+            "hypothesis_id": "hypothesis-2",
+            "confidence": 0.7,
+            "reasoning": "CPU evidence is still inconclusive",
+        }
+    ]
+    validation_path.write_text(json.dumps(validation))
+    lease_store = Mock()
+    monkeypatch.setattr(mcp_server, "_session_store", lambda: (lease_store, Mock()))
+    urlopen = Mock()
+    monkeypatch.setattr(mcp_server.request, "urlopen", urlopen)
+
+    result = json.loads(mcp_server.execute_healthcare_reset("db-leak"))
+
+    assert result["status"] == "BLOCKED"
+    assert "unresolved competing hypothesis hypothesis-2" in result["error"]
+    assert not artifact_home.joinpath("remediation.json").exists()
+    lease_store.acquire_side_effect_lease.assert_not_called()
+    urlopen.assert_not_called()
+
+
 def test_execute_healthcare_reset_uses_latest_validation_and_fails_closed(artifact_home, monkeypatch):
     _write_rca_artifacts(artifact_home, title="DB connection leak", validation_index=1)
     artifact_home.joinpath("validation-2.json").write_text(

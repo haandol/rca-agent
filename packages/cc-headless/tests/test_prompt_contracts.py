@@ -208,6 +208,19 @@ def test_remediation_capability_is_narrow_and_has_no_fallback():
     assert "ECS `UpdateService`" in guidance
 
 
+def test_remediation_guidance_blocks_unresolved_conflicting_allowlisted_causes():
+    remediation = (SKILLS_DIR / "remediation" / "SKILL.md").read_text()
+    principles = (PROMPTS_DIR / "sections" / "core" / "principles.md").read_text()
+
+    assert "모든 validation loop를 반영한 최신 hypothesis 상태" in remediation
+    assert "확정 fault와 다른 allowlisted" in remediation
+    assert "`unclassified` 또는 `needs_investigation`" in remediation
+    assert "`rejected` 또는 `closed`인 경쟁 가설은 해소된 것으로 본다" in remediation
+    assert "모두 같은 reset action으로 수렴하면 충돌로 보지 않는다" in remediation
+    assert "서로 다른 allowlisted 원인을" in principles
+    assert "미해소 경쟁 가설이 있으면 어떤 변경도 실행하지 않는다" in principles
+
+
 def test_hypothesis_and_validation_contract_require_matching_fault_enum():
     hypotheses = (PROMPTS_DIR / "sections" / "artifacts" / "hypotheses.md").read_text()
     validation = (PROMPTS_DIR / "sections" / "artifacts" / "validation.md").read_text()

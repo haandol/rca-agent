@@ -53,8 +53,8 @@
 | H-08 | CC Remediation | 복구가 서버 소유 알람 대상과 바인딩되지 않음 | VERIFIED | `e4e0776` |
 | H-09 | CC | 필수 플레이북 저장 실패 후에도 세션 완료·메시지 삭제 | VERIFIED | `e4e0776` |
 | H-10 | CC | 분기 가설을 후속 validation loop에서 확정할 수 없음 | VERIFIED | `e4e0776` |
-| H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | VERIFIED | 본 커밋 |
-| H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | OPEN | - |
+| H-11 | CC Remediation | CloudWatch M-of-N 조건을 무시해 조기 NORMALIZED 가능 | VERIFIED | `25570cd` |
+| H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | VERIFIED | 본 커밋 |
 | H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | OPEN | - |
 | H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | OPEN | - |
 | H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | OPEN | - |
@@ -371,7 +371,7 @@
     중복·정렬, strict threshold, 잘못된 M/N 테스트 통과
   - CC Headless tests: 232 passed
   - Ruff lint/format 및 `git diff --check` 통과
-- **커밋/PR**: 본 커밋
+- **커밋/PR**: `25570cd`
 - **남은 위험**: CloudWatch metric 수집 지연 또는 `ignore`/`missing` 정책에서는
   제한된 재시도 안에 판정을 확정하지 못해 후속 관측이 필요할 수 있다.
 - **영향**: 실제 알람이 아직 OK 전환 조건을 충족하지 않았는데 복구 결과를
@@ -389,12 +389,28 @@
 
 ### H-12 CC 경쟁 가설 미해결 상태에서 복구 허용
 
+- **상태**: `VERIFIED` (2026-07-21)
+- **수정**: 모든 validation loop의 가설별 최신 분류를 누적하고, 확정 fault와
+  다른 allowlisted reset으로 이어지는 가설이 미분류, 조사 중 또는 해소되지 않은
+  과거 confirmed 상태이면 복구를 차단한다. 경쟁 가설이 후속 loop에서
+  `rejected`/`closed`로 해소되거나 같은 reset action으로 수렴하는 경우만 허용한다.
+- **검증**:
+  - 단일 확정과 동일 fault 복수 확정 허용 테스트 통과
+  - 다른 fault의 미분류·조사 중·과거 confirmed 차단 테스트 통과
+  - 후속 `rejected`/`closed` 해소와 unsupported 경쟁 가설 허용 테스트 통과
+  - MCP 통합 테스트에서 reset lease와 HTTP 호출 전 `BLOCKED` 확인
+  - CC Headless tests: 246 passed
+  - Ruff lint/format 및 `git diff --check` 통과
+- **커밋/PR**: 본 커밋
+- **남은 위험**: 가설의 fault type과 terminal 분류 자체는 모델 산출물이므로 서버는
+  구조·상태 정합을 검증하지만 증거의 의미를 독립 재판정하지는 않는다. H-08의
+  서버 소유 알람 대상·metric 바인딩이 잘못된 reset의 추가 안전 경계로 남는다.
 - **영향**: high-cpu가 confirmed여도 db-leak 경쟁 가설이 investigation 상태면
   잘못된 reset을 실행할 수 있다.
 - **원인**: 복구 증거 validator가 모든 경쟁 가설의 terminal 상태를 요구하지 않는다.
 - **근거**:
-  - `packages/cc-headless/src/cc_headless/services/artifact_validation.py:176`
-  - `packages/cc-headless/src/cc_headless/services/artifact_validation.py:242`
+  - `packages/cc-headless/src/cc_headless/services/artifact_validation.py:171`
+  - `packages/cc-headless/src/cc_headless/services/artifact_validation.py:299`
 - **완료 조건**: 상충하는 allowlisted 원인이 남아 있으면 `BLOCKED`로 종료해야 한다.
   단일 확정, 복수 확정, 미해결 경쟁 원인 테스트를 각각 추가한다.
 
