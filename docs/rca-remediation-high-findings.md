@@ -57,8 +57,8 @@
 | H-12 | CC Remediation | 경쟁 가설이 미해결이어도 자동 복구를 허용 | VERIFIED | `597eafd` |
 | H-13 | Healthcare | DB leak 주입과 reset 경쟁 시 reset 후 연결이 남음 | VERIFIED | `8c97524` |
 | H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | VERIFIED | `573688b` |
-| H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | VERIFIED | `7b513a6` + 본 커밋 |
-| H-16 | Healthcare/Infra | 일부 fault가 알람을 발생시키거나 정상화를 검증할 수 없음 | OPEN | - |
+| H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | VERIFIED | `7b513a6`, `a614036` |
+| H-16 | Healthcare/Infra | 일부 fault가 알람을 발생시키거나 정상화를 검증할 수 없음 | IN_PROGRESS | 로컬 검토 중 |
 | H-17 | Dashboard | 활성 세션 삭제가 claim/lease fencing을 제거 | OPEN | - |
 | H-18 | Dashboard | 취소가 현재 claim과 late trace write를 fence하지 않음 | OPEN | - |
 | H-19 | Dashboard | 모델·S3 Markdown을 sanitizing 없이 HTML로 렌더링 | OPEN | - |
@@ -484,7 +484,7 @@
   - PostgreSQL 16에서 실제 `pg_sleep`를 `pg_stat_activity`로 관측하고 reset 후
     worker connection 종료 확인: 1 passed
   - Healthcare tests: 23 passed, 1 skipped, 1 xfailed
-- **커밋/PR**: `7b513a6` + 본 커밋
+- **커밋/PR**: `7b513a6`, `a614036`
 - **남은 위험**: 실행 중인 `pg_sleep`는 즉시 취소하지 않으므로 stop 응답 시간은
   현재 쿼리 interval과 join timeout의 영향을 받는다.
 - **영향**: 의도한 DB 부하 대신 loop-bound asyncpg 오류가 반복되거나, 예외를
@@ -500,6 +500,21 @@
 
 ### H-16 fault와 CloudWatch 알람/검증 신호 불일치
 
+- **상태**: `IN_PROGRESS` (2026-07-21)
+- **검토 결과**:
+  - high-cpu는 ECS `CPUUtilization` 알람과 주입·reset 계약이 일치한다.
+  - explicit db-leak는 `count=35`일 때 실제 AWS에서 `DatabaseConnections`
+    임계치 30을 넘겼지만 기본 count 10과 environment pool 최대 15는 부족하다.
+  - high-memory는 ECS `MemoryUtilization`과 연결되지만 기본 할당량이 임계치 80%를
+    안정적으로 넘는다는 라이브 근거가 없다.
+  - slow-query의 `pg_sleep`는 RDS storage `ReadLatency`를 안정적으로 높이지
+    않으며 현재 해당 알람도 없다.
+  - 60초 period 2개를 요구하는 알람은 reset 시점 정렬을 포함하면 최대 약 180초가
+    필요해 CC 기본 120초 관측 예산으로는 `NORMALIZED` 확정이 어렵다.
+- **다음 구현 경계**: 네 allowlisted fault만 대상으로 주입량 계약, slow-query용
+  권위 metric, CDK 알람, H-08 target mapping, H-11 관측 예산을 하나의 ADR-first
+  변경으로 정렬한 뒤 동일 배포에서 fault별 라이브 흐름을 검증한다. 환경 변수 기반
+  request latency fault는 별도 지원 범위로 분리한다.
 - **영향**: 장애 주입이 RCA를 시작하지 못하거나 reset 후 정상화 여부를 판정할 수
   없어 전체 데모 흐름이 성립하지 않는다.
 - **원인**: slow-query/request latency 알람이 없고, 환경 기반 DB leak의 최대
