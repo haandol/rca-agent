@@ -33,7 +33,7 @@
       "command": "fastmcp",
       "args": [
         "run",
-        "/app/src/cc_headless/mcp_server.py:mcp"
+        "{{PACKAGE_ROOT}}/src/cc_headless/mcp_server.py:mcp"
       ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"

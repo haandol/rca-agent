@@ -38,6 +38,7 @@ def _find_file(name: str) -> str:
 
 _MCP_CONFIG_PATH = _find_file("mcp-config.json")
 _WORKSPACE_SOURCE = Path(_MCP_CONFIG_PATH).parent
+_PACKAGE_ROOT_PLACEHOLDER = "{{PACKAGE_ROOT}}"
 _ROOT_AGENT = "orchestrator"
 _BUILTIN_TOOLS = ("Agent", "Skill")
 _ALLOWED_TOOLS = (
@@ -49,6 +50,20 @@ _ALLOWED_TOOLS = (
     "mcp__rca-progress__save_artifact",
     "mcp__rca-progress__execute_healthcare_reset",
 )
+
+
+def _render_mcp_config(source: str, dest_dir: Path) -> str:
+    """Resolve packaged MCP server references against the installed package root.
+
+    The committed config refers to the packaged MCP server through a placeholder so
+    the same harness starts from a local checkout and from the container image.
+    """
+    text = Path(source).read_text()
+    if _PACKAGE_ROOT_PLACEHOLDER not in text:
+        return source
+    dest = dest_dir / "mcp-config.json"
+    dest.write_text(text.replace(_PACKAGE_ROOT_PLACEHOLDER, str(_WORKSPACE_SOURCE)))
+    return str(dest)
 
 
 def _prepare_workspace(path: Path) -> None:
@@ -89,26 +104,6 @@ class CcSubprocessRunner(CcRunnerPort):
         attempt: int | None = None,
     ) -> CcResult:
         artifact_dir_for_token(execution_token)
-        args = [
-            "claude",
-            "-p",
-            prompt,
-            "--output-format",
-            "json",
-            "--dangerously-skip-permissions",
-            "--mcp-config",
-            mcp_config or _MCP_CONFIG_PATH,
-            "--strict-mcp-config",
-            "--no-session-persistence",
-            "--agent",
-            _ROOT_AGENT,
-            "--tools",
-            ",".join(_BUILTIN_TOOLS),
-            "--allowedTools",
-            ",".join(_ALLOWED_TOOLS),
-        ]
-
-        logger.info("cc_cli_started", mcp_config=mcp_config or _MCP_CONFIG_PATH)
 
         with (
             TemporaryDirectory(prefix="cc-workspace-") as workspace,
@@ -116,6 +111,28 @@ class CcSubprocessRunner(CcRunnerPort):
         ):
             workspace_path = Path(workspace)
             _prepare_workspace(workspace_path)
+            resolved_mcp_config = _render_mcp_config(mcp_config or _MCP_CONFIG_PATH, Path(home))
+            args = [
+                "claude",
+                "-p",
+                prompt,
+                "--output-format",
+                "json",
+                "--dangerously-skip-permissions",
+                "--mcp-config",
+                resolved_mcp_config,
+                "--strict-mcp-config",
+                "--no-session-persistence",
+                "--agent",
+                _ROOT_AGENT,
+                "--tools",
+                ",".join(_BUILTIN_TOOLS),
+                "--allowedTools",
+                ",".join(_ALLOWED_TOOLS),
+            ]
+
+            logger.info("cc_cli_started", mcp_config=resolved_mcp_config)
+
             env = {
                 **os.environ,
                 "HOME": home,

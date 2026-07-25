@@ -12,6 +12,9 @@ dependencies = [
     "structlog>=25.1",
 ]
 
+[project.scripts]
+cc-headless-eval = "cc_headless.eval_adapter:main"
+
 [project.optional-dependencies]
 dev = [
     "ruff>=0.11",

@@ -24,7 +24,21 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 ECR_NS=$(echo "${PREFIX}" | tr '[:upper:]' '[:lower:]')
 PLATFORM="linux/arm64"
-IMAGE_TAG="latest"
+
+# 이미지 태그는 커밋 SHA로 고정한다. 실행 중인 하네스 버전을 태그만으로
+# 식별할 수 있어야 하므로 mutable 한 latest 를 배포 대상으로 쓰지 않는다.
+# 커밋되지 않은 변경이 있으면 태그에 표시해 재현 불가 상태를 드러낸다.
+resolve_image_tag() {
+  local sha dirty=""
+  sha=$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null) || {
+    err "git 저장소가 아니어서 이미지 태그를 고정할 수 없습니다"
+    exit 1
+  }
+  if ! git -C "$REPO_ROOT" diff --quiet HEAD -- 2>/dev/null; then
+    dirty="-dirty"
+  fi
+  echo "${sha}${dirty}"
+}
 
 lookup() {
   local svc=$1 field=$2
@@ -41,6 +55,12 @@ lookup() {
     healthcare:repo)     echo "${ECR_NS}/healthcare" ;;
     healthcare:cluster)  echo "${PREFIX}Healthcare" ;;
     healthcare:service)  echo "${PREFIX}Healthcare" ;;
+    agent:stack)         echo "${PREFIX}RcaAgentServiceStack" ;;
+    agent:tagenv)        echo "AGENT_IMAGE_TAG" ;;
+    cc-headless:stack)   echo "${PREFIX}CcHeadlessStack" ;;
+    cc-headless:tagenv)  echo "CC_HEADLESS_IMAGE_TAG" ;;
+    healthcare:stack)    echo "${PREFIX}HealthcareServiceStack" ;;
+    healthcare:tagenv)   echo "HEALTHCARE_IMAGE_TAG" ;;
     *) echo "Unknown: ${svc}:${field}" >&2; return 1 ;;
   esac
 }
@@ -81,18 +101,14 @@ do_push() {
 
 do_ecs_deploy() {
   local svc=$1
-  local cluster service_name
-  cluster=$(lookup "$svc" cluster)
-  service_name=$(lookup "$svc" service)
-  log "ECS 재배포: $cluster / $service_name"
-  aws ecs update-service \
-    --cluster "$cluster" \
-    --service "$service_name" \
-    --force-new-deployment \
-    --region "$REGION" \
-    --query "service.{status:status,desired:desiredCount,running:runningCount}" \
-    --output table
-  ok "재배포 시작: $svc"
+  local stack tagenv
+  stack=$(lookup "$svc" stack)
+  tagenv=$(lookup "$svc" tagenv)
+  log "스택 배포: $stack (${tagenv}=${IMAGE_TAG})"
+  # 태스크 정의가 불변 태그를 직접 가리키도록 CDK 로 배포한다. force-new-deployment
+  # 만으로는 태스크 정의의 이미지 참조가 갱신되지 않는다.
+  (cd "$INFRA_DIR" && env "${tagenv}=${IMAGE_TAG}" npx cdk deploy "$stack" --require-approval never)
+  ok "배포 완료: $svc"
 }
 
 do_status() {
@@ -114,11 +130,13 @@ while [[ $# -gt 0 && "$1" == "--" ]]; do shift; done
 
 SKIP_BUILD=false
 SHOW_STATUS=false
+IMAGE_TAG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=true; shift ;;
     --status)     SHOW_STATUS=true; shift ;;
+    --tag)        IMAGE_TAG="${2:?--tag 값이 필요합니다}"; shift 2 ;;
     --list)
       echo "Available services:"
       for s in $ALL_SERVICES; do echo "  $s"; done
@@ -128,7 +146,8 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: $0 [options] <service> [service...]"
       echo ""
       echo "Options:"
-      echo "  --skip-build   ECR 이미지 빌드 없이 ECS만 재배포"
+      echo "  --skip-build   ECR 이미지 빌드 없이 기존 태그로 스택만 재배포"
+      echo "  --tag <tag>    배포할 이미지 태그 (기본: 현재 커밋 SHA)"
       echo "  --status       ECS 서비스 상태만 확인"
       echo "  --list         사용 가능한 서비스 목록"
       echo ""
@@ -156,6 +175,14 @@ if [[ "$SHOW_STATUS" == "true" ]]; then
     do_status "$svc"
   done
   exit 0
+fi
+
+if [[ -z "$IMAGE_TAG" ]]; then
+  IMAGE_TAG=$(resolve_image_tag)
+fi
+log "이미지 태그: ${IMAGE_TAG}"
+if [[ "$IMAGE_TAG" == *-dirty ]]; then
+  err "커밋되지 않은 변경이 있습니다 — 배포된 하네스를 커밋으로 재현할 수 없습니다"
 fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then

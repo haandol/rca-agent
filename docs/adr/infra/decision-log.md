@@ -5,6 +5,7 @@
 
 | 날짜 | 변경 | 근거 | 현재 ADR |
 |------|------|------|----------|
+| 2026-07-25 | 하네스와 에이전트 런타임을 실행 시점 외부 조회에서 이미지 사전 동봉·버전 고정으로 전환 | 이미지 태그 하나로 로컬 검증 구성을 재현하고 외부 저장소 장애가 RCA 실행을 깨뜨리지 않게 하기 위해 | [CC Headless 실행 인프라](0003-lambda-cc-headless-stack.md) |
 | 2026-07-21 | 세션 reclaim 세대를 SQS 메시지 식별자와 해당 메시지의 receive count 조합으로 한정 | 별도 중복 메시지의 독립적인 receive count가 정상 실행의 claim을 탈취하지 못하게 하기 위해 | [세션 복구](0006-session-recovery-on-restart.md) |
 | 2026-07-21 | 세션 claim fencing을 상태 전이에서 외부 부작용 시작 경계까지 확장 | reclaim된 이전 실행의 reset·보고서·알림·trace 쓰기를 차단하기 위해 | [세션 복구](0006-session-recovery-on-restart.md) |
 | 2026-07-21 | 미완료 CC 세션 복구를 단순 중복 확인에서 SQS receive count와 claim token 기반 원자적 reclaim으로 강화 | 재전달을 실제 재실행으로 연결하면서 이전 실행의 늦은 상태·결과 확정을 차단하기 위해 | [세션 복구](0006-session-recovery-on-restart.md) |

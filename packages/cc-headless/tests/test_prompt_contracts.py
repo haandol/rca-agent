@@ -98,7 +98,16 @@ def test_rca_progress_mcp_points_to_packaged_server():
 
     assert config["command"] == "fastmcp"
     assert config["args"][0] == "run"
-    assert config["args"][1].endswith("/src/cc_headless/mcp_server.py:mcp")
+    assert config["args"][1] == "{{PACKAGE_ROOT}}/src/cc_headless/mcp_server.py:mcp"
+
+
+def test_mcp_config_has_no_environment_specific_absolute_paths():
+    """The same harness must start from a local checkout and from the image."""
+    for name, server in MCP_CONFIG["mcpServers"].items():
+        for arg in server.get("args", []):
+            assert not arg.startswith("/"), f"{name} pins a deployment-specific path: {arg}"
+        for key, value in server.get("env", {}).items():
+            assert not value.startswith("/"), f"{name} env {key} pins a deployment-specific path: {value}"
 
 
 def test_mcp_servers_do_not_require_offline_uv_dependency_resolution():

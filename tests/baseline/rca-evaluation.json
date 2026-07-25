@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "approvedAt": "2026-07-21T14:58:09.847Z",
+  "approvedAt": "2026-07-25T02:42:16.191Z",
   "engines": ["cc-headless", "strands"],
   "contractInputs": [
     "tests/harness/evaluator.mjs",
@@ -11,13 +11,12 @@
     "packages/cc-headless/.claude/agents",
     "packages/cc-headless/prompts",
     "packages/cc-headless/.claude/skills",
-    "packages/cc-headless/.mcp.json",
     "packages/cc-headless/mcp-config.json",
     "packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py",
     "packages/cc-headless/src/cc_headless/mcp_server.py",
     "packages/cc-headless/src/cc_headless/services/prompt_builder.py"
   ],
-  "inputDigest": "sha256:59f1001b68075d15f521275166e3e0f6bff774a0f1ab057cfa38125454c92ef1",
+  "inputDigest": "sha256:23d8cce829cf0516353cdeb38fe89596dba5d55e35ef57c9fb0d5f2addcaa046",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/prompts/__init__.py",
@@ -43,7 +42,6 @@
     "packages/cc-headless/.claude/skills/progress-reporting/SKILL.md",
     "packages/cc-headless/.claude/skills/remediation/SKILL.md",
     "packages/cc-headless/.claude/skills/reporting/SKILL.md",
-    "packages/cc-headless/.mcp.json",
     "packages/cc-headless/CLAUDE.md",
     "packages/cc-headless/mcp-config.json",
     "packages/cc-headless/prompts/rca-system.md",

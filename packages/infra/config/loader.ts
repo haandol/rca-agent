@@ -74,10 +74,33 @@ if (!result.success) {
   throw new Error(`Config validation error: ${result.error.message}`);
 }
 
+const parsed = result.data;
+
+// 배포 스크립트가 방금 빌드·푸시한 불변 태그를 주입한다. 태스크 정의가 그 태그를
+// 직접 가리켜야 실행 중인 코드와 하네스 버전을 태그만으로 식별할 수 있다.
+const IMAGE_TAG_ENV_KEYS = {
+  agent: 'AGENT_IMAGE_TAG',
+  healthcare: 'HEALTHCARE_IMAGE_TAG',
+  ccHeadless: 'CC_HEADLESS_IMAGE_TAG',
+  remediation: 'REMEDIATION_IMAGE_TAG',
+} as const;
+
+function imageTagFor(service: keyof typeof IMAGE_TAG_ENV_KEYS): string {
+  const override = process.env[IMAGE_TAG_ENV_KEYS[service]];
+  return override && override.length > 0 ? override : parsed[service].imageTag;
+}
+
 export const Config: IConfig = {
-  ...result.data,
+  ...parsed,
   app: {
-    ...result.data.app,
-    ns: `${result.data.app.ns}${result.data.app.stage}`,
+    ...parsed.app,
+    ns: `${parsed.app.ns}${parsed.app.stage}`,
+  },
+  agent: { ...parsed.agent, imageTag: imageTagFor('agent') },
+  healthcare: { ...parsed.healthcare, imageTag: imageTagFor('healthcare') },
+  ccHeadless: { ...parsed.ccHeadless, imageTag: imageTagFor('ccHeadless') },
+  remediation: {
+    ...parsed.remediation,
+    imageTag: imageTagFor('remediation'),
   },
 };

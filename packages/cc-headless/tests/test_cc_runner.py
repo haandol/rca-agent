@@ -109,14 +109,49 @@ def test_runner_preserves_parent_environment_without_mutating_home(monkeypatch):
 
 
 def test_runner_default_mcp_config_is_an_existing_absolute_file(monkeypatch):
+    configs = []
+
+    def _popen(args, **kwargs):
+        index = args.index("--mcp-config") + 1
+        configs.append(json.loads(Path(args[index]).read_text()))
+        return FakeProcess()
+
+    monkeypatch.setattr(cc_subprocess_runner.subprocess, "Popen", _popen)
+
+    CcSubprocessRunner().run("investigate", execution_token=EXECUTION_TOKEN)
+
+    assert configs[0]["mcpServers"]["rca-progress"]
+
+
+def test_runner_resolves_packaged_mcp_server_against_the_installed_package(monkeypatch):
+    """The committed placeholder must become a real path that exists in this environment."""
+    servers = []
+
+    def _popen(args, **kwargs):
+        index = args.index("--mcp-config") + 1
+        rendered = json.loads(Path(args[index]).read_text())
+        servers.append(rendered["mcpServers"]["rca-progress"]["args"][1])
+        return FakeProcess()
+
+    monkeypatch.setattr(cc_subprocess_runner.subprocess, "Popen", _popen)
+
+    CcSubprocessRunner().run("investigate", execution_token=EXECUTION_TOKEN)
+
+    target = servers[0]
+    assert "{{PACKAGE_ROOT}}" not in target
+    module_path, _, attribute = target.rpartition(":")
+    assert attribute == "mcp"
+    assert Path(module_path).is_absolute()
+    assert Path(module_path).is_file()
+
+
+def test_runner_does_not_leave_rendered_mcp_config_behind(monkeypatch):
     calls = _capture_processes(monkeypatch)
 
     CcSubprocessRunner().run("investigate", execution_token=EXECUTION_TOKEN)
 
-    config = Path(calls[0]["args"][calls[0]["args"].index("--mcp-config") + 1])
-    assert config.is_absolute()
-    assert config.is_file()
-    assert json.loads(config.read_text())["mcpServers"]["rca-progress"]
+    rendered = Path(calls[0]["args"][calls[0]["args"].index("--mcp-config") + 1])
+    assert not rendered.exists()
 
 
 def test_runner_returns_actionable_error_when_cli_is_missing(monkeypatch):

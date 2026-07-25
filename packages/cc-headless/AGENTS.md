@@ -34,9 +34,23 @@ prompts/
     ├── core/             # 공통 레이어 (artifacts-overview, pipeline-overview, principles)
     ├── artifacts/        # JSON 스키마 (RCA, remediation, playbook)
     └── stages/           # 전문 에이전트 호출 순서
-mcp-config.json       # MCP server configuration for CC
+mcp-config.json       # MCP server configuration for CC ({{PACKAGE_ROOT}} 은 실행 시 패키지 경로로 치환)
 Dockerfile            # ECS Fargate container image
 pyproject.toml        # Python project configuration
+```
+
+## 하네스 패리티
+
+`.claude/`, `prompts/`, `CLAUDE.md`, `mcp-config.json` 은 로컬 실행과 컨테이너 실행이
+공유하는 단일 하네스다. 이미지는 이 자산을 변환 없이 담고, 로컬에서 검증한 하네스가
+그대로 배포된다. `mcp-config.json` 에는 환경별 절대 경로를 넣지 않는다 —
+`tests/test_prompt_contracts.py` 가 이를 거부한다.
+
+## Dev Commands (라이브 평가)
+
+```bash
+# 시나리오 하나를 배포와 동일한 하네스로 실행하고 정규화 결과 JSON 을 출력
+uv run cc-headless-eval ../../tests/scenarios/rds-connection-pool-exhaustion.json
 ```
 
 ## Dev Commands

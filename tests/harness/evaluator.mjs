@@ -30,7 +30,6 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'packages/cc-headless/.claude/agents',
   'packages/cc-headless/prompts',
   'packages/cc-headless/.claude/skills',
-  'packages/cc-headless/.mcp.json',
   'packages/cc-headless/mcp-config.json',
   'packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py',
   'packages/cc-headless/src/cc_headless/mcp_server.py',

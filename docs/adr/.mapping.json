@@ -42,8 +42,8 @@
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-          "status": "Accepted (2026-07-21)",
-          "summary": "CC Headless가 RCA·조건부 Remediation·Report 전문 에이전트를 오케스트레이션한다."
+          "status": "Accepted (2026-07-25)",
+          "summary": "CC Headless가 로컬 검증 하네스를 단일 소스로 RCA·조건부 Remediation·Report 에이전트를 오케스트레이션한다."
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
@@ -114,8 +114,8 @@
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
-          "status": "Accepted (2026-07-21)",
-          "summary": "CC Headless를 제한된 복구 권한의 단일 Fargate 오케스트레이터로 운영한다."
+          "status": "Accepted (2026-07-25)",
+          "summary": "CC Headless를 하네스 동봉 이미지로 제한된 복구 권한의 단일 Fargate 오케스트레이터로 운영한다."
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
