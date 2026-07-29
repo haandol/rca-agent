@@ -55,9 +55,27 @@
   ],
   "expectation": {
     "rootCauseTermGroups": [
-      ["connection", "session"],
-      ["leak", "not returned", "never closed", "not released"],
-      ["deploy", "task definition", "revision"]
+      ["connection", "session", "커넥션", "세션"],
+      [
+        "leak",
+        "not returned",
+        "never closed",
+        "not released",
+        "누수",
+        "반환되지 않",
+        "고갈"
+      ],
+      [
+        "deploy",
+        "task definition",
+        "taskdefinition",
+        "registertaskdefinition",
+        "updateservice",
+        "revision",
+        "배포",
+        "태스크 정의",
+        "리비전"
+      ]
     ],
     "requiredEvidenceIds": [
       "vital-ingest-failures",
@@ -77,19 +95,52 @@
       "playbook"
     ],
     "remediationTermGroups": [
-      ["connection", "session", "pool"],
-      ["reset", "release", "close"],
-      ["task definition", "revision", "roll back", "rollback", "redeploy"]
+      ["connection", "session", "pool", "커넥션", "세션", "풀"],
+      ["reset", "release", "close", "리셋", "해제", "반환"],
+      [
+        "task definition",
+        "revision",
+        "roll back",
+        "rollback",
+        "redeploy",
+        "태스크 정의",
+        "리비전",
+        "롤백",
+        "재배포"
+      ]
     ],
     "semanticTermGroups": [
-      ["vital", "patient"],
-      ["traffic", "requests", "demand"],
-      ["gradual", "steadily", "linear", "over time"]
+      ["vital", "patient", "바이탈", "환자"],
+      ["traffic", "requests", "demand", "트래픽", "요청량"],
+      [
+        "gradual",
+        "steadily",
+        "linear",
+        "over time",
+        "점진",
+        "선형",
+        "누적",
+        "지속"
+      ]
     ],
     "rejectedCauseTermGroups": [
-      ["traffic surge", "traffic spike", "load spike", "request surge"],
-      ["undersized instance", "instance saturation", "storage exhausted"],
-      ["log level", "log_level", "logging configuration"]
+      [
+        "traffic surge",
+        "traffic spike",
+        "load spike",
+        "request surge",
+        "트래픽 급증",
+        "트래픽 폭증",
+        "부하 급증"
+      ],
+      [
+        "undersized instance",
+        "instance saturation",
+        "storage exhausted",
+        "인스턴스 부족",
+        "스토리지 부족"
+      ],
+      ["log level", "log_level", "logging configuration", "로그 레벨"]
     ]
   }
 }

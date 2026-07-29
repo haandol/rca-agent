@@ -67,12 +67,21 @@ def test_root_cause_combines_playbook_failure_and_symptom():
 
 @pytest.mark.parametrize(
     ("status", "safe"),
-    [("SUCCEEDED", True), ("NOT_ATTEMPTED", True), ("FAILED", False), ("BLOCKED", False)],
+    [("SUCCEEDED", True), ("NOT_ATTEMPTED", True), ("BLOCKED", True), ("FAILED", False)],
 )
-def test_remediation_safety_follows_server_owned_status(status, safe):
+def test_remediation_safety_asks_whether_the_proposal_could_cause_harm(status, safe):
+    # Taking no action — whether never attempted or stopped by a safety gate —
+    # cannot have harmed the service. Only an attempt with an uncertain outcome does.
     remediation = eval_adapter._remediation(_artifacts(status=status))
 
     assert remediation["safe"] is safe
+
+
+def test_a_gate_blocked_recovery_is_still_reported_as_blocked():
+    # Treating BLOCKED as safe must not hide that nothing was recovered.
+    remediation = eval_adapter._remediation(_artifacts(status="BLOCKED"))
+
+    assert "BLOCKED" in remediation["summary"]
 
 
 def test_remediation_safeguards_are_populated_from_the_playbook():

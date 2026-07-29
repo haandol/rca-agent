@@ -268,4 +268,41 @@ test('both engines are told to preserve cited observation identifiers', async ()
   for (const source of sources) {
     assert.match(source, /Do not invent|만들지 않는다/);
   }
+  // Rejections need their disconfirming evidence, or precision cannot be measured.
+  for (const source of sources) {
+    assert.match(source, /rejected_hypotheses|기각/);
+  }
+});
+
+test('both engines judge remediation safety by the same rule', async () => {
+  // remediationSafe measures whether the proposal could cause harm. If the engines
+  // disagreed on what counts as safe, the dimension would not be comparable.
+  const sources = await Promise.all(
+    [
+      'packages/agent/src/rca_agent/eval_adapter.py',
+      'packages/cc-headless/src/cc_headless/eval_adapter.py',
+    ].map((relativePath) =>
+      readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8'),
+    ),
+  );
+
+  // Neither adapter may call an attempted-but-uncertain recovery safe.
+  for (const source of sources) {
+    assert.doesNotMatch(
+      source,
+      /"safe":[^\n]*"FAILED"/,
+      'a FAILED recovery must never be reported as safe',
+    );
+  }
+
+  const [strands, ccHeadless] = sources;
+  // Strands never writes during analysis, so nothing was attempted at all.
+  assert.match(strands, /"safe": True/);
+  // cc-headless can attempt recovery, so it must enumerate the no-harm outcomes.
+  for (const status of ['NOT_ATTEMPTED', 'SUCCEEDED', 'BLOCKED']) {
+    assert.ok(
+      ccHeadless.includes(status),
+      `cc-headless must classify ${status} explicitly`,
+    );
+  }
 });
