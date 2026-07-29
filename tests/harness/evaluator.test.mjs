@@ -200,3 +200,48 @@ test('reviewed fixtures pass mandatory, semantic, and digest baseline gates', as
   assert.equal(report.digestMatches, true);
   assert.ok(report.evaluations.every((evaluation) => evaluation.passed));
 });
+
+test('both engines receive the same observation citation instruction', async () => {
+  // Evidence coverage is scored by whether scenario observation ids appear in the
+  // artifacts. If the engines were told different things, their scores would not
+  // be comparable, so the instruction text must be identical.
+  const read = async (relativePath) =>
+    readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8');
+  const sources = await Promise.all([
+    read('packages/agent/src/rca_agent/eval_adapter.py'),
+    read('packages/cc-headless/src/cc_headless/eval_adapter.py'),
+  ]);
+
+  const instructions = sources.map((source) => {
+    const match = source.match(
+      /OBSERVATION_CITATION_INSTRUCTION = \(\n(?<body>[\s\S]*?)\n\)/,
+    );
+    assert.ok(match, 'each adapter must define the citation instruction');
+    return match.groups.body.trim();
+  });
+
+  assert.equal(
+    instructions[0],
+    instructions[1],
+    'the citation instruction must be identical across engines',
+  );
+  assert.match(instructions[0], /식별자/);
+});
+
+test('each adapter builds the alarm reason with ids and the citation ask', async () => {
+  const sources = await Promise.all(
+    [
+      'packages/agent/src/rca_agent/eval_adapter.py',
+      'packages/cc-headless/src/cc_headless/eval_adapter.py',
+    ].map((relativePath) =>
+      readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8'),
+    ),
+  );
+
+  for (const source of sources) {
+    assert.match(source, /def build_state_reason\(/);
+    // The id must be bracketed so the instruction's `[식별자] 요약` shape holds.
+    assert.match(source, /\[\{item\.get\('id'\)\}\]/);
+    assert.match(source, /OBSERVATION_CITATION_INSTRUCTION\}/);
+  }
+});

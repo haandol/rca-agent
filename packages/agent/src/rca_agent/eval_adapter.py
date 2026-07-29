@@ -42,22 +42,40 @@ def _load_scenario(argv: list[str]) -> dict[str, Any]:
     return json.loads(sys.stdin.read())
 
 
+# 평가 하네스는 시나리오 관측 식별자가 산출물에 인용되었는지로 증거 커버리지를
+# 측정한다. 두 엔진이 같은 기준으로 채점되어야 하므로 이 지시문은 엔진마다 동일하다.
+OBSERVATION_CITATION_INSTRUCTION = (
+    "각 신호는 `[식별자] 요약` 형식이다. 어떤 신호를 결론의 근거로 사용했다면 "
+    "산출물의 해당 증거 항목에 그 식별자를 원문 그대로 함께 적는다. 근거로 쓰지 않은 "
+    "신호의 식별자는 적지 않는다."
+)
+
+
+def build_state_reason(state_reason: str, observations: list) -> str:
+    """관측 신호와 식별자 인용 지시를 알람 상태 사유에 덧붙인다.
+
+    실제 운영 알람에는 이 식별자가 없다. 평가에서만 부여되는 컨텍스트이며, 관측이
+    없으면 원래 상태 사유를 그대로 사용한다.
+    """
+    lines = [
+        f"- [{item.get('id')}] ({item.get('source')}) {item.get('summary')}"
+        for item in observations
+        if isinstance(item, dict)
+    ]
+    if not lines:
+        return state_reason
+    signals = "\n".join(lines)
+    return f"{state_reason}\n\n관측된 신호:\n{signals}\n\n{OBSERVATION_CITATION_INSTRUCTION}"
+
+
 def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict[str, Any]:
     """시나리오를 CloudWatch 알람 SNS payload 로 변환한다.
 
-    관측 요약을 NewStateReason 에 이어붙여, 파이프라인이 실제 알람에서 얻는 것과
+    관측 신호를 NewStateReason 에 이어붙여, 파이프라인이 실제 알람에서 얻는 것과
     같은 형태의 초기 컨텍스트를 받게 한다.
     """
     alarm = scenario.get("alarm") or {}
-    observations = scenario.get("observations") or []
-    context = "\n".join(
-        f"- [{item.get('source')}] {item.get('id')}: {item.get('summary')}"
-        for item in observations
-        if isinstance(item, dict)
-    )
-    state_reason = alarm.get("stateReason", "")
-    if context:
-        state_reason = f"{state_reason}\n\n관측된 신호:\n{context}"
+    state_reason = build_state_reason(alarm.get("stateReason", ""), scenario.get("observations") or [])
 
     envelope: dict[str, Any] = {
         "AlarmName": alarm.get("name", "EvalScenarioAlarm"),

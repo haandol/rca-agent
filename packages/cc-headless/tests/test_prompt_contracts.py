@@ -297,3 +297,23 @@ def test_required_artifact_contract_matches_watcher():
         "report.md",
     }
     assert "validation-{N}.json" in _all_guidance()
+
+
+def test_playbook_guidance_requires_copying_the_server_owned_remediation_values():
+    # The completion gate compares playbook remediation_result against the server's
+    # own remediation.json byte for byte, so paraphrasing fails the whole run.
+    playbook = (PROMPTS_DIR / "sections" / "artifacts" / "playbook.md").read_text()
+
+    assert "글자 그대로 복사" in playbook
+    assert "remediation.json" in playbook
+    for field in ("status", "fault_type", "endpoint_path", "validation_artifact"):
+        assert field in playbook
+    assert "요약하거나 다른 말로 바꾸거나 번역하지 않는다" in playbook
+
+
+def test_playbook_guidance_names_every_required_field_as_mandatory():
+    playbook = (PROMPTS_DIR / "sections" / "artifacts" / "playbook.md").read_text()
+
+    assert "모든 키는 필수" in playbook
+    for field in ("severity_criteria", "escalation_criteria", "symptom_pattern"):
+        assert field in playbook

@@ -251,3 +251,36 @@ def test_evidence_cited_only_in_the_report_is_still_counted(monkeypatch: pytest.
     corpus = "\n".join((json.dumps(notification.model_dump(mode="json"), ensure_ascii=False), report))
 
     assert "pool-saturation" in eval_adapter._evidence_ids(corpus, SCENARIO)
+
+
+def test_state_reason_brackets_each_observation_id() -> None:
+    reason = eval_adapter.build_state_reason("threshold crossed", SCENARIO["observations"])
+
+    for observation in SCENARIO["observations"]:
+        assert f"[{observation['id']}]" in reason
+        assert observation["summary"] in reason
+
+
+def test_state_reason_asks_the_engine_to_cite_ids_it_relied_on() -> None:
+    reason = eval_adapter.build_state_reason("threshold crossed", SCENARIO["observations"])
+
+    assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION in reason
+    assert "식별자" in reason
+
+
+def test_state_reason_is_untouched_when_a_scenario_has_no_observations() -> None:
+    # Real production alarms carry no observation ids, so analysis must still work.
+    assert eval_adapter.build_state_reason("threshold crossed", []) == "threshold crossed"
+
+
+def test_state_reason_skips_malformed_observation_entries() -> None:
+    reason = eval_adapter.build_state_reason("r", ["not-a-dict", {"id": "ok", "summary": "s"}])
+
+    assert "[ok]" in reason
+    assert "not-a-dict" not in reason
+
+
+def test_alarm_envelope_carries_the_citation_instruction() -> None:
+    envelope = eval_adapter._alarm_envelope(SCENARIO, state_change_time="2026-07-29T00:00:00.000000+0000")
+
+    assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION in envelope["NewStateReason"]
