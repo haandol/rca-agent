@@ -88,7 +88,8 @@ export class RcaAgentServiceStack extends cdk.Stack {
         FAULT_ERROR_RATE: '0.0',
       },
       secrets: {
-        GITHUB_PERSONAL_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(githubPatSecret),
+        GITHUB_PERSONAL_ACCESS_TOKEN:
+          ecs.Secret.fromSecretsManager(githubPatSecret),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'rca-agent',
@@ -184,7 +185,9 @@ export class RcaAgentServiceStack extends cdk.Stack {
     );
 
     taskDef.taskRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudTrail_ReadOnlyAccess'),
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        'AWSCloudTrail_ReadOnlyAccess',
+      ),
     );
 
     taskDef.taskRole.addToPrincipalPolicy(

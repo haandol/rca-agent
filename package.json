@@ -24,12 +24,12 @@
   },
   "private": true,
   "devDependencies": {
-    "@nx/js": "22.6.5",
-    "@swc-node/register": "1.11.1",
-    "@swc/core": "1.15.8",
-    "@swc/helpers": "0.5.18",
-    "nx": "22.6.5",
-    "prettier": "^3.8.3",
+    "@nx/js": "23.1.0",
+    "@swc-node/register": "1.12.1",
+    "@swc/core": "1.15.46",
+    "@swc/helpers": "0.5.23",
+    "nx": "23.1.0",
+    "prettier": "^3.9.6",
     "tslib": "^2.8.1",
     "typescript": "~5.9.3"
   }

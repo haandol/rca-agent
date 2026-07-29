@@ -475,8 +475,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` });
                   v-if="
                     (
                       selectedNode.metadata.verification_steps as
-                        | string[]
-                        | undefined
+                        string[] | undefined
                     )?.length
                   "
                   class="mt-3"
@@ -536,8 +535,7 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` });
                   v-if="
                     (
                       selectedNode.metadata.prevention_measures as
-                        | string[]
-                        | undefined
+                        string[] | undefined
                     )?.length
                   "
                   class="mt-3"
