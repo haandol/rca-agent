@@ -43,6 +43,15 @@ description: RCA와 실제 remediation 결과를 분리해 최종 report.md와 p
 - `Current alarm window`: 현재 알람의 상태 변경 시각을 기준으로 조사한 구간
 - `Historical comparison window`: 정상 baseline 또는 과거 비교를 위해 조회한 구간
 
+각 라벨과 시작·종료 시각은 **같은 한 줄**에 쓴다. 라벨과 시각을 다른 줄이나 표의
+다른 칸으로 나누면 저장이 거부된다. 시각은 초 단위까지와 타임존 표기(`Z` 또는
+`+09:00`)를 포함한 ISO-8601 이어야 한다. 다음 형식을 그대로 사용한다.
+
+```
+- Current alarm window: 2026-07-29T13:00:00Z ~ 2026-07-29T14:00:00Z
+- Historical comparison window: 2026-07-29T12:00:00Z ~ 2026-07-29T13:00:00Z
+```
+
 모든 증거 항목에 어느 window에서 관측했는지 표시한다. 이번 실행의 current alarm
 window보다 이전에 생성된 수동 장애 주입·수동 테스트 로그는 historical context일
 뿐이며 현재 장애의 발생·원인·지속 증거로 서술하지 않는다. 시각이 없거나 window를

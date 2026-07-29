@@ -51,6 +51,9 @@ def _all_guidance() -> str:
     return "\n".join(path.read_text() for path in paths)
 
 
+_ISO_TIMESTAMP_PATTERN = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})"
+
+
 def test_skill_directories_have_unique_matching_frontmatter_names():
     paths = sorted(SKILLS_DIR.glob("*/SKILL.md"))
     names = [_frontmatter_value(path, "name") for path in paths]
@@ -317,3 +320,30 @@ def test_playbook_guidance_names_every_required_field_as_mandatory():
     assert "모든 키는 필수" in playbook
     for field in ("severity_criteria", "escalation_criteria", "symptom_pattern"):
         assert field in playbook
+
+
+def test_report_guidance_shows_the_exact_evidence_window_line_the_gate_accepts():
+    # The completion gate scans for two ISO-8601 timestamps on the same line as
+    # each label, so guidance that only says "write ISO-8601" is not enough.
+    guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
+
+    assert "같은 한 줄" in guidance
+    for label in ("Current alarm window", "Historical comparison window"):
+        example = next(
+            (line for line in guidance.splitlines() if label in line and line.count("T") >= 2),
+            "",
+        )
+        assert example, f"guidance must show a one-line example for {label}"
+        assert len(re.findall(_ISO_TIMESTAMP_PATTERN, example)) >= 2
+
+
+def test_report_guidance_example_passes_the_completion_gate_rule():
+    from cc_headless.services.artifact_validation import _ISO_TIMESTAMP
+
+    guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text().lower()
+
+    for label in ("current alarm window", "historical comparison window"):
+        matching = [line for line in guidance.splitlines() if label in line]
+        assert any(len(_ISO_TIMESTAMP.findall(line)) >= 2 for line in matching), (
+            f"guidance example fails the gate for {label}"
+        )
