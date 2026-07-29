@@ -245,3 +245,27 @@ test('each adapter builds the alarm reason with ids and the citation ask', async
     assert.match(source, /OBSERVATION_CITATION_INSTRUCTION\}/);
   }
 });
+
+test('both engines are told to preserve cited observation identifiers', async () => {
+  // Evidence coverage is scored from identifiers surviving into the final
+  // artifacts. If only one engine is asked to carry them through, the engines
+  // cannot be compared on that dimension.
+  const sources = await Promise.all(
+    [
+      'packages/agent/src/rca_agent/prompts/report.py',
+      'packages/cc-headless/.claude/skills/reporting/SKILL.md',
+    ].map((relativePath) =>
+      readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8'),
+    ),
+  );
+
+  for (const source of sources) {
+    // Each side must mention bracketed identifiers and verbatim carry-through.
+    assert.match(source, /\[[a-z][a-z0-9-]*\]|\[식별자\]/);
+    assert.match(source, /verbatim|원문 그대로/);
+  }
+  // Neither side may invite invented identifiers.
+  for (const source of sources) {
+    assert.match(source, /Do not invent|만들지 않는다/);
+  }
+});

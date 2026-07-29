@@ -38,6 +38,19 @@ description: RCA와 실제 remediation 결과를 분리해 최종 report.md와 p
 복구 성공만으로 서비스 정상화를 주장하지 않는다. 별도 관측 증거가 없으면 검증
 상태는 `관측 대기`로 기록한다.
 
+`## 복구 결과`에는 `remediation.json`의 다음 네 값을 **문자열 그대로** 포함한다.
+값이 `null`이면 그 자리에 `N/A`를 쓴다. 하나라도 빠지거나 다른 말로 바꾸면 저장이
+거부된다.
+
+- `status`
+- `fault_type`
+- `endpoint_path` (`null`이면 `N/A`)
+- `validation_artifact`
+
+`## 검증 상태`에는 `remediation.json`의 `verification.status` 문자열을 그대로
+포함한다. 복구를 실행하지 않아 `remediation.json`이 없으면 `## 복구 결과`에
+`NOT_ATTEMPTED`와 나머지 값 자리에 `N/A`를 쓴다.
+
 `## 증거 시간 범위`에는 다음 두 라벨과 ISO-8601 시작·종료 시각을 반드시 쓴다.
 
 - `Current alarm window`: 현재 알람의 상태 변경 시각을 기준으로 조사한 구간
@@ -51,6 +64,10 @@ description: RCA와 실제 remediation 결과를 분리해 최종 report.md와 p
 - Current alarm window: 2026-07-29T13:00:00Z ~ 2026-07-29T14:00:00Z
 - Historical comparison window: 2026-07-29T12:00:00Z ~ 2026-07-29T13:00:00Z
 ```
+
+알람 컨텍스트가 신호를 `[식별자] 요약` 형태로 제공한 경우, 그 신호를 근거로 사용한
+증거 항목에 식별자를 원문 그대로 함께 적는다. 근거로 쓰지 않은 신호의 식별자는
+적지 않으며, 제공되지 않은 식별자를 만들지 않는다.
 
 모든 증거 항목에 어느 window에서 관측했는지 표시한다. 이번 실행의 current alarm
 window보다 이전에 생성된 수동 장애 주입·수동 테스트 로그는 historical context일

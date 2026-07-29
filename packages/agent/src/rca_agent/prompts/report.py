@@ -41,6 +41,11 @@ without specific numbers, thresholds, percentages, or timestamps. \
 Use phrases like "abnormally high", "exceeds threshold", "sustained spike" \
 instead of exact values. Exact numbers belong in evidence, impact, and timeline sections.
 - Use plain language suitable for an SRE team.
+- If the collected evidence cites signal identifiers in brackets (for example \
+`[db-connections-climbing]`), carry those identifiers verbatim into the \
+`evidence_list` entries they support. They are how a reader traces a conclusion \
+back to the observation behind it. Do not invent identifiers that the evidence \
+does not contain, and do not add them to entries they did not support.
 """
 
 REPORT_USER_PROMPT_TEMPLATE = """\
