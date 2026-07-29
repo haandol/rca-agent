@@ -27,6 +27,10 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'tests/fixtures/results',
   'packages/agent/src/rca_agent/prompts',
   'packages/agent/src/rca_agent/agent_factory.py',
+  // Each engine's live adapter decides how a run becomes a normalized result, so
+  // changing one changes what the scores mean and requires re-approval.
+  'packages/agent/src/rca_agent/eval_adapter.py',
+  'packages/cc-headless/src/cc_headless/eval_adapter.py',
   'packages/cc-headless/CLAUDE.md',
   'packages/cc-headless/.claude/agents',
   'packages/cc-headless/prompts',

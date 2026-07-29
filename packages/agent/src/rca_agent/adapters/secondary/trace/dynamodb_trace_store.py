@@ -481,12 +481,15 @@ class TraceStore:
         if not self._enabled:
             return
 
+        # "error" and "metadata" are DynamoDB reserved words, so every updated
+        # attribute goes through an alias rather than appearing literally.
         expr_parts = [
             "span_status = :status",
             "end_time = :end",
             "duration_ms = :dur",
             "output_summary = :out",
         ]
+        attr_names: dict[str, str] = {}
         attr_values: dict = {
             ":status": {"S": span.status.value},
             ":end": {"S": span.end_time.isoformat() if span.end_time else ""},
@@ -494,37 +497,39 @@ class TraceStore:
             ":out": {"S": span.output_summary},
         }
         if span.error:
-            expr_parts.append("error = :err")
+            expr_parts.append("#error = :err")
+            attr_names["#error"] = "error"
             attr_values[":err"] = {"S": span.error}
         if span.metadata:
-            expr_parts.append("metadata = :meta")
+            expr_parts.append("#metadata = :meta")
+            attr_names["#metadata"] = "metadata"
             attr_values[":meta"] = {"M": _serialize_metadata(span.metadata)}
 
         if self._claim_token:
-            self._transact_claimed(
-                [
-                    {
-                        "Update": {
-                            "TableName": DYNAMODB_TABLE_NAME,
-                            "Key": {
-                                "PK": _pk(span.rca_id),
-                                "SK": _span_sk(span.span_id),
-                            },
-                            "UpdateExpression": "SET " + ", ".join(expr_parts),
-                            "ConditionExpression": "attribute_exists(SK)",
-                            "ExpressionAttributeValues": attr_values,
-                        },
-                    }
-                ],
-            )
+            update: dict = {
+                "TableName": DYNAMODB_TABLE_NAME,
+                "Key": {
+                    "PK": _pk(span.rca_id),
+                    "SK": _span_sk(span.span_id),
+                },
+                "UpdateExpression": "SET " + ", ".join(expr_parts),
+                "ConditionExpression": "attribute_exists(SK)",
+                "ExpressionAttributeValues": attr_values,
+            }
+            if attr_names:
+                update["ExpressionAttributeNames"] = attr_names
+            self._transact_claimed([{"Update": update}])
             return
         try:
-            self._dynamodb.update_item(
-                TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": _pk(span.rca_id), "SK": _span_sk(span.span_id)},
-                UpdateExpression="SET " + ", ".join(expr_parts),
-                ExpressionAttributeValues=attr_values,
-            )
+            request: dict = {
+                "TableName": DYNAMODB_TABLE_NAME,
+                "Key": {"PK": _pk(span.rca_id), "SK": _span_sk(span.span_id)},
+                "UpdateExpression": "SET " + ", ".join(expr_parts),
+                "ExpressionAttributeValues": attr_values,
+            }
+            if attr_names:
+                request["ExpressionAttributeNames"] = attr_names
+            self._dynamodb.update_item(**request)
         except ClientError:
             logger.exception("Failed to update span end %s", span.span_id)
 

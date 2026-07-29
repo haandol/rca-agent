@@ -617,3 +617,98 @@ class TestDeserializeHypothesis:
         assert result["validated_fault_type"] == "UNSUPPORTED"
         assert result["validation_evidence_summary"] == ""
         assert result["engine"] == "strands"
+
+
+def _create_trace_table(ddb) -> None:
+    ddb.create_table(
+        TableName=TABLE_NAME,
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+
+
+def _span_item(ddb, span_id: str) -> dict:
+    return ddb.get_item(
+        TableName=TABLE_NAME,
+        Key={
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": f"strands#SPAN#{span_id}"},
+        },
+    )["Item"]
+
+
+@mock_aws
+def test_span_end_persists_error_and_metadata_despite_reserved_words():
+    # "error" and "metadata" are DynamoDB reserved words. Writing them literally
+    # fails the whole update, which previously aborted the pipeline mid-run.
+    ddb = boto3.client("dynamodb", region_name="us-east-1")
+    _create_trace_table(ddb)
+
+    with patch(PATCH_TABLE, TABLE_NAME):
+        trace = TraceStore("rca-123", dynamodb_client=ddb)
+        span = trace.start_span(SpanType.SCOPING)
+        trace.end_span(
+            span,
+            output_summary="done",
+            status=SpanStatus.FAILED,
+            error="boom",
+            metadata={"attempt": "1"},
+        )
+
+    item = _span_item(ddb, span.span_id)
+    assert item["span_status"]["S"] == "FAILED"
+    assert item["error"]["S"] == "boom"
+    assert item["metadata"]["M"]["attempt"]["S"] == "1"
+
+
+@mock_aws
+def test_claimed_span_end_persists_error_and_metadata_despite_reserved_words():
+    ddb = boto3.client("dynamodb", region_name="us-east-1")
+    _create_trace_table(ddb)
+    ddb.put_item(
+        TableName=TABLE_NAME,
+        Item={
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": "strands#SESSION"},
+            "state": {"S": "SCOPING"},
+            "claim_token": {"S": "claim-1"},
+        },
+    )
+
+    with patch(PATCH_TABLE, TABLE_NAME):
+        trace = TraceStore("rca-123", claim_token="claim-1", attempt=1, dynamodb_client=ddb)
+        span = trace.start_span(SpanType.SCOPING)
+        trace.end_span(
+            span,
+            output_summary="done",
+            status=SpanStatus.FAILED,
+            error="boom",
+            metadata={"attempt": "1"},
+        )
+
+    item = _span_item(ddb, span.span_id)
+    assert item["error"]["S"] == "boom"
+    assert item["metadata"]["M"]["attempt"]["S"] == "1"
+
+
+@mock_aws
+def test_span_end_without_error_or_metadata_still_writes():
+    ddb = boto3.client("dynamodb", region_name="us-east-1")
+    _create_trace_table(ddb)
+
+    with patch(PATCH_TABLE, TABLE_NAME):
+        trace = TraceStore("rca-123", dynamodb_client=ddb)
+        span = trace.start_span(SpanType.SCOPING)
+        trace.end_span(span, output_summary="done")
+
+    item = _span_item(ddb, span.span_id)
+    assert item["span_status"]["S"] == "COMPLETED"
+    assert item["output_summary"]["S"] == "done"
+    assert "error" not in item

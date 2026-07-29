@@ -20,17 +20,21 @@ pnpm verify
 ```bash
 export AWS_PROFILE=rca-dev
 export AWS_REGION=us-east-1
-export RCA_EVAL_STRANDS_COMMAND='["<strands-adapter>","{scenario}"]'
+export RCA_EVAL_STRANDS_COMMAND='["uv","run","--project","packages/agent","rca-agent-eval","{scenario}"]'
 export RCA_EVAL_CC_HEADLESS_COMMAND='["uv","run","--project","packages/cc-headless","cc-headless-eval","{scenario}"]'
 pnpm eval:live
 ```
+
+두 어댑터 모두 배포된 것과 같은 분석 경로를 로컬에서 한 번 실행한다. Strands
+어댑터는 SQS 소비 루프를 거치지 않고 운영 파이프라인을 직접 호출하므로, 큐·구독·
+재전달 동작은 이 경로로 검증되지 않는다. Strands 어댑터는 DynamoDB 세션 테이블,
+S3 보고서 버킷, Bedrock, CloudWatch·CloudTrail 조회 권한이 필요하다.
 
 cc-headless 어댑터는 배포된 것과 같은 하네스를 로컬에서 한 번 실행한다. Claude
 Code CLI와 하네스가 참조하는 MCP 서버 실행기가 로컬에 설치되어 있어야 하고,
 Bedrock 및 CloudWatch·CloudTrail 조회 권한이 필요하다.
 
-`pnpm eval:live`는 두 엔진의 command 를 모두 요구한다. Strands 어댑터는 아직
-제공되지 않으므로, 현재 라이브 평가는 cc-headless 단독으로는 실행할 수 없다.
+`pnpm eval:live`는 두 엔진의 command 를 모두 요구한다.
 
 각 command는 JSON 문자열 배열이다. `{scenario}`는 시나리오 파일의 절대 경로,
 `{scenarioId}`는 시나리오 ID로 치환된다. `{scenario}`를 사용하지 않으면 시나리오

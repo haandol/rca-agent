@@ -23,6 +23,9 @@ dev = [
     "moto[s3,dynamodb,sqs]>=5.0",
 ]
 
+[project.scripts]
+rca-agent-eval = "rca_agent.eval_adapter:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
