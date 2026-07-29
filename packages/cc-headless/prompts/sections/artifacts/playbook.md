@@ -35,3 +35,8 @@
 복구 성공을 서비스 정상화로 간주하지 않는다. `remediation.json.verification`을
 그대로 복사한다. `PENDING`이면 관측값을 만들지 않고 후속 절차를 `관측 대기`로
 기록한다.
+
+위 스키마의 모든 키는 필수다. 하나라도 없거나 빈 문자열이면 저장이 거부되고
+플레이북은 기록되지 않는다. 특히 `severity_criteria`, `escalation_criteria`,
+`symptom_pattern`을 생략하지 않는다. 저장 도구가 `ok: false`를 반환하면 지적된
+필드를 채워 같은 파일을 다시 저장한다.

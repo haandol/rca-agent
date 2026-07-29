@@ -458,6 +458,55 @@ def _validate_report(base: Path, remediation: dict) -> str:
     return markdown
 
 
+def validate_artifact_shape(filename: str, content: str) -> None:
+    """Reject an artifact whose own shape the completion gate would reject.
+
+    This runs while the writing agent can still act on the error. It checks only
+    fields the artifact owns — cross-artifact agreement with server-owned results
+    is not knowable yet at save time and stays in the completion gate.
+    """
+    if filename == "report.md":
+        for title in _REPORT_SECTIONS:
+            _section(content, title)
+        return
+
+    try:
+        artifact = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ArtifactValidationError(f"{filename} is not valid JSON: {exc}") from exc
+    if not isinstance(artifact, dict):
+        raise ArtifactValidationError(f"{filename} must be a JSON object")
+
+    if filename == "playbook.json":
+        _require_fields(artifact, strings=_PLAYBOOK_STRING_FIELDS, lists=_PLAYBOOK_LIST_FIELDS)
+        if artifact["stage"] != "PLAYBOOK":
+            raise ArtifactValidationError("playbook.json stage must be PLAYBOOK")
+        if not isinstance(artifact.get("remediation_result"), dict):
+            raise ArtifactValidationError("playbook.json remediation_result must be an object")
+        return
+
+    if filename == "scoping.json":
+        _require_fields(
+            artifact,
+            strings=("stage", "alarm_name", "impact_scope", "severity", "summary", "output_summary"),
+        )
+        if artifact["stage"] != "SCOPING":
+            raise ArtifactValidationError("scoping.json stage must be SCOPING")
+        if artifact["impact_scope"] not in {"single", "service", "regional"}:
+            raise ArtifactValidationError("scoping.json impact_scope is invalid")
+        if artifact["severity"] not in {"low", "medium", "high", "critical"}:
+            raise ArtifactValidationError("scoping.json severity is invalid")
+        if not isinstance(artifact.get("metric_snapshot"), dict):
+            raise ArtifactValidationError("scoping.json metric_snapshot must be an object")
+        return
+
+    if filename == "hypotheses.json":
+        _require_fields(artifact, strings=("stage", "tree_id", "summary", "output_summary"), lists=("hypotheses",))
+        if artifact["stage"] != "HYPOTHESIS_GENERATION" or not artifact["hypotheses"]:
+            raise ArtifactValidationError("hypotheses.json must contain generated hypotheses")
+        return
+
+
 def validate_completion_artifacts(base: Path) -> CompletionArtifacts:
     _validate_scoping(base)
     hypotheses_by_id, tree_id = _validate_hypotheses(base)

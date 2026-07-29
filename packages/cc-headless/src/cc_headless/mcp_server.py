@@ -29,6 +29,7 @@ from cc_headless.config.settings import (
 from cc_headless.ports.interfaces.session_store import SideEffectLeaseUnavailableError
 from cc_headless.services.artifact_validation import (
     ArtifactValidationError,
+    validate_artifact_shape,
     validate_remediation_evidence,
 )
 from cc_headless.services.execution_context import (
@@ -205,6 +206,16 @@ def save_artifact(filename: str, content: str) -> str:
     base = _artifact_dir()
     if base is None:
         return json.dumps({"ok": False, "error": "missing or invalid RCA execution context"})
+
+    # Reject a malformed artifact now rather than at the completion gate, where
+    # the run has already ended and the agent can no longer correct it.
+    try:
+        validate_artifact_shape(filename, content)
+    except ArtifactValidationError as exc:
+        return json.dumps(
+            {"ok": False, "error": f"artifact rejected: {exc}. Fix the content and save again."},
+            ensure_ascii=False,
+        )
 
     path = _write_artifact(base, filename, content)
     return json.dumps({"ok": True, "path": str(path)})
