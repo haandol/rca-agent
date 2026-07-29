@@ -10,25 +10,19 @@ from pydantic import BaseModel, Field
 from rca_agent.config.settings import (
     LLM_DEFAULT_TIMEOUT_SECONDS,
     PLAYBOOK_UPDATE_THRESHOLD,
-    S3_VECTOR_BUCKET_NAME,
-    S3_VECTOR_PLAYBOOK_INDEX,
 )
-from rca_agent.ports.dto.models import Playbook, RcaReport, ScopingResult
-from rca_agent.ports.interfaces.embedding import EmbeddingPort
+from rca_agent.ports.dto.models import Playbook, PlaybookMatch, RcaReport, ScopingResult
+from rca_agent.ports.interfaces.playbook_store import PlaybookStorePort
 from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
-from rca_agent.utils.retry import retry_with_backoff
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
 
 logger = logging.getLogger(__name__)
-
-_SEARCH_MAX_RETRIES = 3
-_SEARCH_BASE_DELAY = 1.0
 
 
 class PlaybookOutput(BaseModel):
@@ -48,21 +42,6 @@ class PlaybookUpdateOutput(BaseModel):
     needs_update: bool = True
     failure_type: str = ""
     symptom_pattern: str = ""
-    severity_criteria: str = ""
-    verification_steps: list[str] = Field(default_factory=list)
-    temporary_mitigation: str = ""
-    permanent_remediation: str = ""
-    escalation_criteria: str = ""
-    prevention_measures: list[str] = Field(default_factory=list)
-    related_metrics: list[str] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
-
-
-class _ExistingPlaybookHit(BaseModel):
-    playbook_id: str
-    similarity: float
-    failure_type: str
-    symptom_pattern: str
     severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
     temporary_mitigation: str = ""
@@ -105,17 +84,20 @@ def _build_user_prompt(report: RcaReport) -> str:
     )
 
 
-def _build_update_prompt(existing: _ExistingPlaybookHit, report: RcaReport) -> str:
+def _build_update_prompt(existing: PlaybookMatch, report: RcaReport) -> str:
+    # Only failure_type/symptom_pattern/tags survive in the vector index metadata;
+    # the remaining fields are unavailable at search time (ADR infra/0002).
+    unavailable = "N/A (not in search index)"
     return PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE.format(
-        existing_failure_type=existing.failure_type,
-        existing_symptom_pattern=existing.symptom_pattern,
-        existing_severity_criteria=existing.severity_criteria or "N/A",
-        existing_verification_steps="\n".join(f"  - {s}" for s in existing.verification_steps) or "N/A",
-        existing_temporary_mitigation=existing.temporary_mitigation or "N/A",
-        existing_permanent_remediation=existing.permanent_remediation or "N/A",
-        existing_escalation_criteria=existing.escalation_criteria or "N/A",
-        existing_prevention_measures="\n".join(f"  - {m}" for m in existing.prevention_measures) or "N/A",
-        existing_related_metrics="\n".join(f"  - {m}" for m in existing.related_metrics) or "N/A",
+        existing_failure_type=existing.failure_type or "N/A",
+        existing_symptom_pattern=existing.symptom_pattern or "N/A",
+        existing_severity_criteria=unavailable,
+        existing_verification_steps=unavailable,
+        existing_temporary_mitigation=unavailable,
+        existing_permanent_remediation=unavailable,
+        existing_escalation_criteria=unavailable,
+        existing_prevention_measures=unavailable,
+        existing_related_metrics=unavailable,
         root_cause=report.root_cause,
         severity=report.severity,
         evidence_highlights="\n".join(f"  - {e}" for e in report.evidence_list[:5]) or "N/A",
@@ -139,66 +121,18 @@ def search_existing_playbooks(
     report: RcaReport,
     scoping_result: ScopingResult | None,
     *,
-    embedding: EmbeddingPort,
-    s3_vectors_client=None,
+    playbook_store: PlaybookStorePort,
     threshold: float = PLAYBOOK_UPDATE_THRESHOLD,
-    max_retries: int = _SEARCH_MAX_RETRIES,
-    base_delay: float = _SEARCH_BASE_DELAY,
-) -> list[_ExistingPlaybookHit]:
-    if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
-        return []
-
-    query_text = _build_embed_key(report, scoping_result)
-    try:
-        query_vector = embedding.embed_query(query_text)
-    except Exception:
-        logger.exception("Failed to embed query text, skipping playbook search")
-        return []
-
-    def query() -> dict:
-        return s3_vectors_client.query_vectors(
-            vectorBucketName=S3_VECTOR_BUCKET_NAME,
-            indexName=S3_VECTOR_PLAYBOOK_INDEX,
-            queryVector={"float32": query_vector},
-            topK=3,
-        )
-
-    response = retry_with_backoff(
-        query,
-        max_retries=max_retries,
-        base_delay=base_delay,
-        operation="playbook search",
+) -> list[PlaybookMatch]:
+    """Find playbooks close enough to update instead of creating a duplicate."""
+    return playbook_store.search_similar(
+        _build_embed_key(report, scoping_result),
+        threshold=threshold,
     )
-    if response is None:
-        return []
-
-    hits = []
-    for item in response.get("vectors", []):
-        similarity = item.get("distance", 0.0)
-        if similarity < threshold:
-            continue
-        metadata = item.get("metadata", {})
-        tags_raw = metadata.get("tags", "")
-        if isinstance(tags_raw, str) and tags_raw:
-            tags = tags_raw.split(",")
-        elif isinstance(tags_raw, list):
-            tags = tags_raw
-        else:
-            tags = []
-        hits.append(
-            _ExistingPlaybookHit(
-                playbook_id=item.get("key", ""),
-                similarity=similarity,
-                failure_type=metadata.get("failure_type", ""),
-                symptom_pattern=metadata.get("symptom_pattern", ""),
-                tags=tags,
-            )
-        )
-    return hits
 
 
 def _try_update_existing(
-    hit: _ExistingPlaybookHit,
+    hit: PlaybookMatch,
     report: RcaReport,
     update_agent: Agent,
     *,
@@ -230,13 +164,13 @@ def _try_update_existing(
         playbook_id=hit.playbook_id,
         failure_type=output.failure_type or hit.failure_type,
         symptom_pattern=output.symptom_pattern or hit.symptom_pattern,
-        severity_criteria=output.severity_criteria or hit.severity_criteria,
-        verification_steps=output.verification_steps or hit.verification_steps,
-        temporary_mitigation=output.temporary_mitigation or hit.temporary_mitigation,
-        permanent_remediation=output.permanent_remediation or hit.permanent_remediation,
-        escalation_criteria=output.escalation_criteria or hit.escalation_criteria,
-        prevention_measures=output.prevention_measures or hit.prevention_measures,
-        related_metrics=output.related_metrics or hit.related_metrics,
+        severity_criteria=output.severity_criteria,
+        verification_steps=output.verification_steps,
+        temporary_mitigation=output.temporary_mitigation,
+        permanent_remediation=output.permanent_remediation,
+        escalation_criteria=output.escalation_criteria,
+        prevention_measures=output.prevention_measures,
+        related_metrics=output.related_metrics,
         rca_id=report.rca_id,
         tags=output.tags or hit.tags,
     )
@@ -246,16 +180,14 @@ def run_playbook_generation(
     report: RcaReport,
     agent: Agent,
     *,
-    embedding: EmbeddingPort,
+    playbook_store: PlaybookStorePort,
     scoping_result: ScopingResult | None = None,
-    s3_vectors_client=None,
     timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> Playbook:
     existing_hits = search_existing_playbooks(
         report,
         scoping_result,
-        embedding=embedding,
-        s3_vectors_client=s3_vectors_client,
+        playbook_store=playbook_store,
     )
     deadline = time.monotonic() + max(0, timeout_seconds)
 
@@ -311,56 +243,3 @@ def run_playbook_generation(
         rca_id=report.rca_id,
         tags=output.tags,
     )
-
-
-def save_playbook_to_s3_vectors(
-    playbook: Playbook,
-    *,
-    embedding: EmbeddingPort,
-    scoping_result: ScopingResult | None = None,
-    s3_vectors_client=None,
-) -> bool:
-    if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
-        logger.info("S3 Vectors not configured, skipping playbook indexing")
-        return False
-
-    metric_name = ""
-    if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
-        metric_name = scoping_result.raw_alarm.trigger.metric_name
-
-    parts = {
-        "장애유형": _truncate(playbook.failure_type),
-        "증상": _truncate(playbook.symptom_pattern),
-        "메트릭": _truncate(metric_name),
-    }
-    embed_text = " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
-    try:
-        vector = embedding.embed_document(embed_text)
-    except Exception:
-        logger.exception("Failed to embed playbook text")
-        return False
-
-    metadata = {
-        "failure_type": _truncate(playbook.failure_type),
-        "symptom_pattern": _truncate(playbook.symptom_pattern),
-        "tags": ",".join(playbook.tags)[:256],
-        "rca_id": playbook.rca_id,
-    }
-
-    try:
-        s3_vectors_client.put_vectors(
-            vectorBucketName=S3_VECTOR_BUCKET_NAME,
-            indexName=S3_VECTOR_PLAYBOOK_INDEX,
-            vectors=[
-                {
-                    "key": playbook.playbook_id,
-                    "data": {"float32": vector},
-                    "metadata": metadata,
-                }
-            ],
-        )
-        logger.info("Playbook %s indexed in S3 Vectors", playbook.playbook_id)
-        return True
-    except Exception:
-        logger.exception("Failed to index playbook in S3 Vectors")
-        return False

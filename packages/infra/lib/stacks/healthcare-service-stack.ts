@@ -9,6 +9,7 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as cloudmap from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
+import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -139,17 +140,9 @@ export class HealthcareServiceStack extends cdk.Stack {
       );
     }
 
-    this.grantEcrPull(taskDef);
+    grantEcrPull(taskDef);
 
     return taskDef;
-  }
-
-  private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {
-    taskDef.executionRole!.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName(
-        'AmazonEC2ContainerRegistryReadOnly',
-      ),
-    );
   }
 
   private newService(

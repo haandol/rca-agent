@@ -8,7 +8,9 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck",
+    "format": "prettier --write \"app/**/*.{ts,vue}\" \"server/**/*.ts\" nuxt.config.ts",
+    "format:check": "prettier --check \"app/**/*.{ts,vue}\" \"server/**/*.ts\" nuxt.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1053.0",

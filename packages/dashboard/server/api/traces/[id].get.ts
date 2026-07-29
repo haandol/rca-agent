@@ -1,11 +1,5 @@
 import { QueryCommand, type QueryCommandInput } from '@aws-sdk/lib-dynamodb';
 
-function parseEngine(sk: string): string {
-  if (sk === 'SESSION' || sk.startsWith('SPAN#') || sk.startsWith('HYPO#'))
-    return 'strands';
-  return sk.split('#')[0] ?? 'strands';
-}
-
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id');
   if (!id) {
@@ -67,17 +61,7 @@ export default defineEventHandler(async (event) => {
         error: (i.error as string) || null,
         metadata: (i.metadata as Record<string, unknown>) || null,
         engine: (i.engine as string) || parseEngine(sk),
-        remediationStatus: remediation.remediationStatus,
-        remediationSuccess: remediation.remediationSuccess,
-        remediationSummary: remediation.remediationSummary,
-        remediationError: remediation.remediationError,
-        remediationCompletedAt: remediation.remediationCompletedAt,
-        verificationStatus: remediation.verificationStatus,
-        metricsNormalized: remediation.metricsNormalized,
-        verificationSummary: remediation.verificationSummary,
-        remainingIssues: remediation.remainingIssues,
-        remediationFaultType: remediation.remediationFaultType,
-        remediationEndpoint: remediation.remediationEndpoint,
+        ...remediation,
       };
     })
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -97,24 +81,12 @@ export default defineEventHandler(async (event) => {
         span.spanType === 'REMEDIATION' &&
         span.engine === selectedSessionEngine,
     );
+  // Each span already carries a full RemediationDetails, so the latest
+  // REMEDIATION span can back-fill fields the session record lacks as-is.
   const sessionRemediation = session
     ? mergeRemediationDetails(
         readSessionRemediation(session),
-        remediationSpan
-          ? {
-              remediationStatus: remediationSpan.remediationStatus,
-              remediationSuccess: remediationSpan.remediationSuccess,
-              remediationSummary: remediationSpan.remediationSummary,
-              remediationError: remediationSpan.remediationError,
-              remediationCompletedAt: remediationSpan.remediationCompletedAt,
-              verificationStatus: remediationSpan.verificationStatus,
-              metricsNormalized: remediationSpan.metricsNormalized,
-              verificationSummary: remediationSpan.verificationSummary,
-              remainingIssues: remediationSpan.remainingIssues,
-              remediationFaultType: remediationSpan.remediationFaultType,
-              remediationEndpoint: remediationSpan.remediationEndpoint,
-            }
-          : readSpanRemediation({}),
+        remediationSpan ?? readSpanRemediation({}),
       )
     : null;
   const sessionData =
@@ -130,17 +102,7 @@ export default defineEventHandler(async (event) => {
           updatedAt: (session.updated_at as string) || '',
           engine:
             (session.engine as string) || parseEngine(session.SK as string),
-          remediationStatus: sessionRemediation.remediationStatus,
-          remediationSuccess: sessionRemediation.remediationSuccess,
-          remediationSummary: sessionRemediation.remediationSummary,
-          remediationError: sessionRemediation.remediationError,
-          remediationCompletedAt: sessionRemediation.remediationCompletedAt,
-          verificationStatus: sessionRemediation.verificationStatus,
-          metricsNormalized: sessionRemediation.metricsNormalized,
-          verificationSummary: sessionRemediation.verificationSummary,
-          remainingIssues: sessionRemediation.remainingIssues,
-          remediationFaultType: sessionRemediation.remediationFaultType,
-          remediationEndpoint: sessionRemediation.remediationEndpoint,
+          ...sessionRemediation,
         }
       : null;
 

@@ -194,10 +194,31 @@ test('dashboard APIs and UI consume authoritative remediation fields', async () 
     'verificationSummary',
     'remainingIssues',
   ]) {
-    assert.ok(sessionsSource.includes(field), `sessions API exposes ${field}`);
-    assert.ok(tracesSource.includes(field), `trace API exposes ${field}`);
     assert.ok(graphSource.includes(field), `trace graph carries ${field}`);
   }
+
+  // The APIs spread the normalized RemediationDetails rather than restating
+  // each field, so assert the spread instead of individual field names.
+  for (const [name, source] of [
+    ['sessions', sessionsSource],
+    ['trace', tracesSource],
+  ]) {
+    assert.match(
+      source,
+      /\.\.\.\w*[rR]emediation,/,
+      `${name} API spreads the normalized remediation details`,
+    );
+  }
+  assert.match(
+    sessionsSource,
+    /const remediation = readSessionRemediation\(item\)/,
+    'sessions API derives remediation from the session record',
+  );
+  assert.match(
+    tracesSource,
+    /const remediation = readSpanRemediation\(i\)/,
+    'trace API derives per-span remediation from the span record',
+  );
 
   assert.match(detailSource, /node\.remediationStatus/);
   assert.match(detailSource, /node\.verificationStatus/);

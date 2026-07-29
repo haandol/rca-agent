@@ -69,8 +69,10 @@ packages/dashboard/
 │   │   │   └── [rcaId]/
 │   │   │       └── [hypothesisId].get.ts  # GET /api/evidence/:rcaId/:hypothesisId — S3 증거 조회
 │   │   └── traces/[id].get.ts     # GET /api/traces/:id — DynamoDB 트레이스 조회
-│   └── utils/
-│       └── aws.ts                 # DynamoDB/S3 클라이언트 싱글톤
+│   └── utils/                     # Nitro 자동 임포트 (server/api 에서 import 없이 사용)
+│       ├── aws.ts                 # DynamoDB/S3 클라이언트 싱글톤
+│       ├── engine.ts              # SK → 엔진 판별 (parseEngine)
+│       └── remediation.ts         # 세션/스팬 remediation 필드 정규화·병합
 ├── nuxt.config.ts                 # Nuxt 설정 (포트 3100, runtimeConfig)
 ├── package.json
 └── tsconfig.json

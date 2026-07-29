@@ -1,4 +1,4 @@
-import tailwindcss from '@tailwindcss/vite'
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
@@ -16,7 +16,8 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     awsRegion: process.env.AWS_REGION || 'us-east-1',
-    dynamodbTableName: process.env.DYNAMODB_TABLE_NAME || 'RcaAgentDevRcaSession',
+    dynamodbTableName:
+      process.env.DYNAMODB_TABLE_NAME || 'RcaAgentDevRcaSession',
     s3ReportBucket: process.env.S3_REPORT_BUCKET || 'rca-agent-dev-evidence',
   },
-})
+});

@@ -18,7 +18,7 @@ from rca_agent.ports.dto.models import (
     RcaSessionState,
     RemediationResult,
 )
-from rca_agent.services import evidence, playbook_gen, remediation_pipeline, scoping
+from rca_agent.services import evidence, remediation_pipeline
 from rca_agent.services.notification import build_notification
 from rca_agent.services.pipeline import PipelineOrchestrator
 from rca_agent.services.remediation_pipeline import RemediationOrchestrator
@@ -91,12 +91,16 @@ def test_validated_high_cpu_persists_and_is_the_only_remediation_type(
     session_store = DynamoDbSessionStore(ddb)
     notification = MagicMock()
     notification.send.return_value = True
+    report_store = MagicMock()
+    report_store.search_similar.return_value = []
+    playbook_store = MagicMock()
+    playbook_store.search_similar.return_value = []
     container = SimpleNamespace(
         session_store=session_store,
         dynamodb_client=ddb,
-        report_store=MagicMock(),
+        report_store=report_store,
         notification=notification,
-        playbook_store=MagicMock(),
+        playbook_store=playbook_store,
         s3_vectors_client=None,
         s3_client=MagicMock(),
         embedding=MagicMock(),
@@ -157,8 +161,6 @@ def test_validated_high_cpu_persists_and_is_the_only_remediation_type(
     rca_id = build_rca_id(build_idempotency_key(alarm))
 
     with (
-        patch.object(scoping, "S3_VECTOR_BUCKET_NAME", ""),
-        patch.object(playbook_gen, "S3_VECTOR_BUCKET_NAME", ""),
         patch.object(evidence, "S3_EVIDENCE_BUCKET", ""),
         patch.object(
             evidence,

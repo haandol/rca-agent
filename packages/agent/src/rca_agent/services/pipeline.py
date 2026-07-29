@@ -400,8 +400,7 @@ class PipelineOrchestrator:
             scoping_result = run_scoping(
                 alarm,
                 c.scoping_agent,
-                embedding=c.embedding,
-                s3_vectors_client=c.s3_vectors_client,
+                report_store=c.report_store,
             )
             s.output_summary = (
                 f"심각도={scoping_result.initial_severity},"
@@ -1144,9 +1143,8 @@ class PipelineOrchestrator:
             playbook = run_playbook_generation(
                 rca_report,
                 c.playbook_agent,
-                embedding=c.embedding,
+                playbook_store=c.playbook_store,
                 scoping_result=scoping_result,
-                s3_vectors_client=c.s3_vectors_client,
             )
             with self._side_effect_lease(
                 rca_report.rca_id,

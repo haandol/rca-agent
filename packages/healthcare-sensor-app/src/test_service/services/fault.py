@@ -177,8 +177,7 @@ class FaultInjectionService:
         self._database = database
 
     async def leak_connections(self, count: int) -> dict:
-        url = self._database.engine.url
-        dsn = f"postgresql://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}"
+        dsn = _asyncpg_dsn(self._database)
         generation = await _begin_explicit_database_leak()
         try:
             for _ in range(count):

@@ -13,11 +13,11 @@ from rca_agent.ports.dto.models import (
 from rca_agent.services.hypothesis import (
     HypothesisOutput,
     _build_metric_snapshot_text,
-    _build_report_context,
     _build_user_prompt,
     _HypothesisItem,
     run_hypothesis_generation,
 )
+from rca_agent.services.report_context import build_report_context
 
 
 @pytest.fixture()
@@ -66,12 +66,8 @@ def _make_mock_agent(output: HypothesisOutput) -> MagicMock:
 
 
 class TestBuildReportContext:
-    def test_empty_reports(self):
-        result = _build_report_context([])
-        assert result == "No similar past RCA reports found."
-
-    def test_with_reports(self):
-        reports = [
+    def _reports(self) -> list[ReportMatch]:
+        return [
             ReportMatch(
                 rca_id="rca-1",
                 similarity=0.9,
@@ -81,10 +77,27 @@ class TestBuildReportContext:
                 confirmed=True,
             ),
         ]
-        result = _build_report_context(reports)
+
+    def test_empty_reports(self):
+        result = build_report_context([])
+        assert result == "No similar past RCA reports found."
+
+    def test_with_reports(self):
+        result = build_report_context(self._reports())
         assert "Memory leak" in result
         assert "CPU spike" in result
         assert "confirmed" in result
+
+    def test_omits_hypothesis_path_by_default(self):
+        assert "Hypothesis path" not in build_report_context(self._reports())
+
+    def test_includes_hypothesis_path_when_requested(self):
+        result = build_report_context(self._reports(), include_hypothesis_path=True)
+        assert "Hypothesis path: INFRASTRUCTURE → memory" in result
+
+    def test_hypothesis_prompt_includes_hypothesis_path(self, sample_scoping_result: ScopingResult):
+        prompt = _build_user_prompt(sample_scoping_result)
+        assert "Hypothesis path: DEPLOYMENT → task count" in prompt
 
 
 class TestBuildMetricSnapshotText:

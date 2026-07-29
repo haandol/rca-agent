@@ -8,6 +8,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
+import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -152,7 +153,7 @@ export class RemediationAgentStack extends cdk.Stack {
     });
 
     this.grantTaskPermissions(taskDef, props, queue);
-    this.grantEcrPull(taskDef);
+    grantEcrPull(taskDef);
 
     return taskDef;
   }
@@ -187,14 +188,6 @@ export class RemediationAgentStack extends cdk.Stack {
         actions: ['sns:Publish'],
         resources: [props.notificationTopic.topicArn],
       }),
-    );
-  }
-
-  private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {
-    taskDef.executionRole!.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName(
-        'AmazonEC2ContainerRegistryReadOnly',
-      ),
     );
   }
 

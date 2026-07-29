@@ -118,10 +118,17 @@ class AlarmPayload(BaseModel):
 
 
 class PlaybookMatch(BaseModel):
+    """Playbook hit from the vector index.
+
+    Only fields kept in the S3 Vectors metadata are available here; the detail
+    fields live in the playbook record itself.
+    """
+
     playbook_id: str
-    title: str
     similarity: float
-    root_cause_summary: str = ""
+    failure_type: str = ""
+    symptom_pattern: str = ""
+    tags: list[str] = Field(default_factory=list)
 
 
 class ReportMatch(BaseModel):

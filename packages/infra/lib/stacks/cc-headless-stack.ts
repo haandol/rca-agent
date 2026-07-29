@@ -10,6 +10,7 @@ import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
+import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -159,7 +160,7 @@ export class CcHeadlessStack extends cdk.Stack {
     });
 
     this.grantTaskPermissions(taskDef, props, alarmQueue);
-    this.grantEcrPull(taskDef);
+    grantEcrPull(taskDef);
 
     return taskDef;
   }
@@ -232,14 +233,6 @@ export class CcHeadlessStack extends cdk.Stack {
         }),
       );
     }
-  }
-
-  private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {
-    taskDef.executionRole!.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName(
-        'AmazonEC2ContainerRegistryReadOnly',
-      ),
-    );
   }
 
   private newService(

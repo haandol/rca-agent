@@ -44,17 +44,7 @@ export default defineEventHandler(async () => {
             ? 'strands'
             : (item.SK as string).split('#SESSION')[0]) ||
           'strands',
-        remediationStatus: remediation.remediationStatus,
-        remediationSuccess: remediation.remediationSuccess,
-        remediationSummary: remediation.remediationSummary,
-        remediationError: remediation.remediationError,
-        remediationCompletedAt: remediation.remediationCompletedAt,
-        verificationStatus: remediation.verificationStatus,
-        metricsNormalized: remediation.metricsNormalized,
-        verificationSummary: remediation.verificationSummary,
-        remainingIssues: remediation.remainingIssues,
-        remediationFaultType: remediation.remediationFaultType,
-        remediationEndpoint: remediation.remediationEndpoint,
+        ...remediation,
       };
     })
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));

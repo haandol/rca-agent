@@ -15,10 +15,10 @@ from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisGenerationResult,
-    ReportMatch,
     ScopingResult,
 )
 from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
+from rca_agent.services.report_context import build_report_context
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
@@ -58,20 +58,6 @@ class _HypothesisItem(BaseModel):
 HypothesisOutput.model_rebuild()
 
 
-def _build_report_context(reports: list[ReportMatch]) -> str:
-    if not reports:
-        return "No similar past RCA reports found."
-    lines = ["## Similar Past RCA Reports"]
-    for i, r in enumerate(reports, 1):
-        status = "confirmed" if r.confirmed else "unconfirmed"
-        lines.append(f"{i}. **{r.root_cause}** (similarity: {r.similarity:.2f}, {status})")
-        if r.incident_summary:
-            lines.append(f"   Incident: {r.incident_summary}")
-        if r.hypothesis_path:
-            lines.append(f"   Hypothesis path: {r.hypothesis_path}")
-    return "\n".join(lines)
-
-
 def _build_metric_snapshot_text(metric_snapshot: dict) -> str:
     if not metric_snapshot:
         return "No metric data available."
@@ -91,7 +77,7 @@ def _build_user_prompt(scoping: ScopingResult) -> str:
         blast_radius=scoping.blast_radius,
         initial_severity=scoping.initial_severity,
         metric_snapshot=_build_metric_snapshot_text(scoping.metric_snapshot),
-        report_context=_build_report_context(scoping.similar_reports),
+        report_context=build_report_context(scoping.similar_reports, include_hypothesis_path=True),
     )
 
 

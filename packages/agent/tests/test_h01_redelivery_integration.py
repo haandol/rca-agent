@@ -12,7 +12,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
 )
 from rca_agent.adapters.secondary.trace import dynamodb_trace_store
 from rca_agent.ports.dto.models import AlarmPayload, RcaSessionState
-from rca_agent.services import evidence, playbook_gen, scoping
+from rca_agent.services import evidence
 from rca_agent.services.pipeline import PipelineOrchestrator
 
 
@@ -81,9 +81,11 @@ def test_real_store_redelivery_reclaims_failed_session_and_completes(monkeypatch
     report_store.save.side_effect = lambda _report, *, claim_token, attempt: (
         f"reports/strands/attempt-{attempt}-{claim_token}/report.md"
     )
+    report_store.search_similar.return_value = []
     notification = MagicMock()
     notification.send.return_value = True
     playbook_store = MagicMock()
+    playbook_store.search_similar.return_value = []
     container = SimpleNamespace(
         session_store=session_store,
         dynamodb_client=ddb,
@@ -133,8 +135,6 @@ def test_real_store_redelivery_reclaims_failed_session_and_completes(monkeypatch
     rca_id = build_rca_id(build_idempotency_key(alarm))
 
     with (
-        patch.object(scoping, "S3_VECTOR_BUCKET_NAME", ""),
-        patch.object(playbook_gen, "S3_VECTOR_BUCKET_NAME", ""),
         patch.object(evidence, "S3_EVIDENCE_BUCKET", "evidence-bucket"),
         patch.object(
             evidence,

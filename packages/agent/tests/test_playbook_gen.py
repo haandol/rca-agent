@@ -4,10 +4,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import (
+    S3VectorsPlaybookStore,
+)
+from rca_agent.config.settings import PLAYBOOK_UPDATE_THRESHOLD
 from rca_agent.ports.dto.models import (
     AlarmPayload,
     AlarmTrigger,
     Playbook,
+    PlaybookMatch,
     RcaReport,
     ScopingResult,
 )
@@ -15,10 +20,8 @@ from rca_agent.services.playbook_gen import (
     PlaybookOutput,
     PlaybookUpdateOutput,
     _build_embed_key,
-    _ExistingPlaybookHit,
     _try_update_existing,
     run_playbook_generation,
-    save_playbook_to_s3_vectors,
     search_existing_playbooks,
 )
 
@@ -59,27 +62,26 @@ def _make_mock_agent(output) -> MagicMock:
     return agent
 
 
-def _make_hit(**overrides) -> _ExistingPlaybookHit:
+def _make_hit(**overrides) -> PlaybookMatch:
     defaults = {
         "playbook_id": "existing-1",
         "similarity": 0.9,
         "failure_type": "Memory leak",
         "symptom_pattern": "CPU spike + memory growth",
-        "severity_criteria": "Critical if OOM kills detected",
-        "verification_steps": ["Check memory"],
-        "temporary_mitigation": "Restart",
-        "permanent_remediation": "Fix code",
-        "escalation_criteria": "Escalate if not resolved in 10 min",
-        "prevention_measures": ["Add alerts"],
-        "related_metrics": ["CPUUtilization", "MemoryUtilization"],
         "tags": ["memory"],
     }
     defaults.update(overrides)
-    return _ExistingPlaybookHit(**defaults)
+    return PlaybookMatch(**defaults)
+
+
+def _playbook_store(matches: list[PlaybookMatch] | None = None) -> MagicMock:
+    store = MagicMock()
+    store.search_similar.return_value = matches or []
+    return store
 
 
 class TestBuildEmbedKey:
-    def test_includes_all_parts(self, fake_embedding):
+    def test_includes_all_parts(self):
         report = _make_report()
         scoping = _make_scoping()
         key = _build_embed_key(report, scoping)
@@ -87,7 +89,7 @@ class TestBuildEmbedKey:
         assert "CPUUtilization" in key
         assert "CPU spike on web-service" in key
 
-    def test_without_scoping(self, fake_embedding):
+    def test_without_scoping(self):
         report = _make_report()
         key = _build_embed_key(report, None)
         assert "Memory leak in worker" in key
@@ -96,79 +98,30 @@ class TestBuildEmbedKey:
 
 
 class TestSearchExistingPlaybooks:
-    def test_skips_when_not_configured(self, fake_embedding):
-        result = search_existing_playbooks(_make_report(), None, embedding=fake_embedding)
-        assert result == []
+    def test_queries_store_with_embed_key_and_update_threshold(self):
+        store = _playbook_store()
+        report = _make_report()
+        scoping = _make_scoping()
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Known defect: service-level playbook search treats cosine distance as similarity",
-    )
-    @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_returns_hits_above_threshold(self, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.return_value = {
-            "vectors": [
-                {
-                    "key": "pb-1",
-                    "distance": 0.1,
-                    "metadata": {
-                        "failure_type": "Memory leak",
-                        "symptom_pattern": "CPU spike",
-                    },
-                },
-                {
-                    "key": "pb-2",
-                    "distance": 0.8,
-                    "metadata": {"failure_type": "Other"},
-                },
-            ]
-        }
-        hits = search_existing_playbooks(
-            _make_report(),
-            _make_scoping(),
-            embedding=fake_embedding,
-            s3_vectors_client=mock_client,
+        assert search_existing_playbooks(report, scoping, playbook_store=store) == []
+
+        store.search_similar.assert_called_once_with(
+            _build_embed_key(report, scoping),
+            threshold=PLAYBOOK_UPDATE_THRESHOLD,
         )
-        assert len(hits) == 1
-        assert hits[0].playbook_id == "pb-1"
+
+    def test_returns_store_hits(self):
+        hit = _make_hit(playbook_id="pb-1", similarity=0.9)
+        store = _playbook_store([hit])
+
+        hits = search_existing_playbooks(_make_report(), _make_scoping(), playbook_store=store)
+
+        assert [h.playbook_id for h in hits] == ["pb-1"]
         assert hits[0].similarity == pytest.approx(0.9)
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Known defect: service-level playbook search does not request S3 Vectors metadata",
-    )
-    @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_requests_metadata(self, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.return_value = {"vectors": []}
-
-        search_existing_playbooks(
-            _make_report(),
-            _make_scoping(),
-            embedding=fake_embedding,
-            s3_vectors_client=mock_client,
-        )
-
-        assert mock_client.query_vectors.call_args.kwargs["returnMetadata"] is True
-
-    @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_handles_search_failure(self, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.side_effect = RuntimeError("fail")
-        hits = search_existing_playbooks(
-            _make_report(),
-            None,
-            embedding=fake_embedding,
-            s3_vectors_client=mock_client,
-            max_retries=1,
-            base_delay=0,
-        )
-        assert hits == []
 
 
 class TestTryUpdateExisting:
-    def test_returns_updated_playbook(self, fake_embedding):
+    def test_returns_updated_playbook(self):
         hit = _make_hit()
         update_output = PlaybookUpdateOutput(
             needs_update=True,
@@ -192,7 +145,7 @@ class TestTryUpdateExisting:
         assert result.escalation_criteria == "Escalate to infra if not resolved in 5 min"
         assert len(result.related_metrics) == 3
 
-    def test_returns_none_when_no_update_needed(self, fake_embedding):
+    def test_returns_none_when_no_update_needed(self):
         hit = _make_hit()
         update_output = PlaybookUpdateOutput(needs_update=False)
         agent = _make_mock_agent(update_output)
@@ -201,7 +154,7 @@ class TestTryUpdateExisting:
 
         assert result is None
 
-    def test_returns_none_on_failure(self, fake_embedding):
+    def test_returns_none_on_failure(self):
         hit = _make_hit()
         agent = MagicMock(side_effect=RuntimeError("fail"))
 
@@ -233,7 +186,7 @@ class TestTryUpdateExisting:
 
 
 class TestRunPlaybookGeneration:
-    def test_updates_existing_when_found(self, fake_embedding):
+    def test_updates_existing_when_found(self):
         hit = _make_hit()
         update_output = PlaybookUpdateOutput(
             needs_update=True,
@@ -243,16 +196,14 @@ class TestRunPlaybookGeneration:
         )
         agent = _make_mock_agent(update_output)
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=[hit],
-        ):
-            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
+        store = _playbook_store([hit])
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
 
         assert playbook.playbook_id == "existing-1"
         assert playbook.failure_type == "Memory leak (updated)"
 
-    def test_creates_new_when_no_existing(self, fake_embedding):
+    def test_creates_new_when_no_existing(self):
         new_output = PlaybookOutput(
             failure_type="Memory leak",
             symptom_pattern="CPU spike",
@@ -263,11 +214,9 @@ class TestRunPlaybookGeneration:
         )
         agent = _make_mock_agent(new_output)
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=[],
-        ):
-            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
+        store = _playbook_store()
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
 
         assert playbook.failure_type == "Memory leak"
         assert playbook.severity_criteria == "High if sustained over 5 min"
@@ -275,7 +224,7 @@ class TestRunPlaybookGeneration:
         assert playbook.related_metrics == ["CPUUtilization"]
         assert playbook.rca_id == "rca-1"
 
-    def test_creates_new_when_existing_needs_no_update(self, fake_embedding):
+    def test_creates_new_when_existing_needs_no_update(self):
         hit = _make_hit()
         no_update = PlaybookUpdateOutput(needs_update=False)
         new_output = PlaybookOutput(
@@ -297,88 +246,86 @@ class TestRunPlaybookGeneration:
 
         agent = MagicMock(side_effect=mock_call)
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=[hit],
-        ):
-            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
+        store = _playbook_store([hit])
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
 
         assert playbook.failure_type == "New playbook"
 
-    def test_fallback_on_failure(self, fake_embedding):
+    def test_fallback_on_failure(self):
         agent = MagicMock(side_effect=RuntimeError("fail"))
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=[],
-        ):
-            playbook = run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
+        store = _playbook_store()
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
 
         assert playbook.failure_type == "unknown"
         assert playbook.rca_id == "rca-1"
 
-    def test_zero_timeout_returns_fallback_without_starting_generation(self, fake_embedding):
+    def test_zero_timeout_returns_fallback_without_starting_generation(self):
         agent = MagicMock()
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=[],
-        ):
-            started = perf_counter()
-            playbook = run_playbook_generation(
-                _make_report(),
-                agent,
-                embedding=fake_embedding,
-                timeout_seconds=0,
-            )
-            elapsed = perf_counter() - started
+        store = _playbook_store()
+
+        started = perf_counter()
+        playbook = run_playbook_generation(
+            _make_report(),
+            agent,
+            playbook_store=store,
+            timeout_seconds=0,
+        )
+        elapsed = perf_counter() - started
 
         assert elapsed < 0.15
         agent.assert_not_called()
         assert playbook.failure_type == "unknown"
         assert playbook.rca_id == "rca-1"
 
-    def test_uses_one_deadline_for_updates_and_generation(self, fake_embedding):
+    def test_uses_one_deadline_for_updates_and_generation(self):
         hits = [_make_hit(playbook_id=f"existing-{index}") for index in range(3)]
         agent = MagicMock(side_effect=lambda *args, **kwargs: time.sleep(0.2))
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=hits,
-        ):
-            started = perf_counter()
-            playbook = run_playbook_generation(
-                _make_report(),
-                agent,
-                embedding=fake_embedding,
-                timeout_seconds=0.05,
-            )
-            elapsed = perf_counter() - started
+        store = _playbook_store(hits)
+
+        started = perf_counter()
+        playbook = run_playbook_generation(
+            _make_report(),
+            agent,
+            playbook_store=store,
+            timeout_seconds=0.05,
+        )
+        elapsed = perf_counter() - started
 
         assert elapsed < 0.2
         assert agent.call_count == 1
         assert playbook.failure_type == "unknown"
 
-    def test_uses_structured_output(self, fake_embedding):
+    def test_uses_structured_output(self):
         output = PlaybookOutput(failure_type="test", symptom_pattern="test")
         agent = _make_mock_agent(output)
 
-        with patch(
-            "rca_agent.services.playbook_gen.search_existing_playbooks",
-            return_value=[],
-        ):
-            run_playbook_generation(_make_report(), agent, embedding=fake_embedding)
+        store = _playbook_store()
+
+        run_playbook_generation(_make_report(), agent, playbook_store=store)
 
         _, kwargs = agent.call_args
         assert kwargs["structured_output_model"] is PlaybookOutput
 
 
-class TestSavePlaybookToS3Vectors:
+_STORE_MODULE = "rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store"
+
+
+class TestPlaybookStoreSave:
+    def _store(self, client, fake_embedding) -> S3VectorsPlaybookStore:
+        return S3VectorsPlaybookStore(s3_vectors_client=client, embedding=fake_embedding)
+
     def test_skips_when_not_configured(self, fake_embedding):
         playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
-        assert not save_playbook_to_s3_vectors(playbook, embedding=fake_embedding)
 
-    @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
+        with patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", ""):
+            assert not self._store(MagicMock(), fake_embedding).save(playbook)
+
+    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
     def test_indexes_with_embed_key(self, fake_embedding):
         playbook = Playbook(
             playbook_id="p-1",
@@ -386,31 +333,45 @@ class TestSavePlaybookToS3Vectors:
             symptom_pattern="CPU spike",
             rca_id="rca-1",
             tags=["memory"],
+            verification_steps=["Check memory"],
         )
-        scoping = _make_scoping()
         mock_client = MagicMock()
 
-        result = save_playbook_to_s3_vectors(
-            playbook,
-            embedding=fake_embedding,
-            scoping_result=scoping,
-            s3_vectors_client=mock_client,
-        )
+        result = self._store(mock_client, fake_embedding).save(playbook, scoping_result=_make_scoping())
 
         assert result is True
-        call_args = mock_client.put_vectors.call_args
-        vector = call_args[1]["vectors"][0]
+        vector = mock_client.put_vectors.call_args.kwargs["vectors"][0]
+        assert vector["key"] == "p-1"
         assert vector["data"]["float32"] == [0.1] * 1024
         assert vector["metadata"]["failure_type"] == "Memory leak"
         assert vector["metadata"]["tags"] == "memory"
         assert "verification_steps" not in vector["metadata"]
 
-    @patch("rca_agent.services.playbook_gen.S3_VECTOR_BUCKET_NAME", "my-bucket")
+    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
     def test_handles_error(self, fake_embedding):
         playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
         mock_client = MagicMock()
         mock_client.put_vectors.side_effect = RuntimeError("fail")
 
-        result = save_playbook_to_s3_vectors(playbook, embedding=fake_embedding, s3_vectors_client=mock_client)
+        assert not self._store(mock_client, fake_embedding).save(playbook)
 
-        assert result is False
+    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
+    def test_round_trips_csv_tags_through_search(self, fake_embedding):
+        mock_client = MagicMock()
+        mock_client.query_vectors.return_value = {
+            "vectors": [
+                {
+                    "key": "p-1",
+                    "distance": 0.05,
+                    "metadata": {
+                        "failure_type": "Memory leak",
+                        "symptom_pattern": "CPU spike",
+                        "tags": "memory,oom",
+                    },
+                }
+            ]
+        }
+
+        matches = self._store(mock_client, fake_embedding).search_similar("query", threshold=0.9)
+
+        assert [m.tags for m in matches] == [["memory", "oom"]]

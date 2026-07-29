@@ -1,21 +1,16 @@
-import { QueryCommand } from '@aws-sdk/lib-dynamodb'
-
-function parseEngine(sk: string): string {
-  if (sk === 'SESSION' || sk.startsWith('SPAN#') || sk.startsWith('HYPO#')) return 'strands'
-  return sk.split('#')[0] ?? 'strands'
-}
+import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 
 export default defineEventHandler(async (event) => {
-  const id = getRouterParam(event, 'id')
+  const id = getRouterParam(event, 'id');
   if (!id) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing RCA id' })
+    throw createError({ statusCode: 400, statusMessage: 'Missing RCA id' });
   }
 
-  const query = getQuery(event)
-  const engineFilter = (query.engine as string) || ''
+  const query = getQuery(event);
+  const engineFilter = (query.engine as string) || '';
 
-  const config = useRuntimeConfig()
-  const ddb = useDynamoDB()
+  const config = useRuntimeConfig();
+  const ddb = useDynamoDB();
 
   const result = await ddb.send(
     new QueryCommand({
@@ -23,24 +18,24 @@ export default defineEventHandler(async (event) => {
       KeyConditionExpression: 'PK = :pk',
       ExpressionAttributeValues: { ':pk': `RCA#${id}` },
     }),
-  )
+  );
 
-  const items = result.Items ?? []
+  const items = result.Items ?? [];
 
   const span = items.find((i) => {
-    const sk = (i.SK as string) || ''
-    const isSpan = sk.includes('#SPAN#') || sk.startsWith('SPAN#')
-    if (!isSpan) return false
-    if (i.span_type !== 'PLAYBOOK') return false
-    if (!engineFilter) return true
-    return parseEngine(sk) === engineFilter
-  })
+    const sk = (i.SK as string) || '';
+    const isSpan = sk.includes('#SPAN#') || sk.startsWith('SPAN#');
+    if (!isSpan) return false;
+    if (i.span_type !== 'PLAYBOOK') return false;
+    if (!engineFilter) return true;
+    return parseEngine(sk) === engineFilter;
+  });
 
   if (!span) {
-    throw createError({ statusCode: 404, statusMessage: 'Playbook not found' })
+    throw createError({ statusCode: 404, statusMessage: 'Playbook not found' });
   }
 
-  const metadata = (span.metadata as Record<string, unknown>) || {}
+  const metadata = (span.metadata as Record<string, unknown>) || {};
 
   return {
     rcaId: id,
@@ -59,5 +54,5 @@ export default defineEventHandler(async (event) => {
     prevention_measures: (metadata.prevention_measures as string[]) || [],
     related_metrics: (metadata.related_metrics as string[]) || [],
     tags: (metadata.tags as string[]) || [],
-  }
-})
+  };
+});

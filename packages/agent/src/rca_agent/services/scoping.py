@@ -7,26 +7,17 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rca_agent.config.settings import (
-    REPORT_SIMILARITY_THRESHOLD,
-    REPORT_TOP_K,
-    S3_VECTOR_BUCKET_NAME,
-    S3_VECTOR_REPORT_INDEX,
-    SCOPING_TIMEOUT_SECONDS,
-)
+from rca_agent.config.settings import SCOPING_TIMEOUT_SECONDS
 from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
-from rca_agent.ports.interfaces.embedding import EmbeddingPort
+from rca_agent.ports.interfaces.report_store import ReportStorePort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
-from rca_agent.utils.retry import retry_with_backoff
+from rca_agent.services.report_context import build_report_context
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
 
 logger = logging.getLogger(__name__)
-
-_REPORT_SEARCH_MAX_RETRIES = 3
-_REPORT_SEARCH_BASE_DELAY = 1.0
 
 
 class ScopingOutput(BaseModel):
@@ -37,18 +28,6 @@ class ScopingOutput(BaseModel):
     blast_radius: str = "single"
     initial_severity: str = "medium"
     metric_snapshot: dict[str, dict] = Field(default_factory=dict)
-
-
-def _build_report_context(reports: list[ReportMatch]) -> str:
-    if not reports:
-        return "No similar past RCA reports found."
-    lines = ["## Similar Past RCA Reports"]
-    for i, r in enumerate(reports, 1):
-        status = "confirmed" if r.confirmed else "unconfirmed"
-        lines.append(f"{i}. **{r.root_cause}** (similarity: {r.similarity:.2f}, {status})")
-        if r.incident_summary:
-            lines.append(f"   Incident: {r.incident_summary}")
-    return "\n".join(lines)
 
 
 def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
@@ -65,65 +44,15 @@ def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
         period=trigger.period if trigger else 300,
         threshold=trigger.threshold if trigger else "N/A",
         comparison_operator=trigger.comparison_operator if trigger else "N/A",
-        report_context=_build_report_context(reports),
+        report_context=build_report_context(reports),
     )
 
 
-def search_similar_reports(
-    alarm: AlarmPayload,
-    *,
-    embedding: EmbeddingPort,
-    s3_vectors_client=None,
-    max_retries: int = _REPORT_SEARCH_MAX_RETRIES,
-    base_delay: float = _REPORT_SEARCH_BASE_DELAY,
-) -> list[ReportMatch]:
-    if not S3_VECTOR_BUCKET_NAME or s3_vectors_client is None:
-        logger.info("S3 Vectors not configured, skipping report search")
-        return []
-
+def build_report_query(alarm: AlarmPayload) -> str:
+    """Build the structured embedding query shared with the report index writer."""
     reason = alarm.new_state_reason[:80] if alarm.new_state_reason else ""
     metric = alarm.trigger.metric_name[:80] if alarm.trigger else ""
-    query_text = f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
-    try:
-        query_vector = embedding.embed_query(query_text)
-    except Exception:
-        logger.exception("Failed to embed query text, skipping report search")
-        return []
-
-    def query() -> dict:
-        return s3_vectors_client.query_vectors(
-            vectorBucketName=S3_VECTOR_BUCKET_NAME,
-            indexName=S3_VECTOR_REPORT_INDEX,
-            queryVector={"float32": query_vector},
-            topK=REPORT_TOP_K,
-        )
-
-    response = retry_with_backoff(
-        query,
-        max_retries=max_retries,
-        base_delay=base_delay,
-        operation="report search",
-    )
-    if response is None:
-        return []
-
-    matches = []
-    for item in response.get("vectors", []):
-        similarity = item.get("distance", 0.0)
-        if similarity < REPORT_SIMILARITY_THRESHOLD:
-            continue
-        metadata = item.get("metadata", {})
-        matches.append(
-            ReportMatch(
-                rca_id=item.get("key", ""),
-                similarity=similarity,
-                incident_summary=metadata.get("incident_summary", ""),
-                root_cause=metadata.get("root_cause", ""),
-                hypothesis_path=metadata.get("hypothesis_path", ""),
-                confirmed=metadata.get("confirmed", "false") == "true",
-            )
-        )
-    return matches
+    return f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
 
 
 def _invoke_scoping_agent(
@@ -138,11 +67,10 @@ def run_scoping(
     alarm: AlarmPayload,
     agent: Agent,
     *,
-    embedding: EmbeddingPort,
-    s3_vectors_client=None,
+    report_store: ReportStorePort,
     timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
 ) -> ScopingResult:
-    reports = search_similar_reports(alarm, embedding=embedding, s3_vectors_client=s3_vectors_client)
+    reports = report_store.search_similar(build_report_query(alarm))
     user_prompt = _build_user_prompt(alarm, reports)
 
     logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)

@@ -41,7 +41,9 @@ Accepted (2026-04-21)
 
 3. **업데이트 판단 LLM**: `PlaybookUpdateOutput` Pydantic 모델(`needs_update`, 플레이북 전체 필드)을 `structured_output_model`로 지정하여 LLM이 기존 플레이북 대비 새 RCA에서 추가된 점이 있는지 판단한다. `needs_update=false`이면 기존 플레이북을 그대로 유지한다.
 
-4. **S3 Vectors 인덱싱**: `save_playbook_to_s3_vectors()`가 Cohere Embed V4로 `float32` 벡터를 직접 생성하여 저장한다. 메타데이터는 S3 Vectors의 2048 bytes 제한에 맞춰 `failure_type`(80자), `symptom_pattern`(80자), `tags`(CSV 256자), `rca_id`만 포함한다. `verification_steps`, `temporary_mitigation` 등 상세 필드는 DynamoDB의 플레이북 레코드에서 조회한다.
+4. **S3 Vectors 인덱싱**: 플레이북 저장 어댑터가 Cohere Embed V4로 `float32` 벡터를 직접 생성하여 저장한다. 메타데이터는 S3 Vectors의 2048 bytes 제한에 맞춰 `failure_type`(80자), `symptom_pattern`(80자), `tags`(CSV 256자), `rca_id`만 포함한다. `verification_steps`, `temporary_mitigation` 등 상세 필드는 DynamoDB의 플레이북 레코드에서 조회한다.
+
+   검색 결과로 얻을 수 있는 필드도 이 메타데이터 집합으로 한정된다. 따라서 Search-First 업데이트 판단(결정사항 1·3)은 기존 플레이북의 상세 절차를 볼 수 없고, `failure_type`·`symptom_pattern`·`tags`만으로 갱신 필요 여부를 판단한다. 갱신된 플레이북의 상세 필드는 LLM 출력으로 새로 채운다.
 
 5. **태깅**: LLM이 생성한 `tags` 필드를 플레이북에 포함하여 유형별 분류에 활용한다.
 

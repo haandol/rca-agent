@@ -23,6 +23,15 @@ def _truncate(text: str, max_len: int = _EMBED_FIELD_MAX) -> str:
     return text[:max_len].strip() if text else ""
 
 
+def _parse_tags(raw) -> list[str]:
+    """S3 Vectors stores tags as a CSV string; older records may hold a list."""
+    if isinstance(raw, str):
+        return [tag for tag in raw.split(",") if tag]
+    if isinstance(raw, list):
+        return [tag for tag in raw if isinstance(tag, str)]
+    return []
+
+
 class S3VectorsPlaybookStore(PlaybookStorePort):
     def __init__(self, s3_vectors_client=None, embedding: EmbeddingPort | None = None):
         self._s3v = s3_vectors_client
@@ -32,9 +41,10 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
     def _enabled(self) -> bool:
         return bool(S3_VECTOR_BUCKET_NAME and self._s3v)
 
-    def search_similar(self, query_text: str) -> list[PlaybookMatch]:
+    def search_similar(self, query_text: str, *, threshold: float | None = None) -> list[PlaybookMatch]:
         if not self._enabled or self._embedding is None:
             return []
+        effective_threshold = PLAYBOOK_SIMILARITY_THRESHOLD if threshold is None else threshold
         try:
             query_vector = self._embedding.embed_query(query_text)
         except Exception:
@@ -61,15 +71,16 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
         matches = []
         for item in response.get("vectors", []):
             similarity = 1.0 - float(item.get("distance", 1.0))
-            if similarity < PLAYBOOK_SIMILARITY_THRESHOLD:
+            if similarity < effective_threshold:
                 continue
             metadata = item.get("metadata", {})
             matches.append(
                 PlaybookMatch(
                     playbook_id=item.get("key", ""),
-                    title=metadata.get("failure_type", "Unknown"),
                     similarity=similarity,
-                    root_cause_summary=metadata.get("symptom_pattern", ""),
+                    failure_type=metadata.get("failure_type", ""),
+                    symptom_pattern=metadata.get("symptom_pattern", ""),
+                    tags=_parse_tags(metadata.get("tags")),
                 )
             )
         return matches

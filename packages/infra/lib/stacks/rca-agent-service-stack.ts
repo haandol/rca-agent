@@ -9,6 +9,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
+import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -122,7 +123,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
     }
 
     this.grantTaskPermissions(taskDef, props);
-    this.grantEcrPull(taskDef);
+    grantEcrPull(taskDef);
 
     return taskDef;
   }
@@ -191,14 +192,6 @@ export class RcaAgentServiceStack extends cdk.Stack {
         actions: ['sns:Publish'],
         resources: [props.alarmTopic.topicArn],
       }),
-    );
-  }
-
-  private grantEcrPull(taskDef: ecs.FargateTaskDefinition): void {
-    taskDef.executionRole!.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName(
-        'AmazonEC2ContainerRegistryReadOnly',
-      ),
     );
   }
 

@@ -1,99 +1,37 @@
 from threading import Event
 from time import perf_counter
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
-
-from rca_agent.ports.dto.models import AlarmPayload, ScopingResult
-from rca_agent.services.scoping import ScopingOutput, run_scoping, search_similar_reports
+from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
+from rca_agent.services.scoping import ScopingOutput, build_report_query, run_scoping
 
 
-class TestSearchSimilarReports:
-    def test_returns_empty_when_no_client(self, sample_alarm: AlarmPayload, fake_embedding):
-        result = search_similar_reports(sample_alarm, embedding=fake_embedding, s3_vectors_client=None)
-        assert result == []
+def _report_store(matches: list[ReportMatch] | None = None) -> MagicMock:
+    store = MagicMock()
+    store.search_similar.return_value = matches or []
+    return store
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Known defect: service-level report search treats cosine distance as similarity",
-    )
-    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_returns_matches_above_threshold(self, sample_alarm: AlarmPayload, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.return_value = {
-            "vectors": [
-                {
-                    "key": "rca-001",
-                    "distance": 0.15,
-                    "metadata": {
-                        "root_cause": "Task count too low",
-                        "incident_summary": "CPU spike",
-                        "confirmed": "true",
-                    },
-                },
-                {
-                    "key": "rca-002",
-                    "distance": 0.8,
-                    "metadata": {"root_cause": "Irrelevant"},
-                },
-            ]
-        }
-        result = search_similar_reports(sample_alarm, embedding=fake_embedding, s3_vectors_client=mock_client)
-        assert len(result) == 1
-        assert result[0].rca_id == "rca-001"
-        assert result[0].similarity == 0.85
-        assert result[0].confirmed is True
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Known defect: service-level report search does not request S3 Vectors metadata",
-    )
-    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_requests_metadata(self, sample_alarm: AlarmPayload, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.return_value = {"vectors": []}
+class TestBuildReportQuery:
+    def test_uses_shared_embedding_template(self, sample_alarm: AlarmPayload):
+        query = build_report_query(sample_alarm)
 
-        search_similar_reports(
-            sample_alarm,
-            embedding=fake_embedding,
-            s3_vectors_client=mock_client,
+        assert query.startswith("장애유형: HighCPU-web-service")
+        assert "증상: Threshold Crossed" in query
+        assert "메트릭: CPUUtilization" in query
+
+    def test_truncates_each_field_to_80_chars(self):
+        alarm = AlarmPayload(
+            alarm_name="A" * 200,
+            new_state_reason="B" * 200,
         )
 
-        assert mock_client.query_vectors.call_args.kwargs["returnMetadata"] is True
+        query = build_report_query(alarm)
 
-    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_handles_api_error_gracefully(self, sample_alarm: AlarmPayload, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.side_effect = RuntimeError("S3 Vectors unavailable")
-        result = search_similar_reports(
-            sample_alarm, embedding=fake_embedding, s3_vectors_client=mock_client, base_delay=0.01
-        )
-        assert result == []
-
-    @patch("rca_agent.services.scoping.REPORT_SIMILARITY_THRESHOLD", 0.4)
-    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_retries_with_exponential_backoff(self, sample_alarm: AlarmPayload, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.side_effect = [
-            RuntimeError("transient error"),
-            {"vectors": [{"key": "rca-1", "distance": 0.5, "metadata": {"root_cause": "Found"}}]},
-        ]
-        result = search_similar_reports(
-            sample_alarm, embedding=fake_embedding, s3_vectors_client=mock_client, base_delay=0.01
-        )
-        assert len(result) == 1
-        assert result[0].rca_id == "rca-1"
-        assert mock_client.query_vectors.call_count == 2
-
-    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_exhausts_all_retries(self, sample_alarm: AlarmPayload, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.side_effect = RuntimeError("persistent failure")
-        result = search_similar_reports(
-            sample_alarm, embedding=fake_embedding, s3_vectors_client=mock_client, max_retries=2, base_delay=0.01
-        )
-        assert result == []
-        assert mock_client.query_vectors.call_count == 2
+        assert "A" * 80 in query
+        assert "A" * 81 not in query
+        assert "B" * 80 in query
+        assert "B" * 81 not in query
 
 
 class TestRunScoping:
@@ -104,7 +42,7 @@ class TestRunScoping:
         mock_agent.return_value = mock_result
         return mock_agent
 
-    def test_returns_scoping_result(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_returns_scoping_result(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(
             alarm_summary="CPU utilization on web-service exceeded 80% threshold",
             anomaly_start_time="2026-04-22T10:25:00Z",
@@ -114,7 +52,7 @@ class TestRunScoping:
         )
         mock_agent = self._make_mock_agent(output)
 
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
 
         assert isinstance(result, ScopingResult)
         assert result.alarm_summary == "CPU utilization on web-service exceeded 80% threshold"
@@ -124,60 +62,79 @@ class TestRunScoping:
         assert result.metric_snapshot["CPUUtilization"]["current"] == 92.5
         assert result.raw_alarm == sample_alarm
 
-    def test_passes_structured_output_model(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_passes_structured_output_model(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")
         mock_agent = self._make_mock_agent(output)
 
-        run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
+        run_scoping(sample_alarm, mock_agent, report_store=_report_store())
 
         mock_agent.assert_called_once()
         _, kwargs = mock_agent.call_args
         assert kwargs["structured_output_model"] is ScopingOutput
 
-    def test_handles_null_anomaly_time(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_handles_null_anomaly_time(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test", anomaly_start_time=None)
         mock_agent = self._make_mock_agent(output)
 
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
         assert result.anomaly_start_time is None
 
-    def test_handles_invalid_anomaly_time(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_handles_invalid_anomaly_time(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test", anomaly_start_time="not-a-date")
         mock_agent = self._make_mock_agent(output)
 
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
         assert result.anomaly_start_time is None
 
-    @patch("rca_agent.services.scoping.REPORT_SIMILARITY_THRESHOLD", 0.4)
-    @patch("rca_agent.services.scoping.S3_VECTOR_BUCKET_NAME", "my-vector-bucket")
-    def test_includes_reports_in_result(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_includes_reports_from_store_in_result(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")
         mock_agent = self._make_mock_agent(output)
-
-        mock_s3v = MagicMock()
-        mock_s3v.query_vectors.return_value = {
-            "vectors": [
-                {
-                    "key": "rca-1",
-                    "distance": 0.5,
-                    "metadata": {
-                        "root_cause": "Past CPU incident",
-                        "incident_summary": "Memory leak",
-                        "confirmed": "true",
-                    },
-                }
+        store = _report_store(
+            [
+                ReportMatch(
+                    rca_id="rca-1",
+                    similarity=0.9,
+                    root_cause="Past CPU incident",
+                    incident_summary="Memory leak",
+                    confirmed=True,
+                )
             ]
-        }
+        )
 
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding, s3_vectors_client=mock_s3v)
+        result = run_scoping(sample_alarm, mock_agent, report_store=store)
+
+        store.search_similar.assert_called_once_with(build_report_query(sample_alarm))
         assert len(result.similar_reports) == 1
         assert result.similar_reports[0].root_cause == "Past CPU incident"
 
-    def test_prompt_contains_alarm_details(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_injects_reports_into_prompt(self, sample_alarm: AlarmPayload):
+        output = ScopingOutput(alarm_summary="test")
+        mock_agent = self._make_mock_agent(output)
+        store = _report_store(
+            [
+                ReportMatch(
+                    rca_id="rca-1",
+                    similarity=0.91,
+                    root_cause="Past CPU incident",
+                    incident_summary="Memory leak",
+                    confirmed=True,
+                )
+            ]
+        )
+
+        run_scoping(sample_alarm, mock_agent, report_store=store)
+
+        prompt = mock_agent.call_args[0][0]
+        assert "## Similar Past RCA Reports" in prompt
+        assert "Past CPU incident" in prompt
+        assert "similarity: 0.91" in prompt
+        assert "confirmed" in prompt
+
+    def test_prompt_contains_alarm_details(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")
         mock_agent = self._make_mock_agent(output)
 
-        run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
+        run_scoping(sample_alarm, mock_agent, report_store=_report_store())
 
         call_args = mock_agent.call_args
         prompt = call_args[0][0]
@@ -185,7 +142,7 @@ class TestRunScoping:
         assert "CPUUtilization" in prompt
         assert "AWS/ECS" in prompt
 
-    def test_timeout_returns_fallback_result(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_timeout_returns_fallback_result(self, sample_alarm: AlarmPayload):
         def slow_agent(prompt, **kwargs):
             Event().wait(0.35)
             return MagicMock(structured_output=ScopingOutput(alarm_summary="too late"))
@@ -193,7 +150,7 @@ class TestRunScoping:
         mock_agent = MagicMock(side_effect=slow_agent)
 
         started = perf_counter()
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding, timeout_seconds=0)
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store(), timeout_seconds=0)
         elapsed = perf_counter() - started
 
         assert elapsed < 0.15
@@ -202,10 +159,10 @@ class TestRunScoping:
         assert "HighCPU-web-service" in result.alarm_summary
         assert result.raw_alarm == sample_alarm
 
-    def test_agent_exception_returns_fallback_result(self, sample_alarm: AlarmPayload, fake_embedding):
+    def test_agent_exception_returns_fallback_result(self, sample_alarm: AlarmPayload):
         mock_agent = MagicMock(side_effect=RuntimeError("LLM error"))
 
-        result = run_scoping(sample_alarm, mock_agent, embedding=fake_embedding)
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
 
         assert isinstance(result, ScopingResult)
         assert result.alarm_summary.startswith("[Timeout]")
