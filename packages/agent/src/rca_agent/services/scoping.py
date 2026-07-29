@@ -12,6 +12,7 @@ from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.report_store import ReportStorePort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
 from rca_agent.services.report_context import build_report_context
+from rca_agent.utils.embed_key import build_embed_key
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
@@ -50,9 +51,11 @@ def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
 
 def build_report_query(alarm: AlarmPayload) -> str:
     """Build the structured embedding query shared with the report index writer."""
-    reason = alarm.new_state_reason[:80] if alarm.new_state_reason else ""
-    metric = alarm.trigger.metric_name[:80] if alarm.trigger else ""
-    return f"장애유형: {alarm.alarm_name[:80]} | 증상: {reason} | 메트릭: {metric}"
+    return build_embed_key(
+        failure_type=alarm.alarm_name,
+        symptom=alarm.new_state_reason,
+        metric_name=alarm.trigger.metric_name if alarm.trigger else "",
+    )
 
 
 def _invoke_scoping_agent(

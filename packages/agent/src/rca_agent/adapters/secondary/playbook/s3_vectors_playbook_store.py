@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from rca_agent.config.settings import (
-    PLAYBOOK_SIMILARITY_THRESHOLD,
     PLAYBOOK_TOP_K,
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
@@ -11,15 +10,15 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import Playbook, PlaybookMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.playbook_store import PlaybookStorePort
+from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
 from rca_agent.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 _SEARCH_MAX_RETRIES = 3
-_EMBED_FIELD_MAX = 80
 
 
-def _truncate(text: str, max_len: int = _EMBED_FIELD_MAX) -> str:
+def _truncate(text: str, max_len: int = EMBED_FIELD_MAX) -> str:
     return text[:max_len].strip() if text else ""
 
 
@@ -32,19 +31,34 @@ def _parse_tags(raw) -> list[str]:
     return []
 
 
+def _as_text(raw) -> str:
+    return raw if isinstance(raw, str) else ""
+
+
+def _as_text_list(raw) -> list[str]:
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, str)]
+    return []
+
+
 class S3VectorsPlaybookStore(PlaybookStorePort):
-    def __init__(self, s3_vectors_client=None, embedding: EmbeddingPort | None = None):
+    def __init__(
+        self,
+        s3_vectors_client=None,
+        embedding: EmbeddingPort | None = None,
+        dynamodb_client=None,
+    ):
         self._s3v = s3_vectors_client
         self._embedding = embedding
+        self._dynamodb = dynamodb_client
 
     @property
     def _enabled(self) -> bool:
         return bool(S3_VECTOR_BUCKET_NAME and self._s3v)
 
-    def search_similar(self, query_text: str, *, threshold: float | None = None) -> list[PlaybookMatch]:
+    def search_similar(self, query_text: str, *, threshold: float) -> list[PlaybookMatch]:
         if not self._enabled or self._embedding is None:
             return []
-        effective_threshold = PLAYBOOK_SIMILARITY_THRESHOLD if threshold is None else threshold
         try:
             query_vector = self._embedding.embed_query(query_text)
         except Exception:
@@ -71,7 +85,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
         matches = []
         for item in response.get("vectors", []):
             similarity = 1.0 - float(item.get("distance", 1.0))
-            if similarity < effective_threshold:
+            if similarity < threshold:
                 continue
             metadata = item.get("metadata", {})
             matches.append(
@@ -81,9 +95,41 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                     failure_type=metadata.get("failure_type", ""),
                     symptom_pattern=metadata.get("symptom_pattern", ""),
                     tags=_parse_tags(metadata.get("tags")),
+                    rca_id=metadata.get("rca_id", ""),
                 )
             )
         return matches
+
+    def load_detail(self, match: PlaybookMatch) -> Playbook | None:
+        from rca_agent.adapters.secondary.trace.dynamodb_trace_store import TraceStore
+
+        recorded = TraceStore.get_playbook_metadata(
+            match.rca_id,
+            match.playbook_id,
+            dynamodb_client=self._dynamodb,
+        )
+        if not recorded:
+            logger.info(
+                "Playbook %s detail unavailable (rca_id=%s)",
+                match.playbook_id,
+                match.rca_id or "unknown",
+            )
+            return None
+
+        return Playbook(
+            playbook_id=match.playbook_id,
+            failure_type=_as_text(recorded.get("failure_type")) or match.failure_type,
+            symptom_pattern=_as_text(recorded.get("symptom_pattern")) or match.symptom_pattern,
+            severity_criteria=_as_text(recorded.get("severity_criteria")),
+            verification_steps=_as_text_list(recorded.get("verification_steps")),
+            temporary_mitigation=_as_text(recorded.get("temporary_mitigation")),
+            permanent_remediation=_as_text(recorded.get("permanent_remediation")),
+            escalation_criteria=_as_text(recorded.get("escalation_criteria")),
+            prevention_measures=_as_text_list(recorded.get("prevention_measures")),
+            related_metrics=_as_text_list(recorded.get("related_metrics")),
+            rca_id=match.rca_id,
+            tags=_as_text_list(recorded.get("tags")) or match.tags,
+        )
 
     def save(self, playbook: Playbook, *, scoping_result: ScopingResult | None = None) -> bool:
         if not self._enabled or self._embedding is None:
@@ -94,12 +140,11 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
         if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
             metric_name = scoping_result.raw_alarm.trigger.metric_name
 
-        parts = {
-            "장애유형": _truncate(playbook.failure_type),
-            "증상": _truncate(playbook.symptom_pattern),
-            "메트릭": _truncate(metric_name),
-        }
-        embed_text = " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
+        embed_text = build_embed_key(
+            failure_type=playbook.failure_type,
+            symptom=playbook.symptom_pattern,
+            metric_name=metric_name,
+        )
         try:
             vector = self._embedding.embed_document(embed_text)
         except Exception:

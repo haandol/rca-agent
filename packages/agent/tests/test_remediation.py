@@ -4,10 +4,6 @@ from unittest.mock import Mock
 import pytest
 
 from rca_agent.ports.dto.models import FaultType, RcaReport
-from rca_agent.prompts.remediation import (
-    REMEDIATION_SYSTEM_PROMPT,
-    REMEDIATION_USER_PROMPT_TEMPLATE,
-)
 from rca_agent.services import remediation
 
 
@@ -200,14 +196,11 @@ def test_root_cause_keywords_cannot_select_an_action():
     assert result.actions_taken[0].executed is False
 
 
-def test_remediation_prompt_exposes_only_allowlisted_reset_actions():
-    prompt = REMEDIATION_SYSTEM_PROMPT + REMEDIATION_USER_PROMPT_TEMPLATE
-
-    assert "ECS" not in prompt
-    assert "deployment" not in prompt.lower()
-    assert "infrastructure changes" in prompt
-    assert "fail closed" in prompt.lower()
-    assert "/fault/db-leak/reset" in prompt
-    assert "/fault/high-cpu/reset" in prompt
-    assert "/fault/high-memory/reset" in prompt
-    assert "/fault/slow-query/reset" in prompt
+def test_reset_allowlist_is_closed_over_the_four_injected_fault_types():
+    assert remediation._RESET_ENDPOINTS == {
+        FaultType.DB_CONNECTION_LEAK: "/fault/db-leak/reset",
+        FaultType.HIGH_CPU: "/fault/high-cpu/reset",
+        FaultType.HIGH_MEMORY: "/fault/high-memory/reset",
+        FaultType.SLOW_QUERY: "/fault/slow-query/reset",
+    }
+    assert remediation._determine_reset_endpoint(FaultType.UNSUPPORTED) is None

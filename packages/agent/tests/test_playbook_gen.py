@@ -69,14 +69,42 @@ def _make_hit(**overrides) -> PlaybookMatch:
         "failure_type": "Memory leak",
         "symptom_pattern": "CPU spike + memory growth",
         "tags": ["memory"],
+        "rca_id": "rca-0",
     }
     defaults.update(overrides)
     return PlaybookMatch(**defaults)
 
 
-def _playbook_store(matches: list[PlaybookMatch] | None = None) -> MagicMock:
+def _make_existing(**overrides) -> Playbook:
+    defaults = {
+        "playbook_id": "existing-1",
+        "failure_type": "Memory leak",
+        "symptom_pattern": "CPU spike + memory growth",
+        "severity_criteria": "Critical if OOM kills detected",
+        "verification_steps": ["Check memory"],
+        "temporary_mitigation": "Restart",
+        "permanent_remediation": "Fix code",
+        "escalation_criteria": "Escalate if not resolved in 10 min",
+        "prevention_measures": ["Add alerts"],
+        "related_metrics": ["CPUUtilization", "MemoryUtilization"],
+        "rca_id": "rca-0",
+        "tags": ["memory"],
+    }
+    defaults.update(overrides)
+    return Playbook(**defaults)
+
+
+def _playbook_store(
+    matches: list[PlaybookMatch] | None = None,
+    *,
+    detail: Playbook | None = None,
+) -> MagicMock:
+    """Store double whose search hits resolve to ``detail`` (or a full playbook)."""
     store = MagicMock()
     store.search_similar.return_value = matches or []
+    store.load_detail.side_effect = lambda match: (
+        detail if detail is not None else _make_existing(playbook_id=match.playbook_id, rca_id=match.rca_id)
+    )
     return store
 
 
@@ -122,7 +150,7 @@ class TestSearchExistingPlaybooks:
 
 class TestTryUpdateExisting:
     def test_returns_updated_playbook(self):
-        hit = _make_hit()
+        existing = _make_existing()
         update_output = PlaybookUpdateOutput(
             needs_update=True,
             failure_type="Memory leak (updated)",
@@ -135,7 +163,7 @@ class TestTryUpdateExisting:
         )
         agent = _make_mock_agent(update_output)
 
-        result = _try_update_existing(hit, _make_report(), agent)
+        result = _try_update_existing(existing, _make_report(), agent)
 
         assert result is not None
         assert result.playbook_id == "existing-1"
@@ -145,20 +173,55 @@ class TestTryUpdateExisting:
         assert result.escalation_criteria == "Escalate to infra if not resolved in 5 min"
         assert len(result.related_metrics) == 3
 
+    def test_presents_existing_detail_to_the_agent(self):
+        existing = _make_existing(
+            temporary_mitigation="Restart the worker pool",
+            verification_steps=["Check memory", "Check OOM kills"],
+        )
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=False))
+
+        _try_update_existing(existing, _make_report(), agent)
+
+        prompt = agent.call_args[0][0]
+        assert "Restart the worker pool" in prompt
+        assert "Check OOM kills" in prompt
+        assert "not in search index" not in prompt
+
+    def test_keeps_existing_fields_the_agent_left_empty(self):
+        existing = _make_existing()
+        update_output = PlaybookUpdateOutput(
+            needs_update=True,
+            failure_type="Memory leak (updated)",
+        )
+        agent = _make_mock_agent(update_output)
+
+        result = _try_update_existing(existing, _make_report(), agent)
+
+        assert result is not None
+        assert result.failure_type == "Memory leak (updated)"
+        assert result.symptom_pattern == existing.symptom_pattern
+        assert result.severity_criteria == existing.severity_criteria
+        assert result.verification_steps == existing.verification_steps
+        assert result.temporary_mitigation == existing.temporary_mitigation
+        assert result.permanent_remediation == existing.permanent_remediation
+        assert result.escalation_criteria == existing.escalation_criteria
+        assert result.prevention_measures == existing.prevention_measures
+        assert result.related_metrics == existing.related_metrics
+        assert result.tags == existing.tags
+        assert result.rca_id == "rca-1"
+
     def test_returns_none_when_no_update_needed(self):
-        hit = _make_hit()
         update_output = PlaybookUpdateOutput(needs_update=False)
         agent = _make_mock_agent(update_output)
 
-        result = _try_update_existing(hit, _make_report(), agent)
+        result = _try_update_existing(_make_existing(), _make_report(), agent)
 
         assert result is None
 
     def test_returns_none_on_failure(self):
-        hit = _make_hit()
         agent = MagicMock(side_effect=RuntimeError("fail"))
 
-        result = _try_update_existing(hit, _make_report(), agent)
+        result = _try_update_existing(_make_existing(), _make_report(), agent)
 
         assert result is None
 
@@ -172,7 +235,7 @@ class TestTryUpdateExisting:
 
         started = perf_counter()
         result = _try_update_existing(
-            _make_hit(),
+            _make_existing(),
             _make_report(),
             MagicMock(side_effect=slow_agent),
             timeout_seconds=0.04,
@@ -202,6 +265,38 @@ class TestRunPlaybookGeneration:
 
         assert playbook.playbook_id == "existing-1"
         assert playbook.failure_type == "Memory leak (updated)"
+
+    def test_merges_recorded_detail_instead_of_overwriting_it(self):
+        existing = _make_existing(temporary_mitigation="Restart the worker pool")
+        update_output = PlaybookUpdateOutput(
+            needs_update=True,
+            failure_type="Memory leak (updated)",
+        )
+        agent = _make_mock_agent(update_output)
+
+        store = _playbook_store([_make_hit()], detail=existing)
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
+
+        store.load_detail.assert_called_once()
+        assert playbook.playbook_id == "existing-1"
+        assert playbook.temporary_mitigation == "Restart the worker pool"
+        assert playbook.verification_steps == existing.verification_steps
+
+    def test_creates_new_when_detail_is_unavailable(self):
+        new_output = PlaybookOutput(failure_type="New playbook", symptom_pattern="New pattern")
+        agent = _make_mock_agent(new_output)
+
+        store = _playbook_store([_make_hit()])
+        store.load_detail.side_effect = None
+        store.load_detail.return_value = None
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
+
+        assert playbook.playbook_id != "existing-1"
+        assert playbook.failure_type == "New playbook"
+        _, kwargs = agent.call_args
+        assert kwargs["structured_output_model"] is PlaybookOutput
 
     def test_creates_new_when_no_existing(self):
         new_output = PlaybookOutput(
@@ -375,3 +470,90 @@ class TestPlaybookStoreSave:
         matches = self._store(mock_client, fake_embedding).search_similar("query", threshold=0.9)
 
         assert [m.tags for m in matches] == [["memory", "oom"]]
+
+    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
+    def test_search_carries_rca_id_for_detail_lookup(self, fake_embedding):
+        mock_client = MagicMock()
+        mock_client.query_vectors.return_value = {
+            "vectors": [
+                {
+                    "key": "p-1",
+                    "distance": 0.05,
+                    "metadata": {"failure_type": "Memory leak", "rca_id": "rca-7"},
+                }
+            ]
+        }
+
+        matches = self._store(mock_client, fake_embedding).search_similar("query", threshold=0.9)
+
+        assert [m.rca_id for m in matches] == ["rca-7"]
+
+
+_TRACE_MODULE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store"
+
+
+class TestPlaybookStoreLoadDetail:
+    def _store(self, dynamodb_client) -> S3VectorsPlaybookStore:
+        return S3VectorsPlaybookStore(dynamodb_client=dynamodb_client)
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_loads_recorded_detail_from_the_playbook_span(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                {
+                    "SK": {"S": "strands#SPAN#s-1"},
+                    "span_type": {"S": "PLAYBOOK"},
+                    "metadata": {
+                        "M": {
+                            "playbook_id": {"S": "p-1"},
+                            "failure_type": {"S": "Memory leak"},
+                            "temporary_mitigation": {"S": "Restart the worker pool"},
+                            "verification_steps": {"L": [{"S": "Check memory"}]},
+                            "tags": {"L": [{"S": "memory"}]},
+                        }
+                    },
+                }
+            ]
+        }
+
+        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
+
+        assert detail is not None
+        assert detail.playbook_id == "p-1"
+        assert detail.temporary_mitigation == "Restart the worker pool"
+        assert detail.verification_steps == ["Check memory"]
+        assert detail.rca_id == "rca-7"
+        assert ddb.query.call_args.kwargs["ExpressionAttributeValues"][":pk"] == {"S": "RCA#rca-7"}
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_returns_none_when_the_record_is_gone(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": []}
+
+        assert self._store(ddb).load_detail(_make_hit(rca_id="rca-7")) is None
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_returns_none_for_a_different_playbook_in_the_same_rca(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                {
+                    "SK": {"S": "strands#SPAN#s-1"},
+                    "span_type": {"S": "PLAYBOOK"},
+                    "metadata": {"M": {"playbook_id": {"S": "other"}}},
+                }
+            ]
+        }
+
+        assert self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7")) is None
+
+    def test_returns_none_without_a_dynamodb_client(self):
+        assert self._store(None).load_detail(_make_hit(rca_id="rca-7")) is None
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_returns_none_when_the_hit_has_no_rca_id(self):
+        ddb = MagicMock()
+
+        assert self._store(ddb).load_detail(_make_hit(rca_id="")) is None
+        ddb.query.assert_not_called()

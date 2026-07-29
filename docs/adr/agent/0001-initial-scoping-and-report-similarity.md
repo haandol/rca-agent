@@ -50,6 +50,8 @@ flowchart TD
    ```
    각 필드는 80자로 truncate한다. Cohere Embed V4(1536차원, float32, cosine 유사도)를 사용하며, 저장 시 `input_type=search_document`, 검색 시 `input_type=search_query`를 적용한다. 동일 템플릿을 플레이북 인덱스(ADR 0008)에도 적용하여 두 인덱스 간 공간 일관성을 유지한다.
 
+   "동일 템플릿"은 렌더링 함수를 하나로 공유하는 것으로 강제한다. 저장 측과 검색 측이 각자 문자열을 조립하면 truncate 방식이나 빈 필드 처리가 갈라지고(예: 트리거 없는 알람에서 `메트릭:` 레이블만 남는 경우) 같은 장애가 서로 다른 벡터로 매핑된다. 이 어긋남은 검색 결과가 조용히 비는 형태로만 드러나므로, 두 인덱스의 writer·searcher가 같은 텍스트를 만드는지 테스트로 고정한다.
+
 5. **정성적(qualitative) 요약 전략**: 임베딩 필드(`incident_summary`, `root_cause`)에 구체적 수치(임계치, 퍼센트, 타임스탬프)를 포함하지 않는다. LLM 프롬프트에서 "abnormally high", "exceeds threshold", "sustained spike" 등 정성적 표현을 사용하도록 지시한다. 숫자가 다른 동일 패턴 장애(예: CPU 85% vs 92%)가 유사도 검색에서 매칭되도록 하기 위함이다.
 
 6. **보고서 인덱싱 시점**: RCA 보고서가 S3에 저장된 직후 동일 파이프라인에서 벡터 인덱싱을 수행한다. S3 Vectors 메타데이터는 2048 bytes 제한 내에서 `incident_summary`(80자), `root_cause`(80자), `hypothesis_path`(첫 항목, 200자), `confirmed`(true/false), `rca_id`를 저장한다. 상세 내용은 S3 Markdown 본문에서 조회한다.

@@ -10,18 +10,18 @@ async function readRepositoryFile(relativePath) {
   return readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8');
 }
 
+function importRepositoryModule(relativePath) {
+  return import(pathToFileURL(path.join(REPOSITORY_ROOT, relativePath)).href);
+}
+
+const REMEDIATION_MODULE = 'packages/dashboard/server/utils/remediation.ts';
+
 test('dashboard normalizes persisted session and span remediation contracts', async () => {
-  const moduleUrl = pathToFileURL(
-    path.join(
-      REPOSITORY_ROOT,
-      'packages/dashboard/server/utils/remediation.ts',
-    ),
-  ).href;
   const {
     mergeRemediationDetails,
     readSessionRemediation,
     readSpanRemediation,
-  } = await import(moduleUrl);
+  } = await importRepositoryModule(REMEDIATION_MODULE);
 
   const strandsSession = {
     PK: 'RCA#rca-strands-1',
@@ -185,40 +185,47 @@ test('dashboard APIs and UI consume authoritative remediation fields', async () 
     readRepositoryFile('packages/dashboard/app/pages/trace/[id].vue'),
   ]);
 
-  for (const field of [
-    'remediationStatus',
-    'remediationSummary',
-    'remediationError',
-    'verificationStatus',
-    'metricsNormalized',
-    'verificationSummary',
-    'remainingIssues',
-  ]) {
-    assert.ok(graphSource.includes(field), `trace graph carries ${field}`);
-  }
-
-  // The APIs spread the normalized RemediationDetails rather than restating
-  // each field, so assert the spread instead of individual field names.
-  for (const [name, source] of [
-    ['sessions', sessionsSource],
-    ['trace', tracesSource],
-  ]) {
-    assert.match(
-      source,
-      /\.\.\.\w*[rR]emediation,/,
-      `${name} API spreads the normalized remediation details`,
+  // The APIs forward the whole normalized RemediationDetails instead of naming
+  // each field, so assert against the normalizer's actual key set — a new field
+  // there must reach every consumer without this test needing an edit.
+  const { readSessionRemediation, readSpanRemediation } =
+    await importRepositoryModule(REMEDIATION_MODULE);
+  const remediationFields = Object.keys(readSessionRemediation({}));
+  assert.ok(
+    remediationFields.length > 0,
+    'remediation normalizer exposes a field set',
+  );
+  assert.deepEqual(
+    Object.keys(readSpanRemediation({})),
+    remediationFields,
+    'session and span normalizers agree on the field set',
+  );
+  for (const field of remediationFields) {
+    assert.ok(
+      graphSource.includes(field),
+      `trace graph carries ${field} from the normalizer`,
     );
   }
-  assert.match(
-    sessionsSource,
-    /const remediation = readSessionRemediation\(item\)/,
-    'sessions API derives remediation from the session record',
-  );
-  assert.match(
-    tracesSource,
-    /const remediation = readSpanRemediation\(i\)/,
-    'trace API derives per-span remediation from the span record',
-  );
+
+  for (const [name, source, normalizerCall] of [
+    ['sessions', sessionsSource, 'readSessionRemediation(item)'],
+    ['trace', tracesSource, 'readSpanRemediation(i)'],
+  ]) {
+    assert.ok(
+      source.includes(`const remediation = ${normalizerCall}`),
+      `${name} API derives remediation from the persisted record`,
+    );
+    assert.ok(
+      /\.\.\.\s*\w*[rR]emediation\b/.test(source),
+      `${name} API forwards the normalized remediation details wholesale`,
+    );
+    assert.ok(
+      !remediationFields.some((field) =>
+        source.includes(`${field}: remediation.${field}`),
+      ),
+      `${name} API does not restate individual remediation fields`,
+    );
+  }
 
   assert.match(detailSource, /node\.remediationStatus/);
   assert.match(detailSource, /node\.verificationStatus/);
