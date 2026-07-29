@@ -1,4 +1,6 @@
+import io
 import json
+import sys
 
 import pytest
 
@@ -145,3 +147,59 @@ def test_adapter_fails_when_the_harness_run_does_not_succeed(tmp_path, monkeypat
 
     with pytest.raises(SystemExit):
         eval_adapter.main(["cc-headless-eval", str(scenario)])
+
+
+def test_stdout_carries_only_the_result_even_when_the_harness_logs(monkeypatch, tmp_path, capsys):
+    # Production sends logs to stdout for the container log driver, but under
+    # evaluation stdout is the channel for the single normalized result.
+    import logging
+
+    from cc_headless.services.execution_context import ExecutionContext
+
+    class _Result:
+        success = True
+        result = "ok"
+
+    class _Runner:
+        def run(self, prompt, *, execution_token):
+            print("harness progress line")
+            logging.getLogger("cc").info("structured log line")
+            return _Result()
+
+    monkeypatch.setattr(eval_adapter, "CcSubprocessRunner", _Runner)
+    monkeypatch.setattr(eval_adapter, "validate_completion_artifacts", lambda _dir: _artifacts())
+    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
+    monkeypatch.setattr(ExecutionContext, "prepare", lambda self: tmp_path)
+    monkeypatch.setattr(ExecutionContext, "cleanup", lambda self: None)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(SCENARIO)))
+
+    eval_adapter.main(["cc-headless-eval", ""])
+    captured = capsys.readouterr()
+
+    payload = json.loads(captured.out)
+    assert payload["scenarioId"] == SCENARIO["id"]
+    assert "harness progress line" in captured.err
+
+
+def test_stdout_is_restored_even_when_the_harness_fails(monkeypatch, tmp_path):
+    from cc_headless.services.execution_context import ExecutionContext
+
+    class _Result:
+        success = False
+        result = "boom"
+
+    class _Runner:
+        def run(self, prompt, *, execution_token):
+            return _Result()
+
+    monkeypatch.setattr(eval_adapter, "CcSubprocessRunner", _Runner)
+    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
+    monkeypatch.setattr(ExecutionContext, "prepare", lambda self: tmp_path)
+    monkeypatch.setattr(ExecutionContext, "cleanup", lambda self: None)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(SCENARIO)))
+    before = sys.stdout
+
+    with pytest.raises(SystemExit):
+        eval_adapter.main(["cc-headless-eval", ""])
+
+    assert sys.stdout is before

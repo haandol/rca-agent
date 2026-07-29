@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -124,6 +125,22 @@ def _remediation(artifacts: CompletionArtifacts) -> dict[str, Any]:
     }
 
 
+@contextmanager
+def _stdout_reserved_for_the_result():
+    """하네스 실행 동안 표준 출력을 표준 오류로 돌린다.
+
+    운영에서는 로그를 표준 출력으로 보내 컨테이너 로그 수집기가 가져가지만, 평가에서는
+    표준 출력이 "정규화 결과 JSON 하나"를 위한 채널이다. 실제 표준 출력은 결과를 쓸
+    때만 사용한다.
+    """
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        yield real_stdout
+    finally:
+        sys.stdout = real_stdout
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv if argv is None else argv)
     scenario = _load_scenario(argv)
@@ -134,28 +151,29 @@ def main(argv: list[str] | None = None) -> None:
     context = ExecutionContext.create(scenario_id)
     artifact_dir = context.prepare()
     try:
-        result = CcSubprocessRunner().run(
-            build_prompt(_alarm_for(scenario)),
-            execution_token=context.token,
-        )
-        if not result.success:
-            _fail(f"harness run failed: {result.result}")
+        with _stdout_reserved_for_the_result() as result_stream:
+            result = CcSubprocessRunner().run(
+                build_prompt(_alarm_for(scenario)),
+                execution_token=context.token,
+            )
+            if not result.success:
+                _fail(f"harness run failed: {result.result}")
 
-        try:
-            artifacts = validate_completion_artifacts(artifact_dir)
-        except ArtifactValidationError as error:
-            _fail(f"harness produced invalid artifacts: {error}")
+            try:
+                artifacts = validate_completion_artifacts(artifact_dir)
+            except ArtifactValidationError as error:
+                _fail(f"harness produced invalid artifacts: {error}")
 
-        payload = {
-            "schemaVersion": _SCHEMA_VERSION,
-            "scenarioId": scenario_id,
-            "engine": ENGINE,
-            "rootCause": _root_cause(artifacts),
-            "evidenceIds": _evidence_ids(artifact_dir, scenario),
-            "artifacts": _artifact_stages(artifact_dir),
-            "remediation": _remediation(artifacts),
-        }
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+            payload = {
+                "schemaVersion": _SCHEMA_VERSION,
+                "scenarioId": scenario_id,
+                "engine": ENGINE,
+                "rootCause": _root_cause(artifacts),
+                "evidenceIds": _evidence_ids(artifact_dir, scenario),
+                "artifacts": _artifact_stages(artifact_dir),
+                "remediation": _remediation(artifacts),
+            }
+            result_stream.write(json.dumps(payload, ensure_ascii=False))
     finally:
         context.cleanup()
 

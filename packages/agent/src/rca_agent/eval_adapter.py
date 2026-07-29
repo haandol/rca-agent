@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
@@ -158,6 +159,22 @@ def _report_markdown(container, notification) -> str:
         return ""
 
 
+@contextmanager
+def _stdout_reserved_for_the_result():
+    """파이프라인이 도는 동안 표준 출력을 표준 오류로 돌린다.
+
+    모델 SDK 가 진행 상황을 표준 출력에 직접 스트리밍하므로, 그대로 두면 하네스가
+    요구하는 "정규화 결과 JSON 하나"에 진단 텍스트가 섞인다. 실제 표준 출력은
+    결과를 쓸 때만 사용한다.
+    """
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        yield real_stdout
+    finally:
+        sys.stdout = real_stdout
+
+
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     argv = list(sys.argv if argv is None else argv)
@@ -179,42 +196,43 @@ def main(argv: list[str] | None = None) -> None:
     envelope = _alarm_envelope(scenario, state_change_time=state_change_time)
     rca_id = build_rca_id(build_idempotency_key(AlarmPayload.from_cloudwatch_sns(envelope)))
 
-    # 평가는 큐를 소비하지 않으므로 queue_url 은 사용되지 않는다.
-    container = AppContainer("")
-    orchestrator = PipelineOrchestrator(container)
+    with _stdout_reserved_for_the_result() as result_stream:
+        # 평가는 큐를 소비하지 않으므로 queue_url 은 사용되지 않는다.
+        container = AppContainer("")
+        orchestrator = PipelineOrchestrator(container)
 
-    # process_alarm 의 False 는 "메시지를 ack 하지 말라"는 뜻이고, 알림 발행이 대기
-    # 상태여도 False 가 된다. 평가는 알림 전달이 아니라 분석 결과를 채점하므로
-    # 세션에 기록된 상태를 완료 판정의 권위로 삼는다.
-    acked = orchestrator.process_alarm(envelope, receive_count=1, message_id=f"eval:{rca_id}")
-    if not acked:
-        logger.info("Pipeline did not ack the message; judging completion by session state instead")
+        # process_alarm 의 False 는 "메시지를 ack 하지 말라"는 뜻이고, 알림 발행이 대기
+        # 상태여도 False 가 된다. 평가는 알림 전달이 아니라 분석 결과를 채점하므로
+        # 세션에 기록된 상태를 완료 판정의 권위로 삼는다.
+        acked = orchestrator.process_alarm(envelope, receive_count=1, message_id=f"eval:{rca_id}")
+        if not acked:
+            logger.info("Pipeline did not ack the message; judging completion by session state instead")
 
-    handoff = container.session_store.get_completion_handoff(rca_id)
-    if handoff is None:
-        _fail(f"no session result found for rca_id={rca_id}")
-    if handoff.state != RcaSessionState.COMPLETED:
-        _fail(f"session did not complete: state={handoff.state} rca_id={rca_id}")
-    notification = handoff.notification
-    if notification is None:
-        _fail(f"session completed without a result payload: rca_id={rca_id}")
+        handoff = container.session_store.get_completion_handoff(rca_id)
+        if handoff is None:
+            _fail(f"no session result found for rca_id={rca_id}")
+        if handoff.state != RcaSessionState.COMPLETED:
+            _fail(f"session did not complete: state={handoff.state} rca_id={rca_id}")
+        notification = handoff.notification
+        if notification is None:
+            _fail(f"session completed without a result payload: rca_id={rca_id}")
 
-    corpus = "\n".join(
-        (
-            json.dumps(notification.model_dump(mode="json"), ensure_ascii=False),
-            _report_markdown(container, notification),
+        corpus = "\n".join(
+            (
+                json.dumps(notification.model_dump(mode="json"), ensure_ascii=False),
+                _report_markdown(container, notification),
+            )
         )
-    )
-    payload = {
-        "schemaVersion": _SCHEMA_VERSION,
-        "scenarioId": scenario_id,
-        "engine": ENGINE,
-        "rootCause": _root_cause(notification),
-        "evidenceIds": _evidence_ids(corpus, scenario),
-        "artifacts": _stages_reached(notification),
-        "remediation": _remediation(notification),
-    }
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+        payload = {
+            "schemaVersion": _SCHEMA_VERSION,
+            "scenarioId": scenario_id,
+            "engine": ENGINE,
+            "rootCause": _root_cause(notification),
+            "evidenceIds": _evidence_ids(corpus, scenario),
+            "artifacts": _stages_reached(notification),
+            "remediation": _remediation(notification),
+        }
+        result_stream.write(json.dumps(payload, ensure_ascii=False))
 
 
 if __name__ == "__main__":

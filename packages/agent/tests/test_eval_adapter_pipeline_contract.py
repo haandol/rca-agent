@@ -6,6 +6,7 @@ divergence fails here rather than silently producing misleading scores.
 """
 
 import json
+import sys
 
 import pytest
 
@@ -233,3 +234,53 @@ def test_adapter_does_not_consume_a_queue(wired, stdin_scenario, capsys) -> None
     _run(capsys)
 
     assert _Container.instances[0].queue_url == ""
+
+
+class _ChattyOrchestrator(_RecordingOrchestrator):
+    """Mimics the model SDK streaming progress straight to stdout."""
+
+    def process_alarm(self, body, *, receive_count=1, message_id=None) -> bool:
+        print("I'll gather the alarm context first.")
+        print("Tool #1: get_metric_data")
+        return super().process_alarm(body, receive_count=receive_count, message_id=message_id)
+
+
+def test_stdout_carries_only_the_result_even_when_the_pipeline_prints(
+    monkeypatch: pytest.MonkeyPatch, stdin_scenario, capsys
+) -> None:
+    # The harness requires exactly one JSON object on stdout. Progress text from
+    # the model SDK must not contaminate it.
+    monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _ChattyOrchestrator)
+    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    stdin_scenario(SCENARIO)
+
+    eval_adapter.main(["rca-agent-eval", ""])
+    captured = capsys.readouterr()
+
+    payload = json.loads(captured.out)
+    assert payload["scenarioId"] == "rds-connection-pool-exhaustion"
+    assert "Tool #1" in captured.err
+
+
+def test_stdout_is_restored_after_the_run(monkeypatch: pytest.MonkeyPatch, stdin_scenario, capsys) -> None:
+    monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _ChattyOrchestrator)
+    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    stdin_scenario(SCENARIO)
+    before = sys.stdout
+
+    eval_adapter.main(["rca-agent-eval", ""])
+
+    assert sys.stdout is before
+
+
+def test_stdout_is_restored_even_when_the_run_fails(monkeypatch: pytest.MonkeyPatch, stdin_scenario) -> None:
+    monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _ChattyOrchestrator)
+    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    stdin_scenario(SCENARIO)
+    _Container.handoff = None
+    before = sys.stdout
+
+    with pytest.raises(SystemExit):
+        eval_adapter.main(["rca-agent-eval", ""])
+
+    assert sys.stdout is before
