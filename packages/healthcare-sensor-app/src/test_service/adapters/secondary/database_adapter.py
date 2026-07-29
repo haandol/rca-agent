@@ -8,6 +8,7 @@ from test_service.ports.interfaces.database import DatabasePort
 from test_service.services.fault_state import (
     begin_environment_database_leak,
     close_environment_leaked_connections,
+    environment_database_leaks_enabled,
     environment_leaked_connections,
     finish_environment_database_leak,
     register_environment_database_leak,
@@ -69,6 +70,28 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
 
     async def leaky_session(self) -> AsyncGenerator[AsyncSession]:
         session = self._session_factory()
+        if not environment_database_leaks_enabled() or not self._fault_db_leak:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+            return
+
+        # The session is never closed, so its connection stays checked out for
+        # the lifetime of the process. Reset tracks it to make recovery possible.
+        if begin_environment_database_leak(self):
+            try:
+                retain_environment_leaked_connection(self, session)
+            finally:
+                finish_environment_database_leak()
+        logger.warning(
+            "DB session not returned to the pool",
+            extra={"pool_checked_out": self._engine.pool.checkedout()},
+        )
         yield session
 
     def checked_out_connections(self) -> int:

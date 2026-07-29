@@ -15,6 +15,7 @@ class AppSettings:
     fault_db_leak: bool
     fault_slow_query_ms: int
     fault_error_rate: float
+    deployed_revision: str
 
 
 def _build_database_url() -> str:
@@ -41,4 +42,5 @@ def get_settings() -> AppSettings:
         fault_db_leak=environ.get("FAULT_DB_LEAK", "false").lower() == "true",
         fault_slow_query_ms=int(environ.get("FAULT_SLOW_QUERY_MS", "0")),
         fault_error_rate=float(environ.get("FAULT_ERROR_RATE", "0.0")),
+        deployed_revision=environ.get("DEPLOYED_REVISION", "unknown"),
     )

@@ -1,0 +1,95 @@
+{
+  "id": "deployed-connection-leak-vital-ingest",
+  "category": "database",
+  "alarm": {
+    "name": "RcaAgentDev-Healthcare-VitalIngestFailures",
+    "metric": "VitalIngestFailures",
+    "stateReason": "Patient vital readings failed to be recorded for two consecutive minutes"
+  },
+  "observations": [
+    {
+      "id": "vital-ingest-failures",
+      "source": "cloudwatch",
+      "summary": "VitalIngestFailures rose from zero while VitalIngestAttempts stayed flat, so recording is failing rather than demand growing."
+    },
+    {
+      "id": "db-connections-climbing",
+      "source": "cloudwatch",
+      "summary": "RDS DatabaseConnections increased steadily from the deployment onward instead of holding a steady level."
+    },
+    {
+      "id": "session-not-returned-logs",
+      "source": "logs",
+      "summary": "Repeated 'DB session not returned to the pool' warnings with a rising checked-out connection count."
+    },
+    {
+      "id": "task-definition-deployment",
+      "source": "cloudtrail",
+      "summary": "RegisterTaskDefinition and UpdateService on the Healthcare service immediately precede the first ingest failure."
+    },
+    {
+      "id": "fault-flag-enabled-in-revision",
+      "source": "cloudtrail",
+      "summary": "The deployed task definition revision enables the FAULT_DB_LEAK environment flag, which the previous revision had disabled."
+    },
+    {
+      "id": "leaky-session-read-path",
+      "source": "github",
+      "summary": "The patient vitals read path acquires a session that is never closed when the leak flag is enabled."
+    },
+    {
+      "id": "request-volume-flat",
+      "source": "cloudwatch",
+      "summary": "Sensor ingest attempt volume stayed at its normal level throughout, so a traffic surge did not drive the failures."
+    },
+    {
+      "id": "rds-resources-healthy",
+      "source": "cloudwatch",
+      "summary": "RDS CPUUtilization and FreeStorageSpace remained within normal range, so the instance itself was not saturated."
+    },
+    {
+      "id": "unrelated-log-level-deployment",
+      "source": "cloudtrail",
+      "summary": "A second deployment only changed the LOG_LEVEL setting and does not line up with the onset of failures."
+    }
+  ],
+  "expectation": {
+    "rootCauseTermGroups": [
+      ["connection", "session"],
+      ["leak", "not returned", "never closed", "not released"],
+      ["deploy", "task definition", "revision"]
+    ],
+    "requiredEvidenceIds": [
+      "vital-ingest-failures",
+      "db-connections-climbing",
+      "session-not-returned-logs",
+      "task-definition-deployment",
+      "fault-flag-enabled-in-revision",
+      "leaky-session-read-path",
+      "request-volume-flat",
+      "rds-resources-healthy"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "remediationTermGroups": [
+      ["connection", "session", "pool"],
+      ["reset", "release", "close"],
+      ["task definition", "revision", "roll back", "rollback", "redeploy"]
+    ],
+    "semanticTermGroups": [
+      ["vital", "patient"],
+      ["traffic", "requests", "demand"],
+      ["gradual", "steadily", "linear", "over time"]
+    ],
+    "rejectedCauseTermGroups": [
+      ["traffic surge", "traffic spike", "load spike", "request surge"],
+      ["undersized instance", "instance saturation", "storage exhausted"],
+      ["log level", "log_level", "logging configuration"]
+    ]
+  }
+}

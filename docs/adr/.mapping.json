@@ -131,6 +131,11 @@
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",
           "status": "Accepted (2026-07-21)",
           "summary": "SQS 재전달·세션 claim·부작용 lease로 중단 세션을 안전하게 복구한다."
+        },
+        {
+          "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+          "status": "Accepted (2026-07-29)",
+          "summary": "데모를 증상 알람 진입점과 배포 기반 장애 주입, 반증 가능한 경쟁 가설로 재구성한다."
         }
       ]
     }

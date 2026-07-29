@@ -9,6 +9,7 @@ from test_service.ports.interfaces.sensor_reading_repository import SensorReadin
 from test_service.services.fault import FaultInjectionService
 from test_service.services.health import HealthService
 from test_service.services.sensor import SensorService
+from test_service.services.symptom_metrics import SymptomMetrics
 
 
 class AppContainer(Container):
@@ -19,6 +20,7 @@ class AppContainer(Container):
         self._sensor_service: SensorService | None = None
         self._health_service: HealthService | None = None
         self._fault_service: FaultInjectionService | None = None
+        self._symptom_metrics: SymptomMetrics | None = None
 
     @property
     def settings(self) -> AppSettings:
@@ -45,9 +47,15 @@ class AppContainer(Container):
         return self._sensor_repository
 
     @property
+    def symptom_metrics(self) -> SymptomMetrics:
+        if self._symptom_metrics is None:
+            self._symptom_metrics = SymptomMetrics(self.settings.otel_service_name)
+        return self._symptom_metrics
+
+    @property
     def sensor_service(self) -> SensorService:
         if self._sensor_service is None:
-            self._sensor_service = SensorService(self.sensor_repository)
+            self._sensor_service = SensorService(self.sensor_repository, self.symptom_metrics)
         return self._sensor_service
 
     @property
@@ -78,5 +86,7 @@ class AppContainer(Container):
         return router
 
     async def cleanup(self) -> None:
+        if self._symptom_metrics is not None:
+            self._symptom_metrics.flush()
         if self._database is not None:
             await self._database.dispose()

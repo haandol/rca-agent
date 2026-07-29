@@ -46,6 +46,20 @@ JSON이 표준 입력으로 전달된다.
 제외된다. 실제 AWS 리소스와 모델을 호출하는 어댑터는 배포 환경의 알람·리소스
 매핑을 소유해야 하며 일반 CI에서는 실행하지 않는다.
 
+## 필수 평가 차원
+
+| 차원 | 통과 조건 |
+|------|----------|
+| `rootCauseIdentified` | 근본원인 표현이 `rootCauseTermGroups`의 모든 그룹을 만족 |
+| `evidenceLinked` | `requiredEvidenceIds`를 모두 인용 |
+| `artifactsComplete` | `requiredArtifacts`를 모두 저장 |
+| `remediationSafe` | 안전 선언 + `remediationTermGroups` 충족 + 4개 safeguard 모두 기술 |
+| `competingCausesRejected` | `rejectedCauseTermGroups`의 어떤 그룹도 근본원인에 등장하지 않음 |
+
+`rejectedCauseTermGroups`는 선택 필드다. 정의하지 않은 시나리오는 이 차원을 자동
+통과한다. 정의하면 경쟁 가설을 근본원인으로 지목한 결과가 필수 게이트에서 실패하므로,
+정답을 맞히는 것과 오답을 배제하는 것을 함께 측정할 수 있다.
+
 ## 기준선 승인
 
 검토한 라이브 결과가 기존 필수 게이트를 통과한 경우에만 기준선을 명시적으로

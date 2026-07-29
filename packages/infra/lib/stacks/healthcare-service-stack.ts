@@ -94,6 +94,7 @@ export class HealthcareServiceStack extends cdk.Stack {
         DB_PORT: dbPort,
         DB_NAME: 'healthcare',
         OTEL_SERVICE_NAME: 'healthcare-sensor-app',
+        DEPLOYED_REVISION: props.imageTag,
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
         FAULT_ERROR_RATE: '0.0',
@@ -187,6 +188,33 @@ export class HealthcareServiceStack extends cdk.Stack {
     service: ecs.FargateService,
   ): void {
     const alarmAction = new cw_actions.SnsAction(props.alarmTopic);
+
+    // RCA entry point. The app emits this via EMF, so the alarm reports a
+    // domain symptom without naming which subsystem caused it. The cause-level
+    // alarms below stay in place as evidence the agent has to find on its own.
+    const ingestFailureAlarm = new cloudwatch.Alarm(
+      this,
+      'VitalIngestFailures',
+      {
+        alarmName: `${ns}-Healthcare-VitalIngestFailures`,
+        alarmDescription:
+          'Patient vital readings are failing to be recorded. Impact: vitals are missing from the record and abnormal-value alerts are not raised.',
+        metric: new cloudwatch.Metric({
+          namespace: 'Healthcare/Sensor',
+          metricName: 'VitalIngestFailures',
+          dimensionsMap: { ServiceName: 'healthcare-sensor-app' },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(1),
+        }),
+        threshold: 1,
+        evaluationPeriods: 2,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+    ingestFailureAlarm.addAlarmAction(alarmAction);
+    ingestFailureAlarm.addOkAction(alarmAction);
 
     const dbConnAlarm = new cloudwatch.Alarm(this, 'RdsHighConnections', {
       alarmName: `${ns}-Healthcare-RdsHighConnections`,

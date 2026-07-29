@@ -12,6 +12,7 @@ Healthcare Sensor App은 RCA 에이전트의 근본원인분석 정확도를 검
 - **이상치 감지**: 임계값 기반 자동 이상치 판별 및 알림
 - **환자별 바이탈 조회**: 타입/기간 필터링 지원
 - **장애 주입**: DB 커넥션 릭, CPU 부하, 메모리 압박, 슬로우 쿼리 (high-cpu, slow-query는 명시적 reset API 호출까지 영구 지속)
+- **증상 지표(EMF)**: `VitalIngestFailures`, `VitalIngestAttempts`, `AbnormalAlertDelaySeconds`를 `Healthcare/Sensor` 네임스페이스로 발행 — RCA 진입 알람의 근거
 - **Background Traffic Generator**: 10명 가상 환자에 대해 5초 간격 센서 데이터 자동 생성 (92% 정상, 8% 비정상) — CloudWatch baseline 메트릭 축적용
 - **OpenTelemetry 계측**: 분산 트레이싱 및 메트릭 수집
 
@@ -80,6 +81,7 @@ packages/healthcare-sensor-app/
 │       │       └── sensor_reading_repository.py  # SensorReadingRepositoryPort ABC
 │       ├── services/
 │       │   ├── sensor.py                 # 바이탈 수집, 이상치 판별, 조회
+│       │   ├── symptom_metrics.py        # 도메인 증상 지표 EMF 발행
 │       │   ├── health.py                 # 헬스 체크 (DB 풀 상태 포함)
 │       │   ├── fault.py                  # 장애 주입 (커넥션 릭, CPU, 메모리, 슬로우 쿼리)
 │       │   └── traffic_generator.py      # Background 센서 데이터 자동 생성 (lifespan task)
@@ -108,6 +110,23 @@ packages/healthcare-sensor-app/
 3. RCA 에이전트가 알람을 수신하고 근본원인분석 수행
 4. (Remediation 활성화 시) 에이전트가 reset API를 자동 호출하여 장애 해제
 5. 분석 결과를 기대 원인과 비교하여 정확도 측정
+
+### 배포 기반 장애 주입 (플래그십 데모)
+
+`scripts/inject_deployment_fault.py`가 ECS 태스크 정의 리비전을 등록하고 서비스를
+갱신한다. CloudTrail에 실제 `RegisterTaskDefinition`·`UpdateService` 이벤트가 남아
+장애 시작 시각과 배포 시각이 조작 없이 일치한다.
+
+1. `inject_deployment_fault.py db-leak` — `FAULT_DB_LEAK=true` 리비전 배포
+2. 환자 바이탈 조회 요청마다 세션이 반환되지 않아 커넥션이 점진적으로 누적
+3. 바이탈 저장이 실패하기 시작하고 `VitalIngestFailures` 증상 알람 발생
+4. 에이전트가 증상 → 커넥션 추세 → 배포 이벤트 → 코드 경로 순으로 원인 특정
+5. `inject_deployment_fault.py reset` — 모든 장애 플래그를 끈 리비전 배포
+
+리셋 API만으로는 실행 중 상태만 해소되므로, 태스크 정의 되돌리기가 영구 조치다.
+
+`inject_deployment_fault.py red-herring`은 `LOG_LEVEL`만 바꾼 무해한 배포를
+만든다. 두 배포 중 어느 것이 증상 시작 시각과 상관되는지 구별해야 원인에 도달한다.
 
 ### 서비스 디스커버리
 

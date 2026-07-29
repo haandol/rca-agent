@@ -1,7 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as sns from 'aws-cdk-lib/aws-sns';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 
 import { HealthcareServiceStack } from '../lib/stacks/healthcare-service-stack';
 import { RdsStack } from '../lib/stacks/rds-stack';
@@ -53,6 +53,67 @@ function alarmMetricNames(template: Template): string[] {
       : queryMetrics;
   });
 }
+
+test('the RCA entry alarm watches a domain symptom metric', () => {
+  const template = synthesize();
+
+  template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    AlarmName: 'RcaAgentDev-Healthcare-VitalIngestFailures',
+    Namespace: 'Healthcare/Sensor',
+    MetricName: 'VitalIngestFailures',
+    Dimensions: [{ Name: 'ServiceName', Value: 'healthcare-sensor-app' }],
+  });
+});
+
+test('the entry alarm does not name the subsystem that caused the failure', () => {
+  const alarms = Object.values(
+    synthesize().findResources('AWS::CloudWatch::Alarm'),
+  ) as CfnResource[];
+  const entryAlarm = alarms.find(
+    (alarm) =>
+      alarm.Properties?.AlarmName ===
+      'RcaAgentDev-Healthcare-VitalIngestFailures',
+  );
+  const text = [
+    entryAlarm?.Properties?.AlarmName,
+    entryAlarm?.Properties?.AlarmDescription,
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  for (const causeTerm of [
+    'connection',
+    'pool',
+    'leak',
+    'cpu',
+    'memory',
+    'query',
+    'deploy',
+  ]) {
+    expect(text).not.toContain(causeTerm);
+  }
+});
+
+test('cause-level alarms remain available as evidence', () => {
+  const metricNames = alarmMetricNames(synthesize());
+
+  expect(metricNames).toContain('DatabaseConnections');
+  expect(metricNames).toContain('CPUUtilization');
+  expect(metricNames).toContain('MemoryUtilization');
+});
+
+test('the deployed revision is exposed to the container', () => {
+  synthesize().hasResourceProperties('AWS::ECS::TaskDefinition', {
+    ContainerDefinitions: Match.arrayWith([
+      Match.objectLike({
+        Name: 'healthcare',
+        Environment: Match.arrayWith([
+          { Name: 'DEPLOYED_REVISION', Value: 'latest' },
+        ]),
+      }),
+    ]),
+  });
+});
 
 test.failing('slow-query faults are covered by an RDS read-latency alarm', () => {
   expect(alarmMetricNames(synthesize())).toContain('ReadLatency');

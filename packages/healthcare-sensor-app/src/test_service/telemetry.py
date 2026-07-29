@@ -19,6 +19,16 @@ def setup_logging(settings: AppSettings):
     root.addHandler(handler)
     root.setLevel(settings.log_level)
 
+    logging.getLogger(__name__).info(
+        "Service starting",
+        extra={
+            "deployed_revision": settings.deployed_revision,
+            "fault_db_leak": settings.fault_db_leak,
+            "fault_slow_query_ms": settings.fault_slow_query_ms,
+            "fault_error_rate": settings.fault_error_rate,
+        },
+    )
+
 
 def setup_telemetry(app, settings: AppSettings):
     try:

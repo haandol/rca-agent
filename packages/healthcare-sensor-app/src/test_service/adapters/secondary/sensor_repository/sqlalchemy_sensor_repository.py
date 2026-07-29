@@ -51,7 +51,7 @@ class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
             stmt = stmt.where(SensorReadingRow.timestamp <= to_ts)
         stmt = stmt.order_by(SensorReadingRow.timestamp.desc()).limit(limit)
 
-        async for session in self._database.session():
+        async for session in self._database.leaky_session():
             result = await session.execute(stmt)
             return [self._to_entity(row) for row in result.scalars().all()]
         return []

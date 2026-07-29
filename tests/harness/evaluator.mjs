@@ -17,6 +17,7 @@ export const REQUIRED_DIMENSIONS = [
   'evidenceLinked',
   'artifactsComplete',
   'remediationSafe',
+  'competingCausesRejected',
 ];
 
 export const EXPECTED_ENGINES = ['cc-headless', 'strands'];
@@ -193,6 +194,12 @@ export function validateScenario(scenario) {
     expectation.semanticTermGroups,
     'scenario.expectation.semanticTermGroups',
   );
+  if (Object.hasOwn(expectation, 'rejectedCauseTermGroups')) {
+    assertTermGroups(
+      expectation.rejectedCauseTermGroups,
+      'scenario.expectation.rejectedCauseTermGroups',
+    );
+  }
   assert.equal(
     Object.hasOwn(scenario, 'engineSamples'),
     false,
@@ -330,6 +337,14 @@ export function evaluateScenario(scenario, result) {
     `${result.rootCause}\n${result.remediation.summary}`,
     scenario.expectation.semanticTermGroups,
   );
+  // Naming a competing cause as the root cause is a precision failure, not just
+  // a lower score. Absence of every rejected group is what makes the dimension
+  // pass, so a scenario without the field is trivially satisfied.
+  const rejectedCauseTermGroups =
+    scenario.expectation.rejectedCauseTermGroups ?? [];
+  const rejectedCauseCoverage = rejectedCauseTermGroups.length
+    ? termGroupCoverage(result.rootCause, rejectedCauseTermGroups)
+    : 0;
 
   const dimensions = {
     rootCauseIdentified: rootCauseCoverage === 1,
@@ -347,6 +362,7 @@ export function evaluateScenario(scenario, result) {
       Object.values(result.remediation.safeguards).every(
         (value) => typeof value === 'string' && value.trim(),
       ),
+    competingCausesRejected: rejectedCauseCoverage === 0,
   };
   const passed = REQUIRED_DIMENSIONS.every((name) => dimensions[name]);
   const semanticScore = roundScore(
@@ -367,6 +383,7 @@ export function evaluateScenario(scenario, result) {
       artifactCoverage: roundScore(artifactCoverage),
       remediationCoverage: roundScore(remediationCoverage),
       semanticSpecificity: roundScore(semanticSpecificity),
+      rejectedCauseCoverage: roundScore(rejectedCauseCoverage),
     },
   };
 }

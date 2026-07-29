@@ -78,6 +78,22 @@ otel-collector-config.yaml    # ADOT Collector 로컬 설정 (debug exporter)
 | `FAULT_DB_LEAK` | DB 커넥션 리크 feature flag | `false` |
 | `FAULT_SLOW_QUERY_MS` | 요청당 인위적 지연 (ms) | `0` |
 | `FAULT_ERROR_RATE` | 요청 실패율 (0.0~1.0) | `0.0` |
+| `DEPLOYED_REVISION` | 배포된 리비전 식별자 (시작 로그에 기록) | `unknown` |
+
+## Symptom Metrics
+
+앱은 도메인 증상 지표를 CloudWatch EMF 형식으로 표준 출력에 기록한다. `PutMetricData`
+호출과 추가 IAM 권한 없이 로그 수집 계층이 지표를 추출한다.
+
+| Metric | Namespace | 의미 |
+|--------|-----------|------|
+| `VitalIngestAttempts` | `Healthcare/Sensor` | 수집 시도한 바이탈 리딩 수 |
+| `VitalIngestFailures` | `Healthcare/Sensor` | 저장에 실패한 바이탈 리딩 수 |
+| `AbnormalAlertDelaySeconds` | `Healthcare/Sensor` | 이상치 관측부터 알림까지 지연 |
+
+RCA 진입 알람은 `VitalIngestFailures`에 걸려 있다. 알람은 어떤 하위 시스템이 원인인지
+말하지 않으므로, 커넥션 수·CPU·메모리 지표는 에이전트가 검증 단계에서 직접 찾아야 하는
+증거로 남는다.
 
 ## API Surface
 
@@ -115,6 +131,11 @@ otel-collector-config.yaml    # ADOT Collector 로컬 설정 (debug exporter)
 | `/fault/high-memory` | POST | 메모리 할당 |
 | `/fault/high-memory/reset` | POST | 할당된 메모리 해제 |
 | `/fault/slow-query` | POST | 지연 쿼리 실행 |
+
+이 엔드포인트는 즉시 주입용이다. 데모 시나리오는 배포 기반 주입
+(`scripts/inject_deployment_fault.py`)을 사용해 CloudTrail에 실제 배포 이벤트를
+남긴다. `FAULT_DB_LEAK`이 켜지면 환자 바이탈 조회 경로가 세션을 반환하지 않고,
+요청마다 커넥션이 누적된다.
 
 Request/response 스키마는 `src/test_service/ports/dto/`와 `src/test_service/adapters/primary/schemas.py`에 정의되어 있다.
 

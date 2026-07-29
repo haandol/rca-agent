@@ -176,6 +176,7 @@ def make_settings(**overrides: object) -> AppSettings:
         fault_db_leak=False,
         fault_slow_query_ms=0,
         fault_error_rate=0.0,
+        deployed_revision="test",
     )
     return replace(settings, **overrides)
 

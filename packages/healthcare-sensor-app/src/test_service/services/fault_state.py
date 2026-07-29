@@ -113,6 +113,11 @@ def reset_environment_database_leak_state_for_testing() -> None:
         environment_leaked_connections.clear()
 
 
+def environment_database_leaks_enabled() -> bool:
+    with _environment_database_leak_condition:
+        return not _environment_database_leaks_disabled
+
+
 def register_slow_query_delay(delay: SlowQueryDelay) -> None:
     _slow_query_delays.add(delay)
 
