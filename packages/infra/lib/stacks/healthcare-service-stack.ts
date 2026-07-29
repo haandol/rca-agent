@@ -40,7 +40,13 @@ export class HealthcareServiceStack extends cdk.Stack {
 
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props);
-    const service = this.newService(ns, cluster, taskDefinition, props, namespace);
+    const service = this.newService(
+      ns,
+      cluster,
+      taskDefinition,
+      props,
+      namespace,
+    );
     this.service = service;
     this.newAlarms(ns, props, service);
   }
@@ -93,8 +99,14 @@ export class HealthcareServiceStack extends cdk.Stack {
         FAULT_ERROR_RATE: '0.0',
       },
       secrets: {
-        DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
-        DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
+        DB_USERNAME: ecs.Secret.fromSecretsManager(
+          props.dbInstance.secret!,
+          'username',
+        ),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(
+          props.dbInstance.secret!,
+          'password',
+        ),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'healthcare',
@@ -131,10 +143,7 @@ export class HealthcareServiceStack extends cdk.Stack {
     if (props.tracing) {
       taskDef.taskRole.addToPrincipalPolicy(
         new iam.PolicyStatement({
-          actions: [
-            'xray:PutTraceSegments',
-            'xray:PutTelemetryRecords',
-          ],
+          actions: ['xray:PutTraceSegments', 'xray:PutTelemetryRecords'],
           resources: ['*'],
         }),
       );
@@ -192,7 +201,8 @@ export class HealthcareServiceStack extends cdk.Stack {
       }),
       threshold: 30,
       evaluationPeriods: 2,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     dbConnAlarm.addAlarmAction(alarmAction);
@@ -206,7 +216,8 @@ export class HealthcareServiceStack extends cdk.Stack {
       }),
       threshold: 80,
       evaluationPeriods: 2,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     cpuAlarm.addAlarmAction(alarmAction);
@@ -220,7 +231,8 @@ export class HealthcareServiceStack extends cdk.Stack {
       }),
       threshold: 80,
       evaluationPeriods: 2,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     memAlarm.addAlarmAction(alarmAction);

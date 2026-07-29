@@ -120,8 +120,9 @@ class AlarmPayload(BaseModel):
 class PlaybookMatch(BaseModel):
     """Playbook hit from the vector index.
 
-    Only fields kept in the S3 Vectors metadata are available here; the detail
-    fields live in the playbook record itself.
+    Only fields kept in the S3 Vectors metadata are available here. ``rca_id``
+    identifies the RCA that produced the playbook and is the key used to load
+    the detail fields, which the index does not carry.
     """
 
     playbook_id: str
@@ -129,6 +130,7 @@ class PlaybookMatch(BaseModel):
     failure_type: str = ""
     symptom_pattern: str = ""
     tags: list[str] = Field(default_factory=list)
+    rca_id: str = ""
 
 
 class ReportMatch(BaseModel):

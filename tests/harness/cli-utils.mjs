@@ -39,13 +39,6 @@ export async function writeJsonFile(filePath, value) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
-export async function writeJsonFileAtomically(filePath, value) {
-  await writeTextFileAtomically(
-    filePath,
-    `${JSON.stringify(value, null, 2)}\n`,
-  );
-}
-
 export async function writeTextFileAtomically(filePath, content) {
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
   await mkdir(path.dirname(filePath), { recursive: true });

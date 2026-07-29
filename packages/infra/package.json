@@ -16,7 +16,8 @@
     "cdk": "cdk",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write \"lib/**/*.ts\" \"bin/**/*.ts\" \"config/**/*.ts\""
+    "format": "prettier --write \"lib/**/*.ts\" \"bin/**/*.ts\" \"config/**/*.ts\"",
+    "format:check": "prettier --check \"lib/**/*.ts\" \"bin/**/*.ts\" \"config/**/*.ts\""
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

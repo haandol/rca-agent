@@ -13,16 +13,16 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import RcaReport, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.report_store import ReportStorePort
+from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
 from rca_agent.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 _SEARCH_MAX_RETRIES = 3
-_EMBED_FIELD_MAX = 80
 _HYPOTHESIS_PATH_MAX = 200
 
 
-def _truncate(text: str, max_len: int = _EMBED_FIELD_MAX) -> str:
+def _truncate(text: str, max_len: int = EMBED_FIELD_MAX) -> str:
     return text[:max_len].strip() if text else ""
 
 
@@ -113,12 +113,11 @@ class S3ReportStore(ReportStorePort):
         if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
             metric_name = scoping_result.raw_alarm.trigger.metric_name
 
-        parts = {
-            "장애유형": _truncate(report.root_cause),
-            "증상": _truncate(report.incident_summary),
-            "메트릭": _truncate(metric_name),
-        }
-        embed_text = " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
+        embed_text = build_embed_key(
+            failure_type=report.root_cause,
+            symptom=report.incident_summary,
+            metric_name=metric_name,
+        )
         try:
             vector = self._embedding.embed_document(embed_text)
         except Exception:

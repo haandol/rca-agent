@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "approvedAt": "2026-07-25T02:42:16.191Z",
+  "approvedAt": "2026-07-29T06:19:55.892Z",
   "engines": ["cc-headless", "strands"],
   "contractInputs": [
     "tests/harness/evaluator.mjs",
@@ -16,7 +16,7 @@
     "packages/cc-headless/src/cc_headless/mcp_server.py",
     "packages/cc-headless/src/cc_headless/services/prompt_builder.py"
   ],
-  "inputDigest": "sha256:23d8cce829cf0516353cdeb38fe89596dba5d55e35ef57c9fb0d5f2addcaa046",
+  "inputDigest": "sha256:90c7e17601a0585616f85ddb4213e056b1e9968cf3af2dac7b189684cb454e40",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/prompts/__init__.py",
@@ -26,7 +26,6 @@
     "packages/agent/src/rca_agent/prompts/hypothesis.py",
     "packages/agent/src/rca_agent/prompts/playbook.py",
     "packages/agent/src/rca_agent/prompts/prioritization.py",
-    "packages/agent/src/rca_agent/prompts/remediation.py",
     "packages/agent/src/rca_agent/prompts/report.py",
     "packages/agent/src/rca_agent/prompts/scoping.py",
     "packages/agent/src/rca_agent/prompts/validation.py",

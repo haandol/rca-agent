@@ -409,6 +409,37 @@ class TraceStore:
         spans.sort(key=lambda s: s.get("start_time", ""))
         return {"session": session, "spans": spans, "hypotheses": hypotheses}
 
+    @staticmethod
+    def get_playbook_metadata(rca_id: str, playbook_id: str, *, dynamodb_client=None) -> dict | None:
+        """Return the recorded playbook fields for ``playbook_id`` under ``rca_id``.
+
+        The playbook span carries the full field set as its metadata, so no
+        secondary index is needed. Returns None when the record is gone (TTL) or
+        the query fails — callers must treat the detail as unavailable, not empty.
+        """
+        if not DYNAMODB_TABLE_NAME or dynamodb_client is None or not rca_id or not playbook_id:
+            return None
+
+        try:
+            result = dynamodb_client.query(
+                TableName=DYNAMODB_TABLE_NAME,
+                KeyConditionExpression="PK = :pk",
+                FilterExpression="span_type = :span_type",
+                ExpressionAttributeValues={
+                    ":pk": _pk(rca_id),
+                    ":span_type": {"S": SpanType.PLAYBOOK.value},
+                },
+            )
+        except ClientError:
+            logger.exception("Failed to query playbook span for %s", rca_id)
+            return None
+
+        for item in result.get("Items", []):
+            metadata = _deserialize_metadata(item.get("metadata", {}).get("M"))
+            if metadata and metadata.get("playbook_id") == playbook_id:
+                return metadata
+        return None
+
     # ── Private helpers ─────────────────────────────────────────────
 
     def _write_span(self, span: Span) -> None:

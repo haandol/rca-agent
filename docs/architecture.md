@@ -167,7 +167,7 @@ CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션
 
 각 모듈이 생산/소비하는 Pydantic 모델과 모듈 간 의존 관계:
 
-- **F1 Scoping** — `search_similar_reports()`(S3 Vectors) → Scoping Agent(AWS Knowledge+CloudWatch+CloudTrail MCP) → `ScopingResult`
+- **F1 Scoping** — 보고서 인덱스 유사도 검색(S3 Vectors) → Scoping Agent(AWS Knowledge+CloudWatch+CloudTrail MCP) → `ScopingResult`
 - **F2 Hypothesis Generation** — Hypothesis Agent → `Hypothesis[]` (tree_id, depth=0)
 - **F3 Prioritization** — Prioritization Agent → `PrioritizedHypothesis[]` (rank, tools, parallel_group)
 - **F4 Evidence Collection** — Evidence Agent(AWS Knowledge+CloudWatch+CloudTrail+GitHub MCP) → `evidence_map`, S3 증거 아카이브
@@ -175,7 +175,7 @@ CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션
 - **Termination Check** — 순수 로직(LLM 미사용) → `TerminationDecision`
 - **F6 Branching** — Branching Agent → 자식 가설(depth=parent+1)
 - **F7 Report** — Report Agent → `RcaReport` → S3 Markdown + S3 Vectors 인덱싱
-- **F8 Playbook** — 기존 플레이북 검색(≥0.86) → update or create → S3 Vectors 인덱싱
+- **F8 Playbook** — 기존 플레이북 검색(≥0.86) → 상세 로드(실패 시 후보 제외) → update or create → S3 Vectors 인덱싱
 - **F9 Notification** — `build_notification()` (플레이북 포함) → SNS Publish
 
 각 단계의 Pydantic 스키마 및 structured_output 정의는 `packages/agent/`의 ports/dto를 참조하세요.

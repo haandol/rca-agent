@@ -67,7 +67,8 @@ severity criteria, escalation criteria, or related metrics \
 that are NOT already in the existing playbook, merge them.
 - If the existing playbook is already comprehensive and the new RCA adds nothing new, \
 set needs_update to false.
-- Do NOT remove existing content — only add or refine.
+- Do NOT remove existing content — only add or refine. Return each field with the \
+merged content; a field left empty keeps its existing value.
 - Preserve the existing playbook's structure and language style.
 - In `failure_type` and `symptom_pattern`, describe the pattern qualitatively \
 without specific numbers, thresholds, percentages, or timestamps.

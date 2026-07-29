@@ -140,7 +140,11 @@ class AppContainer(Container):
         if self._playbook_store is None:
             from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import S3VectorsPlaybookStore
 
-            self._playbook_store = S3VectorsPlaybookStore(self.s3_vectors_client, self.embedding)
+            self._playbook_store = S3VectorsPlaybookStore(
+                self.s3_vectors_client,
+                self.embedding,
+                self.dynamodb_client,
+            )
         return self._playbook_store
 
     @property

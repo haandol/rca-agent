@@ -16,7 +16,12 @@ class ReportStorePort(ABC):
     ) -> str: ...
 
     @abstractmethod
-    def search_similar(self, query_text: str) -> list[ReportMatch]: ...
+    def search_similar(self, query_text: str) -> list[ReportMatch]:
+        """Return reports similar enough to inform hypothesis generation.
+
+        Takes no threshold, unlike the playbook store: there is one caller and
+        one intent here, so the cutoff stays a property of the index.
+        """
 
     @abstractmethod
     def save_vectors(self, report: RcaReport, *, scoping_result: ScopingResult | None = None) -> bool: ...

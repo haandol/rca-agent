@@ -17,6 +17,7 @@ from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
+from rca_agent.utils.embed_key import build_embed_key
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
@@ -52,23 +53,15 @@ class PlaybookUpdateOutput(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
-_EMBED_FIELD_MAX = 80
-
-
-def _truncate(text: str, max_len: int = _EMBED_FIELD_MAX) -> str:
-    return text[:max_len].strip() if text else ""
-
-
 def _build_embed_key(report: RcaReport, scoping_result: ScopingResult | None) -> str:
     metric_name = ""
     if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
         metric_name = scoping_result.raw_alarm.trigger.metric_name
-    parts = {
-        "장애유형": _truncate(report.root_cause or "unknown"),
-        "증상": _truncate(report.incident_summary),
-        "메트릭": _truncate(metric_name),
-    }
-    return " | ".join(f"{k}: {v}" for k, v in parts.items() if v)
+    return build_embed_key(
+        failure_type=report.root_cause or "unknown",
+        symptom=report.incident_summary,
+        metric_name=metric_name,
+    )
 
 
 def _build_user_prompt(report: RcaReport) -> str:
@@ -84,20 +77,17 @@ def _build_user_prompt(report: RcaReport) -> str:
     )
 
 
-def _build_update_prompt(existing: PlaybookMatch, report: RcaReport) -> str:
-    # Only failure_type/symptom_pattern/tags survive in the vector index metadata;
-    # the remaining fields are unavailable at search time (ADR infra/0002).
-    unavailable = "N/A (not in search index)"
+def _build_update_prompt(existing: Playbook, report: RcaReport) -> str:
     return PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE.format(
         existing_failure_type=existing.failure_type or "N/A",
         existing_symptom_pattern=existing.symptom_pattern or "N/A",
-        existing_severity_criteria=unavailable,
-        existing_verification_steps=unavailable,
-        existing_temporary_mitigation=unavailable,
-        existing_permanent_remediation=unavailable,
-        existing_escalation_criteria=unavailable,
-        existing_prevention_measures=unavailable,
-        existing_related_metrics=unavailable,
+        existing_severity_criteria=existing.severity_criteria or "N/A",
+        existing_verification_steps="\n".join(f"  - {s}" for s in existing.verification_steps) or "N/A",
+        existing_temporary_mitigation=existing.temporary_mitigation or "N/A",
+        existing_permanent_remediation=existing.permanent_remediation or "N/A",
+        existing_escalation_criteria=existing.escalation_criteria or "N/A",
+        existing_prevention_measures="\n".join(f"  - {m}" for m in existing.prevention_measures) or "N/A",
+        existing_related_metrics="\n".join(f"  - {m}" for m in existing.related_metrics) or "N/A",
         root_cause=report.root_cause,
         severity=report.severity,
         evidence_highlights="\n".join(f"  - {e}" for e in report.evidence_list[:5]) or "N/A",
@@ -122,27 +112,31 @@ def search_existing_playbooks(
     scoping_result: ScopingResult | None,
     *,
     playbook_store: PlaybookStorePort,
-    threshold: float = PLAYBOOK_UPDATE_THRESHOLD,
 ) -> list[PlaybookMatch]:
-    """Find playbooks close enough to update instead of creating a duplicate."""
+    """Find playbooks close enough to update instead of creating a duplicate.
+
+    Uses a stricter threshold than plain retrieval: merging into the wrong
+    playbook is worse than writing a new one.
+    """
     return playbook_store.search_similar(
         _build_embed_key(report, scoping_result),
-        threshold=threshold,
+        threshold=PLAYBOOK_UPDATE_THRESHOLD,
     )
 
 
 def _try_update_existing(
-    hit: PlaybookMatch,
+    existing: Playbook,
     report: RcaReport,
     update_agent: Agent,
     *,
+    similarity: float = 0.0,
     timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> Playbook | None:
-    prompt = _build_update_prompt(hit, report)
+    prompt = _build_update_prompt(existing, report)
     logger.info(
         "Checking update for playbook %s (similarity=%.2f)",
-        hit.playbook_id,
-        hit.similarity,
+        existing.playbook_id,
+        similarity,
     )
 
     output: PlaybookUpdateOutput | None = None
@@ -152,27 +146,29 @@ def _try_update_existing(
             timeout_seconds,
         )
     except Exception:
-        logger.warning("Playbook update check failed for %s", hit.playbook_id)
+        logger.warning("Playbook update check failed for %s", existing.playbook_id)
 
     if output is None or not output.needs_update:
         if output and not output.needs_update:
-            logger.info("Playbook %s is up-to-date, no update needed", hit.playbook_id)
+            logger.info("Playbook %s is up-to-date, no update needed", existing.playbook_id)
         return None
 
-    logger.info("Updating playbook %s with new RCA findings", hit.playbook_id)
+    logger.info("Updating playbook %s with new RCA findings", existing.playbook_id)
+    # An empty field means the LLM had nothing to add, not that the step was
+    # dropped — keep the recorded value so a merge never loses past procedure.
     return Playbook(
-        playbook_id=hit.playbook_id,
-        failure_type=output.failure_type or hit.failure_type,
-        symptom_pattern=output.symptom_pattern or hit.symptom_pattern,
-        severity_criteria=output.severity_criteria,
-        verification_steps=output.verification_steps,
-        temporary_mitigation=output.temporary_mitigation,
-        permanent_remediation=output.permanent_remediation,
-        escalation_criteria=output.escalation_criteria,
-        prevention_measures=output.prevention_measures,
-        related_metrics=output.related_metrics,
+        playbook_id=existing.playbook_id,
+        failure_type=output.failure_type or existing.failure_type,
+        symptom_pattern=output.symptom_pattern or existing.symptom_pattern,
+        severity_criteria=output.severity_criteria or existing.severity_criteria,
+        verification_steps=output.verification_steps or existing.verification_steps,
+        temporary_mitigation=output.temporary_mitigation or existing.temporary_mitigation,
+        permanent_remediation=output.permanent_remediation or existing.permanent_remediation,
+        escalation_criteria=output.escalation_criteria or existing.escalation_criteria,
+        prevention_measures=output.prevention_measures or existing.prevention_measures,
+        related_metrics=output.related_metrics or existing.related_metrics,
         rca_id=report.rca_id,
-        tags=output.tags or hit.tags,
+        tags=output.tags or existing.tags,
     )
 
 
@@ -191,19 +187,31 @@ def run_playbook_generation(
     )
     deadline = time.monotonic() + max(0, timeout_seconds)
 
+    merge_candidates = 0
     for hit in existing_hits:
+        # Merging without the recorded procedure would overwrite it under the same
+        # id, so a hit we cannot load is left alone rather than half-updated.
+        existing = playbook_store.load_detail(hit)
+        if existing is None:
+            logger.info(
+                "Skipping playbook %s — detail unavailable, cannot merge safely",
+                hit.playbook_id,
+            )
+            continue
+        merge_candidates += 1
         remaining_seconds = max(0.0, deadline - time.monotonic())
         updated = _try_update_existing(
-            hit,
+            existing,
             report,
             agent,
+            similarity=hit.similarity,
             timeout_seconds=remaining_seconds,
         )
         if updated is not None:
             return updated
 
-    if existing_hits:
-        logger.info("All %d existing playbooks are up-to-date", len(existing_hits))
+    if merge_candidates:
+        logger.info("All %d existing playbooks are up-to-date", merge_candidates)
 
     playbook_id = str(uuid.uuid4())
     user_prompt = _build_user_prompt(report)
