@@ -4,7 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sns from 'aws-cdk-lib/aws-sns';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { Template } from 'aws-cdk-lib/assertions';
 
 import { CcHeadlessStack } from '../lib/stacks/cc-headless-stack';
 
@@ -42,6 +42,8 @@ function synthesize(): SynthesizedTemplates {
   });
   const evidenceBucket = new s3.Bucket(dependencies, 'EvidenceBucket');
 
+  // Healthcare is synthesized so the ingress assertion can prove that analysis
+  // opens no route to the service it investigates.
   const healthcareStack = new cdk.Stack(app, 'Healthcare');
   const healthcareCluster = new ecs.Cluster(
     healthcareStack,
@@ -56,23 +58,15 @@ function synthesize(): SynthesizedTemplates {
     image: ecs.ContainerImage.fromRegistry('placeholder'),
     portMappings: [{ containerPort: 8000 }],
   });
-  const healthcareService = new ecs.FargateService(
-    healthcareStack,
-    'HealthcareService',
-    {
-      cluster: healthcareCluster,
-      taskDefinition: healthcareTaskDefinition,
-    },
-  );
-
-  new cdk.Stack(app, 'RemediationAgentStack');
+  new ecs.FargateService(healthcareStack, 'HealthcareService', {
+    cluster: healthcareCluster,
+    taskDefinition: healthcareTaskDefinition,
+  });
 
   const stack = new CcHeadlessStack(app, 'CcHeadlessTest', {
     vpc,
     alarmTopic,
     notificationTopic,
-    healthcareService,
-    healthcareServiceHost: 'healthcare.rcaagentdev.local',
     rcaSessionTable: sessionTable,
     evidenceBucket,
     vectorBucketName: 'rca-test-vectors',
@@ -116,34 +110,13 @@ function taskRoleStatements(template: Template): IamStatement[] {
     );
 }
 
-test('CC task receives the allowlisted Healthcare target identity', () => {
+test('the analysis task is not told how to reach the service it investigates', () => {
+  // Recovery moved behind a user approval gate, so analysis has no reason to
+  // know the target's address. Leaving the identity here would keep a route
+  // available to a path that must not write.
   const { ccHeadless } = synthesize();
 
-  ccHeadless.hasResourceProperties('AWS::ECS::TaskDefinition', {
-    ContainerDefinitions: Match.arrayWith([
-      Match.objectLike({
-        Name: 'cc-headless',
-        Environment: Match.arrayWith([
-          {
-            Name: 'HEALTHCARE_SERVICE_HOST',
-            Value: 'healthcare.rcaagentdev.local',
-          },
-          {
-            Name: 'HEALTHCARE_ECS_CLUSTER_NAME',
-            Value: 'RcaAgentDevHealthcare',
-          },
-          {
-            Name: 'HEALTHCARE_ECS_SERVICE_NAME',
-            Value: 'RcaAgentDevHealthcare',
-          },
-          {
-            Name: 'HEALTHCARE_RDS_INSTANCE_IDENTIFIER',
-            Value: 'rcaagentdev-postgres',
-          },
-        ]),
-      }),
-    ]),
-  });
+  expect(JSON.stringify(ccHeadless.toJSON())).not.toContain('HEALTHCARE_');
 });
 
 test('CC queue visibility exceeds the analysis and staleness boundary', () => {
@@ -164,24 +137,13 @@ test('CC queue visibility exceeds the analysis and staleness boundary', () => {
   );
 });
 
-test('Healthcare allows CC ingress on port 8000 only', () => {
+test('Healthcare opens no ingress for the analysis engine', () => {
   const { healthcare } = synthesize();
   const ingressRules = Object.values(
     healthcare.findResources('AWS::EC2::SecurityGroupIngress'),
   ) as CfnResource[];
 
-  expect(ingressRules).toHaveLength(1);
-  expect(ingressRules[0].Properties).toEqual(
-    expect.objectContaining({
-      Description: 'CC Headless allowlisted Healthcare reset API calls',
-      FromPort: 8000,
-      IpProtocol: 'tcp',
-      SourceSecurityGroupId: expect.objectContaining({
-        'Fn::ImportValue': expect.any(String),
-      }),
-      ToPort: 8000,
-    }),
-  );
+  expect(ingressRules).toEqual([]);
 });
 
 test('CC task role has no ECS service write permissions', () => {
@@ -199,12 +161,39 @@ test('CC task role has no ECS service write permissions', () => {
   expect(ecsActions).toEqual([]);
 });
 
-test('CC stack has no dependency on the standalone remediation stack', () => {
-  const { app, ccHeadlessStack } = synthesize();
-  const assembly = app.synth();
-  const ccArtifact = assembly.getStackArtifact(ccHeadlessStack.artifactId);
+test('the analysis task role holds no write permission at all', () => {
+  const { ccHeadless } = synthesize();
+  const actions = taskRoleStatements(ccHeadless)
+    .flatMap((statement) =>
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action],
+    )
+    .filter((action): action is string => typeof action === 'string');
 
-  expect(
-    ccArtifact.dependencies.map((dependency) => dependency.id),
-  ).not.toContain('RemediationAgentStack');
+  // Writes analysis does need: its own artifacts, the session record, its
+  // notification, and the plumbing to consume its queue and be shelled into.
+  // Any other mutating action would put recovery back inside the analysis path.
+  const allowedWritePrefixes = [
+    's3:Put',
+    's3:Delete',
+    's3:Abort',
+    's3vectors:',
+    'dynamodb:',
+    'sns:Publish',
+    'logs:',
+    'sqs:ReceiveMessage',
+    'sqs:DeleteMessage',
+    'sqs:ChangeMessageVisibility',
+    'ssmmessages:',
+  ];
+  const unexpectedWrites = actions.filter((action) => {
+    const isRead = /:(Get|List|Describe|Head|Query|Scan|BatchGet|Lookup)/.test(
+      action,
+    );
+    const isAllowed = allowedWritePrefixes.some((prefix) =>
+      action.startsWith(prefix),
+    );
+    return !isRead && !isAllowed && !action.startsWith('bedrock:');
+  });
+
+  expect(unexpectedWrites).toEqual([]);
 });

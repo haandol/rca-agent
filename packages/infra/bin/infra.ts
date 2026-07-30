@@ -9,7 +9,7 @@ import { RcaAgentServiceStack } from '../lib/stacks/rca-agent-service-stack';
 import { RdsStack } from '../lib/stacks/rds-stack';
 import { HealthcareServiceStack } from '../lib/stacks/healthcare-service-stack';
 import { CcHeadlessStack } from '../lib/stacks/cc-headless-stack';
-import { RemediationAgentStack } from '../lib/stacks/remediation-agent-stack';
+import { PlaybookExecutionStack } from '../lib/stacks/playbook-execution-stack';
 import { Config } from '../config/loader';
 
 const app = new cdk.App({
@@ -90,6 +90,7 @@ rcaAgentServiceStack.addDependency(eventBusStack);
 rcaAgentServiceStack.addDependency(databaseStack);
 rcaAgentServiceStack.addDependency(storageStack);
 
+// 분석은 읽기 전용이다. Healthcare 서비스로의 접근 경로를 두지 않는다.
 const ccHeadlessStack = new CcHeadlessStack(
   app,
   `${Config.app.ns}CcHeadlessStack`,
@@ -98,8 +99,6 @@ const ccHeadlessStack = new CcHeadlessStack(
     vpc: networkStack.vpc,
     alarmTopic: eventBusStack.alarmTopic,
     notificationTopic: eventBusStack.alarmTopic,
-    healthcareService: healthcareServiceStack.service,
-    healthcareServiceHost: healthcareServiceStack.serviceHost,
     rcaSessionTable: databaseStack.rcaSessionTable,
     evidenceBucket: storageStack.evidenceBucket,
     vectorBucketName: Config.storage.vectorBucket,
@@ -112,31 +111,29 @@ ccHeadlessStack.addDependency(networkStack);
 ccHeadlessStack.addDependency(eventBusStack);
 ccHeadlessStack.addDependency(databaseStack);
 ccHeadlessStack.addDependency(storageStack);
-// Healthcare owns the ingress rule and therefore references the CC security
-// group. The host is a plain DNS string, so no reverse dependency is created.
 
-const remediationAgentStack = new RemediationAgentStack(
+// 실행은 사용자가 승인 요청을 발행할 때만 시작된다. 이벤트 구독을 두지 않으므로
+// 승인 없이 실행이 기동될 경로가 인프라에 존재하지 않는다.
+const playbookExecutionStack = new PlaybookExecutionStack(
   app,
-  `${Config.app.ns}RemediationAgentStack`,
+  `${Config.app.ns}PlaybookExecutionStack`,
   {
     env,
     vpc: networkStack.vpc,
-    notificationTopic: eventBusStack.alarmTopic,
     healthcareService: healthcareServiceStack.service,
-    healthcareServiceHost: healthcareServiceStack.serviceHost,
     rcaSessionTable: databaseStack.rcaSessionTable,
-    imageTag: Config.remediation.imageTag,
-    desiredCount: Config.remediation.desiredCount,
+    evidenceBucket: storageStack.evidenceBucket,
+    vectorBucketName: Config.storage.vectorBucket,
+    imageTag: Config.execution.imageTag,
   },
 );
-remediationAgentStack.addDependency(ecrStack);
-remediationAgentStack.addDependency(networkStack);
-remediationAgentStack.addDependency(eventBusStack);
-remediationAgentStack.addDependency(databaseStack);
-// NOTE: healthcareServiceStack에 명시적 의존을 두지 않는다. 복구 에이전트가
-// Healthcare 서비스의 SG 인그레스를 여는 순간 Healthcare 스택이 Remediation
-// 스택을 참조하게 되어, 반대 방향 의존을 추가하면 순환 참조가 된다.
-// serviceHost는 일반 DNS 문자열이라 CFN 교차 참조를 만들지 않는다.
+playbookExecutionStack.addDependency(ecrStack);
+playbookExecutionStack.addDependency(networkStack);
+playbookExecutionStack.addDependency(databaseStack);
+playbookExecutionStack.addDependency(storageStack);
+// NOTE: healthcareServiceStack에 명시적 의존을 두지 않는다. 실행 에이전트가
+// Healthcare 서비스의 SG 인그레스를 여는 순간 Healthcare 스택이 실행 스택을
+// 참조하게 되어, 반대 방향 의존을 추가하면 순환 참조가 된다.
 
 const tags = cdk.Tags.of(app);
 tags.add('namespace', Config.app.ns);

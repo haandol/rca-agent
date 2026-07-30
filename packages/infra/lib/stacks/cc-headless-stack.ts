@@ -16,8 +16,6 @@ interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
   readonly alarmTopic: sns.ITopic;
   readonly notificationTopic: sns.ITopic;
-  readonly healthcareService: ecs.FargateService;
-  readonly healthcareServiceHost: string;
   readonly rcaSessionTable: dynamodb.ITable;
   readonly evidenceBucket: s3.IBucket;
   readonly vectorBucketName: string;
@@ -39,13 +37,9 @@ export class CcHeadlessStack extends cdk.Stack {
     );
     const cluster = this.newCluster(ns, props.vpc);
     const taskDefinition = this.newTaskDefinition(ns, props, alarmQueue);
-    const service = this.newService(ns, cluster, taskDefinition);
-
-    props.healthcareService.connections.allowFrom(
-      service,
-      ec2.Port.tcp(8000),
-      'CC Headless allowlisted Healthcare reset API calls',
-    );
+    // Analysis is read-only: no ingress to the target service is opened, so the
+    // analysis path has no route to act on what it is investigating.
+    this.newService(ns, cluster, taskDefinition);
   }
 
   private newDeadLetterQueue(ns: string): sqs.Queue {
@@ -132,10 +126,6 @@ export class CcHeadlessStack extends cdk.Stack {
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
         S3_REPORT_BUCKET: props.reportBucket,
         SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
-        HEALTHCARE_SERVICE_HOST: props.healthcareServiceHost,
-        HEALTHCARE_ECS_CLUSTER_NAME: `${ns}Healthcare`,
-        HEALTHCARE_ECS_SERVICE_NAME: `${ns}Healthcare`,
-        HEALTHCARE_RDS_INSTANCE_IDENTIFIER: `${ns.toLowerCase()}-postgres`,
       },
       secrets: {
         GITHUB_PERSONAL_ACCESS_TOKEN:

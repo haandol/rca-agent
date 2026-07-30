@@ -17,10 +17,9 @@ imageTag = "latest"
 [ccHeadless]
 imageTag = "latest"
 
-[remediation]
+[execution]
+# 분석 워커와 같은 이미지를 다른 진입점으로 실행한다.
 imageTag = "latest"
-# 0 = 복구 에이전트 미배포(알림만), 1 = 자동 복구 활성화
-desiredCount = 0
 
 [storage]
 evidenceBucket = "rca-agent-dev-evidence"

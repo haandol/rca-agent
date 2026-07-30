@@ -35,10 +35,9 @@ const ConfigSchema = z.object({
       imageTag: z.string().default('latest'),
     })
     .required(),
-  remediation: z
+  execution: z
     .object({
       imageTag: z.string().default('latest'),
-      desiredCount: z.number().int().min(0).max(1).default(0),
     })
     .required(),
   storage: z
@@ -82,7 +81,7 @@ const IMAGE_TAG_ENV_KEYS = {
   agent: 'AGENT_IMAGE_TAG',
   healthcare: 'HEALTHCARE_IMAGE_TAG',
   ccHeadless: 'CC_HEADLESS_IMAGE_TAG',
-  remediation: 'REMEDIATION_IMAGE_TAG',
+  execution: 'EXECUTION_IMAGE_TAG',
 } as const;
 
 function imageTagFor(service: keyof typeof IMAGE_TAG_ENV_KEYS): string {
@@ -99,8 +98,5 @@ export const Config: IConfig = {
   agent: { ...parsed.agent, imageTag: imageTagFor('agent') },
   healthcare: { ...parsed.healthcare, imageTag: imageTagFor('healthcare') },
   ccHeadless: { ...parsed.ccHeadless, imageTag: imageTagFor('ccHeadless') },
-  remediation: {
-    ...parsed.remediation,
-    imageTag: imageTagFor('remediation'),
-  },
+  execution: { ...parsed.execution, imageTag: imageTagFor('execution') },
 };
