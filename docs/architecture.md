@@ -2,6 +2,14 @@
 
 RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 데이터 흐름, 기술 스택을 정리합니다.
 
+## 분석과 실행의 분리
+
+시스템은 **읽기 전용 분석**과 **사용자 승인 기반 실행** 두 축으로 나뉩니다.
+
+- **분석**은 알람을 받아 플레이북을 포함한 리포트 하나를 만들고 끝납니다. 어떤 서비스나 인프라도 변경하지 않으며, 태스크 역할에 쓰기 권한이 없습니다.
+- **실행**은 별도 에이전트이며, 사람이 대시보드에서 플레이북 절차를 승인해 실행 요청 큐에 발행할 때만 시작됩니다. 실행 스택에는 이벤트 구독이 없으므로 **사람의 승인 없이 실행이 기동될 경로가 존재하지 않습니다** — 승인이 곧 메시지입니다.
+- 분석 완료 알림은 어떤 기계 동작도 트리거하지 않습니다. 수신자는 사람과 대시보드뿐입니다.
+
 ## Dual-Stack Overview
 
 동일한 CloudWatch 알람에 대해 두 가지 실행 엔진이 독립적으로 RCA를 수행합니다.
@@ -14,6 +22,9 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 | **모델** | 단일 Sonnet 5 (Planning/Execution 행동 분리) | CC 기본 모델 (Sonnet 5) |
 | **타임아웃** | 종료 조건 및 시간 예산 | CC 프로세스 30분 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
+| **쓰기 권한** | 없음 (읽기 전용 분석) | 없음 (읽기 전용 분석) |
+| **산출물** | 플레이북을 포함한 리포트 1개 | 플레이북을 포함한 리포트 1개 |
+| **실행 경로** | 두 엔진 공통 — 사용자 승인 후 별도 플레이북 실행 에이전트가 수행 |
 | **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
 | **구분** | DynamoDB `engine` 필드: `strands` vs `cc-headless` |
 
@@ -58,9 +69,20 @@ graph TB
         DDB["DynamoDB<br/>(세션 상태 + 멱등성)"]
     end
 
-    subgraph Notification["알림"]
+    subgraph Notification["알림 (사람 · 대시보드 전용)"]
         SNS_OUT["SNS Topic<br/>(RCA 완료 알림)"]
         SRE["👩‍💻 SRE / Ops 팀"]
+        DASH["RCA 대시보드<br/>(리포트 + 실행 절차 열람)"]
+    end
+
+    subgraph Approval["사용자 승인 게이트"]
+        APPROVE["👤 승인<br/>POST /api/executions"]
+        SQS_EXEC["SQS Queue<br/>(실행 요청 + DLQ)"]
+    end
+
+    subgraph Execution["플레이북 실행 (쓰기 권한)"]
+        ECS_EXEC["ECS Fargate<br/>execution_main<br/>실행 → 회고"]
+        TARGET["🏥 대상 서비스<br/>(Healthcare 등)"]
     end
 
     CW_ALARM --> SNS_IN
@@ -89,15 +111,27 @@ graph TB
     ECS --> SNS_OUT
     ECS_CC --> SNS_OUT
     SNS_OUT --> SRE
+    DDB --> DASH
+    S3 --> DASH
+    DASH --> APPROVE
+    APPROVE --> SQS_EXEC --> ECS_EXEC
+    ECS_EXEC --> TARGET
+    ECS_EXEC <--> BEDROCK_CC
+    ECS_EXEC --> CW_MCP
+    ECS_EXEC --> S3
+    ECS_EXEC --> DDB
+    ECS_EXEC <--> S3_VECTORS
 ```
+
+분석 완료 알림에서 실행 스택으로 가는 화살표는 없습니다. 알림은 사람과 대시보드만 소비하며, 실행으로 가는 유일한 간선은 승인입니다.
 
 ## Agent Pipeline — Fargate (Strands, 9단계)
 
-에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북을 포함한 SNS 알림을 발행합니다.
+에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북 요약을 포함한 SNS 알림을 발행하며 파이프라인은 여기서 끝납니다.
 
-Strands 자동 복구는 별도 SNS → SQS 워커로 구현되어 있으며 기본 desired count는
-0입니다. 활성화해도 서버 소유 RCA 결과와 허용된 Healthcare reset만 사용하며,
-일반 ECS 강제 배포는 수행하지 않습니다.
+파이프라인은 읽기 전용입니다. 복구를 수행하는 워커가 없고, 알림은 아무것도
+트리거하지 않습니다. 플레이북의 `verification_status`는 항상 `DRAFT`이며 분석은
+이 값을 바꾸지 못합니다 — 실행으로 수행되지 않은 절차는 검증되지 않았기 때문입니다.
 
 ```mermaid
 stateDiagram-v2
@@ -133,10 +167,10 @@ stateDiagram-v2
 
 ## Agent Pipeline — Fargate (CC Headless 오케스트레이터)
 
-CC on Bedrock headless 메인 에이전트는 직접 RCA나 복구를 수행하지 않고, 한 실행
-안에서 RCA, 조건부 Remediation, Report 전문 서브 에이전트를 순서대로 호출합니다.
-읽기 도구와 쓰기 도구는 역할별로 분리되고, 제한된 복구 도구가 확정 산출물과
-허용 목록을 서버 측에서 다시 검증합니다.
+CC on Bedrock headless 메인 에이전트는 직접 RCA를 수행하지 않고, 한 실행 안에서
+RCA와 Report 두 전문 서브 에이전트만 순서대로 호출합니다. 이 실행에는 서비스나
+인프라를 바꾸는 도구가 없으며, 산출물은 플레이북을 포함한 리포트 하나로 끝납니다.
+플레이북은 사람이 승인한 뒤 별도 실행 에이전트가 수행할 초안입니다.
 
 ```mermaid
 stateDiagram-v2
@@ -146,9 +180,7 @@ stateDiagram-v2
     CLAIM --> SKIP: 완료 세션 중복
     CLAIM --> RETRY: 경합 또는 소유권 확인 실패
     ANALYZING --> RCA: 읽기 전용 RCA specialist
-    RCA --> REMEDIATION: 확정 원인
-    RCA --> REPORT: 미확정 원인
-    REMEDIATION --> REPORT: 서버 소유 복구·검증 결과
+    RCA --> REPORT: 스코핑·가설·검증 산출물
     REPORT --> COMPLETION_GATE: 산출물 교차 검증
     COMPLETION_GATE --> COMPLETED: 보고서 저장 + 알림
     ANALYZING --> FAILED: CC 오류 / 타임아웃
@@ -159,9 +191,102 @@ stateDiagram-v2
 ```
 
 CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션 claim을 잃은 실행은
-상태와 trace를 기록할 수 없고, reset·S3·SNS 같은 외부 쓰기는 claim에 종속된
-부작용 lease 안에서만 시작합니다. 완료 게이트는 서버 소유 복구 결과와 보고서,
-플레이북의 상태·원인·검증 참조가 일치하는지 확인합니다.
+상태와 trace를 기록할 수 없고, S3·SNS 같은 외부 쓰기는 claim에 종속된 부작용
+lease 안에서만 시작합니다. 완료 게이트는 보고서와 플레이북의 상태·원인 참조가
+일치하는지, 그리고 플레이북의 `verification_status`가 `DRAFT`인지 확인합니다.
+
+산출물은 `scoping.json`, `hypotheses.json`, `validation-{N}.json`, `playbook.json`,
+`report.md` 다섯 가지입니다.
+
+## Playbook Execution — 사용자 승인 기반 실행 에이전트
+
+실행은 분석과 별개의 워커입니다. 진입점은 `python -m cc_headless.execution_main`이며,
+분석 워커와 같은 컨테이너 이미지를 다른 진입점으로 실행합니다.
+
+```mermaid
+flowchart TD
+    REPORT["저장된 리포트<br/>플레이북 execution_steps<br/>(step_id · intent · action · success_criteria)"]
+    HUMAN["👤 대시보드에서 절차 열람 후 승인<br/>POST /api/executions"]
+    QUEUE["실행 요청 큐<br/>(이벤트 구독 없음 · visibility 4500s)"]
+    WORKER["실행 워커<br/>execution_main long polling"]
+    ALARM["알람 컨텍스트<br/>(리소스 식별자 · 리전)"]
+    GATE["실행 도구의 파괴성 판정<br/>argv 분해 → 서비스·작업 이름 추출<br/>→ 거부 어휘 대조"]
+    RUN["명령 실행"]
+    MANUAL["거부 → 증거에 기록<br/>해당 절차는 수동 조치로 남김<br/>(나머지 절차는 계속)"]
+    OBSERVE["success_criteria 관측 기록"]
+    JUDGE["서버의 해결 판정<br/>기록된 관측만 근거"]
+    RESOLVED["해결 (RESOLVED)"]
+    UNRESOLVED["미해결 (UNRESOLVED)"]
+    RETRO["회고<br/>절차 결함만 교정"]
+    PLAYBOOK["같은 playbook_id 로 갱신<br/>→ 다음 실행의 근거"]
+
+    REPORT --> HUMAN --> QUEUE --> WORKER
+    ALARM -.->|실행 시점 매핑| WORKER
+    WORKER --> GATE
+    GATE -->|허용| RUN --> OBSERVE
+    GATE -->|거부·판정 불가| MANUAL --> OBSERVE
+    OBSERVE --> JUDGE
+    JUDGE -->|관측이 기준 충족| RESOLVED --> RETRO --> PLAYBOOK
+    JUDGE -->|관측 없음 또는 미충족| UNRESOLVED
+```
+
+**왜 이렇게 만들었는가**
+
+- **승인이 곧 메시지다.** 실행 스택에 이벤트 구독을 두지 않으므로, 사람이 승인하지 않고 실행이 시작될 경로가 존재하지 않습니다.
+- **파괴적 조치는 서버가 거부한다.** IAM 정책이나 프롬프트 지시가 아니라 실행 도구가 명령을 argv로 분해해 AWS 서비스와 작업 이름을 추출하고 거부 어휘와 대조합니다. **작업 이름을 확정할 수 없는 명령은 거부합니다** — 판정 불가를 허용으로 읽으면 셸 합성이나 중첩 호출로 거부 목록을 비울 수 있습니다.
+- **해결 판정의 권위는 서버에 있다.** 에이전트의 최종 서술은 관측이 아니므로 근거가 되지 않습니다. 관측되지 않았거나 기준을 만족하지 못하면 실행은 `UNRESOLVED`가 되며, 관측되지 않은 결과가 해결로 기록되는 일은 없습니다.
+- **거부는 실행을 중단시키지 않는다.** 거부된 절차는 증거에 남고 수동 조치로 표시되며, 남은 절차는 계속 수행됩니다.
+
+### 실행 상태 전이
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_APPROVAL: 승인 요청 발행
+    PENDING_APPROVAL --> EXECUTING: 워커 claim
+    EXECUTING --> VERIFYING: 절차 수행 완료
+    VERIFYING --> RESOLVED: 관측이 success_criteria 충족
+    VERIFYING --> UNRESOLVED: 관측 없음 또는 미충족
+    PENDING_APPROVAL --> CANCELLED
+    PENDING_APPROVAL --> FAILED
+    EXECUTING --> FAILED
+    EXECUTING --> CANCELLED
+    VERIFYING --> FAILED
+    VERIFYING --> CANCELLED
+
+    RESOLVED --> [*]
+    UNRESOLVED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+```
+
+한국어 표기는 `승인 대기` → `실행 중` → `검증 중` → `해결`/`미해결`, 그리고
+`실행 중` → `실패`/`취소`입니다. **`실행 중`에서 `해결`로 직접 가는 전이는 없습니다** —
+관측 없이 해결로 전이하면 해소되지 않은 장애가 완료로 기록됩니다.
+
+실행은 분석 세션과 별도 생명주기를 가집니다. 실행 실패는 분석 세션을 실패로 만들지
+않고 저장된 리포트를 변경하지 않습니다. 하나의 리포트는 여러 번 실행될 수 있으며,
+실행 아이템은 같은 DynamoDB 파티션에 `EXEC#{execution_id}`로 저장됩니다 — 엔진
+접두사를 붙이지 않는데, 어느 엔진이 리포트를 만들었든 실행 경로는 하나이기 때문입니다.
+
+### 실행 증거
+
+증거는 명령 단위로 누적됩니다: 절차 식별자, 명령과 인자, 종료 상태, 오류 출력,
+실패 분류, 재시도, 관측 결과. 실행이 실패해도 보존되는데, 사람이 왜 실패했는지 알
+수 있는 유일한 기록이기 때문입니다. 주 보관소는 S3(오브젝트 저장소)이고 DynamoDB에는
+요약만 둡니다. 자격 증명으로 보이는 인자는 가립니다 — 증거는 사람이 읽는 자료이고
+자격 증명이 남으면 열람 자체가 노출이 됩니다.
+
+### 회고
+
+`RESOLVED` 실행만 회고에 들어갑니다. `UNRESOLVED`·`FAILED`·`CANCELLED`는 들어가지
+않는데, 이슈를 해소하지 못한 절차는 올바름이 입증되지 않았기 때문입니다.
+
+- 교정 대상은 **절차의 결함으로 환원되는 실패**뿐입니다: 잘못된·누락된 인자, 빠진 선행 조건, 순서 오류, 해결 확정에 필요했던 검증 절차.
+- **일시적 오류는 교정하지 않습니다.** 같은 명령이 재시도로 성공했다면 절차 자체는 옳았습니다.
+- **삭제는 일어나지 않으며 이것은 프롬프트가 아니라 코드가 보장합니다.** 모델이 담지 않은 필드는 기존 값을 유지하고, `step_id`와 순서는 살아남고, 관측 가능한 성공 기준이 없는 새 절차는 버립니다.
+- 실행 시작 시점에 **갱신 전 플레이북 사본을 보존**합니다. 회고가 원본을 덮어쓰므로 사본이 없으면 갱신 diff의 기준이 사라집니다.
+- 갱신된 플레이북은 같은 `playbook_id`를 유지하며 다음 실행의 근거가 됩니다.
+- 회고 실패는 이미 확정된 해결을 되돌리지 않습니다.
 
 ## Data Flow — Fargate (모듈 간 데이터 흐름)
 
@@ -176,7 +301,7 @@ CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션
 - **F6 Branching** — Branching Agent → 자식 가설(depth=parent+1)
 - **F7 Report** — Report Agent → `RcaReport` → S3 Markdown + S3 Vectors 인덱싱
 - **F8 Playbook** — 기존 플레이북 검색(≥0.86) → 상세 로드(실패 시 후보 제외) → update or create → S3 Vectors 인덱싱
-- **F9 Notification** — `build_notification()` (플레이북 포함) → SNS Publish
+- **F9 Notification** — `build_notification()` (플레이북 요약 포함) → SNS Publish. 수신자는 사람과 대시보드뿐이며 어떤 기계 동작도 트리거하지 않습니다. 복구 트리거용 필드(`fault_type`, 복구 검증 결과)는 담지 않고, 실행 절차 자체도 담지 않습니다 — 실행 주체는 저장된 리포트를 직접 읽으므로, 알림 payload를 실행 입력으로 쓰면 전달 과정에서 잘린 절차가 실행될 수 있습니다
 
 각 단계의 Pydantic 스키마 및 structured_output 정의는 `packages/agent/`의 ports/dto를 참조하세요.
 
@@ -211,20 +336,28 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 - **검증 루프**: 전체 기각 시 가설 재생성(최대 2회)
 - **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
-- **Remediation 분리**: 별도 Strands 복구 워커로 구현되며 기본 비활성. 서버 소유
-  RCA 결과와 Healthcare reset 허용 목록만 사용
+- **읽기 전용**: 복구 워커가 없고, 파이프라인은 리포트 하나로 끝남. 플레이북은
+  `verification_status=DRAFT` 초안으로만 저장
 
 ### Fargate Stack (CC Headless)
 
-- **전문 서브 에이전트**: RCA → 조건부 Remediation → Report 순서로 호출하고
-  역할별 도구 권한과 산출물 계약을 분리
+- **전문 서브 에이전트**: RCA → Report 순서로 호출하고 역할별 도구 권한과 산출물
+  계약을 분리. 오케스트레이터가 호출할 수 있는 전문 에이전트는 이 둘뿐
 - **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
-- **서버 검증형 복구**: 확정 산출물과 허용 목록을 확인한 Healthcare reset만
-  실행하고 CloudWatch 사후 상태를 서버 결과로 기록
+- **쓰기 도구 없음**: 분석 하네스에 쓰기 도구가 들어가면 사용자 승인 게이트가
+  무의미해지므로, 하네스 계약 테스트가 양쪽 도구의 혼입을 모두 막음
 - **reclaim fencing**: claim 조건부 trace와 부작용 lease로 이전 실행의 늦은 쓰기를 차단
 - **실행 시간 제한**: Lambda 15분 제한은 없지만 CC 프로세스는 30분 후 종료
 - **멱등성**: 알람별 안정 세션 키와 receive count/claim token으로 재전달을 제어
 - **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
+
+### Playbook Execution (CC Headless 실행 워커)
+
+- **같은 이미지, 다른 진입점**: `python -m cc_headless.execution_main`. 하나의 하네스를 두 진입점으로 나눔
+- **트리거는 승인뿐**: 실행 요청 큐 long polling. 이벤트 구독이 없어 승인 없이 기동될 경로가 없음
+- **실행 근거**: 플레이북의 `execution_steps`. 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 매핑
+- **서버 판정형 게이트**: 파괴적 조치 거부와 해결 판정 모두 서버가 수행. 판정 불가는 거부
+- **회고 연결**: `RESOLVED` 실행만 회고로 이어지고, 같은 `playbook_id`를 유지하며 절차를 교정
 
 ## Technology Stack
 
@@ -237,11 +370,20 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 | MCP 도구 | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP |
 | 환경 설정 | python-dotenv (`env/local.env`) | ECS 환경변수 |
 
+| Component (실행) | Technology |
+|-----------|-----------|
+| 실행 엔진 | Claude Code CLI headless — 분석 워커와 동일 이미지, `cc_headless.execution_main` 진입점 |
+| 실행 환경 | AWS ECS Fargate (상시 1 태스크) |
+| 트리거 | 실행 요청 SQS Queue (대시보드 승인 발행) + DLQ |
+| MCP 도구 | 읽기 전용 CloudWatch MCP + 서버 판정형 명령 실행·증거 기록 MCP + 회고 갱신 MCP |
+| 증거 저장 | Amazon S3 (주 보관) + DynamoDB (요약) |
+| 권한 | PowerUserAccess + 실행 대상 외 범위 명시적 Deny (시스템 유일의 쓰기 태스크 역할) |
+
 | Component (공유) | Technology |
 |-----------|-----------|
 | 이벤트 라우팅 | Amazon SNS → 각 스택별 SQS Queue |
 | 임베딩 | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (플레이북 + 보고서 인덱스) |
 | 증거/보고서 저장 | Amazon S3 |
-| 세션 관리 | Amazon DynamoDB (`engine` 필드로 스택 구분) |
+| 세션 관리 | Amazon DynamoDB (`engine` 필드로 스택 구분, 실행은 `EXEC#` 접두사) |
 | 알림 | Amazon SNS |
 | 네트워크 보안 | VPC + PrivateLink |

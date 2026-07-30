@@ -59,7 +59,8 @@ test('a retrospective revision becomes the procedure the next execution runs', a
   // Showing the pre-retrospective steps while running the revised ones would
   // mean a person approves a procedure that is not the one that executes.
   assert.ok(
-    source.indexOf('PLAYBOOK_REVISION') < source.indexOf("span_type === 'PLAYBOOK'"),
+    source.indexOf('PLAYBOOK_REVISION') <
+      source.indexOf("span_type === 'PLAYBOOK'"),
     'the approval check prefers the revision over the original span',
   );
   assert.ok(

@@ -11,37 +11,45 @@
 5. [두 가지 RCA 엔진 비교](#5-두-가지-rca-엔진-비교)
 6. [Fargate 엔진 — 9단계 파이프라인](#6-fargate-엔진--9단계-파이프라인)
 7. [CC Headless 엔진 — ECS Fargate](#7-cc-headless-엔진--ecs-fargate)
-8. [MCP 서버 — 외부 데이터 수집 도구](#8-mcp-서버--외부-데이터-수집-도구)
-9. [Healthcare Sensor App — 데모용 서비스](#9-healthcare-sensor-app--데모용-서비스)
-10. [데모 시나리오 1: DB 커넥션 누수](#10-데모-시나리오-1-db-커넥션-누수)
-11. [데모 시나리오 2: CPU 과부하](#11-데모-시나리오-2-cpu-과부하)
-12. [데모 시나리오 3: Slow Query](#12-데모-시나리오-3-slow-query)
-13. [세션 상태와 DynamoDB](#13-세션-상태와-dynamodb)
-14. [장애 대응 체크리스트](#14-장애-대응-체크리스트)
-15. [부록: 데모 실행 가이드](#15-부록-데모-실행-가이드)
+8. [플레이북 실행 — 사용자 승인 게이트](#8-플레이북-실행--사용자-승인-게이트)
+9. [MCP 서버 — 외부 데이터 수집 도구](#9-mcp-서버--외부-데이터-수집-도구)
+10. [Healthcare Sensor App — 데모용 서비스](#10-healthcare-sensor-app--데모용-서비스)
+11. [데모 시나리오 1: DB 커넥션 누수](#11-데모-시나리오-1-db-커넥션-누수)
+12. [데모 시나리오 2: CPU 과부하](#12-데모-시나리오-2-cpu-과부하)
+13. [데모 시나리오 3: Slow Query](#13-데모-시나리오-3-slow-query)
+14. [세션 상태와 DynamoDB](#14-세션-상태와-dynamodb)
+15. [장애 대응 체크리스트](#15-장애-대응-체크리스트)
+16. [부록: 데모 실행 가이드](#16-부록-데모-실행-가이드)
 
 ---
 
 ## 1. 시스템이 하는 일
 
-CloudWatch 알람이 발생하면, AI 에이전트가 **자동으로 근본원인분석(RCA)**을 수행합니다.
+CloudWatch 알람이 발생하면, AI 에이전트가 **자동으로 근본원인분석(RCA)**을 수행합니다. 분석은 여기서 끝납니다 — 조치는 사람이 승인한 뒤에 별도 실행 에이전트가 수행합니다.
 
 ```mermaid
 flowchart LR
     A["🔔 CloudWatch 알람 발생"] --> B["🤖 AI 에이전트가 자동 분석"]
     B --> C["📊 메트릭/로그/배포이력 수집"]
     C --> D["🔍 가설 생성 → 검증 → 확정"]
-    D --> E["📝 RCA 보고서 생성"]
+    D --> E["📝 RCA 보고서 + 플레이북 생성"]
     E --> F["📨 SRE 팀에 알림 전송"]
+    F --> G["👤 대시보드에서 절차 확인 후 승인"]
+    G --> H["🛠️ 실행 에이전트가 절차 수행 + 회고"]
+
+    style G fill:#fff3e0,stroke:#ef6c00
+    style H fill:#ffebee,stroke:#c62828
 ```
 
 **핵심 가치**: 장애 발생 시 SRE가 직접 CloudWatch 콘솔을 뒤지고, 로그를 검색하고, 배포 이력을 추적하는 작업을 AI가 대신 수행합니다. 보통 30분~1시간 걸리는 초기 분석을 **1~5분** 내에 자동 완료합니다.
+
+**분석은 아무것도 바꾸지 않습니다.** 두 RCA 엔진 모두 읽기 전용이고, 태스크 역할에 쓰기 권한이 없습니다. 조치가 실행되는 경로는 하나뿐입니다 — 사람이 대시보드에서 절차를 읽고 승인하는 것. 실행 워커는 그 승인 메시지만 소비하고 이벤트 구독을 갖지 않으므로, **승인 없이 실행이 시작될 경로가 존재하지 않습니다.**
 
 ---
 
 ## 2. 전체 아키텍처
 
-이 시스템은 **동일한 알람에 대해 두 가지 독립적인 RCA 엔진**이 동시에 분석을 수행하는 **Dual-Stack** 구조입니다.
+이 시스템은 **동일한 알람에 대해 두 가지 독립적인 RCA 엔진**이 동시에 분석을 수행하는 **Dual-Stack** 구조이며, 그 뒤에 **사용자 승인 게이트와 별도 실행 스택**이 붙습니다.
 
 ```mermaid
 graph TB
@@ -80,9 +88,22 @@ graph TB
         S3V["S3 Vectors<br/>플레이북/보고서 임베딩"]
     end
 
-    subgraph Notify["알림"]
+    subgraph Notify["알림 (사람 · 대시보드 전용)"]
         SNS_OUT["SNS Topic<br/>(RCA 완료)"]
         SRE["👩‍💻 SRE 팀"]
+        DASH["🖥️ RCA 대시보드<br/>리포트 + 실행 절차"]
+    end
+
+    subgraph Gate["👤 사용자 승인 게이트"]
+        APPROVE["승인<br/>POST /api/executions"]
+        SQS_EXEC["SQS Queue #3<br/>(실행 요청 · 이벤트 구독 없음)"]
+        APPROVE --> SQS_EXEC
+    end
+
+    subgraph ExecStack["🟥 Playbook Execution Stack (쓰기 권한)"]
+        EXEC["ECS Fargate<br/>execution_main<br/>실행 → 관측 → 회고"]
+        TARGET["🏥 대상 서비스"]
+        EXEC --> TARGET
     end
 
     CW --> SNS
@@ -109,10 +130,24 @@ graph TB
     CCFARGATE --> SNS_OUT
     SNS_OUT --> SRE
 
+    DDB --> DASH
+    S3 --> DASH
+    DASH --> APPROVE
+    SQS_EXEC --> EXEC
+    EXEC <--> SONNET
+    EXEC --> CW_MCP
+    EXEC --> DDB
+    EXEC --> S3
+    EXEC <--> S3V
+
     style FargateStack fill:#e3f2fd,stroke:#1565c0
     style CcHeadlessStack fill:#fff3e0,stroke:#ef6c00
     style Tools fill:#e8f5e9,stroke:#388e3c
+    style Gate fill:#fff8e1,stroke:#f9a825
+    style ExecStack fill:#ffebee,stroke:#c62828
 ```
+
+**RCA 완료 알림에서 실행 스택으로 가는 화살표가 없다는 점을 보세요.** 알림은 사람과 대시보드만 소비하며 아무것도 트리거하지 않습니다. 실행으로 가는 유일한 간선은 사람의 승인입니다.
 
 **왜 두 개의 엔진을 사용하나요?**
 
@@ -122,11 +157,13 @@ graph TB
 | 단점 | 항시 실행, 비용 발생 | 동작이 덜 예측 가능 |
 | 용도 | 정밀 분석이 필요한 복잡한 장애 | 빠른 초기 대응, 간단한 장애 |
 
+두 엔진 모두 읽기 전용이고 산출물은 플레이북을 포함한 리포트 하나입니다. 어느 엔진의 리포트를 승인하더라도 실행 경로는 하나입니다.
+
 ---
 
 ## 3. AWS 인프라 구성
 
-전체 인프라는 AWS CDK로 관리되며, 9개의 스택으로 구성됩니다.
+전체 인프라는 AWS CDK로 관리되며, 10개의 스택으로 구성됩니다.
 
 ```mermaid
 graph TB
@@ -137,25 +174,30 @@ graph TB
         DB["💾 DatabaseStack<br/>DynamoDB"]
         STORAGE["🗄️ StorageStack<br/>S3 + S3 Vectors"]
         RDS["🐘 RdsStack<br/>PostgreSQL 17.4"]
-        AGENT["🟦 RcaAgentServiceStack<br/>ECS Fargate (RCA)"]
-        CC["🟧 CcHeadlessStack<br/>ECS Fargate"]
+        AGENT["🟦 RcaAgentServiceStack<br/>ECS Fargate (RCA · 읽기 전용)"]
+        CC["🟧 CcHeadlessStack<br/>ECS Fargate (RCA · 읽기 전용)"]
         HEALTH["🏥 HealthcareServiceStack<br/>ECS Fargate (데모)"]
+        EXEC["🟥 PlaybookExecutionStack<br/>실행 요청 큐 + DLQ<br/>ECS Fargate (쓰기 권한)"]
     end
 
     ECR --> AGENT
     ECR --> CC
     ECR --> HEALTH
+    ECR --> EXEC
     NET --> EVENT
     NET --> AGENT
     NET --> CC
     NET --> HEALTH
     NET --> RDS
+    NET --> EXEC
     EVENT --> AGENT
     EVENT --> CC
     DB --> AGENT
     DB --> CC
+    DB --> EXEC
     STORAGE --> AGENT
     STORAGE --> CC
+    STORAGE --> EXEC
     RDS --> HEALTH
 
     style ECR fill:#f3e5f5,stroke:#7b1fa2
@@ -164,7 +206,12 @@ graph TB
     style DB fill:#fce4ec,stroke:#c62828
     style STORAGE fill:#e8f5e9,stroke:#388e3c
     style RDS fill:#fce4ec,stroke:#c62828
+    style EXEC fill:#ffebee,stroke:#c62828
 ```
+
+`PlaybookExecutionStack`은 `EventBusStack`에 의존하지 않습니다. 알람 토픽을 구독하지 않기 때문입니다 — 실행 요청 큐는 이 스택이 직접 소유하고 대시보드만 발행합니다.
+
+`PlaybookExecutionStack`이 Healthcare 서비스의 보안 그룹 인그레스를 여는데, `HealthcareServiceStack`에 명시적 의존을 두면 순환 참조가 되므로 의존 선언은 하지 않습니다.
 
 ### 주요 리소스 요약
 
@@ -174,19 +221,37 @@ graph TB
 | **SNS (알람 수신)** | CloudWatch 알람 팬아웃 | 1개 토픽 → 2개 SQS로 분배 |
 | **SQS (Fargate용)** | Fargate Long Polling | visibility=25분, retention=4일, DLQ 연결 |
 | **SQS (CC Headless용)** | CC Headless Long Polling | visibility=35분, retention=4일, DLQ 연결 |
-| **DynamoDB** | RCA 세션 상태 관리 | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성) |
-| **S3 (Evidence)** | 수집 증거 + 보고서 저장 | 60일 lifecycle, S3 managed encryption |
+| **SQS (실행 요청용)** | 대시보드 승인 발행 → 실행 워커 소비 | visibility=75분(4500초), retention=4일, DLQ 연결. 이벤트 구독 없음 |
+| **DynamoDB** | RCA 세션 상태 + 실행 이력 관리 | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성) |
+| **S3 (Evidence)** | 수집 증거 + 보고서 + 실행 증거 + 갱신 전 플레이북 사본 | 60일 lifecycle, S3 managed encryption |
 | **S3 Vectors** | 플레이북/보고서 임베딩 검색 | cosine 유사도, 1536차원 벡터 (Cohere Embed V4) |
 | **ECS Fargate** | RCA Agent + Healthcare App | ARM64, 1vCPU, 2GB RAM |
 | **ECS Fargate (CC Headless)** | CC Headless RCA | ARM64, 1vCPU, 2GB RAM |
+| **ECS Fargate (Playbook Execution)** | 승인된 플레이북 실행 + 회고 | ARM64, 1vCPU, 2GB RAM, desiredCount 1 (상시) |
 | **RDS PostgreSQL** | Healthcare 센서 데이터 | PostgreSQL 17.4 |
-| **ECR** | Docker 이미지 레지스트리 | rca-agent, cc-headless, healthcare 3개 |
+| **ECR** | Docker 이미지 레지스트리 | rca-agent, cc-headless, healthcare 3개 (실행 워커는 cc-headless 이미지 재사용) |
+
+### 실행 스택의 권한 경계
+
+`PlaybookExecutionStack`의 태스크 역할은 **시스템에서 쓰기 권한을 가진 유일한 역할**입니다. 분석 스택과 역할을 공유하지 않는데, 공유하면 분석 경로의 결함이 쓰기 권한에 닿기 때문입니다.
+
+| 항목 | 설정 | 왜 |
+|------|------|-----|
+| 트리거 | 실행 요청 큐만 (SNS 구독 없음) | 승인이 곧 메시지다. 승인 없이 실행이 기동될 경로가 인프라에 없다 |
+| 대상 리소스 | 제한하지 않음 | ARN으로 제한하면 플레이북의 표현력을 다시 허용 목록 안으로 되돌린다 |
+| 기본 권한 | `PowerUserAccess` | 플레이북이 필요할 수 있는 넓은 조치 범위 |
+| 명시적 Deny | organizations, account, billing, budgets, ce, cur, aws-portal, sso, identitystore, IAM 변경 | 실행 대상이 될 수 없는 범위. 템플릿에서 경계가 읽히게 하려고 명시한다 |
+| 파괴적 조치 차단 | IAM이 아니라 **실행 도구가 수행** | 작업 이름 어휘와 IAM 액션 이름이 일대일이 아니라 정책으로는 빈틈이 생기고, 정책 거부는 무엇이 왜 막혔는지 기록하거나 그 절차를 수동 조치로 남길 수 없다 |
+| visibility timeout | 4500초 > 실행 상한 3600초 | 실행 중인 요청이 재전달되어 두 번 실행되지 않게 |
+| 태스크 수 | 상시 1 | 태스크 수로 기능을 여닫는 것은 트리거가 이벤트 구독이던 시절의 장치다. 승인 게이트가 있으면 큐가 이미 실행 여부를 결정한다 |
+
+분석 스택(`CcHeadlessStack`)은 Healthcare 서비스로의 네트워크 경로도, `HEALTHCARE_*` 환경변수도 갖지 않습니다. 대상 서비스에 접근하는 것은 실행 스택뿐입니다.
 
 ---
 
 ## 4. 데이터 흐름 — 알람부터 보고서까지
 
-하나의 CloudWatch 알람이 발생했을 때 시스템 전체를 관통하는 데이터 흐름입니다.
+하나의 CloudWatch 알람이 발생했을 때 분석 경로를 관통하는 데이터 흐름입니다. 이 흐름은 알림에서 끝나고, 조치는 8장의 승인 게이트를 거쳐 별도로 시작됩니다.
 
 ```mermaid
 sequenceDiagram
@@ -235,9 +300,9 @@ sequenceDiagram
         CCH->>DDB: 상태 갱신 (COMPLETED)
     end
 
-    Note over ECS,NOTIFY: ④ 알림 발송
-    ECS->>NOTIFY: RCA 완료 알림 (presigned URL)
-    CCH->>NOTIFY: RCA 완료 알림 (presigned URL)
+    Note over ECS,NOTIFY: ④ 알림 발송 (여기서 분석 종료)
+    ECS->>NOTIFY: RCA 완료 알림 (presigned URL + 플레이북 요약)
+    CCH->>NOTIFY: RCA 완료 알림 (presigned URL + 플레이북 요약)
 ```
 
 **핵심 포인트**:
@@ -245,6 +310,7 @@ sequenceDiagram
 - 각 엔진은 **DynamoDB IDEMP# 키**로 같은 알람을 중복 처리하지 않습니다 (자기 엔진 내에서)
 - 두 엔진은 서로 독립적으로 동작하며, `engine` 필드(`strands` vs `cc-headless`)로 구분됩니다
 - 보고서는 **S3 presigned URL**로 SRE 팀에 전달됩니다
+- **완료 알림은 아무것도 트리거하지 않습니다.** 수신자는 사람과 대시보드뿐이고, payload에는 승인 판단에 필요한 요약만 담깁니다. 실행 절차 본문은 담지 않는데, 실행 주체는 저장된 리포트를 직접 읽어야 하고 알림 payload를 실행 입력으로 쓰면 전달 과정에서 잘린 절차가 실행될 수 있기 때문입니다
 
 ---
 
@@ -258,16 +324,18 @@ graph LR
         F_SDK["Strands Agents SDK<br/>9단계 파이프라인"]
         F_MODEL["단일 모델<br/>Sonnet 5 + Planning/Execution 행동 분리"]
         F_TIME["시간 예산<br/>(기본 20분)"]
-        F_PLAY["✅ 플레이북 생성/학습"]
+        F_PLAY["✅ 플레이북 생성/학습<br/>(DRAFT · 실행은 별도)"]
+        F_WRITE["🚫 쓰기 권한 없음"]
     end
 
     subgraph CcStack["🟧 CC Headless Stack (ECS Fargate)"]
         direction TB
         L_ENV["ECS Fargate<br/>Node.js 22"]
-        L_SDK["Claude Code CLI<br/>전문 서브 에이전트 오케스트레이션"]
+        L_SDK["Claude Code CLI<br/>RCA · Report 전문 에이전트"]
         L_MODEL["단일 모델<br/>Sonnet 5"]
         L_TIME["프로세스 타임아웃<br/>(30분)"]
-        L_PLAY["✅ 플레이북 생성 (프롬프트)"]
+        L_PLAY["✅ 플레이북 생성 (프롬프트)<br/>(DRAFT · 실행은 별도)"]
+        L_WRITE["🚫 쓰기 권한 없음"]
     end
 
     style Fargate fill:#e3f2fd,stroke:#1565c0
@@ -278,11 +346,12 @@ graph LR
 |------|-------------------|---------------------|
 | **실행 환경** | ECS Fargate (항시 실행) | ECS Fargate (항시 실행) |
 | **에이전트 프레임워크** | Strands Agents SDK (Python) | Claude Code CLI (Node.js) |
-| **RCA 방식** | 9단계 파이프라인 (코드로 정의) | RCA·Remediation·Report 전문 에이전트 순차 실행 |
+| **RCA 방식** | 9단계 파이프라인 (코드로 정의) | RCA·Report 전문 에이전트 순차 실행 |
 | **AI 모델** | Sonnet 5 (Planning은 adaptive thinking) | Sonnet 5 |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
 | **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | Report 전문 에이전트가 생성 |
-| **자동 복구** | 별도 워커, 기본 비활성 | 확정 원인의 허용된 Healthcare reset만 실행 |
+| **쓰기 권한** | 없음 (읽기 전용 분석) | 없음 (읽기 전용 분석) |
+| **조치 실행** | 두 엔진 공통 — 사용자 승인 후 별도 실행 스택이 수행 (8장) |
 | **이벤트 수신** | SQS Long Polling | SQS Long Polling |
 | **타임아웃** | 20분 시간 예산 + 종료조건 | 30분 프로세스 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
@@ -292,9 +361,10 @@ graph LR
 
 ## 6. Fargate 엔진 — 9단계 파이프라인
 
-Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 자동 복구는
-별도 워커로 분리되며 기본 desired count는 0입니다. 활성화 시에도 서버 소유 RCA
-결과와 허용된 Healthcare reset만 사용합니다.
+Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 파이프라인은
+읽기 전용이며 F9 알림에서 끝납니다. 복구를 수행하는 워커가 없고, 생성된 플레이북은
+`verification_status=DRAFT` 초안입니다 — 실행과 회고를 거치지 않은 절차는 검증되지
+않았기 때문입니다.
 
 ```mermaid
 flowchart TD
@@ -325,8 +395,8 @@ flowchart TD
 
     subgraph Output["④ 결과 생성"]
         F7["F7: 보고서 작성<br/>🧠 Planning<br/>→ S3 저장"]
-        F8["F8: 플레이북 생성<br/>🧠 Planning<br/>→ S3 Vectors 인덱싱 (search-first)"]
-        F9["F9: SNS 알림<br/>(presigned URL + 플레이북 포함)"]
+        F8["F8: 플레이북 생성<br/>🧠 Planning<br/>→ S3 Vectors 인덱싱 (search-first)<br/>verification_status = DRAFT"]
+        F9["F9: SNS 알림<br/>(presigned URL + 플레이북 요약)<br/>사람·대시보드 전용"]
         F7 --> F8 --> F9
     end
 
@@ -411,7 +481,8 @@ Bedrock에서 실측으로 확인한 제약입니다. 이 파라미터를 다시
 ## 7. CC Headless 엔진 — ECS Fargate
 
 Claude Code CLI를 ECS Fargate에서 headless 모드로 실행하고, 메인 에이전트는
-오케스트레이터로서 RCA, 조건부 Remediation, Report 전문 에이전트를 순차 호출합니다.
+오케스트레이터로서 RCA와 Report 두 전문 에이전트만 순차 호출합니다. 이 실행에는
+서비스나 인프라를 바꾸는 도구가 없고, 산출물은 플레이북을 포함한 리포트 하나입니다.
 
 ```mermaid
 flowchart TD
@@ -426,14 +497,10 @@ flowchart TD
     subgraph CCProcess["Claude Code CLI (서브프로세스)"]
         CC["claude -p &lt;prompt&gt;<br/>--output-format json<br/>--strict-mcp-config<br/>--no-session-persistence"]
 
-        subgraph Prompt["전문 서브 에이전트"]
+        subgraph Prompt["전문 서브 에이전트 (읽기 전용, 이 둘뿐)"]
             S1["RCA specialist<br/>스코핑·가설·증거·검증"]
-            GATE{{"확정 원인?"}}
-            S2["Remediation specialist<br/>허용된 reset + CloudWatch 사후 검증"]
-            S3["Report specialist<br/>보고서 + 플레이북"]
-            S1 --> GATE
-            GATE -->|Yes| S2 --> S3
-            GATE -->|No| S3
+            S3["Report specialist<br/>report.md + playbook.json"]
+            S1 --> S3
         end
 
         CC --> Prompt
@@ -464,13 +531,136 @@ flowchart TD
 
 **Fargate와의 차이점**:
 - Fargate는 각 단계를 **Python 코드로** 명시적으로 구현
-- CC Headless는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 쓰기
-  권한, 사후 검증 결과, 완료 조건을 강제
+- CC Headless는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 산출물
+  계약과 완료 조건을 강제
 - claim을 잃거나 DynamoDB 소유권을 확인하지 못한 실행은 외부 쓰기를 시작하지 않음
+- 산출물은 `scoping.json`, `hypotheses.json`, `validation-{N}.json`, `playbook.json`,
+  `report.md` 다섯 가지이며 이 목록이 전부
 
 ---
 
-## 8. MCP 서버 — 외부 데이터 수집 도구
+## 8. 플레이북 실행 — 사용자 승인 게이트
+
+실행은 두 분석 엔진과 별개의 워커입니다. **분석 워커와 같은 컨테이너 이미지를 다른
+진입점으로** 실행합니다: `python -m cc_headless.execution_main`.
+
+```mermaid
+flowchart TD
+    subgraph Approve["① 승인"]
+        REPORT["대시보드 리포트 화면<br/>플레이북 절차를 리포트 안에 렌더"]
+        HUMAN["👤 절차를 읽고 승인 버튼"]
+        POST["POST /api/executions<br/>(EXECUTION_QUEUE_URL 없으면 503)"]
+        QUEUE["실행 요청 큐<br/>이벤트 구독 없음"]
+        REPORT --> HUMAN --> POST --> QUEUE
+    end
+
+    subgraph Run["② 절차 수행"]
+        POLL["실행 워커 Long Polling + claim"]
+        SNAP["갱신 전 플레이북 사본 S3 보존"]
+        MAP["action(자연어) → AWS CLI 명령<br/>리소스·리전은 알람 컨텍스트에서"]
+        GATE{{"실행 도구의 파괴성 판정<br/>argv 분해 → 서비스·작업 이름 추출<br/>→ 거부 어휘 대조"}}
+        EXEC["명령 실행"]
+        BLOCK["거부 → 증거에 기록<br/>해당 절차는 수동 조치<br/>나머지 절차는 계속"]
+        POLL --> SNAP --> MAP --> GATE
+        GATE -->|허용| EXEC
+        GATE -->|파괴적 또는 판정 불가| BLOCK
+    end
+
+    subgraph Judge["③ 서버의 해결 판정"]
+        OBS["success_criteria 관측 기록<br/>(CloudWatch 읽기)"]
+        EVID["실행 증거 누적<br/>S3 주 보관 + DDB 요약"]
+        VERDICT{{"기록된 관측이<br/>기준을 충족했는가?"}}
+        RES["해결 (RESOLVED)"]
+        UNRES["미해결 (UNRESOLVED)"]
+        OBS --> EVID --> VERDICT
+        VERDICT -->|Yes| RES
+        VERDICT -->|No 또는 관측 없음| UNRES
+    end
+
+    subgraph Retro["④ 회고 (RESOLVED만)"]
+        PICK["절차 결함으로 환원되는 실패만 선별"]
+        MERGE["코드가 병합<br/>누락 필드는 기존 값 유지<br/>step_id·순서 보존"]
+        NEXT["같은 playbook_id 로 갱신<br/>→ 다음 실행의 근거"]
+        PICK --> MERGE --> NEXT
+    end
+
+    QUEUE --> POLL
+    EXEC --> OBS
+    BLOCK --> OBS
+    RES --> PICK
+    UNRES --> STOP["종료 — 증거는 보존"]
+
+    style Approve fill:#fff8e1,stroke:#f9a825
+    style Run fill:#ffebee,stroke:#c62828
+    style Judge fill:#e3f2fd,stroke:#1565c0
+    style Retro fill:#e8f5e9,stroke:#388e3c
+```
+
+### 실행 상태 전이
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_APPROVAL: 승인 요청 큐 발행
+    PENDING_APPROVAL --> EXECUTING: 워커 claim
+    EXECUTING --> VERIFYING: 절차 수행 완료
+    VERIFYING --> RESOLVED: 관측이 success_criteria 충족
+    VERIFYING --> UNRESOLVED: 관측 없음 또는 미충족
+
+    PENDING_APPROVAL --> FAILED
+    PENDING_APPROVAL --> CANCELLED
+    EXECUTING --> FAILED
+    EXECUTING --> CANCELLED
+    VERIFYING --> FAILED
+    VERIFYING --> CANCELLED
+
+    RESOLVED --> [*]: 회고 진입
+    UNRESOLVED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+```
+
+대시보드 표기: `승인 대기(PENDING_APPROVAL)` → `실행 중(EXECUTING)` →
+`검증 중(VERIFYING)` → `해결(RESOLVED)`/`미해결(UNRESOLVED)`, 그리고
+`실행 중` → `실패(FAILED)`/`취소(CANCELLED)`.
+
+**`실행 중`에서 `해결`로 바로 가는 전이는 없습니다.** 관측 없이 해결로 전이하면
+해소되지 않은 장애가 완료로 기록됩니다.
+
+### 운영자가 알아야 할 다섯 가지
+
+| 사실 | 왜 그렇게 만들었는가 |
+|------|---------------------|
+| 승인 없이 실행이 시작될 수 없다 | 승인이 곧 메시지다. 실행 스택에 이벤트 구독이 없으므로 사람이 승인하지 않고 실행이 기동될 경로가 존재하지 않는다 |
+| 파괴적 명령은 서버가 거부한다 | IAM이나 프롬프트가 아니라 실행 도구가 명령을 argv로 분해해 작업 이름을 추출하고 거부 어휘와 대조한다. 정책 거부는 어떤 절차가 왜 막혔는지 기록할 수 없다 |
+| 작업 이름을 확정할 수 없는 명령도 거부한다 | 판정 불가를 허용으로 읽으면 셸 합성이나 중첩 호출로 거부 목록을 비울 수 있다 |
+| 해결 판정은 서버가 한다 | 에이전트가 "정상화되었습니다"라고 말하는 것은 관측이 아니다. 기록된 관측만 완료의 근거가 되고, 관측하지 못하면 `UNRESOLVED`로 남는다 |
+| 실패한 실행의 증거도 남는다 | 사람이 왜 실패했는지 알 수 있는 유일한 기록이다. 명령·인자·종료 상태·오류·실패 분류·재시도·관측이 절차 단위로 S3에 남고 DDB에는 요약만 둔다 |
+
+거부된 절차는 실행 전체를 중단시키지 않습니다. 증거에 기록되고 수동 조치로 표시된
+뒤 남은 절차가 계속 수행됩니다.
+
+### 실행과 분석의 생명주기 분리
+
+- 실행 실패는 분석 세션을 실패로 만들지 않고 저장된 리포트를 변경하지 않습니다.
+- 하나의 리포트를 여러 번 실행할 수 있습니다.
+- 실행 아이템은 세션과 같은 파티션에 `EXEC#{execution_id}`로 저장되며 엔진 접두사를 붙이지 않습니다 — 실행 경로가 엔진과 무관하게 하나이기 때문입니다.
+- 자격 증명으로 보이는 인자는 증거에서 가려집니다. 증거는 사람이 읽는 자료이고 자격 증명이 남으면 열람 자체가 노출이 됩니다.
+
+### 회고
+
+`RESOLVED` 실행만 회고에 들어갑니다. `UNRESOLVED`·`FAILED`·`CANCELLED`는 들어가지
+않는데, 이슈를 해소하지 못한 절차는 올바름이 입증되지 않았기 때문입니다.
+
+- 교정 대상은 **절차 결함으로 환원되는 실패**뿐입니다: 잘못된·누락된 인자, 빠진 선행 조건, 순서 오류, 해결 확정에 필요했던 검증 절차.
+- **일시적 오류는 교정하지 않습니다.** 같은 명령이 재시도로 성공했다면 절차 자체는 옳았습니다. 이것을 절차 결함으로 분류하면 불필요한 방어 단계가 절차에 쌓입니다.
+- **삭제는 일어나지 않으며 이것은 프롬프트가 아니라 코드가 보장합니다.** 모델이 담지 않은 필드는 기존 값을 유지하고, `step_id`와 순서는 살아남고, 관측 가능한 성공 기준이 없는 새 절차는 버립니다.
+- 실행 시작 시점에 **갱신 전 플레이북 사본을 보존**합니다. 회고가 원본을 덮어쓰므로 사본이 없으면 갱신 diff의 기준이 사라집니다.
+- 갱신된 플레이북은 같은 `playbook_id`를 유지하며 다음 실행의 근거가 됩니다.
+- 회고 실패는 이미 확정된 해결을 되돌리지 않습니다.
+
+---
+
+## 9. MCP 서버 — 외부 데이터 수집 도구
 
 MCP(Model Context Protocol)는 AI 에이전트가 외부 서비스의 데이터를 조회할 수 있게 해주는 프로토콜입니다.
 
@@ -538,7 +728,7 @@ CloudTrail 서버는 컨테이너에 준비된 Python 패키지를 사용합니�
 
 ---
 
-## 9. Healthcare Sensor App — 데모용 서비스
+## 10. Healthcare Sensor App — 데모용 서비스
 
 RCA 에이전트의 정확도를 검증하기 위한 **의도적으로 장애를 주입할 수 있는** 데모 서비스입니다.
 
@@ -596,16 +786,27 @@ graph TB
 
 ### RCA 대시보드
 
-`packages/dashboard`에 Nuxt.js 기반 로컬 전용 대시보드가 있습니다. DynamoDB 세션 목록과 S3 보고서를 조회할 수 있습니다.
+`packages/dashboard`에 Nuxt.js 기반 로컬 전용 대시보드가 있습니다. DynamoDB 세션 목록과 S3 보고서를 조회할 수 있고, **플레이북 실행 승인의 유일한 진입점**입니다.
 
 ```bash
 cd packages/dashboard
 pnpm dev   # http://localhost:3100
 ```
 
+| 화면 / API | 용도 |
+|-----------|------|
+| 세션 목록 (`/`) | 상태별 통계 + 목록. 실행 상태 컬럼 포함 |
+| 리포트 상세 (`/report/:id`) | 보고서 렌더 + **플레이북 실행 절차 인라인 표시 + 승인 버튼**. 사람이 분석을 읽으면서 그 분석이 만든 절차를 승인한다 |
+| `POST /api/executions` | 승인 발행 (실행 요청 큐). `EXECUTION_QUEUE_URL` 미설정 시 503 |
+| `GET /api/executions/:rcaId` | 실행 시도 이력 (실패한 실행의 증거도 보존) |
+| `GET /api/retrospectives/:rcaId/:executionId` | 회고 조회 |
+| 회고 화면 (`/retrospective/:rcaId/:executionId`) | 이슈 · 실행 전 플레이북 · 실행 증거 · 갱신 diff 4단 비교 |
+
+`EXECUTION_QUEUE_URL`이 없으면 승인 발행이 503으로 실패합니다 — 잘못 설정된 대시보드가 조용히 승인한 것처럼 보이면 안 되기 때문입니다.
+
 ---
 
-## 10. 데모 시나리오 1: DB 커넥션 누수
+## 11. 데모 시나리오 1: DB 커넥션 누수
 
 가장 대표적인 데모 시나리오입니다. DB 커넥션을 누수시켜 장애를 발생시키고, RCA 에이전트가 이를 자동 분석합니다.
 
@@ -702,7 +903,7 @@ graph TD
 
 ---
 
-## 11. 데모 시나리오 2: CPU 과부하
+## 12. 데모 시나리오 2: CPU 과부하
 
 ```mermaid
 sequenceDiagram
@@ -732,7 +933,7 @@ sequenceDiagram
 
 ---
 
-## 12. 데모 시나리오 3: Slow Query
+## 13. 데모 시나리오 3: Slow Query
 
 ```mermaid
 sequenceDiagram
@@ -756,9 +957,9 @@ sequenceDiagram
 
 ---
 
-## 13. 세션 상태와 DynamoDB
+## 14. 세션 상태와 DynamoDB
 
-RCA 세션의 생명주기를 DynamoDB에서 추적합니다. 두 엔진 모두 같은 테이블을 공유합니다.
+RCA 세션의 생명주기를 DynamoDB에서 추적합니다. 두 엔진 모두 같은 테이블을 공유하며, 플레이북 실행도 같은 테이블에 별도 생명주기로 기록됩니다.
 
 ### Fargate 세션 상태 전이
 
@@ -806,9 +1007,36 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
+두 엔진의 세션 상태에 REMEDIATION이나 VERIFICATION은 없습니다. 분석이 복구를 수행하지 않기 때문입니다.
+
+### 실행 상태 전이 (분석 세션과 별도)
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_APPROVAL: 대시보드 승인 발행
+    PENDING_APPROVAL --> EXECUTING: 실행 워커 claim
+    EXECUTING --> VERIFYING: 절차 수행 완료
+    VERIFYING --> RESOLVED: 관측이 success_criteria 충족
+    VERIFYING --> UNRESOLVED: 관측 없음 또는 미충족
+
+    PENDING_APPROVAL --> FAILED
+    PENDING_APPROVAL --> CANCELLED
+    EXECUTING --> FAILED
+    EXECUTING --> CANCELLED
+    VERIFYING --> FAILED
+    VERIFYING --> CANCELLED
+
+    RESOLVED --> [*]: 회고 진입
+    UNRESOLVED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+```
+
+실행 실패는 분석 세션을 실패로 만들지 않고 저장된 리포트를 변경하지 않습니다. 하나의 리포트는 여러 번 실행할 수 있습니다.
+
 ### DynamoDB 싱글테이블 스키마
 
-하나의 DynamoDB 테이블에 세션, 스팬(실행 트레이스), 가설 세 가지 엔티티를 저장합니다. `PK`로 RCA 세션을 묶고, `SK` 접두사로 엔티티 유형을 구분하는 싱글테이블 설계입니다.
+하나의 DynamoDB 테이블에 세션, 스팬(실행 트레이스), 가설, 실행 네 가지 엔티티를 저장합니다. `PK`로 RCA 세션을 묶고, `SK` 접두사로 엔티티 유형을 구분하는 싱글테이블 설계입니다.
 
 ```mermaid
 erDiagram
@@ -832,7 +1060,7 @@ erDiagram
         string PK "RCA#{rca_id}"
         string SK "{engine}#SPAN#{span_id}"
         string engine "strands | cc-headless"
-        string span_type "SCOPING | HYPOTHESIS_GENERATION | ..."
+        string span_type "SCOPING | HYPOTHESIS_GENERATION | VALIDATION_LOOP | REPORT | PLAYBOOK | ..."
         string span_status "RUNNING | COMPLETED | FAILED"
         string parent_span_id "부모 스팬 ID (선택)"
         number loop_index "검증 루프 번호 (선택)"
@@ -866,11 +1094,35 @@ erDiagram
         string updated_at "ISO 8601"
         number ttl "TTL (90일)"
     }
+
+    EXECUTION {
+        string PK "RCA#{rca_id}"
+        string SK "EXEC#{execution_id} (엔진 접두사 없음)"
+        string execution_id "실행 식별자"
+        string engine "리포트를 만든 엔진 (실행 경로는 공통)"
+        string execution_state "PENDING_APPROVAL → EXECUTING → VERIFYING → RESOLVED | UNRESOLVED"
+        string approval_id "승인 식별자 (재전달 멱등성)"
+        string requested_by "승인한 사람"
+        string claim_token "실행 claim 토큰"
+        number claim_expires_at "claim 만료 (epoch)"
+        number attempt "시도 횟수"
+        map evidence_summary "실행 증거 요약 (원본은 S3)"
+        string evidence_s3_key "실행 증거 원본 위치"
+        string playbook_snapshot_s3_key "갱신 전 플레이북 사본"
+        string retrospective_summary "회고 요약"
+        string retrospective_diff_s3_key "갱신 diff 위치"
+        string error_reason "실패 사유"
+        string created_at "ISO 8601"
+        string updated_at "ISO 8601"
+        number ttl "TTL (90일)"
+    }
 ```
 
 ### 키 구조 및 접근 패턴
 
-동일한 `PK = RCA#{rca_id}` 파티션 안에 세션 1개, 스팬 N개, 가설 N개가 저장됩니다. `SK` 접두사로 엔티티를 구분하며, `{engine}#` 접두사로 Strands와 CC Headless의 데이터를 분리합니다.
+동일한 `PK = RCA#{rca_id}` 파티션 안에 세션 1개, 스팬 N개, 가설 N개, 실행 N개가 저장됩니다. `SK` 접두사로 엔티티를 구분하며, 세션·스팬·가설은 `{engine}#` 접두사로 Strands와 CC Headless의 데이터를 분리합니다.
+
+**실행 아이템만 엔진 접두사를 붙이지 않습니다.** 어느 엔진이 리포트를 만들었든 실행 경로는 하나이기 때문입니다.
 
 ```mermaid
 flowchart TD
@@ -887,6 +1139,9 @@ flowchart TD
         H1["SK: strands#HYPO#uuid-h1<br/>depth=0, DB 커넥션 누수, CONFIRMED 0.92"]
         H2["SK: strands#HYPO#uuid-h2<br/>depth=0, 트래픽 급증, REJECTED 0.1"]
         H3["SK: cc-headless#HYPO#uuid-h3<br/>depth=0, 커넥션 풀 고갈, CONFIRMED 0.88"]
+
+        E1["SK: EXEC#uuid-e1<br/>execution_state=RESOLVED<br/>회고 완료, 갱신 diff 있음"]
+        E2["SK: EXEC#uuid-e2<br/>execution_state=UNRESOLVED<br/>증거는 보존"]
     end
 
     style S1 fill:#e3f2fd,stroke:#1565c0
@@ -898,6 +1153,8 @@ flowchart TD
     style H1 fill:#fce4ec,stroke:#c62828
     style H2 fill:#fce4ec,stroke:#c62828
     style H3 fill:#f3e5f5,stroke:#7b1fa2
+    style E1 fill:#ffebee,stroke:#c62828
+    style E2 fill:#ffebee,stroke:#c62828
 ```
 
 ### 접근 패턴 일람
@@ -917,6 +1174,9 @@ flowchart TD
 | 세션 목록 조회 | `Scan` | `FilterExpression: contains(SK, '#SESSION') AND begins_with(PK, 'RCA#')` | 대시보드 세션 목록 |
 | 세션 삭제 | `Query` → `BatchWriteItem` | `PK=RCA#{id}` 전체 아이템 삭제 | 대시보드 세션 삭제 |
 | 세션 취소 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state → CANCELLED` | 대시보드 취소 버튼 |
+| 실행 claim | `PutItem` | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, `attribute_not_exists(SK)` | 실행 워커가 승인 요청을 집을 때 (종료된 실행의 재전달은 중복으로 판정) |
+| 실행 상태 전이 | `UpdateItem` | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, claim token 조건 | 실행 → 검증 → 해결/미해결 |
+| 실행 이력 조회 | `Query` | `PK=RCA#{id}`, `begins_with(SK, 'EXEC#')` | 대시보드 실행 이력·회고 화면 |
 
 ### GSI
 
@@ -926,7 +1186,7 @@ flowchart TD
 
 ### DynamoDB 데이터 흐름
 
-아래 다이어그램은 하나의 알람에 대해 두 엔진이 동시에 DynamoDB를 사용하는 전체 데이터 흐름입니다.
+아래 다이어그램은 하나의 알람에 대해 두 엔진이 동시에 DynamoDB를 사용하고, 이후 승인된 실행이 같은 파티션에 기록되는 전체 데이터 흐름입니다.
 
 ```mermaid
 sequenceDiagram
@@ -934,6 +1194,7 @@ sequenceDiagram
     participant DDB as DynamoDB<br/>(싱글테이블)
     participant CCA as CC Headless Agent
     participant DASH as Dashboard
+    participant EXE as Execution Worker
 
     Note over SA,CCA: 1. 세션 생성 (멱등)
     SA->>DDB: PutItem PK=RCA#id, SK=strands#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
@@ -955,15 +1216,26 @@ sequenceDiagram
     CCA->>DDB: UpdateItem SK=cc-headless#SESSION (state=COMPLETED)
 
     Note over DASH,DDB: 4. 대시보드 조회
-    DASH->>DDB: Scan (세션 목록)
-    DDB-->>DASH: SESSION 아이템들 반환
+    DASH->>DDB: Scan (세션 목록 + 실행 상태 컬럼)
+    DDB-->>DASH: SESSION + EXEC 아이템들 반환
     DASH->>DDB: Query PK=RCA#id (트레이스 상세)
     DDB-->>DASH: SESSION + SPAN[] + HYPO[] 반환
+
+    Note over DASH,EXE: 5. 사용자 승인 후 실행 (별도 생명주기)
+    DASH->>EXE: 실행 요청 큐 발행 (POST /api/executions)
+    EXE->>DDB: PutItem SK=EXEC#{execution_id}<br/>ConditionExpression: attribute_not_exists(SK)
+    EXE->>DDB: UpdateItem SK=EXEC#{id} (증거 요약 + S3 키)
+    EXE->>DDB: UpdateItem SK=EXEC#{id} (execution_state=RESOLVED | UNRESOLVED)
+    EXE->>DDB: UpdateItem SK=EXEC#{id} (회고 요약 + diff S3 키)
+    DASH->>DDB: Query PK=RCA#id, begins_with(SK,'EXEC#')
+    DDB-->>DASH: 실행 이력 + 회고 반환
 ```
+
+실행은 SESSION 아이템을 갱신하지 않습니다. 실행 실패가 분석 세션이나 저장된 리포트를 훼손하지 않게 하려는 것입니다.
 
 ---
 
-## 14. 장애 대응 체크리스트
+## 15. 장애 대응 체크리스트
 
 RCA 에이전트 시스템 자체에 문제가 생겼을 때 확인할 사항입니다.
 
@@ -990,8 +1262,9 @@ flowchart TD
 |--------|-----------|----------|
 | Fargate RCA Agent | `/ecs/rca-agent-*` | MCP 연결 실패, Bedrock API 오류 |
 | Fargate CC Headless | `/ecs/*/cc-headless` | CC CLI 오류 |
+| Playbook Execution | `/ecs/*/playbook-execution` | 실행 요청 수신, 명령 거부, 관측 실패, 회고 오류 |
 | Healthcare App | `/ecs/healthcare-*` | 장애 주입 동작, 트래픽 생성기 |
-| SQS DLQ | DLQ 메시지 수 | 처리 실패한 알람 메시지 |
+| SQS DLQ | DLQ 메시지 수 | 처리 실패한 알람 메시지, 처리 실패한 실행 요청 |
 
 ### 일반적인 문제와 해결책
 
@@ -1004,10 +1277,16 @@ flowchart TD
 | 보고서 S3 업로드 실패 | IAM 권한 부족 | Task Role의 S3 PutObject 권한 확인 |
 | 세션이 "분석중"에서 멈춤 | 태스크 크래시/롤링 배포 중 SIGTERM | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨 |
 | 재처리가 너무 느림 | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음 | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, CC Headless 35분) |
+| 승인 버튼이 503으로 실패 | 대시보드에 `EXECUTION_QUEUE_URL` 미설정 | 환경변수 설정. 미설정 시 조용히 성공한 것처럼 보이지 않도록 의도적으로 503으로 실패한다 |
+| 승인이 409로 거부됨 | 분석이 COMPLETED가 아니거나, 리포트에 실행 절차가 없거나, 이미 진행 중인 실행이 있음 | 대시보드의 실행 이력에서 진행 중 실행 확인. 미확정 원인의 리포트는 실행 절차를 갖지 않는다 |
+| 실행이 UNRESOLVED로 끝남 | `success_criteria`를 관측하지 못했거나 관측이 기준을 만족하지 못함 | 실행 증거(S3)에서 절차별 관측 결과 확인. 관측되지 않은 결과를 해결로 기록하지 않는 것이 설계다 |
+| 절차가 수동 조치로 남음 | 명령이 파괴적으로 판정되었거나 작업 이름을 확정할 수 없었음 | 증거의 `failure_class`가 `BLOCKED_DESTRUCTIVE`/`BLOCKED_UNDECIDABLE`인지 확인. 사람이 직접 조치한다 |
+| 회고가 실행되지 않음 | 실행이 `RESOLVED`가 아님 | 정상 동작. 해소하지 못한 절차는 올바름이 입증되지 않았으므로 회고에 들어가지 않는다 |
+| 같은 승인이 두 번 실행됨 | 실행 요청 큐의 visibility timeout이 실행 상한보다 짧음 | `playbook-execution-stack.ts`의 visibility(4500초) > `EXECUTION_TIMEOUT_SECONDS`(3600초) 확인 |
 
 ---
 
-## 15. 부록: 데모 실행 가이드
+## 16. 부록: 데모 실행 가이드
 
 ### 데모 실행 순서
 
@@ -1017,8 +1296,14 @@ flowchart LR
     B --> C["3️⃣ CloudWatch 알람<br/>발생 대기 (2~5분)"]
     C --> D["4️⃣ RCA 분석 자동 시작<br/>(DynamoDB 세션 확인)"]
     D --> E["5️⃣ SNS 알림 수신<br/>(보고서 URL 확인)"]
-    E --> F["6️⃣ 장애 정리<br/>(Reset API 호출)"]
+    E --> F["6️⃣ 대시보드에서 절차 확인 후 승인<br/>(선택 — 실행 데모)"]
+    F --> G["7️⃣ 실행 결과·회고 확인<br/>(실행 이력 · 4단 비교 화면)"]
+    G --> H["8️⃣ 장애 정리<br/>(Reset API 호출)"]
+
+    style F fill:#fff3e0,stroke:#ef6c00
 ```
+
+6단계는 사람이 직접 눌러야 진행됩니다. 승인 없이 자동으로 넘어가는 경로는 없습니다.
 
 ### DB 커넥션 누수 데모 실행
 

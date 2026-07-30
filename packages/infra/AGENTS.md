@@ -46,7 +46,7 @@ RcaAgentDev
 ├── RcaAgentServiceStack          # ECS Fargate — Strands RCA 에이전트
 ├── CcHeadlessStack               # ECS Fargate — CC headless RCA 에이전트
 ├── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스 + Cloud Map DNS
-└── RemediationAgentStack         # ECS Fargate — Strands 전용 복구 워커 (기본 desiredCount 0)
+└── PlaybookExecutionStack        # ECS Fargate — 승인된 플레이북 실행 워커 (실행 요청 큐 + 유일한 쓰기 권한 역할)
 ```
 
 ### Stack Dependencies
@@ -71,9 +71,19 @@ RdsStack ─────────────┘
 NetworkStack ──────── RdsStack
 
 EcrStack ─────────────┐
-NetworkStack ─────────┼── RemediationAgentStack
-EventBusStack ────────┘
+NetworkStack ─────────┼── PlaybookExecutionStack
+DatabaseStack ────────┤
+StorageStack ─────────┘
 ```
+
+`PlaybookExecutionStack`은 `EventBusStack`에 의존하지 않는다. 실행은 알람이나 분석 완료
+이벤트가 아니라 대시보드가 발행한 승인 요청으로만 시작되므로, 이 스택은 자신의 요청 큐만
+가지며 어떤 토픽도 구독하지 않는다. 승인 없이 실행이 기동될 경로를 인프라에 두지 않는 것이
+이 구조의 목적이다.
+
+`HealthcareServiceStack`에도 명시적 의존을 두지 않는다. 실행 스택이 Healthcare 서비스의
+SG 인그레스를 여는 순간 Healthcare 스택이 실행 스택을 참조하므로, 반대 방향 의존을 추가하면
+순환 참조가 된다.
 
 ## Configuration
 
@@ -115,17 +125,34 @@ EventBusStack ────────┘
 - S3 Vectors: 전체 CRUD
 - Bedrock: InvokeModel / InvokeModelWithResponseStream
 - SNS: Publish (알림 토픽)
-- Healthcare 서비스 8000/tcp 접근 (확정 원인의 허용된 reset API)
 
-### Remediation Agent (Fargate Task Role, Strands 전용)
+분석 태스크 역할에는 **쓰기 권한이 없고 Healthcare 서비스로의 네트워크 경로도 없다.**
+복구는 사용자 승인 뒤 실행 스택이 수행하므로, 분석이 조사 대상을 변경할 수 있는 경로를
+남기지 않는다.
 
-- SQS: ConsumeMessages
-- DynamoDB: RCA 세션 테이블 ReadWriteData
+### Playbook Execution (Fargate Task Role)
+
+시스템에서 **쓰기 권한을 가진 유일한 태스크 역할**이다. 분석 엔진과 역할을 공유하지 않는다 —
+공유하면 분석 경로의 결함이 쓰기 권한에 닿는다.
+
+- SQS: ConsumeMessages (실행 요청 큐)
+- DynamoDB: RCA 세션 테이블 ReadWriteData (실행 항목·상태·회고 결과)
+- S3: Evidence ReadWrite (실행 증거, 갱신 전 플레이북 사본)
+- S3 Vectors: 회고가 갱신한 플레이북 재인덱싱
 - Bedrock: InvokeModel / InvokeModelWithResponseStream
-- CloudWatchReadOnlyAccess
-- SNS: Publish (알림 토픽)
-- Healthcare 서비스 8000/tcp 접근
-- ECS 서비스 조회·변경 권한 없음
+- CloudWatchReadOnlyAccess (절차의 성공 판정 기준 관측)
+- `PowerUserAccess` + 명시적 Deny: organizations, account, billing, budgets, ce, cur,
+  aws-portal, sso, identitystore, IAM 변경
+- SNS Publish 권한 없음 — 알림은 분석 완료를 알리는 신호이고, 실행이 분석 파이프라인을
+  대변해서는 안 된다
+
+**대상 리소스는 제한하지 않는다.** ARN으로 제한하면 플레이북이 기술할 수 있는 절차가 다시
+허용 목록에 갇히므로, 실행 근거를 플레이북으로 옮긴 결정과 모순된다. Deny 목록은 애초에 실행
+대상이 아닌 범위만 잘라낸다.
+
+**파괴적 액션 차단은 이 역할이 아니라 실행 도구가 수행한다.** 작업 이름 어휘와 IAM 액션
+이름이 일대일로 대응하지 않아 정책으로 표현하면 누락이 생기고, 정책 거부는 차단 사유를 실행
+증거에 남기거나 해당 절차를 수동 조치로 표시할 수 없다. 도구는 둘 다 할 수 있다.
 
 ### Healthcare (Fargate Task Role)
 

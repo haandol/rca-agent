@@ -6,6 +6,8 @@
 
 SQS 메시지 수신부터 SNS 알림 발행까지, 9단계 파이프라인의 전체 흐름입니다. 검증 루프 내에서 Beam Selection으로 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증합니다.
 
+파이프라인은 읽기 전용이며 플레이북을 포함한 리포트 하나에서 끝납니다. 복구를 수행하는 워커가 없고, F9 알림은 아무것도 트리거하지 않습니다. 플레이북 절차의 실행은 사용자 승인 뒤 별도 실행 에이전트가 수행합니다(3장).
+
 ```mermaid
 flowchart TD
     subgraph Input["입력 & 사전 검증"]
@@ -107,8 +109,8 @@ flowchart TD
         end
 
         subgraph F9["F9: Notification"]
-            N_BUILD["build_notification()<br/>(플레이북 포함)"]
-            N_SNS["SNS Publish<br/>(presigned URL + 플레이북)"]
+            N_BUILD["build_notification()<br/>(플레이북 요약 · 절차 본문 제외)"]
+            N_SNS["SNS Publish<br/>(presigned URL + 플레이북 요약)<br/>수신자: 사람 · 대시보드"]
             N_BUILD --> N_SNS
         end
 
@@ -240,8 +242,8 @@ flowchart LR
 | Termination | judgments + hypotheses + start_time | TerminationDecision (should_terminate, reason) | 순수 로직 | - |
 | F6: Branching | NEEDS_INVESTIGATION 가설 + evidence | Child Hypothesis[] (depth+1) | Planning | - |
 | F7: Report | best_hypothesis + evidence + timeline | RcaReport (Markdown) → S3 저장 + S3 Vectors 인덱싱 | Planning | - |
-| F8: Playbook | RcaReport | Playbook → S3 Vectors 인덱싱 | Planning | - |
-| F9: Notification | RcaReport + Playbook | SNS 메시지 (presigned URL + 플레이북) | 순수 로직 | - |
+| F8: Playbook | RcaReport | Playbook (`execution_steps`, `verification_status=DRAFT`) → S3 Vectors 인덱싱 | Planning | - |
+| F9: Notification | RcaReport + Playbook | SNS 메시지 (presigned URL + 플레이북 요약) | 순수 로직 | - |
 
 ### 1.5. 주요 설정값
 
@@ -265,7 +267,8 @@ flowchart LR
 ### 2.1. 전체 플로우
 
 Python 핸들러가 SQS 수신과 claim 기반 세션 소유권을 관리하고, CC Headless 메인
-에이전트가 RCA, 조건부 Remediation, Report 전문 서브 에이전트를 순차 호출합니다.
+에이전트가 RCA와 Report 두 전문 서브 에이전트를 순차 호출합니다. 이 실행에는
+서비스나 인프라를 바꾸는 도구가 없고, 산출물은 플레이북을 포함한 리포트 하나입니다.
 Artifact Watcher는 실행 토큰별 격리 디렉터리를 감시하지만 현재 claim과 일치할
 때만 DynamoDB trace를 기록합니다.
 
@@ -299,22 +302,18 @@ flowchart TD
         CW["CloudWatch MCP<br/>메트릭/로그 수집"]
         CT["CloudTrail MCP<br/>배포/변경 이력"]
         GH["GitHub MCP<br/>코드 변경 분석"]
-        PROGRESS["rca-progress MCP<br/>산출물 저장 + 제한된 reset"]
+        PROGRESS["rca-progress MCP<br/>산출물 저장 (쓰기 도구 없음)"]
     end
 
-    subgraph RCA["전문 서브 에이전트"]
+    subgraph RCA["전문 서브 에이전트 (읽기 전용)"]
         direction TB
         STEP1["1. RCA specialist<br/>스코핑 → 가설 → 증거 → 검증"]
-        GATE{{"확정 원인?"}}
-        STEP2["2. Remediation specialist<br/>허용된 reset + 서버 사후 검증"]
-        STEP3["3. Report specialist<br/>report.md + playbook.json"]
-        STEP1 --> GATE
-        GATE -->|Yes| STEP2 --> STEP3
-        GATE -->|No| STEP3
+        STEP2["2. Report specialist<br/>report.md + playbook.json"]
+        STEP1 --> STEP2
     end
 
     subgraph WatcherDetail["Artifact Watcher (백그라운드)"]
-        W_DETECT["파일 감지<br/>(RCA, remediation, report,<br/>playbook 산출물)"]
+        W_DETECT["파일 감지<br/>(scoping, hypotheses, validation-N,<br/>report, playbook 산출물)"]
         W_SPAN["claim 조건부 DDB SPAN 기록"]
         W_HYPO["DDB HYPO 레코드<br/>생성/갱신"]
         W_DETECT --> W_SPAN
@@ -323,10 +322,10 @@ flowchart TD
 
     subgraph Output["결과 처리"]
         REPORT_PARSE["report.md 읽기<br/>+ 근본원인 추출 (regex)"]
-        CONTRACT["서버 소유 remediation 결과와<br/>보고서·플레이북 교차 검증"]
+        CONTRACT["산출물 계약 교차 검증<br/>(playbook verification_status=DRAFT 확인)"]
         S3_REPORT["시도 격리 S3 보고서 저장"]
         PB_PARSE["playbook.json 파싱<br/>→ S3 Vectors 인덱싱"]
-        SNS_NOTIFY["SNS 알림 발행<br/>(presigned URL + 플레이북)"]
+        SNS_NOTIFY["SNS 알림 발행<br/>(presigned URL + 플레이북 요약)"]
         DDB_COMPLETE["DDB 세션 갱신<br/>(state → COMPLETED,<br/>root_cause 저장)"]
         DEL_MSG["SQS 메시지 삭제"]
         REPORT_PARSE --> CONTRACT --> S3_REPORT --> PB_PARSE --> SNS_NOTIFY --> DDB_COMPLETE --> DEL_MSG
@@ -373,7 +372,6 @@ stateDiagram-v2
         · scoping.json → SCOPING 스팬
         · hypotheses.json → HYPO 레코드
         · validation-N.json → VALIDATION_LOOP 스팬 + 가설 갱신
-        · remediation.json → REMEDIATION 스팬
         · report.md → REPORT 스팬
         · playbook.json → PLAYBOOK 스팬
     end note
@@ -388,24 +386,23 @@ stateDiagram-v2
 CC 메인 에이전트는 오케스트레이션만 담당하고 모든 도메인 작업을 역할별 전문
 서브 에이전트에 위임합니다.
 
+호출 가능한 전문 에이전트는 RCA와 Report 둘뿐이며, 오케스트레이터의 도구 목록에도
+이 둘만 있습니다. 복구를 수행하는 전문 에이전트는 존재하지 않습니다.
+
 ```mermaid
 flowchart TD
-    ORCH["Headless 오케스트레이터"]
+    ORCH["Headless 오케스트레이터<br/>Agent(rca-specialist, report-specialist)"]
     RCA["RCA specialist<br/>읽기 전용 도구<br/>스코핑·가설·검증 산출물"]
-    CONFIRMED{{"확정 원인 존재?"}}
-    REM["Remediation specialist<br/>서버 검증형 reset<br/>CloudWatch 사후 판정"]
-    REPORT["Report specialist<br/>서버 결과 기반 보고서·플레이북"]
+    REPORT["Report specialist<br/>report.md + playbook.json<br/>(verification_status=DRAFT)"]
     CHECK["완료 게이트<br/>산출물 스키마·상태 교차 검증"]
+    DONE["분석 종료<br/>리포트 1개 · 쓰기 없음"]
 
-    ORCH --> RCA --> CONFIRMED
-    CONFIRMED -->|Yes| REM --> REPORT
-    CONFIRMED -->|No| REPORT
-    REPORT --> CHECK
+    ORCH --> RCA --> REPORT --> CHECK --> DONE
 
     style ORCH fill:#f5f5f5,stroke:#616161
     style RCA fill:#e3f2fd,stroke:#1565c0
-    style REM fill:#ffebee,stroke:#c62828
     style REPORT fill:#e8f5e9,stroke:#2e7d32
+    style DONE fill:#f5f5f5,stroke:#616161
 ```
 
 ### 2.4. MCP 서버 구성
@@ -416,41 +413,186 @@ flowchart TD
 | `cloudwatch` | `uvx awslabs.cloudwatch-mcp-server` | 메트릭 조회, Logs Insights 쿼리, 알람 조회 |
 | `cloudtrail` | `uvx awslabs.cloudtrail-mcp-server` | 배포/변경 이벤트 조회, Lake SQL 분석 |
 | `github` | `github-mcp-server stdio` | 커밋 diff, PR diff, 파일 내용 조회 |
-| `rca-progress` | `fastmcp run` | 격리 산출물 저장과 서버 검증형 Healthcare reset |
+| `rca-progress` | `fastmcp run` | 격리 산출물 저장 (쓰기 도구 없음) |
 
 ### 2.5. Artifact Watcher 파일 → DDB 매핑
+
+canonical 산출물은 아래 다섯 가지이며 이 표가 전부입니다.
 
 | 파일 | DDB 스팬 타입 | 추가 동작 |
 |------|-------------|----------|
 | `scoping.json` | `SCOPING` | — |
 | `hypotheses.json` | `HYPOTHESIS_GENERATION` | HYPO# 레코드 batch write (최대 25개) |
 | `validation-N.json` | `VALIDATION_LOOP` | HYPO# 레코드 상태 갱신 (confirmed/rejected/closed/needs_investigation) |
-| `remediation.json` | `REMEDIATION` | reset 결과와 CloudWatch 사후 검증 상태 |
 | `report.md` | `REPORT` | — |
 | `playbook.json` | `PLAYBOOK` | failure_type, tags 등 메타데이터 저장 |
 
 ---
 
-## 3. 두 스택 비교
+## 3. 플레이북 실행 — 사용자 승인 기반 실행 에이전트
+
+실행은 두 분석 엔진과 별개의 워커입니다. 진입점은
+`python -m cc_headless.execution_main`이며, 분석 워커와 같은 컨테이너 이미지를
+다른 진입점으로 실행합니다. 실행 경로는 어느 엔진이 리포트를 만들었든 하나입니다.
+
+### 3.1. 전체 플로우
+
+```mermaid
+flowchart TD
+    subgraph Approval["승인 게이트"]
+        DASH["대시보드 리포트 화면<br/>플레이북 execution_steps 인라인 렌더"]
+        HUMAN["👤 절차를 읽고 승인"]
+        POST["POST /api/executions<br/>(EXECUTION_QUEUE_URL 없으면 503)"]
+        QUEUE["실행 요청 큐 + DLQ<br/>이벤트 구독 없음<br/>visibility 4500s > 실행 상한 3600s"]
+        DASH --> HUMAN --> POST --> QUEUE
+    end
+
+    subgraph Worker["실행 워커 (execution_main)"]
+        POLL["요청 큐 Long Polling"]
+        CLAIM["실행 claim<br/>(재전달 중복 실행 방지)"]
+        LOAD["리포트·플레이북 로드<br/>execution_steps 확인"]
+        SNAP["갱신 전 플레이북 사본 S3 보존"]
+        POLL --> CLAIM --> LOAD --> SNAP
+    end
+
+    subgraph Operate["절차 수행 (execution-operator)"]
+        MAP["action(자연어) → AWS CLI 명령<br/>리소스·리전은 알람 컨텍스트에서"]
+        GATE{{"실행 도구의 파괴성 판정<br/>argv 분해 → 서비스·작업 이름"}}
+        RUN["명령 실행"]
+        BLOCK["거부 기록<br/>해당 절차 = 수동 조치<br/>(나머지 절차 계속)"]
+        OBS["success_criteria 관측 기록"]
+        EVID["실행 증거 누적<br/>S3 주 보관 + DDB 요약"]
+        MAP --> GATE
+        GATE -->|허용| RUN --> OBS
+        GATE -->|파괴적·판정 불가| BLOCK --> OBS
+        OBS --> EVID
+    end
+
+    subgraph Judge["서버의 해결 판정"]
+        VERDICT{{"기록된 관측이<br/>기준을 충족했는가?"}}
+        RES["해결 (RESOLVED)"]
+        UNRES["미해결 (UNRESOLVED)"]
+        VERDICT -->|Yes| RES
+        VERDICT -->|No / 관측 없음| UNRES
+    end
+
+    subgraph Retro["회고 (retrospective-analyst)"]
+        DEFECT["절차 결함으로 환원되는 실패만 선별<br/>일시적 오류는 교정하지 않음"]
+        MERGE["코드가 병합<br/>누락 필드는 기존 값 유지<br/>step_id·순서 보존<br/>기준 없는 새 절차는 폐기"]
+        UPDATE["같은 playbook_id 로 갱신<br/>+ S3 Vectors 재인덱싱"]
+        DIFF["갱신 diff 저장<br/>(사본이 기준)"]
+        DEFECT --> MERGE --> UPDATE --> DIFF
+    end
+
+    QUEUE --> POLL
+    SNAP --> MAP
+    EVID --> VERDICT
+    RES --> DEFECT
+    UNRES --> END_UNRES["종료 — 증거는 보존"]
+
+    style Approval fill:#e3f2fd,stroke:#1565c0
+    style Operate fill:#ffebee,stroke:#c62828
+    style Judge fill:#f9f3e3,stroke:#d4a843
+    style Retro fill:#e8f5e9,stroke:#2e7d32
+```
+
+### 3.2. 상태 전이 다이어그램
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_APPROVAL: 승인 요청 큐 발행
+    PENDING_APPROVAL --> EXECUTING: 워커 claim
+    EXECUTING --> VERIFYING: 절차 수행 완료
+    VERIFYING --> RESOLVED: 관측이 success_criteria 충족
+    VERIFYING --> UNRESOLVED: 관측 없음 또는 미충족
+
+    PENDING_APPROVAL --> FAILED
+    PENDING_APPROVAL --> CANCELLED
+    EXECUTING --> FAILED
+    EXECUTING --> CANCELLED
+    VERIFYING --> FAILED
+    VERIFYING --> CANCELLED
+
+    note right of VERIFYING
+        실행 중 → 해결 직접 전이는 없다.
+        관측 없이 해결로 전이하면
+        해소되지 않은 장애가 완료로 기록된다.
+    end note
+
+    RESOLVED --> [*]: 회고 진입
+    UNRESOLVED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+```
+
+한국어 표기: `승인 대기(PENDING_APPROVAL)` → `실행 중(EXECUTING)` →
+`검증 중(VERIFYING)` → `해결(RESOLVED)`/`미해결(UNRESOLVED)`, 그리고
+`실행 중` → `실패(FAILED)`/`취소(CANCELLED)`.
+
+실행은 분석 세션과 별도 생명주기입니다. 실행 실패가 분석 세션을 실패로 만들지 않고
+저장된 리포트를 변경하지 않습니다. 하나의 리포트는 여러 번 실행할 수 있고, 실행
+아이템은 같은 파티션에 `EXEC#{execution_id}`로 저장됩니다 — 엔진 접두사를 붙이지
+않는데, 실행 경로가 엔진과 무관하게 하나이기 때문입니다.
+
+### 3.3. 왜 이 경계들이 이 위치에 있는가
+
+| 경계 | 위치 | 이유 |
+|------|------|------|
+| 승인 게이트 | 대시보드 → 실행 요청 큐 | 승인이 곧 메시지다. 실행 스택에 이벤트 구독이 없으므로 사람이 승인하지 않고 실행이 시작될 경로가 존재하지 않는다 |
+| 파괴적 조치 거부 | 실행 도구(서버) | IAM 액션 이름과 작업 이름 어휘가 일대일이 아니라 정책으로는 빈틈이 생기고, 정책 거부는 무엇이 왜 막혔는지 기록하거나 그 절차를 수동 조치로 남길 수 없다 |
+| 판정 불가 = 거부 | 실행 도구(서버) | 판정 불가를 허용으로 읽으면 셸 합성·중첩 호출로 거부 목록을 비울 수 있다 |
+| 해결 판정 | 서버(`execution_outcome.py`) | 에이전트의 최종 서술은 관측이 아니다. 기록된 관측만 완료의 근거가 된다 |
+| 삭제 금지 | 병합 코드(`playbook_merge.py`) | 프롬프트 지시만으로는 모델이 필드를 누락할 때 축적이 조용히 사라진다 |
+| 회고 진입 조건 | `RESOLVED`만 | 이슈를 해소하지 못한 절차는 올바름이 입증되지 않았다 |
+
+### 3.4. 실행 MCP 도구 구성
+
+| MCP 서버 | 용도 |
+|---------|------|
+| `cloudwatch` | `success_criteria` 관측 — 조치 이후 구간의 메트릭·로그 조회 (읽기 전용) |
+| `playbook-execution` | 서버 판정형 명령 실행(`run_playbook_command`), 절차 관측 기록(`record_step_outcome`), 해소 여부 기록(`record_resolution`) |
+| `playbook-retrospective` | 회고 갱신안 저장(`save_playbook_update`) |
+
+분석 하네스와 실행 하네스는 도구를 공유하지 않습니다. 분석에 쓰기 도구가 들어가면
+승인 게이트가 무의미해지고, 실행이 분석 산출물 도구를 가지면 실행이 리포트를 바꿀
+수 있습니다.
+
+### 3.5. 실행 증거
+
+증거는 명령 단위로 누적됩니다: 절차 식별자, 명령과 인자, 종료 상태, 오류 출력,
+실패 분류, 재시도, 관측 결과. 실행이 실패해도 보존되는데, 사람이 왜 실패했는지 알
+수 있는 유일한 기록이기 때문입니다. 주 보관소는 S3이고 DynamoDB에는 요약만 둡니다.
+자격 증명으로 보이는 인자는 가립니다 — 증거는 사람이 읽는 자료이고 자격 증명이
+남으면 열람 자체가 노출이 됩니다.
+
+실패 분류는 절차 결함(잘못된 인자, 선행 조건 누락, 권한, 대상 없음), 일시적 오류
+(transient, throttled, timeout), 실행 계층 차단(파괴적, 판정 불가)으로 나뉩니다.
+회고는 첫 번째 부류만 교정 입력으로 씁니다.
+
+---
+
+## 4. 두 스택 비교
 
 | | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
 |---|---|---|
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 9단계 코드 기반 파이프라인 | RCA·Remediation·Report 전문 에이전트 오케스트레이션 |
+| **RCA 방식** | 9단계 코드 기반 파이프라인 | RCA·Report 전문 에이전트 오케스트레이션 |
 | **모델** | 단일 Sonnet 5 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 5) |
 | **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
 | **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
 | **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
-| **자동 복구** | 별도 워커, 기본 비활성 | 확정 원인의 허용된 Healthcare reset만 실행 |
+| **쓰기 권한** | 없음 (읽기 전용) | 없음 (읽기 전용) |
+| **산출물** | 플레이북을 포함한 리포트 1개 | 플레이북을 포함한 리포트 1개 |
 | **타임아웃** | 20분 (RCA_TIME_BUDGET_SECONDS) | 30분 (CC_TIMEOUT_SECONDS) |
 | **취소 감지** | update_state() 시 ConditionExpression | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
 | **증거 격리** | 가설별 독립 Agent 인스턴스 | CC 자체 컨텍스트 관리 |
+| **실행 경로** | 두 엔진 공통 — 사용자 승인 후 3장의 실행 에이전트가 수행 |
 | **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
 
 ---
 
-## 4. 데모 시나리오: DB 커넥션 누수 장애
+## 5. 데모 시나리오: DB 커넥션 누수 장애
 
 ### 시나리오 개요
 
@@ -633,7 +775,7 @@ sequenceDiagram
 
 ---
 
-## 5. DynamoDB 트레이스 스팬 계층
+## 6. DynamoDB 트레이스 스팬 계층
 
 대시보드 트레이스 그래프에 표시되는 스팬 구조입니다. 두 스택 모두 동일한 DynamoDB 테이블에 스팬을 기록하며, `engine` 필드로 구분됩니다.
 
@@ -660,7 +802,10 @@ NOTIFICATION
 SCOPING (scoping.json 감지 시)
 HYPOTHESIS_GENERATION (hypotheses.json 감지 시)
 VALIDATION_LOOP (validation-N.json 감지 시, N=1,2,3)
-REMEDIATION (remediation.json 감지 시)
 REPORT (report.md 감지 시)
 PLAYBOOK (playbook.json 감지 시)
 ```
+
+두 엔진 모두 REMEDIATION·VERIFICATION 스팬 타입을 가지지 않습니다. 분석이 복구를
+수행하지 않기 때문입니다. 실행은 스팬이 아니라 같은 파티션의 `EXEC#{execution_id}`
+아이템으로 기록되며, 상세 증거는 S3에 있고 DynamoDB에는 요약만 둡니다.
