@@ -2,12 +2,7 @@ import importlib
 
 from cc_headless.config import settings
 
-_SETTING_ENV_NAMES = (
-    "HEALTHCARE_RESET_TIMEOUT_SECONDS",
-    "CLOUDWATCH_VERIFY_ATTEMPTS",
-    "CLOUDWATCH_VERIFY_INTERVAL_SECONDS",
-    "SIDE_EFFECT_LEASE_SECONDS",
-)
+_SETTING_ENV_NAMES = ("SIDE_EFFECT_LEASE_SECONDS",)
 
 
 def _reload_with_defaults(monkeypatch):
@@ -16,22 +11,33 @@ def _reload_with_defaults(monkeypatch):
     return importlib.reload(settings)
 
 
-def test_default_cloudwatch_window_covers_90_second_metric_lag(monkeypatch):
+def test_analysis_settings_carry_no_recovery_configuration(monkeypatch):
+    # Recovery moved to its own stack. A reset host or verification window left
+    # here would imply this run can act on a service, which it cannot.
     with monkeypatch.context() as isolated:
         defaults = _reload_with_defaults(isolated)
-        assert defaults.CLOUDWATCH_VERIFY_ATTEMPTS == 5
-        assert defaults.CLOUDWATCH_VERIFY_INTERVAL_SECONDS == 30
-        assert (defaults.CLOUDWATCH_VERIFY_ATTEMPTS - 1) * defaults.CLOUDWATCH_VERIFY_INTERVAL_SECONDS == 120
+
+        leftovers = [name for name in dir(defaults) if "HEALTHCARE" in name or "CLOUDWATCH" in name]
+
+        assert leftovers == []
     importlib.reload(settings)
 
 
-def test_side_effect_lease_exceeds_reset_and_full_verification_wait(monkeypatch):
+def test_side_effect_lease_outlives_report_persistence_and_notification(monkeypatch):
+    # The only side effect this run holds a lease for is the final publication,
+    # so the lease has to outlive artifact persistence plus notification retries.
     with monkeypatch.context() as isolated:
         defaults = _reload_with_defaults(isolated)
-        reset_and_verification_seconds = (
-            defaults.HEALTHCARE_RESET_TIMEOUT_SECONDS
-            + (defaults.CLOUDWATCH_VERIFY_ATTEMPTS - 1) * defaults.CLOUDWATCH_VERIFY_INTERVAL_SECONDS
-        )
 
-        assert reset_and_verification_seconds < defaults.SIDE_EFFECT_LEASE_SECONDS
+        assert defaults.SIDE_EFFECT_LEASE_SECONDS >= 60
+        assert defaults.SIDE_EFFECT_LEASE_SECONDS <= 300
+    importlib.reload(settings)
+
+
+def test_side_effect_lease_cannot_be_configured_below_its_floor(monkeypatch):
+    with monkeypatch.context() as isolated:
+        isolated.setenv("SIDE_EFFECT_LEASE_SECONDS", "1")
+        defaults = importlib.reload(settings)
+
+        assert defaults.SIDE_EFFECT_LEASE_SECONDS == 60
     importlib.reload(settings)

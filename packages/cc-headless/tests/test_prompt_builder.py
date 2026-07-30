@@ -45,11 +45,9 @@ def test_build_prompt_resolves_section_includes():
         "scoping.json",
         "hypotheses.json",
         "validation-{N}.json",
-        "remediation.json",
         "playbook.json",
         "1단계: RCA 전문 에이전트",
-        "2단계: 조건부 Remediation 전문 에이전트",
-        "3단계: Report 전문 에이전트",
+        "2단계: Report 전문 에이전트",
         "핵심 원칙",
     ):
         assert marker in prompt, f"missing: {marker}"

@@ -11,12 +11,10 @@ artifacts/
   scoping.md
   hypotheses.md
   validation.md
-  remediation.md
   playbook.md
 stages/
   1-rca-agent.md
-  2-remediation-agent.md
-  3-report-agent.md
+  2-report-agent.md
 ```
 
 메인 프롬프트는 오케스트레이션만 정의한다. 세부 역할과 도구 권한은

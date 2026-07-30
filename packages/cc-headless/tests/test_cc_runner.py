@@ -223,8 +223,10 @@ def test_runner_exposes_only_agent_skill_and_strict_mcp_tools(monkeypatch):
         "mcp__cloudtrail__*",
         "mcp__github__*",
         "mcp__rca-progress__save_artifact",
-        "mcp__rca-progress__execute_healthcare_reset",
     }
+    # Analysis is read-only: the only side effect this run may cause is saving an
+    # artifact. Recovery lives in a separate agent behind a user approval.
+    assert not any("reset" in tool for tool in allowed)
     assert allowed.isdisjoint(dangerous)
 
 

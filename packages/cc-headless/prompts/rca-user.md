@@ -15,12 +15,11 @@
 - **주기**: {period}초
 - **임계치**: {threshold} ({comparison_operator})
 
-Agent tool로 `rca-specialist`를 먼저 호출하고, 확정 결과에만
-`remediation-specialist`를 호출한 뒤, 복구 결과와 무관하게 `report-specialist`를
-호출하라. 메인은 직접 분석하거나 산출물을 저장하지 않는다.
+Agent tool로 `rca-specialist`를 먼저 호출하고, 확정 여부와 무관하게
+`report-specialist`를 호출하라. 메인은 직접 분석하거나 산출물을 저장하지 않는다.
+이 실행은 분석만 수행하며 어떤 복구도 실행하지 않는다.
 
 최종적으로 현재 실행에 다음 산출물이 있어야 한다.
 
 1. RCA: `scoping.json`, `hypotheses.json`, `validation-{N}.json`
-2. narrow remediation MCP: 조건부 `remediation.json`
-3. Report: `report.md`, `playbook.json`
+2. Report: `report.md`, `playbook.json`

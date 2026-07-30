@@ -22,7 +22,6 @@ _POLL_INTERVAL = 3
 ARTIFACT_SPAN_MAP: dict[str, str] = {
     "scoping.json": "SCOPING",
     "hypotheses.json": "HYPOTHESIS_GENERATION",
-    "remediation.json": "REMEDIATION",
     "playbook.json": "PLAYBOOK",
     "report.md": "REPORT",
 }
@@ -46,6 +45,7 @@ _PLAYBOOK_STR_FIELDS = (
     "temporary_mitigation",
     "permanent_remediation",
     "escalation_criteria",
+    "verification_status",
 )
 _PLAYBOOK_LIST_FIELDS = (
     "verification_steps",
@@ -53,7 +53,34 @@ _PLAYBOOK_LIST_FIELDS = (
     "related_metrics",
     "tags",
 )
-_REMEDIATION_STATUSES = {"SUCCEEDED", "FAILED", "BLOCKED"}
+_EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
+
+
+def _safe_metadata_string(value, *, max_length: int) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, (str, int, float, bool)):
+        return ""
+    return str(value)[:max_length]
+
+
+def _build_execution_steps_metadata(steps: object) -> list[dict] | None:
+    """Keep the steps a person approves so the dashboard can show them."""
+    if not isinstance(steps, list) or not steps:
+        return None
+    rendered = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        rendered.append(
+            {
+                "M": {
+                    field: {"S": _safe_metadata_string(step.get(field), max_length=500)}
+                    for field in _EXECUTION_STEP_FIELDS
+                }
+            }
+        )
+    return rendered or None
 
 
 def _build_playbook_metadata(artifact: dict) -> dict:
@@ -66,42 +93,10 @@ def _build_playbook_metadata(artifact: dict) -> dict:
         v = artifact.get(k)
         if isinstance(v, list) and v:
             meta[k] = {"L": [{"S": str(i)} for i in v]}
+    steps = _build_execution_steps_metadata(artifact.get("execution_steps"))
+    if steps:
+        meta["execution_steps"] = {"L": steps}
     return meta
-
-
-def _safe_metadata_string(value, *, max_length: int) -> str:
-    if value is None:
-        return ""
-    if not isinstance(value, (str, int, float, bool)):
-        return ""
-    return str(value)[:max_length]
-
-
-def _build_remediation_metadata(artifact: dict) -> dict:
-    verification = artifact.get("verification")
-    verification = verification if isinstance(verification, dict) else {}
-    metadata = {
-        "fault_type": {
-            "S": _safe_metadata_string(artifact.get("fault_type"), max_length=128),
-        },
-        "endpoint_path": {
-            "S": _safe_metadata_string(artifact.get("endpoint_path"), max_length=256),
-        },
-        "verification": {
-            "M": {
-                "status": {
-                    "S": _safe_metadata_string(verification.get("status"), max_length=32),
-                },
-                "reason": {
-                    "S": _safe_metadata_string(verification.get("reason"), max_length=500),
-                },
-            }
-        },
-    }
-    status = artifact.get("status")
-    if status in _REMEDIATION_STATUSES:
-        metadata["status"] = {"S": status}
-    return metadata
 
 
 def _write_span(
@@ -158,8 +153,6 @@ def _write_span(
         meta = _build_playbook_metadata(artifact)
         if meta:
             item["metadata"] = {"M": meta}
-    elif span_type == "REMEDIATION" and artifact:
-        item["metadata"] = {"M": _build_remediation_metadata(artifact)}
 
     try:
         _transact_claimed(

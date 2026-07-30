@@ -20,9 +20,16 @@ from cc_headless.services.artifact_validation import (
 REPORT_SECTIONS = artifact_validation._REPORT_SECTIONS
 
 
+_EVIDENCE_WINDOWS = (
+    "- Current alarm window: 2026-07-29T13:00:00Z ~ 2026-07-29T14:00:00Z\n"
+    "- Historical comparison window: 2026-07-29T12:00:00Z ~ 2026-07-29T13:00:00Z\n"
+)
+
+
 def _report(*, omit: str | None = None) -> str:
     titles = [t for t in REPORT_SECTIONS if t != omit]
-    return "\n".join(f"## {title}\nplaceholder\n" for title in titles)
+    body = {"증거 시간 범위": _EVIDENCE_WINDOWS, "대응 플레이북": "step-1"}
+    return "\n".join(f"## {title}\n{body.get(title, 'placeholder')}\n" for title in titles)
 
 
 def _scoping() -> dict:
@@ -50,8 +57,16 @@ def _hypotheses() -> dict:
 def _playbook() -> dict:
     artifact: dict = {field: "value" for field in artifact_validation._PLAYBOOK_STRING_FIELDS}
     artifact["stage"] = "PLAYBOOK"
+    artifact["verification_status"] = "DRAFT"
     artifact.update({field: [] for field in artifact_validation._PLAYBOOK_LIST_FIELDS})
-    artifact["remediation_result"] = {}
+    artifact["execution_steps"] = [
+        {
+            "step_id": "step-1",
+            "intent": "restore the connection pool",
+            "action": "restart the healthcare service",
+            "success_criteria": "DatabaseConnections returns below 30",
+        }
+    ]
     return artifact
 
 
@@ -113,13 +128,29 @@ def test_validation_artifacts_defer_to_the_completion_gate() -> None:
     validate_artifact_shape("validation-1.json", "{}")
 
 
-def test_shape_check_does_not_demand_server_owned_agreement() -> None:
-    # remediation_result contents are only knowable after the server acts, so the
-    # save check requires the object to exist but not to match anything yet.
+def test_shape_check_does_not_demand_cross_artifact_agreement() -> None:
+    # Whether the report's prose lists these steps is not knowable when the
+    # playbook is saved, so agreement stays with the completion gate.
     artifact = _playbook()
-    artifact["remediation_result"] = {"status": "NOT_ATTEMPTED"}
+    artifact["execution_steps"].append(
+        {
+            "step_id": "step-2",
+            "intent": "verify",
+            "action": "read the metric again",
+            "success_criteria": "value stays below 30",
+        }
+    )
 
     validate_artifact_shape("playbook.json", json.dumps(artifact))
+
+
+@pytest.mark.parametrize("missing", artifact_validation._EXECUTION_STEP_FIELDS)
+def test_every_execution_step_field_the_gate_requires_is_checked_at_save(missing) -> None:
+    artifact = _playbook()
+    del artifact["execution_steps"][0][missing]
+
+    with pytest.raises(ArtifactValidationError, match=missing):
+        validate_artifact_shape("playbook.json", json.dumps(artifact))
 
 
 def test_artifacts_that_pass_save_can_still_fail_the_completion_gate(tmp_path) -> None:

@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from cc_headless.services.remediation_policy import RESET_PATHS, HealthcareFaultType, parse_fault_type
+from cc_headless.services.fault_taxonomy import FaultType, parse_fault_type
 
 _VALIDATION_NAME = re.compile(r"validation-([1-9][0-9]*)\.json")
 _ISO_TIMESTAMP = re.compile(
@@ -20,13 +20,10 @@ _REPORT_SECTIONS = (
     "5 Whys",
     "뒷받침 증거",
     "가설 분석 경로",
-    "복구 결과",
-    "검증 상태",
+    "대응 플레이북",
     "Action Items",
 )
-_REMEDIATION_STATUSES = {"SUCCEEDED", "FAILED", "BLOCKED"}
-_VERIFICATION_STATUSES = {"NORMALIZED", "FAILED", "PENDING"}
-_AMBIGUOUS_HYPOTHESIS_STATES = {"unclassified", "needs_investigation", "confirmed"}
+_PLAYBOOK_DRAFT_STATUS = "DRAFT"
 _PLAYBOOK_STRING_FIELDS = (
     "stage",
     "playbook_id",
@@ -36,6 +33,7 @@ _PLAYBOOK_STRING_FIELDS = (
     "temporary_mitigation",
     "permanent_remediation",
     "escalation_criteria",
+    "verification_status",
     "summary",
     "output_summary",
 )
@@ -44,7 +42,9 @@ _PLAYBOOK_LIST_FIELDS = (
     "verification_steps",
     "prevention_measures",
     "tags",
+    "execution_steps",
 )
+_EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 
 
 class ArtifactValidationError(ValueError):
@@ -55,20 +55,12 @@ class ArtifactValidationError(ValueError):
 class CompletionArtifacts:
     report_markdown: str
     playbook: dict
-    remediation: dict
     confirmed: bool
 
 
 @dataclass(frozen=True)
-class RemediationEvidence:
-    validation_artifact: str
-    fault_type: HealthcareFaultType
-    confirmed_hypothesis_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class _HypothesisContext:
-    fault_type: HealthcareFaultType
+    fault_type: FaultType
     tree_id: str
     depth: int
 
@@ -297,121 +289,30 @@ def validate_validation_artifacts(
     )
 
 
-def validate_remediation_evidence(base: Path) -> RemediationEvidence:
-    hypotheses_by_id, tree_id = _validate_hypotheses(base)
-    classifications_by_id = dict.fromkeys(hypotheses_by_id, "unclassified")
-    validation_path, validation = _validate_validation(
-        base,
-        hypotheses_by_id,
-        tree_id,
-        classifications_by_id=classifications_by_id,
-    )
-    confirmed = validation["confirmed"]
-    if not confirmed:
-        raise ArtifactValidationError(f"{validation_path.name} has no confirmed root cause")
-    if any(entry["confidence"] < 0.8 for entry in confirmed):
-        raise ArtifactValidationError(f"{validation_path.name} confirmed confidence must be at least 0.8")
-
-    fault_type = parse_fault_type(confirmed[0]["fault_type"])
-    if fault_type is None:
-        raise ArtifactValidationError(f"{validation_path.name} confirmed fault_type is invalid")
-    for hypothesis_id, context in hypotheses_by_id.items():
-        state = classifications_by_id[hypothesis_id]
-        if context.fault_type is fault_type or context.fault_type not in RESET_PATHS:
-            continue
-        if state in _AMBIGUOUS_HYPOTHESIS_STATES:
-            raise ArtifactValidationError(
-                f"{validation_path.name} has unresolved competing hypothesis "
-                f"{hypothesis_id} for fault_type {context.fault_type.value}"
-            )
-    return RemediationEvidence(
-        validation_artifact=validation_path.name,
-        fault_type=fault_type,
-        confirmed_hypothesis_ids=tuple(entry["hypothesis_id"] for entry in confirmed),
-    )
-
-
-def _default_remediation(validation_artifact: str) -> dict:
-    return {
-        "stage": "REMEDIATION",
-        "status": "NOT_ATTEMPTED",
-        "fault_type": None,
-        "endpoint_path": None,
-        "validation_artifact": validation_artifact,
-        "confirmed_hypothesis_ids": [],
-        "summary": "unconfirmed root cause",
-        "output_summary": "NOT_ATTEMPTED: unconfirmed root cause",
-        "verification": {
-            "status": "PENDING",
-            "reason": "reset was not attempted",
-        },
-    }
-
-
-def _validate_remediation(base: Path, validation_artifact: str, confirmed: bool) -> dict:
-    path = base / "remediation.json"
-    if not path.is_file():
-        if confirmed:
-            raise ArtifactValidationError("confirmed RCA requires server-owned remediation.json")
-        return _default_remediation(validation_artifact)
-
-    artifact = _load_object(path, "remediation.json")
-    _require_fields(artifact, strings=("stage", "status", "summary", "output_summary"))
-    if artifact["stage"] != "REMEDIATION" or artifact["status"] not in _REMEDIATION_STATUSES:
-        raise ArtifactValidationError("remediation.json has an invalid stage or status")
-    if not confirmed:
-        raise ArtifactValidationError("unconfirmed RCA must not contain remediation.json")
-
-    fault_type = artifact.get("fault_type")
-    endpoint_path = artifact.get("endpoint_path")
-    if not isinstance(fault_type, str) or not fault_type:
-        raise ArtifactValidationError("remediation.json fault_type must be a non-empty string")
-    parsed_fault_type = parse_fault_type(fault_type)
-    if parsed_fault_type is None:
-        raise ArtifactValidationError("remediation.json fault_type is invalid")
-    if artifact["status"] == "BLOCKED":
-        if endpoint_path is not None:
-            raise ArtifactValidationError("blocked remediation must not declare an endpoint_path")
-    elif parsed_fault_type not in RESET_PATHS or endpoint_path != RESET_PATHS[parsed_fault_type]:
-        raise ArtifactValidationError("remediation.json fault_type and endpoint_path do not match")
-    if artifact.get("validation_artifact") != validation_artifact:
-        raise ArtifactValidationError("remediation.json does not reference the latest validation")
-    if not isinstance(artifact.get("confirmed_hypothesis_ids"), list) or not artifact["confirmed_hypothesis_ids"]:
-        raise ArtifactValidationError("remediation.json must record confirmed hypothesis IDs")
-
-    verification = artifact.get("verification")
-    if not isinstance(verification, dict) or verification.get("status") not in _VERIFICATION_STATUSES:
-        raise ArtifactValidationError("remediation.json verification status is missing or invalid")
-    return artifact
-
-
-def _validate_playbook(base: Path, remediation: dict) -> dict:
-    artifact = _load_object(base / "playbook.json", "playbook.json")
+def _validate_playbook_shape(artifact: dict) -> list[str]:
+    """Check what the playbook owns and return its execution step IDs in order."""
     _require_fields(artifact, strings=_PLAYBOOK_STRING_FIELDS, lists=_PLAYBOOK_LIST_FIELDS)
     if artifact["stage"] != "PLAYBOOK":
         raise ArtifactValidationError("playbook.json stage must be PLAYBOOK")
+    # A playbook is only a draft until an execution and its retrospective have
+    # exercised the procedure, so analysis may not claim any other status.
+    if artifact["verification_status"] != _PLAYBOOK_DRAFT_STATUS:
+        raise ArtifactValidationError(f"playbook.json verification_status must be {_PLAYBOOK_DRAFT_STATUS}")
 
-    reported = artifact.get("remediation_result")
-    if not isinstance(reported, dict):
-        raise ArtifactValidationError("playbook.json remediation_result must be an object")
-    expected = {
-        "status": remediation["status"],
-        "fault_type": remediation.get("fault_type"),
-        "endpoint_path": remediation.get("endpoint_path"),
-        "validation_artifact": remediation.get("validation_artifact"),
-    }
-    for field, value in expected.items():
-        if reported.get(field) != value:
-            raise ArtifactValidationError(f"playbook remediation_result.{field} disagrees with server result")
-    if reported.get("reason") != remediation["summary"]:
-        raise ArtifactValidationError("playbook remediation_result.reason disagrees with server result")
+    step_ids: list[str] = []
+    for step in artifact["execution_steps"]:
+        if not isinstance(step, dict):
+            raise ArtifactValidationError("playbook.json execution_steps entries must be objects")
+        _require_fields(step, strings=_EXECUTION_STEP_FIELDS)
+        if step["step_id"] in step_ids:
+            raise ArtifactValidationError("playbook.json execution step IDs must be unique")
+        step_ids.append(step["step_id"])
+    return step_ids
 
-    verification = reported.get("verification")
-    if not isinstance(verification, dict):
-        raise ArtifactValidationError("playbook remediation_result.verification must be an object")
-    if verification.get("status") != remediation["verification"]["status"]:
-        raise ArtifactValidationError("playbook verification status disagrees with server result")
-    return artifact
+
+def _validate_playbook(base: Path) -> tuple[dict, list[str]]:
+    artifact = _load_object(base / "playbook.json", "playbook.json")
+    return artifact, _validate_playbook_shape(artifact)
 
 
 def _section(markdown: str, title: str) -> str:
@@ -425,11 +326,7 @@ def _section(markdown: str, title: str) -> str:
     return match.group("body")
 
 
-def _validate_report(base: Path, remediation: dict) -> str:
-    try:
-        markdown = (base / "report.md").read_text()
-    except OSError as exc:
-        raise ArtifactValidationError("report.md is missing") from exc
+def _validate_report_sections(markdown: str) -> dict[str, str]:
     sections = {title: _section(markdown, title) for title in _REPORT_SECTIONS}
 
     evidence_window = sections["증거 시간 범위"].lower()
@@ -439,22 +336,28 @@ def _validate_report(base: Path, remediation: dict) -> str:
         line = next((line for line in evidence_window.splitlines() if label in line), "")
         if len(_ISO_TIMESTAMP.findall(line)) < 2:
             raise ArtifactValidationError(f"report.md {label} must include ISO-8601 start and end timestamps")
+    return sections
 
-    remediation_text = sections["복구 결과"]
-    verification_text = sections["검증 상태"]
-    expected_values = (
-        remediation["status"],
-        remediation.get("fault_type"),
-        remediation.get("endpoint_path"),
-        remediation.get("validation_artifact"),
-    )
-    for value in expected_values:
-        rendered = "N/A" if value is None else str(value)
-        if rendered not in remediation_text:
-            raise ArtifactValidationError(f"report.md remediation section is missing server value: {rendered}")
-    verification_status = remediation["verification"]["status"]
-    if verification_status not in verification_text:
-        raise ArtifactValidationError("report.md verification section disagrees with server result")
+
+def _validate_report(base: Path, playbook_step_ids: list[str]) -> str:
+    try:
+        markdown = (base / "report.md").read_text()
+    except OSError as exc:
+        raise ArtifactValidationError("report.md is missing") from exc
+    sections = _validate_report_sections(markdown)
+
+    # The prose is what a person approves and the structure is what runs, so a
+    # step present in one and absent from the other means the approved procedure
+    # and the executed procedure differ.
+    playbook_section = sections["대응 플레이북"]
+    missing = [step_id for step_id in playbook_step_ids if step_id not in playbook_section]
+    if missing:
+        raise ArtifactValidationError(f"report.md playbook section is missing execution steps: {', '.join(missing)}")
+    # Order matters as much as presence: a person reads the prose top to bottom
+    # and approves that sequence, so the structure must run it in the same order.
+    positions = [playbook_section.index(step_id) for step_id in playbook_step_ids]
+    if positions != sorted(positions):
+        raise ArtifactValidationError("report.md playbook section lists execution steps out of order")
     return markdown
 
 
@@ -466,8 +369,7 @@ def validate_artifact_shape(filename: str, content: str) -> None:
     is not knowable yet at save time and stays in the completion gate.
     """
     if filename == "report.md":
-        for title in _REPORT_SECTIONS:
-            _section(content, title)
+        _validate_report_sections(content)
         return
 
     try:
@@ -478,11 +380,7 @@ def validate_artifact_shape(filename: str, content: str) -> None:
         raise ArtifactValidationError(f"{filename} must be a JSON object")
 
     if filename == "playbook.json":
-        _require_fields(artifact, strings=_PLAYBOOK_STRING_FIELDS, lists=_PLAYBOOK_LIST_FIELDS)
-        if artifact["stage"] != "PLAYBOOK":
-            raise ArtifactValidationError("playbook.json stage must be PLAYBOOK")
-        if not isinstance(artifact.get("remediation_result"), dict):
-            raise ArtifactValidationError("playbook.json remediation_result must be an object")
+        _validate_playbook_shape(artifact)
         return
 
     if filename == "scoping.json":
@@ -510,14 +408,16 @@ def validate_artifact_shape(filename: str, content: str) -> None:
 def validate_completion_artifacts(base: Path) -> CompletionArtifacts:
     _validate_scoping(base)
     hypotheses_by_id, tree_id = _validate_hypotheses(base)
-    validation_path, validation = _validate_validation(base, hypotheses_by_id, tree_id)
+    _, validation = _validate_validation(base, hypotheses_by_id, tree_id)
     confirmed = bool(validation["confirmed"])
-    remediation = _validate_remediation(base, validation_path.name, confirmed)
-    playbook = _validate_playbook(base, remediation)
-    report_markdown = _validate_report(base, remediation)
+    playbook, playbook_step_ids = _validate_playbook(base)
+    # An unconfirmed root cause has no verified procedure to run, so proposing
+    # steps for it would put guesswork behind the approval button.
+    if not confirmed and playbook_step_ids:
+        raise ArtifactValidationError("unconfirmed RCA must not declare playbook execution steps")
+    report_markdown = _validate_report(base, playbook_step_ids)
     return CompletionArtifacts(
         report_markdown=report_markdown,
         playbook=playbook,
-        remediation=remediation,
         confirmed=confirmed,
     )

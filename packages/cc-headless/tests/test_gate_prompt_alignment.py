@@ -48,19 +48,13 @@ def test_every_required_report_section_is_documented(section: str) -> None:
     assert section in CORPUS, f"the gate requires report section '{section}' but no prompt mentions it"
 
 
-@pytest.mark.parametrize("status", sorted(gate._REMEDIATION_STATUSES))
-def test_every_remediation_status_is_documented(status: str) -> None:
-    assert status in CORPUS, f"the gate accepts remediation status {status} but no prompt mentions it"
+@pytest.mark.parametrize("field", gate._EXECUTION_STEP_FIELDS)
+def test_every_required_execution_step_field_is_documented(field: str) -> None:
+    assert field in CORPUS, f"the gate requires execution step.{field} but no prompt mentions it"
 
 
-@pytest.mark.parametrize("status", sorted(gate._VERIFICATION_STATUSES))
-def test_every_verification_status_is_documented(status: str) -> None:
-    assert status in CORPUS, f"the gate accepts verification status {status} but no prompt mentions it"
-
-
-@pytest.mark.parametrize("state", sorted(gate._AMBIGUOUS_HYPOTHESIS_STATES))
-def test_every_ambiguous_hypothesis_state_is_documented(state: str) -> None:
-    assert state in CORPUS.lower(), f"the gate treats '{state}' as ambiguous but no prompt mentions it"
+def test_the_draft_playbook_status_the_gate_demands_is_documented() -> None:
+    assert gate._PLAYBOOK_DRAFT_STATUS in CORPUS
 
 
 def test_report_evidence_window_labels_are_documented() -> None:
@@ -78,23 +72,25 @@ def test_report_evidence_window_example_satisfies_the_gate_rule() -> None:
         )
 
 
-def test_the_placeholder_for_absent_server_values_is_documented() -> None:
-    """A null server value must be rendered as a literal the gate looks for.
+def test_prompts_require_the_report_and_playbook_steps_to_agree() -> None:
+    """The gate cross-checks the prose steps against the structured ones.
 
-    The gate renders `None` as "N/A" and then requires that string to appear in
-    the report's remediation section, so the prompts have to say so.
+    A step in one and not the other means the procedure a person approved is not
+    the procedure that runs, so the prompts have to name the field the gate
+    matches on.
     """
-    assert "N/A" in CORPUS
-
-
-def test_prompts_require_copying_server_owned_remediation_values_verbatim() -> None:
-    # The gate compares these against remediation.json exactly, so paraphrase fails.
-    assert "remediation.json" in CORPUS
-    assert "글자 그대로" in CORPUS
+    assert "step_id" in CORPUS
 
 
 def test_prompts_state_that_playbook_fields_are_all_mandatory() -> None:
     assert "필수" in CORPUS
+
+
+def test_prompts_tell_the_agent_to_keep_irreversible_work_out_of_execution_steps() -> None:
+    # The execution layer refuses these, so a playbook that asks for one produces
+    # a step that can never run. The prompts must route it to a recommendation.
+    assert "permanent_remediation" in CORPUS
+    assert "되돌릴 수 없" in CORPUS
 
 
 def test_gate_constants_are_still_where_this_test_reads_them() -> None:
@@ -102,10 +98,9 @@ def test_gate_constants_are_still_where_this_test_reads_them() -> None:
     for name in (
         "_PLAYBOOK_STRING_FIELDS",
         "_PLAYBOOK_LIST_FIELDS",
+        "_EXECUTION_STEP_FIELDS",
+        "_PLAYBOOK_DRAFT_STATUS",
         "_REPORT_SECTIONS",
-        "_REMEDIATION_STATUSES",
-        "_VERIFICATION_STATUSES",
-        "_AMBIGUOUS_HYPOTHESIS_STATES",
         "_ISO_TIMESTAMP",
     ):
         assert hasattr(gate, name), f"the gate no longer exposes {name}; update this alignment test"

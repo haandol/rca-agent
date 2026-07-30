@@ -3,8 +3,10 @@
 | 순서 | 전문 에이전트 | 조건 | 필수 결과 |
 |------|-------------|------|----------|
 | 1 | `rca-specialist` | 항상 | RCA 산출물과 확정 여부 |
-| 2 | `remediation-specialist` | 최신 validation에 confirmed 존재 | 실제 복구 결과 |
-| 3 | `report-specialist` | 항상 | `report.md`, `playbook.json` |
+| 2 | `report-specialist` | 항상 | `report.md`, `playbook.json` |
 
-RCA가 미확정이면 Remediation 결과를 `NOT_ATTEMPTED`로 만들어 Report에 전달한다.
-Remediation이 `BLOCKED` 또는 `FAILED`를 반환해도 Report를 반드시 호출한다.
+RCA가 미확정이어도 Report를 호출하고, 미확정임을 표기한 리포트를 만든다.
+
+이 실행은 **분석만 수행한다.** 어떤 쓰기 도구도 없으며 서비스나 인프라를 변경하지
+않는다. 플레이북은 사용자가 대시보드에서 승인한 뒤 실행 권한을 가진 별도 에이전트가
+수행한다.

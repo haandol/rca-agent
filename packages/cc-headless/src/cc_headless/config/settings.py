@@ -21,31 +21,11 @@ CC_TIMEOUT_SECONDS = int(os.environ.get("CC_TIMEOUT_SECONDS", "1800"))
 
 ALARM_STALENESS_SECONDS = int(os.environ.get("ALARM_STALENESS_SECONDS", "1800"))
 
-HEALTHCARE_SERVICE_HOST = os.environ.get("HEALTHCARE_SERVICE_HOST", "")
-HEALTHCARE_ECS_CLUSTER_NAME = os.environ.get("HEALTHCARE_ECS_CLUSTER_NAME", "")
-HEALTHCARE_ECS_SERVICE_NAME = os.environ.get("HEALTHCARE_ECS_SERVICE_NAME", "")
-HEALTHCARE_RDS_INSTANCE_IDENTIFIER = os.environ.get("HEALTHCARE_RDS_INSTANCE_IDENTIFIER", "")
-HEALTHCARE_RESET_TIMEOUT_SECONDS = min(
-    max(int(os.environ.get("HEALTHCARE_RESET_TIMEOUT_SECONDS", "10")), 1),
-    30,
-)
-CLOUDWATCH_VERIFY_ATTEMPTS = min(max(int(os.environ.get("CLOUDWATCH_VERIFY_ATTEMPTS", "5")), 1), 5)
-CLOUDWATCH_VERIFY_INTERVAL_SECONDS = min(
-    max(int(os.environ.get("CLOUDWATCH_VERIFY_INTERVAL_SECONDS", "30")), 0),
-    30,
-)
-_CLOUDWATCH_VERIFY_WAIT_SECONDS = (CLOUDWATCH_VERIFY_ATTEMPTS - 1) * CLOUDWATCH_VERIFY_INTERVAL_SECONDS
-_MIN_SIDE_EFFECT_LEASE_SECONDS = HEALTHCARE_RESET_TIMEOUT_SECONDS + _CLOUDWATCH_VERIFY_WAIT_SECONDS + 30
+# The analysis run holds no side-effect lease of its own beyond the final
+# publication, so the lease only has to outlive report/playbook persistence and
+# the notification retry.
 SIDE_EFFECT_LEASE_SECONDS = min(
-    max(
-        int(
-            os.environ.get(
-                "SIDE_EFFECT_LEASE_SECONDS",
-                str(_MIN_SIDE_EFFECT_LEASE_SECONDS),
-            )
-        ),
-        _MIN_SIDE_EFFECT_LEASE_SECONDS,
-    ),
+    max(int(os.environ.get("SIDE_EFFECT_LEASE_SECONDS", "60")), 60),
     300,
 )
 

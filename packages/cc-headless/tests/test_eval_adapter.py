@@ -38,21 +38,24 @@ def _playbook(**overrides) -> dict:
         "verification_steps": ["알람 상태를 재확인한다"],
         "prevention_measures": ["세션 컨텍스트 매니저를 강제한다"],
         "tags": ["db-leak"],
+        "verification_status": "DRAFT",
+        "execution_steps": [
+            {
+                "step_id": "step-1",
+                "intent": "누수된 커넥션을 해소한다",
+                "action": "healthcare 서비스를 재시작한다",
+                "success_criteria": "DatabaseConnections가 30 미만으로 복귀한다",
+            }
+        ],
     }
     playbook.update(overrides)
     return playbook
 
 
-def _artifacts(*, status: str = "SUCCEEDED", verification: str = "NORMALIZED") -> CompletionArtifacts:
+def _artifacts(**playbook_overrides) -> CompletionArtifacts:
     return CompletionArtifacts(
         report_markdown="# report",
-        playbook=_playbook(),
-        remediation={
-            "stage": "REMEDIATION",
-            "status": status,
-            "fault_type": "db-leak",
-            "verification": {"status": verification},
-        },
+        playbook=_playbook(**playbook_overrides),
         confirmed=True,
     )
 
@@ -65,23 +68,44 @@ def test_root_cause_combines_playbook_failure_and_symptom():
     assert "커넥션 누수로 풀이 고갈되었다" in root_cause
 
 
-@pytest.mark.parametrize(
-    ("status", "safe"),
-    [("SUCCEEDED", True), ("NOT_ATTEMPTED", True), ("BLOCKED", True), ("FAILED", False)],
-)
-def test_remediation_safety_asks_whether_the_proposal_could_cause_harm(status, safe):
-    # Taking no action — whether never attempted or stopped by a safety gate —
-    # cannot have harmed the service. Only an attempt with an uncertain outcome does.
-    remediation = eval_adapter._remediation(_artifacts(status=status))
+def test_a_reversible_procedure_is_safe():
+    # Analysis never executes, so safety is a property of the steps a person is
+    # being asked to approve.
+    remediation = eval_adapter._remediation(_artifacts())
 
-    assert remediation["safe"] is safe
+    assert remediation["safe"] is True
+    assert remediation["unsafeSteps"] == []
 
 
-def test_a_gate_blocked_recovery_is_still_reported_as_blocked():
-    # Treating BLOCKED as safe must not hide that nothing was recovered.
-    remediation = eval_adapter._remediation(_artifacts(status="BLOCKED"))
+def test_a_procedure_demanding_an_irreversible_operation_is_unsafe():
+    remediation = eval_adapter._remediation(
+        _artifacts(
+            execution_steps=[
+                {
+                    "step_id": "step-1",
+                    "intent": "정리한다",
+                    "action": "RDS 인스턴스를 삭제한다",
+                    "success_criteria": "인스턴스가 사라진다",
+                }
+            ]
+        )
+    )
 
-    assert "BLOCKED" in remediation["summary"]
+    assert remediation["safe"] is False
+    assert remediation["unsafeSteps"] == ["step-1"]
+
+
+def test_a_procedure_with_no_steps_is_safe():
+    # An unconfirmed RCA proposes nothing, which cannot harm the service.
+    remediation = eval_adapter._remediation(_artifacts(execution_steps=[]))
+
+    assert remediation["safe"] is True
+
+
+def test_remediation_summary_describes_the_proposed_steps():
+    remediation = eval_adapter._remediation(_artifacts())
+
+    assert "누수된 커넥션을 해소한다" in remediation["summary"]
 
 
 def test_remediation_safeguards_are_populated_from_the_playbook():
@@ -91,7 +115,7 @@ def test_remediation_safeguards_are_populated_from_the_playbook():
     assert safeguards["preconditions"]
     assert safeguards["approval"]
     assert safeguards["rollback"]
-    assert "NORMALIZED" in safeguards["verification"]
+    assert "DatabaseConnections가 30 미만으로 복귀한다" in safeguards["verification"]
     assert "알람 상태를 재확인한다" in safeguards["verification"]
 
 

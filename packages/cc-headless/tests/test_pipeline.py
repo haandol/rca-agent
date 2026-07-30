@@ -67,7 +67,8 @@ def _patch_runtime(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(pipeline, "start_watcher", lambda *args: (FinishedThread(), Mock()))
 
 
-def _valid_report(root_cause: str = "DB connection leak") -> str:
+def _valid_report(root_cause: str = "DB connection leak", *, step_ids: tuple[str, ...] = ()) -> str:
+    steps = "\n".join(f"- {step_id}: 절차" for step_id in step_ids) or "확정 원인이 없어 실행 절차가 없다"
     return f"""## 인시던트 요약
 현재 알람 조사
 ## 영향
@@ -83,13 +84,9 @@ Historical comparison window: 2026-07-20T00:00:00Z to 2026-07-20T00:10:00Z
 Current alarm window 관측값
 ## 가설 분석 경로
 hypothesis-1 검토
-## 복구 결과
-status: NOT_ATTEMPTED
-fault_type: N/A
-endpoint_path: N/A
-validation_artifact: validation-1.json
-## 검증 상태
-PENDING
+## 대응 플레이북
+검증되지 않은 DRAFT 절차
+{steps}
 ## Action Items
 후속 관측
 """
@@ -100,6 +97,7 @@ def _write_required_report_artifacts(
     report: str,
     *,
     include_playbook: bool = True,
+    execution_steps: list[dict] | None = None,
 ) -> None:
     artifact_dir.joinpath("scoping.json").write_text(
         json.dumps(
@@ -177,50 +175,35 @@ def _write_required_report_artifacts(
                     "escalation_criteria": "metric remains high",
                     "prevention_measures": ["test"],
                     "tags": ["test"],
-                    "remediation_result": {
-                        "status": "NOT_ATTEMPTED",
-                        "fault_type": None,
-                        "endpoint_path": None,
-                        "reason": "unconfirmed root cause",
-                        "validation_artifact": "validation-1.json",
-                        "verification": {
-                            "status": "PENDING",
-                            "reason": "reset was not attempted",
-                        },
-                    },
+                    "verification_status": "DRAFT",
+                    "execution_steps": execution_steps or [],
                     "summary": "playbook complete",
-                    "output_summary": "not attempted",
+                    "output_summary": "draft playbook",
                 }
             )
         )
 
 
+_STEP = {
+    "step_id": "step-1",
+    "intent": "누수 커넥션을 해소한다",
+    "action": "healthcare 서비스를 재시작한다",
+    "success_criteria": "DatabaseConnections가 30 미만으로 복귀한다",
+}
+
+
 def _write_confirmed_report_artifacts(
     artifact_dir: Path,
     *,
-    remediation_status: str = "SUCCEEDED",
-    playbook_status: str | None = None,
     fault_type: str = "db-leak",
-    endpoint_path: str | None = "/fault/db-leak/reset",
-    remediation_reason: str = "Healthcare reset completed via /fault/db-leak/reset",
-    verification_status: str = "NORMALIZED",
+    execution_steps: list[dict] | None = None,
 ) -> None:
-    endpoint_text = endpoint_path or "N/A"
-    report = (
-        _valid_report("DB connection leak")
-        .replace(
-            """status: NOT_ATTEMPTED
-fault_type: N/A
-endpoint_path: N/A
-validation_artifact: validation-1.json""",
-            f"""status: {remediation_status}
-fault_type: {fault_type}
-endpoint_path: {endpoint_text}
-validation_artifact: validation-1.json""",
-        )
-        .replace("## 검증 상태\nPENDING", f"## 검증 상태\n{verification_status}")
+    steps = execution_steps if execution_steps is not None else [dict(_STEP)]
+    _write_required_report_artifacts(
+        artifact_dir,
+        _valid_report("DB connection leak", step_ids=tuple(step["step_id"] for step in steps)),
+        execution_steps=steps,
     )
-    _write_required_report_artifacts(artifact_dir, report)
 
     validation = json.loads(artifact_dir.joinpath("validation-1.json").read_text())
     validation["confirmed"] = [
@@ -237,36 +220,6 @@ validation_artifact: validation-1.json""",
     hypotheses = json.loads(artifact_dir.joinpath("hypotheses.json").read_text())
     hypotheses["hypotheses"][0]["fault_type"] = fault_type
     artifact_dir.joinpath("hypotheses.json").write_text(json.dumps(hypotheses))
-
-    remediation = {
-        "stage": "REMEDIATION",
-        "status": remediation_status,
-        "fault_type": fault_type,
-        "endpoint_path": endpoint_path,
-        "validation_artifact": "validation-1.json",
-        "confirmed_hypothesis_ids": ["hypothesis-1"],
-        "summary": remediation_reason,
-        "output_summary": f"{remediation_status}: {remediation_reason}",
-        "verification": {
-            "status": verification_status,
-            "reason": f"verification status: {verification_status}",
-        },
-    }
-    artifact_dir.joinpath("remediation.json").write_text(json.dumps(remediation))
-
-    playbook = json.loads(artifact_dir.joinpath("playbook.json").read_text())
-    playbook["remediation_result"] = {
-        "status": playbook_status or remediation_status,
-        "fault_type": fault_type,
-        "endpoint_path": endpoint_path,
-        "reason": remediation_reason,
-        "validation_artifact": "validation-1.json",
-        "verification": {
-            "status": verification_status,
-            "reason": f"verification status: {verification_status}",
-        },
-    }
-    artifact_dir.joinpath("playbook.json").write_text(json.dumps(playbook))
 
 
 def test_extract_root_cause_skips_report_status_metadata():
@@ -415,7 +368,7 @@ def test_report_artifact_is_uploaded_without_using_cli_fallback(monkeypatch, tmp
     container.report_store.send_notification.assert_called_once()
 
 
-def test_unconfirmed_result_does_not_request_remediation(monkeypatch, tmp_path):
+def test_unconfirmed_result_completes_without_execution_steps(monkeypatch, tmp_path):
     class UnconfirmedReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             artifact_dir = artifact_dir_for_token(execution_token)
@@ -440,7 +393,7 @@ def test_unconfirmed_result_does_not_request_remediation(monkeypatch, tmp_path):
     assert notification.kwargs["confirmed"] is False
 
 
-def test_confirmed_completion_uses_server_owned_remediation_result(monkeypatch, tmp_path):
+def test_confirmed_completion_publishes_a_report_with_its_playbook(monkeypatch, tmp_path):
     class ConfirmedReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             _write_confirmed_report_artifacts(artifact_dir_for_token(execution_token))
@@ -460,13 +413,16 @@ def test_confirmed_completion_uses_server_owned_remediation_result(monkeypatch, 
     assert container.report_store.send_notification.call_args.kwargs["confirmed"] is True
 
 
-def test_remediation_mismatch_prevents_completion_and_all_publication(monkeypatch, tmp_path):
+def test_report_omitting_a_structured_step_prevents_completion_and_all_publication(monkeypatch, tmp_path):
+    # The prose is what a person approves. A step present only in the structure
+    # would run without approval, so the session must not complete.
     class MismatchedReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
-            _write_confirmed_report_artifacts(
-                artifact_dir_for_token(execution_token),
-                playbook_status="FAILED",
-            )
+            artifact_dir = artifact_dir_for_token(execution_token)
+            _write_confirmed_report_artifacts(artifact_dir)
+            playbook = json.loads(artifact_dir.joinpath("playbook.json").read_text())
+            playbook["execution_steps"].append({**_STEP, "step_id": "step-2"})
+            artifact_dir.joinpath("playbook.json").write_text(json.dumps(playbook))
             return CcResult(True, "complete", "{}")
 
     container = _container(MismatchedReportWriter())
@@ -485,20 +441,20 @@ def test_remediation_mismatch_prevents_completion_and_all_publication(monkeypatc
     container.session_store.mark_completed.assert_not_called()
 
 
-def test_confirmed_unsupported_remediation_can_complete_with_blocked_report(monkeypatch, tmp_path):
-    class UnsupportedReportWriter:
+def test_unconfirmed_run_declaring_execution_steps_prevents_completion(monkeypatch, tmp_path):
+    # Steps for an unconfirmed cause would put guesswork behind the approval
+    # button, so the gate refuses the run rather than letting it be approved.
+    class OvereagerReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
-            _write_confirmed_report_artifacts(
-                artifact_dir_for_token(execution_token),
-                remediation_status="BLOCKED",
-                fault_type="unsupported",
-                endpoint_path=None,
-                remediation_reason="confirmed root cause has no allowlisted remediation action",
-                verification_status="PENDING",
+            artifact_dir = artifact_dir_for_token(execution_token)
+            _write_required_report_artifacts(
+                artifact_dir,
+                _valid_report("Most likely connection leak", step_ids=("step-1",)),
+                execution_steps=[dict(_STEP)],
             )
             return CcResult(True, "complete", "{}")
 
-    container = _container(UnsupportedReportWriter())
+    container = _container(OvereagerReportWriter())
     _patch_runtime(monkeypatch, tmp_path)
 
     result = PipelineOrchestrator(container)._run_rca(
@@ -508,37 +464,31 @@ def test_confirmed_unsupported_remediation_can_complete_with_blocked_report(monk
         CLAIM_TOKEN,
     )
 
-    assert result is True
-    container.report_store.send_notification.assert_called_once()
-    container.session_store.mark_completed.assert_called_once()
+    assert result is False
+    container.session_store.mark_completed.assert_not_called()
 
 
-def test_confirmed_known_fault_mismatch_can_complete_with_blocked_report(monkeypatch, tmp_path):
-    class MismatchedActionReportWriter:
+def test_a_run_never_publishes_a_recovery_it_did_not_perform(monkeypatch, tmp_path):
+    # This engine only analyses. Nothing in the completed session may claim a
+    # recovery outcome, because execution happens later and elsewhere.
+    class ConfirmedReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
-            _write_confirmed_report_artifacts(
-                artifact_dir_for_token(execution_token),
-                remediation_status="BLOCKED",
-                fault_type="high-cpu",
-                endpoint_path=None,
-                remediation_reason="requested action does not uniquely match the confirmed root cause",
-                verification_status="PENDING",
-            )
+            _write_confirmed_report_artifacts(artifact_dir_for_token(execution_token))
             return CcResult(True, "complete", "{}")
 
-    container = _container(MismatchedActionReportWriter())
+    container = _container(ConfirmedReportWriter())
     _patch_runtime(monkeypatch, tmp_path)
 
-    result = PipelineOrchestrator(container)._run_rca(
+    PipelineOrchestrator(container)._run_rca(
         "rca-1",
         ALARM_DATA,
         structlog.get_logger(),
         CLAIM_TOKEN,
     )
 
-    assert result is True
-    container.report_store.send_notification.assert_called_once()
-    container.session_store.mark_completed.assert_called_once()
+    playbook = container.report_store.send_notification.call_args.kwargs["playbook"]
+    assert "remediation_result" not in playbook
+    assert playbook["verification_status"] == "DRAFT"
 
 
 def test_failed_cc_run_never_publishes_report(monkeypatch, tmp_path):

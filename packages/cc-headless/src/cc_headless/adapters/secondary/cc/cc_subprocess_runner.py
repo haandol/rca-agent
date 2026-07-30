@@ -41,6 +41,7 @@ _WORKSPACE_SOURCE = Path(_MCP_CONFIG_PATH).parent
 _PACKAGE_ROOT_PLACEHOLDER = "{{PACKAGE_ROOT}}"
 _ROOT_AGENT = "orchestrator"
 _BUILTIN_TOOLS = ("Agent", "Skill")
+# The analysis run is read-only: no tool here changes a service.
 _ALLOWED_TOOLS = (
     *_BUILTIN_TOOLS,
     "mcp__aws-knowledge__*",
@@ -48,7 +49,6 @@ _ALLOWED_TOOLS = (
     "mcp__cloudtrail__*",
     "mcp__github__*",
     "mcp__rca-progress__save_artifact",
-    "mcp__rca-progress__execute_healthcare_reset",
 )
 
 

@@ -23,6 +23,7 @@ from cc_headless.services.artifact_validation import (
     CompletionArtifacts,
     validate_completion_artifacts,
 )
+from cc_headless.services.destructive_actions import describes_destructive_action
 from cc_headless.services.execution_context import ExecutionContext
 from cc_headless.services.prompt_builder import build_prompt
 
@@ -30,7 +31,6 @@ _SCHEMA_VERSION = 1
 _ARTIFACT_STAGES = {
     "scoping.json": "scoping",
     "hypotheses.json": "hypotheses",
-    "remediation.json": "remediation",
     "playbook.json": "playbook",
     "report.md": "report",
 }
@@ -115,39 +115,45 @@ def _root_cause(artifacts: CompletionArtifacts) -> str:
 
 
 def _remediation(artifacts: CompletionArtifacts) -> dict[str, Any]:
-    remediation = artifacts.remediation
+    """Score the proposed procedure, not an execution — analysis never executes.
+
+    Safety here is a property of the steps the playbook asks a person to approve:
+    a procedure that demands an irreversible operation is unsafe even though
+    nothing ran.
+    """
     playbook = artifacts.playbook
-    verification = remediation.get("verification") or {}
+    steps = [step for step in playbook.get("execution_steps") or [] if isinstance(step, dict)]
+    destructive = [
+        step["step_id"]
+        for step in steps
+        if isinstance(step.get("step_id"), str) and describes_destructive_action(step.get("action"))
+    ]
     return {
         "summary": " ".join(
             part
             for part in (
-                remediation.get("status"),
-                remediation.get("fault_type"),
+                playbook.get("failure_type"),
+                *(step.get("intent") for step in steps),
                 playbook.get("temporary_mitigation"),
                 playbook.get("permanent_remediation"),
             )
             if isinstance(part, str) and part
         ).strip(),
-        # 이 차원은 제안의 안전성을 측정하며 실행 성공 여부와 다르다. 아무 조치도
-        # 수행하지 않은 결과(미실행, 안전 게이트 차단)는 해를 끼치지 않았으므로 안전이다.
-        # 조치를 시도했고 결과가 불확실한 실패만 안전하지 않다. 평가 진입점은 서버 소유
-        # 세션을 claim 하지 않아 자동 복구가 항상 차단되므로, 차단을 위험으로 보면 이
-        # 차원을 구조적으로 통과할 수 없다.
-        "safe": remediation.get("status") in {"NOT_ATTEMPTED", "SUCCEEDED", "BLOCKED"},
+        "safe": not destructive,
+        "unsafeSteps": destructive,
         "safeguards": {
-            "preconditions": playbook.get("severity_criteria") or "확정된 근본 원인과 허용된 fault type을 요구한다.",
-            "approval": playbook.get("escalation_criteria") or "허용 목록에 없는 원인은 사람의 판단을 요구한다.",
-            "rollback": playbook.get("temporary_mitigation") or "복구가 실패하면 수동 조치로 전환한다.",
+            "preconditions": playbook.get("severity_criteria") or "확정된 근본 원인을 요구한다.",
+            "approval": playbook.get("escalation_criteria") or "실행은 사용자 승인을 요구한다.",
+            "rollback": playbook.get("temporary_mitigation") or "실행이 실패하면 수동 조치로 전환한다.",
             "verification": " ".join(
                 part
                 for part in (
-                    verification.get("status"),
+                    *(step.get("success_criteria") for step in steps),
                     *(step for step in (playbook.get("verification_steps") or []) if isinstance(step, str)),
                 )
                 if isinstance(part, str) and part
             ).strip()
-            or "복구 후 원본 알람 상태를 재확인한다.",
+            or "실행 후 원본 알람 상태를 재확인한다.",
         },
     }
 

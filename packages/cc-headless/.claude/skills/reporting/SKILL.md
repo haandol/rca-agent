@@ -1,17 +1,21 @@
 ---
 name: reporting
-description: RCA와 실제 remediation 결과를 분리해 최종 report.md와 playbook.json을 작성하는 가이드
+description: 플레이북을 포함한 단일 RCA 리포트를 report.md와 playbook.json 두 표현으로 작성하는 가이드
 ---
 
-# RCA Report와 Playbook
+# RCA 리포트와 플레이북
+
+분석의 산출물은 **플레이북을 포함한 리포트 하나**다. `report.md`는 사람이 읽는 서술,
+`playbook.json`은 실행과 유사도 검색이 쓰는 구조다. 두 표현의 절차가 어긋나면 저장이
+거부된다.
 
 ## 입력
 
 - 원본 알람 상세
 - RCA 전문 에이전트의 최종 결과와 증거
-- Remediation 상태: `NOT_ATTEMPTED`, `SUCCEEDED`, `FAILED`, `BLOCKED`
 
-입력에 없는 실행·정상화 사실은 만들지 않는다.
+입력에 없는 사실은 만들지 않는다. **복구를 실행하지 않았으므로 실행 결과나 정상화
+여부를 쓰지 않는다.** 플레이북은 사용자가 승인한 뒤 별도 에이전트가 수행한다.
 
 ## report.md
 
@@ -24,34 +28,25 @@ description: RCA와 실제 remediation 결과를 분리해 최종 report.md와 p
 - `## 5 Whys` (증거가 끊기면 추가 조사 필요로 종료)
 - `## 뒷받침 증거`
 - `## 가설 분석 경로`
-- `## 복구 결과`
-- `## 검증 상태`
+- `## 대응 플레이북`
 - `## Action Items`
 
-복구 결과는 실제 상태를 그대로 기록한다.
+### `## 대응 플레이북`
 
-- `NOT_ATTEMPTED`: 미확정으로 자동 복구 미실행
-- `SUCCEEDED`: 실행 endpoint와 성공 응답
-- `FAILED`: 호출 실패 사유와 수동 조치 필요
-- `BLOCKED`: 안전 게이트 차단 사유와 추가 조사 필요
+`playbook.json`의 절차를 사람이 읽는 형태로 서술한다. 다음을 포함한다.
 
-복구 성공만으로 서비스 정상화를 주장하지 않는다. 별도 관측 증거가 없으면 검증
-상태는 `관측 대기`로 기록한다.
+- 이 플레이북이 **초안(DRAFT)**이며 아직 실행으로 검증되지 않았다는 표기
+- 각 실행 단계의 `step_id`, 의도, 수행할 작업, 성공 판정 기준
+- 되돌릴 수 없는 조치가 필요한 경우 그것이 실행 대상이 아니라 수동 조치 권고임을 명시
 
-`## 복구 결과`에는 `remediation.json`의 다음 네 값을 **문자열 그대로** 포함한다.
-값이 `null`이면 그 자리에 `N/A`를 쓴다. 하나라도 빠지거나 다른 말로 바꾸면 저장이
-거부된다.
+서술한 단계 집합은 `playbook.json`의 `execution_steps`와 **같은 `step_id`를 같은
+순서로** 담아야 한다. 하나라도 빠지거나 다른 식별자를 쓰면 저장이 거부된다.
 
-- `status`
-- `fault_type`
-- `endpoint_path` (`null`이면 `N/A`)
-- `validation_artifact`
+확정 근본원인이 없으면 실행 단계를 만들지 않고, 무엇을 더 조사해야 하는지를 쓴다.
 
-`## 검증 상태`에는 `remediation.json`의 `verification.status` 문자열을 그대로
-포함한다. 복구를 실행하지 않아 `remediation.json`이 없으면 `## 복구 결과`에
-`NOT_ATTEMPTED`와 나머지 값 자리에 `N/A`를 쓴다.
+### `## 증거 시간 범위`
 
-`## 증거 시간 범위`에는 다음 두 라벨과 ISO-8601 시작·종료 시각을 반드시 쓴다.
+다음 두 라벨과 ISO-8601 시작·종료 시각을 반드시 쓴다.
 
 - `Current alarm window`: 현재 알람의 상태 변경 시각을 기준으로 조사한 구간
 - `Historical comparison window`: 정상 baseline 또는 과거 비교를 위해 조회한 구간
@@ -64,6 +59,8 @@ description: RCA와 실제 remediation 결과를 분리해 최종 report.md와 p
 - Current alarm window: 2026-07-29T13:00:00Z ~ 2026-07-29T14:00:00Z
 - Historical comparison window: 2026-07-29T12:00:00Z ~ 2026-07-29T13:00:00Z
 ```
+
+### 증거 인용 규칙
 
 알람 컨텍스트가 신호를 `[식별자] 요약` 형태로 제공한 경우, 그 신호를 근거로 사용한
 증거 항목에 식별자를 원문 그대로 함께 적는다. 근거로 쓰지 않은 신호의 식별자는
@@ -80,25 +77,14 @@ window보다 이전에 생성된 수동 장애 주입·수동 테스트 로그�
 
 ## playbook.json
 
-기존 장애 유형, 증상 패턴, 정량 검증 절차, 임시·영구 조치, 에스컬레이션,
-예방 조치 필드를 유지하고 다음 객체를 추가한다.
+스키마와 `execution_steps` 규칙은 시스템 프롬프트의 플레이북 스키마 절을 따른다.
+핵심은 세 가지다.
 
-```json
-{
-  "remediation_result": {
-    "status": "NOT_ATTEMPTED | SUCCEEDED | FAILED | BLOCKED",
-    "fault_type": "db-leak",
-    "endpoint_path": "/fault/db-leak/reset",
-    "reason": "실행 또는 차단 결과",
-    "validation_artifact": "validation-2.json",
-    "verification": {
-      "status": "NORMALIZED | FAILED | PENDING",
-      "reason": "서버 측 bounded CloudWatch 검증 결과"
-    }
-  }
-}
-```
+- `step_id`는 안정적인 식별자이고 `report.md`의 서술과 일치해야 한다.
+- `action`은 자연어로 쓰고 명령 문자열을 박아 넣지 않는다. 대상 리소스는 명시한다.
+- `success_criteria`는 관측 가능한 기준이어야 한다. 없으면 실행 에이전트가 해결
+  여부를 판정할 수 없다.
 
-`remediation.json`은 서버 소유 원본이다. status, fault type, endpoint path,
-validation artifact, verification을 `report.md`와 `playbook.json`에 그대로 반영한다.
+`verification_status`는 항상 `DRAFT`다.
+
 Report 전문 에이전트는 `report.md`와 `playbook.json`을 모두 저장한다.

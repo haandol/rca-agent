@@ -19,17 +19,15 @@ EXPECTED_SKILLS = {
     "hypothesis-tree",
     "hypothesis-validation",
     "progress-reporting",
-    "remediation",
     "reporting",
 }
-EXPECTED_AGENTS = {"orchestrator", "rca-specialist", "remediation-specialist", "report-specialist"}
+EXPECTED_AGENTS = {"orchestrator", "rca-specialist", "report-specialist"}
 EXPECTED_SERVERS = {"aws-knowledge", "cloudwatch", "cloudtrail", "github", "rca-progress"}
 EXPECTED_CATEGORIES = {"DEPLOYMENT", "INFRASTRUCTURE", "TRAFFIC", "DEPENDENCY", "CONFIGURATION"}
 CANONICAL_ARTIFACTS = {
     "scoping.json",
     "hypotheses.json",
     "validation-{N}.json",
-    "remediation.json",
     "playbook.json",
     "report.md",
 }
@@ -75,11 +73,9 @@ def test_role_agents_have_unique_matching_frontmatter_names():
 def test_role_agents_enforce_distinct_tool_boundaries():
     orchestrator_tools = _frontmatter_value(AGENTS_DIR / "orchestrator.md", "tools")
     rca_tools = set(_frontmatter_value(AGENTS_DIR / "rca-specialist.md", "tools").split(", "))
-    remediation_tools = set(_frontmatter_value(AGENTS_DIR / "remediation-specialist.md", "tools").split(", "))
     report_tools = set(_frontmatter_value(AGENTS_DIR / "report-specialist.md", "tools").split(", "))
 
-    assert orchestrator_tools == "Agent(rca-specialist, remediation-specialist, report-specialist), Skill"
-    assert "execute_healthcare_reset" not in orchestrator_tools
+    assert orchestrator_tools == "Agent(rca-specialist, report-specialist), Skill"
     assert rca_tools == {
         "Skill",
         "mcp__aws-knowledge__*",
@@ -88,8 +84,16 @@ def test_role_agents_enforce_distinct_tool_boundaries():
         "mcp__github__*",
         "mcp__rca-progress__save_artifact",
     }
-    assert remediation_tools == {"Skill", "mcp__rca-progress__execute_healthcare_reset"}
     assert report_tools == {"Skill", "mcp__rca-progress__save_artifact"}
+
+
+def test_no_role_agent_can_change_a_service():
+    # Analysis is read-only. A write tool in any role would put recovery back
+    # inside analysis and bypass the user approval that now gates it.
+    for path in sorted(AGENTS_DIR.glob("*.md")):
+        tools = _frontmatter_value(path, "tools")
+        assert "reset" not in tools, path.name
+        assert "Bash" not in tools, path.name
 
 
 def test_mcp_server_set_is_explicit_and_stable():
@@ -191,46 +195,29 @@ def test_guidance_requires_fresh_execution_artifacts_and_forbids_prior_run_reuse
     assert "/tmp/rca-{RCA_ID}" not in guidance
 
 
-def test_main_prompt_orders_rca_conditional_remediation_and_mandatory_report(monkeypatch):
+def test_main_prompt_orders_rca_before_mandatory_report(monkeypatch):
     monkeypatch.setattr("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
     prompt = build_prompt(AlarmContext(alarm_name="OrchestrationContract"))
 
-    rca_index = prompt.index("1단계: RCA 전문 에이전트")
-    remediation_index = prompt.index("2단계: 조건부 Remediation 전문 에이전트")
-    report_index = prompt.index("3단계: Report 전문 에이전트")
-
-    assert rca_index < remediation_index < report_index
-    assert "Remediation이 `BLOCKED` 또는 `FAILED`를 반환해도 Report를 반드시 호출한다" in prompt
-    assert "최신 validation의 `confirmed`가 비어 있지 않을 때만" in prompt
+    assert prompt.index("1단계: RCA 전문 에이전트") < prompt.index("2단계: Report 전문 에이전트")
+    assert "RCA가 미확정이어도 호출한다" in prompt
+    assert "2단계: 조건부 Remediation" not in prompt
 
 
-def test_remediation_capability_is_narrow_and_has_no_fallback():
+def test_the_analysis_harness_exposes_no_write_capability():
     from cc_headless.adapters.secondary.cc.cc_subprocess_runner import _ALLOWED_TOOLS
 
     write_tools = {tool for tool in _ALLOWED_TOOLS if "rca-progress" in tool and "save_artifact" not in tool}
-    guidance = (SKILLS_DIR / "remediation" / "SKILL.md").read_text()
 
-    assert write_tools == {"mcp__rca-progress__execute_healthcare_reset"}
-    assert "URL이나 endpoint path를 인자로 전달하지 않는다" in guidance
-    assert "unsupported 원인에" in guidance
-    assert "대체 액션은 없다" in guidance
-    assert "자유 텍스트에서 fault type을 추론하지 않는다" in guidance
-    assert 'execute_healthcare_reset("unsupported")' in guidance
-    assert "미확정이면 도구를 호출하지 않으며" in guidance
-    assert "ECS `UpdateService`" in guidance
+    assert write_tools == set()
 
 
-def test_remediation_guidance_blocks_unresolved_conflicting_allowlisted_causes():
-    remediation = (SKILLS_DIR / "remediation" / "SKILL.md").read_text()
-    principles = (PROMPTS_DIR / "sections" / "core" / "principles.md").read_text()
+def test_guidance_states_that_execution_is_a_separate_approved_step():
+    guidance = _all_guidance()
 
-    assert "모든 validation loop를 반영한 최신 hypothesis 상태" in remediation
-    assert "확정 fault와 다른 allowlisted" in remediation
-    assert "`unclassified` 또는 `needs_investigation`" in remediation
-    assert "`rejected` 또는 `closed`인 경쟁 가설은 해소된 것으로 본다" in remediation
-    assert "모두 같은 reset action으로 수렴하면 충돌로 보지 않는다" in remediation
-    assert "서로 다른 allowlisted 원인을" in principles
-    assert "미해소 경쟁 가설이 있으면 어떤 변경도 실행하지 않는다" in principles
+    assert "사용자 승인" in guidance or "사용자가 승인" in guidance
+    assert "별도 실행 에이전트" in guidance or "별도 에이전트" in guidance
+    assert "복구를 실행하지 않는다" in guidance
 
 
 def test_hypothesis_and_validation_contract_require_matching_fault_enum():
@@ -253,21 +240,17 @@ def test_cc_completion_event_cannot_enter_strands_external_remediation_queue():
     assert '"StringValue": "rca_complete"' not in report_store
 
 
-def test_report_guidance_records_actual_remediation_states_and_verification_wait():
+def test_report_guidance_marks_the_playbook_as_an_unverified_draft():
     guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
     playbook = (PROMPTS_DIR / "sections" / "artifacts" / "playbook.md").read_text()
 
-    for status in ("NOT_ATTEMPTED", "SUCCEEDED", "FAILED", "BLOCKED"):
-        assert status in guidance
-        assert status in playbook
+    assert "DRAFT" in guidance
+    assert "DRAFT" in playbook
     assert "검증 메트릭" in playbook
     assert "Pass" in playbook
     assert "Fail" in playbook
-    assert "관측 대기" in guidance
-    for status in ("NORMALIZED", "FAILED", "PENDING"):
-        assert status in guidance
-        assert status in playbook
-    assert "remediation.json" in guidance
+    # Nothing may describe an execution that has not happened.
+    assert "복구를 실행하지 않았으므로" in guidance
 
 
 def test_report_contract_separates_current_and_historical_evidence_windows():
@@ -295,23 +278,23 @@ def test_required_artifact_contract_matches_watcher():
     assert set(ARTIFACT_SPAN_MAP) == {
         "scoping.json",
         "hypotheses.json",
-        "remediation.json",
         "playbook.json",
         "report.md",
     }
     assert "validation-{N}.json" in _all_guidance()
 
 
-def test_playbook_guidance_requires_copying_the_server_owned_remediation_values():
-    # The completion gate compares playbook remediation_result against the server's
-    # own remediation.json byte for byte, so paraphrasing fails the whole run.
+def test_playbook_guidance_defines_the_execution_step_contract():
+    # These are what the execution agent runs and what the retrospective corrects,
+    # so the prompt has to name every field the gate requires.
+    from cc_headless.services.artifact_validation import _EXECUTION_STEP_FIELDS
+
     playbook = (PROMPTS_DIR / "sections" / "artifacts" / "playbook.md").read_text()
 
-    assert "글자 그대로 복사" in playbook
-    assert "remediation.json" in playbook
-    for field in ("status", "fault_type", "endpoint_path", "validation_artifact"):
+    for field in _EXECUTION_STEP_FIELDS:
         assert field in playbook
-    assert "요약하거나 다른 말로 바꾸거나 번역하지 않는다" in playbook
+    assert "명령 문자열을 박아 넣지 않는다" in playbook
+    assert "되돌릴 수 없는 조치를 담지 않는다" in playbook
 
 
 def test_playbook_guidance_names_every_required_field_as_mandatory():

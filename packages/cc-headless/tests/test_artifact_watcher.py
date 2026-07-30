@@ -20,7 +20,6 @@ def _scan(artifact_dir, seen=None):
     [
         ("scoping.json", "SCOPING"),
         ("hypotheses.json", "HYPOTHESIS_GENERATION"),
-        ("remediation.json", "REMEDIATION"),
         ("playbook.json", "PLAYBOOK"),
         ("report.md", "REPORT"),
         ("validation-3.json", "VALIDATION_LOOP"),
@@ -212,58 +211,51 @@ def test_watcher_write_uses_transactional_current_claim_condition(monkeypatch):
     assert items[1]["Put"]["Item"]["span_type"]["S"] == "REPORT"
 
 
-def test_remediation_span_stores_only_bounded_dashboard_metadata(monkeypatch):
+def test_playbook_span_carries_the_execution_steps_a_person_will_approve(monkeypatch):
     monkeypatch.setattr(artifact_watcher, "DYNAMODB_TABLE_NAME", "sessions")
     ddb = Mock()
     artifact = {
-        "status": "BLOCKED",
-        "fault_type": "unsupported",
-        "endpoint_path": None,
-        "verification": {
-            "status": "PENDING",
-            "reason": "x" * 600,
-            "raw_response": {"must": "not be copied"},
-        },
-        "confirmed_hypothesis_ids": ["hypothesis-1"],
-        "error": "must not be copied to metadata",
+        "playbook_id": "pb-1",
+        "failure_type": "db-leak",
+        "verification_status": "DRAFT",
+        "execution_steps": [
+            {
+                "step_id": "step-1",
+                "intent": "restore the pool",
+                "action": "restart the healthcare service",
+                "success_criteria": "x" * 600,
+                "raw_response": {"must": "not be copied"},
+            },
+            "not an object",
+        ],
         "raw_response": {"large": "payload"},
     }
 
-    artifact_watcher._write_span(
-        ddb,
-        "rca-1",
-        "REMEDIATION",
-        artifact,
-        claim_token=CLAIM_TOKEN,
-    )
+    artifact_watcher._write_span(ddb, "rca-1", "PLAYBOOK", artifact, claim_token=CLAIM_TOKEN)
 
-    item = ddb.transact_write_items.call_args.kwargs["TransactItems"][1]["Put"]["Item"]
-    metadata = item["metadata"]["M"]
-    assert set(metadata) == {"status", "fault_type", "endpoint_path", "verification"}
-    assert metadata["status"] == {"S": "BLOCKED"}
-    assert metadata["fault_type"] == {"S": "unsupported"}
-    assert metadata["endpoint_path"] == {"S": ""}
-    assert metadata["verification"]["M"]["status"] == {"S": "PENDING"}
-    assert metadata["verification"]["M"]["reason"] == {"S": "x" * 500}
-    assert set(metadata["verification"]["M"]) == {"status", "reason"}
+    metadata = ddb.transact_write_items.call_args.kwargs["TransactItems"][1]["Put"]["Item"]["metadata"]["M"]
+    assert metadata["verification_status"] == {"S": "DRAFT"}
+    steps = metadata["execution_steps"]["L"]
+    assert len(steps) == 1
+    step = steps[0]["M"]
+    assert set(step) == {"step_id", "intent", "action", "success_criteria"}
+    assert step["step_id"] == {"S": "step-1"}
+    assert step["success_criteria"] == {"S": "x" * 500}
 
 
-def test_remediation_span_omits_unrecognized_metadata_status(monkeypatch):
+def test_playbook_span_omits_execution_steps_when_there_are_none(monkeypatch):
+    # An unconfirmed RCA declares no steps, and an empty list in the trace would
+    # read as "steps existed but were dropped".
     monkeypatch.setattr(artifact_watcher, "DYNAMODB_TABLE_NAME", "sessions")
     ddb = Mock()
 
     artifact_watcher._write_span(
         ddb,
         "rca-1",
-        "REMEDIATION",
-        {
-            "status": "NOT_ATTEMPTED",
-            "fault_type": "db-leak",
-            "endpoint_path": None,
-            "verification": {"status": "PENDING", "reason": "not run"},
-        },
+        "PLAYBOOK",
+        {"playbook_id": "pb-1", "execution_steps": []},
         claim_token=CLAIM_TOKEN,
     )
 
-    item = ddb.transact_write_items.call_args.kwargs["TransactItems"][1]["Put"]["Item"]
-    assert "status" not in item["metadata"]["M"]
+    metadata = ddb.transact_write_items.call_args.kwargs["TransactItems"][1]["Put"]["Item"]["metadata"]["M"]
+    assert "execution_steps" not in metadata
