@@ -20,8 +20,8 @@ class ExecutionState(StrEnum):
     CANCELLED = "CANCELLED"
 
 
-# ADR agent/0017 의 상태 전이. 실행 중에서 해결로 바로 가는 경로는 없다 — 관측 없이
-# 해결로 전이하면 미해결 장애가 완료로 기록된다.
+# 실행 중에서 해결로 바로 가는 경로는 없다 — 관측 없이 해결로 전이하면 미해결 장애가
+# 완료로 기록된다.
 VALID_TRANSITIONS: dict[ExecutionState, frozenset[ExecutionState]] = {
     ExecutionState.PENDING_APPROVAL: frozenset(
         {ExecutionState.EXECUTING, ExecutionState.CANCELLED, ExecutionState.FAILED}

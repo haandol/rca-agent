@@ -47,7 +47,7 @@
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
-          "status": "Superseded by agent/0017 (2026-07-30)",
+          "status": "Superseded by [ADR 0017](0017-playbook-execution-agent.md)",
           "summary": "서버 소유 RCA와 허용 목록을 검증한 제한적 자동 복구만 실행한다. 사용자 승인 기반 플레이북 실행으로 대체됨."
         },
         {

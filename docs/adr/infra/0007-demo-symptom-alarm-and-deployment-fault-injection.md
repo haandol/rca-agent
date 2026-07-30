@@ -1,10 +1,11 @@
 # ADR 0007: 데모 시나리오 — 증상 기반 알람과 배포 기반 장애 주입
 
 Date: 2026-07-29
+Updated: 2026-07-30
 
 ## Status
 
-Accepted (2026-07-29)
+Accepted (2026-07-30)
 
 ## Context
 

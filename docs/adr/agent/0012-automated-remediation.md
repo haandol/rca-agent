@@ -5,7 +5,7 @@ Updated: 2026-07-30
 
 ## Status
 
-Superseded by [ADR 0017](0017-playbook-execution-agent.md) (2026-07-30)
+Superseded by [ADR 0017](0017-playbook-execution-agent.md)
 
 자동 복구를 폐지하고 사용자 승인 게이트를 통과한 플레이북 실행으로 대체했다. 아래
 본문은 대체 이전의 결정을 기록으로 남긴 것이며 현재 동작이 아니다.
