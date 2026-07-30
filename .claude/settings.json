@@ -1,14 +1,6 @@
 {
   "enabledPlugins": {
-    "nx@nx-claude-plugins": true,
     "alps-writer@alps-writer": true
   },
-  "extraKnownMarketplaces": {
-    "nx-claude-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "nrwl/nx-ai-agents-config"
-      }
-    }
-  }
+  "extraKnownMarketplaces": {}
 }
