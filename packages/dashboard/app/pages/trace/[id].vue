@@ -6,7 +6,6 @@ import { marked } from 'marked';
 import { buildTraceGraph, type NodeData } from '~/composables/useTraceGraph';
 import SpanNode from '~/components/flow/SpanNode.vue';
 import HypoNode from '~/components/flow/HypoNode.vue';
-import RemediationDetail from '~/components/flow/RemediationDetail.vue';
 
 function md(text: string | undefined | null): string {
   if (!text) return '';
@@ -70,8 +69,6 @@ const STATE_LABEL: Record<string, string> = {
   EVIDENCE_COLLECTION: '증거 수집',
   HYPOTHESIS_VALIDATION: '가설 검증',
   REPORT_GENERATION: '보고서 생성',
-  REMEDIATION: '자동 복구',
-  VERIFICATION: '복구 검증',
   ANALYZING: '분석 중',
   COMPLETED: '완료',
   FAILED: '실패',
@@ -90,19 +87,10 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleString();
 }
 
-function remediationBadgeClass(
-  status: string,
-  success: boolean | null = null,
-): string {
-  if (status === 'COMPLETED') {
-    if (success === true) return 'badge-success';
-    if (success === false) return 'badge-error';
-    return 'badge-ghost';
-  }
-  if (['SUCCEEDED', 'NORMALIZED'].includes(status)) return 'badge-success';
-  if (['FAILED', 'BREACHING'].includes(status)) return 'badge-error';
-  if (['BLOCKED', 'PENDING', 'PROCESSING'].includes(status))
-    return 'badge-warning';
+function executionBadgeClass(state: string): string {
+  if (state === 'RESOLVED') return 'badge-success';
+  if (state === 'UNRESOLVED' || state === 'FAILED') return 'badge-error';
+  if (state === 'EXECUTING' || state === 'VERIFYING') return 'badge-warning';
   return 'badge-ghost';
 }
 
@@ -286,84 +274,58 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` });
             {{ formatTime(trace.session.createdAt) }}
           </div>
         </div>
+        <!-- Executions have their own lifecycle, so they are listed beside the
+             analysis session rather than folded into its state. -->
         <div
-          v-if="
-            trace.session.remediationStatus ||
-            trace.session.verificationStatus ||
-            trace.session.metricsNormalized !== null
-          "
-          class="col-span-2 md:col-span-4 border-t border-base-content/5 pt-3"
+          v-if="trace.executions.length"
+          class="col-span-2 md:col-span-4 border-t border-base-content/5 pt-3 space-y-2"
         >
-          <div class="flex flex-wrap items-center gap-2">
-            <div
-              class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider mr-1"
-            >
-              자동 복구
-            </div>
+          <div
+            class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider"
+          >
+            플레이북 실행
+          </div>
+          <div
+            v-for="execution in trace.executions"
+            :key="execution.executionId"
+            class="flex flex-wrap items-center gap-2"
+          >
             <span
-              v-if="trace.session.remediationStatus"
               class="badge badge-sm"
-              :class="
-                remediationBadgeClass(
-                  trace.session.remediationStatus,
-                  trace.session.remediationSuccess,
-                )
-              "
+              :class="executionBadgeClass(execution.state)"
             >
-              {{ trace.session.remediationStatus }}
+              {{ execution.stateLabel }}
+            </span>
+            <span class="text-xs text-base-content/50">
+              {{ execution.attempt }}회차 · 절차
+              {{ execution.attemptedStepCount }}건
             </span>
             <span
-              v-if="trace.session.verificationStatus"
-              class="badge badge-sm"
-              :class="remediationBadgeClass(trace.session.verificationStatus)"
+              v-if="execution.blockedCount"
+              class="badge badge-sm badge-warning"
             >
-              검증 {{ trace.session.verificationStatus }}
+              차단 {{ execution.blockedCount }}
             </span>
             <span
-              v-if="trace.session.metricsNormalized !== null"
-              class="badge badge-sm"
-              :class="
-                trace.session.metricsNormalized
-                  ? 'badge-success'
-                  : 'badge-error'
-              "
+              v-if="execution.failedStepCount"
+              class="badge badge-sm badge-error"
             >
-              메트릭
-              {{ trace.session.metricsNormalized ? '정상화' : '미정상화' }}
+              실패 {{ execution.failedStepCount }}
             </span>
-            <span
-              v-if="trace.session.remediationCompletedAt"
-              class="text-xs text-base-content/45 ml-auto"
+            <NuxtLink
+              v-if="execution.retrospectiveStatus"
+              :to="`/retrospective/${id}/${execution.executionId}`"
+              class="badge badge-sm badge-info"
             >
-              {{ formatTime(trace.session.remediationCompletedAt) }}
+              회고 {{ execution.retrospectiveStatus }}
+            </NuxtLink>
+            <span
+              v-if="execution.errorReason"
+              class="text-xs text-error/70 w-full"
+            >
+              {{ execution.errorReason }}
             </span>
           </div>
-          <p
-            v-if="trace.session.remediationSummary"
-            class="text-xs text-base-content/70 mt-2 whitespace-pre-wrap"
-          >
-            {{ trace.session.remediationSummary }}
-          </p>
-          <p
-            v-if="trace.session.verificationSummary"
-            class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap"
-          >
-            {{ trace.session.verificationSummary }}
-          </p>
-          <p
-            v-if="trace.session.remediationError"
-            class="text-xs text-error mt-1 whitespace-pre-wrap"
-          >
-            {{ trace.session.remediationError }}
-          </p>
-          <ul
-            v-if="trace.session.remainingIssues.length"
-            class="mt-2 list-disc pl-4 text-xs text-error/80 space-y-1"
-          >
-            <li v-for="issue in trace.session.remainingIssues" :key="issue">
-              {{ issue }}
-            </li>
-          </ul>
         </div>
       </div>
 
@@ -400,18 +362,9 @@ useHead({ title: () => `Trace ${id.slice(0, 8)}` });
         >
           <div class="p-4">
             <template v-if="selectedNode">
-              <!-- Remediation detail -->
-              <RemediationDetail
-                v-if="
-                  selectedNode.nodeType === 'span' &&
-                  selectedNode.spanType === 'REMEDIATION'
-                "
-                :node="selectedNode"
-              />
-
               <!-- Playbook detail -->
               <template
-                v-else-if="
+                v-if="
                   selectedNode.nodeType === 'span' &&
                   selectedNode.spanType === 'PLAYBOOK' &&
                   selectedNode.metadata

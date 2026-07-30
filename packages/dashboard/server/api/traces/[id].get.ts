@@ -46,7 +46,6 @@ export default defineEventHandler(async (event) => {
       const spanId = sk.includes('#SPAN#')
         ? (sk.split('#SPAN#')[1] ?? '')
         : sk.replace('SPAN#', '');
-      const remediation = readSpanRemediation(i);
       return {
         spanId,
         spanType: (i.span_type as string) || '',
@@ -61,7 +60,6 @@ export default defineEventHandler(async (event) => {
         error: (i.error as string) || null,
         metadata: (i.metadata as Record<string, unknown>) || null,
         engine: (i.engine as string) || parseEngine(sk),
-        ...remediation,
       };
     })
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -71,40 +69,26 @@ export default defineEventHandler(async (event) => {
     const isSession = sk.endsWith('#SESSION') || sk === 'SESSION';
     return isSession && matchesEngine(sk);
   });
-  const selectedSessionEngine = session
-    ? (session.engine as string) || parseEngine(session.SK as string)
-    : engineFilter;
-  const remediationSpan = [...spans]
-    .reverse()
-    .find(
-      (span) =>
-        span.spanType === 'REMEDIATION' &&
-        span.engine === selectedSessionEngine,
-    );
-  // Each span already carries a full RemediationDetails, so the latest
-  // REMEDIATION span can back-fill fields the session record lacks as-is.
-  const sessionRemediation = session
-    ? mergeRemediationDetails(
-        readSessionRemediation(session),
-        remediationSpan ?? readSpanRemediation({}),
-      )
+  // Executions have their own lifecycle, so they are reported alongside the
+  // analysis session rather than merged into it.
+  const executions = items
+    .filter((i) => isExecutionItem((i.SK as string) || ''))
+    .map(readExecution)
+    .sort((a, b) => b.attempt - a.attempt);
+
+  const sessionData = session
+    ? {
+        state: (session.state as string) || 'UNKNOWN',
+        alarmName: (session.alarm_name as string) || '',
+        alarmArn: (session.alarm_arn as string) || '',
+        rootCause: (session.root_cause as string) || '',
+        confirmed: (session.confirmed as boolean) ?? false,
+        errorReason: (session.error_reason as string) || '',
+        createdAt: (session.created_at as string) || '',
+        updatedAt: (session.updated_at as string) || '',
+        engine: (session.engine as string) || parseEngine(session.SK as string),
+      }
     : null;
-  const sessionData =
-    session && sessionRemediation
-      ? {
-          state: (session.state as string) || 'UNKNOWN',
-          alarmName: (session.alarm_name as string) || '',
-          alarmArn: (session.alarm_arn as string) || '',
-          rootCause: (session.root_cause as string) || '',
-          confirmed: (session.confirmed as boolean) ?? false,
-          errorReason: (session.error_reason as string) || '',
-          createdAt: (session.created_at as string) || '',
-          updatedAt: (session.updated_at as string) || '',
-          engine:
-            (session.engine as string) || parseEngine(session.SK as string),
-          ...sessionRemediation,
-        }
-      : null;
 
   const hypotheses = items
     .filter((i) => {
@@ -139,5 +123,5 @@ export default defineEventHandler(async (event) => {
       };
     });
 
-  return { rcaId: id, session: sessionData, spans, hypotheses };
+  return { rcaId: id, session: sessionData, spans, hypotheses, executions };
 });

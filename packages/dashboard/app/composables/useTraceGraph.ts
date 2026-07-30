@@ -14,17 +14,6 @@ interface SpanItem {
   outputSummary: string;
   error: string | null;
   metadata: Record<string, unknown> | null;
-  remediationStatus: string;
-  remediationSuccess: boolean | null;
-  remediationSummary: string;
-  remediationError: string;
-  remediationCompletedAt: string;
-  verificationStatus: string;
-  metricsNormalized: boolean | null;
-  verificationSummary: string;
-  remainingIssues: string[];
-  remediationFaultType: string;
-  remediationEndpoint: string;
 }
 
 interface HypothesisItem {
@@ -64,24 +53,11 @@ export interface NodeData {
   description?: string;
   evidenceSummary?: string;
   judgmentReasoning?: string;
-  remediationStatus?: string;
-  remediationSuccess?: boolean | null;
-  remediationSummary?: string;
-  remediationError?: string;
-  remediationCompletedAt?: string;
-  verificationStatus?: string;
-  metricsNormalized?: boolean | null;
-  verificationSummary?: string;
-  remainingIssues?: string[];
-  remediationFaultType?: string;
-  remediationEndpoint?: string;
 }
 
 const SPAN_LABEL: Record<string, string> = {
   SCOPING: '스코핑',
   HYPOTHESIS_GENERATION: '가설 생성',
-  REMEDIATION: '자동 복구',
-  VERIFICATION: '복구 검증',
   PLAYBOOK: '플레이북',
   REPORT: '보고서',
   NOTIFICATION: '알림',
@@ -90,8 +66,6 @@ const SPAN_LABEL: Record<string, string> = {
 const PIPELINE_STAGE_ORDER = [
   'SCOPING',
   'HYPOTHESIS_GENERATION',
-  'REMEDIATION',
-  'VERIFICATION',
   'PLAYBOOK',
   'REPORT',
   'NOTIFICATION',
@@ -144,17 +118,6 @@ export function buildTraceGraph(
         spanId: s.spanId,
         spanType: s.spanType,
         loopIndex: s.loopIndex,
-        remediationStatus: s.remediationStatus,
-        remediationSuccess: s.remediationSuccess,
-        remediationSummary: s.remediationSummary,
-        remediationError: s.remediationError,
-        remediationCompletedAt: s.remediationCompletedAt,
-        verificationStatus: s.verificationStatus,
-        metricsNormalized: s.metricsNormalized,
-        verificationSummary: s.verificationSummary,
-        remainingIssues: s.remainingIssues,
-        remediationFaultType: s.remediationFaultType,
-        remediationEndpoint: s.remediationEndpoint,
       },
     });
   }

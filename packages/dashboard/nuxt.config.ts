@@ -19,5 +19,8 @@ export default defineNuxtConfig({
     dynamodbTableName:
       process.env.DYNAMODB_TABLE_NAME || 'RcaAgentDevRcaSession',
     s3ReportBucket: process.env.S3_REPORT_BUCKET || 'rca-agent-dev-evidence',
+    // Publishing here is what approves an execution, so it has no default: a
+    // misconfigured dashboard must fail to approve rather than approve elsewhere.
+    executionQueueUrl: process.env.EXECUTION_QUEUE_URL || '',
   },
 });

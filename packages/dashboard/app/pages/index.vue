@@ -49,16 +49,6 @@ const stateStyle: Record<string, { bg: string; text: string; dot: string }> = {
     text: 'text-warning',
     dot: 'bg-warning animate-pulse',
   },
-  REMEDIATION: {
-    bg: 'bg-warning/10',
-    text: 'text-warning',
-    dot: 'bg-warning animate-pulse',
-  },
-  VERIFICATION: {
-    bg: 'bg-warning/10',
-    text: 'text-warning',
-    dot: 'bg-warning animate-pulse',
-  },
 };
 
 const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CANCELLED', 'OUTDATED'];
@@ -71,8 +61,6 @@ const STATE_LABEL: Record<string, string> = {
   EVIDENCE_COLLECTION: '증거 수집',
   HYPOTHESIS_VALIDATION: '가설 검증',
   REPORT_GENERATION: '보고서 생성',
-  REMEDIATION: '자동 복구',
-  VERIFICATION: '복구 검증',
   ANALYZING: '분석 중',
   COMPLETED: '완료',
   FAILED: '실패',
@@ -94,10 +82,7 @@ const STATE_DESC: Record<string, string> = {
   HYPOTHESIS_VALIDATION:
     '수집된 증거를 바탕으로 가설을 채택(CONFIRMED), 기각(REJECTED), 또는 추가 조사(NEEDS_INVESTIGATION)로 분류하는 단계. 매 루프 진입 시 Accepted Review Gate가 기존 채택 가설을 리뷰하여 중복 탐색을 차단한다.',
   REPORT_GENERATION:
-    '채택된 근본원인과 증거를 기반으로 한글 RCA 보고서를 생성하는 단계',
-  REMEDIATION:
-    '근본원인에 맞는 자동 복구 조치(장애 리셋, ECS 재배포 등)를 수행하는 단계',
-  VERIFICATION: '복구 후 메트릭을 재조회하여 정상화 여부를 확인하는 단계',
+    '플레이북을 포함한 한글 RCA 보고서를 생성하는 단계. 분석은 여기서 끝나고 복구는 수행하지 않는다.',
   ANALYZING:
     'CC Headless 엔진이 프롬프트 주도로 전체 파이프라인을 자율 실행 중인 상태',
   COMPLETED:
@@ -131,19 +116,11 @@ function formatTime(iso: string) {
   });
 }
 
-function remediationBadgeClass(
-  status: string,
-  success: boolean | null = null,
-): string {
-  if (status === 'COMPLETED') {
-    if (success === true) return 'badge-success';
-    if (success === false) return 'badge-error';
-    return 'badge-ghost';
-  }
-  if (['SUCCEEDED', 'NORMALIZED'].includes(status)) return 'badge-success';
-  if (['FAILED', 'BREACHING'].includes(status)) return 'badge-error';
-  if (['BLOCKED', 'PENDING', 'PROCESSING'].includes(status))
-    return 'badge-warning';
+// 미해결과 실패를 성공과 같은 강도로 보여주면 사람이 완료로 오인한다.
+function executionBadgeClass(state: string): string {
+  if (state === 'RESOLVED') return 'badge-success';
+  if (state === 'UNRESOLVED' || state === 'FAILED') return 'badge-error';
+  if (state === 'EXECUTING' || state === 'VERIFYING') return 'badge-warning';
   return 'badge-ghost';
 }
 
@@ -431,41 +408,36 @@ useHead({ title: 'RCA 대시보드' });
               </p>
               <span v-else class="text-base-content/25">-</span>
               <div
-                v-if="
-                  session.remediationStatus ||
-                  session.verificationStatus ||
-                  session.metricsNormalized !== null
-                "
-                class="flex flex-wrap gap-1 mt-1.5"
+                v-if="session.executionState"
+                class="flex flex-wrap items-center gap-1 mt-1.5"
               >
                 <span
-                  v-if="session.remediationStatus"
                   class="badge badge-xs"
-                  :class="
-                    remediationBadgeClass(
-                      session.remediationStatus,
-                      session.remediationSuccess,
-                    )
-                  "
+                  :class="executionBadgeClass(session.executionState)"
                 >
-                  복구 {{ session.remediationStatus }}
+                  실행 {{ session.executionStateLabel }}
                 </span>
                 <span
-                  v-if="session.verificationStatus"
-                  class="badge badge-xs"
-                  :class="remediationBadgeClass(session.verificationStatus)"
+                  v-if="session.executionBlockedCount"
+                  class="badge badge-xs badge-warning"
+                  title="되돌릴 수 없는 조치라 차단되어 수동 조치로 남은 절차"
                 >
-                  검증 {{ session.verificationStatus }}
+                  차단 {{ session.executionBlockedCount }}
                 </span>
                 <span
-                  v-else-if="session.metricsNormalized !== null"
-                  class="badge badge-xs"
-                  :class="
-                    session.metricsNormalized ? 'badge-success' : 'badge-error'
-                  "
+                  v-if="session.executionAttempts > 1"
+                  class="badge badge-xs badge-ghost"
                 >
-                  메트릭 {{ session.metricsNormalized ? '정상화' : '미정상화' }}
+                  {{ session.executionAttempts }}회 시도
                 </span>
+                <NuxtLink
+                  v-if="session.retrospectiveStatus === 'UPDATED'"
+                  :to="`/retrospective/${session.rcaId}/${session.executionId}`"
+                  class="badge badge-xs badge-info"
+                  title="실행 증거로 플레이북이 갱신되었다"
+                >
+                  회고 반영
+                </NuxtLink>
               </div>
             </td>
             <td class="text-xs text-base-content/45 whitespace-nowrap">
