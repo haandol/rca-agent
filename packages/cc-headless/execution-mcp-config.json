@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "cloudwatch": {
+      "command": "uvx",
+      "args": ["awslabs.cloudwatch-mcp-server"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    },
+    "playbook-execution": {
+      "command": "fastmcp",
+      "args": [
+        "run",
+        "{{PACKAGE_ROOT}}/src/cc_headless/execution_mcp_server.py:mcp"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    },
+    "playbook-retrospective": {
+      "command": "fastmcp",
+      "args": [
+        "run",
+        "{{PACKAGE_ROOT}}/src/cc_headless/retrospective_mcp_server.py:mcp"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}

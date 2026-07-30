@@ -1,0 +1,360 @@
+"""플레이북 실행과 회고의 오케스트레이션.
+
+승인 요청을 소비해 실행하고, 해결이 확정되면 회고를 이어서 수행한다. 실행 상태는
+분석 세션과 별도 생명주기를 가지며, 실행 실패가 분석 리포트를 변경하지 않는다.
+"""
+
+from __future__ import annotations
+
+from threading import Event
+
+import structlog
+
+from cc_headless.config.settings import EXECUTION_CLAIM_SECONDS
+from cc_headless.di.execution_container import ExecutionContainer
+from cc_headless.ports.interfaces.execution_store import (
+    ExecutionClaimDisposition,
+    ExecutionClaimLostError,
+    ExecutionTarget,
+    ExecutionTargetUnavailableError,
+)
+from cc_headless.services.execution_evidence import ExecutionEvidence
+from cc_headless.services.execution_outcome import assemble_evidence, judge_resolution
+from cc_headless.services.execution_prompt import (
+    build_execution_prompt,
+    build_retrospective_prompt,
+)
+from cc_headless.services.execution_request import (
+    ExecutionRequest,
+    InvalidExecutionRequestError,
+    parse_execution_request,
+)
+from cc_headless.services.execution_state import ExecutionState, enters_retrospective
+from cc_headless.services.execution_workspace import ExecutionWorkspace
+from cc_headless.services.playbook_merge import merge_playbook_update
+
+logger = structlog.get_logger()
+
+
+class ExecutionOrchestrator:
+    def __init__(self, container: ExecutionContainer, shutdown_event: Event | None = None):
+        self._c = container
+        self._shutdown_event = shutdown_event or Event()
+
+    def process_message(self, message_body: str) -> bool:
+        """실행 요청 하나를 처리한다. True 면 큐에서 지운다."""
+        try:
+            request = parse_execution_request(message_body)
+        except InvalidExecutionRequestError as exc:
+            # 승인으로 해석할 수 없는 메시지는 실행하지 않는다. 재전달해도 같은 판정이
+            # 나오므로 큐에서 지운다.
+            logger.error("execution_request_rejected", detail=str(exc))
+            return True
+
+        execution_id = request.execution_id
+        log = logger.bind(
+            execution_id=execution_id,
+            rca_id=request.rca_id,
+            engine=request.engine,
+            approval_id=request.approval_id,
+        )
+        log.info("execution_request_received")
+
+        store = self._c.execution_store
+        claim = store.claim_execution(
+            execution_id,
+            rca_id=request.rca_id,
+            engine=request.engine,
+            approval_id=request.approval_id,
+            requested_by=request.requested_by,
+            claim_seconds=EXECUTION_CLAIM_SECONDS,
+        )
+        if claim.disposition is ExecutionClaimDisposition.TERMINAL_DUPLICATE:
+            log.info("execution_terminal_duplicate_acknowledged")
+            return True
+        if not claim.acquired:
+            log.info("execution_claim_contended")
+            return False
+
+        return self._run(request, execution_id, claim.claim_token, log)
+
+    def _run(
+        self,
+        request: ExecutionRequest,
+        execution_id: str,
+        claim_token: str,
+        log: structlog.stdlib.BoundLogger,
+    ) -> bool:
+        store = self._c.execution_store
+        workspace = ExecutionWorkspace.create(execution_id)
+        workspace.prepare()
+
+        try:
+            try:
+                target = store.load_target(request.rca_id, request.engine)
+            except ExecutionTargetUnavailableError as exc:
+                log.error("execution_target_unavailable", detail=str(exc))
+                store.update_state(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    state=ExecutionState.FAILED,
+                    claim_token=claim_token,
+                    error_reason=str(exc),
+                )
+                return True
+
+            # 갱신 전 사본을 실행 시작 시점에 보존한다. 회고가 원본을 덮어쓰므로 사후에
+            # 복원할 수 없고, 이 사본이 없으면 갱신 diff 의 기준이 사라진다.
+            snapshot_key = self._c.evidence_store.save_playbook_snapshot(
+                execution_id,
+                rca_id=request.rca_id,
+                playbook=target.playbook,
+            )
+
+            steps = target.playbook.get("execution_steps")
+            if not isinstance(steps, list) or not steps:
+                reason = "approved playbook declares no execution steps"
+                log.info("execution_has_no_steps")
+                store.update_state(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    state=ExecutionState.FAILED,
+                    claim_token=claim_token,
+                    error_reason=reason,
+                )
+                return True
+
+            prompt = build_execution_prompt(target, execution_id=execution_id)
+
+            def _should_cancel() -> bool:
+                if self._shutdown_event.is_set():
+                    return True
+                state = store.load_state(execution_id, rca_id=request.rca_id)
+                return state is ExecutionState.CANCELLED
+
+            cc_result = self._c.execution_runner.run_execution(
+                prompt,
+                execution_token=workspace.token,
+                execution_id=execution_id,
+                cancel_checker=_should_cancel,
+            )
+
+            evidence = assemble_evidence(
+                workspace.read_records(),
+                execution_id=execution_id,
+                rca_id=request.rca_id,
+                engine=request.engine,
+                playbook=target.playbook,
+            )
+
+            if cc_result.cancelled:
+                return self._finish(
+                    execution_id,
+                    request,
+                    evidence,
+                    claim_token,
+                    ExecutionState.CANCELLED,
+                    "execution was cancelled",
+                    log,
+                )
+
+            store.update_state(
+                execution_id,
+                rca_id=request.rca_id,
+                state=ExecutionState.VERIFYING,
+                claim_token=claim_token,
+                summary=evidence.summary(),
+            )
+
+            verdict = judge_resolution(evidence, agent_succeeded=cc_result.success)
+            log.info(
+                "execution_judged",
+                state=str(verdict.state),
+                blocked=evidence.blocked_count,
+                failed=evidence.failed_step_count,
+            )
+            self._finish(
+                execution_id,
+                request,
+                evidence,
+                claim_token,
+                verdict.state,
+                verdict.reason,
+                log,
+            )
+
+            if enters_retrospective(verdict.state):
+                self._retrospect(execution_id, request, target, evidence, claim_token, workspace, snapshot_key, log)
+            return True
+        except ExecutionClaimLostError:
+            # 다른 워커가 같은 실행을 이어받았다. 이 워커의 쓰기는 더 이상 유효하지 않다.
+            log.info("execution_claim_lost")
+            return False
+        except Exception:
+            log.exception("execution_pipeline_failed")
+            try:
+                store.update_state(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    state=ExecutionState.FAILED,
+                    claim_token=claim_token,
+                    error_reason="Unhandled execution exception",
+                )
+            except Exception:
+                log.exception("execution_mark_failed_failed")
+            return False
+        finally:
+            workspace.cleanup()
+
+    def _finish(
+        self,
+        execution_id: str,
+        request: ExecutionRequest,
+        evidence: ExecutionEvidence,
+        claim_token: str,
+        state: ExecutionState,
+        reason: str,
+        log: structlog.stdlib.BoundLogger,
+    ) -> bool:
+        """증거를 먼저 보존한 뒤 상태를 확정한다.
+
+        실행이 실패·미해결로 끝나도 증거는 지우지 않는다. 자동 회고의 입력은 아니지만
+        사람이 원인을 읽는 유일한 자료다.
+        """
+        evidence.final_state = str(state)
+        if state is not ExecutionState.RESOLVED:
+            evidence.error_reason = reason
+
+        evidence_key = ""
+        try:
+            evidence_key = self._c.evidence_store.save_execution_evidence(
+                execution_id,
+                rca_id=request.rca_id,
+                evidence=evidence.to_dict(),
+            )
+        except Exception:
+            # 증거 저장 실패를 실행 실패로 처리하지 않는다. 실행은 이미 일어났고 그
+            # 사실을 상태로는 남겨야 한다.
+            log.exception("execution_evidence_save_failed")
+
+        self._c.execution_store.update_state(
+            execution_id,
+            rca_id=request.rca_id,
+            state=state,
+            claim_token=claim_token,
+            summary=evidence.summary(),
+            error_reason="" if state is ExecutionState.RESOLVED else reason,
+            evidence_s3_key=evidence_key,
+        )
+        return True
+
+    def _retrospect(
+        self,
+        execution_id: str,
+        request: ExecutionRequest,
+        target: ExecutionTarget,
+        evidence: ExecutionEvidence,
+        claim_token: str,
+        workspace: ExecutionWorkspace,
+        snapshot_key: str,
+        log: structlog.stdlib.BoundLogger,
+    ) -> None:
+        """해결된 실행 직후의 회고. 실패해도 실행 결과를 되돌리지 않는다."""
+        store = self._c.execution_store
+        if not store.claim_retrospective(execution_id, rca_id=request.rca_id, claim_token=claim_token):
+            log.info("retrospective_already_claimed")
+            return
+
+        try:
+            prompt = build_retrospective_prompt(target, evidence, execution_id=execution_id)
+            result = self._c.execution_runner.run_retrospective(
+                prompt,
+                execution_token=workspace.token,
+                execution_id=execution_id,
+            )
+            if not result.success:
+                store.record_retrospective(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    claim_token=claim_token,
+                    status="FAILED",
+                    summary=result.result[:500],
+                    playbook_snapshot_s3_key=snapshot_key,
+                )
+                log.error("retrospective_agent_failed", detail=result.result[:500])
+                return
+
+            saved = workspace.read_retrospective()
+            if saved is None:
+                store.record_retrospective(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    claim_token=claim_token,
+                    status="NO_CHANGE",
+                    summary="retrospective found no procedure defect to correct",
+                    playbook_snapshot_s3_key=snapshot_key,
+                )
+                log.info("retrospective_no_change")
+                return
+
+            merged, diff = merge_playbook_update(target.playbook, saved.get("update"))
+            if diff.is_empty:
+                store.record_retrospective(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    claim_token=claim_token,
+                    status="NO_CHANGE",
+                    summary="proposed update changed nothing",
+                    playbook_snapshot_s3_key=snapshot_key,
+                )
+                log.info("retrospective_update_changed_nothing")
+                return
+
+            diff_key = self._c.evidence_store.save_retrospective_diff(
+                execution_id,
+                rca_id=request.rca_id,
+                diff={
+                    "rationale": str(saved.get("rationale", ""))[:4000],
+                    **diff.to_dict(),
+                },
+            )
+            store.save_playbook_revision(
+                request.rca_id,
+                request.engine,
+                merged,
+                execution_id=execution_id,
+            )
+            # 갱신된 절차가 다음 유사 장애의 검색 결과에 반영되도록 인덱스도 갱신한다.
+            self._c.playbook_store.save_to_s3_vectors(
+                merged,
+                request.rca_id,
+                metric_name=target.metric_name,
+            )
+            store.record_retrospective(
+                execution_id,
+                rca_id=request.rca_id,
+                claim_token=claim_token,
+                status="UPDATED",
+                summary=str(saved.get("rationale", ""))[:500],
+                playbook_snapshot_s3_key=snapshot_key,
+                diff_s3_key=diff_key,
+            )
+            log.info(
+                "retrospective_updated_playbook",
+                corrected=len(diff.corrected_steps),
+                added=len(diff.added_steps),
+            )
+        except Exception:
+            # 회고 실패는 이미 확정된 실행 결과를 되돌리지 않는다.
+            log.exception("retrospective_failed")
+            try:
+                store.record_retrospective(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    claim_token=claim_token,
+                    status="FAILED",
+                    summary="unhandled retrospective exception",
+                    playbook_snapshot_s3_key=snapshot_key,
+                )
+            except Exception:
+                log.exception("retrospective_record_failed")
