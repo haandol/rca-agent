@@ -125,8 +125,7 @@ export class CcHeadlessStack extends cdk.Stack {
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         CLAUDE_CODE_USE_BEDROCK: '1',
-        ANTHROPIC_DEFAULT_SONNET_MODEL:
-          'global.anthropic.claude-sonnet-4-6[1m]',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'global.anthropic.claude-sonnet-5',
         SQS_QUEUE_URL: alarmQueue.queueUrl,
         DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
         S3_EVIDENCE_BUCKET: props.evidenceBucket.bucketName,

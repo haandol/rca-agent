@@ -11,7 +11,7 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
 | **RCA 방식** | 9단계 closed-loop 파이프라인 | 전문 서브 에이전트 오케스트레이션 |
-| **모델** | 단일 Sonnet 4.6 (Planning/Execution 행동 분리) | CC 기본 모델 (Sonnet 4.6) |
+| **모델** | 단일 Sonnet 5 (Planning/Execution 행동 분리) | CC 기본 모델 (Sonnet 5) |
 | **타임아웃** | 종료 조건 및 시간 예산 | CC 프로세스 30분 제한 |
 | **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
 | **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
@@ -37,9 +37,9 @@ graph TB
     end
 
     subgraph LLM["LLM 추론"]
-        BEDROCK_PLAN["Amazon Bedrock<br/>Sonnet 4.6 + Adaptive Thinking<br/>(Planning: 가설·보고서·플레이북·분기·우선순위)"]
-        BEDROCK_EXEC["Amazon Bedrock<br/>Sonnet 4.6 (thinking 없음)<br/>(Execution: 스코핑·증거 수집·검증)"]
-        BEDROCK_CC["Amazon Bedrock<br/>Sonnet 4.6<br/>(CC Headless 오케스트레이터)"]
+        BEDROCK_PLAN["Amazon Bedrock<br/>Sonnet 5 + Adaptive Thinking<br/>(Planning: 가설·보고서·플레이북·분기·우선순위)"]
+        BEDROCK_EXEC["Amazon Bedrock<br/>Sonnet 5 (thinking 없음)<br/>(Execution: 스코핑·증거 수집·검증)"]
+        BEDROCK_CC["Amazon Bedrock<br/>Sonnet 5<br/>(CC Headless 오케스트레이터)"]
     end
 
     subgraph DataTools["데이터 수집 도구 (MCP)"]
@@ -206,7 +206,7 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 ### Fargate Stack (Strands Agents SDK)
 
 - **9단계 파이프라인**: F1(Scoping) → F2(Hypothesis) → [검증 루프: F3(Prioritization) → Beam Selection → F4(Evidence) → F5(Validation) → Termination Check → F6(Branching)] → F7(Report) → F8(Playbook) → F9(Notification)
-- **단일 모델 + Planning/Execution 행동 분리**: 모든 단계가 Sonnet 4.6을 사용하되, Planning은 adaptive thinking을 활성화하고 Execution은 thinking 없이 호출
+- **단일 모델 + Planning/Execution 행동 분리**: 모든 단계가 Sonnet 5을 사용하되, Planning은 adaptive thinking을 활성화하고 Execution은 thinking 없이 호출
 - **Beam Search 탐색**: 우선순위 상위 N개(기본 3) 가설만 선택적으로 검증하여 효율적 탐색
 - **검증 루프**: 전체 기각 시 가설 재생성(최대 2회)
 - **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용
@@ -233,7 +233,7 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 | 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (Python) |
 | 실행 환경 | AWS ECS Fargate | AWS ECS Fargate |
 | 이벤트 수신 | SQS Long Polling | SQS Long Polling |
-| LLM 추론 | Bedrock — 단일 Sonnet 4.6 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 4.6 (CC 전문 서브 에이전트) |
+| LLM 추론 | Bedrock — 단일 Sonnet 5 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 5 (CC 전문 서브 에이전트) |
 | MCP 도구 | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP |
 | 환경 설정 | python-dotenv (`env/local.env`) | ECS 환경변수 |
 

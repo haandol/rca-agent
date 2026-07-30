@@ -71,7 +71,7 @@ graph TB
     end
 
     subgraph LLM["AI 모델 (Amazon Bedrock)"]
-        SONNET["Sonnet 4.6<br/>(단일 모델 · Planning은 adaptive thinking)"]
+        SONNET["Sonnet 5<br/>(단일 모델 · Planning은 adaptive thinking)"]
     end
 
     subgraph SharedStorage["공유 저장소"]
@@ -256,7 +256,7 @@ graph LR
         direction TB
         F_ENV["ECS Fargate<br/>Python 3.12"]
         F_SDK["Strands Agents SDK<br/>9단계 파이프라인"]
-        F_MODEL["단일 모델<br/>Sonnet 4.6 + Planning/Execution 행동 분리"]
+        F_MODEL["단일 모델<br/>Sonnet 5 + Planning/Execution 행동 분리"]
         F_TIME["시간 예산<br/>(기본 20분)"]
         F_PLAY["✅ 플레이북 생성/학습"]
     end
@@ -265,7 +265,7 @@ graph LR
         direction TB
         L_ENV["ECS Fargate<br/>Node.js 22"]
         L_SDK["Claude Code CLI<br/>전문 서브 에이전트 오케스트레이션"]
-        L_MODEL["단일 모델<br/>Sonnet 4.6"]
+        L_MODEL["단일 모델<br/>Sonnet 5"]
         L_TIME["프로세스 타임아웃<br/>(30분)"]
         L_PLAY["✅ 플레이북 생성 (프롬프트)"]
     end
@@ -279,7 +279,7 @@ graph LR
 | **실행 환경** | ECS Fargate (항시 실행) | ECS Fargate (항시 실행) |
 | **에이전트 프레임워크** | Strands Agents SDK (Python) | Claude Code CLI (Node.js) |
 | **RCA 방식** | 9단계 파이프라인 (코드로 정의) | RCA·Remediation·Report 전문 에이전트 순차 실행 |
-| **AI 모델** | Sonnet 4.6 (Planning은 adaptive thinking) | Sonnet 4.6 |
+| **AI 모델** | Sonnet 5 (Planning은 adaptive thinking) | Sonnet 5 |
 | **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
 | **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | Report 전문 에이전트가 생성 |
 | **자동 복구** | 별도 워커, 기본 비활성 | 확정 원인의 허용된 Healthcare reset만 실행 |
@@ -358,11 +358,11 @@ graph LR
 
 ### 단일 모델 + Planning/Execution 행동 분리
 
-비용과 품질의 균형을 맞추기 위해 단일 Sonnet 4.6 모델을 사용하되, 단계별로 adaptive thinking 유무로 호출 특성을 구분합니다.
+비용과 품질의 균형을 맞추기 위해 단일 Sonnet 5 모델을 사용하되, 단계별로 adaptive thinking 유무로 호출 특성을 구분합니다.
 
 ```mermaid
 graph TB
-    subgraph Planning["🧠 Planning — Sonnet 4.6 + adaptive thinking"]
+    subgraph Planning["🧠 Planning — Sonnet 5 + adaptive thinking"]
         P1["F2: 가설 생성"]
         P2["F3: 우선순위 결정"]
         P4["F6: 분기"]
@@ -370,7 +370,7 @@ graph TB
         P6["F8: 플레이북 생성"]
     end
 
-    subgraph Execution["🔧 Execution — Sonnet 4.6 (thinking 없음)"]
+    subgraph Execution["🔧 Execution — Sonnet 5 (thinking 없음)"]
         E1["F1: 스코핑<br/>(MCP 도구 호출)"]
         E2["F4: 증거 수집<br/>(MCP 도구 호출)"]
         E3["F5: 가설 검증"]
@@ -391,6 +391,20 @@ graph TB
 - **Execution**: 도구 호출·데이터 수집·검증 → thinking 없이 호출
 - **순수 로직**: AI 불필요 → 코드로 직접 처리
 - **모델 ID**: `BEDROCK_MODEL_ID`만 사용. Haiku 티어(`BEDROCK_HAIKU_MODEL_ID`)는 제거됨
+
+#### Sonnet 5 세대의 호출 제약
+
+Bedrock에서 실측으로 확인한 제약입니다. 이 파라미터를 다시 넣으면 **모든 LLM 호출이
+`ValidationException`으로 실패**합니다.
+
+| 파라미터 | 상태 | 대응 |
+|----------|------|------|
+| `temperature` | ❌ 거부 (`deprecated for this model`) | 전달하지 않음. 출력 특성은 프롬프트로 조정 |
+| `effort` (thinking 하위 또는 최상위) | ❌ 거부 (`Extra inputs are not permitted`) | 전달하지 않음. Planning/Execution은 adaptive 온·오프로만 구분 |
+| `thinking: {"type": "adaptive"}` | ✅ 정상 | Planning 티어에서 사용 |
+| forced `toolChoice` + adaptive thinking | ✅ 정상 | structured output 경로에서 사용 |
+
+모델을 올릴 때는 최소 호출로 파라미터 허용 여부를 먼저 확인한 뒤 코드를 옮깁니다.
 
 ---
 
@@ -463,7 +477,7 @@ MCP(Model Context Protocol)는 AI 에이전트가 외부 서비스의 데이터�
 ```mermaid
 graph TB
     subgraph Agent["RCA 에이전트"]
-        AI["AI 모델<br/>(Sonnet 4.6)"]
+        AI["AI 모델<br/>(Sonnet 5)"]
     end
 
     subgraph MCP["MCP 서버들"]

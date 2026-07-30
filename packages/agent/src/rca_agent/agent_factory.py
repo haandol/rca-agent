@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 
 
 def _build_thinking_fields() -> dict[str, Any]:
+    """Adaptive thinking only — the model tier decision forbids an effort level.
+
+    The target Bedrock deployment rejects `effort`, so Planning and Execution are
+    distinguished by whether adaptive thinking is on at all.
+    """
     if THINKING_ENABLED:
         return {"thinking": {"type": "adaptive"}}
     return {}
@@ -43,11 +48,11 @@ def create_planning_model(
     max_tokens: int = BEDROCK_MAX_TOKENS,
 ) -> BedrockModel:
     additional = _build_thinking_fields()
+    # No sampling parameters: this model generation rejects `temperature`.
     return BedrockModel(
         model_id=model_id,
         region_name=region,
         max_tokens=max_tokens,
-        temperature=0.3,
         streaming=False,
         cache_prompt="default",
         **({"additional_request_fields": additional} if additional else {}),
@@ -64,7 +69,6 @@ def create_execution_model(
         model_id=model_id,
         region_name=region,
         max_tokens=max_tokens,
-        temperature=0.3,
         streaming=False,
         cache_prompt="default",
     )

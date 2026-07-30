@@ -19,13 +19,13 @@ flowchart TD
 
     subgraph F1["F1: Scoping"]
         S_RPT["S3 Vectors<br/>유사 보고서 검색"]
-        S_AGENT["Scoping Agent<br/>(Execution 티어: Sonnet 4.6 (thinking 없음))<br/>AWS Knowledge + CW + CT MCP"]
+        S_AGENT["Scoping Agent<br/>(Execution 티어: Sonnet 5 (thinking 없음))<br/>AWS Knowledge + CW + CT MCP"]
         S_OUT["ScopingResult<br/>(severity, blast_radius,<br/>anomaly_start_time, similar_reports)"]
         S_RPT --> S_AGENT --> S_OUT
     end
 
     subgraph F2["F2: Hypothesis Generation"]
-        H_AGENT["Hypothesis Agent<br/>(Planning 티어: Sonnet 4.6)"]
+        H_AGENT["Hypothesis Agent<br/>(Planning 티어: Sonnet 5)"]
         H_OUT["Hypothesis[] (3~5개, depth=0)<br/>각 가설: description, category,<br/>confidence_score, required_evidence"]
         H_DDB["DynamoDB 가설 저장<br/>(HYPO# 레코드)"]
         H_AGENT --> H_OUT --> H_DDB
@@ -44,7 +44,7 @@ flowchart TD
         end
 
         subgraph F4["F4: Evidence Collection"]
-            E_AGENT["Evidence Agent<br/>(Execution 티어: Sonnet 4.6 (thinking 없음))<br/>가설별 독립 Agent 인스턴스"]
+            E_AGENT["Evidence Agent<br/>(Execution 티어: Sonnet 5 (thinking 없음))<br/>가설별 독립 Agent 인스턴스"]
             E_MCP["AWS Knowledge + CW + CT + GitHub MCP<br/>· 메트릭/로그 수집<br/>· 배포/변경 이력<br/>· 코드 diff 분석"]
             E_PARENT["부모 가설 요약 주입<br/>(depth > 0인 경우)"]
             E_SAVE["DDB: evidence_summary<br/>S3: full evidence 저장"]
@@ -56,7 +56,7 @@ flowchart TD
         end
 
         subgraph F5["F5: Validation"]
-            V_AGENT["Validation Agent<br/>(Execution 티어: Sonnet 4.6 (thinking 없음))<br/>ThreadPoolExecutor 병렬 실행"]
+            V_AGENT["Validation Agent<br/>(Execution 티어: Sonnet 5 (thinking 없음))<br/>ThreadPoolExecutor 병렬 실행"]
             V_CLASSIFY["신뢰도 기반 재분류<br/>≥0.8 → CONFIRMED<br/>≤0.3 → REJECTED<br/>그 외 → NEEDS_INVESTIGATION"]
             V_GUARD["증거 수집 실패 시<br/>CONFIRMED 방지 가드레일"]
             V_OUT["ValidationJudgment[]<br/>+ all_rejected 플래그"]
@@ -71,7 +71,7 @@ flowchart TD
         end
 
         subgraph F6["F6: Branching"]
-            B_AGENT["Branching Agent<br/>(Planning 티어: Sonnet 4.6)"]
+            B_AGENT["Branching Agent<br/>(Planning 티어: Sonnet 5)"]
             B_DEDUP["중복 제거<br/>(부모/기각 가설과 비교)"]
             B_OUT["Child Hypothesis[]<br/>(depth = parent+1, max_depth=3)"]
             B_AGENT --> B_DEDUP --> B_OUT
@@ -94,14 +94,14 @@ flowchart TD
         CLOSE["미해결 가설 최종 분류<br/>CONFIRMED 종료 → REJECTED<br/>기타 종료: 저신뢰도 → REJECTED,<br/>나머지 → CLOSED"]
 
         subgraph F7["F7: Report"]
-            R_AGENT["Report Agent<br/>(Planning 티어: Sonnet 4.6)"]
+            R_AGENT["Report Agent<br/>(Planning 티어: Sonnet 5)"]
             R_S3["S3 보고서 저장<br/>(reports/{rca_id}.md)"]
             R_AGENT --> R_S3
         end
 
         subgraph F8["F8: Playbook"]
             PB_SEARCH["S3 Vectors<br/>기존 플레이북 검색 (≥0.86)"]
-            PB_AGENT["Playbook Agent<br/>(Planning 티어: Sonnet 4.6)<br/>update or create"]
+            PB_AGENT["Playbook Agent<br/>(Planning 티어: Sonnet 5)<br/>update or create"]
             PB_S3V["S3 Vectors 인덱싱"]
             PB_SEARCH --> PB_AGENT --> PB_S3V
         end
@@ -192,7 +192,7 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-    subgraph Planning["Planning 티어<br/>(Sonnet 4.6 + Adaptive Thinking)"]
+    subgraph Planning["Planning 티어<br/>(Sonnet 5 + Adaptive Thinking)"]
         HYP["F2: Hypothesis Gen"]
         PRIO["F3: Prioritization"]
         BRANCH["F6: Branching"]
@@ -200,7 +200,7 @@ flowchart LR
         PLAYBOOK["F8: Playbook"]
     end
 
-    subgraph Execution["Execution 티어<br/>(Sonnet 4.6, thinking 없음)"]
+    subgraph Execution["Execution 티어<br/>(Sonnet 5, thinking 없음)"]
         SCOPING["F1: Scoping"]
         EVIDENCE["F4: Evidence Collection"]
         VALIDATION["F5: Validation"]
@@ -438,7 +438,7 @@ flowchart TD
 | **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
 | **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
 | **RCA 방식** | 9단계 코드 기반 파이프라인 | RCA·Remediation·Report 전문 에이전트 오케스트레이션 |
-| **모델** | 단일 Sonnet 4.6 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 4.6) |
+| **모델** | 단일 Sonnet 5 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 5) |
 | **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
 | **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
 | **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
@@ -492,14 +492,14 @@ sequenceDiagram
 
     Note over Agent,Bedrock: Phase 2: F2 가설 생성
     Agent->>DDB: state = HYPOTHESIS_GENERATION
-    Agent->>Bedrock: 스코핑 결과 기반 가설 요청 (Sonnet 4.6)
+    Agent->>Bedrock: 스코핑 결과 기반 가설 요청 (Sonnet 5)
     Bedrock-->>Agent: 3개 가설 반환
     Agent->>DDB: HYPO# 레코드 저장
     Note right of Agent: A: 최근 배포 코드 결함 (0.7)<br/>B: 트래픽 급증 (0.5)<br/>C: RDS 인스턴스 문제 (0.4)
 
     Note over Agent,Bedrock: Loop 1: F3 우선순위 + Beam Selection
     Agent->>DDB: state = HYPOTHESIS_PRIORITIZATION
-    Agent->>Bedrock: 가설 우선순위 요청 (Sonnet 4.6)
+    Agent->>Bedrock: 가설 우선순위 요청 (Sonnet 5)
     Bedrock-->>Agent: A → B → C 순서
     Agent->>Agent: Beam Selection: 3개 전부 선택
 
@@ -534,7 +534,7 @@ sequenceDiagram
 
     Note over Agent,Bedrock: Loop 1: F5 가설 검증
     Agent->>DDB: state = HYPOTHESIS_VALIDATION
-    Agent->>Bedrock: 가설 A + 증거 요약 → 검증 (Execution: Sonnet 4.6)
+    Agent->>Bedrock: 가설 A + 증거 요약 → 검증 (Execution: Sonnet 5)
     Bedrock-->>Agent: A: NEEDS_INVESTIGATION (0.75)<br/>배포 상관관계 높으나 구체적 코드 결함 미확인
     Agent->>Bedrock: 가설 B + 증거 요약 → 검증
     Bedrock-->>Agent: B: REJECTED (0.1)
@@ -544,7 +544,7 @@ sequenceDiagram
 
     Note over Agent,Bedrock: Loop 1: 종료 판단 + F6 분기
     Agent->>Agent: 종료 조건 미충족 → 계속
-    Agent->>Bedrock: 가설 A 하위 분기 요청 (Sonnet 4.6)
+    Agent->>Bedrock: 가설 A 하위 분기 요청 (Sonnet 5)
     Bedrock-->>Agent: 하위 가설 생성
     Agent->>DDB: HYPO# 레코드 저장
     Note right of Agent: A-1: 커넥션 풀 설정 변경 (0.4)<br/>A-2: 코드에서 커넥션 미반환 (0.7)
@@ -566,9 +566,9 @@ sequenceDiagram
     end
 
     Agent->>DDB: state = HYPOTHESIS_VALIDATION
-    Agent->>Bedrock: A-1 + 증거 → 검증 (Execution: Sonnet 4.6)
+    Agent->>Bedrock: A-1 + 증거 → 검증 (Execution: Sonnet 5)
     Bedrock-->>Agent: A-1: REJECTED (0.2)
-    Agent->>Bedrock: A-2 + 증거 → 검증 (Execution: Sonnet 4.6)
+    Agent->>Bedrock: A-2 + 증거 → 검증 (Execution: Sonnet 5)
     Bedrock-->>Agent: A-2: CONFIRMED (0.92)
 
     Note over Agent,Bedrock: 종료 → confidence ≥ 0.9 (CONFIRMED)
@@ -579,14 +579,14 @@ sequenceDiagram
 
     Note over Agent,S3: F7 보고서 생성
     Agent->>DDB: state = REPORT_GENERATION
-    Agent->>Bedrock: RCA 보고서 작성 요청 (Sonnet 4.6)
+    Agent->>Bedrock: RCA 보고서 작성 요청 (Sonnet 5)
     Bedrock-->>Agent: 구조화된 보고서
     Agent->>S3: reports/{rca_id}.md 저장
 
     Note over Agent,S3V: F8 플레이북 생성
     Agent->>S3V: 기존 유사 플레이북 검색 (≥0.86)
     S3V-->>Agent: (해당 없음 → 신규 생성)
-    Agent->>Bedrock: 플레이북 생성 요청 (Sonnet 4.6)
+    Agent->>Bedrock: 플레이북 생성 요청 (Sonnet 5)
     Bedrock-->>Agent: DB 커넥션 누수 플레이북
     Agent->>S3V: 플레이북 임베딩 인덱싱
 
