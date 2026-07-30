@@ -368,6 +368,7 @@ stateDiagram-v2
 
 ## 5. 관련 문서
 
+- [플레이북 실행 전환 인계서](./playbook-execution-migration-plan.md) — 이 전환의 진행 상황과 남은 작업
 - [아키텍처](./architecture.md) — dual-stack, 파이프라인, 저장소
 - [아키텍처 & 데모 흐름](./architecture-and-demo-flow.md) — 단계별 상세 다이어그램
 - [운영 가이드](./system-guide-for-ops.md) — 인프라·데모 운영

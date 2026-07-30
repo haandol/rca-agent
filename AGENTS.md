@@ -72,5 +72,6 @@ pnpm nx affected -t test
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
 | [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
+| [플레이북 실행 전환 인계서](./docs/playbook-execution-migration-plan.md) | 자동 복구 → 사용자 승인 기반 플레이북 실행 전환의 완료·잔여 작업과 새 세션 인계 절차 |
 | [RCA/Remediation High 발견사항](./docs/rca-remediation-high-findings.md) | 전체 흐름 점검에서 확인된 High 문제, 상태, 완료 조건, 새 세션 인계 절차 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |
