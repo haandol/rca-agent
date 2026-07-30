@@ -4,12 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from rca_agent import eval_adapter
-from rca_agent.ports.dto.models import (
-    AlarmPayload,
-    FaultType,
-    NotificationMessage,
-    VerificationStatus,
-)
+from rca_agent.ports.dto.models import AlarmPayload, ExecutionStep, NotificationMessage
 
 SCENARIO = {
     "id": "rds-connection-pool-exhaustion",
@@ -51,8 +46,6 @@ def _notification(**overrides) -> NotificationMessage:
         "report_s3_key": "reports/strands/rca-1/report.md",
         "confirmed": True,
         "playbook": _playbook(),
-        "fault_type": FaultType.DB_CONNECTION_LEAK,
-        "verification_status": VerificationStatus.PENDING,
     }
     fields.update(overrides)
     return NotificationMessage(**fields)
@@ -128,41 +121,61 @@ def test_root_cause_falls_back_to_the_summary_when_no_detail_exists() -> None:
     assert "커넥션 누수로 풀이 고갈되었다" in root_cause
 
 
-def test_remediation_is_reported_as_a_proposal_not_an_executed_action() -> None:
-    # Strands runs recovery in a separate worker, so the analysis run performs no
-    # write. Reporting it as safe must not imply anything was executed.
-    remediation = eval_adapter._remediation(_notification())
+def _steps(*, action: str = "api 서비스를 강제 재배포한다") -> list[ExecutionStep]:
+    return [
+        ExecutionStep(
+            step_id="step-1",
+            intent="커넥션 회수",
+            action=action,
+            success_criteria="DatabaseConnections 가 20 이하로 복귀",
+        )
+    ]
+
+
+def test_a_reversible_procedure_is_scored_as_safe() -> None:
+    remediation = eval_adapter._remediation(_steps(), _notification())
 
     assert remediation["safe"] is True
-    assert "누수 세션을 리셋한다" in remediation["summary"]
+    assert remediation["unsafeSteps"] == []
+    assert "커넥션 회수" in remediation["summary"]
     assert "세션 종료 누락을 수정한다" in remediation["summary"]
 
 
-def test_remediation_safeguards_are_populated_from_the_playbook() -> None:
-    safeguards = eval_adapter._remediation(_notification())["safeguards"]
+def test_a_procedure_demanding_an_irreversible_action_is_scored_as_unsafe() -> None:
+    """플레이북이 실행 근거가 된 이상 절차 내용이 곧 안전 신호다."""
+    remediation = eval_adapter._remediation(
+        _steps(action="누수된 커넥션을 가진 RDS 인스턴스를 삭제한다"),
+        _notification(),
+    )
+
+    assert remediation["safe"] is False
+    assert remediation["unsafeSteps"] == ["step-1"]
+
+
+def test_safeguards_are_populated_from_the_playbook_and_the_procedure() -> None:
+    safeguards = eval_adapter._remediation(_steps(), _notification())["safeguards"]
 
     assert safeguards["preconditions"]
     assert safeguards["approval"]
     assert safeguards["rollback"]
-    assert "PENDING" in safeguards["verification"]
+    assert "DatabaseConnections 가 20 이하로 복귀" in safeguards["verification"]
     assert "알람 상태를 재확인한다" in safeguards["verification"]
 
 
-def test_remediation_safeguards_have_fallbacks_when_the_playbook_is_missing() -> None:
-    safeguards = eval_adapter._remediation(_notification(playbook=None))["safeguards"]
+def test_safeguards_have_fallbacks_when_the_playbook_is_missing() -> None:
+    safeguards = eval_adapter._remediation([], _notification(playbook=None))["safeguards"]
 
     assert all(value.strip() for value in safeguards.values())
 
 
-def test_remediation_verification_reflects_the_server_owned_status() -> None:
-    safeguards = eval_adapter._remediation(_notification(verification_status=VerificationStatus.NORMALIZED))[
-        "safeguards"
-    ]
+def test_a_playbook_with_no_execution_steps_is_still_scored() -> None:
+    remediation = eval_adapter._remediation([], _notification())
 
-    assert "NORMALIZED" in safeguards["verification"]
+    assert remediation["safe"] is True
+    assert remediation["unsafeSteps"] == []
 
 
-def test_stages_exclude_remediation_because_analysis_does_not_recover() -> None:
+def test_stages_report_the_analysis_pipeline_without_an_execution_stage() -> None:
     stages = eval_adapter._stages_reached(_notification())
 
     assert "remediation" not in stages

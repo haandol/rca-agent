@@ -39,6 +39,10 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py',
   'packages/cc-headless/src/cc_headless/mcp_server.py',
   'packages/cc-headless/src/cc_headless/services/prompt_builder.py',
+  // remediationSafe scores the proposed procedure against the destructive-action
+  // vocabulary, so a change to that vocabulary changes what the dimension means.
+  'packages/agent/src/rca_agent/services/destructive_actions.py',
+  'packages/cc-headless/src/cc_headless/services/destructive_actions.py',
 ];
 
 function normalize(value) {

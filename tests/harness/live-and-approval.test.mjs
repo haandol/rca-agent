@@ -8,6 +8,7 @@ import { approveBaseline } from './approve-cli.mjs';
 import { readJsonFile } from './cli-utils.mjs';
 import {
   EXPECTED_ENGINES,
+  loadScenarios,
   REPOSITORY_ROOT,
   validateBaseline,
 } from './evaluator.mjs';
@@ -77,7 +78,15 @@ test('fake live commands run both engines and write normalized results and repor
 
   assert.equal(outcome.report.passed, true, outcome.report.failures.join('\n'));
   assert.equal(outcome.report.live, true);
-  assert.equal(outcome.report.evaluations.length, 6);
+  // Every scenario is run against every engine, so a new scenario has to appear
+  // on both sides rather than being scored for one engine only.
+  const scenarioCount = (
+    await loadScenarios(path.join(REPOSITORY_ROOT, 'tests/scenarios'))
+  ).length;
+  assert.equal(
+    outcome.report.evaluations.length,
+    scenarioCount * EXPECTED_ENGINES.length,
+  );
   assert.deepEqual(
     JSON.parse(await readFile(reportPath, 'utf8')),
     outcome.report,

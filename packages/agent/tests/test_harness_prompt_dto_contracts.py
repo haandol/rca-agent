@@ -30,7 +30,6 @@ from rca_agent.prompts.prioritization import (
 from rca_agent.prompts.report import REPORT_SYSTEM_PROMPT, REPORT_USER_PROMPT_TEMPLATE
 from rca_agent.prompts.scoping import SCOPING_SYSTEM_PROMPT, SCOPING_USER_PROMPT_TEMPLATE
 from rca_agent.prompts.validation import VALIDATION_SYSTEM_PROMPT, VALIDATION_USER_PROMPT_TEMPLATE
-from rca_agent.prompts.verification import VERIFICATION_SYSTEM_PROMPT, VERIFICATION_USER_PROMPT_TEMPLATE
 from rca_agent.services.branching import BranchingOutput
 from rca_agent.services.hypothesis import HypothesisOutput
 
@@ -49,7 +48,6 @@ SYSTEM_PROMPTS = [
     REPORT_SYSTEM_PROMPT,
     SCOPING_SYSTEM_PROMPT,
     VALIDATION_SYSTEM_PROMPT,
-    VERIFICATION_SYSTEM_PROMPT,
 ]
 
 
@@ -153,6 +151,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "mitigation_text",
                 "remediation_text",
                 "action_items_text",
+                "confirmed",
             },
         ),
         (
@@ -162,6 +161,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "existing_symptom_pattern",
                 "existing_severity_criteria",
                 "existing_verification_steps",
+                "existing_execution_steps",
                 "existing_temporary_mitigation",
                 "existing_permanent_remediation",
                 "existing_escalation_criteria",
@@ -173,25 +173,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "detection_method",
                 "mitigation_text",
                 "remediation_text",
-            },
-        ),
-        (
-            VERIFICATION_USER_PROMPT_TEMPLATE,
-            {
-                "alarm_name",
-                "namespace",
-                "metric_name",
-                "dimensions",
-                "statistic",
-                "period",
-                "threshold",
-                "comparison_operator",
-                "evaluation_periods",
-                "datapoints_to_alarm",
-                "server_status",
-                "server_evaluation",
-                "remediation_summary",
-                "seconds_since_remediation",
+                "confirmed",
             },
         ),
     ],

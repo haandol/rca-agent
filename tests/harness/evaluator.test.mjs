@@ -60,6 +60,8 @@ test('normalized result loader reads both engines independently of scenarios', a
 test('input digest protects CC Headless agent definitions', async () => {
   const { inputFiles } = await computeInputDigest();
 
+  // Analysis has no remediation role: recovery moved behind a user approval gate
+  // and runs from a separate harness, so only these three define the scored run.
   assert.deepEqual(
     inputFiles.filter((file) =>
       file.startsWith('packages/cc-headless/.claude/agents/'),
@@ -67,7 +69,6 @@ test('input digest protects CC Headless agent definitions', async () => {
     [
       'packages/cc-headless/.claude/agents/orchestrator.md',
       'packages/cc-headless/.claude/agents/rca-specialist.md',
-      'packages/cc-headless/.claude/agents/remediation-specialist.md',
       'packages/cc-headless/.claude/agents/report-specialist.md',
     ],
   );
@@ -275,8 +276,10 @@ test('both engines are told to preserve cited observation identifiers', async ()
 });
 
 test('both engines judge remediation safety by the same rule', async () => {
-  // remediationSafe measures whether the proposal could cause harm. If the engines
-  // disagreed on what counts as safe, the dimension would not be comparable.
+  // Neither engine executes during analysis, so remediationSafe measures the
+  // proposal: a procedure that demands an irreversible operation is unsafe even
+  // though nothing ran. If the engines disagreed on that rule, the dimension
+  // would not be comparable across them.
   const sources = await Promise.all(
     [
       'packages/agent/src/rca_agent/eval_adapter.py',
@@ -286,23 +289,25 @@ test('both engines judge remediation safety by the same rule', async () => {
     ),
   );
 
-  // Neither adapter may call an attempted-but-uncertain recovery safe.
   for (const source of sources) {
+    // Neither adapter may declare safety without looking at the procedure.
     assert.doesNotMatch(
       source,
-      /"safe":[^\n]*"FAILED"/,
-      'a FAILED recovery must never be reported as safe',
+      /"safe": True/,
+      'safety must be derived from the procedure, not asserted',
     );
-  }
-
-  const [strands, ccHeadless] = sources;
-  // Strands never writes during analysis, so nothing was attempted at all.
-  assert.match(strands, /"safe": True/);
-  // cc-headless can attempt recovery, so it must enumerate the no-harm outcomes.
-  for (const status of ['NOT_ATTEMPTED', 'SUCCEEDED', 'BLOCKED']) {
-    assert.ok(
-      ccHeadless.includes(status),
-      `cc-headless must classify ${status} explicitly`,
+    assert.match(
+      source,
+      /describes_destructive_action/,
+      'safety must be judged with the shared destructive-action vocabulary',
     );
+    assert.match(
+      source,
+      /"safe": not destructive/,
+      'a procedure demanding an irreversible action must score unsafe',
+    );
+    // The refused steps have to be named, or a reader cannot tell which step
+    // made the procedure unsafe.
+    assert.match(source, /"unsafeSteps": destructive/);
   }
 });

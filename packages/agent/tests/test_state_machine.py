@@ -498,5 +498,6 @@ class TestPipelineFinalizeBeforeReport:
         assert confirmed_h.fault_type == FaultType.DB_CONNECTION_LEAK
         assert confirmed_h.validated_fault_type == FaultType.HIGH_CPU
         assert confirmed_h.judgment_reasoning == "CPU evidence independently confirms saturation"
-        assert notification_builder.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU
+        # 검증이 확정한 원인 유형은 세션 상태로 남지만 알림 payload 에는 담기지 않는다.
+        assert "fault_type" not in notification_builder.call_args.kwargs
         assert container.session_store.mark_completed.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
 
 class RcaSessionState(StrEnum):
@@ -44,10 +44,14 @@ class FaultType(StrEnum):
     UNSUPPORTED = "UNSUPPORTED"
 
 
-class VerificationStatus(StrEnum):
-    NORMALIZED = "NORMALIZED"
-    FAILED = "FAILED"
-    PENDING = "PENDING"
+class PlaybookVerificationStatus(StrEnum):
+    """플레이북 절차가 실행으로 검증되었는지.
+
+    실행되지 않은 플레이북은 초안이다. 실행과 회고를 거친 뒤에야 검증된 절차가 되며,
+    그 전이는 분석이 아니라 실행 주체가 수행한다.
+    """
+
+    DRAFT = "DRAFT"
 
 
 class AlarmTrigger(BaseModel):
@@ -248,12 +252,30 @@ class RcaReport(BaseModel):
     rejected_hypotheses: list[str] = Field(default_factory=list)
 
 
+class ExecutionStep(BaseModel):
+    """실행 에이전트가 수행할 한 단계.
+
+    ``action`` 은 자연어다. 명령 문자열을 고정하지 않는 이유는 대상 리소스 식별자와
+    리전이 실행 시점의 알람 컨텍스트에서 결정되기 때문이며, 절차에 박아 넣으면 같은
+    유형의 다른 리소스 장애에 재사용할 수 없다.
+
+    ``step_id`` 는 안정적이어야 한다. 실행 증거가 어느 단계에서 실패했는지 지목하고
+    회고가 그 단계를 교정하기 때문이다.
+    """
+
+    step_id: str
+    intent: str = ""
+    action: str = ""
+    success_criteria: str = ""
+
+
 class Playbook(BaseModel):
     playbook_id: str
     failure_type: str
     symptom_pattern: str
     severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
+    execution_steps: list[ExecutionStep] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
     escalation_criteria: str = ""
@@ -261,62 +283,15 @@ class Playbook(BaseModel):
     related_metrics: list[str] = Field(default_factory=list)
     rca_id: str = ""
     tags: list[str] = Field(default_factory=list)
-
-
-class RemediationAction(BaseModel):
-    action_type: str
-    description: str
-    target: str = ""
-    parameters: dict = Field(default_factory=dict)
-    executed: bool = False
-    success: bool = False
-    error: str = ""
-
-
-class RemediationResult(BaseModel):
-    rca_id: str
-    actions_taken: list[RemediationAction] = Field(default_factory=list)
-    overall_success: bool = False
-    summary: str = ""
-
-
-class RemediationContext(BaseModel):
-    rca_id: str
-    state: RcaSessionState
-    alarm_name: str = ""
-    region: str = "us-east-1"
-    root_cause: str = ""
-    confirmed: bool = False
-    selected_hypothesis_id: str = ""
-    fault_type: FaultType = FaultType.UNSUPPORTED
-    validated_fault_type: FaultType = FaultType.UNSUPPORTED
-    validated_root_cause: str = ""
-    evidence_summary: str = ""
-    remediation_status: str = ""
-    remediation_claim_expires_at: int = 0
-    verification_status: str = ""
-    verification_summary: str = ""
-    verification_remaining_issues: list[str] = Field(default_factory=list)
-    metrics_normalized: bool = False
-
-
-class VerificationResult(BaseModel):
-    rca_id: str
-    status: VerificationStatus
-    verification_summary: str = ""
-    remaining_issues: list[str] = Field(default_factory=list)
-
-    @computed_field
-    @property
-    def metrics_normalized(self) -> bool:
-        return self.status is VerificationStatus.NORMALIZED
+    # 분석은 이 값을 바꾸지 않는다. 실행되지 않은 절차는 검증되지 않았다.
+    verification_status: PlaybookVerificationStatus = PlaybookVerificationStatus.DRAFT
 
 
 class AlarmContext(BaseModel):
     """Alarm context carried in the RCA notification.
 
-    Verification uses only alarm_name to load the authoritative CloudWatch
-    definition. The remaining fields are informational notification context.
+    실행 에이전트가 절차의 자연어 서술을 실제 리소스에 매핑할 때 쓰는 컨텍스트이며,
+    알림 수신자에게는 어떤 알람의 분석인지를 알려준다.
     """
 
     alarm_name: str = ""
@@ -331,6 +306,14 @@ class AlarmContext(BaseModel):
 
 
 class NotificationMessage(BaseModel):
+    """분석 완료 알림.
+
+    수신자는 사람과 대시보드뿐이다. 어떤 기계 소비자도 이 알림을 받아 쓰기 작업을
+    시작하지 않으며, 실행은 사용자가 승인 요청을 발행할 때만 시작된다. 그래서 payload
+    는 승인 판단에 필요한 정보만 담고 실행 절차 자체는 담지 않는다 — 실행 주체는
+    저장된 리포트를 직접 읽는다.
+    """
+
     rca_id: str
     publication_id: str = ""
     root_cause_summary: str
@@ -342,11 +325,7 @@ class NotificationMessage(BaseModel):
     playbook: dict | None = None
     root_cause: str = ""
     selected_hypothesis_id: str = ""
-    fault_type: FaultType = FaultType.UNSUPPORTED
     alarm_context: AlarmContext | None = None
-    verification_status: VerificationStatus = VerificationStatus.PENDING
-    # SNS routing attribute — remediation queue subscribes to "rca_complete"
-    # only, so remediation-result notifications never loop back.
     event_type: str = "rca_complete"
 
 
@@ -355,15 +334,6 @@ class CompletionHandoff(BaseModel):
     state: RcaSessionState
     notification_status: str = ""
     notification: NotificationMessage | None = None
-
-
-class RemediationHandoff(BaseModel):
-    rca_id: str
-    remediation_status: str = ""
-    publication_status: str = ""
-    notification: NotificationMessage | None = None
-    result: RemediationResult | None = None
-    verification: VerificationResult | None = None
 
 
 class RcaSession(BaseModel):

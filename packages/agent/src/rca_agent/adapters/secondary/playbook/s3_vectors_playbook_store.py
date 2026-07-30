@@ -7,7 +7,7 @@ from rca_agent.config.settings import (
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
 )
-from rca_agent.ports.dto.models import Playbook, PlaybookMatch, ScopingResult
+from rca_agent.ports.dto.models import ExecutionStep, Playbook, PlaybookMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.playbook_store import PlaybookStorePort
 from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
@@ -39,6 +39,33 @@ def _as_text_list(raw) -> list[str]:
     if isinstance(raw, list):
         return [item for item in raw if isinstance(item, str)]
     return []
+
+
+def _as_execution_steps(raw) -> list[ExecutionStep]:
+    """Rebuild the recorded execution steps so a merge starts from what ran.
+
+    A step whose recorded shape is unreadable is dropped rather than guessed at:
+    the retrospective keys corrections by ``step_id``, so a step with no
+    identifier cannot be corrected and must not become an execution basis.
+    """
+    if not isinstance(raw, list):
+        return []
+    steps: list[ExecutionStep] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        step_id = _as_text(entry.get("step_id")).strip()
+        if not step_id:
+            continue
+        steps.append(
+            ExecutionStep(
+                step_id=step_id,
+                intent=_as_text(entry.get("intent")),
+                action=_as_text(entry.get("action")),
+                success_criteria=_as_text(entry.get("success_criteria")),
+            )
+        )
+    return steps
 
 
 class S3VectorsPlaybookStore(PlaybookStorePort):
@@ -122,6 +149,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             symptom_pattern=_as_text(recorded.get("symptom_pattern")) or match.symptom_pattern,
             severity_criteria=_as_text(recorded.get("severity_criteria")),
             verification_steps=_as_text_list(recorded.get("verification_steps")),
+            execution_steps=_as_execution_steps(recorded.get("execution_steps")),
             temporary_mitigation=_as_text(recorded.get("temporary_mitigation")),
             permanent_remediation=_as_text(recorded.get("permanent_remediation")),
             escalation_criteria=_as_text(recorded.get("escalation_criteria")),

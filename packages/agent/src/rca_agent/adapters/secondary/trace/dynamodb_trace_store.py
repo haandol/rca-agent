@@ -564,20 +564,25 @@ class TraceStore:
             raise SessionOwnershipCheckError(self._rca_id) from exc
 
 
+def _serialize_metadata_value(value) -> dict:
+    if isinstance(value, str):
+        return {"S": value}
+    if isinstance(value, bool):
+        return {"BOOL": value}
+    if isinstance(value, (int, float)):
+        return {"N": str(value)}
+    if isinstance(value, dict):
+        # Nested maps keep their shape so a structured field such as a playbook
+        # execution step stays readable field by field. Flattening it to a string
+        # would make the execution agent parse prose to find the step it must run.
+        return {"M": {str(k): _serialize_metadata_value(v) for k, v in value.items()}}
+    if isinstance(value, list):
+        return {"L": [_serialize_metadata_value(item) for item in value]}
+    return {"S": str(value)}
+
+
 def _serialize_metadata(meta: dict) -> dict:
-    result = {}
-    for k, v in meta.items():
-        if isinstance(v, str):
-            result[k] = {"S": v}
-        elif isinstance(v, bool):
-            result[k] = {"BOOL": v}
-        elif isinstance(v, (int, float)):
-            result[k] = {"N": str(v)}
-        elif isinstance(v, list):
-            result[k] = {"L": [{"S": str(i)} for i in v]}
-        else:
-            result[k] = {"S": str(v)}
-    return result
+    return {k: _serialize_metadata_value(v) for k, v in meta.items()}
 
 
 def _deserialize_session(item: dict) -> dict:
@@ -645,20 +650,22 @@ def _deserialize_hypothesis(item: dict) -> dict:
     }
 
 
+def _deserialize_metadata_value(value: dict):
+    if "S" in value:
+        return value["S"]
+    if "N" in value:
+        n = value["N"]
+        return int(n) if "." not in n else float(n)
+    if "BOOL" in value:
+        return value["BOOL"]
+    if "M" in value:
+        return {k: _deserialize_metadata_value(v) for k, v in value["M"].items()}
+    if "L" in value:
+        return [_deserialize_metadata_value(item) for item in value["L"]]
+    return str(value)
+
+
 def _deserialize_metadata(meta_map: dict | None) -> dict | None:
     if not meta_map:
         return None
-    result = {}
-    for k, v in meta_map.items():
-        if "S" in v:
-            result[k] = v["S"]
-        elif "N" in v:
-            n = v["N"]
-            result[k] = int(n) if "." not in n else float(n)
-        elif "BOOL" in v:
-            result[k] = v["BOOL"]
-        elif "L" in v:
-            result[k] = [i.get("S", str(i)) for i in v["L"]]
-        else:
-            result[k] = str(v)
-    return result
+    return {k: _deserialize_metadata_value(v) for k, v in meta_map.items()}

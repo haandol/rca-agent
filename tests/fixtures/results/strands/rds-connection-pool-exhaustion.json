@@ -8,6 +8,7 @@
   "remediation": {
     "summary": "Restore service by reducing pool wait time and raising the connection limit within database capacity.",
     "safe": true,
+    "unsafeSteps": [],
     "safeguards": {
       "preconditions": "Confirm database capacity, current pool saturation, and the target service configuration.",
       "approval": "Require the database or service owner to approve the capacity change.",

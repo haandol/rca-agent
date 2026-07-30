@@ -11,16 +11,20 @@ from rca_agent.config.settings import PLAYBOOK_UPDATE_THRESHOLD
 from rca_agent.ports.dto.models import (
     AlarmPayload,
     AlarmTrigger,
+    ExecutionStep,
     Playbook,
     PlaybookMatch,
+    PlaybookVerificationStatus,
     RcaReport,
     ScopingResult,
 )
 from rca_agent.services.playbook_gen import (
+    ExecutionStepOutput,
     PlaybookOutput,
     PlaybookUpdateOutput,
     _build_embed_key,
     _try_update_existing,
+    build_execution_steps,
     run_playbook_generation,
     search_existing_playbooks,
 )
@@ -557,3 +561,163 @@ class TestPlaybookStoreLoadDetail:
 
         assert self._store(ddb).load_detail(_make_hit(rca_id="")) is None
         ddb.query.assert_not_called()
+
+
+class TestExecutionStepContract:
+    """플레이북이 실행 근거가 되므로 절차의 형태를 코드가 지킨다."""
+
+    def _output(self, **overrides) -> PlaybookOutput:
+        return PlaybookOutput(
+            failure_type="Memory leak",
+            symptom_pattern="메모리가 단조 증가한다",
+            **overrides,
+        )
+
+    def _step(self, **overrides) -> dict:
+        step = {
+            "step_id": "step-1",
+            "intent": "워커 풀 회수",
+            "action": "web-service 를 강제 재배포한다",
+            "success_criteria": "MemoryUtilization 이 60% 이하로 복귀",
+        }
+        step.update(overrides)
+        return step
+
+    def test_an_unconfirmed_root_cause_gets_no_execution_steps(self):
+        """추측 절차가 승인 버튼 뒤에 놓이면 사람이 검증된 절차로 오인한다."""
+        steps = build_execution_steps(
+            [ExecutionStepOutput(**self._step())],
+            confirmed=False,
+        )
+
+        assert steps == []
+
+    def test_a_confirmed_root_cause_keeps_its_steps_in_order(self):
+        steps = build_execution_steps(
+            [
+                ExecutionStepOutput(**self._step()),
+                ExecutionStepOutput(**self._step(step_id="step-2", intent="증상 확인")),
+            ],
+            confirmed=True,
+        )
+
+        assert [step.step_id for step in steps] == ["step-1", "step-2"]
+        assert steps[0].action == "web-service 를 강제 재배포한다"
+
+    def test_a_step_without_an_observable_criterion_is_dropped(self):
+        """관측 기준이 없으면 실행 에이전트가 해결을 확정할 수 없다."""
+        steps = build_execution_steps(
+            [
+                ExecutionStepOutput(**self._step(success_criteria="  ")),
+                ExecutionStepOutput(**self._step(step_id="step-2")),
+            ],
+            confirmed=True,
+        )
+
+        assert [step.step_id for step in steps] == ["step-2"]
+
+    def test_a_step_without_an_action_is_dropped(self):
+        steps = build_execution_steps(
+            [ExecutionStepOutput(**self._step(action=""))],
+            confirmed=True,
+        )
+
+        assert steps == []
+
+    def test_a_duplicate_step_id_is_dropped(self):
+        """식별자가 겹치면 증거가 어느 절차를 가리키는지 알 수 없다."""
+        steps = build_execution_steps(
+            [
+                ExecutionStepOutput(**self._step()),
+                ExecutionStepOutput(**self._step(intent="다른 의도")),
+            ],
+            confirmed=True,
+        )
+
+        assert len(steps) == 1
+        assert steps[0].intent == "워커 풀 회수"
+
+    def test_a_missing_step_id_gets_a_positional_one(self):
+        steps = build_execution_steps(
+            [ExecutionStepOutput(**self._step(step_id=""))],
+            confirmed=True,
+        )
+
+        assert [step.step_id for step in steps] == ["step-1"]
+
+    def test_a_generated_playbook_is_always_an_unverified_draft(self):
+        """실행되지 않은 절차는 검증되지 않았다. 분석은 이 값을 바꾸지 않는다."""
+        agent = _make_mock_agent(self._output(execution_steps=[ExecutionStepOutput(**self._step())]))
+        store = MagicMock()
+        store.search_similar.return_value = []
+
+        playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
+
+        assert playbook.verification_status is PlaybookVerificationStatus.DRAFT
+        assert [step.step_id for step in playbook.execution_steps] == ["step-1"]
+
+    def test_an_update_that_omits_steps_keeps_the_recorded_ones(self):
+        existing = Playbook(
+            playbook_id="p-1",
+            failure_type="Memory leak",
+            symptom_pattern="메모리 증가",
+            execution_steps=[ExecutionStep(**self._step())],
+        )
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, temporary_mitigation="재배포 후 확인"))
+
+        updated = _try_update_existing(existing, _make_report(), agent)
+
+        assert updated is not None
+        assert [step.step_id for step in updated.execution_steps] == ["step-1"]
+        assert updated.execution_steps[0].action == "web-service 를 강제 재배포한다"
+
+    def test_the_recorded_steps_survive_a_round_trip_through_the_trace(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                {
+                    "SK": {"S": "strands#SPAN#s-1"},
+                    "span_type": {"S": "PLAYBOOK"},
+                    "metadata": {
+                        "M": {
+                            "playbook_id": {"S": "p-1"},
+                            "execution_steps": {"L": [{"M": {k: {"S": v} for k, v in self._step().items()}}]},
+                        }
+                    },
+                }
+            ]
+        }
+
+        with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
+            detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
+                _make_hit(playbook_id="p-1", rca_id="rca-7")
+            )
+
+        assert detail is not None
+        assert [step.step_id for step in detail.execution_steps] == ["step-1"]
+        assert detail.execution_steps[0].success_criteria == "MemoryUtilization 이 60% 이하로 복귀"
+
+    def test_a_recorded_step_without_an_identifier_is_dropped_on_load(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                {
+                    "SK": {"S": "strands#SPAN#s-1"},
+                    "span_type": {"S": "PLAYBOOK"},
+                    "metadata": {
+                        "M": {
+                            "playbook_id": {"S": "p-1"},
+                            "execution_steps": {"L": [{"M": {"action": {"S": "무언가"}}}]},
+                        }
+                    },
+                }
+            ]
+        }
+
+        with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
+            detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
+                _make_hit(playbook_id="p-1", rca_id="rca-7")
+            )
+
+        assert detail is not None
+        assert detail.execution_steps == []

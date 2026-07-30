@@ -7,7 +7,6 @@ from rca_agent.config.settings import S3_REPORT_BUCKET, SNS_NOTIFICATION_TOPIC_A
 from rca_agent.ports.dto.models import (
     AlarmContext,
     AlarmPayload,
-    FaultType,
     NotificationMessage,
     Playbook,
     RcaReport,
@@ -46,10 +45,12 @@ def build_notification(
     dashboard_url: str = "",
     alarm: AlarmPayload | None = None,
     selected_hypothesis_id: str = "",
-    fault_type: FaultType = FaultType.UNSUPPORTED,
 ) -> NotificationMessage:
     playbook_data = None
     if playbook:
+        # 실행 절차 자체는 담지 않는다. 실행 주체는 저장된 리포트를 직접 읽으므로,
+        # 알림 payload 를 실행 입력으로 쓰면 전달 과정에서 잘린 절차가 실행될 수 있다.
+        # 여기 담는 것은 사람이 승인 여부를 판단하는 데 필요한 요약뿐이다.
         playbook_data = {
             "playbook_id": playbook.playbook_id,
             "failure_type": playbook.failure_type,
@@ -59,6 +60,8 @@ def build_notification(
             "temporary_mitigation": playbook.temporary_mitigation,
             "permanent_remediation": playbook.permanent_remediation,
             "escalation_criteria": playbook.escalation_criteria,
+            "verification_status": playbook.verification_status.value,
+            "execution_step_count": len(playbook.execution_steps),
         }
     return NotificationMessage(
         rca_id=report.rca_id,
@@ -75,7 +78,6 @@ def build_notification(
         playbook=playbook_data,
         root_cause=report.root_cause,
         selected_hypothesis_id=selected_hypothesis_id,
-        fault_type=fault_type,
         alarm_context=_build_alarm_context(alarm),
     )
 
@@ -118,8 +120,6 @@ def send_notification(
         "elapsed_seconds": notification.elapsed_seconds,
         "confirmed": notification.confirmed,
         "selected_hypothesis_id": notification.selected_hypothesis_id,
-        "fault_type": notification.fault_type.value,
-        "verification_status": notification.verification_status.value,
     }
     if notification.playbook:
         message_body["playbook"] = notification.playbook
@@ -141,5 +141,3 @@ def send_notification(
         default=False,
     )
     return bool(result)
-
-    return False

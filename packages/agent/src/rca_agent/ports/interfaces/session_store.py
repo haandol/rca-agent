@@ -11,10 +11,6 @@ from rca_agent.ports.dto.models import (
     NotificationMessage,
     RcaSession,
     RcaSessionState,
-    RemediationContext,
-    RemediationHandoff,
-    RemediationResult,
-    VerificationResult,
 )
 
 
@@ -123,34 +119,3 @@ class SessionStorePort(ABC):
 
     @abstractmethod
     def mark_completion_notified(self, rca_id: str, *, claim_token: str | None = None) -> bool: ...
-
-    @abstractmethod
-    def get_remediation_context(self, rca_id: str) -> RemediationContext | None: ...
-
-    @abstractmethod
-    def claim_remediation(self, rca_id: str) -> str | None: ...
-
-    @abstractmethod
-    def complete_remediation(
-        self,
-        rca_id: str,
-        claim_token: str,
-        result: RemediationResult,
-        verification: VerificationResult | None,
-        notification: NotificationMessage,
-    ) -> bool: ...
-
-    @abstractmethod
-    def release_remediation(self, rca_id: str, claim_token: str, *, error_reason: str) -> bool: ...
-
-    @abstractmethod
-    def get_remediation_handoff(self, rca_id: str) -> RemediationHandoff | None: ...
-
-    @abstractmethod
-    def claim_remediation_publication(self, rca_id: str, *, lease_seconds: int) -> str | None: ...
-
-    @abstractmethod
-    def mark_remediation_published(self, rca_id: str, publication_claim_token: str) -> bool: ...
-
-    @abstractmethod
-    def release_remediation_publication(self, rca_id: str, publication_claim_token: str) -> bool: ...

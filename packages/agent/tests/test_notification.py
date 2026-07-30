@@ -1,11 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from rca_agent.ports.dto.models import (
-    NotificationMessage,
-    RcaReport,
-    VerificationStatus,
-)
+from rca_agent.ports.dto.models import NotificationMessage, RcaReport
 from rca_agent.services.notification import build_notification, send_notification
 
 
@@ -37,7 +33,7 @@ class TestBuildNotification:
         assert "manual review" in msg.root_cause_summary.lower()
         assert msg.severity == "medium"
 
-    def test_carries_alarm_context_for_remediation(self):
+    def test_carries_alarm_context_so_execution_can_resolve_the_target(self):
         from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger
 
         alarm = AlarmPayload(
@@ -56,7 +52,6 @@ class TestBuildNotification:
         assert msg.alarm_context is not None
         assert msg.alarm_context.metric_name == "DatabaseConnections"
         assert msg.alarm_context.threshold == 30.0
-        assert msg.verification_status is VerificationStatus.PENDING
 
 
 class TestSendNotification:
@@ -70,8 +65,6 @@ class TestSendNotification:
             rca_id="r-1",
             root_cause_summary="Memory leak",
             severity="high",
-            verification_status=VerificationStatus.FAILED,
-            event_type="remediation_complete",
         )
         mock_sns = MagicMock()
 
@@ -83,7 +76,6 @@ class TestSendNotification:
         assert "rca-topic" in call_kwargs["TopicArn"]
         body = json.loads(call_kwargs["Message"])
         assert body["rca_id"] == "r-1"
-        assert body["verification_status"] == "FAILED"
 
     @patch("rca_agent.services.notification.SNS_NOTIFICATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123:rca-topic")
     def test_retries_on_failure(self):

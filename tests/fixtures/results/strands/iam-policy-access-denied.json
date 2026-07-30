@@ -12,6 +12,7 @@
   "remediation": {
     "summary": "Restore the missing StartQuery permission with a least privilege task role policy.",
     "safe": true,
+    "unsafeSteps": [],
     "safeguards": {
       "preconditions": "Confirm the task role and the missing logs:StartQuery action without broadening unrelated permissions.",
       "approval": "Require the IAM or service owner to approve the policy update.",

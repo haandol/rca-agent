@@ -1083,6 +1083,8 @@ class PipelineOrchestrator:
             SpanType.NOTIFICATION,
             input_summary=f"rca_id={rca_report.rca_id}",
         ) as s:
+            # 검증이 확정한 원인 유형은 리포트·플레이북의 입력이고 세션 상태로 남지만,
+            # 알림 payload 에는 담지 않는다 — 알림에 기계 소비자가 없다.
             validated_fault_type = best_hypothesis.validated_fault_type if best_hypothesis else FaultType.UNSUPPORTED
             notification = build_notification(
                 rca_report,
@@ -1091,7 +1093,6 @@ class PipelineOrchestrator:
                 playbook=playbook,
                 alarm=alarm,
                 selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
-                fault_type=validated_fault_type,
             )
 
             completed = store.mark_completed(
@@ -1155,18 +1156,22 @@ class PipelineOrchestrator:
             trace.end_span(
                 playbook_span,
                 output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),
+                # 실행 주체가 이 메타데이터에서 절차를 읽으므로 두 엔진이 같은 모양을
+                # 써야 한다. cc-headless 의 PLAYBOOK 스팬 메타데이터가 기준이다.
                 metadata={
                     "playbook_id": playbook.playbook_id,
                     "failure_type": playbook.failure_type,
                     "symptom_pattern": playbook.symptom_pattern,
                     "severity_criteria": playbook.severity_criteria,
                     "verification_steps": playbook.verification_steps,
+                    "execution_steps": [step.model_dump() for step in playbook.execution_steps],
                     "temporary_mitigation": playbook.temporary_mitigation,
                     "permanent_remediation": playbook.permanent_remediation,
                     "escalation_criteria": playbook.escalation_criteria,
                     "prevention_measures": playbook.prevention_measures,
                     "related_metrics": playbook.related_metrics,
                     "tags": playbook.tags,
+                    "verification_status": playbook.verification_status.value,
                 },
             )
             logger.info(

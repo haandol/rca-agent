@@ -12,6 +12,7 @@
   "remediation": {
     "summary": "Rollback the deployment, then replace the per-sensor query with a batched query.",
     "safe": true,
+    "unsafeSteps": [],
     "safeguards": {
       "preconditions": "Confirm the latest deployment introduced the query regression and identify the last healthy revision.",
       "approval": "Require the service owner or on-call SRE to approve the rollback.",

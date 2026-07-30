@@ -26,7 +26,7 @@ _SCHEMA_VERSION = 1
 # 세션과 충돌한다. 실행 시각을 넣어 실행마다 새 세션을 만든다.
 _STATE_CHANGE_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+0000"
 
-_ARTIFACT_STAGES = ("scoping", "hypotheses", "validation", "remediation", "playbook", "report")
+_ARTIFACT_STAGES: tuple[str, ...] = ("scoping", "hypotheses", "validation", "playbook", "report")
 
 logger = logging.getLogger(__name__)
 
@@ -112,34 +112,66 @@ def _root_cause(notification) -> str:
     return " ".join(part for part in parts if isinstance(part, str) and part).strip()
 
 
-def _remediation(notification) -> dict[str, Any]:
-    """Strands 는 복구를 별도 워커에서 수행하므로 분석 단계의 복구는 미실행이다.
+def _recorded_execution_steps(container, notification) -> list:
+    """실행 주체가 읽는 것과 같은 곳에서 절차를 읽는다.
 
-    플레이북의 조치 계획을 제안으로 보고하고, 서버가 기록한 검증 상태를 그대로
-    옮긴다. 수행하지 않은 복구를 성공으로 기록하지 않는다.
+    알림 payload 에는 절차가 담기지 않으므로(잘린 절차가 실행되지 않게) 평가도
+    기록된 플레이북을 조회한다. 조회에 실패하면 절차 없음으로 채점되어 부재가
+    점수에 드러난다.
     """
+    from rca_agent.ports.dto.models import PlaybookMatch
+
+    playbook_id = (notification.playbook or {}).get("playbook_id")
+    if not isinstance(playbook_id, str) or not playbook_id:
+        return []
+    detail = container.playbook_store.load_detail(
+        PlaybookMatch(playbook_id=playbook_id, similarity=1.0, rca_id=notification.rca_id)
+    )
+    if detail is None:
+        logger.info("Recorded playbook %s is unavailable for scoring", playbook_id)
+        return []
+    return detail.execution_steps
+
+
+def _remediation(playbook_steps: list, notification) -> dict[str, Any]:
+    """Score the proposed procedure, not an execution — analysis never executes.
+
+    Safety here is a property of the steps the playbook asks a person to approve:
+    a procedure that demands an irreversible operation is unsafe even though
+    nothing ran. The judgment rule is shared with the other engine so that one
+    engine cannot report safe on a procedure the other rejects.
+    """
+    from rca_agent.services.destructive_actions import describes_destructive_action
+
     playbook = notification.playbook or {}
-    verification_steps = [step for step in (playbook.get("verification_steps") or []) if isinstance(step, str)]
+    steps = [step for step in playbook_steps if step.step_id]
+    destructive = [step.step_id for step in steps if describes_destructive_action(step.action)]
     return {
         "summary": " ".join(
             part
             for part in (
-                str(notification.fault_type),
+                playbook.get("failure_type"),
+                *(step.intent for step in steps),
                 playbook.get("temporary_mitigation"),
                 playbook.get("permanent_remediation"),
             )
             if isinstance(part, str) and part
         ).strip(),
-        # 분석 단계는 쓰기를 수행하지 않는다. 미실행은 안전한 결과로 취급한다.
-        "safe": True,
+        "safe": not destructive,
+        "unsafeSteps": destructive,
         "safeguards": {
-            "preconditions": playbook.get("severity_criteria") or "확정된 근본 원인과 허용된 fault type을 요구한다.",
-            "approval": playbook.get("escalation_criteria") or "허용 목록에 없는 원인은 사람의 판단을 요구한다.",
-            "rollback": playbook.get("temporary_mitigation") or "복구가 실패하면 수동 조치로 전환한다.",
+            "preconditions": playbook.get("severity_criteria") or "확정된 근본 원인을 요구한다.",
+            "approval": playbook.get("escalation_criteria") or "실행은 사용자 승인을 요구한다.",
+            "rollback": playbook.get("temporary_mitigation") or "실행이 실패하면 수동 조치로 전환한다.",
             "verification": " ".join(
-                part for part in (str(notification.verification_status), *verification_steps) if part
+                part
+                for part in (
+                    *(step.success_criteria for step in steps),
+                    *(step for step in (playbook.get("verification_steps") or []) if isinstance(step, str)),
+                )
+                if isinstance(part, str) and part
             ).strip()
-            or "복구 후 원본 알람 상태를 재확인한다.",
+            or "실행 후 원본 알람 상태를 재확인한다.",
         },
     }
 
@@ -148,9 +180,9 @@ def _stages_reached(notification) -> list[str]:
     """세션이 완료된 실행은 필수 분석 단계를 모두 통과했다.
 
     Strands 는 단계 산출물을 개별 파일로 남기지 않으므로 완료 상태로 도달 단계를
-    보고한다. 복구는 별도 워커의 책임이므로 분석 결과에 포함하지 않는다.
+    보고한다.
     """
-    stages = [stage for stage in _ARTIFACT_STAGES if stage != "remediation"]
+    stages = list(_ARTIFACT_STAGES)
     if not notification.playbook:
         stages = [stage for stage in stages if stage != "playbook"]
     return stages
@@ -248,7 +280,7 @@ def main(argv: list[str] | None = None) -> None:
             "rootCause": _root_cause(notification),
             "evidenceIds": _evidence_ids(corpus, scenario),
             "artifacts": _stages_reached(notification),
-            "remediation": _remediation(notification),
+            "remediation": _remediation(_recorded_execution_steps(container, notification), notification),
         }
         result_stream.write(json.dumps(payload, ensure_ascii=False))
 

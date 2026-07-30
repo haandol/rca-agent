@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "deployed-connection-leak-vital-ingest",
+  "engine": "strands",
+  "rootCause": "A deployed task definition revision enabled the leaky read path, so each patient vital request acquired a database session that was never returned and connections grew steadily until the pool was exhausted.",
+  "evidenceIds": [
+    "vital-ingest-failures",
+    "db-connections-climbing",
+    "session-not-returned-logs",
+    "task-definition-deployment",
+    "fault-flag-enabled-in-revision",
+    "leaky-session-read-path",
+    "request-volume-flat",
+    "rds-resources-healthy"
+  ],
+  "artifacts": ["scoping", "hypotheses", "validation", "report", "playbook"],
+  "remediation": {
+    "summary": "Release the leaked connections by redeploying the Healthcare service, then roll the task definition back to the revision whose session pool behaviour was intact.",
+    "safe": true,
+    "unsafeSteps": [],
+    "safeguards": {
+      "preconditions": "Confirm the deployed revision enables the leak flag and that the previous revision did not.",
+      "approval": "Require the service owner to approve the redeploy and the revision rollback.",
+      "rollback": "Redeploy the current revision if vital ingest does not recover after the rollback.",
+      "verification": "Verify that DatabaseConnections stops climbing and VitalIngestFailures returns to zero while ingest attempts stay flat."
+    }
+  }
+}

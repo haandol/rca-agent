@@ -13,10 +13,10 @@ import pytest
 from rca_agent import eval_adapter
 from rca_agent.ports.dto.models import (
     CompletionHandoff,
-    FaultType,
+    ExecutionStep,
     NotificationMessage,
+    Playbook,
     RcaSessionState,
-    VerificationStatus,
 )
 
 SCENARIO = {
@@ -40,6 +40,7 @@ def _notification() -> NotificationMessage:
         severity="high",
         report_s3_key="",
         playbook={
+            "playbook_id": "pb-1",
             "failure_type": "DB_CONNECTION_LEAK",
             "symptom_pattern": "커넥션 증가",
             "severity_criteria": "확정 원인을 요구한다",
@@ -48,8 +49,6 @@ def _notification() -> NotificationMessage:
             "escalation_criteria": "에스컬레이션한다",
             "verification_steps": ["알람을 확인한다"],
         },
-        fault_type=FaultType.DB_CONNECTION_LEAK,
-        verification_status=VerificationStatus.PENDING,
     )
 
 
@@ -77,6 +76,29 @@ class _Store:
         return self.handoff
 
 
+class _PlaybookStore:
+    """실행 절차는 알림이 아니라 기록된 플레이북에서 읽힌다."""
+
+    def __init__(self) -> None:
+        self.requested: list[str] = []
+
+    def load_detail(self, match):
+        self.requested.append(match.playbook_id)
+        return Playbook(
+            playbook_id=match.playbook_id,
+            failure_type="DB_CONNECTION_LEAK",
+            symptom_pattern="커넥션 증가",
+            execution_steps=[
+                ExecutionStep(
+                    step_id="step-1",
+                    intent="커넥션 회수",
+                    action="api 서비스를 강제 재배포한다",
+                    success_criteria="DatabaseConnections 가 20 이하",
+                )
+            ],
+        )
+
+
 class _Container:
     instances: list["_Container"] = []
     handoff: CompletionHandoff | None = None
@@ -84,7 +106,9 @@ class _Container:
     def __init__(self, queue_url, *, poll_wait_seconds=20) -> None:
         self.queue_url = queue_url
         self.session_store = _Store(_Container.handoff)
+        self.playbook_store = _PlaybookStore()
         self.s3_client = None
+        self.dynamodb_client = None
         _Container.instances.append(self)
 
 
@@ -161,6 +185,9 @@ def test_adapter_emits_exactly_one_normalized_result_object(wired, stdin_scenari
     assert payload["engine"] == "strands"
     assert payload["rootCause"]
     assert payload["remediation"]["safeguards"]
+    # 절차의 안전성이 채점되므로 절차가 실제로 조회되어야 한다.
+    assert _Container.instances[0].playbook_store.requested == ["pb-1"]
+    assert payload["remediation"]["unsafeSteps"] == []
 
 
 def test_a_completed_session_is_scored_even_when_the_message_was_not_acked(wired, stdin_scenario, capsys) -> None:

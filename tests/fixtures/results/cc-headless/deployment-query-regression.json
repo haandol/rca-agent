@@ -12,6 +12,7 @@
   "remediation": {
     "summary": "Revert the release and deploy a batch-query implementation after verification.",
     "safe": true,
+    "unsafeSteps": [],
     "safeguards": {
       "preconditions": "Confirm the latest deployment introduced the query regression and identify the last healthy revision.",
       "approval": "Require the service owner or on-call SRE to approve the rollback.",

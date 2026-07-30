@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import boto3
 from moto import mock_aws
@@ -16,12 +16,10 @@ from rca_agent.ports.dto.models import (
     FaultType,
     NotificationMessage,
     RcaSessionState,
-    RemediationResult,
 )
-from rca_agent.services import evidence, remediation_pipeline
+from rca_agent.services import evidence
 from rca_agent.services.notification import build_notification
 from rca_agent.services.pipeline import PipelineOrchestrator
-from rca_agent.services.remediation_pipeline import RemediationOrchestrator
 
 
 class _StructuredAgent:
@@ -79,9 +77,10 @@ def _get_item(ddb, table_name: str, rca_id: str, sk: str) -> dict:
 
 
 @mock_aws
-def test_validated_high_cpu_persists_and_is_the_only_remediation_type(
+def test_the_validated_fault_type_overrides_the_generated_one_everywhere_it_is_recorded(
     monkeypatch,
 ):
+    """가설 생성이 붙인 원인 유형은 조사 힌트이고, 검증이 확정한 것만 결론의 권위다."""
     table_name = "rca-sessions"
     ddb = boto3.client("dynamodb", region_name="us-east-1")
     _create_table(ddb, table_name)
@@ -153,8 +152,6 @@ def test_validated_high_cpu_persists_and_is_the_only_remediation_type(
                 "symptom_pattern": "CPUUtilization above 95%",
             }
         ),
-        healthcare_service_host="healthcare.local",
-        verification_agent=MagicMock(),
     )
     container.report_store.save.return_value = "reports/high-cpu.md"
     alarm = AlarmPayload.from_cloudwatch_sns(_alarm_body())
@@ -198,32 +195,7 @@ def test_validated_high_cpu_persists_and_is_the_only_remediation_type(
     assert hypothesis_item["validation_evidence_summary"]["S"] == "CPUUtilization remained above 95%."
     assert session_item["state"]["S"] == RcaSessionState.COMPLETED.value
     assert session_item["fault_type"]["S"] == FaultType.HIGH_CPU.value
-    assert completion_notification.fault_type == FaultType.HIGH_CPU
-    assert notification_builder.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU
 
-    context = session_store.get_remediation_context(rca_id)
-    assert context is not None
-    assert context.fault_type == FaultType.HIGH_CPU
-    assert context.validated_fault_type == FaultType.HIGH_CPU
-    assert context.validated_root_cause == hypothesis_item["description"]["S"]
-
-    execute_remediation = Mock(
-        return_value=RemediationResult(
-            rca_id=rca_id,
-            actions_taken=[],
-            overall_success=False,
-            summary="captured validated type",
-        )
-    )
-    monkeypatch.setattr(
-        remediation_pipeline,
-        "execute_remediation",
-        execute_remediation,
-    )
-    notification.reset_mock()
-
-    RemediationOrchestrator(container).process_notification({"rca_id": rca_id})
-
-    execute_remediation.assert_called_once()
-    assert execute_remediation.call_args.kwargs["fault_type"] == FaultType.HIGH_CPU
-    assert execute_remediation.call_args.kwargs["fault_type"] != FaultType.DB_CONNECTION_LEAK
+    # 알림에는 원인 유형이 담기지 않는다 — 알림에 기계 소비자가 없기 때문이다.
+    assert "fault_type" not in completion_notification.model_dump()
+    assert "fault_type" not in notification_builder.call_args.kwargs

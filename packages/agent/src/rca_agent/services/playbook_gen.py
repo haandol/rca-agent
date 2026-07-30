@@ -11,7 +11,13 @@ from rca_agent.config.settings import (
     LLM_DEFAULT_TIMEOUT_SECONDS,
     PLAYBOOK_UPDATE_THRESHOLD,
 )
-from rca_agent.ports.dto.models import Playbook, PlaybookMatch, RcaReport, ScopingResult
+from rca_agent.ports.dto.models import (
+    ExecutionStep,
+    Playbook,
+    PlaybookMatch,
+    RcaReport,
+    ScopingResult,
+)
 from rca_agent.ports.interfaces.playbook_store import PlaybookStorePort
 from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
@@ -26,11 +32,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class ExecutionStepOutput(BaseModel):
+    step_id: str = ""
+    intent: str = ""
+    action: str = ""
+    success_criteria: str = ""
+
+
 class PlaybookOutput(BaseModel):
     failure_type: str
     symptom_pattern: str
     severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
+    execution_steps: list[ExecutionStepOutput] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
     escalation_criteria: str = ""
@@ -45,12 +59,48 @@ class PlaybookUpdateOutput(BaseModel):
     symptom_pattern: str = ""
     severity_criteria: str = ""
     verification_steps: list[str] = Field(default_factory=list)
+    execution_steps: list[ExecutionStepOutput] = Field(default_factory=list)
     temporary_mitigation: str = ""
     permanent_remediation: str = ""
     escalation_criteria: str = ""
     prevention_measures: list[str] = Field(default_factory=list)
     related_metrics: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+
+
+def build_execution_steps(
+    outputs: list[ExecutionStepOutput],
+    *,
+    confirmed: bool,
+) -> list[ExecutionStep]:
+    """실행 절차를 실행 가능한 형태로만 받아들인다.
+
+    미확정 원인에는 실행 절차를 두지 않는다 — 추측 절차가 승인 버튼 뒤에 놓이면
+    사람이 검증된 절차로 오인한다. 확정된 경우에도 대상 작업과 관측 기준이 없는 단계는
+    실행 근거가 될 수 없으므로 버린다. 실행 에이전트가 성공을 판정할 수 없기 때문이다.
+    """
+    if not confirmed:
+        return []
+    steps: list[ExecutionStep] = []
+    seen: set[str] = set()
+    for index, output in enumerate(outputs, start=1):
+        if not output.action.strip() or not output.success_criteria.strip():
+            logger.info("Dropping execution step %d — no action or no observable criterion", index)
+            continue
+        step_id = output.step_id.strip() or f"step-{index}"
+        if step_id in seen:
+            logger.info("Dropping execution step %s — duplicate step_id", step_id)
+            continue
+        seen.add(step_id)
+        steps.append(
+            ExecutionStep(
+                step_id=step_id,
+                intent=output.intent.strip(),
+                action=output.action.strip(),
+                success_criteria=output.success_criteria.strip(),
+            )
+        )
+    return steps
 
 
 def _build_embed_key(report: RcaReport, scoping_result: ScopingResult | None) -> str:
@@ -74,6 +124,16 @@ def _build_user_prompt(report: RcaReport) -> str:
         mitigation_text=report.temporary_mitigation or "N/A",
         remediation_text=report.permanent_remediation or "N/A",
         action_items_text="\n".join(f"- {a}" for a in report.action_items) or "N/A",
+        confirmed="yes" if report.root_cause_confirmed else "no — leave execution_steps empty",
+    )
+
+
+def _render_existing_execution_steps(steps: list[ExecutionStep]) -> str:
+    if not steps:
+        return "  (none)"
+    return "\n".join(
+        f"  - {step.step_id}: intent={step.intent} | action={step.action} | success_criteria={step.success_criteria}"
+        for step in steps
     )
 
 
@@ -83,6 +143,7 @@ def _build_update_prompt(existing: Playbook, report: RcaReport) -> str:
         existing_symptom_pattern=existing.symptom_pattern or "N/A",
         existing_severity_criteria=existing.severity_criteria or "N/A",
         existing_verification_steps="\n".join(f"  - {s}" for s in existing.verification_steps) or "N/A",
+        existing_execution_steps=_render_existing_execution_steps(existing.execution_steps),
         existing_temporary_mitigation=existing.temporary_mitigation or "N/A",
         existing_permanent_remediation=existing.permanent_remediation or "N/A",
         existing_escalation_criteria=existing.escalation_criteria or "N/A",
@@ -94,6 +155,7 @@ def _build_update_prompt(existing: Playbook, report: RcaReport) -> str:
         detection_method=report.detection_method or "N/A",
         mitigation_text=report.temporary_mitigation or "N/A",
         remediation_text=report.permanent_remediation or "N/A",
+        confirmed="yes" if report.root_cause_confirmed else "no — leave execution_steps empty",
     )
 
 
@@ -162,6 +224,10 @@ def _try_update_existing(
         symptom_pattern=output.symptom_pattern or existing.symptom_pattern,
         severity_criteria=output.severity_criteria or existing.severity_criteria,
         verification_steps=output.verification_steps or existing.verification_steps,
+        execution_steps=(
+            build_execution_steps(output.execution_steps, confirmed=report.root_cause_confirmed)
+            or existing.execution_steps
+        ),
         temporary_mitigation=output.temporary_mitigation or existing.temporary_mitigation,
         permanent_remediation=output.permanent_remediation or existing.permanent_remediation,
         escalation_criteria=output.escalation_criteria or existing.escalation_criteria,
@@ -243,6 +309,10 @@ def run_playbook_generation(
         symptom_pattern=output.symptom_pattern,
         severity_criteria=output.severity_criteria,
         verification_steps=output.verification_steps,
+        execution_steps=build_execution_steps(
+            output.execution_steps,
+            confirmed=report.root_cause_confirmed,
+        ),
         temporary_mitigation=output.temporary_mitigation,
         permanent_remediation=output.permanent_remediation,
         escalation_criteria=output.escalation_criteria,

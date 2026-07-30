@@ -8,6 +8,7 @@
   "remediation": {
     "summary": "Adjust connection pool capacity and enforce a bounded acquisition timeout.",
     "safe": true,
+    "unsafeSteps": [],
     "safeguards": {
       "preconditions": "Confirm database capacity, current pool saturation, and the target service configuration.",
       "approval": "Require the database or service owner to approve the capacity change.",

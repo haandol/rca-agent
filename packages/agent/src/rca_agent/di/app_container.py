@@ -8,7 +8,6 @@ from rca_agent.config.aws_sdk import SIDE_EFFECT_AWS_CLIENT_CONFIG
 from rca_agent.config.settings import (
     DYNAMODB_TABLE_NAME,
     GITHUB_PERSONAL_ACCESS_TOKEN,
-    HEALTHCARE_SERVICE_HOST,
     S3_EVIDENCE_BUCKET,
     S3_REPORT_BUCKET,
     S3_VECTOR_BUCKET_NAME,
@@ -53,7 +52,6 @@ class AppContainer(Container):
         self._branching_agent = None
         self._report_agent = None
         self._playbook_agent = None
-        self._verification_agent = None
         self._scoping_mcp_clients = None
         self._evidence_mcp_clients = None
 
@@ -255,20 +253,6 @@ class AppContainer(Container):
 
             self._playbook_agent = create_playbook_agent()
         return self._playbook_agent
-
-    # ── Remediation Agent (별도 배포) ──────────────────────────────
-
-    @property
-    def verification_agent(self):
-        if self._verification_agent is None:
-            from rca_agent.agent_factory import create_verification_agent
-
-            self._verification_agent = create_verification_agent()
-        return self._verification_agent
-
-    @property
-    def healthcare_service_host(self) -> str:
-        return HEALTHCARE_SERVICE_HOST
 
     def cleanup(self) -> None:
         pass
