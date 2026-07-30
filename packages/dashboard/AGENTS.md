@@ -6,6 +6,10 @@
 
 RCA 대시보드는 DynamoDB 세션 상태와 S3 보고서를 조회하는 로컬 전용 웹 대시보드다. 인증 없이 로컬 AWS 크레덴셜(`~/.aws`)을 사용하며, 배포 대상이 아닌 개발/데모용 도구이다.
 
+**이 대시보드는 플레이북 실행 승인의 유일한 진입점이다.** 실행 워커는 이 대시보드가 발행한
+요청만 소비하며 이벤트 구독을 갖지 않으므로, 승인 없이 실행이 시작될 경로가 존재하지 않는다.
+승인 발행이 대시보드의 유일한 쓰기 권한이며 로컬 자격 증명에 종속된다.
+
 ### Core Features
 
 - **세션 목록 조회**: DynamoDB에서 RCA 세션 전체를 스캔하여 상태별 통계 및 목록 표시
@@ -17,6 +21,9 @@ RCA 대시보드는 DynamoDB 세션 상태와 S3 보고서를 조회하는 로�
 - **세션 취소/삭제**: 진행 중인 세션 취소(CANCELLED) 및 세션 삭제 지원
 - **엔진 구분**: Strands / CC Headless 엔진별 세션 필터링
 - **상태 뱃지**: COMPLETED, FAILED, CANCELLED, OUTDATED, 진행 중 상태를 시각적으로 구분
+- **실행 승인**: 리포트 안에서 플레이북 실행 절차를 읽고 승인 → 실행 요청 큐 발행
+- **실행 이력**: 리포트별 실행 시도, 차단·실패 건수, 종료 상태 조회 (실패한 실행의 증거도 보존)
+- **회고 4단 비교**: 이슈 · 실행 전 플레이북 · 실행 증거 · 갱신 diff 를 함께 조회
 
 ### Tech Stack
 
@@ -41,9 +48,10 @@ pnpm dev   # http://localhost:3100
 packages/dashboard/
 ├── app/
 │   ├── pages/
-│   │   ├── index.vue              # 세션 목록 + 통계 카드
-│   │   ├── report/[id].vue        # 보고서 상세 (Markdown)
+│   │   ├── index.vue              # 세션 목록 + 통계 카드 + 실행 상태 컬럼
+│   │   ├── report/[id].vue        # 보고서 상세 + 실행 절차 + 승인 게이트
 │   │   ├── playbook/[id].vue      # 플레이북 상세
+│   │   ├── retrospective/[rcaId]/[executionId].vue  # 회고 4단 비교
 │   │   └── trace/[id].vue         # 트레이스 그래프 (Vue Flow DAG)
 │   ├── layouts/
 │   │   └── default.vue            # 다크 테마 레이아웃
@@ -63,6 +71,9 @@ packages/dashboard/
 │   │   │   ├── [id].delete.ts     # DELETE /api/sessions/:id — 세션 삭제
 │   │   │   └── [id]/
 │   │   │       └── cancel.post.ts # POST /api/sessions/:id/cancel — 세션 취소
+│   │   ├── executions.post.ts     # POST /api/executions — 실행 승인 발행 (유일한 진입점)
+│   │   ├── executions/[rcaId].get.ts  # GET /api/executions/:rcaId — 실행 시도 이력
+│   │   ├── retrospectives/[rcaId]/[executionId].get.ts  # 회고 4단 조회
 │   │   ├── reports/[id].get.ts    # GET /api/reports/:id — S3 보고서 조회
 │   │   ├── playbooks/[id].get.ts  # GET /api/playbooks/:id — DynamoDB 플레이북 조회
 │   │   ├── evidence/
@@ -70,9 +81,9 @@ packages/dashboard/
 │   │   │       └── [hypothesisId].get.ts  # GET /api/evidence/:rcaId/:hypothesisId — S3 증거 조회
 │   │   └── traces/[id].get.ts     # GET /api/traces/:id — DynamoDB 트레이스 조회
 │   └── utils/                     # Nitro 자동 임포트 (server/api 에서 import 없이 사용)
-│       ├── aws.ts                 # DynamoDB/S3 클라이언트 싱글톤
+│       ├── aws.ts                 # DynamoDB/S3/SQS 클라이언트 싱글톤
 │       ├── engine.ts              # SK → 엔진 판별 (parseEngine)
-│       └── remediation.ts         # 세션/스팬 remediation 필드 정규화·병합
+│       └── execution.ts           # EXEC# 항목 → 실행 상태·요약 정규화
 ├── nuxt.config.ts                 # Nuxt 설정 (포트 3100, runtimeConfig)
 ├── package.json
 └── tsconfig.json
@@ -86,7 +97,8 @@ packages/dashboard/
 |------|--------|------|
 | `AWS_REGION` | `us-east-1` | AWS 리전 |
 | `DYNAMODB_TABLE_NAME` | `RcaAgentDevRcaSession` | DynamoDB 테이블명 |
-| `S3_REPORT_BUCKET` | `rca-agent-dev-evidence` | S3 보고서 버킷 |
+| `S3_REPORT_BUCKET` | `rca-agent-dev-evidence` | S3 보고서·증거 버킷 |
+| `EXECUTION_QUEUE_URL` | (없음) | 실행 요청 큐 URL. 없으면 승인 발행이 503으로 실패한다 — 잘못 설정된 대시보드가 조용히 승인한 것처럼 보이면 안 된다. |
 
 ## Agent Guidelines
 
@@ -106,3 +118,6 @@ packages/dashboard/
 
 - 서버 사이드 API에서 AWS SDK 호출 시 클라이언트 사이드로 노출하지 않도록 주의 (`server/` 디렉토리 안에서만 AWS SDK 사용)
 - DynamoDB Scan 시 `begins_with(PK, 'RCA#')` 필터로 멱등성 키(`IDEMP#`) 레코드를 제외해야 함
+- 실행 항목(`EXEC#`)을 세션 상태에 병합하지 말 것 — 실행은 분석과 별도 생명주기이고, 실행 실패가 완료된 분석을 실패로 보이게 하면 안 된다
+- 실행 상태를 뱃지로 보일 때 `UNRESOLVED`·`FAILED`를 성공과 같은 강도로 표시하지 말 것 — 미해결 장애가 완료로 읽힌다
+- 승인 발행 전 검증(분석 완료, 실행 절차 존재, 진행 중 실행 없음)을 건너뛰지 말 것. 워커가 거부할 요청을 발행하면 승인 게이트가 무의미해진다
