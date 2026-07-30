@@ -38,6 +38,18 @@ pnpm cdk deploy <StackName>   # 특정 스택 배포
 
 실행 워커의 이미지 태그는 `config/dev.toml`의 `[execution]` 섹션(`imageTag`) 또는 `EXECUTION_IMAGE_TAG` 환경변수로 지정합니다.
 
+### 서비스 단위 배포
+
+```bash
+pnpm --filter infra run deploy:service -- cc-headless execution   # 같은 이미지, 두 진입점
+pnpm --filter infra run deploy:service -- --list
+pnpm --filter infra run deploy:service -- --status execution
+```
+
+이미지 태그는 현재 커밋 SHA로 고정됩니다. `latest`는 가변 태그라서 배포된 하네스 버전을 태그만으로 식별할 수 없으므로 배포 대상으로 쓰지 않습니다. 커밋되지 않은 변경이 있으면 태그에 `-dirty`가 붙어 재현 불가 상태가 드러납니다.
+
+분석 워커와 실행 워커는 같은 이미지를 공유하므로 두 서비스를 함께 배포해도 빌드·푸시는 한 번만 수행됩니다. 다만 **스택은 각각 배포해야** 합니다 — 태스크 정의가 불변 태그를 직접 가리켜야 하고, 두 워커의 진입점이 다르기 때문입니다.
+
 ## Agent — Fargate (Strands)
 
 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, 알람 메시지 수신 시 RCA 워크플로우를 자동 시작합니다.

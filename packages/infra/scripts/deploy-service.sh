@@ -8,6 +8,8 @@ set -euo pipefail
 #   bash deploy-service.sh cc-headless
 #   bash deploy-service.sh agent
 #   bash deploy-service.sh healthcare
+#   bash deploy-service.sh execution
+#   bash deploy-service.sh cc-headless execution   # 같은 이미지, 두 진입점
 #   bash deploy-service.sh --list
 #   bash deploy-service.sh --skip-build cc-headless
 #   bash deploy-service.sh --status cc-headless
@@ -55,17 +57,25 @@ lookup() {
     healthcare:repo)     echo "${ECR_NS}/healthcare" ;;
     healthcare:cluster)  echo "${PREFIX}Healthcare" ;;
     healthcare:service)  echo "${PREFIX}Healthcare" ;;
+    # 실행 워커는 분석 워커와 같은 이미지를 다른 진입점으로 띄운다. 그래서 빌드
+    # 컨텍스트와 리포지토리가 cc-headless 와 동일하고, 배포 대상 스택만 다르다.
+    execution:ctx)       echo "packages/cc-headless" ;;
+    execution:repo)      echo "${ECR_NS}/cc-headless" ;;
+    execution:cluster)   echo "${PREFIX}PlaybookExecution" ;;
+    execution:service)   echo "${PREFIX}PlaybookExecution" ;;
     agent:stack)         echo "${PREFIX}RcaAgentServiceStack" ;;
     agent:tagenv)        echo "AGENT_IMAGE_TAG" ;;
     cc-headless:stack)   echo "${PREFIX}CcHeadlessStack" ;;
     cc-headless:tagenv)  echo "CC_HEADLESS_IMAGE_TAG" ;;
     healthcare:stack)    echo "${PREFIX}HealthcareServiceStack" ;;
     healthcare:tagenv)   echo "HEALTHCARE_IMAGE_TAG" ;;
+    execution:stack)     echo "${PREFIX}PlaybookExecutionStack" ;;
+    execution:tagenv)    echo "EXECUTION_IMAGE_TAG" ;;
     *) echo "Unknown: ${svc}:${field}" >&2; return 1 ;;
   esac
 }
 
-ALL_SERVICES="agent cc-headless healthcare"
+ALL_SERVICES="agent cc-headless healthcare execution"
 
 log() { echo -e "\033[1;34m▶ $*\033[0m"; }
 err() { echo -e "\033[1;31m✗ $*\033[0m" >&2; }
@@ -187,9 +197,20 @@ fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then
   ecr_login
+  # 여러 서비스가 같은 이미지를 공유할 수 있으므로(분석 워커와 실행 워커) 리포지토리
+  # 단위로 한 번만 빌드·푸시한다. 두 번 푸시해도 결과는 같지만 빌드 시간이 두 배가 된다.
+  built_repos=""
   for svc in "${SERVICES[@]}"; do
+    repo=$(lookup "$svc" repo)
+    case " ${built_repos} " in
+      *" ${repo} "*)
+        log "빌드 생략: $svc — ${repo} 는 이미 이 태그로 푸시했습니다"
+        continue
+        ;;
+    esac
     do_build "$svc"
     do_push "$svc"
+    built_repos="${built_repos} ${repo}"
   done
 else
   log "--skip-build: 빌드 생략"
