@@ -1,4 +1,4 @@
-# ADR 0004: RDS PostgreSQL + Healthcare 서비스 배포 — RCA 검증용 데모 인프라
+# ADR 0004: Healthcare 데모 서비스와 데이터베이스 배포 — RCA 검증 환경
 
 Date: 2026-04-22
 
@@ -8,61 +8,76 @@ Accepted (2026-04-22)
 
 ## Context
 
-RCA 에이전트의 정확도를 검증하려면 실제 AWS 환경에서 장애 시나리오를 재현해야 한다. Healthcare Sensor App은 이를 위한 데모 서비스로, 다음 요구사항이 있다:
+RCA 에이전트의 정확도는 실제 클라우드 환경에서 장애 시나리오를 재현해야 검증할 수
+있다. Healthcare Sensor App은 이를 위한 데모 서비스로, 관계형 데이터베이스를 사용하는
+실제 서비스의 장애 패턴을 재현한다.
 
-1. **영속 스토리지**: 센서 데이터를 PostgreSQL에 저장하여 실제 운영 환경을 시뮬레이션
-2. **CloudWatch baseline**: 정상 상태의 메트릭 패턴이 축적되어야 RCA 에이전트가 이상 탐지 가능
-3. **장애 주입**: DB 커넥션 릭, 슬로우 쿼리, CPU/메모리 부하 등 fault injection 시나리오 지원
-4. **네트워크 격리**: 외부 인바운드 차단, VPC 내부 통신만 허용
+## Decision Drivers
 
-검토한 대안:
-- **Aurora Serverless v2**: 자동 스케일링이 유연하지만, 데모 목적에 비해 비용이 과함
-- **RDS t4g.micro**: 최소 비용으로 PostgreSQL 운영 가능, Free Tier 적용
+- 센서 데이터가 영속 저장소에 쌓이고 정상 상태 메트릭이 축적되어야 RCA 에이전트가 이상을 판정할 수 있다. baseline이 없으면 모든 값이 정상으로도 이상으로도 보인다.
+- 커넥션 누수, 슬로우 쿼리, 자원 부하를 개별적으로 활성화할 수 있어야 한다.
+- 데모 서비스는 외부에서 접근할 수 없어야 한다. 의도적으로 장애를 주입하는 환경이므로 노출되면 안 된다.
+- 데모 목적에 비해 상시 비용이 과하지 않아야 한다.
+- 주입한 장애는 자동 복구가 되돌릴 수 있는 상태여야 한다. 복구 대상이 없으면 복구 경로를 검증할 수 없다([ADR agent/0012](../agent/0012-automated-remediation.md)).
 
 ## Decision
 
-### RDS PostgreSQL 스택
+관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.
 
-독립 CDK 스택(`RdsStack`)으로 PostgreSQL 17.4를 배포한다.
+### 데이터베이스
 
-- **인스턴스 타입**: t4g.micro (ARM64, 비용 최적화)
-- **스토리지**: GP3 20GB (최대 50GB autoscaling)
-- **네트워크**: Private subnet, VPC CIDR 내부에서만 5432 접근 허용
-- **자격 증명**: Secrets Manager 자동 생성 (`{ns}/rds/postgres`)
-- **보호 수준**: `deletionProtection: false`, `removalPolicy: DESTROY` (Dev 환경)
+- **네트워크 격리**: 사설 서브넷에 두고 VPC 내부에서만 데이터베이스 포트 접근을 허용한다.
+- **자격 증명**: 비밀 관리 서비스가 생성·보관하고 서비스는 참조로만 주입받는다. 자격 증명이 배포 구성이나 이미지에 들어가면 안 된다.
+- **비용 최적화**: 데모 규모에 맞는 최소 인스턴스 등급과 스토리지를 사용한다. 자동 스케일링이 필요한 규모가 아니다.
+- **개발 환경 수준 보호**: 삭제 보호를 두지 않는다. 데모 환경은 재생성이 정상 운영이며, 삭제 보호는 반복 검증을 방해한다.
 
-### Healthcare 서비스 배포
+### Healthcare 서비스
 
-ECS Fargate로 Healthcare Sensor App을 배포한다.
+- **DB 연결 구성**: 접속 대상은 환경 설정으로, 자격 증명은 비밀 참조로 주입한다.
+- **배경 트래픽 생성**: 서비스가 스스로 주기적으로 센서 데이터를 생성한다. 일부는 이상치로 만들어 도메인 이상 탐지 경로도 동작하게 한다. 외부 부하 생성기에 의존하면 그 생성기가 데모의 추가 실패 지점이 되고, baseline이 실행마다 달라진다.
+- **장애 플래그**: 커넥션 누수, 슬로우 쿼리, 에러율을 실행 환경 설정으로 개별 활성화한다. 플래그가 실행 정의에 있으므로 배포로 장애를 주입할 수 있고, 그 배포가 변경 이력에 남는다([ADR infra/0007](0007-demo-symptom-alarm-and-deployment-fault-injection.md)).
+- **배포된 코드 상태 노출**: 배포된 리비전 식별자를 실행 환경에 명시해 에이전트가 어떤 코드가 실행 중인지 저장소와 대조할 수 있게 한다.
+- **트레이싱은 선택적 구성**: 트레이싱 수집기를 사이드카로 붙일 수 있게 두되 기본 활성화하지 않는다. RCA의 자동 증거 수집 경로가 트레이스를 사용하지 않기 때문이다([ADR tools/0003](../tools/0003-trace-analysis.md)).
 
-- **DB 연결**: ECS 환경변수(`DB_HOST`, `DB_PORT`, `DB_NAME`) + Secrets Manager(`DB_USERNAME`, `DB_PASSWORD`)
-- **Background Traffic Generator**: 앱 시작 시 asyncio task로 5초 간격 센서 데이터 자동 생성. 10명 가상 환자, 5가지 바이탈 타입, ~8% 비정상 값
-- **Fault Injection**: 환경변수(`FAULT_DB_LEAK`, `FAULT_SLOW_QUERY_MS`, `FAULT_ERROR_RATE`)로 장애 활성화
-- **Tracing**: OTel Collector 사이드카로 X-Ray 전송, `xray:PutTraceSegments` 권한 부여
+### 스택 간 순환 참조 회피
 
-### Cross-Stack 의존성 해결
+데이터베이스 보안 그룹이 서비스 보안 그룹을 참조하고 서비스가 데이터베이스를
+참조하면 스택 간 순환이 생긴다. 데이터베이스 인바운드를 VPC 대역 전체로 열어 보안
+그룹 상호 참조를 제거한다. 이는 개발 환경에서만 허용되는 완화이며, 같은 VPC의 다른
+서비스가 데이터베이스에 접근할 수 있다는 대가를 감수한다.
 
-RDS Security Group과 Healthcare ECS 서비스 간 cross-stack 참조로 CDK DependencyCycle이 발생할 수 있다. RDS SG에서 VPC CIDR 전체 대상으로 5432 인바운드를 허용하여 cross-stack SG 참조를 제거한다.
+## 대안 검토
+
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 서버리스 데이터베이스(자동 스케일링) | 부하에 따라 용량이 조절되고 유휴 비용이 낮다. | 데모 목적에 비해 비용이 과하고, 자동 스케일링이 커넥션 고갈 장애를 흡수해 재현하려는 증상 자체를 약화시킨다. |
+| 컨테이너 내 데이터베이스 | 별도 스택이 없고 비용이 거의 없다. | 컨테이너 재기동마다 데이터와 메트릭 baseline이 사라져 이상 판정 기준이 축적되지 않고, 관리형 데이터베이스 메트릭이 없어 증거 경로가 성립하지 않는다. |
+| 외부 부하 생성기로 트래픽 주입 | 부하 패턴을 정밀하게 제어할 수 있다. | 생성기가 데모의 추가 실패 지점이 되고 실행마다 baseline이 달라져 이상 판정 기준이 흔들린다. |
+| 최소 등급 관리형 데이터베이스 + 앱 내장 배경 트래픽 | baseline이 자동 축적되고 관리형 메트릭이 증거로 쓰이며 비용이 최소다. | 상시 비용이 발생하고, 부하 패턴 제어가 앱 구성에 묶인다. |
 
 ## Consequences
 
 ### Positive
 
-- RCA 에이전트가 실제 AWS 환경에서 CloudWatch 메트릭/로그 기반으로 분석 가능
-- Background traffic으로 정상 baseline이 자동 축적되어 fault injection 시 이상 패턴이 명확히 드러남
-- t4g.micro + GP3로 최소 비용 운영
+- RCA 에이전트가 실제 클라우드 환경의 메트릭·로그로 분석을 수행한다
+- 배경 트래픽으로 정상 baseline이 자동 축적되어 장애 주입 시 이상 패턴이 명확히 드러난다
+- 최소 등급 구성으로 상시 비용을 억제한다
+- 장애 플래그가 실행 정의에 있어 배포 기반 주입이 가능하다
 
 ### Negative
 
-- RDS 상시 실행 비용 발생 (t4g.micro ~$6/month)
-- VPC CIDR 전체 인바운드 허용은 동일 VPC 내 다른 서비스의 DB 접근을 차단하지 못함 (Dev 환경에서만 허용)
+- 데이터베이스 상시 실행 비용이 발생한다
+- VPC 대역 전체 인바운드 허용은 같은 VPC 내 다른 서비스의 데이터베이스 접근을 차단하지 못한다 (개발 환경에서만 허용)
+- 삭제 보호가 없어 실수로 스택을 파괴하면 축적된 baseline이 사라진다
 
 ### Risks
 
-- Healthcare 서비스 재배포 시 circuit breaker가 DB 연결 실패로 롤백할 수 있다. RDS가 완전히 가동된 후 서비스를 배포해야 한다.
-- Secrets Manager 비밀이 `fromGeneratedSecret`으로 자동 생성되므로, 스택 재생성 시 비밀이 변경된다.
+- 서비스 재배포 시 데이터베이스 연결 실패로 배포가 롤백될 수 있다. 데이터베이스가 완전히 가동된 뒤 서비스를 배포한다.
+- 자격 증명이 자동 생성되므로 스택 재생성 시 값이 바뀐다. 재생성 후에는 참조하는 모든 서비스가 새 비밀을 읽어야 한다.
 
 ## Related
 
-- [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md) — Fargate 기반 서비스 배포 패턴
-- [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — S3/DynamoDB 공유 저장소
+- [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md) — 데모 서비스 알람이 에이전트에 전달되는 경로
+- [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — 공유 저장소
+- [ADR infra/0007: 데모 증상 알람과 배포 기반 장애 주입](0007-demo-symptom-alarm-and-deployment-fault-injection.md) — 장애 플래그를 배포로 활성화하는 시나리오
+- [ADR agent/0012: 자동 복구 실행 경계](../agent/0012-automated-remediation.md) — 이 서비스의 리셋이 유일한 자동 복구 대상

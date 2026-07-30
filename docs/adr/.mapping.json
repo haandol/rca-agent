@@ -18,27 +18,27 @@
         {
           "path": "docs/adr/agent/0006-termination-conditions.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "신뢰도·시간·깊이·반복 한도로 RCA 탐색 종료를 판단한다."
+          "summary": "신뢰도·시간·깊이·반복 한도와 게이트 조기 종료로 RCA 탐색 종료를 결정론적으로 판단한다."
         },
         {
           "path": "docs/adr/agent/0007-rca-report-generation.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "검증 결과와 5 Whys를 포함한 구조화 RCA 보고서를 생성한다."
+          "summary": "확정 여부와 서버 판정 복구 결과를 구분한 구조화 RCA 보고서를 5 Whys와 함께 생성한다."
         },
         {
           "path": "docs/adr/agent/0008-playbook-generation.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "RCA 결과를 재사용 가능한 플레이북으로 만들고 S3 Vectors에 인덱싱한다."
+          "summary": "RCA 결과를 재사용 가능한 플레이북으로 만들어 유사도 검색으로 보강하고, 복구 실행 근거로는 쓰지 않는다."
         },
         {
           "path": "docs/adr/agent/0009-notification.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "RCA와 복구 완료 결과를 구분된 SNS 이벤트로 발행한다."
+          "summary": "RCA와 복구 완료 결과를 구분된 발행-구독 이벤트로 비블로킹 발행한다."
         },
         {
           "path": "docs/adr/agent/0010-model-tier-architecture.md",
           "status": "Accepted (2026-04-22)",
-          "summary": "단일 Sonnet 모델을 Planning과 Execution 행동으로 분리한다."
+          "summary": "단일 모델을 thinking 유무로 Planning과 Execution 행동으로 분리한다."
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
@@ -53,12 +53,12 @@
         {
           "path": "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
           "status": "Accepted (2026-04-24)",
-          "summary": "가설별 증거 수집 컨텍스트를 격리하고 계층적으로 관리한다."
+          "summary": "가설별 증거 수집 컨텍스트를 격리하고 상위 단계에는 요약만 계층적으로 전달한다."
         },
         {
           "path": "docs/adr/agent/0015-hexagonal-architecture.md",
           "status": "Accepted (2026-04-28)",
-          "summary": "에이전트 패키지를 Ports와 Adapters 중심의 Hexagonal 구조로 구성한다."
+          "summary": "엔진 패키지를 Ports와 Adapters로 분리해 인프라 없이 비즈니스 로직을 검증한다."
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
@@ -74,27 +74,27 @@
         {
           "path": "docs/adr/tools/0001-metrics-collection.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "CloudWatch MCP로 알람 관련 메트릭을 수집한다."
+          "summary": "관리형 MCP 서버로 알람 관련 메트릭과 알람 이력을 수집한다."
         },
         {
           "path": "docs/adr/tools/0002-log-search.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "CloudWatch Logs Insights를 통해 장애 로그를 검색한다."
+          "summary": "관리형 MCP 서버의 로그 도구로 가설별 쿼리를 생성해 장애 로그를 검색한다."
         },
         {
           "path": "docs/adr/tools/0003-trace-analysis.md",
           "status": "Deprecated (2026-04-21)",
-          "summary": "X-Ray 분산 트레이스 자동 분석은 현재 범위에서 사용하지 않는다."
+          "summary": "분산 트레이스 자동 증거 수집은 채택하지 않는다."
         },
         {
           "path": "docs/adr/tools/0004-deploy-history.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "CloudTrail MCP로 배포와 변경 이력을 조회한다."
+          "summary": "관리형 MCP 서버로 시간 컷오프 없이 배포와 변경 이력을 조회한다."
         },
         {
           "path": "docs/adr/tools/0005-code-change-analysis.md",
           "status": "Accepted (2026-04-22)",
-          "summary": "GitHub MCP로 배포 코드 변경과 결함 후보를 분석한다."
+          "summary": "저장소 MCP 서버로 배포 코드 변경의 결함 후보를 읽기 전용으로 분석한다."
         }
       ]
     },
@@ -110,7 +110,7 @@
         {
           "path": "docs/adr/infra/0002-evidence-storage.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "S3·S3 Vectors·DynamoDB에 RCA 증거와 결과를 저장한다."
+          "summary": "증거 원본·벡터 인덱스·실시간 상태를 3계층으로 분리해 저장한다."
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
@@ -120,12 +120,12 @@
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
           "status": "Accepted (2026-04-22)",
-          "summary": "RDS와 Healthcare 서비스를 RCA 검증용 데모 환경으로 배포한다."
+          "summary": "Healthcare 데모 서비스와 데이터베이스를 배포 기반 장애 주입이 가능한 검증 환경으로 운영한다."
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
           "status": "Accepted (2026-07-21)",
-          "summary": "파이프라인 단계와 가설 상태를 DynamoDB 실행 trace로 기록한다."
+          "summary": "파이프라인 스팬과 가설 상태를 세션과 같은 파티션의 실행 trace로 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",

@@ -16,47 +16,18 @@ Architecture Decision Record (ADR)는 소프트웨어 개발 과정에서 내린
 adr/
 ├── agent/        # RCA 에이전트 코어 관련 결정 (가설-트리, 상태 머신, 프롬프트 등)
 ├── tools/        # MCP 도구 관련 결정 (CloudWatch, Logs, CloudTrail, GitHub 등)
-├── infra/        # 인프라 관련 결정 (ECS Fargate, SNS/SQS, DynamoDB, S3, VPC 등)
-└── web/          # RCA 대시보드 웹 프론트엔드 관련 결정
+└── infra/        # 인프라 관련 결정 (ECS Fargate, SNS/SQS, DynamoDB, S3, VPC 등)
 ```
 
-## 카테고리별 ADR 목록
+각 카테고리 폴더에는 번호 매겨진 ADR과, 그 카테고리의 주요 결정 전환을 역순으로
+기록하는 `decision-log.md`가 있다. ADR 본문은 현재 상태만 서술하고 진화 이력은
+결정 로그와 Git이 보존한다.
 
-### Agent
+## ADR 인덱스
 
-- [ADR 0001: 초기 스코핑 + RCA 보고서 유사도 검색 (Roll-up)](agent/0001-initial-scoping-and-report-similarity.md) — 얕은 스코핑 + S3 Vectors 유사 보고서 검색으로 가설 생성 컨텍스트 확보 (구 0001, 0016 통합)
-- [ADR 0002: 가설 트리 라이프사이클 (Roll-up)](agent/0002-hypothesis-tree-lifecycle.md) — 가설 생성·우선순위·검증·분기·Beam 탐색 + Accepted Review Gate + Toyota/AWS COE 5 Whys 가드레일
-- [ADR 0006: 종료 조건 — RCA 분석 자동 종료 판단](agent/0006-termination-conditions.md) — Accepted Review Gate · 신뢰도 · 시간 · 깊이 · 루프 한도 기반 OR 평가
-- [ADR 0007: RCA 보고서 생성 — 구조화된 분석 결과 보고](agent/0007-rca-report-generation.md) — Toyota/AWS COE 5 Whys 가드레일 + `five_whys` 필드 포함
-- [ADR 0008: 플레이북 생성 — RCA 결과 기반 재사용 가능 플레이북](agent/0008-playbook-generation.md)
-- [ADR 0009: 알림 — RCA 진행/완료 알림 전달](agent/0009-notification.md)
-- [ADR 0010: 모델 티어 아키텍처 — 계획/실행 모델 분리 + adaptive thinking](agent/0010-model-tier-architecture.md)
-- [ADR 0011: CC Headless 전문 서브 에이전트 오케스트레이션](agent/0011-cc-headless-prompt-driven-rca.md)
-- [ADR 0012: 자동 복구 실행 경계](agent/0012-automated-remediation.md)
-- [ADR 0014: 계층형 증거 수집 세션 격리 — 가설별 독립 컨텍스트 윈도우 관리](agent/0014-hierarchical-evidence-session-isolation.md)
-- [ADR 0015: Hexagonal Architecture — Ports & Adapters 기반 패키지 구조 전환](agent/0015-hexagonal-architecture.md)
-- [ADR 0016: RCA 평가 테스트 하네스](agent/0016-rca-evaluation-test-harness.md) — 오프라인 계약 테스트, 엔진 중립 시나리오 평가, 선택적 AWS·실모델 평가 계층
-
-### Tools
-
-- [ADR 0001: 메트릭 수집 — CloudWatch MCP 서버 기반 증거 수집](tools/0001-metrics-collection.md)
-- [ADR 0002: 로그 검색 — CloudWatch MCP 서버 기반 증거 수집](tools/0002-log-search.md)
-- [ADR 0003: 트레이스 분석 — X-Ray 기반 분산 트레이스 조회](tools/0003-trace-analysis.md) *(Rejected)*
-- [ADR 0004: 배포 이력 조회 — CloudTrail MCP 서버 기반 배포/변경 이벤트 조회](tools/0004-deploy-history.md)
-- [ADR 0005: 코드 변경 분석 — GitHub MCP 서버 기반 배포 코드 diff의 LLM 결함 탐지](tools/0005-code-change-analysis.md)
-
-### Infra
-
-- [ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate](infra/0001-alarm-ingestion-sns-sqs-fargate.md)
-- [ADR 0002: 증거 저장 — S3 + S3 Vectors + DynamoDB 기반 증거 아카이브](infra/0002-evidence-storage.md)
-- [ADR 0003: CC Headless 스택 — ECS Fargate 기반 RCA 실행 인프라](infra/0003-lambda-cc-headless-stack.md)
-- [ADR 0004: RDS PostgreSQL + Healthcare 서비스 배포 — RCA 검증용 데모 인프라](infra/0004-rds-healthcare-deployment.md)
-- [ADR 0005: 파이프라인 실행 트레이스 — DynamoDB 기반 단계별 추적](infra/0005-execution-trace-dynamodb.md)
-- [ADR 0006: SQS Visibility Timeout 기반 미완료 RCA 세션 자동 복구](infra/0006-session-recovery-on-restart.md) — SQS 재전달 + SIGTERM graceful shutdown 결합
-
-### Web
-
-(아직 등록된 ADR 없음)
+ADR 목록은 `.mapping.json`이 유일한 인덱스다 — 카테고리별로 각 ADR의 경로, Status,
+한 줄 Key Decision 요약과 카테고리 간 `dependsOn`을 담는다. README는 목록을
+중복하지 않는다.
 
 ## ADR 작성 가이드
 

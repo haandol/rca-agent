@@ -1,4 +1,4 @@
-# ADR 0015: Hexagonal Architecture — Ports & Adapters 기반 패키지 구조 전환
+# ADR 0015: Hexagonal Architecture — Ports & Adapters 기반 패키지 구조
 
 Date: 2026-04-28
 
@@ -8,56 +8,63 @@ Accepted (2026-04-28)
 
 ## Context
 
-기존 agent/cc-headless 패키지는 비즈니스 로직(파이프라인 오케스트레이션, 가설 관리, 종료 판단 등)과 인프라 의존성(DynamoDB, S3, S3 Vectors, SNS, SQS, Bedrock)이 동일 모듈에 혼재되어 있었다. 이로 인해:
+두 엔진 패키지는 비즈니스 로직(파이프라인 오케스트레이션, 가설 관리, 종료 판단)과
+인프라 의존성(상태 저장소, 오브젝트 스토리지, 벡터 인덱스, 알림, 큐, 모델 호출)이
+같은 모듈에 혼재된 상태로 자랐다. 이 때문에 세 가지 비용이 발생했다.
 
-1. **테스트 어려움**: DynamoDB, S3 등 AWS 서비스를 직접 호출하는 코드가 비즈니스 로직에 산재하여, 단위 테스트 시 모킹 대상이 넓고 경계가 불명확했다.
-2. **교체 비용**: 저장소 전략 변경(예: DynamoDB → 다른 스토어)이나 임베딩 모델 교체 시 비즈니스 로직 모듈을 직접 수정해야 했다.
-3. **중복 구현**: agent/cc-headless 두 패키지가 동일 인프라(DynamoDB 세션, S3 보고서, S3 Vectors 플레이북)에 대해 유사한 클라이언트 코드를 독립적으로 유지했다.
+1. **테스트 경계 불명확**: AWS 서비스를 직접 호출하는 코드가 비즈니스 로직에
+   산재해 단위 테스트의 모킹 대상이 넓고 무엇을 검증하는지 흐려졌다.
+2. **교체 비용**: 저장 전략이나 임베딩 모델을 바꾸려면 비즈니스 로직 모듈을 직접
+   수정해야 했다.
+3. **엔진 간 중복**: 두 패키지가 같은 인프라에 대해 유사한 클라이언트 코드를
+   독립적으로 유지했다.
+
+## Decision Drivers
+
+- 비즈니스 로직은 AWS 자격 증명 없이 결정적으로 테스트할 수 있어야 한다. 오프라인
+  계약 테스트가 필수 CI 게이트이기 때문이다([ADR 0016](0016-rca-evaluation-test-harness.md)).
+- 인프라 교체(저장소·임베딩 모델)가 비즈니스 로직 수정을 강제해서는 안 된다.
+- 두 엔진이 오케스트레이션 방식은 달라도 구조는 같아야 한다. 구조가 갈라지면 같은
+  결정이 두 곳에서 다르게 구현되어 엔진 비교가 흐려진다.
+- 기존 import 경로를 사용하는 코드가 한 번에 깨지지 않아야 한다.
 
 ## Decision
 
-**Hexagonal Architecture(Ports & Adapters)** 패턴을 agent/cc-headless 양쪽 패키지에 적용한다.
+**Hexagonal Architecture(Ports & Adapters)** 패턴을 양쪽 엔진 패키지에 적용한다.
 
 ### 핵심 결정사항
 
-1. **계층 분리**: 각 패키지를 4개 계층으로 분리한다.
+1. **네 계층 분리**
 
    | 계층 | 역할 |
    |------|------|
-   | Ports | 비즈니스 로직이 외부 세계와 소통하는 인터페이스(추상 클래스). Primary Port(인바운드)와 Secondary Port(아웃바운드)로 구분 |
-   | Adapters | Port 인터페이스의 구체 구현. Primary Adapter(SQS 컨슈머, Health 서버)와 Secondary Adapter(DynamoDB, S3, SNS, Bedrock 등) |
-   | Services | 순수 비즈니스 로직. Port 인터페이스에만 의존하며 인프라 구체 클래스를 알지 못함 |
-   | DI (Dependency Injection) | Container가 Adapter를 생성하고 Service에 Port로 주입 |
+   | Ports | 비즈니스 로직이 외부와 소통하는 인터페이스. 인바운드(Primary)와 아웃바운드(Secondary)로 구분 |
+   | Adapters | Port의 구체 구현. 인바운드는 메시지 소비·헬스체크, 아웃바운드는 저장소·알림·모델 호출 |
+   | Services | 순수 비즈니스 로직. Port 인터페이스에만 의존하며 인프라 구체 구현을 알지 못함 |
+   | DI | Container가 Adapter를 생성해 Service에 Port로 주입 |
 
-2. **Port 설계 원칙**: Port는 Python 추상 클래스(ABC)로 정의하며, 메서드 시그니처에는 DTO만 사용한다. AWS SDK 타입(boto3 client, DynamoDB item 형식 등)이 Port 인터페이스에 노출되지 않는다.
+2. **Port 시그니처에 인프라 타입 금지**: Port 메서드는 도메인 DTO만 주고받는다.
+   AWS SDK 클라이언트나 저장소별 아이템 형식이 Port에 노출되면 추상화가 새어
+   교체 이점이 사라지고, 인메모리 구현으로 대체할 수도 없다.
 
-3. **DTO 계층**: `ports/dto`에 패키지 전체에서 공유하는 데이터 모델(Pydantic)을 정의한다. 기존 `models.py`의 도메인 모델을 이 계층으로 이동하여 Port와 Service가 공통으로 참조한다.
+3. **DTO 공유 계층**: 도메인 모델을 Port와 Service가 함께 참조하는 단일 계층에
+   둔다. 계층마다 자체 모델을 두면 경계마다 변환 코드가 생기고 필드가 갈라진다.
 
-4. **DI Container 패턴**: 추상 `Container` 클래스가 모든 Port를 property로 선언하고, `AppContainer`가 실제 AWS Adapter를 lazy-init으로 생성한다. 테스트 시 `Container`를 상속하여 인메모리 구현을 주입할 수 있다.
+4. **Container를 통한 주입**: 추상 Container가 모든 Port를 선언하고 실제 구현이
+   인프라 Adapter를 지연 생성한다. 테스트는 Container를 상속해 인메모리 구현을
+   주입한다. 이것이 "AWS 없이 비즈니스 로직 테스트"를 성립시키는 경로다.
 
-5. **양 패키지 동일 구조**: agent와 cc-headless 모두 동일한 계층 구조(`ports/`, `adapters/`, `services/`, `di/`, `config/`)를 사용한다. 패키지별로 필요한 Port/Adapter 범위가 다르지만(예: agent는 QueueConsumerPort를 가지고, cc-headless는 CcRunnerPort를 가짐) 구조적 일관성을 유지한다.
+5. **양 패키지 동일 구조**: 두 엔진이 같은 계층 구조를 쓴다. 필요한 Port 집합은
+   다르지만(한쪽은 큐 소비, 다른 쪽은 CC 프로세스 실행) 구조적 일관성을 유지한다.
 
-6. **Config 모듈 분리**: 환경변수 로딩과 상수 정의를 `config/settings.py`로 분리하여 Adapter 생성 시 참조한다. 비즈니스 로직(Service)은 설정값을 직접 읽지 않고 Container나 생성자 인자로 전달받는다.
+6. **Service는 설정을 직접 읽지 않는다**: 환경 설정 로딩은 별도 모듈로 분리하고
+   Service는 Container나 생성자 인자로 값을 받는다. Service가 환경을 직접 읽으면
+   테스트마다 환경을 조작해야 하고 설정 의존이 시그니처에 드러나지 않는다.
 
-7. **기존 모듈 유지(Thin Wrapper)**: 기존 최상위 모듈(`hypothesis.py`, `branching.py`, `scoping.py`, `evidence.py`, `report.py`, `playbook_gen.py`, `notification.py`, `session_store.py`, `trace_store.py` 등)은 각각 Service 또는 Adapter 계층으로 로직을 이동한 후 얇은 re-export 래퍼로 남겨둔다. 비즈니스 로직 모듈은 `services/`로, 인프라 모듈(`session_store.py`, `trace_store.py`)은 `adapters/secondary/`로 이동하였다. 루트 래퍼는 하위호환용으로만 존재한다. 외부 진입점(`main.py`)은 Container를 통해 Service를 조합하여 파이프라인을 실행한다.
-
-8. **프롬프트 모듈 분리**: 기존 단일 `prompts.py`(409줄)를 `prompts/` 패키지로 분리한다. 공통 언어 지시문(`common.py`)과 9개 스테이지별 모듈로 구성하여 각 서비스와 프롬프트의 응집도를 높인다. `__init__.py`에서 전체 상수를 re-export하여 기존 import 경로를 유지한다.
-
-9. **파이프라인 메서드 분할**: `PipelineOrchestrator._run_pipeline`(520줄 단일 메서드)을 `_run_scoping`, `_run_hypothesis_generation`, `_run_validation_loop`, `_finalize_hypotheses`, `_run_report_and_notify` 5개 메서드로 분할하여 가독성과 테스트 가능성을 개선한다.
-
-### Adapter 분류
-
-| 방향 | Adapter | Port | 설명 |
-|------|---------|------|------|
-| Primary (인바운드) | SQS Consumer | QueueConsumerPort | 알람 메시지 수신 (agent) |
-| Primary (인바운드) | Health Server | — | 헬스체크 엔드포인트 |
-| Secondary (아웃바운드) | DynamoDB Session Store | SessionStorePort | 세션 CRUD + 멱등성 |
-| Secondary (아웃바운드) | S3 Report Store | ReportStorePort | 보고서 저장/조회 |
-| Secondary (아웃바운드) | S3 Evidence Store | EvidenceStorePort | 증거 아카이브 |
-| Secondary (아웃바운드) | S3 Vectors Playbook Store | PlaybookStorePort | 플레이북 임베딩 검색/저장 |
-| Secondary (아웃바운드) | SNS Notification | NotificationPort | RCA 완료 알림 |
-| Secondary (아웃바운드) | Bedrock Embedding | EmbeddingPort | 텍스트 임베딩 |
-| Secondary (아웃바운드) | CC Subprocess Runner | CcRunnerPort | CC CLI 프로세스 실행 (cc-headless) |
+7. **기존 진입 경로는 얇은 re-export로 유지**: 로직을 Service·Adapter로 옮긴 뒤
+   기존 모듈 위치에는 re-export만 남긴다. 하위호환 목적이며 새 코드는 계층 경로를
+   직접 참조한다. 한 번의 대규모 import 변경으로 두 패키지를 동시에 깨뜨리지 않기
+   위한 전환 장치다.
 
 ### 의존성 방향
 
@@ -70,9 +77,9 @@ graph LR
     end
 
     subgraph Infra["인프라 (바깥쪽)"]
-        ADAPTERS["Adapters<br/>(DynamoDB, S3, SNS, ...)"]
+        ADAPTERS["Adapters"]
         DI["DI Container"]
-        MAIN["main.py<br/>(진입점)"]
+        ENTRY["진입점"]
     end
 
     SERVICES --> PORTS
@@ -81,34 +88,51 @@ graph LR
     ADAPTERS --> DTO
     DI --> ADAPTERS
     DI --> PORTS
-    MAIN --> DI
-    MAIN --> SERVICES
+    ENTRY --> DI
+    ENTRY --> SERVICES
 ```
 
-의존성은 항상 바깥에서 안쪽으로 향한다. Service는 Port 인터페이스만 참조하고, Adapter의 존재를 알지 못한다.
+의존성은 항상 바깥에서 안쪽으로 향한다. Service는 Port 인터페이스만 참조하고
+Adapter의 존재를 알지 못한다.
+
+## 대안 검토
+
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 현행 유지(레이어 없는 모듈 구성) | 변경 비용이 없고 파일 수가 적다. | 비즈니스 로직 테스트가 AWS 모킹에 계속 묶여 필수 CI 게이트를 결정적으로 만들 수 없다. |
+| 인프라 호출만 얇은 유틸 모듈로 추출 | 구조 변경이 작고 즉시 적용 가능하다. | 인터페이스가 아니라 함수 묶음이라 인메모리 대체가 불가능하고, 유틸이 여전히 인프라 타입을 노출한다. |
+| 공유 라이브러리 패키지를 먼저 추출 | 두 엔진의 인프라 중복을 근본적으로 없앤다. | 두 엔진의 Port 집합이 아직 다르고 변화 중이라 공통 인터페이스를 조기에 고정하면 잘못된 추상화가 굳는다. 구조를 먼저 맞추고 중복이 안정되면 추출한다. |
+| Ports & Adapters 적용 | 비즈니스 로직을 인프라 없이 테스트하고 인프라 교체를 Adapter로 국소화한다. | 파일·디렉토리 수가 늘고 작은 변경에도 Port·Adapter·Container를 함께 수정해야 한다. |
 
 ## Consequences
 
 ### Positive
 
-- 비즈니스 로직(Service)을 인프라 없이 단위 테스트 가능 — Port를 구현하는 인메모리 스텁만으로 충분
-- 인프라 교체(DynamoDB → 다른 스토어, 임베딩 모델 교체 등) 시 Adapter만 교체하면 되며 비즈니스 로직 수정 불필요
-- agent/cc-headless 양쪽에 동일 구조가 적용되어 패키지 간 탐색 비용 감소
-- DI Container로 의존성 생명주기(lazy-init, cleanup)를 중앙에서 관리
+- 비즈니스 로직을 인프라 없이 단위 테스트할 수 있다 — Port 인메모리 구현만으로 충분
+- 인프라 교체 시 Adapter만 바꾸면 되고 비즈니스 로직 수정이 불필요하다
+- 양쪽 엔진에 동일 구조가 적용되어 패키지 간 탐색 비용이 감소한다
+- 의존성 생명주기(지연 생성, 정리)를 Container에서 중앙 관리한다
 
 ### Negative
 
-- 계층 분리로 인한 파일/디렉토리 수 증가 — 소규모 변경에도 Port → Adapter → Container를 모두 수정해야 할 수 있음
-- 추상화 계층 추가로 코드 추적 경로가 길어져 디버깅 시 간접 참조를 따라가야 함
-- 두 패키지가 유사한 Port/Adapter를 독립적으로 유지하므로 공유 라이브러리 추출 없이는 일부 중복이 잔존
+- 계층 분리로 파일·디렉토리 수가 증가하고, 소규모 변경에도 Port → Adapter →
+  Container를 모두 수정해야 할 수 있다
+- 추상화 계층이 늘어 디버깅 시 간접 참조를 따라가야 한다
+- 두 패키지가 유사한 Port·Adapter를 독립 유지하므로 공유 라이브러리 추출 전까지
+  일부 중복이 잔존한다
+- re-export 래퍼가 남아 있는 동안 같은 심볼에 두 경로가 존재한다
 
 ### Risks
 
-- Port 인터페이스가 특정 Adapter의 특성에 과도하게 맞춰지면(leaky abstraction) 교체 이점이 사라진다. Port 메서드 설계 시 도메인 관점에서 정의하고 인프라 용어를 배제하여 완화한다.
-- 양 패키지의 Port/Adapter가 시간이 지나며 분기될 수 있다. 공통 인터페이스가 필요해지면 shared 패키지 추출을 검토한다.
+- Port 인터페이스가 특정 Adapter의 특성에 과도하게 맞춰지면(leaky abstraction)
+  교체 이점이 사라진다. Port 메서드를 도메인 관점에서 정의하고 인프라 용어를
+  배제해 완화한다.
+- 양 패키지의 Port·Adapter가 시간이 지나며 분기할 수 있다. 공통 인터페이스가
+  안정되면 shared 패키지 추출을 검토한다.
 
 ## Related
 
-- [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — Planning/Execution 모델 팩토리가 DI Container를 통해 주입됨
-- [ADR agent/0011: CC Headless 프롬프트 주도 RCA](0011-cc-headless-prompt-driven-rca.md) — CC Headless 패키지에도 동일 구조 적용
-- [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집 Service가 EvidenceStorePort를 통해 격리된 세션 관리
+- [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — 모델 생성 경로가 Container를 통해 주입됨
+- [ADR agent/0011: CC Headless 전문 서브 에이전트 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — CC Headless 패키지에도 동일 구조 적용
+- [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집이 저장소 Port를 통해 직접 영속화
+- [ADR agent/0016: RCA 평가 테스트 하네스](0016-rca-evaluation-test-harness.md) — 오프라인 계약 테스트가 이 구조를 전제로 함

@@ -5,6 +5,9 @@
 
 | 날짜 | 변경 | 근거 | 현재 ADR |
 |------|------|------|----------|
+| 2026-07-30 | 자동 복구의 실행 근거를 플레이북 절차에서 검증 확정 원인 유형과 서버 허용 목록으로 확정 | LLM이 생성한 자유 텍스트 절차가 쓰기 액션의 권위가 되면 fail-closed 경계가 무너지므로 | [플레이북 생성](0008-playbook-generation.md), [자동 복구 실행 경계](0012-automated-remediation.md) |
+| 2026-04-22 | 모델 구성을 경량·고성능 2-tier에서 단일 모델 + thinking 유무 행동 분리로 전환 | 경량 모델이 도구 응답과 구조화 출력에서 토큰 한도에 걸려 증거를 누락하고, 확정 금지 가드레일 재트리거가 절감을 상쇄했기 때문에 | [모델 티어 아키텍처](0010-model-tier-architecture.md) |
+| 2026-04-28 | 초기 스코핑의 유사도 검색 대상을 플레이북 인덱스에서 RCA 보고서 인덱스로 교체 | 플레이북은 대응 절차 중심이라 가설 생성에 필요한 "증상 → 근본 원인" 추론 경로가 빈약했으므로 | [초기 스코핑과 보고서 유사도](0001-initial-scoping-and-report-similarity.md), [플레이북 생성](0008-playbook-generation.md) |
 | 2026-07-25 | CC 하네스 자산을 실험용·배포용 이중 관리에서 엔진 패키지 단일 소스로 고정 | 로컬에서 검증한 오케스트레이션 동작이 배포 동작을 그대로 보증하도록 하기 위해 | [CC Headless 오케스트레이션](0011-cc-headless-prompt-driven-rca.md), [CC Headless 실행 인프라](../infra/0003-lambda-cc-headless-stack.md) |
 | 2026-07-21 | CC 자동 복구 전에 다른 허용 액션의 경쟁 가설이 기각·종료됐는지 검증 | 확정 가설 하나만으로 조사 중인 상충 원인을 무시하고 잘못된 reset을 실행하지 않기 위해 | [자동 복구 실행 경계](0012-automated-remediation.md) |
 | 2026-07-21 | CC 복구 후 정상화 판정을 원본 CloudWatch 알람의 M-of-N 및 missing-data 정책에 맞춤 | 단일 정상 datapoint만으로 아직 ALARM 조건인 장애를 정상화로 보고하지 않기 위해 | [자동 복구 실행 경계](0012-automated-remediation.md) |

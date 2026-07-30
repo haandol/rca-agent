@@ -10,21 +10,42 @@ Accepted (2026-04-21)
 
 RCA가 완료되면 SRE 팀에 즉시 알려야 한다. 알림이 지연되면 조치가 늦어지고, 알림이 실패해도 RCA 자체가 블로킹되면 안 된다.
 
+## Decision Drivers
+
+- RCA 완료를 SRE가 즉시 인지해야 한다. 대시보드를 보고 있어야만 알 수 있으면 자동화의 대응 시간 단축 효과가 사라진다.
+- 알림 실패가 RCA 자체를 실패시켜서는 안 된다. 보고서는 이미 저장되어 있다.
+- 확정과 미확정 결과가 같은 강도로 전달되어서는 안 된다.
+- 알림 채널을 늘릴 때 발행 측 코드를 바꾸지 않아야 한다.
+- RCA 완료와 복구 완료가 같은 이벤트로 전달되어서는 안 된다([ADR 0012](0012-automated-remediation.md)).
+
 ## Decision
 
-**SNS Topic 기반 알림 전송 + 비블로킹 처리** 전략을 채택한다.
+**발행-구독 토픽 기반 알림 + 비블로킹 처리** 전략을 채택한다.
 
 ### 핵심 결정사항
 
-1. **알림 메시지 구조**: `NotificationMessage` Pydantic 모델로 RCA ID, 근본 원인 요약(최대 200자), 심각도, 보고서 S3 키, 대시보드 URL, 소요 시간, 확정 여부를 포함한다. `build_notification()` 함수가 `RcaReport`에서 메시지를 구성한다.
+1. **알림 메시지 구조**: RCA ID, 근본 원인 요약, 심각도, 보고서 접근 경로, 소요 시간, 확정 여부, 그리고 생성된 플레이북의 대응 절차를 포함한다. 요약은 200자를 넘지 않는다 — 이메일·메신저 구독자가 본문을 열지 않고도 조치 판단을 시작할 수 있어야 하기 때문이다.
 
-2. **SNS Topic 발행**: `send_notification()`이 `SNS_NOTIFICATION_TOPIC_ARN`으로 JSON 메시지를 발행한다. Presigned URL 생성에 실패하면 대시보드 URL로 대체한다.
+2. **비블로킹 발행**: 알림 발행은 예외를 전파하지 않으며 최대 3회 exponential backoff 재시도 후 실패를 로그로만 남긴다. 알림 대상이 설정되지 않았거나 모든 재시도가 실패해도 RCA 파이프라인은 정상 완료된다. 알림은 조치 시작을 앞당기는 편의이지 RCA 결과의 보존 경로가 아니다 — 보고서는 이미 S3에 있다.
 
-3. **비블로킹 + exponential backoff**: `send_notification()`은 `bool`을 반환하며 예외를 전파하지 않는다. 최대 3회 재시도(`base_delay * 2^attempt`)하며, 모든 시도 실패 시 `False`를 반환하고 로그만 기록한다. SNS 미설정 시에도 파이프라인은 정상 완료된다.
+3. **근본 원인 미확정 시 구분 표기**: 근본 원인이 확정되지 않은 세션의 알림은 수동 검토가 필요함을 요약에 명시하고 심각도를 중간으로 낮춘다. 미확정 결과가 확정 결과와 같은 강도로 전달되면 수신자가 잘못된 조치를 시작할 수 있다.
 
-4. **근본 원인 미확정 시**: `root_cause_confirmed=False`이면 `build_notification()`이 "Root cause unconfirmed — manual review needed" 요약을 생성하고, severity를 "medium"으로 설정한다.
+4. **보고서 접근 경로**: 알림에는 만료 시한이 있는 보고서 직접 접근 링크를 담고, 링크 생성에 실패하면 대시보드 URL로 대체한다. 만료 기한은 24시간으로 둔다 — 알림 링크가 무기한 유효하면 증거 접근 통제를 우회하는 영구 경로가 된다.
 
-5. **Presigned URL**: `_generate_presigned_url()`이 S3 보고서에 대해 24시간(86400초) 만료 Presigned URL을 생성한다. 실패 시 대시보드 URL로 fallback한다.
+### 복구 완료 알림과의 분리
+
+RCA 완료 알림과 복구 완료 알림은 서로 구분된 이벤트로 발행한다. 두 결과를 같은
+이벤트로 합치면 복구가 아직 수행되지 않은 세션과 복구가 끝난 세션을 수신자가
+구별할 수 없고, 엔진별 복구 경로가 서로의 진입 이벤트를 소비해 중복 실행될 수
+있다([ADR 0012](0012-automated-remediation.md)).
+
+## 대안 검토
+
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 대시보드 폴링만 사용 (알림 없음) | 인프라가 늘지 않고 전달 실패가 없다. | SRE가 대시보드를 보고 있어야만 완료를 인지하므로 야간·비근무 시간 대응이 지연되고, 자동화의 대응 시간 단축 효과가 사라진다. |
+| 채널별 직접 연동(메신저·페이저 API 호출) | 채널별 서식과 상호작용을 제어할 수 있다. | 채널마다 자격 증명·재시도·레이트 리밋을 유지해야 하고, 채널 추가마다 발행 측 코드가 바뀐다. |
+| 발행-구독 토픽에 발행하고 구독자가 분기 | 채널 추가가 구독 설정 변경으로 끝나고 발행 측이 채널을 알지 못한다. | 채널별 서식을 제어할 수 없고, at-least-once 전달이라 소비자가 중복 제거를 유지해야 한다. |
 
 ## Consequences
 
@@ -36,18 +57,16 @@ RCA가 완료되면 SRE 팀에 즉시 알려야 한다. 알림이 지연되면 �
 
 ### Negative
 
-- MVP에서는 SNS(이메일) 기반으로 Slack/PagerDuty 직접 연동은 미지원
+- SNS 구독(이메일) 기반이므로 Slack/PagerDuty는 구독자 측 연동이 필요하고 채널별 서식을 제어할 수 없다
+- 알림 payload에 플레이북 절차를 포함하므로 메시지가 커지고, 절차가 길면 수신 채널에서 잘릴 수 있다
 
 ### Risks
 
-- SNS 발행 지연으로 알림이 늦어질 수 있으나, RCA 보고서는 이미 S3에 저장되어 있으므로 대시보드에서 직접 확인 가능하다.
-
-## Implementation Status
-
-구현 완료. 알림 메시지에 플레이북 데이터(playbook_id, failure_type, symptom_pattern, severity_criteria, verification_steps, temporary_mitigation, permanent_remediation, escalation_criteria)를 포함하여 SNS에 발행한다. 다만 이 알림을 구독하여 자동 복구를 수행할 Remediation Agent는 아직 미구현(ADR agent/0012 참조).
+- 알림 발행 지연으로 조치가 늦어질 수 있으나, RCA 보고서는 이미 S3에 저장되어 있으므로 대시보드에서 직접 확인 가능하다.
+- 표준 SNS는 at-least-once 전달이므로 같은 결과 이벤트가 중복 도착할 수 있다. 소비자는 세션·발행 식별자를 멱등성 키로 사용해야 한다([ADR 0012](0012-automated-remediation.md)).
 
 ## Related
 
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 알림에 포함할 보고서를 생성하는 단계
 - [ADR agent/0008: 플레이북 생성](0008-playbook-generation.md) — 알림에 포함할 플레이북을 생성하는 단계
-- [ADR agent/0012: 자동 복구](0012-automated-remediation.md) — 알림을 구독하여 복구를 수행하는 에이전트 (미구현)
+- [ADR agent/0012: 자동 복구](0012-automated-remediation.md) — 복구 완료 이벤트를 별도로 발행하는 경계

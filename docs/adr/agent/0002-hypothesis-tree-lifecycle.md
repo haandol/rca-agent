@@ -8,13 +8,15 @@ Accepted (2026-04-28)
 
 ## Context
 
-RCA Agent는 스코핑 결과를 바탕으로 **가설 트리**를 생성하고, 증거 수집·검증·분기를 반복하여 근본 원인에 수렴해야 한다. 가설 트리 라이프사이클 설계 시 고려 사항:
+RCA Agent는 스코핑 결과를 바탕으로 **가설 트리**를 생성하고, 증거 수집·검증·분기를 반복하여 근본 원인에 수렴해야 한다.
 
-1. **구조화된 트리**: 가설은 루트 노드로 시작해 필요 시 분기되어 트리를 형성한다. 이후 우선순위, 검증, 분기 단계에서 각 노드의 상태를 일관되게 관리할 수 있어야 한다.
-2. **탐색 효율**: 모든 PENDING 가설을 매 루프마다 검증하면 트리 분기 누적 시 LLM 호출이 폭발한다. 20분 타임 버짓 내에 근본 원인에 수렴해야 한다.
-3. **판단 기준 명확성**: 확정/기각/추가조사의 경계를 코드에서 일관되게 적용해야 LLM 판단의 편차가 파이프라인을 왜곡하지 않는다.
-4. **탐색 폭 제어**: 무제한 분기는 폭발을 야기하므로 깊이와 폭을 제한해야 한다.
-5. **복합 원인 대응**: 단일 경로(DFS)로 몰아가면 복합 원인을 놓치고, 전체 검증은 비용이 폭증한다. 둘 사이의 균형이 필요하다.
+## Decision Drivers
+
+- 가설은 루트에서 시작해 필요 시 분기되므로, 우선순위·검증·분기 단계가 각 노드의 상태를 일관되게 관리할 수 있어야 한다.
+- 모든 미검증 가설을 매 루프마다 검증하면 트리 분기 누적 시 LLM 호출이 폭발한다. 20분 시간 예산 안에 근본 원인에 수렴해야 한다.
+- 확정·기각·추가조사의 경계는 코드에서 일관되게 적용해야 한다. LLM 판단의 편차가 파이프라인을 왜곡해서는 안 된다.
+- 무제한 분기는 탐색 폭발을 야기하므로 깊이와 폭에 상한이 필요하다.
+- 단일 경로 탐색은 복합 원인을 놓치고 전체 검증은 비용이 폭증한다. 둘 사이의 균형이 필요하다.
 
 ## Decision
 
@@ -22,26 +24,26 @@ RCA Agent는 스코핑 결과를 바탕으로 **가설 트리**를 생성하고,
 
 ### 상태 용어 (Terminology)
 
-문서·UI·프롬프트 전반에서 확정된 가설을 **"채택(Accepted)"**로 표기한다. 기존 "확정(Confirmed)" 표현은 더 이상 사용하지 않는다. 단 하위 호환을 위해 **DDB/S3/API 페이로드에 저장되는 status 문자열 값은 `CONFIRMED`를 유지**한다. 코드 상수명(`HypothesisStatus.CONFIRMED`, `TerminationReason.CONFIRMED`)도 그대로 둔다. 변경 범위를 "사용자가 보는 표현"으로 제한하여 레거시 세션·보고서 조회를 깨지 않는다.
+사용자가 보는 표현(문서·UI·프롬프트)에서 확정된 가설을 **"채택(Accepted)"**으로 표기한다. 반면 저장·전송되는 상태 값은 `CONFIRMED`를 유지한다. 표현 변경이 저장 스키마까지 내려가면 이미 기록된 세션·보고서 조회가 깨지므로, 변경 범위를 표현 계층으로 한정한다.
 
 ### 가설 트리 라이프사이클
 
 ```mermaid
 flowchart TD
-    Start["스코핑 완료"] --> GEN["F2: 가설 생성<br/>(루트 3~5개, depth=0)"]
+    Start["스코핑 완료"] --> GEN["가설 생성<br/>(루트 3~5개, depth=0)"]
     GEN --> GATE["Accepted Review Gate<br/>(이전 루프의 채택 가설 리뷰)"]
     GATE -->|"max≥0.9"| FIN
     GATE -->|"0.8≤max<0.9"| PRIO_BLOCKED["PRIO (비확장 모드)<br/>증거 보강만, 분기·신규 금지"]
     GATE -->|"그 외"| PRIO
-    PRIO --> BEAM["Beam 선택<br/>상위 N개 (RCA_BEAM_WIDTH=3)"]
+    PRIO --> BEAM["Beam 선택<br/>상위 3개"]
     PRIO_BLOCKED --> BEAM
-    BEAM --> EVID["F4: 증거 수집<br/>(beam 내 가설만)"]
-    EVID --> VAL["F5: 검증<br/>(confidence_score 산출)"]
+    BEAM --> EVID["증거 수집<br/>(beam 내 가설만)"]
+    EVID --> VAL["검증<br/>(confidence_score 산출)"]
     VAL --> CLS{판정}
     CLS -->|"≥0.8"| ACC["채택 (status=CONFIRMED)"]
     CLS -->|"≤0.3"| REJ["REJECTED<br/>+ 하위 subtree pruning"]
     CLS -->|"0.3~0.8"| NI["NEEDS_INVESTIGATION"]
-    NI --> BR["F6: 분기<br/>(자식 2~3개, depth+1)"]
+    NI --> BR["분기<br/>(자식 2~3개, depth+1)"]
     BR --> GATE
     ACC --> TERM{종료 조건}
     REJ --> ALLREJ{전체 기각?}
@@ -54,24 +56,19 @@ flowchart TD
 
 ### 공통 도메인 모델
 
-가설 노드는 다음 속성을 갖는다:
+가설 노드는 트리 정체성(자신과 트리 식별자, 부모 참조, 깊이), 내용(설명, 카테고리, 필수 증거), 판정(신뢰도, 상태)을 갖는다. 카테고리는 DEPLOYMENT / INFRASTRUCTURE / TRAFFIC / DEPENDENCY / CONFIGURATION 다섯 가지이며, 상태는 PENDING에서 시작해 CONFIRMED / REJECTED / NEEDS_INVESTIGATION / CLOSED 중 하나로 귀결된다.
 
-- `hypothesis_id` (UUID), `tree_id` (트리 루트 공통)
-- `parent_id` (루트는 None), `depth` (루트=0, 자식은 부모+1)
-- `description`, `category` (DEPLOYMENT/INFRASTRUCTURE/TRAFFIC/DEPENDENCY/CONFIGURATION)
-- `confidence_score` (0.0~1.0), `required_evidence` (list)
-- `status`: PENDING → CONFIRMED / REJECTED / NEEDS_INVESTIGATION / CLOSED
-- `referenced_playbook_id` (과거 호환, 현재는 비어 있음)
+카테고리를 다섯 가지로 고정하는 이유는 두 가지다. 검증 전략을 카테고리별로 체계화할 수 있고, 가설 생성 시 카테고리 분포를 보아 단일 원인 가정에 빠졌는지 판정할 수 있다.
 
-### 1. 가설 생성 (F2)
+### 1. 가설 생성
 
-- **LLM 구조화 출력**: Strands SDK `structured_output_model`로 `HypothesisOutput` Pydantic 모델을 지정한다. SDK가 파싱을 처리하므로 프롬프트에 JSON 포맷 지시가 불필요하다. 비스트리밍 모드로 호출한다.
-- **개수 제한**: 루트 레벨 3~5개. Pydantic `max_length=5` 제약으로 하드 제한하며, 초과 시 방어적으로 잘라낸다.
+- **LLM 구조화 출력**: 가설 목록을 구조화 출력으로 받아 이후 단계가 파싱 없이 소비한다.
+- **개수 제한**: 루트 레벨 3~5개. 스키마 제약으로 상한을 강제하며 초과 시 방어적으로 잘라낸다. 하한 3개는 단일 원인 가정을 막고, 상한 5개는 첫 루프의 검증 비용을 묶는다.
 - **카테고리 필수**: 각 가설은 5개 카테고리 중 하나에 분류되어 검증 전략을 체계화한다.
-- **유사 보고서 주입**: 스코핑에서 전달된 유사 RCA 보고서(`root_cause`, `incident_summary`, `hypothesis_path`, `confirmed`)를 프롬프트에 포함하여 과거 경험을 우선 반영한다. 확정된 보고서의 근본 원인에 더 높은 신뢰도를 부여하도록 지시한다(ADR 0001).
-- **재시도**: 시도당 3분 타임아웃, 최대 3회 재시도. 모두 실패 시 빈 가설 목록 반환.
-- **전체 기각 후 재생성**: 검증 결과 모든 가설이 REJECTED이면 가설 생성으로 루프백한다. 최대 `RCA_MAX_REGENERATION_ROUNDS=2`회 제한.
-- **모델 티어**: Planning 티어 (Sonnet 4.6 + adaptive thinking).
+- **유사 보고서 주입**: 스코핑에서 전달된 유사 RCA 보고서를 프롬프트에 포함해 과거 경험을 우선 반영하고, 확정된 보고서의 근본 원인에 더 높은 신뢰도를 부여하도록 지시한다([ADR 0001](0001-initial-scoping-and-report-similarity.md)).
+- **재시도**: 시도당 타임아웃과 **최대 3회** 재시도를 두고, 모두 실패하면 빈 가설 목록을 반환해 파이프라인이 미확정 보고서로 종료되게 한다. 무한 재시도는 20분 예산을 가설 생성에서 소진시키므로 실패를 미확정 결과로 확정한다.
+- **전체 기각 후 재생성**: 검증 결과 모든 가설이 기각되면 가설 생성으로 루프백한다. 재생성은 **최대 2회**까지만 허용한다 — 무제한 재생성은 20분 예산을 가설 생성에만 소모한다.
+- **모델 티어**: Planning 티어([ADR 0010](0010-model-tier-architecture.md)).
 - **5 Whys 사고 프레임 (Toyota / AWS COE)**: 각 가설은 "증상에 대한 1차 '왜?'의 답 후보" 로 구성하여, 분기 단계에서 다시 "왜 그게 발생했는가?" 로 한 단계 더 내려갈 수 있어야 한다. 다음 가드레일을 프롬프트에 강제한다.
   - **"휴먼 에러" 종착 금지**: 운영자 실수로 귀결되는 가설은 검증 부재·권한 과다·런북 결함 등 시스템·프로세스 결함으로 풀어 표현.
   - **단일 원인 가정 회피**: 카테고리 분포가 다양하도록 다요인 후보를 제시 — 한 카테고리에 모든 가설을 몰지 않는다.
@@ -94,61 +91,58 @@ flowchart TD
 | CONFIRMED 가설 존재하나 0.8 ≤ max < 0.9 | `expansion_blocked=True` 반환 → 증거 보강만 허용, 새 분기·재생성 금지. 그 다음 루프에서도 0.9 돌파 실패 시 종료 |
 | CONFIRMED 가설 없음 | gate 통과, 기존 흐름대로 진행 |
 
-**Accepted-유사 자동 기각**: CONFIRMED 가설이 하나라도 존재하면, PENDING/NEEDS_INVESTIGATION 상태 가설 중 다음을 만족하는 것은 REJECTED로 자동 전환한다(`reasoning="이미 채택된 {accepted_id}와 동일 원인 영역 — 게이트 자동 기각"`):
+**Accepted-유사 자동 기각**: 채택 가설이 하나라도 존재하면, 미검증·추가조사 상태 가설 중 같은 카테고리이고 설명 토큰 유사도가 **0.6 이상**인 것은 자동 기각하고 그 근거를 판정 사유에 남긴다. 임계치를 0.6으로 보수적으로 두는 이유는 독립적이지만 표현이 비슷한 원인까지 묶여 기각되는 것을 막기 위함이다.
 
-- 같은 `category`
-- description 토큰 기반 Jaccard similarity ≥ 0.6 (소문자화·불용어 제외)
+동일 영역 분기 누적을 근원에서 억제하는 가드레일이다. subtree pruning과 달리 부모가 기각되지 않았어도 **채택된 형제** 기준으로 prune한다.
 
-동일 영역 분기 누적을 근원에서 억제하는 가드레일이다. subtree pruning과 달리 부모가 REJECTED되지 않았어도 **채택된 형제** 기준으로 prune한다.
+**비확장 모드 세부**:
 
-**비확장 모드(`expansion_blocked`) 세부**:
-
-- BRANCHING(F6) 호출 생략 — NEEDS_INVESTIGATION 가설이 있어도 자식 생성 금지
-- 전체 기각 시 재생성 생략 — `RCA_MAX_REGENERATION_ROUNDS`와 무관하게 스킵
+- 분기 호출 생략 — 추가조사 가설이 있어도 자식 생성 금지
+- 전체 기각 시 재생성 생략 — 재생성 한도와 무관하게 스킵
 - 증거 수집 + 검증은 계속 수행하여 max confidence를 0.9 이상으로 끌어올리는 것만 목표
-- 해당 루프 종료 후 gate 재실행. 여전히 0.8~0.9이면 다음 루프도 비확장. 연속 2회(`RCA_EXPANSION_BLOCKED_GRACE_LOOPS=2`) 비확장에도 0.9 미도달이면 `early_exit=True`로 전환.
+- 해당 루프 종료 후 gate 재실행. 여전히 0.8~0.9이면 다음 루프도 비확장. **연속 2회** 비확장에도 0.9 미도달이면 조기 종료로 전환한다 — 증거 보강만으로 임계를 넘지 못하는 가설은 추가 루프로도 확정되지 않는다.
 
-### 3. 우선순위 결정 (F3)
+### 3. 우선순위 결정
 
-- **LLM 동적 우선순위**: `PrioritizationOutput` Pydantic 모델로 LLM이 각 가설의 `priority_rank`, `tools`(필요 도구 목록), `estimated_seconds`, `parallel_group`을 반환한다.
-- **컨텍스트 기반 판단**: 알람 유형, 스코핑 결과, 가설 카테고리를 종합해 순서를 결정한다(예: 최근 배포 확인 시 배포 가설 우선).
-- **병렬 그룹**: 독립적 가설은 동일 `parallel_group`으로 묶어 병렬 검증 가능성을 표시한다.
-- **Fallback**: LLM 실패 시 카테고리 기본 순서(DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION)로 정렬한다. 120초 타임아웃을 `ThreadPoolExecutor`로 강제한다.
+- **LLM 동적 우선순위**: 각 가설의 순위, 필요 도구, 예상 소요, 병렬 그룹을 구조화 출력으로 받는다.
+- **컨텍스트 기반 판단**: 알람 유형, 스코핑 결과, 가설 카테고리를 종합해 순서를 결정한다(예: 최근 배포가 확인되면 배포 가설 우선).
+- **병렬 그룹**: 독립적 가설은 같은 그룹으로 묶어 병렬 검증 가능성을 표시한다.
+- **Fallback**: LLM 실패나 타임아웃 시 카테고리 기본 순서(DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION)로 정렬한다. 우선순위 결정 실패가 탐색 자체를 막아서는 안 되며, 이 기본 순서는 배포가 가장 흔한 원인이라는 경험을 반영한다.
 - **모델 티어**: Planning 티어.
 
 ### 4. Beam Search — 상위 N개 선택적 검증
 
-- **Beam 선택**: 우선순위 결정 후 `priority_rank` 기준 상위 N개만 증거 수집·검증·분기에 참여시킨다. `RCA_BEAM_WIDTH` 기본 3.
+- **Beam 선택**: 우선순위 결정 후 상위 **3개**만 증거 수집·검증·분기에 참여시킨다. 루프당 LLM 호출을 고정 폭으로 묶어 비용을 예측 가능하게 만드는 값이다.
 - **상태 필터**: CONFIRMED/REJECTED는 beam 후보에서 제외한다. PENDING/NEEDS_INVESTIGATION만 후보.
 - **비선택 가설 보존**: beam에 포함되지 않은 가설은 삭제하지 않고 목록에 유지한다. 다음 루프에서 우선순위가 재평가되어 beam에 진입할 수 있어 한 번 배제된 가설도 복귀 가능하다(DFS 백트래킹과 구분되는 특성).
 - **증거 재사용**: beam 진입 가설 중 이전 루프에서 이미 증거가 수집된 가설은 재수집하지 않는다.
 
-### 5. 증거 수집 및 검증 (F4, F5)
+### 5. 증거 수집 및 검증
 
-- **LLM 신뢰도 기반 3단 판정**: `ValidationOutput` Pydantic 모델로 `status`, `confidence_score`, `reasoning`, `evidence_summary`, `validated_fault_type`을 반환받는다.
-- **Score 기반 재분류**: LLM이 반환한 status는 참고만 하고, **confidence_score를 기준으로 코드에서 status를 재분류**한다:
+- **LLM 신뢰도 기반 3단 판정**: 검증 결과로 상태, 신뢰도, 판단 근거, 증거 요약, 검증된 원인 유형을 구조화 출력으로 받는다.
+- **Score 기반 재분류**: LLM이 반환한 상태는 참고만 하고, **신뢰도를 기준으로 코드에서 상태를 재분류**한다:
   - `≥ 0.8` → **CONFIRMED**
   - `≤ 0.3` → **REJECTED**
   - 그 사이 → **NEEDS_INVESTIGATION**
-  이는 LLM status 판단의 일관성 부족을 보완한다.
-- **복구 유형 독립 검증**: 가설 생성·분기 단계의 `fault_type`은 조사 힌트일 뿐
+  LLM의 상태 판단은 같은 증거에도 흔들리지만 신뢰도는 상대적으로 안정적이므로, 경계 판정의 권위를 코드가 갖는다.
+- **복구 유형 독립 검증**: 가설 생성·분기 단계가 붙인 원인 유형은 조사 힌트일 뿐
   자동 복구의 권위가 아니다. 검증 단계가 실제 수집 증거를 기준으로 허용 목록
-  원인 유형을 독립 분류하고, `CONFIRMED` 판정과 함께 저장된
-  `validated_fault_type`만 후속 복구가 사용할 수 있다. 확정되지 않았거나 증거가
-  부족하거나 설명·증거와 유형이 일치하지 않으면 `UNSUPPORTED`로 저장한다.
-- **증거 수집 실패 시 CONFIRMED 금지**: 증거 수집이 타임아웃/예외로 실패한 가설은 `required_evidence`가 비어있지 않으면 CONFIRMED를 금지하고 최대 NEEDS_INVESTIGATION까지만 허용한다. LLM이 description과 초기 confidence_score만으로 증거 없이 확정하는 문제를 방지하는 가드레일이다. `required_evidence`가 비어있는 가설은 증거 없이도 확정 가능하다.
-- **판단 근거 기록**: `reasoning`과 `evidence_summary`를 `ValidationJudgment`에 기록하여 보고서와 사후 검토에 활용한다.
-- **REJECTED subtree pruning**: 가설이 REJECTED로 판정되면 해당 노드의 하위 subtree 전체를 REJECTED로 전파한다.
-- **모델 티어**: Execution 티어. 증거-가설 일치도 판정은 단순 분류 작업이므로 thinking 없이 호출한다. 모델은 단일 Sonnet 4.6이며 Planning/Execution 차이는 thinking 유무로 결정된다(ADR 0010).
+  원인 유형을 독립 분류하고, 확정 판정과 함께 저장된 검증 원인 유형만 후속 복구가
+  사용할 수 있다. 확정되지 않았거나 증거가 부족하거나 설명·증거와 유형이 일치하지
+  않으면 지원 불가로 저장해 복구를 fail-closed로 만든다([ADR 0012](0012-automated-remediation.md)).
+- **증거 수집 실패 시 CONFIRMED 금지**: 증거 수집이 실패한 가설은 필수 증거 목록이 비어있지 않으면 확정을 금지하고 최대 NEEDS_INVESTIGATION까지만 허용한다. 이 가드레일이 없으면 LLM이 가설 설명만 보고 증거 없이 확정한다. 필수 증거를 요구하지 않는 가설은 증거 없이도 확정할 수 있다.
+- **판단 근거 기록**: 판단 근거와 증거 요약을 검증 판정과 함께 남겨 보고서와 사후 검토에 사용한다.
+- **REJECTED subtree pruning**: 가설이 기각되면 해당 노드의 하위 subtree 전체에 기각을 전파한다. 반증된 부모의 자식은 전제 자체가 무효다.
+- **모델 티어**: Execution 티어. 증거-가설 일치도 판정은 분류 작업이므로 사고 없이 호출한다([ADR 0010](0010-model-tier-architecture.md)).
 
-### 6. 하위 가설 분기 (F6)
+### 6. 하위 가설 분기
 
 - **NEEDS_INVESTIGATION 대상**: 판정이 NEEDS_INVESTIGATION인 가설만 분기한다.
-- **LLM 구조화 자식 생성**: `BranchingOutput` Pydantic 모델로 자식 가설 목록을 반환한다. 부모 가설, 수집된 증거, 기각된 가설 목록을 LLM에 전달한다.
-- **자식 개수 제한**: 부모당 최대 3개. Pydantic `max_length=3`으로 하드 제한, 초과 시 방어적 truncate.
-- **트리 확장**: 자식에 새 UUID 부여, `parent_id=부모ID`, `depth=부모.depth+1`.
-- **깊이 제한**: `MAX_BRANCHING_DEPTH=3`. 부모 depth가 제한에 도달하면 LLM 호출 없이 빈 결과 반환.
-- **중복 방지**: 부모 가설과 기각된 가설과 대소문자 무시 비교로 중복 자식을 자동 제거한다.
+- **LLM 구조화 자식 생성**: 부모 가설, 수집된 증거, 기각된 가설 목록을 전달해 자식 가설을 구조화 출력으로 받는다. 기각 목록을 함께 주지 않으면 이미 반증된 방향이 자식으로 되살아난다.
+- **자식 개수 제한**: 부모당 **최대 3개**. 스키마 제약으로 상한을 강제하고 초과 시 방어적으로 잘라낸다.
+- **트리 확장**: 자식에 새 식별자를 부여하고 부모 참조와 깊이(부모+1)를 기록한다.
+- **분기 깊이 제한**: 분기는 **깊이 3까지만** 확장한다. 상한에 도달한 부모는 LLM 호출 없이 분기를 건너뛴다. 5 Whys는 통상 3단계 안에서 시스템·프로세스 결함에 도달하며, 그보다 깊은 분기는 비용만 늘린다.
+- **중복 방지**: 부모 가설과 기각된 가설에 대해 대소문자 무시 비교로 중복 자식을 제거한다.
 - **모델 티어**: Planning 티어.
 - **5 Whys 한 단계 내려가기**: 분기는 본질적으로 부모 가설에 대한 "왜 그게 발생했는가?" 의 답이다. 자식이 "휴먼 에러" 로 귀결되면 한 번 더 분기해 시스템·프로세스·설계 결함까지 내려간다. 자식의 `required_evidence` 는 부모보다 좁고 구체적이어야 한다. 가설 생성 단계의 4가지 가드레일이 동일하게 적용된다.
 
@@ -201,7 +195,7 @@ flowchart TD
 - 단계별 LLM 호출로 비용 누적 (가설 생성·우선순위·검증·분기 각각)
 - LLM 판단 일관성이 완벽하지 않아 동일 증거에 다른 결과 가능 — confidence_score 재분류로 부분 완화
 - Beam width가 너무 작으면 유효 가설이 검증 기회를 얻지 못할 수 있음
-- 우선순위 결정(F3) 정확도에 대한 의존도 높음 — 우선순위 오류가 탐색 실패로 직결 가능
+- 우선순위 결정 정확도에 대한 의존도 높음 — 우선순위 오류가 탐색 실패로 직결 가능
 - Accepted-유사 자동 기각이 공격적이면 **독립적이지만 유사한 원인**도 묶여서 기각될 수 있음 — 유사도 임계치 0.6으로 보수 설정, 운영 데이터로 조정
 
 ### Risks
@@ -214,7 +208,7 @@ flowchart TD
 ## Related
 
 - [ADR agent/0001: 초기 스코핑 + RCA 보고서 유사도 검색](0001-initial-scoping-and-report-similarity.md) — 가설 생성의 입력인 스코핑 결과와 유사 보고서 생성
-- [ADR agent/0006: 중단 조건](0006-termination-conditions.md) — 검증 루프 종료 판단 기준 (CONFIRMED / 타임 버짓 / 최대 루프 / 전체 기각 등)
-- [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — best_hypothesis와 검증 판단 근거를 소비하여 보고서 생성
+- [ADR agent/0006: 중단 조건](0006-termination-conditions.md) — 검증 루프 종료 판단 기준 (확정 / 시간 예산 / 최대 루프 / 전체 기각 등)
+- [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 최적 가설과 검증 판단 근거를 소비하여 보고서 생성
 - [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — 각 단계의 Planning/Execution 티어 매핑
-- [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집 실패의 근본 원인(컨텍스트 오버플로우) 해결 및 가설별 독립 세션 관리
+- [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집 컨텍스트 오버플로우 해결과 가설별 격리

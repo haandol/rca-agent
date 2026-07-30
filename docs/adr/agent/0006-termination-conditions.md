@@ -10,33 +10,49 @@ Accepted (2026-04-21)
 
 가설-트리 탐색이 무한히 계속되면 시간과 비용이 폭증하고 운영 통제가 불가능해진다. 적절한 시점에 탐색을 종료하고 보고서 생성으로 전환해야 한다.
 
+## Decision Drivers
+
+- 탐색 비용과 소요 시간에 상한이 있어야 운영이 통제 가능하다.
+- 근본 원인이 확정되면 남은 예산을 소진하지 않고 즉시 보고서로 전환해야 한다.
+- 근본 원인을 찾지 못한 채 예산이 소진되어도 SRE가 이어받을 결과물이 남아야 한다.
+- 운영자가 진행 중인 분석을 중단시킬 수 있어야 하고, 중단이 완료된 세션의 결과를 훼손해서는 안 된다.
+
 ## Decision
 
 **OR 조건 기반 다중 중단 조건**을 채택한다. 하나라도 충족되면 탐색을 종료한다.
 
 ### 중단 조건
 
-1. **신뢰도 임계치**: 채택 가설(status=CONFIRMED)의 confidence_score가 0.9 이상
-2. **Accepted Review Gate early exit**: 채택 가설이 있고 max confidence가 0.9 이상이면 **검증 루프 진입 전에** early exit. 0.8~0.9 범위에서 비확장 모드를 연속 2회 돌았음에도 0.9를 돌파하지 못하면 early exit (ADR agent/0002 참조).
-3. **시간 예산**: RCA 시작 후 20분 경과 (`RCA_TIME_BUDGET_SECONDS=1200`)
-4. **비용 예산**: LLM 토큰 사용량이 사전 설정 한도 초과 — `TerminationReason.TOKEN_BUDGET` enum이 정의되어 있으나, Strands SDK의 토큰 사용량 추적 API가 확정되면 구현 예정 (현재 보류)
-5. **최대 깊이**: 가설 트리 깊이가 5를 초과 (`RCA_MAX_TREE_DEPTH=5`)
-6. **최대 반복**: 검증 루프가 3회를 초과 (`RCA_MAX_VALIDATION_LOOPS=3`)
-7. **외부 취소 및 terminal 상태 강제 중단**: 대시보드에서 관리자가 세션 상태를 `CANCELLED`로 변경하거나, 세션이 `COMPLETED`, `FAILED`, `OUTDATED` 등 terminal 상태에 진입하면, 다음 `update_state()` 호출 시점에 파이프라인이 즉시 종료된다. `_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}` 중 하나라도 해당되면 `SessionCancelledError`가 발생한다.
+1. **신뢰도 임계치**: 채택 가설의 신뢰도가 **0.9 이상**
+2. **Accepted Review Gate early exit**: 채택 가설이 있고 최대 신뢰도가 0.9 이상이면 **검증 루프 진입 전에** 종료한다. 0.8~0.9 구간에서 비확장 모드를 연속 2회 돌았음에도 0.9를 넘지 못하면 역시 종료한다([ADR 0002](0002-hypothesis-tree-lifecycle.md)).
+3. **시간 예산**: RCA 시작 후 **20분** 경과. 인시던트 대응에서 자동 분석이 20분을 넘기면 사람이 병행 조사에 들어가므로, 그 시점에는 부분 결과라도 전달하는 것이 낫다.
+4. **최대 깊이**: 가설 트리 깊이 **5 초과**
+5. **최대 반복**: 검증 루프 **3회 초과**
+6. **외부 취소 및 terminal 상태 진입**: 운영자가 세션을 취소하거나 세션이 완료·실패·만료 등 최종 상태에 들어가면 다음 상태 전이 시점에 파이프라인이 즉시 종료된다.
+
+비용(토큰) 예산 기반 종료는 종료 사유 어휘에 자리를 두었으나 적용하지 않는다. 사용량 추적이 SDK 경계 밖에 있어 신뢰할 수 있는 집계가 없고, 부정확한 집계로 탐색을 중단하면 시간 예산보다 예측 불가한 종료가 된다. 현재 비용 상한은 시간·깊이·루프 한도와 Beam 폭이 실질적으로 담당한다.
 
 ### 핵심 결정사항
 
-1. **순수 로직 (LLM 미사용)**: `check_termination()` 함수는 LLM을 호출하지 않고 순수 로직으로 중단 조건을 평가한다. `time.monotonic()` 기반으로 경과 시간을 계산하고, 가설 목록에서 최대 depth를 추출한다.
+1. **순수 로직 (LLM 미사용)**: 중단 조건 평가는 LLM을 호출하지 않는다. 종료 판단이 모델 판단에 의존하면 같은 상태에서 다른 결정이 나와 예산 통제가 성립하지 않는다.
 
-2. **정상 중단**: CONFIRMED 가설 중 confidence ≥ 0.9인 가설이 있으면 해당 가설을 `best_hypothesis`로 설정하고 보고서 생성에 진입한다.
+2. **정상 중단**: 신뢰도 0.9 이상의 채택 가설이 있으면 그 가설을 최적 가설로 보고서 생성에 전달한다.
 
-3. **강제 중단**: 시간/깊이/반복 한도 초과 시 `_best_hypothesis()` 함수가 모든 judgment 중 가장 높은 confidence_score를 가진 가설을 선택하여 보고서 생성에 전달한다.
+3. **강제 중단**: 시간·깊이·반복 한도 초과 시 누적 판정 중 최고 신뢰도 가설을 최적 가설로 선택해 보고서 생성에 전달한다. 확정에 이르지 못했어도 가장 유력한 후보는 남긴다.
 
-4. **전체 기각 시 재생성**: 모든 가설이 기각되면 `check_termination()`에서 종료하지 않고, `main.py`의 검증 루프가 가설을 재생성한다(최대 2회, `RCA_MAX_REGENERATION_ROUNDS`). 재생성 한도를 초과하면 루프가 종료되고 "근본 원인 미확정" 상태로 보고서를 생성한다.
+4. **전체 기각 시 재생성**: 모든 가설이 기각되면 종료하지 않고 가설을 재생성한다(최대 2회). 한도를 초과하면 "근본 원인 미확정" 상태로 보고서를 생성한다. 전체 기각은 탐색 실패가 아니라 방향 전환 신호이므로 종료 조건과 분리한다.
 
-5. **OR 평가 순서**: Accepted Review Gate → CONFIRMED → TIME_BUDGET → MAX_DEPTH → MAX_LOOPS 순서로 평가하며, 첫 번째로 충족된 조건에서 즉시 반환한다. 전체 기각(ALL_REJECTED)은 `check_termination()`이 아닌 메인 루프에서 재생성 로직으로 처리한다. Accepted Review Gate는 검증 루프 진입 **전**에 실행되므로, 재분기·재생성 없이도 조기 종료되어 루프 폭주를 차단한다.
+5. **OR 평가 순서**: Accepted Review Gate → 확정 → 시간 예산 → 최대 깊이 → 최대 루프 순서로 평가하고 첫 번째 충족 조건에서 즉시 반환한다. 게이트를 검증 루프 진입 **전**에 두어 재분기·재생성 없이도 조기 종료되게 한다.
 
-6. **Cooperative Cancellation**: `update_state()`에 DynamoDB ConditionExpression(`#st <> CANCELLED`)을 추가하여, 세션이 CANCELLED 상태이면 `SessionCancelledError`를 발생시킨다. 파이프라인은 이 예외를 잡아 `mark_failed` 없이 조용히 종료한다. 별도 폴링 없이 매 단계 전환 시 자연스럽게 취소가 감지된다.
+6. **Cooperative Cancellation**: 취소는 별도 폴링이 아니라 상태 전이 시점의 조건부 쓰기로 감지한다. 최종 상태의 세션에 대한 전이 시도는 실패하고, 파이프라인은 실패 기록을 남기지 않고 조용히 종료한다. 폴링 없이 매 단계 경계에서 취소가 반영되며, 이미 완료된 세션의 결과가 늦은 전이로 덮이지 않는다.
+
+7. **미검증 가설 CLOSED 처리**: 루프 종료 후 보고서 생성 전에 미검증·추가조사 상태로 남은 가설을 CLOSED로 정리하고 종료 사유를 함께 기록한다. 기각은 증거로 반증된 가설에만 쓰고, 예산 소진으로 검증되지 못한 가설과 구별한다 — 둘을 섞으면 보고서 독자가 "반증됨"과 "확인 못 함"을 구별할 수 없다. 최적 가설은 이 정리에서 제외한다.
+
+### 운영자 취소
+
+대시보드에서 세션을 취소하면 세션 상태가 취소로 바뀌고 해당 RCA의 미검증·추가조사 가설이 CLOSED로 정리된다. 이미 최종 상태(완료·실패·만료·취소)인 세션은 취소할 수 없고 그 요청은 충돌로 거부된다 — 완료된 RCA의 결과를 늦은 취소가 훼손해서는 안 된다. 진행 중이던 LLM 호출은 즉시 중단되지 않고 해당 호출이 끝난 뒤 다음 단계 경계에서 종료된다.
+
+정리된 각 가설에는 종료 사유가 함께 기록되어, 보고서 독자가 그 가설이 왜 검증되지 않았는지(시간 예산 소진, 최대 깊이 초과, 운영자 중단 등) 구별할 수 있다.
 
 ## Consequences
 
@@ -54,17 +70,19 @@ Accepted (2026-04-21)
 
 ### Risks
 
-- 중단 조건 임계치가 너무 느슨하면 비용 폭증, 너무 엄격하면 정확도 저하. MVP 운영 데이터로 조정한다.
+- 중단 조건 임계치가 너무 느슨하면 비용 폭증, 너무 엄격하면 정확도 저하. 운영 데이터로 조정한다.
+- 토큰 예산 종료가 없으므로 사고 토큰이 많이 소모되는 세션의 실제 비용은 시간·루프 한도로만 간접 제어된다.
 
-## Implementation Notes
+## 대안 검토
 
-- `check_termination()`: CONFIRMED, TIME_BUDGET, MAX_DEPTH, MAX_LOOPS만 평가. ALL_REJECTED는 메인 루프에서 재생성으로 처리.
-- **미검증 가설 자동 정리 (CLOSED)**: 루프 종료 후 보고서 생성 전에, PENDING/NEEDS_INVESTIGATION 상태의 가설을 **CLOSED**로 일괄 처리한다. REJECTED는 증거 기반으로 명시적으로 기각된 가설에만 사용하고, 예산 소진/미검증 종료는 CLOSED로 구분한다. `judgment_reasoning`에 종료 사유별 메시지를 기록한다 — `TerminationReason` 매핑: CONFIRMED→"확정된 근본원인 발견으로 추가 검증 불필요", TIME_BUDGET→"시간 예산 소진", TOKEN_BUDGET→"토큰 예산 소진", MAX_DEPTH→"최대 트리 깊이 초과", MAX_LOOPS→"최대 검증 루프 초과", ALL_REJECTED→"전체 가설 기각", 기본→"분석 종료". best_hypothesis는 제외. 이를 통해 세션 COMPLETED 시 모든 가설이 최종 상태(CONFIRMED/REJECTED/CLOSED)를 갖는다.
-- `update_state()`: `ConditionExpression: NOT #st IN (:completed, :failed, :outdated, :cancelled)`로 cooperative termination 구현. 모든 terminal 상태에서 `ConditionalCheckFailedException` → `SessionCancelledError` 변환.
-- `_process_alarm()` / `_run_rca()`: `SessionCancelledError`를 별도 `except` 블록에서 처리하여 `mark_failed` 없이 종료.
-- `mark_completed()` / `mark_failed()`: `NOT #state IN (:completed, :failed, :outdated, :cancelled)` ConditionExpression으로 terminal 상태의 세션이 덮어쓰기되지 않도록 가드.
-- 대시보드: `POST /api/sessions/:id/cancel` 엔드포인트가 DDB 세션 상태를 CANCELLED로 업데이트하고, 해당 RCA의 PENDING/NEEDS_INVESTIGATION 상태 가설 노드를 CLOSED로 일괄 처리한다(`judgment_reasoning: "관리자에 의한 분석 중단"`). terminal 상태(`COMPLETED`, `FAILED`, `CANCELLED`, `OUTDATED`)인 세션은 취소 불가 (409 응답).
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 단일 조건(확정 시에만 종료) | 규칙이 단순하고 품질 저하가 없다. | 확정에 이르지 못하는 장애에서 무한히 탐색해 비용과 시간 통제가 불가능하다. |
+| LLM이 종료 시점을 판단 | 맥락을 반영한 유연한 종료가 가능하다. | 같은 상태에서 다른 결정이 나와 예산 상한이 성립하지 않고, 종료 판단 자체가 추가 호출 비용이 된다. |
+| OR 조건 기반 다중 중단 조건 | 정상 종료와 강제 종료를 모두 결정론적으로 처리하고 예산 상한이 보장된다. | 임계치가 여러 개라 튜닝 지점이 늘고, 강제 종료 시 미확정 보고서가 생성된다. |
 
 ## Related
 
 - [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 매 검증 루프 후 중단 조건을 평가
+- [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 미확정 종료 시에도 보고서를 생성
+- [ADR infra/0001: 알람 수신 아키텍처](../infra/0001-alarm-ingestion-sns-sqs-fargate.md) — 세션 상태 전이 검증과 조건부 쓰기 가드

@@ -1,4 +1,4 @@
-# ADR 0010: 모델 티어 아키텍처 — 단일 모델(Sonnet 4.6) + Planning/Execution 행동 분리
+# ADR 0010: 모델 티어 아키텍처 — 단일 모델 + Planning/Execution 행동 분리
 
 Date: 2026-04-22
 
@@ -8,69 +8,101 @@ Accepted (2026-04-22)
 
 ## Context
 
-초기 설계는 비용 효율을 위해 Planning(Sonnet 4.6 + adaptive thinking) / Execution(Haiku 4.5) 2-tier 모델 분리를 채택했다. 그러나 운영 중 다음 문제가 관찰되었다:
+RCA 파이프라인의 각 단계는 요구하는 추론 깊이가 다르다. 가설 생성·우선순위 결정·
+보고서 작성은 다각도 추론이 필요하고, 메트릭 조회와 증거-가설 일치 판정은 수집된
+데이터에 대한 분류에 가깝다. 단계별로 모델을 다르게 쓰면 비용을 낮출 수 있지만,
+경량 모델은 MCP 도구 응답과 구조화 출력을 함께 생성하는 과정에서 토큰 한도에
+도달하고 증거·타임스탬프를 누락한다. 증거 수집이 실패하면 확정 금지 가드레일이
+반복 트리거되어 불필요한 분기와 재검증 루프가 발생하므로, 경량 모델의 절감이
+루프 비용으로 되돌아온다.
 
-1. **Haiku의 MaxTokensReachedException 반복**: Evidence 수집 서브에이전트가 MCP 도구 호출 결과 + structured output을 생성하는 과정에서 토큰 한도에 도달하는 사례가 다수 발생. 가드레일(증거 실패 시 CONFIRMED 금지)이 반복 트리거되어 불필요한 분기 / 재검증 루프 유발.
-2. **세부 정보 누락**: Haiku가 생성한 report / playbook 내용이 Sonnet 결과 대비 증거·타임스탬프 누락이 잦음. 특히 CloudTrail 이벤트 연관성 추론에서 차이가 컸다.
-3. **운영 일관성**: CC Headless 엔진은 이미 Sonnet 단일 티어로 동작하므로, Strands만 2-tier를 유지하는 것이 비교·운영에 불편.
+CC Headless 엔진은 단일 모델로 동작한다. 두 엔진의 모델 구성이 다르면 같은 알람에
+대한 결과 비교가 모델 차이와 오케스트레이션 차이 중 무엇에서 왔는지 구별할 수 없다.
+
+## Decision Drivers
+
+- 증거 수집 단계는 도구 응답과 구조화 출력을 함께 생성해도 토큰 한도에 걸리지
+  않아야 한다.
+- 보고서·플레이북에 증거와 타임스탬프가 누락되지 않아야 한다.
+- 두 실행 엔진의 결과가 모델 차이가 아닌 오케스트레이션 차이로만 달라져야 한다.
+- 단계별 추론 깊이 차이는 유지해 불필요한 사고 비용을 줄여야 한다.
 
 ## Decision
 
-**단일 모델(Sonnet 4.6) + Planning/Execution 행동 분리**로 전환한다. 모델은 하나지만 호출 시 adaptive thinking 유무를 통해 사고 깊이만 차등화한다.
+**단일 모델 + Planning/Execution 행동 분리**를 채택한다. 모든 단계가 같은 모델을
+호출하고, 호출 시 adaptive thinking 유무로 사고 깊이만 차등화한다.
 
-### 모델 티어
+### 티어의 의미
 
-| 티어 | 모델 | 용도 | Thinking |
-|------|------|------|----------|
-| Planning | Sonnet 4.6 (`BEDROCK_MODEL_ID`) | 추론·판단이 필요한 단계 | Adaptive (`THINKING_ENABLED=true`) |
-| Execution | Sonnet 4.6 (`BEDROCK_MODEL_ID`, 동일) | 메트릭 수집·증거 판정 | 없음 |
+| 티어 | 용도 | Thinking |
+|------|------|----------|
+| Planning | 추론·판단이 필요한 단계 | Adaptive |
+| Execution | 도구 호출·증거 판정 | 없음 |
 
-`BEDROCK_HAIKU_MODEL_ID` / `BEDROCK_HAIKU_MAX_TOKENS` 환경변수는 제거했다. 단일 `BEDROCK_MODEL_ID` / `BEDROCK_MAX_TOKENS`(기본 16384)만 사용한다.
+Adaptive thinking은 사고량을 모델이 프롬프트 복잡도에 따라 자율 조절하는 모드이며,
+피처플래그로 토글할 수 있다. 기본값은 비활성이다 — 사고 토큰 사용량이 예측 불가하므로
+비용 관측이 확보된 환경에서만 켠다.
 
-### 파이프라인 단계 → 모델 매핑
+### 파이프라인 단계 → 티어 매핑
 
 | 단계 | 티어 | 근거 |
 |------|------|------|
-| F1 Scoping | Execution | CloudWatch MCP 도구 호출 + 얕은 분석 |
-| F2 Hypothesis Generation | Planning | 다각도 근본 원인 추론 |
-| F3 Prioritization | Planning | 가설 간 상대적 중요도 판단 |
-| F4 Validation | Execution | 수집된 증거 대비 단순 판정 |
-| F5 Branching | Planning | 하위 가설 도출 추론 |
-| F7 Report Generation | Planning | 구조화된 보고서 작성 |
-| F8 Playbook Generation | Planning | 장애 패턴 추출 및 절차 작성 |
-
-매핑 자체는 유지한다. Planning/Execution의 의미는 "thinking 유무"로 축약되어 같은 Sonnet이라도 호출 모드가 다르다.
-
-### Adaptive Thinking
-
-- `additional_request_fields={"thinking": {"type": "adaptive"}}` — 모델이 프롬프트 복잡도에 따라 사고량을 자율 조절.
-- `THINKING_ENABLED` 환경변수(`true`/`false`, 기본값 `false`)로 피처플래그 토글.
+| Scoping | Execution | 도구 호출 + 얕은 분석 |
+| Hypothesis Generation | Planning | 다각도 근본 원인 추론 |
+| Prioritization | Planning | 가설 간 상대적 중요도 판단 |
+| Validation | Execution | 수집된 증거 대비 판정 |
+| Branching | Planning | 하위 가설 도출 추론 |
+| Report Generation | Planning | 구조화된 보고서 작성 |
+| Playbook Generation | Planning | 장애 패턴 추출 및 절차 작성 |
 
 ### 핵심 결정사항
 
-1. **팩토리 함수 유지**: `create_planning_model()` / `create_execution_model()` 두 팩토리는 남긴다. 모델 ID가 같아도 adaptive thinking 유무로 호출 특성이 달라지므로 의도 구분에 유용하다.
-2. **Haiku 환경변수 삭제**: `BEDROCK_HAIKU_MODEL_ID` / `BEDROCK_HAIKU_MAX_TOKENS` 제거. 향후 모델 다변화가 필요하면 단계별 ID 오버라이드(`SCOPING_MODEL_ID` 등)를 새로 도입한다.
-3. **structured_output과 thinking 호환**: Strands SDK는 `structured_output` 재시도 시 `tool_choice`를 강제하면 thinking을 자동 strip한다. 초회 호출에서는 thinking이 정상 작동하며, 재시도에서만 일시 비활성화되므로 실질적 영향은 미미하다.
+1. **티어 구분을 코드 경계로 유지**: 모델 ID가 같아도 Planning/Execution을 별도
+   생성 경로로 남긴다. 호출 특성(thinking 유무)이 다르고, 향후 단계별 모델
+   오버라이드가 필요해지면 이 경계가 그 진입점이 된다.
+2. **단계별 모델 오버라이드는 도입하지 않는다**: 지금은 단일 모델 ID만 설정으로
+   노출한다. 특정 단계의 비용 부담이 실측으로 확인되면 그때 단계별 오버라이드를
+   추가한다. 예상만으로 설정 표면을 넓히지 않는다.
+3. **structured output 재시도 시 thinking 손실을 수용한다**: SDK가 구조화 출력
+   재시도에서 도구 선택을 강제하면 thinking이 제거된다. 초회 호출에서는 정상
+   작동하므로 재시도 경로에만 영향이 있고, 이를 우회하려 재시도 자체를 없애면
+   구조화 출력 실패가 파이프라인 실패로 직결된다.
+
+## 대안 검토
+
+| 대안 | 장점 | 단점 및 미채택 이유 |
+|------|------|---------------------|
+| 단계별로 서로 다른 모델(경량/고성능 2-tier) | 호출 빈도가 높은 단계의 비용을 크게 낮춘다. | 경량 모델이 도구 응답 + 구조화 출력에서 토큰 한도에 걸리고 증거를 누락한다. 확정 금지 가드레일이 반복 트리거되어 절감이 루프 비용으로 상쇄되고, CC Headless와 모델 구성이 달라 엔진 비교가 흐려진다. |
+| 모든 단계에 동일 모델 + 항상 thinking | 품질이 가장 균일하다. | 단순 분류 단계까지 사고 토큰을 소모하고 사용량 예측이 어려워진다. |
+| 단일 모델 + thinking 유무로 행동 분리 | 품질을 확보하면서 단계별 사고 깊이를 차등화하고, 두 엔진의 모델 구성이 같아진다. | 경량 모델 대비 조회·판정 단계 비용이 오르므로 탐색 폭 제어에 더 의존한다. |
 
 ## Consequences
 
 ### Positive
 
-- Evidence 수집·검증 품질이 Sonnet 수준으로 상향. MaxTokensReachedException 및 가드레일 재트리거 루프 감소.
-- 모델 운용이 단일화되어 Bedrock 엔드포인트 / 할당량 / 환경변수 관리가 단순해짐.
-- CC Headless 엔진과 동일한 모델 티어로 양 엔진 비교·재현 실험 용이.
+- 증거 수집·검증 품질이 균일해지고 토큰 한도 초과로 인한 가드레일 재트리거 루프가
+  사라진다.
+- 모델 엔드포인트·할당량·설정이 단일화되어 운용이 단순해진다.
+- 두 엔진이 같은 모델을 쓰므로 결과 차이를 오케스트레이션 차이로 귀속할 수 있다.
 
 ### Negative
 
-- Scoping/Validation 비용이 증가(Haiku 대비 약 10배). 호출 빈도가 높은 Validation 단계가 주 영향권.
-- Adaptive thinking의 토큰 사용량이 예측 불가하여 비용 추정이 어려움. Planning 단계에만 국한되지만 여전히 변동성 존재.
+- 조회·판정 단계 비용이 경량 모델 대비 상승한다. 호출 빈도가 높은 검증 단계가 주
+  영향권이다.
+- Adaptive thinking의 토큰 사용량이 예측 불가하여 비용 추정이 어렵다. Planning
+  단계에 국한되지만 변동성은 남는다.
 
 ### Risks
 
-- 비용 상승 억제를 위해 Beam Width·루프 수·Review Gate 등 기존 제어 파라미터를 적극 활용한다.
-- 특정 단계(Scoping 등)에서 비용 부담이 크면 향후 단계별 모델 오버라이드를 도입해 선택적으로 경량 모델로 되돌릴 수 있다.
+- 비용 상승이 탐색 제어에 의존한다. Beam width, 검증 루프 한도, Accepted Review
+  Gate가 실질적인 비용 상한 역할을 하므로 이 값들을 느슨하게 바꾸면 단일 모델
+  전환의 비용 영향이 증폭된다([ADR 0002](0002-hypothesis-tree-lifecycle.md),
+  [ADR 0006](0006-termination-conditions.md)).
+- 특정 단계의 비용 부담이 실측으로 확인되면 단계별 모델 오버라이드가 필요해진다.
+  티어 경계를 코드에 유지하는 이유가 이 확장 경로다.
 
 ## Related
 
 - [ADR agent/0001: 초기 스코핑 + RCA 보고서 유사도 검색](0001-initial-scoping-and-report-similarity.md) — 스코핑은 Execution 티어 사용
-- [ADR agent/0002: 가설 트리 라이프사이클 (Accepted Review Gate)](0002-hypothesis-tree-lifecycle.md) — Review Gate가 비용 폭주 방지
+- [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 탐색 제어 파라미터가 비용 상한 역할
+- [ADR agent/0015: Hexagonal Architecture](0015-hexagonal-architecture.md) — 모델 생성 경로가 DI Container를 통해 주입됨

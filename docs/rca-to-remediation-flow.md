@@ -455,6 +455,5 @@ RCA 세션은 멱등성 키로 중복을 거릅니다. 그리고 복구 액션(�
 
 - [시스템 운영 가이드](./system-guide-for-ops.md) — 인프라·데모 시나리오 전반
 - [아키텍처 & 데모 흐름](./architecture-and-demo-flow.md) — 9단계 파이프라인 상세
-- [ADR agent/0012](./adr/agent/0012-automated-remediation.md) — 자동 복구를 별도
-  에이전트로 분리한 결정과 배경
-- [ADR agent/0009](./adr/agent/0009-notification.md) — 완료 알림 발행
+- 자동 복구의 실행 경계·안전 정책과 완료 알림 발행 결정은 해당 ADR 본문을
+  참조하라 (ADR 인덱스: `.mapping.json`)

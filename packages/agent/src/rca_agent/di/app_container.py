@@ -256,7 +256,7 @@ class AppContainer(Container):
             self._playbook_agent = create_playbook_agent()
         return self._playbook_agent
 
-    # ── Remediation Agent (별도 배포 — ADR agent/0012) ─────────────
+    # ── Remediation Agent (별도 배포) ──────────────────────────────
 
     @property
     def verification_agent(self):
