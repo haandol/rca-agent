@@ -280,12 +280,29 @@ test('the execution worker cannot publish the analysis notification', () => {
   expect(actions).not.toContain('sns:Publish');
 });
 
-test('dev configures the execution image without a feature-flag task count', () => {
+test('dev pins no image tag and no feature-flag task count', () => {
   const config = toml.parse(
     fs.readFileSync(path.resolve(__dirname, '../config/dev.toml'), 'utf-8'),
-  ) as { execution?: { imageTag?: string; desiredCount?: number } };
+  ) as {
+    execution?: { imageTag?: string; desiredCount?: number };
+    agent?: { imageTag?: string };
+    ccHeadless?: { imageTag?: string };
+    healthcare?: { imageTag?: string };
+  };
 
-  expect(config.execution?.imageTag).toEqual(expect.any(String));
+  // A default tag here would let a deploy that injects no tag silently fall back
+  // to it. CDK updates the stacks a target depends on, so that fallback would
+  // rewrite an unrelated service's task definition to a stale image — which is
+  // exactly how the execution worker first came up without its entry point.
+  for (const service of [
+    'agent',
+    'ccHeadless',
+    'healthcare',
+    'execution',
+  ] as const) {
+    expect(config[service]?.imageTag).toBeUndefined();
+  }
+
   // Gating by task count made sense when an event subscription was the trigger.
   expect(config.execution?.desiredCount).toBeUndefined();
 });

@@ -8,18 +8,17 @@ region = "us-east-1"
 [alarm]
 notificationEmail = "dongkyl@amazon.com"
 
+# 이미지 태그는 배포 스크립트가 커밋 SHA 로 주입한다. 여기에 기본값을 두지 않는
+# 이유는, 기본값이 있으면 태그를 주입하지 않은 배포가 조용히 그 값으로 되돌아가고
+# 배포된 코드를 태그로 식별할 수 없게 되기 때문이다. 태그가 없으면 synth 가 실패한다.
 [agent]
-imageTag = "latest"
 
 [healthcare]
-imageTag = "latest"
 
 [ccHeadless]
-imageTag = "latest"
 
+# 실행 워커는 분석 워커와 같은 이미지를 다른 진입점으로 실행한다.
 [execution]
-# 분석 워커와 같은 이미지를 다른 진입점으로 실행한다.
-imageTag = "latest"
 
 [storage]
 evidenceBucket = "rca-agent-dev-evidence"

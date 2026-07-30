@@ -109,15 +109,48 @@ do_push() {
   ok "푸시 완료: $svc"
 }
 
+# 지금 배포된 태스크 정의가 가리키는 이미지 태그.
+deployed_tag() {
+  local svc=$1 family
+  family=$(lookup "$svc" service)
+  aws ecs describe-task-definition \
+    --task-definition "$family" \
+    --region "$REGION" \
+    --query 'taskDefinition.containerDefinitions[0].image' \
+    --output text 2>/dev/null | sed 's/.*://' || true
+}
+
+# CDK 는 배포 대상이 의존하는 스택을 함께 갱신한다. 그래서 대상 서비스의 태그만
+# 주입하면 함께 갱신되는 다른 서비스의 태스크 정의가 다른 태그로 바뀐다. 설정에
+# 기본 태그가 없어 synth 가 네 태그를 모두 요구하므로, 배포하지 않는 서비스는 지금
+# 떠 있는 태그를 그대로 넘겨 태스크 정의를 건드리지 않는다.
+build_tag_env() {
+  local target_svc=$1
+  local svc tagenv tag
+  for svc in $ALL_SERVICES; do
+    tagenv=$(lookup "$svc" tagenv)
+    if [[ "$svc" == "$target_svc" ]]; then
+      tag="$IMAGE_TAG"
+    else
+      tag=$(deployed_tag "$svc")
+      # 아직 배포되지 않은 서비스는 조회할 태스크 정의가 없다. 이 배포로 태스크
+      # 정의가 처음 만들어지는 경우이므로 이번 태그를 쓴다.
+      [[ -z "$tag" || "$tag" == "None" ]] && tag="$IMAGE_TAG"
+    fi
+    printf '%s=%s\n' "$tagenv" "$tag"
+  done
+}
+
 do_ecs_deploy() {
   local svc=$1
-  local stack tagenv
+  local stack
   stack=$(lookup "$svc" stack)
-  tagenv=$(lookup "$svc" tagenv)
-  log "스택 배포: $stack (${tagenv}=${IMAGE_TAG})"
+  local -a tag_env=()
+  while IFS= read -r pair; do tag_env+=("$pair"); done < <(build_tag_env "$svc")
+  log "스택 배포: $stack ($(lookup "$svc" tagenv)=${IMAGE_TAG})"
   # 태스크 정의가 불변 태그를 직접 가리키도록 CDK 로 배포한다. force-new-deployment
   # 만으로는 태스크 정의의 이미지 참조가 갱신되지 않는다.
-  (cd "$INFRA_DIR" && env "${tagenv}=${IMAGE_TAG}" npx cdk deploy "$stack" --require-approval never)
+  (cd "$INFRA_DIR" && env "${tag_env[@]}" npx cdk deploy "$stack" --require-approval never)
   ok "배포 완료: $svc"
 }
 
