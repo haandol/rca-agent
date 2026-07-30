@@ -22,33 +22,33 @@
         },
         {
           "path": "docs/adr/agent/0007-rca-report-generation.md",
-          "status": "Accepted (2026-04-21)",
-          "summary": "확정 여부와 서버 판정 복구 결과를 구분한 구조화 RCA 보고서를 5 Whys와 함께 생성한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "플레이북을 포함한 단일 리포트를 5 Whys와 함께 생성하고 실행 결과는 담지 않는다."
         },
         {
           "path": "docs/adr/agent/0008-playbook-generation.md",
-          "status": "Accepted (2026-04-21)",
-          "summary": "RCA 결과를 재사용 가능한 플레이북으로 만들어 유사도 검색으로 보강하고, 복구 실행 근거로는 쓰지 않는다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "플레이북을 실행 근거가 되는 구조화 절차로 만들고 유사도 검색으로 보강한다."
         },
         {
           "path": "docs/adr/agent/0009-notification.md",
-          "status": "Accepted (2026-04-21)",
-          "summary": "RCA와 복구 완료 결과를 구분된 발행-구독 이벤트로 비블로킹 발행한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "RCA 완료를 사람 대상 발행-구독 이벤트로 비블로킹 발행하고 실행을 트리거하지 않는다."
         },
         {
           "path": "docs/adr/agent/0010-model-tier-architecture.md",
-          "status": "Accepted (2026-04-22)",
-          "summary": "단일 모델을 thinking 유무로 Planning과 Execution 행동으로 분리한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "단일 Sonnet 5 모델을 thinking 유무로 분리하고 sampling 파라미터와 effort를 전달하지 않는다."
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-          "status": "Accepted (2026-07-25)",
-          "summary": "CC Headless가 로컬 검증 하네스를 단일 소스로 RCA·조건부 Remediation·Report 에이전트를 오케스트레이션한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "CC Headless가 단일 소스 하네스로 읽기 전용 RCA·Report 에이전트를 오케스트레이션한다."
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
-          "status": "Accepted (2026-07-21)",
-          "summary": "서버 소유 RCA와 허용 목록을 검증한 제한적 자동 복구만 실행한다."
+          "status": "Superseded by agent/0017 (2026-07-30)",
+          "summary": "서버 소유 RCA와 허용 목록을 검증한 제한적 자동 복구만 실행한다. 사용자 승인 기반 플레이북 실행으로 대체됨."
         },
         {
           "path": "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
@@ -62,8 +62,18 @@
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
-          "status": "Accepted (2026-07-21)",
-          "summary": "엔진 중립 오프라인 계약과 선택적 라이브 평가 계층을 운영한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "엔진 중립 오프라인 계약과 선택적 라이브 평가 계층을 운영하고 실행은 평가하지 않는다."
+        },
+        {
+          "path": "docs/adr/agent/0017-playbook-execution-agent.md",
+          "status": "Accepted (2026-07-30)",
+          "summary": "사용자 승인 뒤 별도 에이전트가 플레이북을 근거로 실행하고 파괴적 액션만 거부한다."
+        },
+        {
+          "path": "docs/adr/agent/0018-playbook-retrospective.md",
+          "status": "Accepted (2026-07-30)",
+          "summary": "해결된 실행 직후 자동 회고가 실행 증거로 플레이북 절차를 교정한다."
         }
       ]
     },
@@ -109,13 +119,13 @@
         },
         {
           "path": "docs/adr/infra/0002-evidence-storage.md",
-          "status": "Accepted (2026-04-21)",
-          "summary": "증거 원본·벡터 인덱스·실시간 상태를 3계층으로 분리해 저장한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "증거 원본·벡터 인덱스·실시간 상태를 3계층으로 분리하고 실행 증거와 갱신 전 플레이북을 함께 보존한다."
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
-          "status": "Accepted (2026-07-25)",
-          "summary": "CC Headless를 하네스 동봉 이미지로 제한된 복구 권한의 단일 Fargate 오케스트레이터로 운영한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "CC Headless를 하네스 동봉 이미지의 읽기 전용 단일 Fargate 분석 워커로 운영한다."
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
@@ -124,8 +134,8 @@
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
-          "status": "Accepted (2026-07-21)",
-          "summary": "파이프라인 스팬과 가설 상태를 세션과 같은 파티션의 실행 trace로 기록한다."
+          "status": "Accepted (2026-07-30)",
+          "summary": "파이프라인 스팬·가설 상태·플레이북 실행 시도를 세션과 같은 파티션의 실행 trace로 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",
@@ -134,8 +144,13 @@
         },
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
-          "status": "Accepted (2026-07-29)",
+          "status": "Accepted (2026-07-30)",
           "summary": "데모를 증상 알람 진입점과 배포 기반 장애 주입, 반증 가능한 경쟁 가설로 재구성한다."
+        },
+        {
+          "path": "docs/adr/infra/0008-playbook-execution-stack.md",
+          "status": "Accepted (2026-07-30)",
+          "summary": "플레이북 실행을 사용자 요청 큐로 기동되는 쓰기 권한 전용 Fargate 스택으로 운영한다."
         }
       ]
     }

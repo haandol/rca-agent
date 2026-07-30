@@ -18,7 +18,7 @@ RCA 에이전트의 정확도는 실제 클라우드 환경에서 장애 시나�
 - 커넥션 누수, 슬로우 쿼리, 자원 부하를 개별적으로 활성화할 수 있어야 한다.
 - 데모 서비스는 외부에서 접근할 수 없어야 한다. 의도적으로 장애를 주입하는 환경이므로 노출되면 안 된다.
 - 데모 목적에 비해 상시 비용이 과하지 않아야 한다.
-- 주입한 장애는 자동 복구가 되돌릴 수 있는 상태여야 한다. 복구 대상이 없으면 복구 경로를 검증할 수 없다([ADR agent/0012](../agent/0012-automated-remediation.md)).
+- 주입한 장애는 플레이북 실행이 되돌릴 수 있는 상태여야 한다. 복구 대상이 없으면 실행 경로를 검증할 수 없다([ADR agent/0017](../agent/0017-playbook-execution-agent.md)).
 
 ## Decision
 
@@ -80,4 +80,4 @@ RCA 에이전트의 정확도는 실제 클라우드 환경에서 장애 시나�
 - [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md) — 데모 서비스 알람이 에이전트에 전달되는 경로
 - [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — 공유 저장소
 - [ADR infra/0007: 데모 증상 알람과 배포 기반 장애 주입](0007-demo-symptom-alarm-and-deployment-fault-injection.md) — 장애 플래그를 배포로 활성화하는 시나리오
-- [ADR agent/0012: 자동 복구 실행 경계](../agent/0012-automated-remediation.md) — 이 서비스의 리셋이 유일한 자동 복구 대상
+- [ADR agent/0017: 플레이북 실행 에이전트](../agent/0017-playbook-execution-agent.md) — 이 서비스의 리셋이 실행 대상이 되는 경로
