@@ -177,3 +177,19 @@ def test_the_retrospective_agent_is_told_deletion_never_happens():
 
     assert "삭제는 일어나지 않는다" in guidance
     assert "기존 `step_id`를 재사용" in guidance
+
+
+def test_the_image_installs_the_executable_the_gate_allows():
+    """게이트가 허용하는 실행 파일은 이미지가 제공해야 한다.
+
+    실행 도구는 argv 를 셸 없이 직접 spawn 하므로 이 바이너리가 없으면 모든 절차가
+    spawn 실패로 끝난다. 라이브 실측에서 4절차 전부가 이렇게 실패했고, 단위 테스트는
+    러너를 대역으로 바꾸므로 이미지 구성을 검증하지 못했다.
+    """
+    from cc_headless.services.command_gate import _ALLOWED_EXECUTABLE
+
+    dockerfile = (PACKAGE_ROOT / "Dockerfile").read_text()
+
+    assert f"{_ALLOWED_EXECUTABLE} --version" in dockerfile, (
+        f"the image must install and verify {_ALLOWED_EXECUTABLE!r}, otherwise every playbook command fails to spawn"
+    )

@@ -17,7 +17,17 @@ COPY --from=node-dist /usr/local/bin/node /usr/local/bin/
 COPY --from=node-dist /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates unzip && rm -rf /var/lib/apt/lists/*
+
+# 실행 도구는 게이트가 파싱한 argv 를 셸 없이 직접 spawn 하므로 aws 실행 파일이
+# 이미지에 있어야 한다. 분석 경로는 MCP 서버로 AWS 에 접근해 필요가 없지만, 실행
+# 경로는 이 바이너리가 없으면 모든 절차가 spawn 실패로 끝난다.
+RUN ARCH=$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/aarch64/') && \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o /tmp/awscliv2.zip && \
+    unzip -q /tmp/awscliv2.zip -d /tmp && \
+    /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli && \
+    rm -rf /tmp/awscliv2.zip /tmp/aws && \
+    aws --version
 
 RUN npm install -g @anthropic-ai/claude-code
 
