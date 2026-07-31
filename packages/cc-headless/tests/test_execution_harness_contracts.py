@@ -10,7 +10,12 @@ EXECUTION_MCP_CONFIG = json.loads((PACKAGE_ROOT / "execution-mcp-config.json").r
 ANALYSIS_MCP_CONFIG = json.loads((PACKAGE_ROOT / "mcp-config.json").read_text())
 EXECUTION_GUIDANCE = (PACKAGE_ROOT / "EXECUTION.md").read_text()
 
-EXPECTED_EXECUTION_AGENTS = {"execution-operator", "retrospective-analyst"}
+EXPECTED_EXECUTION_AGENTS = {
+    "execution-orchestrator",
+    "execution-operator",
+    "retrospective-orchestrator",
+    "retrospective-analyst",
+}
 EXPECTED_EXECUTION_SERVERS = {"cloudwatch", "playbook-execution", "playbook-retrospective"}
 
 
@@ -95,8 +100,28 @@ def test_the_runner_allowlists_match_the_agent_frontmatter():
         _RETROSPECTIVE_TOOLS,
     )
 
-    assert set(_EXECUTION_TOOLS) == _tools("execution-operator")
-    assert set(_RETROSPECTIVE_TOOLS) == _tools("retrospective-analyst")
+    # 러너의 허용 목록은 루트가 아니라 실제로 도구를 쓰는 하위 에이전트와 맞아야 한다.
+    # 루트는 위임만 하므로 Agent 와 Skill 만 더 갖는다.
+    assert set(_EXECUTION_TOOLS) == _tools("execution-operator") | {"Agent"}
+    assert set(_RETROSPECTIVE_TOOLS) == _tools("retrospective-analyst") | {"Agent"}
+
+
+def test_the_root_agents_delegate_instead_of_executing():
+    """MCP 도구는 위임된 하위 에이전트에서만 해석된다.
+
+    루트에 실행 도구를 적으면 노출되지 않아 아무 절차도 수행되지 않는다. 라이브
+    실측에서 확인한 동작이므로 위임 구조를 계약으로 고정한다.
+    """
+    for root, worker in (
+        ("execution-orchestrator", "execution-operator"),
+        ("retrospective-orchestrator", "retrospective-analyst"),
+    ):
+        tools = _tools(root)
+
+        assert tools == {f"Agent({worker})", "Skill"}, root
+        assert not [tool for tool in tools if tool.startswith("mcp__")], (
+            f"{root} must not hold MCP tools — they would not resolve on a root agent"
+        )
 
 
 def test_the_analysis_harness_cannot_reach_any_execution_tool():

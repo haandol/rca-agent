@@ -41,11 +41,14 @@ _MCP_CONFIG_PATH = _find_file("execution-mcp-config.json")
 _WORKSPACE_SOURCE = Path(_MCP_CONFIG_PATH).parent
 _PACKAGE_ROOT_PLACEHOLDER = "{{PACKAGE_ROOT}}"
 
-_EXECUTION_AGENT = "execution-operator"
-_RETROSPECTIVE_AGENT = "retrospective-analyst"
-_BUILTIN_TOOLS = ("Skill",)
+# MCP 도구는 위임된 서브 에이전트에서만 해석된다. 루트 에이전트의 도구 목록에 적으면
+# 노출되지 않아, 실행 에이전트가 `Skill` 하나만 들고 아무 절차도 수행하지 못한다 —
+# 라이브 실측에서 확인한 동작이다. 그래서 루트는 위임자이고 실제 도구는 하위가 든다.
+_EXECUTION_AGENT = "execution-orchestrator"
+_RETROSPECTIVE_AGENT = "retrospective-orchestrator"
+_BUILTIN_TOOLS = ("Agent", "Skill")
 
-# 실행 하네스의 쓰기 경로는 이 두 도구뿐이다. Bash 도, 임의 HTTP 도 없다 — 명령은
+# 실행 하네스의 쓰기 경로는 이 세 도구뿐이다. Bash 도, 임의 HTTP 도 없다 — 명령은
 # 서버가 파싱해 파괴성을 판정한 뒤에만 실행된다.
 _EXECUTION_TOOLS = (
     *_BUILTIN_TOOLS,
