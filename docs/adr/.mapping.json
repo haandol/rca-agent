@@ -144,8 +144,8 @@
         },
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "데모를 증상 알람 진입점과 배포 기반 장애 주입, 반증 가능한 경쟁 가설로 재구성한다."
+          "status": "Accepted (2026-07-31)",
+          "summary": "데모를 증상 알람 진입점과 배포 기반 장애 주입으로 재구성하고, 커넥션 누수만 증상까지 이어지도록 임계치·주입량을 정합시킨다."
         },
         {
           "path": "docs/adr/infra/0008-playbook-execution-stack.md",

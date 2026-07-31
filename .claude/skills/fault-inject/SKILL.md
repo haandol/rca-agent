@@ -47,16 +47,16 @@ python3 scripts/inject_deployment_fault.py reset         # 모든 플래그 해�
 
 | 유형 | 주입 엔드포인트 | 리셋 엔드포인트 | 원인 지표 알람 |
 |------|---------------|---------------|-----------|
-| DB 커넥션 누수 | `POST /fault/db-leak` | `POST /fault/db-leak/reset` | `RcaAgentDev-Healthcare-RdsHighConnections` (임계치: 30) |
+| DB 커넥션 누수 | `POST /fault/db-leak` | `POST /fault/db-leak/reset` | `RcaAgentDev-Healthcare-RdsHighConnections` (임계치: 12) |
 | High CPU | `POST /fault/high-cpu` | `POST /fault/high-cpu/reset` | `RcaAgentDev-Healthcare-HighCPU` (임계치: 80%) |
 | High Memory | `POST /fault/high-memory` | `POST /fault/high-memory/reset` | `RcaAgentDev-Healthcare-HighMemory` (임계치: 80%) |
-| Slow Query | `POST /fault/slow-query` | `POST /fault/slow-query/reset` | 직접 알람 없음 (RDS ReadLatency로 간접) |
+| Slow Query | `POST /fault/slow-query` | `POST /fault/slow-query/reset` | 알람 없음 — 증상으로 이어지지 않아 진입점이 아니다 |
 
 RCA **진입 알람**은 `RcaAgentDev-Healthcare-VitalIngestFailures`다. 증상 지표에 걸려
 있어 원인을 누설하지 않는다. 위 원인 지표 알람은 에이전트가 검증 단계에서 스스로
 찾아야 하는 증거다.
 
-모든 엔드포인트는 `POST` 메서드, `Content-Type: application/json` body: `{"count": N}` (기본값 10).
+모든 엔드포인트는 `POST` 메서드, `Content-Type: application/json` body: `{"count": N}` (기본값 20 — 커넥션 풀 상한 15를 넘겨야 증상까지 도달한다).
 
 ## 실행 방법
 
@@ -86,7 +86,7 @@ aws ecs execute-command \
 
 | 유형 | 알람 트리거 권장값 | 설명 |
 |------|-----------------|------|
-| db-leak | 50 | 커넥션 50개 누수 (임계치 30) |
+| db-leak | 20 | 기본값. 풀 상한 15와 임계치 12를 모두 넘긴다 |
 | high-cpu | 10 | CPU 스트레스 스레드 10개 |
 | high-memory | 10 | 메모리 할당 블록 10개 |
 | slow-query | 10 | 느린 쿼리 10개 주입 |
