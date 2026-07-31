@@ -75,35 +75,64 @@ NEEDS_INVESTIGATION 가설에 대해:
 - 하위 가설은 validation JSON의 `new_hypotheses` 배열에 포함한다
 - 하위 가설에도 `fault_type` enum을 포함한다
 
-## 반환값
+## validation JSON 스키마
 
-서브에이전트는 반드시 다음 JSON 형태로 결과를 반환한다:
+판정은 **상태별 배열로 분리해** 기록한다. 하나의 목록에 상태 필드를 붙이는 형태는
+완료 게이트가 거부한다 — 같은 가설이 두 상태에 동시에 놓이는 것을 구조가 막아야
+하고, 확정 항목에만 요구되는 검사(`fault_type` 일치)가 배열 단위로 걸린다.
+
+**다섯 배열은 항목이 없어도 빈 배열로 반드시 포함한다.** 누락하면 리포트를 다
+만들어도 세션이 완료되지 않는다.
 
 ```json
 {
+  "stage": "VALIDATION",
   "loop_index": 1,
-  "judgments": [
+  "summary": "이번 루프에서 무엇을 검증했는지",
+  "output_summary": "상위 단계에 전달할 요약",
+  "confirmed": [
     {
-      "hypothesis_id": "uuid",
-      "status": "CONFIRMED|REJECTED|CLOSED|NEEDS_INVESTIGATION",
-      "confidence_score": 0.85,
-      "fault_type": "db-leak|high-cpu|high-memory|slow-query|unsupported",
+      "hypothesis_id": "기존 가설의 uuid",
+      "confidence": 0.92,
+      "fault_type": "db-leak",
       "reasoning": "판단 근거"
     }
   ],
-  "all_rejected": false,
-  "new_children_count": 2,
-  "confirmed_hypothesis": {
-    "hypothesis_id": "uuid",
-    "description": "확정된 근본원인",
-    "confidence_score": 0.92,
-    "fault_type": "db-leak"
-  }
+  "rejected": [{ "hypothesis_id": "uuid", "confidence": 0.1, "reasoning": "..." }],
+  "needs_investigation": [{ "hypothesis_id": "uuid", "confidence": 0.5, "reasoning": "..." }],
+  "closed": [{ "hypothesis_id": "uuid", "confidence": 0.2, "reasoning": "..." }],
+  "new_hypotheses": [
+    {
+      "hypothesis_id": "새 uuid",
+      "tree_id": "hypotheses.json 과 같은 tree_id",
+      "parent_id": "분기 대상 가설의 uuid",
+      "title": "제목",
+      "description": "부모보다 구체적인 서술",
+      "category": "카테고리",
+      "status": "PENDING",
+      "fault_type": "db-leak",
+      "confidence_score": 0.5,
+      "depth": 2,
+      "required_evidence": ["수집할 증거"]
+    }
+  ]
 }
 ```
 
-- `confirmed_hypothesis`는 CONFIRMED 가설이 있을 때만 포함
-- `all_rejected`가 true이면 메인 에이전트가 재생성을 결정한다
+배열 항목의 제약:
+
+- `stage`는 `VALIDATION`이고 `loop_index`는 **파일명의 N과 같아야** 한다
+  (`validation-2.json` → `loop_index: 2`).
+- 네 판정 배열의 각 항목은 `hypothesis_id`·`reasoning`·`confidence`를 갖는다.
+  `confidence`는 0~1이며 필드 이름은 `confidence_score`가 아니다.
+- **같은 `hypothesis_id`를 두 배열에 넣지 않는다.** 한 가설은 한 상태만 갖는다.
+- `confirmed` 항목은 `fault_type`을 갖고 그 값이 참조 가설의 `fault_type`과 같아야
+  한다. `confirmed`가 둘 이상이면 fault_type이 서로 같아야 한다.
+- `new_hypotheses`는 `confidence_score`(0~1)를 쓰고, `depth`는 **부모 depth + 1**,
+  `tree_id`는 `hypotheses.json`의 값과 같아야 하며 `parent_id`는 기존 가설을
+  가리켜야 한다. `hypothesis_id`는 기존·신규 전체에서 유일해야 한다.
+
+가설이 전부 `rejected`이면 메인 에이전트가 재생성을 결정한다.
 
 ## 산출물 저장
 

@@ -4,9 +4,13 @@ The save call runs while the agent can still fix its output; the completion gate
 runs after the run has ended. If the two disagree about a field the artifact owns,
 a run can pass every save and still fail at the end with nothing recoverable —
 which is the failure this check exists to prevent.
+
+The skill the agent reads is the third layer. It can disagree with both while
+every test passes, because nothing else reads it — so the run only breaks live.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +22,7 @@ from cc_headless.services.artifact_validation import (
 )
 
 REPORT_SECTIONS = artifact_validation._REPORT_SECTIONS
+SKILLS_DIR = Path(__file__).resolve().parents[1] / ".claude" / "skills"
 
 
 _EVIDENCE_WINDOWS = (
@@ -151,6 +156,31 @@ def test_every_execution_step_field_the_gate_requires_is_checked_at_save(missing
 
     with pytest.raises(ArtifactValidationError, match=missing):
         validate_artifact_shape("playbook.json", json.dumps(artifact))
+
+
+def test_the_validation_skill_names_every_list_the_gate_requires() -> None:
+    """The skill is what the agent writes from, so a field it omits never gets written.
+
+    A live run wrote `judgments[]` with a status field because the skill documented
+    that shape, while the gate wanted five state-separated lists. Three runs
+    finished every artifact and were then discarded at the gate, each naming a
+    different missing list — the agent was guessing at a schema it had never been
+    shown.
+    """
+    skill = (SKILLS_DIR / "hypothesis-validation" / "SKILL.md").read_text()
+
+    for field in ("confirmed", "rejected", "needs_investigation", "closed", "new_hypotheses"):
+        assert f'"{field}"' in skill, f"the validation skill never shows the {field} list"
+
+    # The shape that broke it. Keeping it out is the point, not incidental.
+    assert '"judgments"' not in skill
+
+
+def test_the_generation_skill_names_every_field_the_gate_requires() -> None:
+    skill = (SKILLS_DIR / "hypothesis-generation" / "SKILL.md").read_text()
+
+    for field in ("stage", "tree_id", "hypotheses", "summary", "output_summary"):
+        assert f'"{field}"' in skill, f"the generation skill never shows {field}"
 
 
 def test_artifacts_that_pass_save_can_still_fail_the_completion_gate(tmp_path) -> None:
