@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { marked } from 'marked';
+import { renderMarkdownDocument } from '~/utils/markdown';
 
 const route = useRoute();
 const id = route.params.id as string;
@@ -28,10 +28,9 @@ const session = computed(() => {
     return sessions.value.find((s) => s.rcaId === id && s.engine === engine);
   return sessions.value.find((s) => s.rcaId === id);
 });
-const renderedHtml = computed(() => {
-  if (!report.value?.markdown) return '';
-  return marked.parse(report.value.markdown) as string;
-});
+const renderedHtml = computed(() =>
+  renderMarkdownDocument(report.value?.markdown),
+);
 
 const executions = computed(() => executionHistory.value?.executions ?? []);
 const latest = computed(() => executions.value[0] ?? null);

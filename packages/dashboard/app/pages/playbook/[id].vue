@@ -1,14 +1,5 @@
 <script setup lang="ts">
-import { marked } from 'marked';
-
-function md(text: string | undefined | null): string {
-  if (!text) return '';
-  const normalized = text
-    .replace(/\\n/g, '\n')
-    .replace(/(?<!\n)(\d+)\.\s/g, '\n$1. ')
-    .trim();
-  return marked.parse(normalized, { async: false, breaks: true }) as string;
-}
+import { renderMarkdown as md } from '~/utils/markdown';
 
 const route = useRoute();
 const id = route.params.id as string;

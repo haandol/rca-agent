@@ -2,19 +2,10 @@
 import { VueFlow } from '@vue-flow/core';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
-import { marked } from 'marked';
 import { buildTraceGraph, type NodeData } from '~/composables/useTraceGraph';
 import SpanNode from '~/components/flow/SpanNode.vue';
 import HypoNode from '~/components/flow/HypoNode.vue';
-
-function md(text: string | undefined | null): string {
-  if (!text) return '';
-  const normalized = text
-    .replace(/\\n/g, '\n')
-    .replace(/(?<!\n)(\d+)\.\s/g, '\n$1. ')
-    .trim();
-  return marked.parse(normalized, { async: false, breaks: true }) as string;
-}
+import { renderMarkdown as md } from '~/utils/markdown';
 
 const route = useRoute();
 const id = route.params.id as string;
