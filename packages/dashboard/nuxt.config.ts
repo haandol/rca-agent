@@ -11,7 +11,9 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  devtools: { enabled: true },
+  // The floating devtools button sits over the bottom-right of every page,
+  // which is where session rows and execution history end up on long lists.
+  devtools: { enabled: false },
   devServer: { port: 3100 },
 
   runtimeConfig: {
