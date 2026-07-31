@@ -18,7 +18,7 @@ RCA 대시보드는 DynamoDB 세션 상태와 S3 보고서를 조회하는 로�
 - **트레이스 그래프**: DynamoDB 실행 트레이스를 Vue Flow 기반 DAG로 시각화 (가설 노드 + 스팬 노드)
 - **파이프라인 상태 그래프**: Vue Flow 기반 상태 전이 그래프로 현재 파이프라인 진행 상황 표시
 - **증거 상세 조회**: 가설별 S3에 저장된 full evidence를 on-demand로 조회
-- **세션 취소/삭제**: 진행 중인 세션 취소(CANCELLED) 및 세션 삭제 지원
+- **세션 취소/삭제**: 진행 중인 세션 취소(CANCELLED) 및 세션 삭제 지원. 취소는 claim을 회전시켜 실행 중 워커를 fencing하고, 삭제는 최종 상태이며 활성 lease·실행이 없을 때만 허용한다
 - **엔진 구분**: Strands / CC Headless 엔진별 세션 필터링
 - **상태 뱃지**: COMPLETED, FAILED, CANCELLED, OUTDATED, 진행 중 상태를 시각적으로 구분
 - **실행 승인**: 리포트 안에서 플레이북 실행 절차를 읽고 승인 → 실행 요청 큐 발행
@@ -62,6 +62,8 @@ packages/dashboard/
 │   │       └── SpanNode.vue       # 스팬 노드 커스텀 컴포넌트
 │   ├── composables/
 │   │   └── useTraceGraph.ts       # 트레이스 데이터 → Vue Flow 그래프 변환
+│   ├── utils/
+│   │   └── markdown.ts            # 신뢰할 수 없는 Markdown 렌더 (raw HTML 미생성)
 │   ├── assets/css/main.css        # 글로벌 스타일 (DaisyUI + TailwindCSS)
 │   └── app.vue                    # 루트 컴포넌트
 ├── server/
@@ -83,7 +85,8 @@ packages/dashboard/
 │   └── utils/                     # Nitro 자동 임포트 (server/api 에서 import 없이 사용)
 │       ├── aws.ts                 # DynamoDB/S3/SQS 클라이언트 싱글톤
 │       ├── engine.ts              # SK → 엔진 판별 (parseEngine)
-│       └── execution.ts           # EXEC# 항목 → 실행 상태·요약 정규화
+│       ├── execution.ts           # EXEC# 항목 → 실행 상태·요약 정규화
+│       └── fencing.ts             # 취소·삭제의 claim/lease 조건부 쓰기
 ├── nuxt.config.ts                 # Nuxt 설정 (포트 3100, runtimeConfig)
 ├── package.json
 └── tsconfig.json
@@ -121,3 +124,6 @@ packages/dashboard/
 - 실행 항목(`EXEC#`)을 세션 상태에 병합하지 말 것 — 실행은 분석과 별도 생명주기이고, 실행 실패가 완료된 분석을 실패로 보이게 하면 안 된다
 - 실행 상태를 뱃지로 보일 때 `UNRESOLVED`·`FAILED`를 성공과 같은 강도로 표시하지 말 것 — 미해결 장애가 완료로 읽힌다
 - 승인 발행 전 검증(분석 완료, 실행 절차 존재, 진행 중 실행 없음)을 건너뛰지 말 것. 워커가 거부할 요청을 발행하면 승인 게이트가 무의미해진다
+- 모델·S3에서 온 Markdown을 `marked`로 직접 렌더하지 말 것 — raw HTML이 그대로 보존되어 인증 없는 cancel/delete API를 호출할 수 있다. `app/utils/markdown.ts`를 사용한다
+- 취소를 상태 변경만으로 구현하지 말 것. 실행 중 워커는 claim token을 계속 들고 있으므로 회전 없이는 취소 이후에도 산출물을 기록한다
+- 활성 세션·실행을 삭제하지 말 것. 삭제는 fencing 기준을 제거하므로, 진행 중 실행과 SQS 재전달이 동시에 도는 상태를 만든다

@@ -9,7 +9,7 @@
 
 - 점검 기준 커밋: `0b2e279`
 - 최초 작성일: 2026-07-21
-- 전체 상태: `OPEN`
+- 전체 상태: `OPEN` — H-16만 미해결이며 라이브 AWS 검증이 필요하다
 - 범위: `packages/agent`, `packages/cc-headless`, `packages/healthcare-sensor-app`,
   `packages/infra`, `packages/dashboard`
 
@@ -59,10 +59,10 @@
 | H-14 | Healthcare | fault가 남아도 reset API가 성공을 반환 가능 | VERIFIED | `573688b` |
 | H-15 | Healthcare | slow-query가 다른 event loop의 AsyncEngine을 사용하고 오류를 숨김 | VERIFIED | `7b513a6`, `a614036` |
 | H-16 | Healthcare/Infra | 일부 fault가 알람을 발생시키거나 정상화를 검증할 수 없음 | IN_PROGRESS | 로컬 검토 중 |
-| H-17 | Dashboard | 활성 세션 삭제가 claim/lease fencing을 제거 | OPEN | - |
-| H-18 | Dashboard | 취소가 현재 claim과 late trace write를 fence하지 않음 | OPEN | - |
-| H-19 | Dashboard | 모델·S3 Markdown을 sanitizing 없이 HTML로 렌더링 | OPEN | - |
-| H-20 | Infra | CloudWatch SNS publish 정책에 source 제한이 없음 | OPEN | - |
+| H-17 | Dashboard | 활성 세션 삭제가 claim/lease fencing을 제거 | VERIFIED | 로컬 커밋 대기 |
+| H-18 | Dashboard | 취소가 현재 claim과 late trace write를 fence하지 않음 | VERIFIED | 로컬 커밋 대기 |
+| H-19 | Dashboard | 모델·S3 Markdown을 sanitizing 없이 HTML로 렌더링 | VERIFIED | 로컬 커밋 대기 |
+| H-20 | Infra | CloudWatch SNS publish 정책에 source 제한이 없음 | VERIFIED | 로컬 커밋 대기 |
 
 ## 상세 발견사항
 
@@ -529,51 +529,94 @@
 
 ### H-17 Dashboard 삭제가 활성 fencing을 제거
 
+- **상태**: `VERIFIED` (2026-07-31)
+- **수정**: 삭제를 최종 상태이고 유효한 side-effect lease가 없을 때만 허용하도록
+  조건부 쓰기로 제한했다. 범위 안의 모든 세션 레코드를 삭제 전에 claim 회전으로
+  fencing하고, 조건 실패는 부분 삭제 없이 409로 거부한다. 실행 항목은 분석과 별도
+  생명주기지만 같은 파티션에 있고 자체 claim을 검사하므로, 진행 중 실행도 삭제를
+  차단한다.
+- **검증**:
+  - moto DynamoDB에서 대시보드의 실제 조건식을 적용해 `ANALYZING` 세션의 삭제가
+    거부되고 진행 중 실행의 소유권이 유지됨을 확인
+  - 최종 상태 + lease 없음에서만 삭제가 성립하고, 삭제 직전 claim이 회전해 옛
+    소유자가 레코드를 되살릴 수 없음을 확인
+  - CC Headless tests: 502 passed / Infra: 30 passed / 계약 테스트 45 passed
+- **남은 위험**: 삭제는 알람 이벤트 자체를 취소하지 않으므로 메시지 보관 기간 안의
+  재전달로 세션이 재생성될 수 있다. tombstone 전략은 ADR에서 현재 필요 범위를
+  넘는다고 판단해 채택하지 않았다.
 - **영향**: active claim/lease가 있는 세션을 삭제하면 기존 실행은 이미 시작한
   reset을 계속할 수 있고, SQS 재전달은 세션이 없다고 판단해 새 실행을 시작한다.
 - **원인**: 삭제 API가 상태, claim, side-effect lease, remediation claim을 확인하지
   않고 엔진 레코드를 제거한다.
-- **근거**:
-  - `packages/dashboard/app/pages/index.vue:562`
-  - `packages/dashboard/server/api/sessions/[id].delete.ts:40`
-  - `packages/cc-headless/src/cc_headless/mcp_server.py:317`
 - **완료 조건**: terminal이며 active lease/claim이 없는 세션만 삭제할 수 있어야
   한다. 메시지 retention 기간 동안 재생성을 막는 tombstone 전략도 검토한다.
 
 ### H-18 Dashboard 취소의 claim/trace fencing 부재
 
+- **상태**: `VERIFIED` (2026-07-31)
+- **수정**: 취소가 상태 전이와 claim token 회전을 하나의 조건부 쓰기로 수행한다.
+  이후 이전 claim의 상태·산출물·trace·최종 발행 쓰기는 저장소 조건에서 실패한다.
+  유효한 side-effect lease가 있는 동안에는 취소를 거부해, 이미 시작된 외부 쓰기를
+  완료 여부를 알 수 없는 상태로 남기지 않는다.
+- **검증**:
+  - moto DynamoDB에서 취소 후 엔진 저장소의 `mark_completed`·`mark_failed`·
+    `update_state`가 모두 `SessionCancelledError`로 실패하고
+    `is_terminated`가 참이 됨을 확인
+  - active lease 중 취소가 거부되고 워커가 자기 작업을 정상 완료함을 확인
+  - 완료된 분석이 취소로 되돌려지지 않음을 확인
+  - 상태만 바꾸는 수정 전 동작으로 되돌려 위 3건이 실패하는 것을 확인
+- **남은 위험**: 취소는 진행 중 실행을 즉시 종료시키지 않고 다음 쓰기 시점에
+  차단한다. 취소의 의미는 "이후 확정 금지"이며 "즉시 정지"가 아니다.
 - **영향**: 취소 응답 이후 late artifact가 가설과 trace를 다시 기록할 수 있고,
   이미 lease 안에 들어간 side effect가 완료될 수 있다.
 - **원인**: 취소는 state만 변경하고 claim token을 회전하거나 trace write 조건에
   non-terminal state를 포함하지 않는다.
-- **근거**:
-  - `packages/dashboard/server/api/sessions/[id]/cancel.post.ts:120`
-  - `packages/cc-headless/src/cc_headless/services/artifact_watcher.py:202`
 - **완료 조건**: 취소가 claim을 원자적으로 fence하고 이후 상태/trace/final
   publication 쓰기가 실패해야 한다. active side effect의 취소 의미를 명시적으로
   정의하고 테스트한다.
 
 ### H-19 Dashboard 저장형 XSS
 
+- **상태**: `VERIFIED` (2026-07-31)
+- **수정**: raw HTML을 사후 sanitizing하지 않고 **애초에 생성하지 않는** 방향을
+  택했다. 공통 렌더러가 author HTML을 텍스트로 escape하고, 링크·이미지는 실행
+  불가능한 스킴만 유지한다. 생성된 태그 목록을 allowlist로 관리하면 렌더러가
+  새로 내보내는 태그를 계속 따라가야 하지만, author HTML을 만들지 않으면 따라갈
+  대상 자체가 없다. 세 페이지 모두 이 렌더러를 사용한다.
+- **검증**:
+  - `<script>`, `<img onerror>`, `<iframe>`, `<svg><animate onbegin>`,
+    inline event handler가 실제 태그로 살아남지 않음을 렌더러 실행으로 확인
+  - `javascript:`(대소문자·제어문자 삽입 변형 포함), `vbscript:`, `data:` URL이
+    `href`/`src`로 남지 않음을 확인
+  - 정상 Markdown(제목·목록·코드블록·표)과 상대·fragment 링크는 그대로 렌더됨을 확인
+  - `marked` 직접 import 회귀를 막는 테스트 포함. escape를 제거하면 실패함을 확인
+- **남은 위험**: CSP는 추가하지 않았다. 실행 가능한 markup이 생성되지 않으므로
+  주 경로는 닫혔으나, 심층 방어로서의 CSP는 별도 항목으로 남는다.
 - **영향**: 모델 또는 S3 산출물의 악성 HTML이 대시보드 origin에서 실행되어 인증
   없는 cancel/delete API를 호출할 수 있다.
 - **원인**: `marked`가 보존한 raw HTML을 sanitizing 없이 `v-html`로 렌더링한다.
-- **근거**:
-  - `packages/dashboard/app/pages/report/[id].vue:20`
-  - `packages/dashboard/app/pages/trace/[id].vue:822`
-  - `packages/dashboard/app/pages/playbook/[id].vue:10`
 - **재현 결과**: `marked`가 `<img onerror=...>` 이벤트 handler를 그대로 보존했다.
 - **완료 조건**: strict allowlist sanitizer 또는 raw HTML 비활성화를 적용하고,
   script/event-handler/javascript URL 회귀 테스트와 CSP를 추가한다.
 
 ### H-20 CloudWatch SNS publish source 제한 부재
 
+- **상태**: `VERIFIED` (2026-07-31)
+- **수정**: 토픽 정책이 알람 서비스 주체 허용에 그치지 않고, 발행 요청이 이 배포의
+  계정에서 시작되고 이 배포가 소유한 알람에서 왔음을 함께 요구한다. 알람은 형제
+  스택에 있으므로 이 배포의 알람 이름 접두사로 범위를 제한했다 — 알람 ARN 목록을
+  나열하면 알람을 추가하는 모든 스택과 이 construct가 결합된다.
+- **검증**:
+  - CDK assertion으로 `aws:SourceAccount`가 이 배포의 계정이고 `aws:SourceArn`이
+    알람 리소스·네임스페이스 접두사로 제한됨을 확인
+  - 조건 블록을 제거하면 두 테스트가 실패하는 것을 확인
+  - Infra tests: 30 passed
+- **남은 위험**: 알람을 다른 스택이나 계정으로 옮기면 정책의 출처 조건도 함께
+  넓혀야 한다. 갱신하지 않으면 새 알람의 발행이 조용히 거부된다.
 - **영향**: 다른 AWS 계정의 CloudWatch 서비스 요청이 RCA 입력 토픽에 이벤트를
   발행해 두 Bedrock 기반 엔진을 실행할 수 있다.
 - **원인**: SNS resource policy가 service principal만 허용하고
   `aws:SourceAccount`와 alarm `aws:SourceArn` 조건을 사용하지 않는다.
-- **근거**:
-  - `packages/infra/lib/constructs/alarm-topic.ts:30`
 - **완료 조건**: 현재 계정과 기대 alarm ARN으로 publish를 제한하고, CDK assertion
   테스트가 두 조건의 존재를 검증해야 한다.
 
