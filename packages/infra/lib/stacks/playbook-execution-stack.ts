@@ -256,6 +256,23 @@ export class PlaybookExecutionStack extends cdk.Stack {
         resources: ['*'],
       }),
     );
+
+    // Rolling a service back to a known-good task definition is an allowed
+    // recovery action, and ECS cannot accept one without being handed that
+    // definition's roles. Without this the most direct recovery path fails on
+    // AccessDenied while force-new-deployment succeeds — observed in a live run.
+    //
+    // The pass is confined to ECS tasks. Passing a role to an arbitrary service
+    // would be a privilege-escalation path, and no recovery step needs one.
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['iam:PassRole'],
+        resources: ['*'],
+        conditions: {
+          StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' },
+        },
+      }),
+    );
   }
 
   private newService(

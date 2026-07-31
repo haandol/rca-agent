@@ -124,6 +124,20 @@ def test_the_root_agents_delegate_instead_of_executing():
         )
 
 
+@pytest.mark.parametrize("root", ["execution-orchestrator", "retrospective-orchestrator"])
+def test_the_root_agents_must_wait_for_the_delegation_to_return(root):
+    """루트가 위임을 배경으로 띄우고 먼저 끝내면 하위의 마지막 기록이 유실된다.
+
+    라이브 실측에서 실제로 일어났다. 하위 에이전트가 4절차를 모두 수행하고 관측까지
+    기록했는데, 루트가 결과를 기다리지 않고 응답해 프로세스가 종료되면서 해소 여부
+    기록만 유실됐다. 판정은 미해결로 정확했지만 실행이 무의미해진다.
+    """
+    guidance = (EXECUTION_AGENTS_DIR / f"{root}.md").read_text()
+
+    assert "배경 작업으로 띄우지 않는다" in guidance, root
+    assert "반환할" in guidance and "기다린" in guidance, root
+
+
 def test_the_analysis_harness_cannot_reach_any_execution_tool():
     """읽기 도구는 공유해도 되지만 쓰기 경로는 실행 하네스만 가진다."""
     from cc_headless.adapters.secondary.cc.cc_subprocess_runner import _ALLOWED_TOOLS

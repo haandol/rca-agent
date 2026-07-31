@@ -18,6 +18,7 @@ type IamStatement = {
   Effect?: string;
   Action?: string | string[];
   Resource?: unknown;
+  Condition?: Record<string, Record<string, unknown>>;
 };
 
 type PolicyDocument = {
@@ -229,6 +230,26 @@ test('the execution role cannot grant or revoke access', () => {
   ]) {
     expect(denied).toContain(mutation);
   }
+});
+
+test('a rollback can hand ECS the task definition it rolls back to', () => {
+  // Rolling back to a known-good task definition is an allowed recovery action,
+  // and ECS refuses one unless the caller may pass that definition's roles. A
+  // live run hit AccessDenied on exactly this while force-new-deployment passed.
+  const { execution } = synthesize();
+  const passRole = taskRoleStatements(execution).filter((statement) => {
+    const actions = Array.isArray(statement.Action)
+      ? statement.Action
+      : [statement.Action];
+    return statement.Effect !== 'Deny' && actions.includes('iam:PassRole');
+  });
+
+  expect(passRole).toHaveLength(1);
+  // Passing a role to any other service would be a privilege-escalation path,
+  // and no recovery step needs one.
+  expect(passRole[0].Condition?.StringEquals).toEqual({
+    'iam:PassedToService': 'ecs-tasks.amazonaws.com',
+  });
 });
 
 test('destructive-action refusal is not expressed as an IAM deny', () => {

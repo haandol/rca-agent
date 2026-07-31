@@ -181,6 +181,11 @@ class ExecutionOrchestrator:
                 state=str(verdict.state),
                 blocked=evidence.blocked_count,
                 failed=evidence.failed_step_count,
+                # 절차를 수행했는데 해소 기록이 없는 조합은 에이전트가 마지막 기록에
+                # 도달하지 못했다는 뜻이다. 판정은 미해결로 정확하지만 원인이 절차
+                # 실패인지 조기 종료인지 구별되지 않으므로, 그 구별을 로그가 보유한다.
+                resolution_recorded=evidence.resolution_confirmed is not None,
+                attempted=evidence.attempted_step_count,
             )
             self._finish(
                 execution_id,
