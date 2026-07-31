@@ -40,6 +40,11 @@ const inFlight = computed(() =>
   ),
 );
 const executionSteps = computed(() => playbook.value?.execution_steps ?? []);
+// Anything other than the recorded VERIFIED reads as a draft: an unproven
+// procedure must never look proven to whoever is deciding to approve it.
+const isVerifiedPlaybook = computed(
+  () => playbook.value?.verification_status === 'VERIFIED',
+);
 
 // Approval is only meaningful when there is a confirmed procedure to approve and
 // nothing already running against it.
@@ -234,14 +239,14 @@ useHead({ title: () => `Report ${id.slice(0, 8)}` });
         </div>
         <span
           class="badge badge-sm"
-          :class="
-            playbook.verification_status === 'DRAFT'
-              ? 'badge-warning'
-              : 'badge-success'
+          :class="isVerifiedPlaybook ? 'badge-success' : 'badge-warning'"
+          :title="
+            isVerifiedPlaybook
+              ? '이 절차는 실행으로 이슈를 해소하고 회고를 거쳤습니다'
+              : '실행과 회고를 거치기 전의 플레이북은 초안입니다'
           "
-          title="실행과 회고를 거치기 전의 플레이북은 초안입니다"
         >
-          {{ playbook.verification_status }}
+          {{ isVerifiedPlaybook ? '검증됨' : '초안' }}
         </span>
       </div>
 

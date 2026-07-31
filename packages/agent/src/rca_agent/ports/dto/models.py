@@ -48,10 +48,14 @@ class PlaybookVerificationStatus(StrEnum):
     """플레이북 절차가 실행으로 검증되었는지.
 
     실행되지 않은 플레이북은 초안이다. 실행과 회고를 거친 뒤에야 검증된 절차가 되며,
-    그 전이는 분석이 아니라 실행 주체가 수행한다.
+    그 전이는 분석이 아니라 실행 주체가 수행한다. 분석은 DRAFT만 쓸 수 있다.
+
+    승격은 한 방향뿐이다. 한 번 실행으로 입증된 절차가 이후 분석이나 병합으로 미검증
+    상태로 떨어지면, 이 값이 "실행으로 입증되었는가"를 더 이상 뜻하지 않는다.
     """
 
     DRAFT = "DRAFT"
+    VERIFIED = "VERIFIED"
 
 
 class AlarmTrigger(BaseModel):

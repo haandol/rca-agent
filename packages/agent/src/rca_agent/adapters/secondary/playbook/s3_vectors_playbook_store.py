@@ -7,7 +7,13 @@ from rca_agent.config.settings import (
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_PLAYBOOK_INDEX,
 )
-from rca_agent.ports.dto.models import ExecutionStep, Playbook, PlaybookMatch, ScopingResult
+from rca_agent.ports.dto.models import (
+    ExecutionStep,
+    Playbook,
+    PlaybookMatch,
+    PlaybookVerificationStatus,
+    ScopingResult,
+)
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.playbook_store import PlaybookStorePort
 from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
@@ -39,6 +45,21 @@ def _as_text_list(raw) -> list[str]:
     if isinstance(raw, list):
         return [item for item in raw if isinstance(item, str)]
     return []
+
+
+def _as_verification_status(raw) -> PlaybookVerificationStatus:
+    """Rebuild the recorded verification status, defaulting to a draft.
+
+    An unreadable or absent value means the record predates the promotion or was
+    written by something we cannot trust, and an unproven procedure must not read
+    as verified. Only the recorded VERIFIED survives a reload.
+    """
+    if isinstance(raw, str):
+        try:
+            return PlaybookVerificationStatus(raw)
+        except ValueError:
+            logger.info("Unknown playbook verification status %r, treating as draft", raw)
+    return PlaybookVerificationStatus.DRAFT
 
 
 def _as_execution_steps(raw) -> list[ExecutionStep]:
@@ -157,6 +178,9 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             related_metrics=_as_text_list(recorded.get("related_metrics")),
             rca_id=match.rca_id,
             tags=_as_text_list(recorded.get("tags")) or match.tags,
+            # 검증 상태를 재구성하지 않으면 기본값 DRAFT로 되살아나, 보강 경로가 회고의
+            # 승격을 조용히 취소한다.
+            verification_status=_as_verification_status(recorded.get("verification_status")),
         )
 
     def save(self, playbook: Playbook, *, scoping_result: ScopingResult | None = None) -> bool:

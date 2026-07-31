@@ -37,6 +37,8 @@ tools: Skill, mcp__playbook-retrospective__save_playbook_update
 - 되돌릴 수 없는 조치를 절차로 추가하지 않는다.
 - 삭제는 일어나지 않는다. 불필요했던 단계는 지우는 것이 아니라 `intent`에 그 사실을
   기록해 교정한다.
+- `verification_status`를 갱신안에 담지 않는다. 절차가 검증되었는지는 서버가 판정하며,
+  담아도 무시된다.
 
 `save_playbook_update`로 갱신안과 근거를 저장한 뒤 무엇을 왜 바꿨는지 요약해 최종
 응답으로 반환한다. 교정할 결함이 없으면 그 사실을 응답으로 남기고 갱신안을 저장하지

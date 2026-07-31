@@ -10,6 +10,15 @@ from dataclasses import dataclass, field
 
 _EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 
+VERIFICATION_STATUS_FIELD = "verification_status"
+PLAYBOOK_DRAFT = "DRAFT"
+PLAYBOOK_VERIFIED = "VERIFIED"
+
+# 모델이 갱신안에 담아도 무시하는 필드. 검증 상태는 서버가 소유하므로 LLM 출력이
+# 검증 여부의 권위가 되면 실행되지 않은 절차가 검증됨으로 표기된다. 식별자와 stage는
+# 병합이 유지해야 하는 값이라 갱신안이 바꿀 수 없다.
+_SERVER_OWNED_FIELDS = frozenset({"execution_steps", "playbook_id", "stage", "verification_status"})
+
 
 @dataclass
 class PlaybookDiff:
@@ -83,7 +92,7 @@ def merge_playbook_update(existing: dict, update: object) -> tuple[dict, Playboo
     }
 
     for name, new_value in update.items():
-        if name in {"execution_steps", "playbook_id", "stage"}:
+        if name in _SERVER_OWNED_FIELDS:
             continue
         if not _meaningful(new_value):
             continue
@@ -129,3 +138,15 @@ def merge_playbook_update(existing: dict, update: object) -> tuple[dict, Playboo
 
     merged["execution_steps"] = merged_steps
     return merged, diff
+
+
+def promote_to_verified(playbook: dict) -> dict:
+    """실행으로 입증된 절차를 검증됨으로 승격한다.
+
+    해결된 실행의 회고가 갱신을 반영하는 지점에서만 호출한다 — 해결 판정과 절차 교정을
+    모두 통과한 곳이 여기뿐이다. 이미 검증됨이면 그대로 둔다. 되돌리는 전이는 없으므로
+    이 함수에 반대 방향은 없다.
+    """
+    promoted = dict(playbook)
+    promoted[VERIFICATION_STATUS_FIELD] = PLAYBOOK_VERIFIED
+    return promoted

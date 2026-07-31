@@ -31,7 +31,7 @@ from cc_headless.services.execution_request import (
 )
 from cc_headless.services.execution_state import ExecutionState, enters_retrospective
 from cc_headless.services.execution_workspace import ExecutionWorkspace
-from cc_headless.services.playbook_merge import merge_playbook_update
+from cc_headless.services.playbook_merge import merge_playbook_update, promote_to_verified
 
 logger = structlog.get_logger()
 
@@ -286,6 +286,9 @@ class ExecutionOrchestrator:
 
             saved = workspace.read_retrospective()
             if saved is None:
+                # 교정할 결함이 없었다는 것은 절차가 그대로 이슈를 해소했다는 뜻이므로
+                # 승격은 일어난다. 갱신 없는 회고도 절차를 확인한 회고다.
+                self._publish_playbook(request, target, promote_to_verified(target.playbook), execution_id)
                 store.record_retrospective(
                     execution_id,
                     rca_id=request.rca_id,
@@ -294,11 +297,12 @@ class ExecutionOrchestrator:
                     summary="retrospective found no procedure defect to correct",
                     playbook_snapshot_s3_key=snapshot_key,
                 )
-                log.info("retrospective_no_change")
+                log.info("retrospective_no_change", promoted=True)
                 return
 
             merged, diff = merge_playbook_update(target.playbook, saved.get("update"))
             if diff.is_empty:
+                self._publish_playbook(request, target, promote_to_verified(merged), execution_id)
                 store.record_retrospective(
                     execution_id,
                     rca_id=request.rca_id,
@@ -307,7 +311,7 @@ class ExecutionOrchestrator:
                     summary="proposed update changed nothing",
                     playbook_snapshot_s3_key=snapshot_key,
                 )
-                log.info("retrospective_update_changed_nothing")
+                log.info("retrospective_update_changed_nothing", promoted=True)
                 return
 
             diff_key = self._c.evidence_store.save_retrospective_diff(
@@ -318,18 +322,7 @@ class ExecutionOrchestrator:
                     **diff.to_dict(),
                 },
             )
-            store.save_playbook_revision(
-                request.rca_id,
-                request.engine,
-                merged,
-                execution_id=execution_id,
-            )
-            # 갱신된 절차가 다음 유사 장애의 검색 결과에 반영되도록 인덱스도 갱신한다.
-            self._c.playbook_store.save_to_s3_vectors(
-                merged,
-                request.rca_id,
-                metric_name=target.metric_name,
-            )
+            self._publish_playbook(request, target, promote_to_verified(merged), execution_id)
             store.record_retrospective(
                 execution_id,
                 rca_id=request.rca_id,
@@ -358,3 +351,28 @@ class ExecutionOrchestrator:
                 )
             except Exception:
                 log.exception("retrospective_record_failed")
+
+    def _publish_playbook(
+        self,
+        request: ExecutionRequest,
+        target: ExecutionTarget,
+        playbook: dict,
+        execution_id: str,
+    ) -> None:
+        """회고를 통과한 플레이북을 개정본과 검색 인덱스 양쪽에 반영한다.
+
+        두 저장소가 같은 내용을 보아야 한다 — 다음 실행은 개정본을 읽고 다음 RCA 의
+        보강은 인덱스를 읽으므로, 한쪽만 갱신하면 승격이 한 경로에서만 보인다.
+        """
+        self._c.execution_store.save_playbook_revision(
+            request.rca_id,
+            request.engine,
+            playbook,
+            execution_id=execution_id,
+        )
+        # 갱신된 절차가 다음 유사 장애의 검색 결과에 반영되도록 인덱스도 갱신한다.
+        self._c.playbook_store.save_to_s3_vectors(
+            playbook,
+            request.rca_id,
+            metric_name=target.metric_name,
+        )

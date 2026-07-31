@@ -341,8 +341,83 @@ def test_a_retrospective_that_omits_fields_does_not_delete_the_existing_playbook
 
     ExecutionOrchestrator(container).process_message(APPROVAL)
 
-    container.execution_store.save_playbook_revision.assert_not_called()
+    revised = container.execution_store.save_playbook_revision.call_args.args[2]
+
+    # 빈 필드는 "고칠 것이 없다"는 뜻이므로 기록된 값이 그대로 남는다.
+    assert revised["symptom_pattern"] == "DatabaseConnections 80 초과"
+    assert revised["execution_steps"][0]["action"] == "api 서비스를 강제 재배포"
     assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "NO_CHANGE"
+
+
+def test_a_retrospective_with_no_correction_still_promotes_the_procedure():
+    # 절차가 그대로 이슈를 해소했다면 그것이 가장 강한 검증이다.
+    runner = RecordingRunner(
+        retrospective={
+            "update": {"symptom_pattern": "", "execution_steps": []},
+            "rationale": "고칠 것이 없다",
+        }
+    )
+    container = _container(runner)
+
+    ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    revised = container.execution_store.save_playbook_revision.call_args.args[2]
+    indexed = container.playbook_store.save_to_s3_vectors.call_args.args[0]
+
+    assert revised["verification_status"] == "VERIFIED"
+    # 다음 실행은 개정본을, 다음 RCA 의 보강은 인덱스를 읽으므로 양쪽이 같아야 한다.
+    assert indexed["verification_status"] == "VERIFIED"
+
+
+def test_a_corrected_procedure_is_promoted_along_with_its_revision():
+    runner = RecordingRunner(
+        retrospective={
+            "update": {"execution_steps": [{"step_id": "step-1", "action": "api 서비스를 강제 재배포하고 30초 대기"}]},
+            "rationale": "첫 시도가 대기 없이 지표를 조회해 실패했다",
+        }
+    )
+    container = _container(runner)
+
+    ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    revised = container.execution_store.save_playbook_revision.call_args.args[2]
+
+    assert revised["verification_status"] == "VERIFIED"
+    assert revised["execution_steps"][0]["action"].endswith("30초 대기")
+
+
+def test_a_failed_retrospective_leaves_the_playbook_a_draft():
+    # 갱신을 반영하지 못한 회고는 절차를 확인한 것이 아니므로 승격도 없다.
+    runner = RecordingRunner(retrospective_success=False)
+    container = _container(runner)
+
+    ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
+
+
+def test_an_unresolved_execution_never_promotes_the_playbook():
+    # 이슈를 해소하지 못한 실행의 절차는 올바름이 입증되지 않았다.
+    runner = RecordingRunner(
+        records=[
+            {"type": "attempt", "step_id": "step-1", "command": "aws ecs update-service", "succeeded": True},
+            {
+                "type": "step_outcome",
+                "step_id": "step-1",
+                "observation": "DatabaseConnections 78",
+                "criteria_met": False,
+            },
+            {"type": "resolution", "observation": "지표가 여전히 높다", "resolved": False},
+        ]
+    )
+    container = _container(runner)
+
+    ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    assert _states(container)[-1] is ExecutionState.UNRESOLVED
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
 
 
 def test_a_failed_retrospective_does_not_undo_the_resolved_execution():

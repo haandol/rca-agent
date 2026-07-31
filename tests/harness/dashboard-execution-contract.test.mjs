@@ -70,6 +70,30 @@ test('a retrospective revision becomes the procedure the next execution runs', a
   );
 });
 
+test('a person deciding to approve can tell a proven procedure from a draft', async () => {
+  const [playbookApi, reportPage] = await Promise.all([
+    readRepositoryFile('packages/dashboard/server/api/playbooks/[id].get.ts'),
+    readRepositoryFile('packages/dashboard/app/pages/report/[id].vue'),
+  ]);
+
+  // The promotion is recorded on the revision, so reading the status off the
+  // analysis span alone would show a draft forever.
+  assert.match(
+    playbookApi,
+    /verification_status: text\('verification_status'\)/,
+    'the playbook API must read the status through the revision-first accessor',
+  );
+
+  // Anything other than the recorded VERIFIED has to read as a draft: an
+  // unproven procedure looking proven is what misleads the approver.
+  assert.match(reportPage, /verification_status === 'VERIFIED'/);
+  assert.match(
+    reportPage,
+    /검증됨/,
+    'the badge must name the state rather than print the raw enum',
+  );
+});
+
 test('the dashboard reports execution state without altering the analysis session', async () => {
   const [executionModule, sessionsSource, tracesSource] = await Promise.all([
     readRepositoryFile(EXECUTION_MODULE),

@@ -697,6 +697,84 @@ class TestExecutionStepContract:
         assert [step.step_id for step in detail.execution_steps] == ["step-1"]
         assert detail.execution_steps[0].success_criteria == "MemoryUtilization 이 60% 이하로 복귀"
 
+    def test_an_update_does_not_demote_a_verified_playbook(self):
+        """보강 한 번이 회고의 승격을 취소하면 검증됨이 아무것도 뜻하지 않는다."""
+        existing = Playbook(
+            playbook_id="p-1",
+            failure_type="Memory leak",
+            symptom_pattern="메모리 증가",
+            execution_steps=[ExecutionStep(**self._step())],
+            verification_status=PlaybookVerificationStatus.VERIFIED,
+        )
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, temporary_mitigation="재배포 후 확인"))
+
+        updated = _try_update_existing(existing, _make_report(), agent)
+
+        assert updated is not None
+        assert updated.verification_status is PlaybookVerificationStatus.VERIFIED
+
+    def test_an_update_to_a_draft_playbook_leaves_it_a_draft(self):
+        """분석은 이 값을 올릴 수 없다. 승격은 실행 뒤 회고만 수행한다."""
+        existing = Playbook(playbook_id="p-1", failure_type="Memory leak", symptom_pattern="메모리 증가")
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, temporary_mitigation="재배포 후 확인"))
+
+        updated = _try_update_existing(existing, _make_report(), agent)
+
+        assert updated is not None
+        assert updated.verification_status is PlaybookVerificationStatus.DRAFT
+
+    def test_a_verified_status_survives_a_round_trip_through_the_trace(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                {
+                    "SK": {"S": "strands#SPAN#s-1"},
+                    "span_type": {"S": "PLAYBOOK"},
+                    "metadata": {
+                        "M": {
+                            "playbook_id": {"S": "p-1"},
+                            "verification_status": {"S": "VERIFIED"},
+                        }
+                    },
+                }
+            ]
+        }
+
+        with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
+            detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
+                _make_hit(playbook_id="p-1", rca_id="rca-7")
+            )
+
+        assert detail is not None
+        assert detail.verification_status is PlaybookVerificationStatus.VERIFIED
+
+    def test_an_unreadable_recorded_status_loads_as_a_draft(self):
+        """읽을 수 없는 값이 검증됨으로 되살아나면 미입증 절차가 검증된 것으로 보인다."""
+        for recorded in ({"S": "SOMETHING"}, {"N": "1"}):
+            ddb = MagicMock()
+            ddb.query.return_value = {
+                "Items": [
+                    {
+                        "SK": {"S": "strands#SPAN#s-1"},
+                        "span_type": {"S": "PLAYBOOK"},
+                        "metadata": {
+                            "M": {
+                                "playbook_id": {"S": "p-1"},
+                                "verification_status": recorded,
+                            }
+                        },
+                    }
+                ]
+            }
+
+            with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
+                detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
+                    _make_hit(playbook_id="p-1", rca_id="rca-7")
+                )
+
+            assert detail is not None
+            assert detail.verification_status is PlaybookVerificationStatus.DRAFT
+
     def test_a_recorded_step_without_an_identifier_is_dropped_on_load(self):
         ddb = MagicMock()
         ddb.query.return_value = {

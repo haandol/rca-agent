@@ -1,4 +1,4 @@
-from cc_headless.services.playbook_merge import merge_playbook_update
+from cc_headless.services.playbook_merge import merge_playbook_update, promote_to_verified
 
 EXISTING = {
     "stage": "PLAYBOOK",
@@ -130,3 +130,35 @@ def test_a_step_update_matching_the_existing_value_is_not_reported_as_a_change()
     assert merged["execution_steps"] == EXISTING["execution_steps"]
     assert diff.corrected_steps == []
     assert diff.preserved_steps == ["step-1", "step-2"]
+
+
+def test_a_model_cannot_declare_the_verification_status_through_an_update():
+    # 이 값이 모델 출력이 되면 실행되지 않은 절차가 검증됨으로 표기된다.
+    merged, diff = merge_playbook_update(EXISTING, {"verification_status": "VERIFIED"})
+
+    assert merged["verification_status"] == "DRAFT"
+    assert diff.is_empty
+
+
+def test_a_model_cannot_demote_a_verified_playbook_through_an_update():
+    verified = {**EXISTING, "verification_status": "VERIFIED"}
+
+    merged, diff = merge_playbook_update(verified, {"verification_status": "DRAFT"})
+
+    assert merged["verification_status"] == "VERIFIED"
+    assert diff.is_empty
+
+
+def test_promotion_marks_the_procedure_verified_without_touching_the_content():
+    promoted = promote_to_verified(EXISTING)
+
+    assert promoted["verification_status"] == "VERIFIED"
+    assert promoted["execution_steps"] == EXISTING["execution_steps"]
+    # 원본을 제자리에서 바꾸면 갱신 전 사본이 승격된 값으로 오염된다.
+    assert EXISTING["verification_status"] == "DRAFT"
+
+
+def test_promoting_an_already_verified_playbook_is_a_no_op():
+    verified = {**EXISTING, "verification_status": "VERIFIED"}
+
+    assert promote_to_verified(verified) == verified

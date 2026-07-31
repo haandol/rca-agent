@@ -106,9 +106,16 @@ test('neither engine can mark a playbook verified during analysis', async () => 
   ]);
 
   // A playbook is a draft until an execution and its retrospective have
-  // exercised the procedure, so DRAFT must be the only status analysis can write.
+  // exercised the procedure, so DRAFT is the only status analysis may write.
   assert.match(ccValidation, /_PLAYBOOK_DRAFT_STATUS = "DRAFT"/);
+  assert.match(
+    ccValidation,
+    /verification_status must be/,
+    'analysis artifacts must be rejected when they claim any other status',
+  );
 
+  // Both engines share one two-value vocabulary. A third value on either side
+  // would mean a status the other cannot interpret.
   const statusEnum = agentModels.slice(
     agentModels.indexOf('class PlaybookVerificationStatus(StrEnum):'),
     agentModels.indexOf('class AlarmTrigger(BaseModel):'),
@@ -116,6 +123,54 @@ test('neither engine can mark a playbook verified during analysis', async () => 
   const members = [...statusEnum.matchAll(/^    (\w+) = "([^"]+)"$/gm)];
   assert.deepEqual(
     members.map(([, name, value]) => [name, value]),
-    [['DRAFT', 'DRAFT']],
+    [
+      ['DRAFT', 'DRAFT'],
+      ['VERIFIED', 'VERIFIED'],
+    ],
   );
+});
+
+// The retrospective is the only actor that may promote a procedure, and the
+// promotion only holds if nothing downstream can quietly undo it. Each engine
+// enforces that in its own package, so this test is what keeps the one-way rule
+// from being a rule in only one of them.
+test('neither engine lets a model or a merge undo a promotion', async () => {
+  const [agentGeneration, agentStore, ccMerge] = await Promise.all([
+    readRepositoryFile('packages/agent/src/rca_agent/services/playbook_gen.py'),
+    readRepositoryFile(
+      'packages/agent/src/rca_agent/adapters/secondary/playbook/s3_vectors_playbook_store.py',
+    ),
+    readRepositoryFile(
+      'packages/cc-headless/src/cc_headless/services/playbook_merge.py',
+    ),
+  ]);
+
+  // A model-supplied status would make LLM output the authority on whether a
+  // procedure has been proven, so the merge must drop the field outright.
+  assert.ok(
+    pythonStringLiterals(ccMerge, '_SERVER_OWNED_FIELDS').has(
+      'verification_status',
+    ),
+    'the retrospective merge must ignore a model-supplied verification status',
+  );
+
+  // Rebuilding a merged playbook field by field is where a promotion goes
+  // missing: an omitted field falls back to DRAFT instead of raising.
+  assert.match(
+    agentGeneration,
+    /verification_status=existing\.verification_status/,
+    'the Strands merge must carry the recorded status into the merged playbook',
+  );
+  // Reloading a recorded playbook is the other place a promotion disappears:
+  // a status the loader does not reconstruct comes back as the default draft.
+  assert.match(
+    agentStore,
+    /verification_status=_as_verification_status\(/,
+    'the Strands loader must reconstruct the recorded verification status',
+  );
+
+  // The promotion itself must be one named operation with no inverse — a
+  // demotion helper anywhere would make the one-way rule a convention.
+  assert.match(ccMerge, /def promote_to_verified\(/);
+  assert.doesNotMatch(ccMerge, /def demote|def to_draft|def unverify/);
 });
