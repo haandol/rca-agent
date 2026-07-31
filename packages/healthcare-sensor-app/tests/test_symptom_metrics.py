@@ -1,6 +1,8 @@
+import asyncio
 import json
 
 import pytest
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 
 from test_service.ports.dto.sensor import SensorReadingEntity
 from test_service.services.sensor import SensorService
@@ -147,3 +149,46 @@ async def test_sensor_service_works_without_a_metrics_collaborator() -> None:
     saved = await service.ingest([_reading()])
 
     assert len(saved) == 1
+
+
+class PoolExhaustedRepository(FakeRepository):
+    """저장이 커넥션 풀 고갈로 실패하는 저장소.
+
+    누수가 쌓여 풀이 비면 요청은 커넥션을 얻지 못하고 SQLAlchemy 가 대기 후
+    TimeoutError 를 던진다. 데모의 진입점이 증상 알람이므로, 이 실패가 증상 지표에
+    나타나는지가 사슬의 마지막 구간이다.
+    """
+
+    async def save_batch(self, readings: list[SensorReadingEntity]) -> list[SensorReadingEntity]:
+        raise SATimeoutError("QueuePool limit of size 5 overflow 10 reached, connection timed out")
+
+
+def test_pool_exhaustion_surfaces_as_the_symptom_the_entry_alarm_watches() -> None:
+    """풀 고갈이 증상 지표를 움직여야 RCA 가 시작된다.
+
+    커넥션 누수는 원인 지표(커넥션 수)를 먼저 올리고, 풀이 고갈되면 바이탈 수집이
+    실패해 증상 지표에 나타난다. 이 마지막 연결이 끊기면 장애를 주입해도 진입 알람이
+    뜨지 않아 분석이 시작되지 않는다.
+    """
+    metrics = RecordingMetrics()
+    service = SensorService(PoolExhaustedRepository(), metrics)
+
+    with pytest.raises(SATimeoutError):
+        asyncio.run(service.ingest([_reading(), _reading(90.0)]))
+
+    payload = metrics.emitted[-1]
+    # 진입 알람은 이 지표가 1 이상인 것을 본다. 시도 수와 같아야 부분 실패가 아니라
+    # 배치 전체가 유실됐음을 나타낸다.
+    assert payload[METRIC_INGEST_FAILURES] == 2
+    assert payload[METRIC_INGEST_ATTEMPTS] == 2
+    assert METRIC_INGEST_FAILURES in _metric_names(payload)
+
+
+def test_a_successful_ingest_leaves_the_entry_alarm_metric_at_zero() -> None:
+    """정상 상태에서 진입 알람이 뜨지 않아야 한다 — 그렇지 않으면 상시 발화한다."""
+    metrics = RecordingMetrics()
+    service = SensorService(FakeRepository(), metrics)
+
+    asyncio.run(service.ingest([_reading(), _reading()]))
+
+    assert metrics.emitted[-1][METRIC_INGEST_FAILURES] == 0

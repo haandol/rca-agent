@@ -36,7 +36,10 @@ class HealthResponse(BaseModel):
 
 
 class FaultRequest(BaseModel):
-    count: int = 10
+    # Default has to exceed the connection pool ceiling, or a single injection
+    # leaks without exhausting the pool and never reaches the ingest failures the
+    # entry-point alarm watches.
+    count: int = 20
 
 
 class FaultMemoryRequest(BaseModel):

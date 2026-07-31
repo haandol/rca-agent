@@ -95,6 +95,11 @@ export class HealthcareServiceStack extends cdk.Stack {
         DB_NAME: 'healthcare',
         OTEL_SERVICE_NAME: 'healthcare-sensor-app',
         DEPLOYED_REVISION: props.imageTag,
+        // Stated here rather than left to the app's defaults because the
+        // connection alarm threshold is derived from this capacity: the leak has
+        // to cross the threshold before it exhausts the pool.
+        DB_POOL_SIZE: '5',
+        DB_MAX_OVERFLOW: '10',
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
         FAULT_ERROR_RATE: '0.0',
@@ -216,6 +221,11 @@ export class HealthcareServiceStack extends cdk.Stack {
     ingestFailureAlarm.addAlarmAction(alarmAction);
     ingestFailureAlarm.addOkAction(alarmAction);
 
+    // Threshold sits between normal usage and the app's pool capacity, so a leak
+    // trips this alarm before it exhausts the pool and turns into the ingest
+    // failures the symptom alarm watches. Above the pool ceiling the leak would
+    // starve requests while this metric stayed quiet, leaving the cause-level
+    // evidence the agent is supposed to find absent from the timeline.
     const dbConnAlarm = new cloudwatch.Alarm(this, 'RdsHighConnections', {
       alarmName: `${ns}-Healthcare-RdsHighConnections`,
       metric: new cloudwatch.Metric({
@@ -227,7 +237,7 @@ export class HealthcareServiceStack extends cdk.Stack {
         statistic: 'Maximum',
         period: cdk.Duration.minutes(1),
       }),
-      threshold: 30,
+      threshold: 12,
       evaluationPeriods: 2,
       comparisonOperator:
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,

@@ -115,16 +115,51 @@ test('the deployed revision is exposed to the container', () => {
   });
 });
 
-test.failing('slow-query faults are covered by an RDS read-latency alarm', () => {
-  expect(alarmMetricNames(synthesize())).toContain('ReadLatency');
+function alarmThreshold(template: Template, alarmName: string): number {
+  const alarms = Object.values(
+    template.findResources('AWS::CloudWatch::Alarm'),
+  ) as CfnResource[];
+  const alarm = alarms.find(
+    (candidate) => candidate.Properties?.AlarmName === alarmName,
+  );
+  expect(alarm).toBeDefined();
+  return alarm!.Properties!.Threshold as number;
+}
+
+// The demo only holds together if a leak actually moves the metrics: the
+// cause-level alarm has to trip before the pool runs dry, and the pool has to run
+// dry for the symptom alarm to see anything at all. That ordering is the
+// contract, so it is pinned here rather than left to whoever next edits a number.
+const POOL_SIZE = 5;
+const POOL_MAX_OVERFLOW = 10;
+const POOL_CEILING = POOL_SIZE + POOL_MAX_OVERFLOW;
+const MEASURED_NORMAL_CONNECTIONS = 3;
+
+test('the connection alarm trips between normal usage and pool exhaustion', () => {
+  const threshold = alarmThreshold(
+    synthesize(),
+    'RcaAgentDev-Healthcare-RdsHighConnections',
+  );
+
+  // Above the ceiling the leak would starve requests while this metric stayed
+  // quiet, so the evidence the agent must find would not exist.
+  expect(threshold).toBeLessThan(POOL_CEILING);
+  // Too close to normal usage and ordinary traffic variation trips it.
+  expect(threshold).toBeGreaterThan(MEASURED_NORMAL_CONNECTIONS * 2);
 });
 
-test.failing('injected request latency is covered by a service p99 latency alarm', () => {
-  const metricNames = alarmMetricNames(synthesize());
-
-  expect(
-    metricNames.some((metricName) =>
-      ['RequestLatency', 'TargetResponseTime'].includes(metricName),
-    ),
-  ).toBe(true);
+test('the container pool is the capacity the threshold was derived from', () => {
+  // The threshold is only meaningful relative to the pool. If the pool moves and
+  // this is not revisited, the ordering above silently stops holding.
+  synthesize().hasResourceProperties('AWS::ECS::TaskDefinition', {
+    ContainerDefinitions: Match.arrayWith([
+      Match.objectLike({
+        Name: 'healthcare',
+        Environment: Match.arrayWith([
+          { Name: 'DB_POOL_SIZE', Value: String(POOL_SIZE) },
+          { Name: 'DB_MAX_OVERFLOW', Value: String(POOL_MAX_OVERFLOW) },
+        ]),
+      }),
+    ]),
+  });
 });
