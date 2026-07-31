@@ -28,6 +28,13 @@ function formatDuration(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+// Anything other than the recorded VERIFIED reads as a draft: a procedure that
+// has never run must not look proven.
+const isVerified = computed(
+  () => playbook.value?.verification_status === 'VERIFIED',
+);
+const executionSteps = computed(() => playbook.value?.execution_steps ?? []);
+
 useHead({ title: () => `Playbook ${id.slice(0, 8)}` });
 </script>
 
@@ -56,6 +63,25 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` });
       <div class="flex-1">
         <h1 class="text-xl font-bold tracking-tight">플레이북</h1>
       </div>
+      <NuxtLink
+        v-if="playbook"
+        :to="engine ? `/report/${id}?engine=${engine}` : `/report/${id}`"
+        class="btn btn-ghost btn-xs rounded-lg"
+      >
+        리포트에서 실행 승인
+      </NuxtLink>
+      <span
+        v-if="playbook"
+        class="badge badge-sm"
+        :class="isVerified ? 'badge-success' : 'badge-warning'"
+        :title="
+          isVerified
+            ? '이 절차는 실행으로 이슈를 해소하고 회고를 거쳤습니다'
+            : '실행과 회고를 거치기 전의 플레이북은 초안입니다'
+        "
+      >
+        {{ isVerified ? '검증됨' : '초안' }}
+      </span>
       <span
         v-if="playbook"
         class="badge badge-sm"
@@ -183,6 +209,64 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` });
 
     <!-- Playbook Content -->
     <template v-else-if="playbook">
+      <!-- A retrospective revision means these are not the analysis-time steps. -->
+      <NuxtLink
+        v-if="playbook.revisedByExecutionId"
+        :to="`/retrospective/${id}/${playbook.revisedByExecutionId}`"
+        class="block text-xs text-info/80 bg-info/10 hover:bg-info/15 rounded-lg px-3 py-2"
+      >
+        이전 실행의 회고가 이 절차를 교정했습니다 — 무엇이 왜 바뀌었는지 보기 →
+      </NuxtLink>
+
+      <!-- Execution steps — the basis of what the execution agent performs -->
+      <div class="bg-base-100 rounded-xl border border-base-content/5 p-5">
+        <div class="flex items-start gap-3 mb-3">
+          <div class="flex-1">
+            <div
+              class="text-[11px] font-medium text-base-content/40 uppercase tracking-wider"
+            >
+              실행 절차
+            </div>
+            <p class="text-xs text-base-content/50 mt-1">
+              승인 시 실행 에이전트가 이 순서대로 수행합니다. 되돌릴 수 없는
+              조치는 실행 계층이 거부하고 수동 조치로 남깁니다.
+            </p>
+          </div>
+        </div>
+
+        <div
+          v-if="!executionSteps.length"
+          class="text-sm text-base-content/50 bg-base-200/40 rounded-lg px-4 py-3"
+        >
+          확정된 근본원인이 없어 실행할 절차가 없습니다. 추가 조사가 필요합니다.
+        </div>
+
+        <ol v-else class="space-y-3">
+          <li
+            v-for="(step, index) in executionSteps"
+            :key="step.step_id"
+            class="border border-base-content/5 rounded-lg p-4"
+          >
+            <div class="flex items-center gap-2">
+              <span class="badge badge-xs badge-ghost font-mono">
+                {{ step.step_id }}
+              </span>
+              <span class="text-xs text-base-content/40">{{ index + 1 }}단계</span>
+            </div>
+            <div v-if="step.intent" class="text-sm mt-2">{{ step.intent }}</div>
+            <div v-if="step.action" class="text-sm mt-2 text-base-content/70">
+              {{ step.action }}
+            </div>
+            <div
+              v-if="step.success_criteria"
+              class="text-xs mt-2 text-success/80 bg-success/5 rounded px-2 py-1.5"
+            >
+              성공 판정: {{ step.success_criteria }}
+            </div>
+          </li>
+        </ol>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <!-- Left column -->
         <div class="space-y-4">

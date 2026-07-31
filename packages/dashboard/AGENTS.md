@@ -14,7 +14,7 @@ RCA 대시보드는 DynamoDB 세션 상태와 S3 보고서를 조회하는 로�
 
 - **세션 목록 조회**: DynamoDB에서 RCA 세션 전체를 스캔하여 상태별 통계 및 목록 표시
 - **보고서 조회**: S3에 저장된 Markdown 보고서를 렌더링
-- **플레이북 조회**: DynamoDB에서 플레이북 데이터를 조회하여 렌더링
+- **플레이북 조회**: DynamoDB에서 플레이북 데이터를 조회하여 렌더링. 실행 절차(`step_id`·의도·작업·성공 판정), 초안/검증됨 상태, 회고 개정 여부를 함께 보여준다. 회고 개정본이 있으면 그것이 렌더 대상이다 — 다음 실행의 근거가 최신 절차이기 때문이다
 - **트레이스 그래프**: DynamoDB 실행 트레이스를 Vue Flow 기반 DAG로 시각화 (가설 노드 + 스팬 노드)
 - **파이프라인 상태 그래프**: Vue Flow 기반 상태 전이 그래프로 현재 파이프라인 진행 상황 표시
 - **증거 상세 조회**: 가설별 S3에 저장된 full evidence를 on-demand로 조회
@@ -50,7 +50,7 @@ packages/dashboard/
 │   ├── pages/
 │   │   ├── index.vue              # 세션 목록 + 통계 카드 + 실행 상태 컬럼
 │   │   ├── report/[id].vue        # 보고서 상세 + 실행 절차 + 승인 게이트
-│   │   ├── playbook/[id].vue      # 플레이북 상세
+│   │   ├── playbook/[id].vue      # 플레이북 상세 + 실행 절차 + 초안/검증됨
 │   │   ├── retrospective/[rcaId]/[executionId].vue  # 회고 4단 비교
 │   │   └── trace/[id].vue         # 트레이스 그래프 (Vue Flow DAG)
 │   ├── layouts/
