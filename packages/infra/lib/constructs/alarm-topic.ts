@@ -27,12 +27,33 @@ export class AlarmTopic extends Construct {
       new snsSubscriptions.EmailSubscription(props.notificationEmail),
     );
 
+    // Allowing the CloudWatch service principal alone would let an alarm in any
+    // account publish here, and one alarm starts a full run of both analysis
+    // engines. Alarm ingestion is unauthenticated, so requiring that the request
+    // came from this account and from an alarm this deployment owns is the only
+    // boundary between an outside alarm and unbounded model spend.
+    const stack = cdk.Stack.of(this);
     topic.addToResourcePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         principals: [new iam.ServicePrincipal('cloudwatch.amazonaws.com')],
         actions: ['sns:Publish'],
         resources: [topic.topicArn],
+        conditions: {
+          StringEquals: { 'aws:SourceAccount': stack.account },
+          ArnLike: {
+            'aws:SourceArn': stack.formatArn({
+              service: 'cloudwatch',
+              resource: 'alarm',
+              // Alarms live in the same account but in sibling stacks, so the
+              // grant is scoped by this deployment's alarm-name prefix rather
+              // than by a list of alarm ARNs that would couple this construct to
+              // every stack that adds one.
+              resourceName: `${ns}-*`,
+              arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+            }),
+          },
+        },
       }),
     );
 
