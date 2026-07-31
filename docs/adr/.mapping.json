@@ -22,13 +22,13 @@
         },
         {
           "path": "docs/adr/agent/0007-rca-report-generation.md",
-          "status": "Accepted (2026-07-30)",
+          "status": "Accepted (2026-07-31)",
           "summary": "플레이북을 포함한 단일 리포트를 5 Whys와 함께 생성하고 실행 결과는 담지 않는다."
         },
         {
           "path": "docs/adr/agent/0008-playbook-generation.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "플레이북을 실행 근거가 되는 구조화 절차로 만들고 유사도 검색으로 보강한다."
+          "status": "Accepted (2026-07-31)",
+          "summary": "플레이북을 실행 근거가 되는 구조화 절차로 만들고 유사도 검색으로 보강하며, 분석은 초안만 쓰고 병합은 획득한 검증 상태를 낮추지 않는다."
         },
         {
           "path": "docs/adr/agent/0009-notification.md",
@@ -72,8 +72,8 @@
         },
         {
           "path": "docs/adr/agent/0018-playbook-retrospective.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "해결된 실행 직후 자동 회고가 실행 증거로 플레이북 절차를 교정한다."
+          "status": "Accepted (2026-07-31)",
+          "summary": "해결된 실행 직후 자동 회고가 실행 증거로 플레이북 절차를 교정하고, 초안에서 검증됨으로의 단방향 승격을 서버가 수행한다."
         }
       ]
     },
@@ -134,8 +134,8 @@
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "파이프라인 스팬·가설 상태·플레이북 실행 시도를 세션과 같은 파티션의 실행 trace로 기록한다."
+          "status": "Accepted (2026-07-31)",
+          "summary": "파이프라인 스팬·가설 상태·플레이북 실행 시도와 회고 개정본을 세션과 같은 파티션의 실행 trace로 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",
