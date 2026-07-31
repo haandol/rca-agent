@@ -251,7 +251,9 @@ useHead({ title: () => `Playbook ${id.slice(0, 8)}` });
               <span class="badge badge-xs badge-ghost font-mono">
                 {{ step.step_id }}
               </span>
-              <span class="text-xs text-base-content/40">{{ index + 1 }}단계</span>
+              <span class="text-xs text-base-content/40"
+                >{{ index + 1 }}단계</span
+              >
             </div>
             <div v-if="step.intent" class="text-sm mt-2">{{ step.intent }}</div>
             <div v-if="step.action" class="text-sm mt-2 text-base-content/70">

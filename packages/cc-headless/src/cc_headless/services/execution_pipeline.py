@@ -138,6 +138,15 @@ class ExecutionOrchestrator:
                 execution_id=execution_id,
                 cancel_checker=_should_cancel,
             )
+            # 에이전트가 실패를 보고하지 않고 아무것도 하지 않은 채 성공 종료할 수 있다.
+            # 그 경우 기록된 관측이 없으므로 판정은 미해결로 떨어지지만, 왜 수행하지
+            # 않았는지는 이 응답에만 남아 있다 — 남기지 않으면 사후에 읽을 방법이 없다.
+            log.info(
+                "execution_agent_returned",
+                succeeded=cc_result.success,
+                cancelled=cc_result.cancelled,
+                detail=cc_result.result[:2000],
+            )
 
             evidence = assemble_evidence(
                 workspace.read_records(),

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from structlog.testing import capture_logs
 
 from cc_headless.ports.dto.models import CcResult
 from cc_headless.ports.interfaces.execution_store import (
@@ -395,6 +396,25 @@ def test_a_failed_retrospective_leaves_the_playbook_a_draft():
 
     container.execution_store.save_playbook_revision.assert_not_called()
     container.playbook_store.save_to_s3_vectors.assert_not_called()
+
+
+def test_an_agent_that_does_nothing_still_leaves_its_response_to_read():
+    """실측에서 에이전트가 절차를 하나도 시도하지 않고 성공 종료했다.
+
+    기록된 관측이 없으므로 판정은 미해결로 떨어지지만, 왜 수행하지 않았는지는 최종
+    응답에만 남아 있다. 남기지 않으면 원인을 사후에 읽을 방법이 없다.
+    """
+    runner = RecordingRunner(records=[])
+    container = _container(runner)
+
+    with capture_logs() as logs:
+        ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    returned = [entry for entry in logs if entry.get("event") == "execution_agent_returned"]
+
+    assert returned, "the agent's final response must be logged even on a clean exit"
+    assert returned[0]["detail"] == "done"
+    assert _states(container)[-1] is ExecutionState.UNRESOLVED
 
 
 def test_an_unresolved_execution_never_promotes_the_playbook():
