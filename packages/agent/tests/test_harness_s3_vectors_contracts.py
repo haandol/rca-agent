@@ -114,6 +114,68 @@ def test_query_explicitly_requests_metadata(
 
 
 @pytest.mark.parametrize(_STORE_CASE_FIELDS, _STORE_CASES)
+def test_query_explicitly_requests_distance(
+    store_factory,
+    module,
+    search,
+    index_setting,  # noqa: ARG001
+    top_k_setting,  # noqa: ARG001
+    threshold_setting,  # noqa: ARG001
+    key_field,  # noqa: ARG001
+    embedding,
+):
+    """거리를 요청하지 않으면 응답에 그 필드가 없어 모든 후보가 탈락한다.
+
+    유사도는 거리에서만 나오고, 없는 거리를 최대값으로 읽으면 유사도가 0이 된다.
+    그러면 임계값이 무엇이든 통과하는 후보가 없어 검색이 오류 없이 빈 결과만
+    돌려주고, 보강 경로 전체가 조용히 죽는다.
+    """
+    client = MagicMock()
+    client.query_vectors.return_value = {"vectors": []}
+    store = store_factory(client, embedding)
+
+    with patch(f"{module}.S3_VECTOR_BUCKET_NAME", "vector-bucket"):
+        search(store, "database saturation")
+
+    assert client.query_vectors.call_args.kwargs["returnDistance"] is True
+
+
+@pytest.mark.parametrize(_STORE_CASE_FIELDS, _STORE_CASES)
+def test_missing_distance_drops_the_hit_instead_of_ranking_it(
+    store_factory,
+    module,
+    search,
+    index_setting,  # noqa: ARG001
+    top_k_setting,  # noqa: ARG001
+    threshold_setting,
+    key_field,  # noqa: ARG001
+    embedding,
+):
+    """거리 없는 결과는 후보에서 빠진다 — 유사도를 추측해 순위에 넣지 않는다."""
+    client = MagicMock()
+    client.query_vectors.return_value = {
+        "vectors": [
+            {
+                "key": "no-distance",
+                "metadata": {
+                    "incident_summary": "hit without distance",
+                    "failure_type": "hit without distance",
+                },
+            }
+        ]
+    }
+    store = store_factory(client, embedding)
+
+    with ExitStack() as patches:
+        patches.enter_context(patch(f"{module}.S3_VECTOR_BUCKET_NAME", "vector-bucket"))
+        if threshold_setting:
+            patches.enter_context(patch(f"{module}.{threshold_setting}", 0.7))
+        matches = search(store, "database saturation")
+
+    assert matches == []
+
+
+@pytest.mark.parametrize(_STORE_CASE_FIELDS, _STORE_CASES)
 def test_cosine_distance_is_converted_to_similarity(
     store_factory,
     module,

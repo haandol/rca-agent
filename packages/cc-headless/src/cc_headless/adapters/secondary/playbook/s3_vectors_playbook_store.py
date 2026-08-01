@@ -71,6 +71,10 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                 queryVector={"float32": query_vector},
                 topK=PLAYBOOK_TOP_K,
                 returnMetadata=True,
+                # 거리를 요청하지 않으면 응답에 그 필드가 없다. 없는 값을 최대 거리로
+                # 읽으면 모든 후보의 유사도가 0이 되어 임계값에서 전부 탈락하고,
+                # 검색은 오류 없이 빈 결과만 돌려준다.
+                returnDistance=True,
             )
         except Exception:
             logger.error("playbook_search_failed", traceback=traceback.format_exc())

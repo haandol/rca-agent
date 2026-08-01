@@ -181,6 +181,30 @@ class TestSearchSimilar:
         assert [match.playbook_id for match in matches] == ["pb-near"]
 
     @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
+    def test_query_explicitly_requests_distance(self):
+        """거리를 요청하지 않으면 응답에 그 필드가 없어 모든 후보가 탈락한다.
+
+        유사도는 거리에서만 나온다. 없는 거리를 최대값으로 읽으면 유사도가 0이 되어
+        임계값이 무엇이든 통과하는 후보가 없고, 검색은 오류 없이 빈 결과만 돌려준다.
+        """
+        s3v = MagicMock()
+        s3v.query_vectors.return_value = {"vectors": []}
+
+        self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
+
+        assert s3v.query_vectors.call_args.kwargs["returnDistance"] is True
+
+    @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
+    def test_a_hit_without_a_distance_is_dropped(self):
+        s3v = MagicMock()
+        s3v.query_vectors.return_value = {"vectors": [{"key": "pb-1", "metadata": {"rca_id": "rca-1"}}]}
+
+        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
+
+        # 유사도를 추측해 순위에 넣지 않는다 — 무관한 플레이북에 병합될 수 있다.
+        assert matches == []
+
+    @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
     def test_hit_reports_whether_the_procedure_was_proven(self):
         s3v = MagicMock()
         s3v.query_vectors.return_value = {
