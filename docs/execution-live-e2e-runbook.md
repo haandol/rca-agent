@@ -51,6 +51,20 @@ pnpm --filter infra run deploy:service -- execution    # 실행 워커 (이미�
 >
 > CDK 는 `cdk.out` 을 잠그므로 **두 배포를 동시에 돌릴 수 없다.** 순차로 실행한다.
 >
+> **잔여 프로세스가 잠금을 붙들 수 있다.** CDK 프로세스가 스택 갱신을 마친 뒤에도
+> 종료되지 않는 경우가 있고(실측에서 1시간 28분), 그 상태에서 다음 배포는 이미지
+> 푸시까지 성공하고 스택 갱신만 `Other CLIs are currently reading from cdk.out` 으로
+> 실패한다 — 배포가 절반만 반영된 것처럼 보인다.
+>
+> ```bash
+> aws cloudformation describe-stacks --stack-name <스택> --query 'Stacks[0].StackStatus'
+> ps -o pid,etime,command -p <오류에 표시된 PID>
+> ```
+>
+> 스택이 `UPDATE_COMPLETE` 인데 프로세스가 남아 있으면 잔여 프로세스다. 종료한 뒤
+> `packages/infra/cdk.out/read.<pid>.*.lock` 을 제거하고, 이미지는 이미 푸시됐으므로
+> `--skip-build` 로 스택만 재배포한다.
+>
 > `execution` 배포는 이미지와 **태스크 역할 정책을 함께** 갱신한다. IAM을 바꿨다면
 > 이 배포가 반영 경로다.
 
