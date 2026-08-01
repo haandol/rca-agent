@@ -17,8 +17,8 @@
         },
         {
           "path": "docs/adr/agent/0006-termination-conditions.md",
-          "status": "Accepted (2026-04-21)",
-          "summary": "신뢰도·시간·깊이·반복 한도와 게이트 조기 종료로 RCA 탐색 종료를 결정론적으로 판단한다."
+          "status": "Accepted (2026-08-01)",
+          "summary": "신뢰도·시간·깊이·반복 한도와 게이트 조기 종료로 RCA 탐색 종료를 결정론적으로 판단하고, 시간 예산은 예산 소진이 부분 결과를 남기는지에 따라 엔진별로 다르게 둔다."
         },
         {
           "path": "docs/adr/agent/0007-rca-report-generation.md",
