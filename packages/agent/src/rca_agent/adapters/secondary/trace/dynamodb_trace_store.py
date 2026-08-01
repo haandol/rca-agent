@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -411,11 +412,17 @@ class TraceStore:
 
     @staticmethod
     def get_playbook_metadata(rca_id: str, playbook_id: str, *, dynamodb_client=None) -> dict | None:
-        """Return the recorded playbook fields for ``playbook_id`` under ``rca_id``.
+        """Return the current playbook fields for ``playbook_id`` under ``rca_id``.
 
-        The playbook span carries the full field set as its metadata, so no
-        secondary index is needed. Returns None when the record is gone (TTL) or
-        the query fails — callers must treat the detail as unavailable, not empty.
+        A retrospective revision wins over what analysis first recorded. Both live
+        in the same partition under the same playbook id, and the revision is the
+        procedure the next execution will run — reading the analysis-time span
+        instead would make an enrichment overwrite corrected arguments and step
+        order with the values that already failed once.
+
+        Returns None when neither record is readable (TTL, query failure) — callers
+        must treat the detail as unavailable, not empty, because merging into a
+        playbook whose procedure we cannot see rolls back what it accumulated.
         """
         if not DYNAMODB_TABLE_NAME or dynamodb_client is None or not rca_id or not playbook_id:
             return None
@@ -424,17 +431,22 @@ class TraceStore:
             result = dynamodb_client.query(
                 TableName=DYNAMODB_TABLE_NAME,
                 KeyConditionExpression="PK = :pk",
-                FilterExpression="span_type = :span_type",
-                ExpressionAttributeValues={
-                    ":pk": _pk(rca_id),
-                    ":span_type": {"S": SpanType.PLAYBOOK.value},
-                },
+                ExpressionAttributeValues={":pk": _pk(rca_id)},
             )
         except ClientError:
-            logger.exception("Failed to query playbook span for %s", rca_id)
+            logger.exception("Failed to query playbook records for %s", rca_id)
             return None
 
-        for item in result.get("Items", []):
+        items = result.get("Items", [])
+
+        revision = _playbook_revision(items, playbook_id)
+        if revision is not None:
+            logger.info("Loaded playbook %s from its retrospective revision", playbook_id)
+            return revision
+
+        for item in items:
+            if item.get("span_type", {}).get("S") != SpanType.PLAYBOOK.value:
+                continue
             metadata = _deserialize_metadata(item.get("metadata", {}).get("M"))
             if metadata and metadata.get("playbook_id") == playbook_id:
                 return metadata
@@ -669,3 +681,32 @@ def _deserialize_metadata(meta_map: dict | None) -> dict | None:
     if not meta_map:
         return None
     return {k: _deserialize_metadata_value(v) for k, v in meta_map.items()}
+
+
+def _playbook_revision(items: list[dict], playbook_id: str) -> dict | None:
+    """Return the retrospective revision of ``playbook_id``, if one was recorded.
+
+    The revision is written by the execution path, which stores the playbook as a
+    JSON document rather than as span metadata. It carries no engine of its own in
+    the match: a revision under this partition revised this playbook regardless of
+    which analysis engine first wrote it, because one execution path serves both.
+
+    An unparseable revision returns None so the caller falls back to the recorded
+    span. Refusing the whole load would drop a playbook that is still mergeable.
+    """
+    for item in items:
+        if not item.get("SK", {}).get("S", "").endswith("#PLAYBOOK_REVISION"):
+            continue
+        if item.get("playbook_id", {}).get("S") != playbook_id:
+            continue
+        raw = item.get("playbook", {}).get("S")
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.exception("Playbook revision for %s is unreadable, falling back to the span", playbook_id)
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None

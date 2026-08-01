@@ -139,6 +139,10 @@ class PlaybookMatch(BaseModel):
     symptom_pattern: str = ""
     tags: list[str] = Field(default_factory=list)
     rca_id: str = ""
+    # A hit has to say whether its procedure was proven by an execution without a
+    # second lookup. Absent on records written before the field existed, and an
+    # unproven procedure must not read as verified, so the default is a draft.
+    verification_status: PlaybookVerificationStatus = PlaybookVerificationStatus.DRAFT
 
 
 class ReportMatch(BaseModel):

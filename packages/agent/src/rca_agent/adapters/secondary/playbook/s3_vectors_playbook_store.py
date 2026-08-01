@@ -144,6 +144,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                     symptom_pattern=metadata.get("symptom_pattern", ""),
                     tags=_parse_tags(metadata.get("tags")),
                     rca_id=metadata.get("rca_id", ""),
+                    verification_status=_as_verification_status(metadata.get("verification_status")),
                 )
             )
         return matches
@@ -208,6 +209,11 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             "symptom_pattern": _truncate(playbook.symptom_pattern),
             "tags": ",".join(playbook.tags)[:256],
             "rca_id": playbook.rca_id,
+            # Whether a procedure was proven by an execution is a discriminator, not
+            # detail: a searcher has to see it without loading the record behind the
+            # hit, and the promotion has to be visible on both the revision and the
+            # index or it only shows on one path.
+            "verification_status": playbook.verification_status.value,
         }
         try:
             self._s3v.put_vectors(

@@ -1,3 +1,4 @@
+import json
 import time
 from time import perf_counter
 from unittest.mock import MagicMock, patch
@@ -561,6 +562,131 @@ class TestPlaybookStoreLoadDetail:
 
         assert self._store(ddb).load_detail(_make_hit(rca_id="")) is None
         ddb.query.assert_not_called()
+
+
+class TestLoadDetailPrefersTheRetrospectiveRevision:
+    """보강 대상은 회고 개정본이다.
+
+    분석 원본을 보강 대상으로 삼으면 병합이 모든 필드를 보존해도 결과가 교정 이전으로
+    퇴행한다. 검색과 병합이 정상 동작하므로 실패로 드러나지 않아, 이 우선순위를
+    테스트가 고정한다.
+    """
+
+    def _store(self, dynamodb_client) -> S3VectorsPlaybookStore:
+        return S3VectorsPlaybookStore(dynamodb_client=dynamodb_client)
+
+    def _span_item(self) -> dict:
+        return {
+            "SK": {"S": "strands#SPAN#s-1"},
+            "span_type": {"S": "PLAYBOOK"},
+            "metadata": {
+                "M": {
+                    "playbook_id": {"S": "p-1"},
+                    "failure_type": {"S": "DB connection leak"},
+                    "temporary_mitigation": {"S": "원본 조치"},
+                    "verification_status": {"S": "DRAFT"},
+                    "execution_steps": {
+                        "L": [
+                            {
+                                "M": {
+                                    "step_id": {"S": "step-1"},
+                                    "intent": {"S": "커넥션 회수"},
+                                    "action": {"S": "잘못된 인자로 서비스를 갱신한다"},
+                                    "success_criteria": {"S": "커넥션 수 감소"},
+                                }
+                            }
+                        ]
+                    },
+                }
+            },
+        }
+
+    def _revision_item(self) -> dict:
+        revised = {
+            "playbook_id": "p-1",
+            "failure_type": "DB connection leak",
+            "temporary_mitigation": "교정된 조치",
+            "verification_status": "VERIFIED",
+            "execution_steps": [
+                {
+                    "step_id": "step-1",
+                    "intent": "커넥션 회수",
+                    "action": "교정된 인자로 서비스를 갱신한다",
+                    "success_criteria": "커넥션 수 감소",
+                },
+                {
+                    "step_id": "step-2",
+                    "intent": "해소 확인",
+                    "action": "커넥션 메트릭을 조회한다",
+                    "success_criteria": "임계치 미만 유지",
+                },
+            ],
+        }
+        return {
+            "SK": {"S": "cc-headless#PLAYBOOK_REVISION"},
+            "playbook_id": {"S": "p-1"},
+            "playbook": {"S": json.dumps(revised, ensure_ascii=False)},
+            "revised_by_execution_id": {"S": "exec-9"},
+        }
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_revision_wins_over_the_analysis_span(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [self._span_item(), self._revision_item()]}
+
+        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
+
+        assert detail is not None
+        assert detail.temporary_mitigation == "교정된 조치"
+        # 회고가 붙인 절차와 교정한 인자가 보강의 출발점이어야 한다.
+        assert [step.step_id for step in detail.execution_steps] == ["step-1", "step-2"]
+        assert detail.execution_steps[0].action == "교정된 인자로 서비스를 갱신한다"
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_promotion_survives_the_reload(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [self._span_item(), self._revision_item()]}
+
+        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
+
+        assert detail is not None
+        assert detail.verification_status is PlaybookVerificationStatus.VERIFIED
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_falls_back_to_the_span_without_a_revision(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [self._span_item()]}
+
+        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
+
+        assert detail is not None
+        assert detail.temporary_mitigation == "원본 조치"
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_unreadable_revision_falls_back_rather_than_dropping_the_playbook(self):
+        ddb = MagicMock()
+        broken = self._revision_item()
+        broken["playbook"] = {"S": "{not json"}
+        ddb.query.return_value = {"Items": [self._span_item(), broken]}
+
+        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
+
+        # 개정본을 읽지 못한 것이 병합 포기 사유가 되면, 아직 병합 가능한 플레이북이
+        # 버려지고 같은 유형이 새 식별자로 다시 생성된다.
+        assert detail is not None
+        assert detail.temporary_mitigation == "원본 조치"
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_ignores_a_revision_of_a_different_playbook(self):
+        ddb = MagicMock()
+        other = self._revision_item()
+        other["playbook_id"] = {"S": "p-other"}
+        ddb.query.return_value = {"Items": [self._span_item(), other]}
+
+        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
+
+        assert detail is not None
+        assert detail.temporary_mitigation == "원본 조치"
 
 
 class TestExecutionStepContract:
