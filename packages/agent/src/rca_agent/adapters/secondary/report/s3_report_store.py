@@ -10,7 +10,7 @@ from rca_agent.config.settings import (
     S3_VECTOR_BUCKET_NAME,
     S3_VECTOR_REPORT_INDEX,
 )
-from rca_agent.ports.dto.models import RcaReport, ReportMatch, ScopingResult
+from rca_agent.ports.dto.models import Playbook, RcaReport, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.report_store import ReportStorePort
 from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
@@ -40,6 +40,7 @@ class S3ReportStore(ReportStorePort):
         self,
         report: RcaReport,
         *,
+        playbook: Playbook,
         claim_token: str | None = None,
         attempt: int | None = None,
     ) -> str:
@@ -51,7 +52,15 @@ class S3ReportStore(ReportStorePort):
             key = f"reports/{ENGINE}/{report.rca_id}/{attempt_segment}/report.md"
         else:
             key = f"reports/{ENGINE}/{report.rca_id}.md"
-        body = _render_markdown(report)
+
+        body = _render_markdown(report, playbook)
+        # 서술과 구조가 어긋난 리포트는 저장하지 않는다. 사람은 서술을 읽고 승인하는데
+        # 실행은 구조를 따라가므로, 둘이 다르면 승인 게이트가 형식만 남는다.
+        mismatch = _step_mismatch(body, playbook)
+        if mismatch:
+            logger.error("Refusing to save report %s: %s", report.rca_id, mismatch)
+            return ""
+
         try:
             self._s3.put_object(Bucket=S3_REPORT_BUCKET, Key=key, Body=body, ContentType="text/markdown")
             logger.info("Report saved to s3://%s/%s", S3_REPORT_BUCKET, key)
@@ -151,7 +160,85 @@ class S3ReportStore(ReportStorePort):
             return False
 
 
-def _render_markdown(report: RcaReport) -> str:
+_PLAYBOOK_SECTION = "## 대응 플레이북"
+
+
+def _render_playbook_section(playbook: Playbook) -> list[str]:
+    """Render the procedure a person reads before approving it.
+
+    A draft label is fixed into the body because analysis has never run any of
+    these steps. The status shown on the approval screen is the playbook's current
+    value, not this label — a prior retrospective may have promoted the procedure
+    since, and the body is fixed at analysis time.
+    """
+    lines = [_PLAYBOOK_SECTION, ""]
+    if not playbook.execution_steps:
+        lines.extend(
+            [
+                "확정된 근본 원인이 없어 실행 절차를 만들지 않았다. 추측 절차가 승인 버튼 뒤에 "
+                "놓이면 사람이 검증된 절차로 오인하기 때문이다. 이 리포트의 조치 항목은 사람이 "
+                "판단해 수행할 권고이며 실행 대상이 아니다.",
+                "",
+            ]
+        )
+        return lines
+
+    lines.extend(
+        [
+            "이 플레이북은 **초안(DRAFT)**이며 아직 실행으로 검증되지 않았다. 실행과 회고를 "
+            "거친 뒤에야 검증된 절차가 된다.",
+            "",
+            "각 절차의 작업은 자연어다. 대상 리소스 식별자와 리전은 실행 시점의 알람 "
+            "컨텍스트에서 결정된다.",
+            "",
+        ]
+    )
+    for index, step in enumerate(playbook.execution_steps, start=1):
+        lines.append(f"### {index}. {step.step_id}")
+        lines.append("")
+        lines.append(f"- **의도**: {step.intent or 'N/A'}")
+        lines.append(f"- **수행할 작업**: {step.action}")
+        lines.append(f"- **성공 판정 기준**: {step.success_criteria}")
+        lines.append("")
+
+    if playbook.permanent_remediation:
+        lines.extend(
+            [
+                "되돌릴 수 없는 조치(삭제·종료·자격 증명 회수)는 위 절차에 담기지 않는다. "
+                "실행 계층이 거부하므로 그런 조치는 영구 조치 권고로만 남는다.",
+                "",
+            ]
+        )
+    return lines
+
+
+def _step_mismatch(body: str, playbook: Playbook) -> str:
+    """Return why the narrative and the structure disagree, or an empty string.
+
+    Checks identifiers and their order, not prose: the narrative is free to
+    describe a step differently, but it must describe the same steps in the same
+    sequence the execution agent will follow.
+    """
+    step_ids = [step.step_id for step in playbook.execution_steps]
+    if not step_ids:
+        return ""
+
+    section = body.split(_PLAYBOOK_SECTION, 1)
+    if len(section) == 1:
+        return "report has no playbook section to approve"
+    rendered = section[1]
+
+    missing = [step_id for step_id in step_ids if step_id not in rendered]
+    if missing:
+        return f"playbook steps missing from the report narrative: {', '.join(missing)}"
+
+    positions = [rendered.index(step_id) for step_id in step_ids]
+    if positions != sorted(positions):
+        return "playbook steps appear in a different order in the report narrative"
+    return ""
+
+
+def _render_markdown(report: RcaReport, playbook: Playbook) -> str:
     confirmed_label = "Confirmed" if report.root_cause_confirmed else "Unconfirmed (most likely candidate)"
     lines = [
         f"# RCA Report: {report.rca_id}",
@@ -202,6 +289,7 @@ def _render_markdown(report: RcaReport) -> str:
         lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
     if report.permanent_remediation:
         lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
+    lines.extend(_render_playbook_section(playbook))
     if report.action_items:
         lines.append("## Action Items")
         for item in report.action_items:

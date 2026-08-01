@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS, S3_REPORT_BUCKET
+from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS
 from rca_agent.ports.dto.models import (
     Hypothesis,
     RcaReport,
@@ -141,96 +141,3 @@ def run_report_generation(
         five_whys=output.five_whys,
         rejected_hypotheses=rejected_descriptions,
     )
-
-
-def save_report_to_s3(report: RcaReport, *, s3_client=None) -> str:
-    if not S3_REPORT_BUCKET or s3_client is None:
-        logger.info("S3 report bucket not configured, skipping upload")
-        return ""
-
-    key = f"reports/{report.rca_id}.md"
-    body = _render_markdown(report)
-
-    try:
-        s3_client.put_object(Bucket=S3_REPORT_BUCKET, Key=key, Body=body, ContentType="text/markdown")
-        logger.info("Report saved to s3://%s/%s", S3_REPORT_BUCKET, key)
-        return key
-    except Exception:
-        logger.exception("Failed to save report to S3")
-        return ""
-
-
-def _render_markdown(report: RcaReport) -> str:
-    confirmed_label = "Confirmed" if report.root_cause_confirmed else "Unconfirmed (most likely candidate)"
-    lines = [
-        f"# RCA Report: {report.rca_id}",
-        "",
-        "## Incident Summary",
-        report.incident_summary,
-        "",
-        f"- **Severity**: {report.severity}",
-    ]
-    if report.detection_method:
-        lines.append(f"- **Detection**: {report.detection_method}")
-    lines.append("")
-
-    if report.impact_summary:
-        lines.extend(["## Impact Assessment", report.impact_summary, ""])
-
-    lines.extend(
-        [
-            "## Root Cause",
-            f"**Status**: {confirmed_label}",
-            f"**Confidence**: {report.confidence_score:.2f}",
-            "",
-            report.root_cause,
-            "",
-        ]
-    )
-
-    if report.five_whys:
-        lines.append("## 5 Whys")
-        for step in report.five_whys:
-            lines.append(f"- {step}")
-        lines.append("")
-
-    if report.hypothesis_path:
-        lines.append("## Hypothesis Path")
-        for p in report.hypothesis_path:
-            lines.append(f"- {p}")
-        lines.append("")
-
-    if report.evidence_list:
-        lines.append("## Evidence")
-        for e in report.evidence_list:
-            lines.append(f"- {e}")
-        lines.append("")
-
-    if report.timeline:
-        lines.append("## Timeline")
-        for t in report.timeline:
-            lines.append(f"- {t}")
-        lines.append("")
-
-    if report.temporary_mitigation:
-        lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
-
-    if report.permanent_remediation:
-        lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
-
-    if report.action_items:
-        lines.append("## Action Items")
-        for item in report.action_items:
-            lines.append(f"- {item}")
-        lines.append("")
-
-    if report.lessons_learned:
-        lines.extend(["## Lessons Learned", report.lessons_learned, ""])
-
-    if report.rejected_hypotheses:
-        lines.append("## Rejected Hypotheses")
-        for r in report.rejected_hypotheses:
-            lines.append(f"- {r}")
-        lines.append("")
-
-    return "\n".join(lines)

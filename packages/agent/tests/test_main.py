@@ -265,10 +265,11 @@ class TestProcessAlarmFullPipeline:
         assert isinstance(completed.kwargs["completion_notification"], NotificationMessage)
         assert completed.kwargs["report_s3_key"] == "reports/rca-1.md"
         assert completed.kwargs["claim_token"] == "claim-1"
-        assert container.report_store.save.call_args.kwargs == {
-            "claim_token": "claim-1",
-            "attempt": 1,
-        }
+        saved = container.report_store.save.call_args.kwargs
+        assert saved["claim_token"] == "claim-1"
+        assert saved["attempt"] == 1
+        # 리포트는 플레이북을 포함한 하나의 산출물이므로 절차 없이 저장되지 않는다.
+        assert saved["playbook"] is not None
         container.session_store.mark_completion_notified.assert_not_called()
 
     def test_early_exit_on_no_hypotheses(self):

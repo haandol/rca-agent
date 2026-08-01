@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from rca_agent.ports.dto.models import RcaReport, ReportMatch, ScopingResult
+from rca_agent.ports.dto.models import Playbook, RcaReport, ReportMatch, ScopingResult
 
 
 class ReportStorePort(ABC):
@@ -11,9 +11,16 @@ class ReportStorePort(ABC):
         self,
         report: RcaReport,
         *,
+        playbook: Playbook,
         claim_token: str | None = None,
         attempt: int | None = None,
-    ) -> str: ...
+    ) -> str:
+        """Persist the report with its playbook as one artifact.
+
+        The playbook is required, not optional: a report a person approves has to
+        show the procedure that will run. Rendering the narrative without it would
+        put the approval button behind a document that omits what gets executed.
+        """
 
     @abstractmethod
     def search_similar(self, query_text: str) -> list[ReportMatch]:

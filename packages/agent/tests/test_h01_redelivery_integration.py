@@ -78,7 +78,7 @@ def test_real_store_redelivery_reclaims_failed_session_and_completes(monkeypatch
 
     session_store = DynamoDbSessionStore(ddb)
     report_store = MagicMock()
-    report_store.save.side_effect = lambda _report, *, claim_token, attempt: (
+    report_store.save.side_effect = lambda _report, *, playbook, claim_token, attempt: (
         f"reports/strands/attempt-{attempt}-{claim_token}/report.md"
     )
     report_store.search_similar.return_value = []

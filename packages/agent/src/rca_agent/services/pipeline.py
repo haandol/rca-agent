@@ -1068,18 +1068,21 @@ class PipelineOrchestrator:
         logger.info("RCA report generated: %s", rca_report.rca_id)
 
         trace.check_cancelled()
-        report_s3_key = c.report_store.save(
-            rca_report,
-            claim_token=claim_token,
-            attempt=attempt,
-        )
-        trace.check_cancelled()
-
+        # 플레이북이 리포트의 한 섹션이므로 리포트보다 먼저 만든다. 순서가 반대면
+        # 리포트는 자신이 담아야 할 절차를 모르는 상태로 확정된다.
         playbook = self._run_playbook(
             rca_report,
             scoping_result,
             trace,
             claim_token=claim_token,
+        )
+        trace.check_cancelled()
+
+        report_s3_key = c.report_store.save(
+            rca_report,
+            playbook=playbook,
+            claim_token=claim_token,
+            attempt=attempt,
         )
 
         with trace.span(
