@@ -73,5 +73,6 @@ pnpm nx affected -t test
 | [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [RCA에서 플레이북 실행까지](./docs/rca-to-remediation-flow.md) | 분석 → 리포트 → 승인 → 실행 → 해결 판정 → 회고로 이어지는 닫힌 루프 전체 흐름 |
+| [루프 현황 점검](./docs/rca-remediation-loop-audit-2026-08-01.md) | 의도한 설계와 코드의 항목별 대조, 남은 갭 2건과 수정 방향 |
 | [RCA 흐름 점검 High 발견사항](./docs/rca-remediation-high-findings.md) | 전체 흐름 점검에서 확인된 High 문제, 상태, 완료 조건, 새 세션 인계 절차 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |
