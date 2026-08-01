@@ -4,6 +4,13 @@
 - 기준 커밋: `1adef24` (브랜치 `fix/close-the-retrospective-loop`, main 미머지)
 - 목적: **회고가 교정한 절차가 다음 분석의 보강 대상이 되는가**를 라이브로 확인한다
 
+> **실측 완료 (2026-08-01, `148f934`).** 세 관문 모두 통과했고 결과는
+> [루프 현황 점검 §7](./rca-remediation-loop-audit-2026-08-01.md)이 보유한다. 검색을
+> 죽이고 있던 세 번째 결함(`returnDistance` 누락)이 이 실측에서 드러나 함께 고쳤다.
+>
+> 아래 절차는 **다음 회차를 돌릴 때 그대로 재사용**한다. 남은 라이브 확인 대상은 CC
+> 경로(갭 B)이며, CC의 CLI 30분 한도가 선결 조건이다.
+
 ## 왜 이 문서가 있는가
 
 코드 수정은 끝났고 오프라인 계약 테스트도 전부 통과했다(Strands 522, CC 536). 하지만
@@ -117,7 +124,11 @@ done
 
 ---
 
-## 2. 인덱스 처리 — 판단이 필요한 지점
+## 2. 인덱스 처리 — 재적재는 필요하지 않다
+
+> **2026-08-01 실측으로 해소됨.** "옛 텍스트로 임베딩돼 검색되지 않는다"는 판단은
+> `returnDistance` 누락이 만든 착시였다. 그 결함을 고친 뒤 기존 49개 항목이 정상적으로
+> 검색된다. 아래 세 선택지는 더 이상 판단 대상이 아니며, 재적재 없이 진행한다.
 
 임베딩 입력 필드가 바뀌었으므로 **기존 인덱스 레코드는 옛 텍스트로 임베딩된 상태**다. 새
 쿼리와 공간이 어긋나 검색되지 않는다.
@@ -344,6 +355,48 @@ aws dynamodb query --table-name RcaAgentDevRcaSession \
 
 ## 5. 검색이 또 빈 결과였다면
 
+**먼저 스토어를 직접 호출한다.** 임계값 계산만 재현하면 검색 경로 자체의 결함을 놓친다 —
+2026-08-01 실측에서 `returnDistance` 누락이 정확히 그렇게 숨어 있었다. 임계값을 0으로 두고
+실제 순위를 보면 인덱스가 후보를 찾는지와 유사도 계산이 옳은지를 한 번에 가른다.
+
+```bash
+cd packages/agent
+S3_VECTOR_BUCKET_NAME=rca-agent-dev-vectors DYNAMODB_TABLE_NAME=RcaAgentDevRcaSession \
+  .venv/bin/python - <<'PY'
+import boto3, json, sys
+sys.path.insert(0, 'src')
+from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import S3VectorsPlaybookStore
+from rca_agent.utils.embed_key import build_embed_key
+from rca_agent.config.settings import PLAYBOOK_UPDATE_THRESHOLD
+
+br = boto3.client('bedrock-runtime', region_name='us-east-1')
+class Emb:
+    def embed_query(self, t):
+        r = br.invoke_model(modelId="cohere.embed-v4:0", contentType="application/json",
+            accept="application/json",
+            body=json.dumps({"texts":[t],"input_type":"search_query","embedding_types":["float"]}))
+        return json.loads(r['body'].read())['embeddings']['float'][0]
+
+store = S3VectorsPlaybookStore(boto3.client('s3vectors', region_name='us-east-1'), Emb(),
+                               boto3.client('dynamodb', region_name='us-east-1'))
+q = build_embed_key(failure_type="<그 회차 failure_type>",
+                    symptom="<그 회차 symptom_pattern>",
+                    metric_name="<알람의 metric_name>")
+for h in store.search_similar(q, threshold=0.0):   # 임계값 없이 실제 순위를 본다
+    print(f"{h.similarity:.4f}  {h.playbook_id[:8]}  vs={h.verification_status}"
+          f"  {'→병합' if h.similarity >= PLAYBOOK_UPDATE_THRESHOLD else ''}")
+    d = store.load_detail(h)
+    print("   load_detail:", "None" if d is None
+          else f"vs={d.verification_status} steps={[s.step_id for s in d.execution_steps]}")
+PY
+```
+
+| 관측 | 의미 |
+|------|------|
+| 모든 유사도가 정확히 `0.0000` | 거리가 응답에 없다 — 계산 결함이지 임계값 문제가 아니다 |
+| 상위 후보가 0.9 이상인데 병합이 안 됐다 | 검색 시점에 그 항목이 아직 색인되지 않았다 (자기 자신은 초안 생성 뒤에 색인된다) |
+| 상위 후보가 0.7 근처 | 그 회차 서술 편차가 컸다 — 아래 임계값 측정으로 이어간다 |
+
 임계값을 더 내리기 전에 **실제 유사도를 측정한다.** 추측으로 값을 옮기면 무관한 병합이 늘어난다.
 
 ```bash
@@ -412,7 +465,11 @@ pkill -f "nuxt.*dev"
 | 함정 | 증상 | 대응 |
 |------|------|------|
 | CDK 잔여 프로세스 | 이미지는 푸시되고 스택 갱신만 실패 | 스택 상태 확인 후 프로세스 종료 + 잠금 제거 (0.3) |
+| CDK가 스택 완료 후 유휴 | `UPDATE_COMPLETE`인데 프로세스가 CPU 0%로 남아 다음 서비스 배포가 시작되지 않음 | 스택 이벤트 시각과 프로세스 `etime`을 대조해 판단. 스택이 끝났으면 종료하고 남은 서비스를 따로 배포 |
+| 배포 출력이 파이프로 사라짐 | `\| tail`을 붙이면 진행 상황을 볼 수 없어 원인 진단 불가 | 로그를 파일로 리다이렉트한 뒤 `tail`로 읽는다 |
 | CDK 동시 배포 | `Other CLIs are currently reading from cdk.out` | 순차 실행 (1장) |
+| 실행이 `UNRESOLVED`로 끝남 | 회고가 진입하지 않아 승격된 플레이북이 없음 | 분석이 절차에 배포 롤백을 담는지가 회차마다 갈린다. 결함 플래그가 태스크 정의에 있으면 앱 재시작만으로는 재발한다 — 재주입해 다시 시도 |
+| 새 알람이 세션을 만들지 않음 | 진행 중인 세션이 있어 억제됨 | 이전 세션이 끝날 때까지 기다린다. `state`로 확인 |
 | 미커밋 변경 | 배포 스크립트가 거부 | 먼저 커밋 |
 | `infra` 테스트 | gitignore된 `lib/**/*.js`를 Jest가 `.ts`보다 먼저 해석 | `pnpm --filter infra build && test` |
 | 리포트 버킷 오인 | `s3-reports-general-purpose-bucket-...`에서 404 | 실제는 `rca-agent-dev-evidence` (3.4) |
