@@ -46,8 +46,14 @@ Based on the scoping results below, generate root cause hypotheses.
 - **Blast Radius**: {blast_radius}
 - **Initial Severity**: {initial_severity}
 
-## Metric Snapshot
-{metric_snapshot}
+## Metric Observations
+Each line gives the observed datapoint sequence, then how scoping read it. \
+The sequence is the evidence — if it shows a shape the summary misses, follow the sequence. \
+What you must not do is infer a shape from the endpoints while ignoring the points between them.
+{metric_observations}
+
+## Concurrent Alarms
+{concurrent_alarms}
 
 {report_context}
 

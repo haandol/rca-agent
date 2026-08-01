@@ -106,7 +106,14 @@ def _write_required_report_artifacts(
                 "alarm_name": "HighCPU",
                 "impact_scope": "service",
                 "severity": "high",
-                "metric_snapshot": {"CPUUtilization": 95},
+                "metric_observations": [
+                    {
+                        "metric_name": "DatabaseConnections",
+                        "datapoints": [2, 12, 20, 27, 30],
+                        "trend": "rising",
+                    }
+                ],
+                "concurrent_alarms": [],
                 "summary": "scoped",
                 "output_summary": "service/high",
             }

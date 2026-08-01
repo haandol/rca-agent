@@ -1,6 +1,12 @@
 from datetime import UTC, datetime
 
-from rca_agent.ports.dto.models import AlarmPayload, RcaSessionState, ScopingResult
+from rca_agent.ports.dto.models import (
+    AlarmPayload,
+    MetricObservation,
+    MetricTrend,
+    RcaSessionState,
+    ScopingResult,
+)
 
 
 class TestRcaSessionState:
@@ -113,7 +119,8 @@ class TestScopingResult:
         assert result.blast_radius == "single"
         assert result.initial_severity == "medium"
         assert result.similar_reports == []
-        assert result.metric_snapshot == {}
+        assert result.metric_observations == []
+        assert result.concurrent_alarms == []
 
     def test_full(self, sample_alarm: AlarmPayload):
         result = ScopingResult(
@@ -121,9 +128,18 @@ class TestScopingResult:
             anomaly_start_time=datetime(2026, 4, 22, 10, 25, 0, tzinfo=UTC),
             blast_radius="service_wide",
             initial_severity="high",
-            metric_snapshot={"CPUUtilization": {"current": 92.5, "baseline": 45.0, "unit": "Percent"}},
+            metric_observations=[
+                MetricObservation(
+                    metric_name="CPUUtilization",
+                    datapoints=[45.0, 60.0, 78.0, 92.5],
+                    trend=MetricTrend.RISING,
+                    unit="Percent",
+                    baseline=45.0,
+                )
+            ],
             raw_alarm=sample_alarm,
         )
         assert result.blast_radius == "service_wide"
-        assert result.metric_snapshot["CPUUtilization"]["current"] == 92.5
+        assert result.metric_observations[0].datapoints[-1] == 92.5
+        assert result.metric_observations[0].trend is MetricTrend.RISING
         assert result.raw_alarm.alarm_name == "HighCPU-web-service"

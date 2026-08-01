@@ -512,6 +512,7 @@ class PipelineOrchestrator:
                 trace,
                 loop_span,
                 claim_token,
+                scoping_result,
             )
             self._apply_judgments(state, trace)
             self._loop_termination_check(state, start_time, trace, loop_span)
@@ -698,6 +699,7 @@ class PipelineOrchestrator:
         trace,
         loop_span,
         claim_token,
+        scoping_result,
     ) -> ValidationResult:
         c = self._container
         c.session_store.update_state(
@@ -715,6 +717,7 @@ class PipelineOrchestrator:
                 state.evidence_map,
                 c.validation_agent,
                 evidence_failed_ids=state.evidence_failed_ids,
+                scoping_result=scoping_result,
             )
             state.all_judgments = validation_result.judgments
             confirmed_count = sum(1 for j in state.all_judgments if j.status == HypothesisStatus.CONFIRMED)

@@ -85,7 +85,8 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "anomaly_start_time",
                 "blast_radius",
                 "initial_severity",
-                "metric_snapshot",
+                "metric_observations",
+                "concurrent_alarms",
                 "report_context",
             },
         ),
@@ -103,7 +104,8 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "state_change_time",
                 "blast_radius",
                 "initial_severity",
-                "metric_context",
+                "metric_observations",
+                "concurrent_alarms",
                 "parent_context",
                 "hypothesis_description",
                 "hypothesis_category",
@@ -112,7 +114,8 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
         ),
         (
             VALIDATION_USER_PROMPT_TEMPLATE,
-            {"description", "evidence_text"},
+            # 검증이 관측을 보지 못하면 확인된 사실에 반하는 서술이 근거 없이 성립한다.
+            {"description", "evidence_text", "metric_observations", "concurrent_alarms"},
         ),
         (
             BRANCHING_USER_PROMPT_TEMPLATE,

@@ -254,7 +254,14 @@ def confirmed_run(artifact_dir):
             "severity": "high",
             "summary": "s",
             "output_summary": "o",
-            "metric_snapshot": {},
+            "metric_observations": [
+                {
+                    "metric_name": "DatabaseConnections",
+                    "datapoints": [2, 12, 20, 27, 30],
+                    "trend": "rising",
+                }
+            ],
+            "concurrent_alarms": [],
         },
     )
     _write_json(
@@ -310,7 +317,14 @@ def test_completion_rejects_execution_steps_for_an_unconfirmed_root_cause(artifa
             "severity": "high",
             "summary": "s",
             "output_summary": "o",
-            "metric_snapshot": {},
+            "metric_observations": [
+                {
+                    "metric_name": "DatabaseConnections",
+                    "datapoints": [2, 12, 20, 27, 30],
+                    "trend": "rising",
+                }
+            ],
+            "concurrent_alarms": [],
         },
     )
     _write_json(
@@ -334,7 +348,14 @@ def test_completion_accepts_an_unconfirmed_run_without_execution_steps(artifact_
             "severity": "high",
             "summary": "s",
             "output_summary": "o",
-            "metric_snapshot": {},
+            "metric_observations": [
+                {
+                    "metric_name": "DatabaseConnections",
+                    "datapoints": [2, 12, 20, 27, 30],
+                    "trend": "rising",
+                }
+            ],
+            "concurrent_alarms": [],
         },
     )
     _write_json(

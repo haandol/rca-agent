@@ -12,6 +12,8 @@ from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
+    MetricObservation,
+    MetricTrend,
     ScopingResult,
 )
 from rca_agent.ports.interfaces.session_store import SideEffectLeaseUnavailableError
@@ -34,7 +36,15 @@ def scoping_result() -> ScopingResult:
         alarm_summary="CPU spike on web-service",
         blast_radius="single",
         initial_severity="high",
-        metric_snapshot={"CPUUtilization": {"current": 92.5, "baseline": 45.0, "unit": "Percent"}},
+        metric_observations=[
+            MetricObservation(
+                metric_name="CPUUtilization",
+                datapoints=[45.0, 60.0, 78.0, 92.5],
+                trend=MetricTrend.RISING,
+                unit="Percent",
+                baseline=45.0,
+            )
+        ],
         raw_alarm=AlarmPayload(
             alarm_name="HighCPU",
             region="us-east-1",
@@ -97,7 +107,7 @@ class TestBuildUserPrompt:
         assert "DEPLOYMENT" in prompt
         assert "deployment history" in prompt
 
-    def test_includes_metric_snapshot(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
+    def test_includes_metric_observations(self, hypothesis: Hypothesis, scoping_result: ScopingResult):
         prompt = _build_user_prompt(hypothesis, scoping_result)
         assert "CPUUtilization" in prompt
         assert "92.5" in prompt

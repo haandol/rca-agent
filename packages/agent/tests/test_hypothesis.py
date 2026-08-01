@@ -7,16 +7,18 @@ from rca_agent.ports.dto.models import (
     FaultType,
     HypothesisCategory,
     HypothesisGenerationResult,
+    MetricObservation,
+    MetricTrend,
     ReportMatch,
     ScopingResult,
 )
 from rca_agent.services.hypothesis import (
     HypothesisOutput,
-    _build_metric_snapshot_text,
     _build_user_prompt,
     _HypothesisItem,
     run_hypothesis_generation,
 )
+from rca_agent.services.observation_context import render_observations
 from rca_agent.services.report_context import build_report_context
 
 
@@ -26,7 +28,15 @@ def sample_scoping_result() -> ScopingResult:
         alarm_summary="CPU utilization on web-service exceeded 80%",
         blast_radius="single",
         initial_severity="high",
-        metric_snapshot={"CPUUtilization": {"current": 92.5, "baseline": 45.0, "unit": "Percent"}},
+        metric_observations=[
+            MetricObservation(
+                metric_name="CPUUtilization",
+                datapoints=[45.0, 60.0, 78.0, 92.5],
+                trend=MetricTrend.RISING,
+                unit="Percent",
+                baseline=45.0,
+            )
+        ],
         similar_reports=[
             ReportMatch(
                 rca_id="rca-001",
@@ -100,16 +110,29 @@ class TestBuildReportContext:
         assert "Hypothesis path: DEPLOYMENT → task count" in prompt
 
 
-class TestBuildMetricSnapshotText:
+class TestRenderObservations:
     def test_empty(self):
-        assert _build_metric_snapshot_text({}) == "No metric data available."
+        assert render_observations([]) == "No metric data available."
 
-    def test_with_data(self):
-        snapshot = {"CPUUtilization": {"current": 92.5, "baseline": 45.0, "unit": "Percent"}}
-        result = _build_metric_snapshot_text(snapshot)
+    def test_keeps_the_sequence_and_the_trend(self):
+        result = render_observations(
+            [
+                MetricObservation(
+                    metric_name="CPUUtilization",
+                    datapoints=[45.0, 60.0, 78.0, 92.5],
+                    trend=MetricTrend.RISING,
+                    unit="Percent",
+                    baseline=45.0,
+                )
+            ]
+        )
+
         assert "CPUUtilization" in result
         assert "92.5" in result
-        assert "45.0" in result
+        # 하류 단계가 지속 상승과 급증을 가르는 근거는 시퀀스와 추세다. 현재 값만
+        # 남으면 두 형태가 같은 텍스트가 된다.
+        assert "60" in result and "78" in result
+        assert "rising" in result
 
 
 class TestBuildUserPrompt:

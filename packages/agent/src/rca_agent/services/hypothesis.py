@@ -18,6 +18,10 @@ from rca_agent.ports.dto.models import (
     ScopingResult,
 )
 from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
+from rca_agent.services.observation_context import (
+    render_concurrent_alarms,
+    render_observations,
+)
 from rca_agent.services.report_context import build_report_context
 from rca_agent.utils.timeout import call_with_timeout
 
@@ -58,25 +62,14 @@ class _HypothesisItem(BaseModel):
 HypothesisOutput.model_rebuild()
 
 
-def _build_metric_snapshot_text(metric_snapshot: dict) -> str:
-    if not metric_snapshot:
-        return "No metric data available."
-    lines = []
-    for name, data in metric_snapshot.items():
-        current = data.get("current", "N/A")
-        baseline = data.get("baseline", "N/A")
-        unit = data.get("unit", "")
-        lines.append(f"- **{name}**: current={current}, baseline={baseline} {unit}")
-    return "\n".join(lines)
-
-
 def _build_user_prompt(scoping: ScopingResult) -> str:
     return HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE.format(
         alarm_summary=scoping.alarm_summary,
         anomaly_start_time=scoping.anomaly_start_time or "N/A",
         blast_radius=scoping.blast_radius,
         initial_severity=scoping.initial_severity,
-        metric_snapshot=_build_metric_snapshot_text(scoping.metric_snapshot),
+        metric_observations=render_observations(scoping.metric_observations),
+        concurrent_alarms=render_concurrent_alarms(scoping.concurrent_alarms),
         report_context=build_report_context(scoping.similar_reports, include_hypothesis_path=True),
     )
 

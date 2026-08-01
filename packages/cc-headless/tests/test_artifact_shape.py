@@ -45,7 +45,18 @@ def _scoping() -> dict:
         "severity": "high",
         "summary": "s",
         "output_summary": "o",
-        "metric_snapshot": {},
+        "metric_observations": [
+            {
+                "metric_name": "DatabaseConnections",
+                "datapoints": [2, 12, 20, 27, 30],
+                "trend": "rising",
+                "window_start": "2026-08-01T00:00:00Z",
+                "window_end": "2026-08-01T00:30:00Z",
+                "unit": "Count",
+                "baseline": 2,
+            }
+        ],
+        "concurrent_alarms": [{"alarm_name": "VitalIngestFailures", "state": "ALARM"}],
     }
 
 
@@ -181,6 +192,60 @@ def test_the_generation_skill_names_every_field_the_gate_requires() -> None:
 
     for field in ("stage", "tree_id", "hypotheses", "summary", "output_summary"):
         assert f'"{field}"' in skill, f"the generation skill never shows {field}"
+
+
+def test_the_evidence_skill_shows_the_observation_shape() -> None:
+    """관측 형태를 스킬이 보여주지 않으면 모델이 다시 두 숫자로 요약한다."""
+    skill = (SKILLS_DIR / "evidence-patterns" / "SKILL.md").read_text()
+
+    for field in ("metric_observations", "datapoints", "trend", "shape_note", "concurrent_alarms"):
+        assert f'"{field}"' in skill, f"the evidence skill never shows {field}"
+
+
+def test_an_observation_may_describe_a_shape_the_vocabulary_lacks() -> None:
+    """다섯 항목이 관측의 표현력을 제한하지 않아야 한다.
+
+    처음 보는 패턴을 가장 가까운 항목으로 뭉개면 그 패턴이 사라지고, 계약이 커버리지를
+    좁히는 쪽으로 작동한다.
+    """
+    artifact = _scoping()
+    artifact["metric_observations"][0]["shape_note"] = "계단식으로 두 번 올라 각각 유지됐다"
+
+    validate_artifact_shape("scoping.json", json.dumps(artifact))
+
+
+@pytest.mark.parametrize("missing", ["metric_observations", "concurrent_alarms"])
+def test_scoping_must_carry_the_observation_arrays(missing) -> None:
+    artifact = _scoping()
+    del artifact[missing]
+
+    with pytest.raises(ArtifactValidationError, match=missing):
+        validate_artifact_shape("scoping.json", json.dumps(artifact))
+
+
+def test_an_observation_cannot_claim_a_trend_it_did_not_observe() -> None:
+    """두 점 미만으로 추세를 단정하는 것이 이 계약이 막으려는 실패다."""
+    artifact = _scoping()
+    artifact["metric_observations"][0]["datapoints"] = [30]
+
+    with pytest.raises(ArtifactValidationError, match="datapoint"):
+        validate_artifact_shape("scoping.json", json.dumps(artifact))
+
+
+def test_an_observation_with_too_few_points_may_report_unknown() -> None:
+    artifact = _scoping()
+    artifact["metric_observations"][0]["datapoints"] = []
+    artifact["metric_observations"][0]["trend"] = "unknown"
+
+    validate_artifact_shape("scoping.json", json.dumps(artifact))
+
+
+def test_an_observation_trend_outside_the_vocabulary_is_refused() -> None:
+    artifact = _scoping()
+    artifact["metric_observations"][0]["trend"] = "climbing"
+
+    with pytest.raises(ArtifactValidationError, match="trend"):
+        validate_artifact_shape("scoping.json", json.dumps(artifact))
 
 
 def test_artifacts_that_pass_save_can_still_fail_the_completion_gate(tmp_path) -> None:

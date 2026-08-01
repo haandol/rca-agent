@@ -14,10 +14,15 @@ from rca_agent.ports.dto.models import (
     FaultType,
     Hypothesis,
     HypothesisStatus,
+    ScopingResult,
     ValidationJudgment,
     ValidationResult,
 )
 from rca_agent.prompts.validation import VALIDATION_USER_PROMPT_TEMPLATE
+from rca_agent.services.observation_context import (
+    render_concurrent_alarms,
+    render_observations,
+)
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
@@ -49,10 +54,20 @@ def _classify_status(score: float) -> HypothesisStatus:
     return HypothesisStatus.NEEDS_INVESTIGATION
 
 
-def _build_user_prompt(hypothesis: Hypothesis, evidence_text: str) -> str:
+def _build_user_prompt(
+    hypothesis: Hypothesis,
+    evidence_text: str,
+    scoping_result: ScopingResult | None,
+) -> str:
+    # 검증이 관측을 보지 못하면, 확인된 사실에 반하는 서술도 근거 없이 성립한다 —
+    # 라이브에서 동반 발화한 증상 알람을 "동반되지 않았다"로 쓴 것이 그 경우다.
+    observations = render_observations(scoping_result.metric_observations) if scoping_result else "Not available."
+    concurrent = render_concurrent_alarms(scoping_result.concurrent_alarms) if scoping_result else "Not available."
     return VALIDATION_USER_PROMPT_TEMPLATE.format(
         description=hypothesis.description,
         evidence_text=evidence_text or "No evidence collected yet.",
+        metric_observations=observations,
+        concurrent_alarms=concurrent,
     )
 
 
@@ -68,8 +83,9 @@ def validate_hypothesis(
     *,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
     evidence_failed: bool = False,
+    scoping_result: ScopingResult | None = None,
 ) -> ValidationJudgment:
-    user_prompt = _build_user_prompt(hypothesis, evidence_text)
+    user_prompt = _build_user_prompt(hypothesis, evidence_text, scoping_result)
 
     logger.info("Validating hypothesis %s: %s", hypothesis.hypothesis_id, hypothesis.description[:60])
 
@@ -134,6 +150,7 @@ def run_validation(
     *,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
     evidence_failed_ids: set[str] | None = None,
+    scoping_result: ScopingResult | None = None,
 ) -> ValidationResult:
     tree_id = hypotheses[0].tree_id if hypotheses else ""
     judgments = []
@@ -147,6 +164,7 @@ def run_validation(
             agent,
             timeout_seconds=timeout_seconds,
             evidence_failed=h.hypothesis_id in _failed,
+            scoping_result=scoping_result,
         )
         judgments.append(judgment)
 

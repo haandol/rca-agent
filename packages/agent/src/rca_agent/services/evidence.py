@@ -15,6 +15,10 @@ from rca_agent.config.settings import (
 )
 from rca_agent.ports.dto.models import Hypothesis, HypothesisStatus, ScopingResult
 from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
+from rca_agent.services.observation_context import (
+    render_concurrent_alarms,
+    render_observations,
+)
 from rca_agent.utils.retry import retry_with_backoff
 from rca_agent.utils.timeout import call_with_timeout
 
@@ -87,16 +91,6 @@ def _build_user_prompt(
     evidence_map: dict[str, str] | None = None,
 ) -> str:
     alarm = scoping_result.raw_alarm
-    metric_context = ""
-    if scoping_result.metric_snapshot:
-        lines = []
-        for name, data in scoping_result.metric_snapshot.items():
-            current = data.get("current", "N/A")
-            baseline = data.get("baseline", "N/A")
-            unit = data.get("unit", "")
-            lines.append(f"- {name}: current={current}, baseline={baseline} {unit}")
-        metric_context = "\n".join(lines)
-
     parent_context = _build_parent_context(hypothesis, hypotheses_by_id, evidence_map)
 
     return EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE.format(
@@ -107,7 +101,8 @@ def _build_user_prompt(
         state_change_time=alarm.state_change_time if alarm else "N/A",
         blast_radius=scoping_result.blast_radius,
         initial_severity=scoping_result.initial_severity,
-        metric_context=metric_context or "No metric data available.",
+        metric_observations=render_observations(scoping_result.metric_observations),
+        concurrent_alarms=render_concurrent_alarms(scoping_result.concurrent_alarms),
         parent_context=parent_context,
         hypothesis_description=hypothesis.description,
         hypothesis_category=hypothesis.category,

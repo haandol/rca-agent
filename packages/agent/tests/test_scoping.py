@@ -2,8 +2,20 @@ from threading import Event
 from time import perf_counter
 from unittest.mock import MagicMock
 
-from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
-from rca_agent.services.scoping import ScopingOutput, build_report_query, run_scoping
+from rca_agent.ports.dto.models import (
+    AlarmPayload,
+    MetricTrend,
+    ReportMatch,
+    ScopingResult,
+)
+from rca_agent.services.scoping import (
+    ConcurrentAlarmOutput,
+    MetricObservationOutput,
+    ScopingOutput,
+    build_report_query,
+    reconcile_trend,
+    run_scoping,
+)
 
 
 def _report_store(matches: list[ReportMatch] | None = None) -> MagicMock:
@@ -48,7 +60,17 @@ class TestRunScoping:
             anomaly_start_time="2026-04-22T10:25:00Z",
             blast_radius="single",
             initial_severity="high",
-            metric_snapshot={"CPUUtilization": {"current": 92.5, "baseline": 45.0, "unit": "Percent"}},
+            metric_observations=[
+                MetricObservationOutput(
+                    metric_name="CPUUtilization",
+                    datapoints=[45.0, 60.0, 78.0, 92.5],
+                    window_start="2026-04-22T10:00:00Z",
+                    window_end="2026-04-22T10:30:00Z",
+                    unit="Percent",
+                    baseline=45.0,
+                )
+            ],
+            concurrent_alarms=[ConcurrentAlarmOutput(alarm_name="VitalIngestFailures", state="ALARM")],
         )
         mock_agent = self._make_mock_agent(output)
 
@@ -59,8 +81,60 @@ class TestRunScoping:
         assert result.blast_radius == "single"
         assert result.initial_severity == "high"
         assert result.anomaly_start_time is not None
-        assert result.metric_snapshot["CPUUtilization"]["current"] == 92.5
+        observation = result.metric_observations[0]
+        assert observation.datapoints == [45.0, 60.0, 78.0, 92.5]
+        assert observation.window_start is not None
+        assert result.concurrent_alarms[0].alarm_name == "VitalIngestFailures"
         assert result.raw_alarm == sample_alarm
+
+    def test_the_model_keeps_its_reading_of_the_sequence(self, sample_alarm: AlarmPayload):
+        """추세 해석은 모델이 한다.
+
+        서버가 규칙으로 도출하면 규칙이 모르는 형태를 가장 가까운 항목으로 뭉개고 모델이
+        반박할 수 없다. 추세는 되돌릴 수 없는 결정이 아니므로 서버가 권위를 가질 이유가
+        없다 — 서버는 근거 없는 단정만 막는다.
+        """
+        output = ScopingOutput(
+            alarm_summary="connections climbing in steps",
+            metric_observations=[
+                MetricObservationOutput(
+                    metric_name="DatabaseConnections",
+                    datapoints=[2.0, 12.0, 12.0, 27.0, 27.0],
+                    trend=MetricTrend.RISING,
+                    shape_note="계단식으로 두 번 올라 각각 유지됐다",
+                )
+            ],
+        )
+        mock_agent = self._make_mock_agent(output)
+
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
+
+        observation = result.metric_observations[0]
+        assert observation.trend is MetricTrend.RISING
+        # 어휘에 담기지 않는 형태를 뭉개지 않고 함께 전달한다.
+        assert observation.shape_note == "계단식으로 두 번 올라 각각 유지됐다"
+
+    def test_a_trend_claimed_from_one_datapoint_falls_back_to_unknown(self, sample_alarm: AlarmPayload):
+        """근거 없는 단정은 서버가 막는다.
+
+        한 점으로는 어떤 형태도 관측되지 않았다. 이 단정을 허용하면 시퀀스를 요구한
+        이유가 사라진다.
+        """
+        output = ScopingOutput(
+            alarm_summary="single sample",
+            metric_observations=[
+                MetricObservationOutput(
+                    metric_name="DatabaseConnections",
+                    datapoints=[30.0],
+                    trend=MetricTrend.RISING,
+                )
+            ],
+        )
+        mock_agent = self._make_mock_agent(output)
+
+        result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
+
+        assert result.metric_observations[0].trend is MetricTrend.UNKNOWN
 
     def test_passes_structured_output_model(self, sample_alarm: AlarmPayload):
         output = ScopingOutput(alarm_summary="test")
@@ -167,3 +241,21 @@ class TestRunScoping:
         assert isinstance(result, ScopingResult)
         assert result.alarm_summary.startswith("[Timeout]")
         assert result.raw_alarm == sample_alarm
+
+
+class TestReconcileTrend:
+    """서버는 추세를 도출하지 않고 근거 없는 단정만 막는다."""
+
+    def test_the_reported_reading_survives(self):
+        # 규칙이 모르는 형태를 뭉개지 않는 것이 이 계약의 요점이다.
+        assert reconcile_trend(MetricTrend.RISING, [2.0, 12.0, 12.0, 27.0]) is MetricTrend.RISING
+        assert reconcile_trend(MetricTrend.SPIKE, [2.0, 30.0, 2.5]) is MetricTrend.SPIKE
+        assert reconcile_trend(MetricTrend.FLAT, [10.0, 10.4, 9.8]) is MetricTrend.FLAT
+
+    def test_too_few_points_cannot_claim_a_shape(self):
+        # 한 점으로는 어떤 형태도 관측되지 않았다.
+        assert reconcile_trend(MetricTrend.RISING, [15.0]) is MetricTrend.UNKNOWN
+        assert reconcile_trend(MetricTrend.SPIKE, []) is MetricTrend.UNKNOWN
+
+    def test_two_points_are_enough_to_report_a_shape(self):
+        assert reconcile_trend(MetricTrend.RISING, [2.0, 30.0]) is MetricTrend.RISING

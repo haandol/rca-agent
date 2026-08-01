@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from rca_agent.config.settings import SCOPING_TIMEOUT_SECONDS
-from rca_agent.ports.dto.models import AlarmPayload, ReportMatch, ScopingResult
+from rca_agent.ports.dto.models import (
+    AlarmPayload,
+    ConcurrentAlarm,
+    MetricObservation,
+    MetricTrend,
+    ReportMatch,
+    ScopingResult,
+)
 from rca_agent.ports.interfaces.report_store import ReportStorePort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
 from rca_agent.services.report_context import build_report_context
@@ -21,6 +28,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class MetricObservationOutput(BaseModel):
+    """지표 하나에 대해 모델이 채워야 하는 관측.
+
+    `datapoints` 를 요구하는 것이 이 모델의 요점이다. 모델이 조회한 시계열을 스스로
+    두 숫자로 요약하게 두면 추세가 사라지고, 하류 단계는 사라진 것을 복원할 수 없다.
+    """
+
+    metric_name: str
+    datapoints: list[float] = Field(default_factory=list)
+    trend: MetricTrend = MetricTrend.UNKNOWN
+    shape_note: str = ""
+    window_start: str | None = None
+    window_end: str | None = None
+    unit: str = ""
+    baseline: float | None = None
+
+
+class ConcurrentAlarmOutput(BaseModel):
+    alarm_name: str
+    state: str = ""
+
+
 class ScopingOutput(BaseModel):
     """Structured output model for the scoping agent."""
 
@@ -28,7 +57,51 @@ class ScopingOutput(BaseModel):
     anomaly_start_time: str | None = None
     blast_radius: str = "single"
     initial_severity: str = "medium"
-    metric_snapshot: dict[str, dict] = Field(default_factory=dict)
+    metric_observations: list[MetricObservationOutput] = Field(default_factory=list)
+    concurrent_alarms: list[ConcurrentAlarmOutput] = Field(default_factory=list)
+
+
+def _parse_window(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).replace(tzinfo=UTC)
+    except ValueError:
+        logger.warning("Could not parse observation window: %s", value)
+        return None
+
+
+_MIN_TREND_DATAPOINTS = 2
+
+
+def reconcile_trend(reported: MetricTrend, datapoints: list[float]) -> MetricTrend:
+    """모델이 읽은 추세를 시퀀스와 대조한다.
+
+    추세 자체는 모델이 판정한다. 서버가 규칙으로 도출하면 규칙이 모르는 형태(계단형,
+    톱니형, 주기적 진동)를 가장 가까운 항목으로 뭉개고, 그 판정을 모델이 반박할 수
+    없다. 추세는 파괴적 액션이나 해결 판정과 달리 되돌릴 수 없는 결정이 아니므로 서버가
+    권위를 가질 이유가 없다.
+
+    서버가 막는 것은 하나다 — **근거 없이 형태를 단정하는 것.** 데이터포인트가 두 개
+    미만이면 어떤 추세도 관측되지 않았으므로 미확정으로 되돌린다. 라이브의 오독은 모델이
+    추세를 판정해서가 아니라 판정할 시퀀스가 전달되지 않아 생겼다.
+    """
+    if len(datapoints) < _MIN_TREND_DATAPOINTS:
+        return MetricTrend.UNKNOWN
+    return reported
+
+
+def _to_observation(item: MetricObservationOutput) -> MetricObservation:
+    return MetricObservation(
+        metric_name=item.metric_name,
+        datapoints=item.datapoints,
+        trend=reconcile_trend(item.trend, item.datapoints),
+        shape_note=item.shape_note,
+        window_start=_parse_window(item.window_start),
+        window_end=_parse_window(item.window_end),
+        unit=item.unit,
+        baseline=item.baseline,
+    )
 
 
 def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
@@ -100,21 +173,17 @@ def run_scoping(
 
     logger.info("Scoping complete: severity=%s, blast_radius=%s", output.initial_severity, output.blast_radius)
 
-    anomaly_time = None
-    if output.anomaly_start_time:
-        from datetime import datetime
-
-        try:
-            anomaly_time = datetime.fromisoformat(output.anomaly_start_time).replace(tzinfo=UTC)
-        except ValueError:
-            logger.warning("Could not parse anomaly_start_time: %s", output.anomaly_start_time)
+    anomaly_time = _parse_window(output.anomaly_start_time)
 
     return ScopingResult(
         alarm_summary=output.alarm_summary,
         anomaly_start_time=anomaly_time,
         blast_radius=output.blast_radius,
         initial_severity=output.initial_severity,
-        metric_snapshot=output.metric_snapshot,
+        metric_observations=[_to_observation(item) for item in output.metric_observations],
+        concurrent_alarms=[
+            ConcurrentAlarm(alarm_name=item.alarm_name, state=item.state) for item in output.concurrent_alarms
+        ],
         similar_reports=reports,
         raw_alarm=alarm,
     )

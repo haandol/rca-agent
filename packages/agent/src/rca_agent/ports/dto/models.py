@@ -150,12 +150,53 @@ class ReportMatch(BaseModel):
     confirmed: bool = False
 
 
+class MetricTrend(StrEnum):
+    RISING = "rising"
+    FALLING = "falling"
+    FLAT = "flat"
+    SPIKE = "spike"
+    UNKNOWN = "unknown"
+
+
+class MetricObservation(BaseModel):
+    """한 지표의 관측 결과.
+
+    현재 값과 기준선 두 숫자만 남기면 하류 단계가 "지금 높다"만 알고 "계속 오르는
+    중인가, 한 번 튀었다 내려왔나"를 구별할 수 없다. 그 구별이 누수와 일시적 부하를
+    가르는 근거이므로 시퀀스를 보유한다.
+
+    `trend` 는 모델이 읽은 요약이고 `datapoints` 가 근거다. 어휘에 담기지 않는 형태는
+    `shape_note` 로 서술한다 — 다섯 항목으로 뭉개면 처음 보는 패턴이 사라진다.
+    """
+
+    metric_name: str
+    datapoints: list[float] = Field(default_factory=list)
+    trend: MetricTrend = MetricTrend.UNKNOWN
+    shape_note: str = ""
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    unit: str = ""
+    baseline: float | None = None
+
+
+class ConcurrentAlarm(BaseModel):
+    """스코핑이 확인한 동시 발생 알람.
+
+    확인만 지시하고 담을 곳을 두지 않으면 확인은 수행되어도 그 사실이 검증 단계에
+    도달하지 못하고, 근거 없는 반대 서술이 성립한다.
+    """
+
+    alarm_name: str
+    state: str = ""
+
+
 class ScopingResult(BaseModel):
     alarm_summary: str
     anomaly_start_time: datetime | None = None
     blast_radius: str = "single"
     initial_severity: str = "medium"
-    metric_snapshot: dict = Field(default_factory=dict)
+    metric_observations: list[MetricObservation] = Field(default_factory=list)
+    concurrent_alarms: list[ConcurrentAlarm] = Field(default_factory=list)
     similar_reports: list[ReportMatch] = Field(default_factory=list)
     raw_alarm: AlarmPayload | None = None
 

@@ -16,6 +16,45 @@ current alarm window보다 앞선 수동 테스트·수동 장애 주입 로그�
 context로만 사용할 수 있다. 시각이 없거나 어느 window인지 판별할 수 없는 로그를
 현재 장애의 발생, 원인, 지속 증거로 사용하지 않는다.
 
+## 관측 결과를 기록하는 형태
+
+`scoping.json`은 `metric_observations`와 `concurrent_alarms` 두 배열을 항목이 없어도
+반드시 포함한다.
+
+```json
+{
+  "metric_observations": [
+    {
+      "metric_name": "DatabaseConnections",
+      "datapoints": [2, 12, 20, 27, 30],
+      "trend": "rising",
+      "shape_note": "",
+      "window_start": "2026-08-01T00:00:00Z",
+      "window_end": "2026-08-01T00:30:00Z",
+      "unit": "Count",
+      "baseline": 2
+    }
+  ],
+  "concurrent_alarms": [
+    { "alarm_name": "RcaAgentDev-Healthcare-VitalIngestFailures", "state": "ALARM" }
+  ]
+}
+```
+
+- **`datapoints`는 조회한 값을 시간 순서대로 담는다.** 현재 값과 기준선 두 숫자로
+  요약하지 않는다. 두 형태는 현재 값이 같아도 원인이 다르다 — 계속 오르는 지표는
+  누수이고, 튀었다 돌아온 지표는 일시적 부하다. 두 숫자만 남기면 이 구별이 사라지고
+  가설 검증 단계가 그것을 복원할 수 없다.
+- `trend`는 `rising`·`falling`·`flat`·`spike`·`unknown` 중 하나로 **당신이 시퀀스를 읽은
+  결과**를 쓴다. 데이터포인트가 2개 미만이면 형태를 알 수 없으므로 `unknown`을 쓰며,
+  적은 데이터포인트로 추세를 단정하면 게이트가 거부한다.
+- **어휘에 담기지 않는 형태는 `shape_note`에 서술한다.** 계단식 상승, 톱니형, 주기적
+  진동처럼 다섯 항목에 들어맞지 않는 패턴을 가장 가까운 항목으로 뭉개지 않는다. 어휘는
+  요약이고 `datapoints`가 근거이므로, 하류 단계는 시퀀스를 읽어 다르게 해석할 수 있다.
+- **확인한 동시 발생 알람은 전부 기록한다.** 확인했는데 적지 않으면 하류 단계에는
+  발화하지 않은 알람으로 읽히고, "다른 알람은 없었다"는 반대 서술이 근거 없이
+  성립한다. 없으면 빈 배열을 쓴다.
+
 ## 서비스별 메트릭 수집 패턴
 
 ### ECS Fargate 서비스

@@ -46,6 +46,15 @@ _PLAYBOOK_LIST_FIELDS = (
 )
 _EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 
+# 관측 형태를 계약으로 두지 않으면 모델이 조회한 시계열을 스스로 두 숫자로 요약하고,
+# 하류 단계는 지속 상승과 급증을 구별할 근거를 잃는다. 두 엔진이 같은 형태를 쓴다 —
+# 한쪽만 시퀀스를 보유하면 판정 차이가 관측 품질 차이로 오염된다.
+#
+# 추세 해석은 모델이 하고 게이트는 근거 없는 단정만 막는다. 어휘에 담기지 않는 형태는
+# `shape_note` 로 서술하므로, 다섯 항목이 관측의 표현력을 제한하지 않는다.
+_METRIC_OBSERVATION_TRENDS = ("rising", "falling", "flat", "spike", "unknown")
+_MIN_OBSERVATION_DATAPOINTS = 2
+
 
 class ArtifactValidationError(ValueError):
     pass
@@ -86,17 +95,49 @@ def _require_fields(artifact: dict, *, strings: tuple[str, ...] = (), lists: tup
             raise ArtifactValidationError(f"required list field is missing: {field}")
 
 
-def _validate_scoping(base: Path) -> None:
-    artifact = _load_object(base / "scoping.json", "scoping.json")
-    _require_fields(artifact, strings=("stage", "alarm_name", "impact_scope", "severity", "summary", "output_summary"))
+def _validate_scoping_shape(artifact: dict) -> None:
+    """저장 시점과 완료 게이트가 공유하는 scoping.json 검사.
+
+    두 계층이 각자 검사하면 한쪽만 필드를 요구해, 저장은 통과하고 완료에서 버려지는
+    리포트가 생긴다.
+    """
+    _require_fields(
+        artifact,
+        strings=("stage", "alarm_name", "impact_scope", "severity", "summary", "output_summary"),
+        lists=("metric_observations", "concurrent_alarms"),
+    )
     if artifact["stage"] != "SCOPING":
         raise ArtifactValidationError("scoping.json stage must be SCOPING")
     if artifact["impact_scope"] not in {"single", "service", "regional"}:
         raise ArtifactValidationError("scoping.json impact_scope is invalid")
     if artifact["severity"] not in {"low", "medium", "high", "critical"}:
         raise ArtifactValidationError("scoping.json severity is invalid")
-    if not isinstance(artifact.get("metric_snapshot"), dict):
-        raise ArtifactValidationError("scoping.json metric_snapshot must be an object")
+
+    for observation in artifact["metric_observations"]:
+        if not isinstance(observation, dict):
+            raise ArtifactValidationError("scoping.json metric_observations entries must be objects")
+        _require_fields(observation, strings=("metric_name", "trend"), lists=("datapoints",))
+        if observation["trend"] not in _METRIC_OBSERVATION_TRENDS:
+            raise ArtifactValidationError(f"scoping.json observation trend is invalid: {observation['trend']}")
+        datapoints = observation["datapoints"]
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in datapoints):
+            raise ArtifactValidationError("scoping.json datapoints must be numbers")
+        # 두 점 미만이면 형태를 알 수 없다. 그것이 unknown 이라는 값이 있는 이유이고,
+        # 시퀀스를 요구한 이유이기도 하다.
+        if len(datapoints) < _MIN_OBSERVATION_DATAPOINTS and observation["trend"] != "unknown":
+            raise ArtifactValidationError(
+                f"scoping.json observation claims trend '{observation['trend']}' "
+                f"from {len(datapoints)} datapoint(s); a trend needs at least {_MIN_OBSERVATION_DATAPOINTS}"
+            )
+
+    for alarm in artifact["concurrent_alarms"]:
+        if not isinstance(alarm, dict):
+            raise ArtifactValidationError("scoping.json concurrent_alarms entries must be objects")
+        _require_fields(alarm, strings=("alarm_name", "state"))
+
+
+def _validate_scoping(base: Path) -> None:
+    _validate_scoping_shape(_load_object(base / "scoping.json", "scoping.json"))
 
 
 def _validate_hypotheses(base: Path) -> tuple[dict[str, _HypothesisContext], str]:
@@ -384,18 +425,7 @@ def validate_artifact_shape(filename: str, content: str) -> None:
         return
 
     if filename == "scoping.json":
-        _require_fields(
-            artifact,
-            strings=("stage", "alarm_name", "impact_scope", "severity", "summary", "output_summary"),
-        )
-        if artifact["stage"] != "SCOPING":
-            raise ArtifactValidationError("scoping.json stage must be SCOPING")
-        if artifact["impact_scope"] not in {"single", "service", "regional"}:
-            raise ArtifactValidationError("scoping.json impact_scope is invalid")
-        if artifact["severity"] not in {"low", "medium", "high", "critical"}:
-            raise ArtifactValidationError("scoping.json severity is invalid")
-        if not isinstance(artifact.get("metric_snapshot"), dict):
-            raise ArtifactValidationError("scoping.json metric_snapshot must be an object")
+        _validate_scoping_shape(artifact)
         return
 
     if filename == "hypotheses.json":

@@ -43,8 +43,12 @@ Collect evidence to validate the following hypothesis.
 - **Blast Radius**: {blast_radius}
 - **Severity**: {initial_severity}
 
-## Current Metric Snapshot
-{metric_context}
+## Metric Observations from Scoping
+Each line reports the trend derived from the observed sequence, then the sequence itself.
+{metric_observations}
+
+## Concurrent Alarms Observed at Scoping
+{concurrent_alarms}
 {parent_context}\
 
 ## Hypothesis to Validate

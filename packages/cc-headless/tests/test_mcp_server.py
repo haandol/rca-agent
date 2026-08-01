@@ -36,7 +36,14 @@ def _minimal_valid_artifact(filename: str) -> str:
                 "severity": "high",
                 "summary": "s",
                 "output_summary": "o",
-                "metric_snapshot": {},
+                "metric_observations": [
+                    {
+                        "metric_name": "DatabaseConnections",
+                        "datapoints": [2, 12, 20, 27, 30],
+                        "trend": "rising",
+                    }
+                ],
+                "concurrent_alarms": [],
             }
         )
 
