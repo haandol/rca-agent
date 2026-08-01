@@ -545,6 +545,24 @@ class TestPlaybookSearchFirstMerge:
 
         assert container.playbook_store.search_similar.call_args.kwargs["threshold"] == PLAYBOOK_UPDATE_THRESHOLD
 
+    def test_threshold_admits_a_recurrence_whose_wording_differs(self):
+        # 실측: 같은 유형·패턴을 다른 문장으로 쓴 재발이 0.83, 글자까지 같으면 0.96.
+        # 임계값이 그 사이에 있으면 같은 장애의 재발조차 병합되지 않고, 그 실패는 빈
+        # 검색 결과로 나타나 정상적인 신규 생성과 구별되지 않는다.
+        assert PLAYBOOK_UPDATE_THRESHOLD <= 0.83
+
+    def test_searches_with_the_playbook_fields_the_index_stores(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[])
+
+        self._run(container, monkeypatch, tmp_path)
+
+        query = container.playbook_store.search_similar.call_args.args[0]
+        saved = self._saved(container)
+        # 저장과 검색이 같은 필드에서 나와야 유사도가 의미를 가진다.
+        assert saved["failure_type"][:40] in query
+        assert saved["symptom_pattern"][:40] in query
+
     def test_skips_a_candidate_whose_detail_cannot_be_read(self, monkeypatch, tmp_path):
         container = _container(None)
         container.playbook_store.search_similar = Mock(return_value=[self._hit()])

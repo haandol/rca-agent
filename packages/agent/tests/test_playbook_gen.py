@@ -114,32 +114,47 @@ def _playbook_store(
 
 
 class TestBuildEmbedKey:
+    """검색 텍스트는 인덱스가 저장하는 것과 같은 필드에서 나와야 한다.
+
+    플레이북의 유형·패턴은 재사용을 위해 일반화된 서술이고, 보고서의 근본 원인·요약은
+    이번 사건의 리소스와 시각을 담은 개별 서술이다. 후자로 검색하면 같은 장애도 자신의
+    저장 항목과 낮은 유사도가 나오고, 그 실패가 빈 검색 결과와 구별되지 않는다.
+    """
+
     def test_includes_all_parts(self):
-        report = _make_report()
-        scoping = _make_scoping()
-        key = _build_embed_key(report, scoping)
-        assert "Memory leak in worker" in key
+        draft = _make_existing(playbook_id="pb-draft")
+        key = _build_embed_key(draft, _make_scoping())
+        assert draft.failure_type in key
+        assert draft.symptom_pattern in key
         assert "CPUUtilization" in key
-        assert "CPU spike on web-service" in key
 
     def test_without_scoping(self):
-        report = _make_report()
-        key = _build_embed_key(report, None)
-        assert "Memory leak in worker" in key
-        assert "CPU spike on web-service" in key
+        draft = _make_existing(playbook_id="pb-draft")
+        key = _build_embed_key(draft, None)
+        assert draft.failure_type in key
         assert "CPUUtilization" not in key
+
+    def test_uses_the_playbook_fields_not_the_report_narrative(self):
+        draft = _make_existing(playbook_id="pb-draft")
+        report = _make_report()
+        key = _build_embed_key(draft, None)
+
+        # 저장은 플레이북 필드를 임베딩하므로 검색도 같은 필드를 써야 대칭이 된다.
+        assert draft.failure_type in key
+        assert report.root_cause not in key
+        assert report.incident_summary not in key
 
 
 class TestSearchExistingPlaybooks:
     def test_queries_store_with_embed_key_and_update_threshold(self):
         store = _playbook_store()
-        report = _make_report()
+        draft = _make_existing(playbook_id="pb-draft")
         scoping = _make_scoping()
 
-        assert search_existing_playbooks(report, scoping, playbook_store=store) == []
+        assert search_existing_playbooks(draft, scoping, playbook_store=store) == []
 
         store.search_similar.assert_called_once_with(
-            _build_embed_key(report, scoping),
+            _build_embed_key(draft, scoping),
             threshold=PLAYBOOK_UPDATE_THRESHOLD,
         )
 
@@ -147,10 +162,17 @@ class TestSearchExistingPlaybooks:
         hit = _make_hit(playbook_id="pb-1", similarity=0.9)
         store = _playbook_store([hit])
 
-        hits = search_existing_playbooks(_make_report(), _make_scoping(), playbook_store=store)
+        hits = search_existing_playbooks(
+            _make_existing(playbook_id="pb-draft"), _make_scoping(), playbook_store=store
+        )
 
         assert [h.playbook_id for h in hits] == ["pb-1"]
         assert hits[0].similarity == pytest.approx(0.9)
+
+    def test_threshold_admits_a_recurrence_whose_wording_differs(self):
+        # 실측: 같은 유형·패턴을 다른 문장으로 쓴 재발이 0.83, 글자까지 같으면 0.96.
+        # 임계값이 그 사이에 있으면 같은 장애의 재발조차 병합되지 않는다.
+        assert PLAYBOOK_UPDATE_THRESHOLD <= 0.83
 
 
 class TestTryUpdateExisting:

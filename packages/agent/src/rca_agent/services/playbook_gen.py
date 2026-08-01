@@ -103,14 +103,26 @@ def build_execution_steps(
     return steps
 
 
-def _build_embed_key(report: RcaReport, scoping_result: ScopingResult | None) -> str:
-    metric_name = ""
+def _metric_name(scoping_result: ScopingResult | None) -> str:
     if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
-        metric_name = scoping_result.raw_alarm.trigger.metric_name
+        return scoping_result.raw_alarm.trigger.metric_name
+    return ""
+
+
+def _build_embed_key(playbook: Playbook, scoping_result: ScopingResult | None) -> str:
+    """Render the search text from the same fields the index stores.
+
+    Sharing the renderer is not enough — the fields have to match too. A
+    playbook's failure type and symptom pattern are generalized so the procedure
+    can be reused on another resource; a report's root cause and incident summary
+    name this incident's resource, revision and timestamps. Query with the report
+    and the same fault scores low against its own stored playbook, and the failure
+    arrives as an empty result set rather than as an error.
+    """
     return build_embed_key(
-        failure_type=report.root_cause or "unknown",
-        symptom=report.incident_summary,
-        metric_name=metric_name,
+        failure_type=playbook.failure_type or "unknown",
+        symptom=playbook.symptom_pattern,
+        metric_name=_metric_name(scoping_result),
     )
 
 
@@ -170,18 +182,20 @@ def _invoke_update_agent(agent: Agent, prompt: str) -> PlaybookUpdateOutput:
 
 
 def search_existing_playbooks(
-    report: RcaReport,
+    draft: Playbook,
     scoping_result: ScopingResult | None,
     *,
     playbook_store: PlaybookStorePort,
 ) -> list[PlaybookMatch]:
     """Find playbooks close enough to update instead of creating a duplicate.
 
-    Uses a stricter threshold than plain retrieval: merging into the wrong
-    playbook is worse than writing a new one.
+    Searches with this run's own draft rather than with the report, so the query
+    and the stored entries come from the same fields. Uses a stricter threshold
+    than plain retrieval: merging into the wrong playbook is worse than writing a
+    new one.
     """
     return playbook_store.search_similar(
-        _build_embed_key(report, scoping_result),
+        _build_embed_key(draft, scoping_result),
         threshold=PLAYBOOK_UPDATE_THRESHOLD,
     )
 
@@ -251,12 +265,18 @@ def run_playbook_generation(
     scoping_result: ScopingResult | None = None,
     timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> Playbook:
+    deadline = time.monotonic() + max(0, timeout_seconds)
+
+    # 이번 분석의 초안을 먼저 만든다. 검색 쿼리가 인덱스에 저장된 것과 같은 필드에서
+    # 나와야 하고, 그 필드는 초안이 생긴 뒤에만 존재한다. 병합이 성립하면 이 초안은
+    # 기존 플레이북을 보강하는 입력이 되고, 성립하지 않으면 그대로 신규 플레이북이다.
+    draft = _generate_draft(report, agent, deadline)
+
     existing_hits = search_existing_playbooks(
-        report,
+        draft,
         scoping_result,
         playbook_store=playbook_store,
     )
-    deadline = time.monotonic() + max(0, timeout_seconds)
 
     merge_candidates = 0
     for hit in existing_hits:
@@ -284,10 +304,19 @@ def run_playbook_generation(
     if merge_candidates:
         logger.info("All %d existing playbooks are up-to-date", merge_candidates)
 
+    return draft
+
+
+def _generate_draft(report: RcaReport, agent: Agent, deadline: float) -> Playbook:
+    """이번 RCA 결과로 플레이북 초안을 만든다.
+
+    생성이 실패해도 최소 정보만 담은 플레이북을 돌려준다 — 플레이북 생성 실패가 RCA
+    결과 전체의 손실이 되어서는 안 된다.
+    """
     playbook_id = str(uuid.uuid4())
     user_prompt = _build_user_prompt(report)
 
-    logger.info("Generating new playbook from RCA %s", report.rca_id)
+    logger.info("Generating playbook draft from RCA %s", report.rca_id)
 
     output: PlaybookOutput | None = None
     try:

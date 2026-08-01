@@ -214,20 +214,23 @@ def test_index_writer_and_searcher_render_the_same_embed_text(metric_name, embed
     )
     assert report_written == build_report_query(alarm)
 
+    # The playbook a run stores is what a later run searches with, so both sides
+    # are rendered from this one object rather than from the report.
+    playbook = Playbook(
+        playbook_id="p-1",
+        failure_type=report.root_cause,
+        symptom_pattern=report.incident_summary,
+    )
     playbook_written = _document_embed_text(
         S3VectorsPlaybookStore(s3_vectors_client=MagicMock(), embedding=embedding),
         "rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store",
-        lambda store: store.save(
-            Playbook(
-                playbook_id="p-1",
-                failure_type=report.root_cause,
-                symptom_pattern=report.incident_summary,
-            ),
-            scoping_result=scoping,
-        ),
+        lambda store: store.save(playbook, scoping_result=scoping),
         embedding,
     )
-    assert playbook_written == _build_playbook_embed_key(report, scoping)
+    # The searcher renders from the playbook's own fields. Querying with the
+    # report's narrative instead scores a fault low against its own stored entry,
+    # and that failure arrives as an empty result set rather than as an error.
+    assert playbook_written == _build_playbook_embed_key(playbook, scoping)
 
     # Both indexes share one embedding space, so the two writers must agree too.
     assert report_written == playbook_written

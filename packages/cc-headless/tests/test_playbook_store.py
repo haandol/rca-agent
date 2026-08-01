@@ -10,6 +10,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from cc_headless.adapters.secondary.playbook.s3_vectors_playbook_store import S3VectorsPlaybookStore
+from cc_headless.config.settings import PLAYBOOK_UPDATE_THRESHOLD
 from cc_headless.ports.interfaces.playbook_store import PlaybookMatch
 
 _MODULE = "cc_headless.adapters.secondary.playbook.s3_vectors_playbook_store"
@@ -175,7 +176,7 @@ class TestSearchSimilar:
             ]
         }
 
-        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=0.86)
+        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
 
         assert [match.playbook_id for match in matches] == ["pb-near"]
 
@@ -192,7 +193,7 @@ class TestSearchSimilar:
             ]
         }
 
-        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=0.86)
+        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
 
         assert matches[0].verification_status == "VERIFIED"
 
@@ -203,7 +204,7 @@ class TestSearchSimilar:
             "vectors": [{"key": "pb-1", "distance": 0.01, "metadata": {"rca_id": "rca-1"}}]
         }
 
-        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=0.86)
+        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
 
         # 미검증 절차가 검증됨으로 보이면 사람이 승인 판단을 잘못한다.
         assert matches[0].verification_status == "DRAFT"
@@ -214,7 +215,7 @@ class TestSearchSimilar:
         s3v.query_vectors.return_value = {"vectors": []}
         embedding = self._embedding()
 
-        self._store(s3v, embedding).search_similar("query", threshold=0.86)
+        self._store(s3v, embedding).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
 
         # 저장과 검색이 같은 입력 유형을 쓰면 같은 장애의 두 벡터가 어긋난다.
         embedding.embed_query.assert_called_once_with("query")
@@ -225,10 +226,10 @@ class TestSearchSimilar:
         s3v = MagicMock()
         s3v.query_vectors.side_effect = RuntimeError("index down")
 
-        assert self._store(s3v, self._embedding()).search_similar("query", threshold=0.86) == []
+        assert self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD) == []
 
     def test_returns_no_hits_when_the_index_is_not_configured(self):
-        assert self._store(None, self._embedding()).search_similar("query", threshold=0.86) == []
+        assert self._store(None, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD) == []
 
 
 class TestIndexMetadata:
