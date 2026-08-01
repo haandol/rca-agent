@@ -8,7 +8,11 @@ from unittest.mock import Mock
 import structlog
 from structlog.testing import capture_logs
 
-from cc_headless.config.settings import PLAYBOOK_UPDATE_THRESHOLD
+from cc_headless.config.settings import (
+    ALARM_STALENESS_SECONDS,
+    CC_TIMEOUT_SECONDS,
+    PLAYBOOK_UPDATE_THRESHOLD,
+)
 from cc_headless.ports.dto.models import CcResult
 from cc_headless.ports.interfaces.session_store import ClaimDisposition, SessionClaim, SessionOwnershipCheckError
 from cc_headless.services import execution_context, pipeline
@@ -268,15 +272,19 @@ def test_redelivered_message_runs_only_after_atomic_session_claim(monkeypatch):
     assert run_rca.call_args.args[3] == CLAIM_TOKEN
 
 
-def test_35_minute_redelivery_bypasses_initial_alarm_staleness_check(monkeypatch):
+def _past_staleness_boundary() -> str:
+    """건너뛰기 기준을 막 넘긴 시각. 기준 값이 바뀌어도 이 테스트의 의도는 유지된다."""
+    return (
+        datetime.now(UTC) - timedelta(seconds=ALARM_STALENESS_SECONDS + 300)
+    ).isoformat()
+
+
+def test_redelivery_bypasses_initial_alarm_staleness_check(monkeypatch):
     container = _container(SimpleNamespace())
     orchestrator = PipelineOrchestrator(container)
     run_rca = Mock(return_value=True)
     monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
-    stale_alarm = {
-        **ALARM_DATA,
-        "StateChangeTime": (datetime.now(UTC) - timedelta(minutes=35)).isoformat(),
-    }
+    stale_alarm = {**ALARM_DATA, "StateChangeTime": _past_staleness_boundary()}
 
     result = orchestrator.process_message(json.dumps(stale_alarm), receive_count=2)
 
@@ -290,16 +298,23 @@ def test_initial_stale_alarm_is_still_rejected(monkeypatch):
     orchestrator = PipelineOrchestrator(container)
     run_rca = Mock(return_value=True)
     monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
-    stale_alarm = {
-        **ALARM_DATA,
-        "StateChangeTime": (datetime.now(UTC) - timedelta(minutes=35)).isoformat(),
-    }
+    stale_alarm = {**ALARM_DATA, "StateChangeTime": _past_staleness_boundary()}
 
     result = orchestrator.process_message(json.dumps(stale_alarm), receive_count=1)
 
     assert result is True
     run_rca.assert_not_called()
     container.session_store.mark_outdated.assert_called_once()
+
+
+def test_staleness_boundary_is_not_shorter_than_the_analysis_budget():
+    """예산 초과 한 회차가 뒤따르는 알람을 폐기하게 해서는 안 된다.
+
+    이 워커는 한 세션씩 직렬로 처리하므로 한 회차가 예산을 다 쓰면 그만큼의 대기가
+    다음 알람에 그대로 전가된다. 건너뛰기 기준이 예산보다 짧으면 초과 한 번이 그 뒤
+    여러 알람을 통째로 버린다 — 라이브에서 4건이 그렇게 사라졌다.
+    """
+    assert ALARM_STALENESS_SECONDS >= CC_TIMEOUT_SECONDS
 
 
 def test_competing_delivery_is_acknowledged_without_duplicate_execution(monkeypatch):

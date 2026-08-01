@@ -129,9 +129,11 @@ test('CC queue visibility exceeds the analysis and staleness boundary', () => {
       resource.Properties?.QueueName === 'RcaAgentDevCcHeadlessQueue',
   );
   const visibilityTimeout = alarmQueue?.Properties?.VisibilityTimeout;
-  const analysisAndStalenessBoundarySeconds = 30 * 60;
+  // 분석 예산과 오래된 알람 기준이 같은 값이므로 경계도 하나다. 가시성이 이 경계보다
+  // 짧으면 아직 돌고 있는 세션의 메시지가 재전달되어 같은 알람을 두 번 분석한다.
+  const analysisAndStalenessBoundarySeconds = 60 * 60;
 
-  expect(visibilityTimeout).toBe(35 * 60);
+  expect(visibilityTimeout).toBe(65 * 60);
   expect(visibilityTimeout as number).toBeGreaterThan(
     analysisAndStalenessBoundarySeconds,
   );

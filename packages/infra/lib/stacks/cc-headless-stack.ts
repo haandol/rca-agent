@@ -57,7 +57,9 @@ export class CcHeadlessStack extends cdk.Stack {
   ): sqs.Queue {
     const queue = new sqs.Queue(this, 'AlarmQueue', {
       queueName: `${ns}CcHeadlessQueue`,
-      visibilityTimeout: cdk.Duration.minutes(35),
+      // 분석 예산(60분)보다 짧으면 아직 돌고 있는 세션의 메시지가 재전달되어 같은
+      // 알람을 두 번 분석한다. 예산에 여유를 더해 둔다.
+      visibilityTimeout: cdk.Duration.minutes(65),
       retentionPeriod: cdk.Duration.days(4),
       deadLetterQueue: {
         queue: deadLetterQueue,
