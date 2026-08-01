@@ -13,6 +13,18 @@ _EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 VERIFICATION_STATUS_FIELD = "verification_status"
 PLAYBOOK_DRAFT = "DRAFT"
 PLAYBOOK_VERIFIED = "VERIFIED"
+_KNOWN_STATUSES = frozenset({PLAYBOOK_DRAFT, PLAYBOOK_VERIFIED})
+
+
+def normalize_verification_status(raw: object) -> str:
+    """기록된 검증 상태를 복원한다. 해석할 수 없는 값은 초안이다.
+
+    값이 없거나 알 수 없다는 것은 승격 이전 레코드이거나 신뢰할 수 없는 출처가 쓴 것이며,
+    실행으로 입증되지 않은 절차가 검증됨으로 읽히면 사람이 승인 판단을 잘못한다.
+    """
+    if isinstance(raw, str) and raw in _KNOWN_STATUSES:
+        return raw
+    return PLAYBOOK_DRAFT
 
 # 모델이 갱신안에 담아도 무시하는 필드. 검증 상태는 서버가 소유하므로 LLM 출력이
 # 검증 여부의 권위가 되면 실행되지 않은 절차가 검증됨으로 표기된다. 식별자와 stage는

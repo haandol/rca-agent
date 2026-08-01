@@ -19,6 +19,11 @@ S3_VECTOR_PLAYBOOK_INDEX = os.environ.get("S3_VECTOR_PLAYBOOK_INDEX", "playbook"
 S3_VECTOR_REGION = os.environ.get("S3_VECTOR_REGION", "us-east-1")
 BEDROCK_EMBEDDING_MODEL_ID = os.environ.get("BEDROCK_EMBEDDING_MODEL_ID", "cohere.embed-v4:0")
 
+# 병합 임계값은 일반 조회보다 엄격하다. 다른 유형의 장애를 같은 플레이북으로 병합하면
+# 절차가 뒤섞여 어느 쪽에도 쓸 수 없어지므로, 새로 하나 만드는 것보다 나쁘다.
+PLAYBOOK_UPDATE_THRESHOLD = float(os.environ.get("PLAYBOOK_UPDATE_THRESHOLD", "0.86"))
+PLAYBOOK_TOP_K = int(os.environ.get("PLAYBOOK_TOP_K", "3"))
+
 PRESIGNED_URL_EXPIRY = 86400
 
 CC_TIMEOUT_SECONDS = int(os.environ.get("CC_TIMEOUT_SECONDS", "1800"))

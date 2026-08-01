@@ -84,7 +84,13 @@ class AppContainer(Container):
         if self._playbook_store is None:
             from cc_headless.adapters.secondary.playbook.s3_vectors_playbook_store import S3VectorsPlaybookStore
 
-            self._playbook_store = S3VectorsPlaybookStore(self.s3_vectors_client, self.embedding)
+            # 상세 절차는 인덱스가 아니라 상태 저장소에 있으므로 두 클라이언트를 함께
+            # 받는다. 검색만 되고 상세를 못 읽으면 병합이 성립하지 않는다.
+            self._playbook_store = S3VectorsPlaybookStore(
+                self.s3_vectors_client,
+                self.embedding,
+                dynamodb_client=self.dynamodb_client,
+            )
         return self._playbook_store
 
     @property

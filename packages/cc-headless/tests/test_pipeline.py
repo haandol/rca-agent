@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import structlog
 from structlog.testing import capture_logs
 
+from cc_headless.config.settings import PLAYBOOK_UPDATE_THRESHOLD
 from cc_headless.ports.dto.models import CcResult
 from cc_headless.ports.interfaces.session_store import ClaimDisposition, SessionClaim, SessionOwnershipCheckError
 from cc_headless.services import execution_context, pipeline
@@ -51,6 +52,9 @@ def _container(runner):
     playbook_store = SimpleNamespace(
         load_playbook=Mock(side_effect=_load_playbook),
         save_to_s3_vectors=Mock(return_value=True),
+        # 기본값은 축적된 플레이북이 없는 첫 분석이다.
+        search_similar=Mock(return_value=[]),
+        load_detail=Mock(return_value=None),
     )
     return SimpleNamespace(
         session_store=store,
@@ -418,6 +422,151 @@ def test_confirmed_completion_publishes_a_report_with_its_playbook(monkeypatch, 
 
     assert result is True
     assert container.report_store.send_notification.call_args.kwargs["confirmed"] is True
+
+
+class TestPlaybookSearchFirstMerge:
+    """같은 유형의 기존 플레이북이 있으면 그것을 보강한다.
+
+    새 식별자로 분기하면 같은 증상의 플레이북이 여럿이 되어 회고가 쌓아 온 검증된 절차가
+    다음 실행의 근거가 되지 못한다.
+    """
+
+    def _run(self, container, monkeypatch, tmp_path) -> bool:
+        class ConfirmedReportWriter:
+            def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
+                _write_confirmed_report_artifacts(artifact_dir_for_token(execution_token))
+                return CcResult(True, "complete", "{}")
+
+        container.cc_runner = ConfirmedReportWriter()
+        _patch_runtime(monkeypatch, tmp_path)
+        return PipelineOrchestrator(container)._run_rca(
+            "rca-1",
+            ALARM_DATA,
+            structlog.get_logger(),
+            CLAIM_TOKEN,
+        )
+
+    def _hit(self, playbook_id: str = "pb-existing") -> SimpleNamespace:
+        return SimpleNamespace(
+            playbook_id=playbook_id,
+            similarity=0.93,
+            failure_type="DB connection leak",
+            symptom_pattern="커넥션 수 상승",
+            tags=[],
+            rca_id="rca-old",
+            verification_status="VERIFIED",
+        )
+
+    def _existing(self) -> dict:
+        return {
+            "playbook_id": "pb-existing",
+            "failure_type": "DB connection leak",
+            "symptom_pattern": "커넥션 수 상승",
+            "verification_status": "VERIFIED",
+            "escalation_criteria": "기존 에스컬레이션 기준",
+            "execution_steps": [
+                {
+                    "step_id": "step-legacy",
+                    "intent": "커넥션 회수",
+                    "action": "회고가 교정한 인자로 서비스를 갱신한다",
+                    "success_criteria": "커넥션 수 감소",
+                }
+            ],
+        }
+
+    def _saved(self, container) -> dict:
+        return container.playbook_store.save_to_s3_vectors.call_args.args[0]
+
+    def test_keeps_the_existing_identifier_instead_of_branching(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=self._existing())
+
+        assert self._run(container, monkeypatch, tmp_path) is True
+        assert self._saved(container)["playbook_id"] == "pb-existing"
+
+    def test_merge_never_drops_accumulated_steps(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=self._existing())
+
+        self._run(container, monkeypatch, tmp_path)
+        saved = self._saved(container)
+
+        step_ids = [step["step_id"] for step in saved["execution_steps"]]
+        assert "step-legacy" in step_ids
+        # 회고가 교정한 인자가 살아남아야 한다 — 여기가 퇴행하는 지점이었다.
+        legacy = next(step for step in saved["execution_steps"] if step["step_id"] == "step-legacy")
+        assert legacy["action"] == "회고가 교정한 인자로 서비스를 갱신한다"
+        # 기존 절차는 유지되고 새 절차는 뒤에 붙는다. 순서를 재배치하면 과거 실행 증거가
+        # 가리키는 절차를 찾을 수 없다.
+        assert step_ids[0] == "step-legacy"
+        assert len(step_ids) > 1
+
+    def test_analysis_may_enrich_a_field_the_existing_playbook_already_had(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=self._existing())
+
+        self._run(container, monkeypatch, tmp_path)
+
+        # 병합은 삭제만 금지한다. 새 분석이 값을 제공하면 그것이 보강이고, 값을 비워
+        # 반환했을 때만 기존 값이 유지된다.
+        assert self._saved(container)["escalation_criteria"] == "metric remains high"
+
+    def test_merge_keeps_fields_the_new_analysis_never_mentioned(self, monkeypatch, tmp_path):
+        container = _container(None)
+        existing = self._existing()
+        # 새 분석의 산출물에 없는 필드. 회고가 붙였을 수도 있는 축적이다.
+        existing["runbook_url"] = "https://runbook.example/db-leak"
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=existing)
+
+        self._run(container, monkeypatch, tmp_path)
+
+        # 새 분석이 언급하지 않은 필드가 사라지면 축적이 조용히 되돌아간다.
+        assert self._saved(container)["runbook_url"] == "https://runbook.example/db-leak"
+
+    def test_merge_does_not_lower_an_earned_verification_status(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=self._existing())
+
+        self._run(container, monkeypatch, tmp_path)
+
+        # 분석은 초안만 쓸 수 있지만, 이미 획득한 검증 상태를 낮출 수도 없다.
+        assert self._saved(container)["verification_status"] == "VERIFIED"
+
+    def test_uses_the_merge_threshold_not_a_plain_retrieval_cutoff(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[])
+
+        self._run(container, monkeypatch, tmp_path)
+
+        assert container.playbook_store.search_similar.call_args.kwargs["threshold"] == PLAYBOOK_UPDATE_THRESHOLD
+
+    def test_skips_a_candidate_whose_detail_cannot_be_read(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=None)
+
+        assert self._run(container, monkeypatch, tmp_path) is True
+        # 절차를 보지 못한 "보강"은 축적을 되돌리므로 신규 생성으로 떨어진다.
+        assert self._saved(container)["playbook_id"] != "pb-existing"
+
+    def test_search_failure_does_not_block_the_analysis(self, monkeypatch, tmp_path):
+        container = _container(None)
+        container.playbook_store.search_similar = Mock(side_effect=RuntimeError("index down"))
+
+        # 플레이북은 미래를 위한 자산이고 이번 RCA 의 결과물은 리포트다.
+        assert self._run(container, monkeypatch, tmp_path) is True
+        container.playbook_store.save_to_s3_vectors.assert_called_once()
+
+    def test_first_analysis_of_a_symptom_creates_its_own_playbook(self, monkeypatch, tmp_path):
+        container = _container(None)
+
+        assert self._run(container, monkeypatch, tmp_path) is True
+        container.playbook_store.load_detail.assert_not_called()
 
 
 def test_report_omitting_a_structured_step_prevents_completion_and_all_publication(monkeypatch, tmp_path):

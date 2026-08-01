@@ -8,7 +8,11 @@ from threading import Event
 
 import structlog
 
-from cc_headless.config.settings import ALARM_STALENESS_SECONDS, SIDE_EFFECT_LEASE_SECONDS
+from cc_headless.config.settings import (
+    ALARM_STALENESS_SECONDS,
+    PLAYBOOK_UPDATE_THRESHOLD,
+    SIDE_EFFECT_LEASE_SECONDS,
+)
 from cc_headless.di.container import Container
 from cc_headless.ports.dto.models import AlarmContext, parse_alarm
 from cc_headless.ports.interfaces.session_store import (
@@ -19,7 +23,13 @@ from cc_headless.ports.interfaces.session_store import (
 from cc_headless.services.artifact_validation import ArtifactValidationError, validate_completion_artifacts
 from cc_headless.services.artifact_watcher import start_watcher
 from cc_headless.services.execution_context import ExecutionContext
+from cc_headless.services.playbook_merge import (
+    VERIFICATION_STATUS_FIELD,
+    merge_playbook_update,
+    normalize_verification_status,
+)
 from cc_headless.services.prompt_builder import build_prompt
+from cc_headless.utils.embed_key import build_embed_key
 
 logger = structlog.get_logger()
 _ROOT_CAUSE_SECTION = re.compile(
@@ -315,7 +325,70 @@ class PipelineOrchestrator:
         log: structlog.stdlib.BoundLogger,
     ) -> None:
         metric_name = alarm.metric_name or ""
-        saved = self._c.playbook_store.save_to_s3_vectors(playbook, rca_id, metric_name=metric_name)
+        recorded = self._merge_into_existing(playbook, metric_name, log)
+        saved = self._c.playbook_store.save_to_s3_vectors(recorded, rca_id, metric_name=metric_name)
         if not saved:
             raise RuntimeError("Playbook persistence failed")
-        log.info("playbook_saved", playbook_id=playbook.get("playbook_id"))
+        log.info("playbook_saved", playbook_id=recorded.get("playbook_id"))
+
+    def _merge_into_existing(
+        self,
+        playbook: dict,
+        metric_name: str,
+        log: structlog.stdlib.BoundLogger,
+    ) -> dict:
+        """같은 유형의 기존 플레이북이 있으면 그것을 보강한다.
+
+        새 식별자로 분기하면 같은 증상의 플레이북이 여럿이 되어 어느 것이 최신인지 알 수
+        없고, 회고가 쌓아 온 검증된 절차가 다음 실행의 근거가 되지 못한다. 그래서 충분히
+        닮은 플레이북을 찾으면 그 식별자를 유지한 채 병합한다.
+
+        검색·병합 실패는 분석을 중단시키지 않는다. 플레이북은 미래를 위한 자산이고 이번
+        RCA 의 결과물은 리포트이므로, 자산 축적 실패가 결과 전달을 막아서는 안 된다.
+        """
+        store = self._c.playbook_store
+        query = build_embed_key(
+            failure_type=str(playbook.get("failure_type", "")),
+            symptom=str(playbook.get("symptom_pattern", "")),
+            metric_name=metric_name,
+        )
+        if not query:
+            return playbook
+
+        try:
+            hits = store.search_similar(query, threshold=PLAYBOOK_UPDATE_THRESHOLD)
+        except Exception:
+            log.exception("playbook_search_failed")
+            return playbook
+
+        for hit in hits:
+            try:
+                existing = store.load_detail(hit)
+            except Exception:
+                log.exception("playbook_detail_load_failed", playbook_id=hit.playbook_id)
+                continue
+            if existing is None:
+                # 기존 절차를 보지 못한 상태의 "보강"은 같은 식별자로 과거 내용을 덮어써
+                # 축적을 되돌린다. 그 후보는 건너뛰고 신규 생성으로 떨어지는 편이 안전하다.
+                log.info("playbook_merge_skipped_no_detail", playbook_id=hit.playbook_id)
+                continue
+
+            merged, diff = merge_playbook_update(existing, playbook)
+            # 식별자와 검증 상태는 기존 플레이북의 것을 유지한다. 병합이 획득한 검증
+            # 상태를 낮추면 보강 한 번이 회고의 승격을 취소한다.
+            merged["playbook_id"] = hit.playbook_id
+            merged[VERIFICATION_STATUS_FIELD] = normalize_verification_status(
+                existing.get(VERIFICATION_STATUS_FIELD)
+            )
+            log.info(
+                "playbook_merged_into_existing",
+                playbook_id=hit.playbook_id,
+                similarity=round(hit.similarity, 3),
+                changed_fields=len(diff.changed_fields),
+                corrected_steps=len(diff.corrected_steps),
+                added_steps=len(diff.added_steps),
+                preserved_steps=len(diff.preserved_steps),
+            )
+            return merged
+
+        return playbook
