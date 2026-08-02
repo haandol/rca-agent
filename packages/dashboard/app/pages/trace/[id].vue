@@ -6,6 +6,7 @@ import { buildTraceGraph, type NodeData } from '~/composables/useTraceGraph';
 import SpanNode from '~/components/flow/SpanNode.vue';
 import HypoNode from '~/components/flow/HypoNode.vue';
 import { renderMarkdown as md } from '~/utils/markdown';
+import { STATE_LABEL } from '~/utils/sessionState';
 
 const route = useRoute();
 const id = route.params.id as string;
@@ -50,21 +51,6 @@ const hypoStatusLabel: Record<string, string> = {
   CLOSED: '종료',
   NEEDS_INVESTIGATION: '추가 조사',
   PENDING: '대기',
-};
-
-const STATE_LABEL: Record<string, string> = {
-  ALARM_RECEIVED: '알람 수신',
-  SCOPING: '스코핑',
-  HYPOTHESIS_GENERATION: '가설 생성',
-  HYPOTHESIS_PRIORITIZATION: '우선순위 결정',
-  EVIDENCE_COLLECTION: '증거 수집',
-  HYPOTHESIS_VALIDATION: '가설 검증',
-  REPORT_GENERATION: '보고서 생성',
-  ANALYZING: '분석 중',
-  COMPLETED: '완료',
-  FAILED: '실패',
-  CANCELLED: '중단됨',
-  OUTDATED: '만료됨',
 };
 
 const stateModalRef = ref<HTMLDialogElement | null>(null);
