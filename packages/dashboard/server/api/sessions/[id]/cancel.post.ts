@@ -5,7 +5,6 @@ import {
   type QueryCommandInput,
 } from '@aws-sdk/lib-dynamodb';
 
-const ALLOWED_ENGINES = new Set(['strands', 'cc-headless']);
 const OPEN_HYPO_STATES = new Set(['PENDING', 'NEEDS_INVESTIGATION']);
 
 async function findSessionKey(
@@ -14,16 +13,11 @@ async function findSessionKey(
   rcaId: string,
   engine: string,
 ): Promise<string | null> {
-  const sessionKeys =
-    engine === 'strands'
-      ? ['strands#SESSION', 'SESSION']
-      : [`${engine}#SESSION`];
-
-  for (const sessionKey of sessionKeys) {
+  for (const sessionKey of sessionSkCandidates(engine)) {
     const result = await ddb.send(
       new GetCommand({
         TableName: tableName,
-        Key: { PK: `RCA#${rcaId}`, SK: sessionKey },
+        Key: { PK: rcaPk(rcaId), SK: sessionKey },
         ProjectionExpression: 'PK',
       }),
     );
@@ -41,7 +35,7 @@ async function closeOpenHypotheses(
   sessionKey: string,
   now: string,
 ) {
-  const prefix = sessionKey === 'SESSION' ? 'HYPO#' : `${engine}#HYPO#`;
+  const prefix = hypothesisSkPrefix(engine, sessionKey);
   const items = [];
   let exclusiveStartKey: QueryCommandInput['ExclusiveStartKey'];
 
@@ -50,7 +44,7 @@ async function closeOpenHypotheses(
       new QueryCommand({
         TableName: tableName,
         KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': prefix },
+        ExpressionAttributeValues: { ':pk': rcaPk(rcaId), ':prefix': prefix },
         ProjectionExpression: 'PK, SK, #st',
         ExpressionAttributeNames: { '#st': 'status' },
         ExclusiveStartKey: exclusiveStartKey,
@@ -91,7 +85,7 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event);
   const engine = typeof query.engine === 'string' ? query.engine : '';
-  if (!ALLOWED_ENGINES.has(engine)) {
+  if (!isAllowedEngine(engine)) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Missing or invalid engine',
@@ -121,7 +115,7 @@ export default defineEventHandler(async (event) => {
     await ddb.send(
       new UpdateCommand({
         TableName: config.dynamodbTableName,
-        Key: { PK: `RCA#${id}`, SK: sessionKey },
+        Key: { PK: rcaPk(id), SK: sessionKey },
         ...buildCancelUpdate(
           fencedClaimToken('cancelled'),
           now,

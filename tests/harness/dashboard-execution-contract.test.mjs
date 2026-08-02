@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { REPOSITORY_ROOT } from './evaluator.mjs';
 
@@ -25,7 +26,7 @@ test('the dashboard cannot publish an approval that the worker would reject', as
   // to be checked before the message exists, or the gate would let through a
   // request that fails after the fact and reads as an approved-but-broken run.
   assert.match(source, /statusCode: 400[\s\S]*?Missing rcaId/);
-  assert.match(source, /ALLOWED_ENGINES\.has\(engine\)/);
+  assert.match(source, /isAllowedEngine\(engine\)/);
   assert.match(source, /state !== 'COMPLETED'/);
   assert.match(source, /declares no playbook execution steps/);
   assert.match(source, /An execution is already/);
@@ -308,25 +309,42 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
   ]);
 
   assert.match(endpointSource, /const query = getQuery\(event\)/);
-  assert.match(endpointSource, /ALLOWED_ENGINES\.has\(engine\)/);
+  assert.match(endpointSource, /isAllowedEngine\(engine\)/);
   assert.match(
     endpointSource,
-    /engine === 'strands'\s*\?\s*\['strands#SESSION', 'SESSION'\]/,
-    'legacy bare SESSION is only a Strands fallback',
-  );
-  assert.match(
-    endpointSource,
-    /Key: \{ PK: `RCA#\$\{id\}`, SK: sessionKey \}/,
+    /Key: \{ PK: rcaPk\(id\), SK: sessionKey \}/,
     'one resolved session key is cancelled',
-  );
-  assert.match(
-    endpointSource,
-    /const prefix = sessionKey === 'SESSION' \? 'HYPO#' : `\$\{engine\}#HYPO#`/,
-    'only hypotheses belonging to the selected session representation are closed',
   );
   assert.doesNotMatch(
     endpointSource,
     /const engines = \['strands', 'cc-headless'\]/,
+  );
+
+  // The legacy fallback and the hypothesis scoping are shared key helpers now,
+  // so they are exercised directly rather than pinned as handler text — the rule
+  // is what the helpers return, not where the handler spells it out.
+  const { sessionSkCandidates, hypothesisSkPrefix } = await import(
+    pathToFileURL(
+      path.join(REPOSITORY_ROOT, 'packages/dashboard/server/utils/keys.ts'),
+    ).href
+  );
+
+  // Bare `SESSION` predates the engine prefix and is therefore only ever Strands.
+  assert.deepEqual(sessionSkCandidates('strands'), [
+    'strands#SESSION',
+    'SESSION',
+  ]);
+  assert.deepEqual(sessionSkCandidates('cc-headless'), ['cc-headless#SESSION']);
+
+  // Only hypotheses belonging to the resolved session representation are closed.
+  assert.equal(hypothesisSkPrefix('strands', 'SESSION'), 'HYPO#');
+  assert.equal(
+    hypothesisSkPrefix('strands', 'strands#SESSION'),
+    'strands#HYPO#',
+  );
+  assert.equal(
+    hypothesisSkPrefix('cc-headless', 'cc-headless#SESSION'),
+    'cc-headless#HYPO#',
   );
 
   assert.match(

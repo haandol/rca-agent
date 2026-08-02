@@ -14,11 +14,18 @@ const {
   buildCancelUpdate,
   buildDeleteClaimUpdate,
   fencedClaimToken,
-  isSessionSortKey,
   TERMINAL_SESSION_STATES,
 } = await import(
   pathToFileURL(
     path.join(REPOSITORY_ROOT, 'packages/dashboard/server/utils/fencing.ts'),
+  ).href
+);
+
+// Which sort keys hold a session is part of the key layout, not of the fencing
+// conditions — the fencing only decides what an operator may write to one.
+const { isSessionSortKey } = await import(
+  pathToFileURL(
+    path.join(REPOSITORY_ROOT, 'packages/dashboard/server/utils/keys.ts'),
   ).href
 );
 

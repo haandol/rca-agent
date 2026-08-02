@@ -1,8 +1,6 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 
-const ALLOWED_ENGINES = new Set(['strands', 'cc-headless']);
-
 async function fetchReport(
   bucket: string,
   key: string,
@@ -22,7 +20,7 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event);
   const engineFilter = (query.engine as string) || '';
-  if (engineFilter && !ALLOWED_ENGINES.has(engineFilter)) {
+  if (engineFilter && !isAllowedEngine(engineFilter)) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid engine' });
   }
 
@@ -34,15 +32,12 @@ export default defineEventHandler(async (event) => {
 
   const attempts: string[] = [];
   for (const engine of engines) {
-    const sessionKeys = [`${engine}#SESSION`];
-    if (engine === 'strands') sessionKeys.push('SESSION');
-
     let reportKey = '';
-    for (const sessionKey of sessionKeys) {
+    for (const sessionKey of sessionSkCandidates(engine)) {
       const sessionResult = await ddb.send(
         new GetCommand({
           TableName: config.dynamodbTableName,
-          Key: { PK: `RCA#${id}`, SK: sessionKey },
+          Key: { PK: rcaPk(id), SK: sessionKey },
           ProjectionExpression: 'report_s3_key',
         }),
       );

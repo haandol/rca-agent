@@ -1,8 +1,6 @@
 import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
 
-const ALLOWED_ENGINES = new Set(['strands', 'cc-headless']);
-
 /**
  * Publishes a playbook execution request — the only entry point to execution.
  *
@@ -24,7 +22,7 @@ export default defineEventHandler(async (event) => {
   if (!rcaId) {
     throw createError({ statusCode: 400, statusMessage: 'Missing rcaId' });
   }
-  if (!ALLOWED_ENGINES.has(engine)) {
+  if (!isAllowedEngine(engine)) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Missing or invalid engine',
@@ -45,7 +43,7 @@ export default defineEventHandler(async (event) => {
   const session = await ddb.send(
     new GetCommand({
       TableName: config.dynamodbTableName,
-      Key: { PK: `RCA#${rcaId}`, SK: `${engine}#SESSION` },
+      Key: { PK: rcaPk(rcaId), SK: sessionSk(engine) },
     }),
   );
   if (!session.Item) {
@@ -123,14 +121,14 @@ async function approvedExecutionSteps(
     new QueryCommand({
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `RCA#${rcaId}` },
+      ExpressionAttributeValues: { ':pk': rcaPk(rcaId) },
     }),
   );
   const items = result.Items ?? [];
 
   // A retrospective revision, if one exists, is what the next execution runs.
   const revision = items.find(
-    (item) => (item.SK as string) === `${engine}#PLAYBOOK_REVISION`,
+    (item) => (item.SK as string) === playbookRevisionSk(engine),
   );
   if (revision) {
     const parsed = safeParse(revision.playbook);
@@ -157,7 +155,10 @@ async function inFlightExecution(
     new QueryCommand({
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': 'EXEC#' },
+      ExpressionAttributeValues: {
+        ':pk': rcaPk(rcaId),
+        ':prefix': EXECUTION_SK_PREFIX,
+      },
     }),
   );
   const executions = (result.Items ?? []).map(readExecution);

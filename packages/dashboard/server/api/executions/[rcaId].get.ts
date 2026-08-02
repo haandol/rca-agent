@@ -20,7 +20,10 @@ export default defineEventHandler(async (event) => {
     new QueryCommand({
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': 'EXEC#' },
+      ExpressionAttributeValues: {
+        ':pk': rcaPk(rcaId),
+        ':prefix': EXECUTION_SK_PREFIX,
+      },
     }),
   );
 

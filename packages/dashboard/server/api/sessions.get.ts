@@ -18,7 +18,7 @@ export default defineEventHandler(async () => {
           ' AND begins_with(PK, :prefix)',
         ExpressionAttributeValues: {
           ':session_suffix': 'SESSION',
-          ':execution_prefix': 'EXEC#',
+          ':execution_prefix': EXECUTION_SK_PREFIX,
           ':prefix': 'RCA#',
         },
         ExclusiveStartKey: exclusiveStartKey,
@@ -43,13 +43,8 @@ export default defineEventHandler(async () => {
   const sessions = items
     .filter((item) => !isExecutionItem((item.SK as string) || ''))
     .map((item) => {
-      const rcaId = (item.PK as string).replace('RCA#', '');
-      const engine =
-        (item.engine as string) ||
-        ((item.SK as string) === 'SESSION'
-          ? 'strands'
-          : (item.SK as string).split('#SESSION')[0]) ||
-        'strands';
+      const rcaId = rcaIdFromPk(item.PK as string);
+      const engine = (item.engine as string) || parseEngine(item.SK as string);
       const executions = (executionsByRca.get(rcaId) ?? []).filter(
         (execution) => !execution.engine || execution.engine === engine,
       );

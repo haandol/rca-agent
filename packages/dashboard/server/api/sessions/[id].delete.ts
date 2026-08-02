@@ -34,8 +34,8 @@ export default defineEventHandler(async (event) => {
         ? 'PK = :pk AND begins_with(SK, :skPrefix)'
         : 'PK = :pk',
       ExpressionAttributeValues: engine
-        ? { ':pk': `RCA#${id}`, ':skPrefix': `${engine}#` }
-        : { ':pk': `RCA#${id}` },
+        ? { ':pk': rcaPk(id), ':skPrefix': `${engine}#` }
+        : { ':pk': rcaPk(id) },
       ProjectionExpression: 'PK, SK',
     }),
   );
@@ -71,7 +71,7 @@ export default defineEventHandler(async (event) => {
       await ddb.send(
         new UpdateCommand({
           TableName: config.dynamodbTableName,
-          Key: { PK: `RCA#${id}`, SK: sessionKey },
+          Key: { PK: rcaPk(id), SK: sessionKey },
           ...buildDeleteClaimUpdate(fencedClaimToken('deleted'), now, nowEpoch),
         }),
       );
@@ -111,7 +111,7 @@ export default defineEventHandler(async (event) => {
       new QueryCommand({
         TableName: config.dynamodbTableName,
         KeyConditionExpression: 'PK = :pk',
-        ExpressionAttributeValues: { ':pk': `RCA#${id}` },
+        ExpressionAttributeValues: { ':pk': rcaPk(id) },
         Select: 'COUNT',
       }),
     );
@@ -143,7 +143,10 @@ async function inFlightExecutions(
     new QueryCommand({
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: { ':pk': `RCA#${rcaId}`, ':prefix': 'EXEC#' },
+      ExpressionAttributeValues: {
+        ':pk': rcaPk(rcaId),
+        ':prefix': EXECUTION_SK_PREFIX,
+      },
     }),
   );
   return (result.Items ?? [])

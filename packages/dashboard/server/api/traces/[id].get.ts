@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
       new QueryCommand({
         TableName: config.dynamodbTableName,
         KeyConditionExpression: 'PK = :pk',
-        ExpressionAttributeValues: { ':pk': `RCA#${id}` },
+        ExpressionAttributeValues: { ':pk': rcaPk(id) },
         ExclusiveStartKey: exclusiveStartKey,
       }),
     );
@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
 
   const session = items.find((i) => {
     const sk = i.SK as string;
-    const isSession = sk.endsWith('#SESSION') || sk === 'SESSION';
+    const isSession = isSessionSortKey(sk);
     return isSession && matchesEngine(sk);
   });
   // Executions have their own lifecycle, so they are reported alongside the

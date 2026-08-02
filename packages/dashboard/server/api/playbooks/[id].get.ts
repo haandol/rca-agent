@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     new QueryCommand({
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `RCA#${id}` },
+      ExpressionAttributeValues: { ':pk': rcaPk(id) },
     }),
   );
 

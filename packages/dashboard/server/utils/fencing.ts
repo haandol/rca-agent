@@ -135,8 +135,3 @@ export function isConditionalCheckFailure(error: unknown): boolean {
     (error as { name?: string })?.name === 'ConditionalCheckFailedException'
   );
 }
-
-/** Sort keys that hold a session record, across engines and legacy layouts. */
-export function isSessionSortKey(sortKey: string): boolean {
-  return sortKey === 'SESSION' || sortKey.endsWith('#SESSION');
-}

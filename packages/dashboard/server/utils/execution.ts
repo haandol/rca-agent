@@ -90,7 +90,7 @@ export function parseExecutionState(
 export function isExecutionItem(sortKey: string): boolean {
   // Executions are not partitioned by engine: the execution path is the same
   // regardless of which engine produced the report it runs.
-  return sortKey.startsWith('EXEC#');
+  return sortKey.startsWith(EXECUTION_SK_PREFIX);
 }
 
 export function isTerminalExecution(
@@ -105,8 +105,9 @@ export function readExecution(item: DataRecord): ExecutionSummary {
   const summary = asRecord(item.evidence_summary) ?? {};
 
   return {
-    executionId: readString(item.execution_id) || sortKey.replace('EXEC#', ''),
-    rcaId: readString(item.rca_id) || readString(item.PK).replace('RCA#', ''),
+    executionId:
+      readString(item.execution_id) || sortKey.replace(EXECUTION_SK_PREFIX, ''),
+    rcaId: readString(item.rca_id) || rcaIdFromPk(readString(item.PK)),
     engine: readString(item.engine),
     state,
     stateLabel:

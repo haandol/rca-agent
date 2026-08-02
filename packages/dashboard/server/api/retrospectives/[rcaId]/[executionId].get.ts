@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   const executionItem = await ddb.send(
     new GetCommand({
       TableName: config.dynamodbTableName,
-      Key: { PK: `RCA#${rcaId}`, SK: `EXEC#${executionId}` },
+      Key: { PK: rcaPk(rcaId), SK: executionSk(executionId) },
     }),
   );
   if (!executionItem.Item) {
@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
   const session = await ddb.send(
     new GetCommand({
       TableName: config.dynamodbTableName,
-      Key: { PK: `RCA#${rcaId}`, SK: `${execution.engine}#SESSION` },
+      Key: { PK: rcaPk(rcaId), SK: sessionSk(execution.engine) },
     }),
   );
 
@@ -55,8 +55,8 @@ export default defineEventHandler(async (event) => {
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk AND SK = :sk',
       ExpressionAttributeValues: {
-        ':pk': `RCA#${rcaId}`,
-        ':sk': `${execution.engine}#PLAYBOOK_REVISION`,
+        ':pk': rcaPk(rcaId),
+        ':sk': playbookRevisionSk(execution.engine),
       },
     }),
   );
