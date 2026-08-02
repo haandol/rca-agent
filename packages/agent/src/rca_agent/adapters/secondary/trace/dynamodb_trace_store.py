@@ -13,9 +13,7 @@ from typing import TYPE_CHECKING
 from botocore.exceptions import ClientError
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
-    TERMINAL_STATES as _TERMINAL_STATES,
-)
-from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    TERMINAL_STATES,
     SessionCancelledError,
 )
 from rca_agent.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
@@ -144,7 +142,7 @@ class TraceStore:
                 raise SessionOwnershipCheckError(f"{self._rca_id}: session item is missing")
             state = item.get("state", {}).get("S", "")
             owner = item.get("claim_token", {}).get("S")
-            if state in _TERMINAL_STATES or (self._claim_token and owner != self._claim_token):
+            if state in TERMINAL_STATES or (self._claim_token and owner != self._claim_token):
                 raise SessionCancelledError(self._rca_id)
         except (SessionCancelledError, SessionOwnershipCheckError):
             raise

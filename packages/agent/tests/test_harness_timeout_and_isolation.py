@@ -105,8 +105,9 @@ class TestExecutionStateIsolation:
             orchestrator.process_alarm(_alarm_body("FirstAlarm"))
             orchestrator.process_alarm(_alarm_body("SecondAlarm"))
 
-        assert [call.kwargs["start_time"] for call in run_pipeline.call_args_list] == [101.0, 202.0]
-        assert len({call.kwargs["rca_id"] for call in run_pipeline.call_args_list}) == 2
+        runs = [call.args[1] for call in run_pipeline.call_args_list]
+        assert [run.start_time for run in runs] == [101.0, 202.0]
+        assert len({run.rca_id for run in runs}) == 2
 
 
 class TestWallClockTimeoutContract:

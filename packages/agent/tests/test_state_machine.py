@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
-    _TERMINAL_STATES,
+    TERMINAL_STATES,
     VALID_TRANSITIONS,
     InvalidStateTransitionError,
     SessionCancelledError,
@@ -85,7 +85,7 @@ class TestValidTransitions:
             assert state in VALID_TRANSITIONS, f"{state} missing from VALID_TRANSITIONS"
 
     def test_terminal_states_not_in_transitions(self):
-        for state in _TERMINAL_STATES:
+        for state in TERMINAL_STATES:
             assert state not in VALID_TRANSITIONS
 
     def test_all_non_terminal_can_reach_failed(self):
@@ -160,7 +160,7 @@ class TestInvalidTransitions:
 
 
 class TestTerminalStateAbort:
-    @pytest.mark.parametrize("terminal", sorted(_TERMINAL_STATES))
+    @pytest.mark.parametrize("terminal", sorted(TERMINAL_STATES))
     def test_terminal_state_raises_session_cancelled(self, terminal: str):
         ddb = _mock_ddb_state(terminal)
         with (

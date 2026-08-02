@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -33,6 +34,7 @@ from rca_agent.ports.interfaces.session_store import (
 from rca_agent.services.evidence import EvidenceCollectionSummary
 from rca_agent.services.pipeline import (
     PipelineOrchestrator,
+    RunContext,
     parse_sns_envelope,
     prune_subtree,
 )
@@ -106,6 +108,16 @@ def _make_hypothesis(hid="h-1", confidence=0.5):
 
 def _scoping():
     return ScopingResult(alarm_summary="CPU spike on web-service")
+
+
+def _run_context(*, rca_id="rca-1", claim_token="claim-1", attempt=1, trace=None):
+    return RunContext(
+        rca_id=rca_id,
+        claim_token=claim_token,
+        attempt=attempt,
+        trace=trace or MagicMock(),
+        start_time=time.monotonic(),
+    )
 
 
 def _hypo_result(hypotheses=None):
@@ -744,10 +756,13 @@ class TestProcessAlarmFullPipeline:
         assert first is False
         assert second is True
         assert orchestrator._run_pipeline.call_count == 2
-        assert [call.kwargs["claim_token"] for call in orchestrator._run_pipeline.call_args_list] == [
+        # 각 시도는 자기 claim 으로만 기록해야 한다 — 재시도가 이전 시도의 토큰을
+        # 물려받으면 fencing 이 무력화된다.
+        assert [call.args[1].claim_token for call in orchestrator._run_pipeline.call_args_list] == [
             "claim-1",
             "claim-2",
         ]
+        assert [call.args[1].attempt for call in orchestrator._run_pipeline.call_args_list] == [1, 2]
         assert [call.kwargs["receive_count"] for call in container.session_store.claim_session.call_args_list] == [1, 2]
         assert [call.kwargs["message_id"] for call in container.session_store.claim_session.call_args_list] == [
             "message-a",
@@ -777,8 +792,7 @@ class TestProcessAlarmFullPipeline:
             orchestrator._run_playbook(
                 report,
                 _scoping(),
-                MagicMock(),
-                claim_token="claim-1",
+                _run_context(claim_token="claim-1"),
             )
 
         container.playbook_store.save.assert_not_called()
