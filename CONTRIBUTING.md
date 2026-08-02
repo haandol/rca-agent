@@ -45,16 +45,16 @@
 
 변경 대상 모듈을 괄호 안에 명시합니다. 이 프로젝트의 주요 scope:
 
-| Scope         | 대상                                                  |
-| ------------- | ----------------------------------------------------- |
-| `agent`       | RCA 에이전트 코어 (`packages/agent/`)                 |
+| Scope         | 대상                                                      |
+| ------------- | --------------------------------------------------------- |
+| `agent`       | RCA 에이전트 코어 (`packages/agent/`)                     |
 | `cc-headless` | CC on Bedrock headless 에이전트 (`packages/cc-headless/`) |
-| `infra`       | AWS CDK 인프라 (`packages/infra/`)                    |
-| `sensor`      | 헬스케어 센서 앱 (`packages/healthcare-sensor-app/`)  |
-| `dashboard`   | RCA 대시보드 (`packages/dashboard/`)                  |
-| `workspace`   | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등) |
-| `deps`        | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)        |
-| `docs`        | 문서 (`docs/`, PRD, ADR)                              |
+| `infra`       | AWS CDK 인프라 (`packages/infra/`)                        |
+| `sensor`      | 헬스케어 센서 앱 (`packages/healthcare-sensor-app/`)      |
+| `dashboard`   | RCA 대시보드 (`packages/dashboard/`)                      |
+| `workspace`   | 워크스페이스 루트 설정 (`nx.json`, `package.json` 등)     |
+| `deps`        | 의존성 관리 (`package.json`, `pnpm-lock.yaml`)            |
+| `docs`        | 문서 (`docs/`, PRD, ADR)                                  |
 
 ### Subject (필수)
 
@@ -226,6 +226,27 @@ pnpm prettier --check .
 # 자동 수정
 pnpm prettier --write .
 ```
+
+### 자동화 훅 (Claude Code)
+
+`format:check`와 테스트는 CI 하드 게이트(`pnpm verify`)이므로, 사람이 기억해서
+맞추는 대신 Claude Code 훅이 앞당겨 처리합니다. 설정은 `.claude/settings.json`,
+스크립트는 `scripts/hooks/`에 있습니다.
+
+| 훅                      | 시점                 | 동작                                                |
+| ----------------------- | -------------------- | --------------------------------------------------- |
+| `format-file.sh`        | 파일 편집 직후       | 편집된 파일만 포맷 (`.py` → ruff, 그 외 → prettier) |
+| `verify-before-push.sh` | `git push` 실행 직전 | `pnpm verify` 실행, 실패하면 push 차단              |
+
+두 스크립트 모두 포맷 규칙을 갖고 있지 않습니다 — ruff는 각 패키지의
+`pyproject.toml`, prettier는 `.prettierrc`/`.prettierignore`를 스스로 찾습니다.
+규칙을 훅에 적으면 설정과 갈라지므로 추가하지 마세요.
+
+> 이 저장소는 `core.hooksPath`가 사내 도구에 점유되어 있어 `pre-commit install`과
+> `.git/hooks`를 쓸 수 없습니다. `.pre-commit-config.yaml`은 CI용으로 남겨 둡니다.
+
+훅을 잠시 끄려면 `/hooks`에서 비활성화하거나, 검증을 직접 돌리려면
+`pnpm verify`를 실행하세요.
 
 ### 프로젝트 구조
 
