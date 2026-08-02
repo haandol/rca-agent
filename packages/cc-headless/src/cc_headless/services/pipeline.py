@@ -377,9 +377,7 @@ class PipelineOrchestrator:
             # 식별자와 검증 상태는 기존 플레이북의 것을 유지한다. 병합이 획득한 검증
             # 상태를 낮추면 보강 한 번이 회고의 승격을 취소한다.
             merged["playbook_id"] = hit.playbook_id
-            merged[VERIFICATION_STATUS_FIELD] = normalize_verification_status(
-                existing.get(VERIFICATION_STATUS_FIELD)
-            )
+            merged[VERIFICATION_STATUS_FIELD] = normalize_verification_status(existing.get(VERIFICATION_STATUS_FIELD))
             log.info(
                 "playbook_merged_into_existing",
                 playbook_id=hit.playbook_id,

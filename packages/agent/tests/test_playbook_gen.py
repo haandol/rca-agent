@@ -162,9 +162,7 @@ class TestSearchExistingPlaybooks:
         hit = _make_hit(playbook_id="pb-1", similarity=0.9)
         store = _playbook_store([hit])
 
-        hits = search_existing_playbooks(
-            _make_existing(playbook_id="pb-draft"), _make_scoping(), playbook_store=store
-        )
+        hits = search_existing_playbooks(_make_existing(playbook_id="pb-draft"), _make_scoping(), playbook_store=store)
 
         assert [h.playbook_id for h in hits] == ["pb-1"]
         assert hits[0].similarity == pytest.approx(0.9)

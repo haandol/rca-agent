@@ -26,6 +26,7 @@ def normalize_verification_status(raw: object) -> str:
         return raw
     return PLAYBOOK_DRAFT
 
+
 # 모델이 갱신안에 담아도 무시하는 필드. 검증 상태는 서버가 소유하므로 LLM 출력이
 # 검증 여부의 권위가 되면 실행되지 않은 절차가 검증됨으로 표기된다. 식별자와 stage는
 # 병합이 유지해야 하는 값이라 갱신안이 바꿀 수 없다.

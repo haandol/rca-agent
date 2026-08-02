@@ -274,9 +274,7 @@ def test_redelivered_message_runs_only_after_atomic_session_claim(monkeypatch):
 
 def _past_staleness_boundary() -> str:
     """건너뛰기 기준을 막 넘긴 시각. 기준 값이 바뀌어도 이 테스트의 의도는 유지된다."""
-    return (
-        datetime.now(UTC) - timedelta(seconds=ALARM_STALENESS_SECONDS + 300)
-    ).isoformat()
+    return (datetime.now(UTC) - timedelta(seconds=ALARM_STALENESS_SECONDS + 300)).isoformat()
 
 
 def test_redelivery_bypasses_initial_alarm_staleness_check(monkeypatch):
