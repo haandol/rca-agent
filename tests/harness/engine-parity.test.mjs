@@ -9,6 +9,8 @@ const AGENT_DESTRUCTIVE =
   'packages/agent/src/rca_agent/services/destructive_actions.py';
 const CC_DESTRUCTIVE =
   'packages/cc-headless/src/cc_headless/services/destructive_actions.py';
+const AGENT_EMBED_KEY = 'packages/agent/src/rca_agent/utils/embed_key.py';
+const CC_EMBED_KEY = 'packages/cc-headless/src/cc_headless/utils/embed_key.py';
 
 async function readRepositoryFile(relativePath) {
   return readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8');
@@ -71,6 +73,47 @@ test('both engines recognise the same Korean destructive phrasing', async () => 
     pythonStringLiterals(agent, '_DESTRUCTIVE_KOREAN'),
     pythonStringLiterals(ccHeadless, '_DESTRUCTIVE_KOREAN'),
   );
+});
+
+/**
+ * Strip a Python module down to what it executes: no comments, no docstrings, no
+ * blank lines. Two renderers may explain themselves differently and still be the
+ * same renderer; what they must not differ in is the text they produce.
+ */
+function pythonCodeLines(source) {
+  const withoutDocstrings = source.replace(/"""[\s\S]*?"""/g, '');
+  return withoutDocstrings
+    .split('\n')
+    .map((line) => line.replace(/\s+#.*$/, '').trimEnd())
+    .filter((line) => line.trim() && !line.trim().startsWith('#'));
+}
+
+// Both engines write to and search the same vector indexes, so the embedding text
+// for one incident has to come out byte-identical on either side. This renderer is
+// what guarantees that, and it is duplicated because the packages cannot import
+// from each other — the same reason the destructive vocabulary is duplicated.
+//
+// Drift here fails silently, which is why it is worth a test: a different label, a
+// different separator or a different truncation length splits the embedding space,
+// and the only symptom is that a playbook stops finding its own prior incidents.
+// A search that matches nothing returns an empty result set, not an error.
+test('both engines render embedding text with the same renderer', async () => {
+  const [agent, ccHeadless] = await Promise.all([
+    readRepositoryFile(AGENT_EMBED_KEY),
+    readRepositoryFile(CC_EMBED_KEY),
+  ]);
+
+  assert.deepEqual(
+    pythonCodeLines(agent),
+    pythonCodeLines(ccHeadless),
+    'the shared embedding renderer has diverged between the engines',
+  );
+
+  // The field cap is part of the rendered text, so a value that differs truncates
+  // the same incident at two different points.
+  const cap = (source) => source.match(/^EMBED_FIELD_MAX = (\d+)$/m)?.[1];
+  assert.equal(cap(agent), cap(ccHeadless));
+  assert.ok(cap(agent), 'EMBED_FIELD_MAX is missing');
 });
 
 // The execution agent reads execution steps out of the recorded playbook, and it
