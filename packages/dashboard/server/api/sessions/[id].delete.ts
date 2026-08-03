@@ -42,7 +42,10 @@ export default defineEventHandler(async (event) => {
 
   const items = result.Items ?? [];
   if (!items.length) {
-    throw createError({ statusCode: 404, statusMessage: 'Session not found' });
+    throw createError({
+      statusCode: 404,
+      statusMessage: '이미 삭제된 세션입니다.',
+    });
   }
 
   // An execution is a separate lifecycle from the analysis, but its records live
@@ -53,7 +56,7 @@ export default defineEventHandler(async (event) => {
   if (running.length) {
     throw createError({
       statusCode: 409,
-      statusMessage: `An execution is ${running[0]!.stateLabel} for this report — wait for it to finish before deleting`,
+      statusMessage: `실행이 끝나지 않았습니다(${running[0]!.stateLabel}). 실행이 끝난 뒤에 삭제할 수 있습니다.`,
     });
   }
 
@@ -81,7 +84,8 @@ export default defineEventHandler(async (event) => {
         // session first, which fences the execution, and only then delete.
         throw createError({
           statusCode: 409,
-          statusMessage: `Session ${sessionKey} is still active — cancel it first, then delete`,
+          statusMessage:
+            '분석이 아직 진행 중입니다. 먼저 중단한 뒤에 삭제할 수 있습니다.',
         });
       }
       throw error;

@@ -101,7 +101,10 @@ export default defineEventHandler(async (event) => {
     engine,
   );
   if (!sessionKey) {
-    throw createError({ statusCode: 404, statusMessage: 'Session not found' });
+    throw createError({
+      statusCode: 404,
+      statusMessage: '이미 삭제된 세션입니다.',
+    });
   }
 
   const now = new Date().toISOString();
@@ -131,7 +134,7 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 409,
         statusMessage:
-          'Session cannot be cancelled — it is already terminal, or a side effect is still holding its lease',
+          '중단할 수 없습니다. 이미 종료된 세션이거나, 진행 중인 외부 작업이 아직 끝나지 않았습니다. 잠시 뒤 다시 시도하세요.',
       });
     }
     throw error;

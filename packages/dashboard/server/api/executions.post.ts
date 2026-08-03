@@ -31,10 +31,13 @@ export default defineEventHandler(async (event) => {
 
   const config = useRuntimeConfig();
   if (!config.executionQueueUrl) {
+    // Naming the variable is the point: this is a misconfiguration the person
+    // reading it can fix, and failing loudly is what keeps a dashboard that
+    // cannot publish from looking like it approved something.
     throw createError({
       statusCode: 503,
       statusMessage:
-        'EXECUTION_QUEUE_URL is not configured, so no approval can be published',
+        '실행 요청 큐가 설정되지 않아 승인을 발행할 수 없습니다. EXECUTION_QUEUE_URL 환경변수를 확인하세요.',
     });
   }
 
@@ -47,13 +50,16 @@ export default defineEventHandler(async (event) => {
     }),
   );
   if (!session.Item) {
-    throw createError({ statusCode: 404, statusMessage: 'Session not found' });
+    throw createError({
+      statusCode: 404,
+      statusMessage: '세션을 찾을 수 없습니다.',
+    });
   }
   if (session.Item.state !== 'COMPLETED') {
     // An unfinished analysis has no approved report behind it.
     throw createError({
       statusCode: 409,
-      statusMessage: `Analysis is ${session.Item.state ?? 'unknown'}, not COMPLETED`,
+      statusMessage: '분석이 완료되지 않아 승인할 수 없습니다.',
     });
   }
 
@@ -63,7 +69,8 @@ export default defineEventHandler(async (event) => {
     // a person could have approved here.
     throw createError({
       statusCode: 409,
-      statusMessage: 'The report declares no playbook execution steps to run',
+      statusMessage:
+        '이 리포트에는 실행할 절차가 없습니다. 근본원인이 확정되지 않았습니다.',
     });
   }
 
@@ -71,7 +78,7 @@ export default defineEventHandler(async (event) => {
   if (running) {
     throw createError({
       statusCode: 409,
-      statusMessage: `An execution is already ${running.stateLabel} for this report`,
+      statusMessage: `아직 끝나지 않은 실행이 있습니다(${running.stateLabel}). 그 실행이 끝난 뒤에 다시 승인할 수 있습니다.`,
     });
   }
 
