@@ -27,7 +27,9 @@ export const STATE_LABEL: Record<string, string> = {
   COMPLETED: '완료',
   FAILED: '실패',
   CANCELLED: '중단됨',
-  OUTDATED: '만료됨',
+  // 'Expired' read as a TTL sweep. The alarm was skipped for being too old to
+  // analyse, which is a decision made at intake, not a record aging out.
+  OUTDATED: '스킵됨',
 };
 
 export const STATE_DESC: Record<string, string> = {
@@ -53,7 +55,10 @@ export const STATE_DESC: Record<string, string> = {
     'RCA 분석이 정상 완료되어 보고서가 S3에 저장되고 알림이 발송된 상태',
   FAILED: '파이프라인 실행 중 오류가 발생하여 분석이 중단된 상태',
   CANCELLED: '사용자가 대시보드에서 수동으로 분석을 중단한 상태',
-  OUTDATED: 'TTL 만료 등으로 더 이상 유효하지 않은 세션',
+  // 판정 근거는 TTL이 아니라 알람 나이다. 기준은 엔진마다 다르다 — 예산 소진 한 번이
+  // 뒤따르는 알람을 폐기하지 않으려면 기준이 그 엔진의 시간 예산 이상이어야 한다.
+  OUTDATED:
+    '알람이 너무 오래되어 분석에 들어가지 않고 종료된 상태. 첫 수신 시점에 알람 나이가 기준(Strands 30분, CC Headless 60분)을 넘으면 이 상태가 된다.',
 };
 
 /**
@@ -69,10 +74,161 @@ export const TERMINAL_STATES = [
   'OUTDATED',
 ] as const;
 
+/**
+ * The stages a run passes through, per engine, in order.
+ *
+ * Used to say how far a stopped run got: a terminal state overwrites the stage it
+ * happened in, so '3단계 중 스코핑에서' has to be derived from this order rather
+ * than read off the session. The two engines have genuinely different lengths
+ * (Strands moves through the pipeline stage by stage, CC Headless collapses them
+ * into a single autonomous run), and flattening them to a common length would
+ * claim a precision neither engine reports.
+ */
+export const ENGINE_TRACK: Record<string, readonly string[]> = {
+  strands: [
+    'ALARM_RECEIVED',
+    'SCOPING',
+    'HYPOTHESIS_GENERATION',
+    'HYPOTHESIS_PRIORITIZATION',
+    'EVIDENCE_COLLECTION',
+    'HYPOTHESIS_VALIDATION',
+    'REPORT_GENERATION',
+    'COMPLETED',
+  ],
+  'cc-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
+};
+
+export function engineTrack(engine: string): readonly string[] {
+  return ENGINE_TRACK[engine] ?? ENGINE_TRACK.strands!;
+}
+
 export function isTerminalState(state: string): boolean {
   return (TERMINAL_STATES as readonly string[]).includes(state);
 }
 
 export function stateLabel(state: string): string {
   return STATE_LABEL[state] || state;
+}
+
+/**
+ * What a person can still do about a finished run.
+ *
+ * `COMPLETED` says the analysis stopped, not whether anything remains. The server
+ * derives these from the same three conditions the approval endpoint enforces,
+ * and the labels live here so the list and the report name the state identically
+ * — a row promising an approval the server would refuse is worse than no promise.
+ */
+export const READINESS_LABEL: Record<string, string> = {
+  AWAITING_APPROVAL: '승인 대기',
+  EXECUTION_UNDERWAY: '실행됨',
+  NO_PROCEDURE: '절차 없음',
+  NOT_COMPLETED: '미완료',
+};
+
+export const READINESS_DESC: Record<string, string> = {
+  AWAITING_APPROVAL:
+    '분석이 끝나고 실행할 절차도 있지만 아직 아무도 승인하지 않았다. 사람이 절차를 읽고 승인해야 실행이 시작된다.',
+  EXECUTION_UNDERWAY:
+    '이 리포트로 실행이 한 번 이상 발행되었다. 실행 자체의 결과는 실행 상태로 따로 읽는다.',
+  NO_PROCEDURE:
+    '분석은 끝났지만 근본원인이 확정되지 않아 실행할 절차가 없다. 추가 조사가 필요하다.',
+  NOT_COMPLETED: '분석이 완료되지 않아 승인 대상이 아니다.',
+};
+
+/**
+ * The one outcome word for a session row.
+ *
+ * A session has two independent lifecycles — the analysis and any execution of
+ * its playbook — and showing both as equal badges made '완료' mean four different
+ * situations. This collapses them into the single thing the reader needs: what
+ * became of this incident, and whether it is still on someone's desk.
+ */
+export type Outcome =
+  | 'RUNNING'
+  | 'AWAITING'
+  | 'RESOLVED'
+  | 'UNRESOLVED'
+  | 'NO_CAUSE'
+  | 'BROKEN'
+  | 'SKIPPED';
+
+export interface OutcomeInput {
+  state: string;
+  readiness?: string;
+  executionState?: string;
+}
+
+export function outcomeOf({
+  state,
+  readiness = '',
+  executionState = '',
+}: OutcomeInput): Outcome {
+  if (!isTerminalState(state)) return 'RUNNING';
+  if (state === 'OUTDATED') return 'SKIPPED';
+  if (state === 'FAILED' || state === 'CANCELLED') return 'BROKEN';
+
+  // A completed analysis is described by what happened after it, since the
+  // analysis finishing is not itself an outcome for the incident.
+  if (executionState === 'RESOLVED') return 'RESOLVED';
+  if (
+    executionState === 'UNRESOLVED' ||
+    executionState === 'FAILED' ||
+    executionState === 'CANCELLED'
+  ) {
+    return 'UNRESOLVED';
+  }
+  if (readiness === 'AWAITING_APPROVAL') return 'AWAITING';
+  if (readiness === 'NO_PROCEDURE') return 'NO_CAUSE';
+  return 'AWAITING';
+}
+
+export const OUTCOME_LABEL: Record<Outcome, string> = {
+  RUNNING: '분석 중',
+  AWAITING: '승인 대기',
+  RESOLVED: '해결',
+  UNRESOLVED: '미해결',
+  NO_CAUSE: '원인 미확정',
+  BROKEN: '분석 중단',
+  SKIPPED: '건너뜀',
+};
+
+/**
+ * Colour is spent only where a state has consequence.
+ *
+ * A resolved incident and a skipped alarm both need no action, so neither is
+ * given emphasis. Ember marks the two that are somebody's move — a run in
+ * progress and a report waiting on approval.
+ */
+export const OUTCOME_TONE: Record<Outcome, string> = {
+  RUNNING: 'text-primary',
+  AWAITING: 'text-primary',
+  RESOLVED: 'text-success',
+  UNRESOLVED: 'text-error',
+  NO_CAUSE: 'text-base-content/45',
+  BROKEN: 'text-error/75',
+  SKIPPED: 'text-base-content/35',
+};
+
+/** Outcomes that put a session on somebody's desk. */
+export function needsAttention(outcome: Outcome): boolean {
+  return outcome === 'RUNNING' || outcome === 'AWAITING';
+}
+
+/**
+ * Where a stopped run got to, in words.
+ *
+ * A terminal state overwrites the stage it happened in, so a run that died
+ * generating the report and one that died on its first metric call both read
+ * FAILED. `stoppedAt` carries the furthest stage the spans recorded, and saying
+ * it — '보고서 생성에서 멈춤' — is the difference between a near-complete analysis
+ * and one that never started. Returns '' when the spans recorded nothing, since
+ * inventing a stage would be worse than admitting there is none.
+ */
+export function stoppedAtLabel(engine: string, stoppedAt: string): string {
+  if (!stoppedAt) return '';
+  const track = engineTrack(engine);
+  const at = track.indexOf(stoppedAt);
+  if (at < 0) return '';
+  const label = STATE_LABEL[stoppedAt] || stoppedAt;
+  return `${label}에서 멈춤 · ${at + 1}/${track.length}단계`;
 }
