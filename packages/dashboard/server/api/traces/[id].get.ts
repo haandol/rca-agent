@@ -76,6 +76,10 @@ export default defineEventHandler(async (event) => {
     .map(readExecution)
     .sort((a, b) => b.attempt - a.attempt);
 
+  const sessionEngine = session
+    ? (session.engine as string) || parseEngine(session.SK as string)
+    : '';
+
   const sessionData = session
     ? {
         state: (session.state as string) || 'UNKNOWN',
@@ -83,10 +87,19 @@ export default defineEventHandler(async (event) => {
         alarmArn: (session.alarm_arn as string) || '',
         rootCause: (session.root_cause as string) || '',
         confirmed: (session.confirmed as boolean) ?? false,
-        errorReason: (session.error_reason as string) || '',
+        // A skipped-for-age reason lands in error_reason on Strands and in
+        // outdated_reason on CC Headless, so both are read.
+        errorReason:
+          (session.error_reason as string) ||
+          (session.outdated_reason as string) ||
+          '',
+        // The furthest stage the spans reached. A terminal state overwrites the
+        // stage it happened in, so this is the only record of where a stopped run
+        // actually got to.
+        stoppedAt: furthestStage(spans, sessionEngine),
         createdAt: (session.created_at as string) || '',
         updatedAt: (session.updated_at as string) || '',
-        engine: (session.engine as string) || parseEngine(session.SK as string),
+        engine: sessionEngine,
       }
     : null;
 

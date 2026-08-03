@@ -28,13 +28,23 @@ test('the dashboard cannot publish an approval that the worker would reject', as
   assert.match(source, /statusCode: 400[\s\S]*?Missing rcaId/);
   assert.match(source, /isAllowedEngine\(engine\)/);
   assert.match(source, /state !== 'COMPLETED'/);
-  assert.match(source, /declares no playbook execution steps/);
-  assert.match(source, /An execution is already/);
+  // The refusals are asserted on the condition each one guards rather than on its
+  // wording: these sentences are read by a person in a dialog and get rewritten,
+  // while the three conditions are the contract the worker also enforces.
+  assert.match(source, /!steps\.length/);
+  assert.match(source, /if \(running\)/);
+  assert.equal(
+    source.match(/statusCode: 409/g)?.length,
+    3,
+    'each of the three approval conditions refuses with a 409',
+  );
 
   // No queue URL must fail loudly: a dashboard that silently skipped publishing
   // would look like it approved something.
   assert.match(source, /statusCode: 503/);
-  assert.match(source, /EXECUTION_QUEUE_URL is not configured/);
+  // The refusal names the variable, so whoever reads it can fix the deployment
+  // rather than only learning that approval failed.
+  assert.match(source, /EXECUTION_QUEUE_URL/);
 });
 
 test('an approval carries a stable identifier so a resubmit cannot double-execute', async () => {
@@ -90,8 +100,18 @@ test('a person deciding to approve can tell a proven procedure from a draft', as
   assert.match(reportPage, /verification_status === 'VERIFIED'/);
   assert.match(
     reportPage,
-    /검증됨/,
-    'the badge must name the state rather than print the raw enum',
+    /검증된 절차/,
+    'the verified state must be named in words rather than printed as the enum',
+  );
+  assert.match(
+    reportPage,
+    /초안/,
+    'the unproven state must be named as a draft',
+  );
+  assert.doesNotMatch(
+    reportPage,
+    /\{\{\s*playbook\.verification_status\s*\}\}/,
+    'the raw enum must never be rendered directly',
   );
 });
 
@@ -153,20 +173,61 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
   assert.match(executionModule, /resolutionConfirmed: boolean \| null/);
   assert.match(executionModule, /readTristate/);
 
-  // UNRESOLVED and FAILED must not read as success at a glance.
-  for (const [name, source] of [
-    ['index', indexSource],
-    ['report', reportPage],
-  ]) {
-    assert.match(
-      source,
-      /state === 'RESOLVED'\) return 'badge-success'/,
-      `${name} page marks only RESOLVED as success`,
+  // UNRESOLVED and FAILED must not read as success at a glance. The report page
+  // still maps execution states to a tone directly; the session list collapses
+  // the analysis and execution lifecycles into one outcome word, so its rule
+  // lives in the shared vocabulary and is asserted by executing it below.
+  assert.match(
+    reportPage,
+    /state === 'RESOLVED'\) return 'text-success'/,
+    'report page marks only RESOLVED as success',
+  );
+  assert.match(
+    reportPage,
+    /'UNRESOLVED' \|\| state === 'FAILED'\) return 'text-error'/,
+    'report page marks unresolved and failed as errors',
+  );
+
+  // The list derives its single word from the shared module, so it must not
+  // reimplement the mapping and drift from it.
+  assert.match(
+    indexSource,
+    /outcomeOf/,
+    'the session list derives its outcome from the shared vocabulary',
+  );
+
+  const { outcomeOf, OUTCOME_TONE } = await import(
+    pathToFileURL(
+      path.join(
+        REPOSITORY_ROOT,
+        'packages/dashboard/app/utils/sessionState.ts',
+      ),
+    ).href
+  );
+
+  const resolved = outcomeOf({
+    state: 'COMPLETED',
+    readiness: 'EXECUTION_UNDERWAY',
+    executionState: 'RESOLVED',
+  });
+  assert.equal(resolved, 'RESOLVED');
+  assert.match(OUTCOME_TONE[resolved], /success/);
+
+  for (const failed of ['UNRESOLVED', 'FAILED', 'CANCELLED']) {
+    const outcome = outcomeOf({
+      state: 'COMPLETED',
+      readiness: 'EXECUTION_UNDERWAY',
+      executionState: failed,
+    });
+    assert.equal(
+      outcome,
+      'UNRESOLVED',
+      `${failed} execution must not read as resolved`,
     );
-    assert.match(
-      source,
-      /'UNRESOLVED' \|\| state === 'FAILED'\) return 'badge-error'/,
-      `${name} page marks unresolved and failed as errors`,
+    assert.doesNotMatch(
+      OUTCOME_TONE[outcome],
+      /success/,
+      `${failed} execution must not be toned as success`,
     );
   }
 });
@@ -183,8 +244,10 @@ test('the report page gates approval on a confirmed procedure', async () => {
   assert.match(source, /verification_status/);
 
   // Approval requires a completed analysis, steps to run, and nothing already
-  // running — the same conditions the API enforces.
-  assert.match(source, /session\.state === 'COMPLETED'/);
+  // running — the same conditions the API enforces. The state check is asserted
+  // on the optional-chained form the gate itself uses, so this does not pass on
+  // an unrelated mention of the same state elsewhere in the page.
+  assert.match(source, /session\.value\?\.state === 'COMPLETED'/);
   assert.match(source, /executionSteps\.value\.length > 0/);
   assert.match(source, /!inFlight\.value/);
   assert.match(source, /:disabled="!canApprove"/);
@@ -241,43 +304,113 @@ test('the analysis lifecycle no longer contains a recovery stage', async () => {
   }
 });
 
-test('dashboard session and trace reads paginate DynamoDB results', async () => {
-  const [sessionsSource, tracesSource] = await Promise.all([
-    readRepositoryFile('packages/dashboard/server/api/sessions.get.ts'),
+test('no dashboard read drops rows DynamoDB withheld', async () => {
+  // DynamoDB truncates a page whenever it feels like it, so every read either
+  // exhausts the cursor or hands it onward. Doing neither loses rows silently,
+  // which is the failure mode that matters: the page still renders.
+  const [tracesSource, summarySource, sessionsSource] = await Promise.all([
     readRepositoryFile('packages/dashboard/server/api/traces/[id].get.ts'),
+    readRepositoryFile('packages/dashboard/server/api/sessions-summary.get.ts'),
+    readRepositoryFile('packages/dashboard/server/api/sessions.get.ts'),
   ]);
 
+  // These two must be complete to be correct: a trace is one run's whole history,
+  // and the archive counts describe everything. Both loop until the cursor clears.
   for (const [name, source] of [
-    ['sessions', sessionsSource],
     ['traces', tracesSource],
+    ['summary', summarySource],
   ]) {
-    assert.match(source, /const items = \[\]/, `${name} accumulates pages`);
     assert.match(
       source,
-      /ExclusiveStartKey: exclusiveStartKey/,
+      /ExclusiveStartKey:/,
       `${name} forwards the page cursor`,
     );
     assert.match(
       source,
-      /items\.push\(\.\.\.\(result\.Items \?\? \[\]\)\)/,
-      `${name} preserves every page`,
-    );
-    assert.match(
-      source,
-      /exclusiveStartKey = result\.LastEvaluatedKey/,
+      /= result\.LastEvaluatedKey/,
       `${name} reads the next cursor`,
     );
-    assert.match(
-      source,
-      /while \(exclusiveStartKey\)/,
-      `${name} continues through the final page`,
-    );
+    assert.match(source, /while \(/, `${name} continues through the last page`);
   }
 
   assert.ok(
     tracesSource.indexOf('const items = []') <
       tracesSource.indexOf('function matchesEngine'),
     'trace engine filtering occurs after all pages are accumulated',
+  );
+
+  // The list is deliberately one page, so instead of exhausting the cursor it
+  // returns one. Truncating without saying so would make an archive with more
+  // rows look finished.
+  assert.match(
+    sessionsSource,
+    /nextCursor: encodeCursor\(/,
+    'the session list hands its position back to the caller',
+  );
+  assert.doesNotMatch(
+    sessionsSource,
+    /while \(exclusiveStartKey\)/,
+    'the session list must not walk the whole table it is paging',
+  );
+
+  // Reading sessions through the index is what makes a page cheap: the table
+  // holds roughly seven trace items per session, and a scan reads them all.
+  assert.match(
+    sessionsSource,
+    /IndexName: SESSION_LIST_INDEX/,
+    'the session list reads the session index rather than scanning',
+  );
+  assert.doesNotMatch(
+    sessionsSource,
+    /ScanCommand/,
+    'the session list no longer scans',
+  );
+  assert.match(
+    sessionsSource,
+    /ScanIndexForward: false/,
+    'the list reads newest first, which a scan cannot promise',
+  );
+});
+
+test('the session index stays session-only, and old sessions are backfilled into it', async () => {
+  const [cdkSource, indexModule, backfill] = await Promise.all([
+    readRepositoryFile('packages/infra/lib/stacks/database-stack.ts'),
+    readRepositoryFile('packages/dashboard/server/utils/sessionIndex.ts'),
+    readRepositoryFile('scripts/backfill_session_list_index.py'),
+  ]);
+
+  // The keys must be attributes only a session carries. `engine` and `created_at`
+  // are also on hypothesis and execution items, so reusing them would pull those
+  // into the index — measured at seven times the session count, which makes a page
+  // of 25 come back mostly hypotheses.
+  assert.match(cdkSource, /indexName: 'session-by-engine-index'/);
+  assert.match(cdkSource, /name: 'list_engine'/);
+  assert.match(cdkSource, /name: 'list_created_at'/);
+  assert.match(indexModule, /LIST_PARTITION_KEY = 'list_engine'/);
+  assert.match(indexModule, /LIST_SORT_KEY = 'list_created_at'/);
+
+  // Both engines write the keys, or that engine's sessions never appear.
+  for (const enginePath of [
+    'packages/agent/src/rca_agent/adapters/secondary/session/dynamodb_session_store.py',
+    'packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py',
+  ]) {
+    const source = await readRepositoryFile(enginePath);
+    assert.match(source, /"list_engine"/, `${enginePath} writes the index key`);
+    assert.match(
+      source,
+      /"list_created_at"/,
+      `${enginePath} writes the index sort key`,
+    );
+  }
+
+  // Sessions written before the index have no keys and would vanish from the list,
+  // so the backfill is part of the same change — and it must not overwrite state
+  // a running analysis owns.
+  assert.match(backfill, /attribute_not_exists\(/, 'backfill is additive only');
+  assert.match(
+    backfill,
+    /ConditionalCheckFailedException/,
+    'a row filled concurrently is not an error',
   );
 });
 
@@ -351,9 +484,24 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
     indexSource,
     /cancelTarget = ref<\{ rcaId: string; engine: string \} \| null>/,
   );
+  // Cancelling has to name both the session and the engine: the two engines
+  // analyse the same alarm in one partition, so an id alone would fence the wrong
+  // run. The row variable's name is the page's business, the pair of arguments is
+  // not.
   assert.match(
     indexSource,
-    /openCancelModal\(session\.rcaId, session\.engine\)/,
+    /openCancelModal\(\w+\.rcaId, \w+\.engine\)/,
+    'the cancel action passes both the session id and its engine',
+  );
+  assert.match(
+    indexSource,
+    /openDeleteModal\(\w+\.rcaId, \w+\.engine\)/,
+    'the delete action passes both the session id and its engine',
   );
   assert.match(indexSource, /query: \{ engine: cancelTarget\.value\.engine \}/);
+  assert.match(
+    indexSource,
+    /\?engine=\$\{deleteTarget\.value\.engine\}/,
+    'delete forwards the engine so it cannot remove the other engine’s session',
+  );
 });

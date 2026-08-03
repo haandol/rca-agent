@@ -270,6 +270,12 @@ class DynamoDbSessionStore(SessionStorePort):
             "message_id": {"S": message_id},
             "created_at": {"S": now.isoformat()},
             "updated_at": {"S": now.isoformat()},
+            # Keys for the session-list index. They duplicate engine and
+            # created_at on purpose: the index must contain sessions only, and
+            # hypothesis and execution items in this partition carry those same
+            # two attributes. An index key written by nothing else keeps them out.
+            "list_engine": {"S": ENGINE},
+            "list_created_at": {"S": now.isoformat()},
             "ttl": {"N": str(ttl)},
         }
         try:

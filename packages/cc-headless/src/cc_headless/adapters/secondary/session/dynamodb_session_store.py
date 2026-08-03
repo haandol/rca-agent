@@ -105,6 +105,12 @@ class DynamoDbSessionStore(SessionStorePort):
             "receive_count": {"N": str(receive_count)},
             "created_at": {"S": now},
             "updated_at": {"S": now},
+            # Keys for the session-list index. They duplicate engine and
+            # created_at on purpose: the index must contain sessions only, and
+            # hypothesis and execution items in this partition carry those same
+            # two attributes. An index key written by nothing else keeps them out.
+            "list_engine": {"S": ENGINE},
+            "list_created_at": {"S": now},
             "ttl": {"N": ttl},
         }
         if alarm_data:
