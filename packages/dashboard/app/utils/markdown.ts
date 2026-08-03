@@ -73,7 +73,23 @@ interface LinkToken {
   text: string;
 }
 
-const renderer = new Marked({ async: false, breaks: true });
+/**
+ * Reports are written in Korean, where `~` is the ordinary range separator
+ * ('05:41~05:42', '3.4~4.2%'). GFM reads a second `~` on the same line as the
+ * close of a strikethrough, so a report that states two ranges strikes out
+ * everything between them — the finding renders as though it had been retracted.
+ * Disabling GFM's strikethrough keeps the tildes as the characters the author
+ * typed; a report has no reason to strike its own text out.
+ */
+const renderer = new Marked({ async: false, breaks: true, gfm: true });
+
+renderer.use({
+  tokenizer: {
+    del() {
+      return undefined;
+    },
+  },
+});
 
 renderer.use({
   renderer: {

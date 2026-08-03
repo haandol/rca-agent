@@ -129,6 +129,27 @@ test('the Markdown a report actually contains still renders as Markdown', () => 
   assert.match(html, /<table>[\s\S]*CPU/);
 });
 
+test('a tilde range in a Korean report is not read as strikethrough', () => {
+  // '~' is the ordinary range separator in Korean ('05:41~05:42', '3.4~4.2%').
+  // Under GFM the second tilde on a line closes a strikethrough, so a report
+  // stating two ranges struck out everything between them — the finding rendered
+  // as though it had been retracted. Ranges are far more common in these reports
+  // than deliberate strikethrough, which has no reason to appear at all.
+  const html = renderMarkdownDocument(
+    'DatabaseConnections는 05:41~05:42에 15.0을 기록했고 CPU는 3.4~4.2%였다.',
+  );
+  assert.doesNotMatch(html, /<del>/);
+  assert.match(html, /05:41~05:42/);
+  assert.match(html, /3\.4~4\.2%/);
+
+  // Field-level rendering shares the renderer, so it must agree.
+  assert.doesNotMatch(renderMarkdown('5~10분간 모니터링'), /<del>/);
+
+  // Emphasis and code still work — only strikethrough was given up.
+  assert.match(renderMarkdownDocument('**확정**된 원인'), /<strong>/);
+  assert.match(renderMarkdownDocument('`max_connections` 상향'), /<code>/);
+});
+
 test('model output with escaped newlines and run-together list items reads as a list', () => {
   // Field-level model output arrives this way often enough that dropping the
   // repair would render a numbered procedure as one paragraph.
