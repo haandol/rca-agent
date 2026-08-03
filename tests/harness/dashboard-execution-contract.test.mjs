@@ -564,3 +564,39 @@ test('every DynamoDB expression alias the dashboard uses is declared', async () 
     }
   }
 });
+
+test('deleting a session removes its artifacts without stripping the other engine', async () => {
+  const source = await readRepositoryFile(
+    'packages/dashboard/server/api/sessions/[id].delete.ts',
+  );
+
+  // Artifacts live under a path per RCA, per engine and per attempt, so a
+  // session's reports are a prefix rather than one key. Deleting a single
+  // `reports/{id}.md` left everything behind, and the objects then sat until the
+  // lifecycle rule swept them weeks later — a deleted session kept its evidence
+  // readable the whole time.
+  assert.match(
+    source,
+    /ListObjectsV2Command/,
+    'the delete enumerates a prefix',
+  );
+  assert.match(source, /DeleteObjectsCommand/, 'and removes what it found');
+  assert.doesNotMatch(
+    source,
+    /`reports\/\$\{id\}\.md`/,
+    'the single-key delete cannot reach the artifacts the engines write',
+  );
+
+  // Reports are engine-scoped, so one engine's deletion takes only its own.
+  assert.match(source, /`reports\/\$\{engine\}\/\$\{id\}\//);
+
+  // Evidence is not engine-scoped: both engines analyse the same alarm under one
+  // RCA id, so removing it while the other engine's session survives would strip
+  // the evidence that session's report cites.
+  assert.match(source, /survivingEngines/);
+  assert.match(
+    source,
+    /if \(!survivingEngines\.size\) prefixes\.push\(`rca\/\$\{id\}\/`\)/,
+    'shared evidence goes only when no session for this RCA is left',
+  );
+});

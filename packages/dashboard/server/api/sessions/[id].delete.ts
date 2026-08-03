@@ -3,7 +3,7 @@ import {
   BatchWriteCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 /**
  * Deletes a session's records — only once nothing is still running against them.
@@ -109,34 +109,106 @@ export default defineEventHandler(async (event) => {
     );
   }
 
-  let hasRemainingSession = false;
-  if (engine) {
-    const remaining = await ddb.send(
-      new QueryCommand({
-        TableName: config.dynamodbTableName,
-        KeyConditionExpression: 'PK = :pk',
-        ExpressionAttributeValues: { ':pk': rcaPk(id) },
-        Select: 'COUNT',
-      }),
-    );
-    hasRemainingSession = (remaining.Count ?? 0) > 0;
-  }
+  /**
+   * The artifacts this deletion also removes.
+   *
+   * Reports are stored per engine, so deleting one engine's session takes only
+   * that engine's reports. Evidence is not: both engines analyse the same alarm
+   * under one RCA id, so it is removed only once no session for this RCA is left
+   * — otherwise deleting one engine's row would strip the evidence the other
+   * engine's report still cites.
+   */
+  const remaining = await ddb.send(
+    new QueryCommand({
+      TableName: config.dynamodbTableName,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': rcaPk(id) },
+      ProjectionExpression: 'SK',
+    }),
+  );
+  const survivingEngines = new Set(
+    (remaining.Items ?? [])
+      .map((item) => (item.SK as string) || '')
+      .filter((sortKey) => isSessionSortKey(sortKey))
+      .map((sortKey) => parseEngine(sortKey)),
+  );
 
-  if (!hasRemainingSession) {
-    try {
-      await s3.send(
-        new DeleteObjectCommand({
-          Bucket: config.s3ReportBucket,
-          Key: `reports/${id}.md`,
-        }),
-      );
-    } catch (_) {
-      // S3 리포트가 없어도 무시
-    }
-  }
+  const prefixes = engine
+    ? [`reports/${engine}/${id}/`]
+    : ALLOWED_ENGINES.map((name) => `reports/${name}/${id}/`);
+  if (!survivingEngines.size) prefixes.push(`rca/${id}/`);
 
-  return { deleted: true, rcaId: id, engine, itemCount: items.length };
+  const deletedObjectCount = await deletePrefixes(
+    s3,
+    config.s3ReportBucket,
+    prefixes,
+  );
+
+  return {
+    deleted: true,
+    rcaId: id,
+    engine,
+    itemCount: items.length,
+    deletedObjectCount,
+  };
 });
+
+/**
+ * Removes every object under the given prefixes.
+ *
+ * Artifacts are written under a path per RCA, per engine and per attempt, so a
+ * session's reports are a prefix rather than one key. Deleting a single key left
+ * everything behind, and the objects then sat until the lifecycle rule swept them
+ * weeks later — a deleted session kept its evidence readable.
+ *
+ * Failures here do not fail the request: the records are already gone, and
+ * reporting a failure would invite a retry that finds no session and 404s. The
+ * count is returned so a caller can see what was actually removed.
+ */
+async function deletePrefixes(
+  s3: ReturnType<typeof useS3>,
+  bucket: string,
+  prefixes: string[],
+): Promise<number> {
+  let removed = 0;
+
+  for (const prefix of prefixes) {
+    let continuationToken: string | undefined;
+    do {
+      try {
+        const listed = await s3.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          }),
+        );
+        const keys = (listed.Contents ?? [])
+          .map((object) => object.Key)
+          .filter((key): key is string => Boolean(key));
+
+        if (keys.length) {
+          await s3.send(
+            new DeleteObjectsCommand({
+              Bucket: bucket,
+              Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+            }),
+          );
+          removed += keys.length;
+        }
+        continuationToken = listed.IsTruncated
+          ? listed.NextContinuationToken
+          : undefined;
+      } catch {
+        // The DynamoDB records are already deleted, so a storage failure must not
+        // turn a completed deletion into an error the operator would retry.
+        continuationToken = undefined;
+      }
+    } while (continuationToken);
+  }
+
+  return removed;
+}
 
 async function inFlightExecutions(
   ddb: ReturnType<typeof useDynamoDB>,
