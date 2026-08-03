@@ -202,15 +202,23 @@ export function buildTraceGraph(
     if (directEdgeIdx >= 0) edges.splice(directEdgeIdx, 1);
   }
 
-  // Auto-layout with dagre
+  // Auto-layout with dagre.
+  //
+  // These sizes must match what the node components actually render: dagre
+  // positions each node by its centre and the result is converted to a top-left
+  // corner below, so a width here that disagrees with the CSS shifts every node
+  // by half the difference and the edges no longer meet the boxes they connect.
+  const sizeOf = (type: string | undefined) =>
+    type === 'hypoNode'
+      ? { width: 212, height: 82 }
+      : { width: 152, height: 48 };
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 60, nodesep: 40 });
+  g.setGraph({ rankdir: 'TB', ranksep: 64, nodesep: 36 });
 
   for (const node of nodes) {
-    const w = node.type === 'hypoNode' ? 220 : 160;
-    const h = node.type === 'hypoNode' ? 80 : 50;
-    g.setNode(node.id, { width: w, height: h });
+    g.setNode(node.id, sizeOf(node.type));
   }
   for (const edge of edges) {
     g.setEdge(edge.source, edge.target);
@@ -221,9 +229,8 @@ export function buildTraceGraph(
   for (const node of nodes) {
     const pos = g.node(node.id);
     if (pos) {
-      const w = node.type === 'hypoNode' ? 220 : 160;
-      const h = node.type === 'hypoNode' ? 80 : 50;
-      node.position = { x: pos.x - w / 2, y: pos.y - h / 2 };
+      const { width, height } = sizeOf(node.type);
+      node.position = { x: pos.x - width / 2, y: pos.y - height / 2 };
     }
   }
 

@@ -2,64 +2,66 @@
 import { Handle, Position } from '@vue-flow/core';
 import type { NodeData } from '~/composables/useTraceGraph';
 
-defineProps<{ data: NodeData }>();
+const props = defineProps<{ data: NodeData }>();
 
+/**
+ * A hypothesis in the graph, read by its verdict first.
+ *
+ * Only the confirmed one earns ink: it is the branch the report's chain came
+ * from. What was rejected recedes rather than being coloured as an error — the
+ * search discarding a hypothesis is the search working, not something failing.
+ */
 const statusClass: Record<string, string> = {
-  CONFIRMED: 'border-success/40 bg-success/8',
-  REJECTED: 'border-error/30 bg-error/5 opacity-60',
-  CLOSED: 'border-base-content/20 bg-base-content/5 opacity-70',
-  NEEDS_INVESTIGATION: 'border-warning/40 bg-warning/8 animate-pulse',
-  PENDING: 'border-base-content/10 bg-base-100',
+  CONFIRMED: 'border-success/55 bg-success/[0.06]',
+  REJECTED: 'border-base-content/12 bg-base-100 opacity-55',
+  CLOSED: 'border-base-content/12 bg-base-100 opacity-65',
+  NEEDS_INVESTIGATION: 'border-warning/45 bg-warning/[0.05]',
+  PENDING: 'border-base-content/15 bg-base-100',
 };
 
 const statusLabel: Record<string, string> = {
   CONFIRMED: '채택',
   REJECTED: '기각',
-  CLOSED: '종료',
+  CLOSED: '검증 못 함',
   NEEDS_INVESTIGATION: '추가 조사',
-  PENDING: '대기',
+  PENDING: '검증 안 됨',
 };
 
-const categoryBadge: Record<string, string> = {
-  DEPLOYMENT: 'badge-info',
-  INFRASTRUCTURE: 'badge-warning',
-  TRAFFIC: 'badge-success',
-  DEPENDENCY: 'badge-error',
-  CONFIGURATION: 'badge-ghost',
-};
+const confidence = computed(() =>
+  props.data.confidenceScore === undefined
+    ? null
+    : Math.round(props.data.confidenceScore * 100),
+);
 </script>
 
 <template>
   <div
-    class="rounded-xl border px-3.5 py-2 min-w-[200px] max-w-[220px] cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5"
-    :class="statusClass[data.status] || 'border-base-content/10 bg-base-100'"
+    class="rounded-box border px-3.5 py-2.5 w-[212px] cursor-pointer transition-colors hover:border-base-content/35"
+    :class="statusClass[data.status] || 'border-base-content/15 bg-base-100'"
   >
-    <div class="flex items-center gap-1 mb-1">
+    <div class="flex items-baseline gap-2">
       <span
-        v-if="data.category"
-        class="badge badge-xs"
-        :class="categoryBadge[data.category] || 'badge-ghost'"
-      >
-        {{ data.category }}
-      </span>
-      <span v-if="data.status" class="badge badge-xs badge-ghost">
-        {{ statusLabel[data.status] || data.status }}
-      </span>
-      <span
-        v-if="data.confidenceScore !== undefined"
-        class="text-[10px] font-mono ml-auto"
+        class="text-[10px] font-medium"
         :class="
-          data.confidenceScore >= 0.8
+          data.status === 'CONFIRMED'
             ? 'text-success'
-            : data.confidenceScore >= 0.5
+            : data.status === 'NEEDS_INVESTIGATION'
               ? 'text-warning'
               : 'text-base-content/40'
         "
       >
-        {{ (data.confidenceScore * 100).toFixed(0) }}%
+        {{ statusLabel[data.status] || data.status }}
+      </span>
+      <span
+        v-if="confidence !== null"
+        class="ml-auto font-mono text-[10px] tabular-nums text-base-content/40"
+      >
+        {{ confidence }}%
       </span>
     </div>
-    <div class="text-xs leading-tight line-clamp-2">{{ data.label }}</div>
+    <div class="font-serif text-[12px] leading-snug line-clamp-2 mt-1.5">
+      {{ data.label }}
+    </div>
   </div>
   <Handle type="target" :position="Position.Top" />
   <Handle type="source" :position="Position.Bottom" />

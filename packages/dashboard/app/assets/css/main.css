@@ -1,38 +1,432 @@
 @import "tailwindcss";
-@plugin "daisyui" {
-  themes: emerald --default, dracula --prefersdark;
-}
-@custom-variant dark (&:where([data-theme=dracula], [data-theme=dracula] *));
+@plugin "daisyui";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/noto-serif-kr/400.css";
+@import "@fontsource/noto-serif-kr/600.css";
 @plugin "@tailwindcss/typography";
 
+/**
+ * A record of incidents, laid out the way an incident actually reads: on a
+ * clock.
+ *
+ * The palette is paper — warm, near-white, close in value — because these pages
+ * are read for minutes at a time and most of what is on them did not go wrong.
+ * Colour is spent only where a state has consequence: ink for the ordinary,
+ * ember for a live run, rust for a break, moss for a resolved one. A row with no
+ * colour is a row that needs nothing.
+ *
+ * Not the conventional monitoring palette (dark ground, saturated status chips):
+ * every session in this table is already over, and treating a finished archive
+ * like a live console makes the one thing still awaiting a person indistinct
+ * from the ninety that don't.
+ */
+@plugin "daisyui/theme" {
+  name: "ledger";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: oklch(98.6% 0.004 85);
+  --color-base-200: oklch(96.2% 0.006 85);
+  --color-base-300: oklch(91.5% 0.008 82);
+  --color-base-content: oklch(24% 0.014 60);
+
+  /* Ember — a run still going, and the one action a person can take. */
+  --color-primary: oklch(56% 0.16 42);
+  --color-primary-content: oklch(99% 0.004 42);
+  --color-secondary: oklch(42% 0.03 60);
+  --color-secondary-content: oklch(99% 0.004 60);
+  --color-accent: oklch(50% 0.1 200);
+  --color-accent-content: oklch(99% 0.004 200);
+  --color-neutral: oklch(32% 0.014 60);
+  --color-neutral-content: oklch(98% 0.004 60);
+
+  --color-info: oklch(50% 0.1 235);
+  --color-info-content: oklch(99% 0.004 235);
+  --color-success: oklch(48% 0.1 148);
+  --color-success-content: oklch(99% 0.004 148);
+  --color-warning: oklch(58% 0.13 68);
+  --color-warning-content: oklch(99% 0.004 68);
+  --color-error: oklch(52% 0.17 28);
+  --color-error-content: oklch(99% 0.004 28);
+
+  --radius-selector: 0.125rem;
+  --radius-field: 0.1875rem;
+  --radius-box: 0.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/**
+ * The same ledger read at night. Kept at the same hues so a state means the same
+ * thing in both, only inverted in value — an operator paged at 3am should not
+ * have to relearn the page.
+ */
+@plugin "daisyui/theme" {
+  name: "ledger-night";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: oklch(20.5% 0.008 60);
+  --color-base-200: oklch(17% 0.007 60);
+  --color-base-300: oklch(27% 0.01 60);
+  --color-base-content: oklch(91% 0.008 75);
+
+  --color-primary: oklch(72% 0.15 46);
+  --color-primary-content: oklch(17% 0.02 46);
+  --color-secondary: oklch(72% 0.03 60);
+  --color-secondary-content: oklch(17% 0.02 60);
+  --color-accent: oklch(72% 0.1 205);
+  --color-accent-content: oklch(17% 0.02 205);
+  --color-neutral: oklch(36% 0.01 60);
+  --color-neutral-content: oklch(93% 0.008 60);
+
+  --color-info: oklch(72% 0.1 235);
+  --color-info-content: oklch(17% 0.02 235);
+  --color-success: oklch(70% 0.13 152);
+  --color-success-content: oklch(16% 0.02 152);
+  --color-warning: oklch(76% 0.13 72);
+  --color-warning-content: oklch(18% 0.02 72);
+  --color-error: oklch(66% 0.17 26);
+  --color-error-content: oklch(98% 0.006 26);
+
+  --radius-selector: 0.125rem;
+  --radius-field: 0.1875rem;
+  --radius-box: 0.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@custom-variant dark (&:where([data-theme="ledger-night"], [data-theme="ledger-night"] *));
+
+/**
+ * Three roles, chosen for what each has to carry.
+ *
+ * Newsreader (with Noto Serif KR for Korean) sets the causal chain and report
+ * prose: a finding is an argument, and a serif is what an argument is set in.
+ * Pretendard runs the interface, where a label has to disappear. JetBrains Mono
+ * holds the clock, the ids and the readings — anything compared down a column.
+ */
+@theme {
+  --font-sans:
+    Pretendard Variable, Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, sans-serif;
+  --font-serif:
+    Newsreader Variable, Newsreader, Noto Serif KR, ui-serif, Georgia, serif;
+  --font-mono: JetBrains Mono Variable, ui-monospace, SFMono-Regular, monospace;
+}
+
 @layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
+    font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Clock readings and ids are compared down a column, so digits hold width. */
+  .font-mono,
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "zero" 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 1px;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--color-primary) 22%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--color-base-content) 16%, transparent);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--color-base-content) 30%, transparent);
+    background-clip: content-box;
   }
 }
 
 @layer components {
-  .glass-navbar {
-    @apply bg-base-100/80 backdrop-blur-xl border-b border-base-content/5;
+  /* ---- Chrome ---------------------------------------------------------- */
+
+  .site-head {
+    @apply bg-base-100/90 backdrop-blur-md border-b border-base-content/10;
   }
 
-  .stat-card {
-    @apply bg-base-100 rounded-xl border border-base-content/5 p-4 transition-shadow hover:shadow-md;
+  /* Surfaces are separated by value, not by outline. A page of bordered boxes
+     reads as a form; this one should read as a page. */
+  .sheet {
+    @apply bg-base-100 rounded-box;
   }
 
-  .session-row {
-    @apply transition-colors hover:bg-base-content/[0.03];
+  .sheet-ruled {
+    @apply bg-base-100 rounded-box border border-base-content/10;
+  }
+
+  .label-sm {
+    @apply text-[11px] font-medium text-base-content/45;
   }
 
   .action-btn {
-    @apply btn btn-ghost btn-xs btn-square rounded-lg opacity-70 hover:opacity-100 transition-opacity;
+    @apply btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100 transition-opacity;
   }
 
-  .sortable-th {
-    @apply text-xs font-medium text-base-content/50 uppercase tracking-wider cursor-pointer select-none hover:text-base-content/80 transition-colors;
+  /* ---- The spine ------------------------------------------------------- */
+
+  /**
+   * The signature: one continuous vertical rule down the left of the archive,
+   * with every session hung off it at its own hour.
+   *
+   * These records are timestamps first — the whole finding in a report is that a
+   * deploy at 05:40:02 preceded a spike at 05:40:00 — so time is the axis the
+   * page is built on rather than a column at the far right.
+   */
+  .spine {
+    @apply relative pl-[86px];
   }
 
-  .sort-indicator {
-    @apply text-[10px] ml-0.5 text-base-content/40;
+  .spine::before {
+    content: "";
+    @apply absolute top-0 bottom-0 w-px bg-base-content/12;
+    left: 61px;
+  }
+
+  /**
+   * A day breaks the spine, because a gap of hours is information.
+   *
+   * The label sits across the rule rather than in the time gutter — a date and a
+   * clock reading in the same column read as one wrong timestamp.
+   */
+  .spine-day {
+    @apply relative -ml-[86px] pl-[86px] pt-8 pb-1 first:pt-0;
+  }
+
+  /* Set on the rule itself, so the date reads as a marker on the clock rather
+     than as another entry. */
+  .spine-day > .spine-day-label {
+    @apply block -ml-[86px] pl-[86px] mb-3 relative;
+    @apply font-mono text-[11px] font-medium text-base-content/55;
+  }
+
+  .spine-day > .spine-day-label::before {
+    content: "";
+    @apply absolute bg-base-100;
+    left: 55px;
+    top: -2px;
+    width: 13px;
+    height: calc(100% + 4px);
+  }
+
+  .spine-day > .spine-day-label::after {
+    content: "";
+    @apply absolute rounded-full bg-base-content/25;
+    left: 58.5px;
+    top: 50%;
+    margin-top: -3px;
+    width: 6px;
+    height: 6px;
+  }
+
+  .spine-entry {
+    @apply relative -ml-[86px] pl-[86px] py-3;
+    @apply border-t border-base-content/[0.06] first:border-t-0;
+  }
+
+  /* The clock reading, set in the gutter against the rule. */
+  .spine-time {
+    @apply absolute left-0 font-mono text-[12px] tabular-nums text-base-content/50;
+    width: 52px;
+    text-align: right;
+    top: 0.8rem;
+  }
+
+  /* The node where an entry meets the spine. Filled means something ran. */
+  .spine-node {
+    @apply absolute rounded-full bg-base-100;
+    left: 57px;
+    top: 0.95rem;
+    width: 9px;
+    height: 9px;
+    box-shadow: 0 0 0 1.5px currentColor;
+  }
+
+  .spine-node-filled {
+    @apply bg-current;
+  }
+
+  /* ---- Duration -------------------------------------------------------- */
+
+  /**
+   * How long a run took, as a length rather than a number.
+   *
+   * A minute count has to be compared arithmetically; a bar is compared by eye.
+   * The width is set inline from the real duration, so a 42-minute run is
+   * visibly four times a 10-minute one.
+   */
+  .run-bar {
+    @apply relative h-[3px] rounded-full bg-current;
+    min-width: 3px;
+  }
+
+  .run-bar-open {
+    background-image: repeating-linear-gradient(
+      90deg,
+      currentColor 0 4px,
+      transparent 4px 7px
+    );
+  }
+
+  /* ---- The causal chain ------------------------------------------------ */
+
+  /**
+   * The finding, set as a linked descent.
+   *
+   * The search runs in parallel and most branches are discarded, but the result
+   * is one chain: each answer becomes the next question. The connecting rule is
+   * what makes it read as a descent rather than a list of five paragraphs.
+   */
+  .chain-link {
+    @apply relative pl-8 pb-7 last:pb-0;
+  }
+
+  .chain-link::before {
+    content: "";
+    @apply absolute left-[7px] top-[22px] bottom-0 w-px bg-base-content/15;
+  }
+
+  .chain-link:last-child::before {
+    @apply hidden;
+  }
+
+  .chain-dot {
+    @apply absolute left-0 top-[6px] size-[15px] rounded-full;
+    @apply border border-base-content/25 bg-base-100;
+    @apply font-mono text-[9px] leading-[13px] text-center text-base-content/50;
+  }
+
+  /* The last link is where the fix belongs, so it is the one marked. */
+  .chain-link:last-child .chain-dot {
+    @apply border-primary/50 text-primary;
+  }
+
+  .chain-question {
+    @apply font-serif text-[15px] leading-snug text-base-content/65;
+  }
+
+  .chain-answer {
+    @apply font-serif text-[16px] leading-[1.65] mt-1.5;
+  }
+
+  /* ---- Steps ----------------------------------------------------------- */
+
+  .step-row {
+    @apply relative pl-9 py-3.5;
+  }
+
+  .step-ord {
+    @apply absolute left-0 top-3.5 font-mono text-[11px] text-base-content/30 tabular-nums;
+  }
+
+  /* ---- Report prose ---------------------------------------------------- */
+
+  /**
+   * A report body, set to be read rather than scanned.
+   *
+   * The generated H1 restates the RCA id already in the header, so it is
+   * suppressed entirely. Everything else steps down from there.
+   */
+  .prose-report {
+    @apply prose max-w-[68ch] font-serif;
+    @apply prose-headings:font-sans prose-headings:tracking-tight;
+    @apply prose-headings:font-semibold;
+    @apply prose-h1:hidden;
+    @apply prose-h2:text-[13px] prose-h2:uppercase prose-h2:tracking-[0.1em];
+    @apply prose-h2:text-base-content/45 prose-h2:mt-11 prose-h2:mb-3;
+    @apply prose-h3:text-[15px] prose-h3:mt-7 prose-h3:mb-2;
+    @apply prose-p:text-[16px] prose-p:leading-[1.72];
+    @apply prose-li:text-[16px] prose-li:leading-[1.66];
+    @apply prose-strong:font-semibold;
+    @apply prose-code:font-mono prose-code:text-[0.84em] prose-code:font-normal;
+    @apply prose-code:before:content-none prose-code:after:content-none;
+    @apply prose-code:bg-base-200 prose-code:px-1.5 prose-code:py-0.5;
+    @apply prose-code:rounded-sm;
+    @apply prose-a:text-primary prose-a:underline prose-a:underline-offset-2;
+    @apply prose-hr:border-base-content/10 prose-hr:my-10;
+    @apply prose-blockquote:border-l-2 prose-blockquote:border-primary/40;
+    @apply prose-blockquote:not-italic prose-blockquote:font-normal;
+    @apply prose-table:text-[14px] prose-table:font-sans;
+    @apply prose-th:text-[11px] prose-th:font-semibold prose-th:text-base-content/50;
+    @apply prose-th:uppercase prose-th:tracking-wider;
+    @apply prose-td:align-top;
+  }
+
+  /* Field-level prose inside panels: same face, tighter measure. */
+  .prose-field {
+    @apply prose prose-sm max-w-none;
+    @apply prose-p:leading-relaxed prose-li:leading-relaxed;
+    @apply prose-code:font-mono prose-code:text-[0.85em];
+    @apply prose-code:before:content-none prose-code:after:content-none;
+    @apply prose-code:bg-base-200 prose-code:px-1 prose-code:rounded-sm;
+    @apply prose-a:text-primary;
+  }
+}
+
+@layer utilities {
+  /* A live run is the only thing on the page that moves. */
+  @keyframes ember {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .animate-ember {
+    animation: ember 1.9s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
