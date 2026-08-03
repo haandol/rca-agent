@@ -151,11 +151,11 @@ graph TB
 
 **왜 두 개의 엔진을 사용하나요?**
 
-| | Fargate (Strands) | Fargate (CC Headless) |
-|---|---|---|
+|      | Fargate (Strands)                                | Fargate (CC Headless)           |
+| ---- | ------------------------------------------------ | ------------------------------- |
 | 장점 | 정교한 9단계 분석, 가설 트리 탐색, 플레이북 학습 | 프롬프트 주도로 유연, 코드 간단 |
-| 단점 | 항시 실행, 비용 발생 | 동작이 덜 예측 가능 |
-| 용도 | 정밀 분석이 필요한 복잡한 장애 | 빠른 초기 대응, 간단한 장애 |
+| 단점 | 항시 실행, 비용 발생                             | 동작이 덜 예측 가능             |
+| 용도 | 정밀 분석이 필요한 복잡한 장애                   | 빠른 초기 대응, 간단한 장애     |
 
 두 엔진 모두 읽기 전용이고 산출물은 플레이북을 포함한 리포트 하나입니다. 어느 엔진의 리포트를 승인하더라도 실행 경로는 하나입니다.
 
@@ -215,35 +215,35 @@ graph TB
 
 ### 주요 리소스 요약
 
-| 리소스 | 용도 | 스펙 |
-|--------|------|------|
-| **VPC** | 모든 서비스의 네트워크 | Public + Private Subnet, NAT Gateway |
-| **SNS (알람 수신)** | CloudWatch 알람 팬아웃 | 1개 토픽 → 2개 SQS로 분배 |
-| **SQS (Fargate용)** | Fargate Long Polling | visibility=25분, retention=4일, DLQ 연결 |
-| **SQS (CC Headless용)** | CC Headless Long Polling | visibility=35분, retention=4일, DLQ 연결 |
-| **SQS (실행 요청용)** | 대시보드 승인 발행 → 실행 워커 소비 | visibility=75분(4500초), retention=4일, DLQ 연결. 이벤트 구독 없음 |
-| **DynamoDB** | RCA 세션 상태 + 실행 이력 관리 | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성) |
-| **S3 (Evidence)** | 수집 증거 + 보고서 + 실행 증거 + 갱신 전 플레이북 사본 | 60일 lifecycle, S3 managed encryption |
-| **S3 Vectors** | 플레이북/보고서 임베딩 검색 | cosine 유사도, 1536차원 벡터 (Cohere Embed V4) |
-| **ECS Fargate** | RCA Agent + Healthcare App | ARM64, 1vCPU, 2GB RAM |
-| **ECS Fargate (CC Headless)** | CC Headless RCA | ARM64, 1vCPU, 2GB RAM |
-| **ECS Fargate (Playbook Execution)** | 승인된 플레이북 실행 + 회고 | ARM64, 1vCPU, 2GB RAM, desiredCount 1 (상시) |
-| **RDS PostgreSQL** | Healthcare 센서 데이터 | PostgreSQL 17.4 |
-| **ECR** | Docker 이미지 레지스트리 | rca-agent, cc-headless, healthcare 3개 (실행 워커는 cc-headless 이미지 재사용) |
+| 리소스                               | 용도                                                   | 스펙                                                                           |
+| ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| **VPC**                              | 모든 서비스의 네트워크                                 | Public + Private Subnet, NAT Gateway                                           |
+| **SNS (알람 수신)**                  | CloudWatch 알람 팬아웃                                 | 1개 토픽 → 2개 SQS로 분배                                                      |
+| **SQS (Fargate용)**                  | Fargate Long Polling                                   | visibility=25분, retention=4일, DLQ 연결                                       |
+| **SQS (CC Headless용)**              | CC Headless Long Polling                               | visibility=35분, retention=4일, DLQ 연결                                       |
+| **SQS (실행 요청용)**                | 대시보드 승인 발행 → 실행 워커 소비                    | visibility=75분(4500초), retention=4일, DLQ 연결. 이벤트 구독 없음             |
+| **DynamoDB**                         | RCA 세션 상태 + 실행 이력 관리                         | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성)                                        |
+| **S3 (Evidence)**                    | 수집 증거 + 보고서 + 실행 증거 + 갱신 전 플레이북 사본 | 60일 lifecycle, S3 managed encryption                                          |
+| **S3 Vectors**                       | 플레이북/보고서 임베딩 검색                            | cosine 유사도, 1536차원 벡터 (Cohere Embed V4)                                 |
+| **ECS Fargate**                      | RCA Agent + Healthcare App                             | ARM64, 1vCPU, 2GB RAM                                                          |
+| **ECS Fargate (CC Headless)**        | CC Headless RCA                                        | ARM64, 1vCPU, 2GB RAM                                                          |
+| **ECS Fargate (Playbook Execution)** | 승인된 플레이북 실행 + 회고                            | ARM64, 1vCPU, 2GB RAM, desiredCount 1 (상시)                                   |
+| **RDS PostgreSQL**                   | Healthcare 센서 데이터                                 | PostgreSQL 17.4                                                                |
+| **ECR**                              | Docker 이미지 레지스트리                               | rca-agent, cc-headless, healthcare 3개 (실행 워커는 cc-headless 이미지 재사용) |
 
 ### 실행 스택의 권한 경계
 
 `PlaybookExecutionStack`의 태스크 역할은 **시스템에서 쓰기 권한을 가진 유일한 역할**입니다. 분석 스택과 역할을 공유하지 않는데, 공유하면 분석 경로의 결함이 쓰기 권한에 닿기 때문입니다.
 
-| 항목 | 설정 | 왜 |
-|------|------|-----|
-| 트리거 | 실행 요청 큐만 (SNS 구독 없음) | 승인이 곧 메시지다. 승인 없이 실행이 기동될 경로가 인프라에 없다 |
-| 대상 리소스 | 제한하지 않음 | ARN으로 제한하면 플레이북의 표현력을 다시 허용 목록 안으로 되돌린다 |
-| 기본 권한 | `PowerUserAccess` | 플레이북이 필요할 수 있는 넓은 조치 범위 |
-| 명시적 Deny | organizations, account, billing, budgets, ce, cur, aws-portal, sso, identitystore, IAM 변경 | 실행 대상이 될 수 없는 범위. 템플릿에서 경계가 읽히게 하려고 명시한다 |
-| 파괴적 조치 차단 | IAM이 아니라 **실행 도구가 수행** | 작업 이름 어휘와 IAM 액션 이름이 일대일이 아니라 정책으로는 빈틈이 생기고, 정책 거부는 무엇이 왜 막혔는지 기록하거나 그 절차를 수동 조치로 남길 수 없다 |
-| visibility timeout | 4500초 > 실행 상한 3600초 | 실행 중인 요청이 재전달되어 두 번 실행되지 않게 |
-| 태스크 수 | 상시 1 | 태스크 수로 기능을 여닫는 것은 트리거가 이벤트 구독이던 시절의 장치다. 승인 게이트가 있으면 큐가 이미 실행 여부를 결정한다 |
+| 항목               | 설정                                                                                        | 왜                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 트리거             | 실행 요청 큐만 (SNS 구독 없음)                                                              | 승인이 곧 메시지다. 승인 없이 실행이 기동될 경로가 인프라에 없다                                                                                        |
+| 대상 리소스        | 제한하지 않음                                                                               | ARN으로 제한하면 플레이북의 표현력을 다시 허용 목록 안으로 되돌린다                                                                                     |
+| 기본 권한          | `PowerUserAccess`                                                                           | 플레이북이 필요할 수 있는 넓은 조치 범위                                                                                                                |
+| 명시적 Deny        | organizations, account, billing, budgets, ce, cur, aws-portal, sso, identitystore, IAM 변경 | 실행 대상이 될 수 없는 범위. 템플릿에서 경계가 읽히게 하려고 명시한다                                                                                   |
+| 파괴적 조치 차단   | IAM이 아니라 **실행 도구가 수행**                                                           | 작업 이름 어휘와 IAM 액션 이름이 일대일이 아니라 정책으로는 빈틈이 생기고, 정책 거부는 무엇이 왜 막혔는지 기록하거나 그 절차를 수동 조치로 남길 수 없다 |
+| visibility timeout | 4500초 > 실행 상한 3600초                                                                   | 실행 중인 요청이 재전달되어 두 번 실행되지 않게                                                                                                         |
+| 태스크 수          | 상시 1                                                                                      | 태스크 수로 기능을 여닫는 것은 트리거가 이벤트 구독이던 시절의 장치다. 승인 게이트가 있으면 큐가 이미 실행 여부를 결정한다                              |
 
 분석 스택(`CcHeadlessStack`)은 Healthcare 서비스로의 네트워크 경로도, `HEALTHCARE_*` 환경변수도 갖지 않습니다. 대상 서비스에 접근하는 것은 실행 스택뿐입니다.
 
@@ -306,6 +306,7 @@ sequenceDiagram
 ```
 
 **핵심 포인트**:
+
 - SNS 팬아웃으로 **하나의 알람이 두 SQS 큐에 동시 전달**됩니다
 - 각 엔진은 **DynamoDB IDEMP# 키**로 같은 알람을 중복 처리하지 않습니다 (자기 엔진 내에서)
 - 두 엔진은 서로 독립적으로 동작하며, `engine` 필드(`strands` vs `cc-headless`)로 구분됩니다
@@ -333,7 +334,7 @@ graph LR
         L_ENV["ECS Fargate<br/>Node.js 22"]
         L_SDK["Claude Code CLI<br/>RCA · Report 전문 에이전트"]
         L_MODEL["단일 모델<br/>Sonnet 5"]
-        L_TIME["프로세스 타임아웃<br/>(30분)"]
+        L_TIME["프로세스 타임아웃<br/>(60분)"]
         L_PLAY["✅ 플레이북 생성 (프롬프트)<br/>(DRAFT · 실행은 별도)"]
         L_WRITE["🚫 쓰기 권한 없음"]
     end
@@ -342,20 +343,20 @@ graph LR
     style CcStack fill:#fff3e0,stroke:#ef6c00
 ```
 
-| 항목 | Fargate (Strands) | Fargate (CC Headless) |
-|------|-------------------|---------------------|
-| **실행 환경** | ECS Fargate (항시 실행) | ECS Fargate (항시 실행) |
-| **에이전트 프레임워크** | Strands Agents SDK (Python) | Claude Code CLI (Node.js) |
-| **RCA 방식** | 9단계 파이프라인 (코드로 정의) | RCA·Report 전문 에이전트 순차 실행 |
-| **AI 모델** | Sonnet 5 (Planning은 adaptive thinking) | Sonnet 5 |
-| **분석 깊이** | 가설 트리 탐색 (depth 최대 5) | 프롬프트 기반 (depth 최대 3) |
-| **플레이북** | 생성 + S3 Vectors 인덱싱 (search-first) | Report 전문 에이전트가 생성 |
-| **쓰기 권한** | 없음 (읽기 전용 분석) | 없음 (읽기 전용 분석) |
-| **조치 실행** | 두 엔진 공통 — 사용자 승인 후 별도 실행 스택이 수행 (8장) |
-| **이벤트 수신** | SQS Long Polling | SQS Long Polling |
-| **타임아웃** | 20분 시간 예산 + 종료조건 | 30분 프로세스 제한 |
-| **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 스케일링 |
-| **비용 모델** | 항시 실행 비용 | 항시 실행 비용 |
+| 항목                    | Fargate (Strands)                                         | Fargate (CC Headless)              |
+| ----------------------- | --------------------------------------------------------- | ---------------------------------- |
+| **실행 환경**           | ECS Fargate (항시 실행)                                   | ECS Fargate (항시 실행)            |
+| **에이전트 프레임워크** | Strands Agents SDK (Python)                               | Claude Code CLI (Node.js)          |
+| **RCA 방식**            | 9단계 파이프라인 (코드로 정의)                            | RCA·Report 전문 에이전트 순차 실행 |
+| **AI 모델**             | Sonnet 5 (Planning은 adaptive thinking)                   | Sonnet 5                           |
+| **분석 깊이**           | 가설 트리 탐색 (depth 최대 5)                             | 프롬프트 기반 (depth 최대 3)       |
+| **플레이북**            | 생성 + S3 Vectors 인덱싱 (search-first)                   | Report 전문 에이전트가 생성        |
+| **쓰기 권한**           | 없음 (읽기 전용 분석)                                     | 없음 (읽기 전용 분석)              |
+| **조치 실행**           | 두 엔진 공통 — 사용자 승인 후 별도 실행 스택이 수행 (8장) |
+| **이벤트 수신**         | SQS Long Polling                                          | SQS Long Polling                   |
+| **타임아웃**            | 20분 시간 예산 + 종료조건                                 | 60분 프로세스 제한                 |
+| **동시성**              | Fargate 태스크 스케일링                                   | Fargate 태스크 스케일링            |
+| **비용 모델**           | 항시 실행 비용                                            | 항시 실행 비용                     |
 
 ---
 
@@ -467,12 +468,12 @@ graph TB
 Bedrock에서 실측으로 확인한 제약입니다. 이 파라미터를 다시 넣으면 **모든 LLM 호출이
 `ValidationException`으로 실패**합니다.
 
-| 파라미터 | 상태 | 대응 |
-|----------|------|------|
-| `temperature` | ❌ 거부 (`deprecated for this model`) | 전달하지 않음. 출력 특성은 프롬프트로 조정 |
-| `effort` (thinking 하위 또는 최상위) | ❌ 거부 (`Extra inputs are not permitted`) | 전달하지 않음. Planning/Execution은 adaptive 온·오프로만 구분 |
-| `thinking: {"type": "adaptive"}` | ✅ 정상 | Planning 티어에서 사용 |
-| forced `toolChoice` + adaptive thinking | ✅ 정상 | structured output 경로에서 사용 |
+| 파라미터                                | 상태                                       | 대응                                                          |
+| --------------------------------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| `temperature`                           | ❌ 거부 (`deprecated for this model`)      | 전달하지 않음. 출력 특성은 프롬프트로 조정                    |
+| `effort` (thinking 하위 또는 최상위)    | ❌ 거부 (`Extra inputs are not permitted`) | 전달하지 않음. Planning/Execution은 adaptive 온·오프로만 구분 |
+| `thinking: {"type": "adaptive"}`        | ✅ 정상                                    | Planning 티어에서 사용                                        |
+| forced `toolChoice` + adaptive thinking | ✅ 정상                                    | structured output 경로에서 사용                               |
 
 모델을 올릴 때는 최소 호출로 파라미터 허용 여부를 먼저 확인한 뒤 코드를 옮깁니다.
 
@@ -530,6 +531,7 @@ flowchart TD
 ```
 
 **Fargate와의 차이점**:
+
 - Fargate는 각 단계를 **Python 코드로** 명시적으로 구현
 - CC Headless는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 산출물
   계약과 완료 조건을 강제
@@ -628,13 +630,13 @@ stateDiagram-v2
 
 ### 운영자가 알아야 할 다섯 가지
 
-| 사실 | 왜 그렇게 만들었는가 |
-|------|---------------------|
-| 승인 없이 실행이 시작될 수 없다 | 승인이 곧 메시지다. 실행 스택에 이벤트 구독이 없으므로 사람이 승인하지 않고 실행이 기동될 경로가 존재하지 않는다 |
-| 파괴적 명령은 서버가 거부한다 | IAM이나 프롬프트가 아니라 실행 도구가 명령을 argv로 분해해 작업 이름을 추출하고 거부 어휘와 대조한다. 정책 거부는 어떤 절차가 왜 막혔는지 기록할 수 없다 |
-| 작업 이름을 확정할 수 없는 명령도 거부한다 | 판정 불가를 허용으로 읽으면 셸 합성이나 중첩 호출로 거부 목록을 비울 수 있다 |
-| 해결 판정은 서버가 한다 | 에이전트가 "정상화되었습니다"라고 말하는 것은 관측이 아니다. 기록된 관측만 완료의 근거가 되고, 관측하지 못하면 `UNRESOLVED`로 남는다 |
-| 실패한 실행의 증거도 남는다 | 사람이 왜 실패했는지 알 수 있는 유일한 기록이다. 명령·인자·종료 상태·오류·실패 분류·재시도·관측이 절차 단위로 S3에 남고 DDB에는 요약만 둔다 |
+| 사실                                       | 왜 그렇게 만들었는가                                                                                                                                     |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 승인 없이 실행이 시작될 수 없다            | 승인이 곧 메시지다. 실행 스택에 이벤트 구독이 없으므로 사람이 승인하지 않고 실행이 기동될 경로가 존재하지 않는다                                         |
+| 파괴적 명령은 서버가 거부한다              | IAM이나 프롬프트가 아니라 실행 도구가 명령을 argv로 분해해 작업 이름을 추출하고 거부 어휘와 대조한다. 정책 거부는 어떤 절차가 왜 막혔는지 기록할 수 없다 |
+| 작업 이름을 확정할 수 없는 명령도 거부한다 | 판정 불가를 허용으로 읽으면 셸 합성이나 중첩 호출로 거부 목록을 비울 수 있다                                                                             |
+| 해결 판정은 서버가 한다                    | 에이전트가 "정상화되었습니다"라고 말하는 것은 관측이 아니다. 기록된 관측만 완료의 근거가 되고, 관측하지 못하면 `UNRESOLVED`로 남는다                     |
+| 실패한 실행의 증거도 남는다                | 사람이 왜 실패했는지 알 수 있는 유일한 기록이다. 명령·인자·종료 상태·오류·실패 분류·재시도·관측이 절차 단위로 S3에 남고 DDB에는 요약만 둔다              |
 
 거부된 절차는 실행 전체를 중단시키지 않습니다. 증거에 기록되고 수동 조치로 표시된
 뒤 남은 절차가 계속 수행됩니다.
@@ -716,12 +718,12 @@ graph TB
 
 ### MCP 서버 설치 방식
 
-| MCP 서버 | 실행 방식 | 비고 |
-|----------|----------|------|
-| AWS Knowledge | `fastmcp run https://...` (stdio) | AWS 공식 문서/SOP 검색 |
-| CloudWatch | `uvx --from awslabs-cloudwatch-mcp-server awslabs.cloudwatch-mcp-server` (stdio) | 메트릭·로그 조회 |
-| CloudTrail | `uvx --from awslabs-cloudtrail-mcp-server awslabs.cloudtrail-mcp-server` (stdio) | 배포·변경 이력 |
-| GitHub | `github-mcp-server stdio` (Go 바이너리, 컨테이너 내장) | 커밋 diff·PR 조회 |
+| MCP 서버      | 실행 방식                                                                        | 비고                   |
+| ------------- | -------------------------------------------------------------------------------- | ---------------------- |
+| AWS Knowledge | `fastmcp run https://...` (stdio)                                                | AWS 공식 문서/SOP 검색 |
+| CloudWatch    | `uvx --from awslabs-cloudwatch-mcp-server awslabs.cloudwatch-mcp-server` (stdio) | 메트릭·로그 조회       |
+| CloudTrail    | `uvx --from awslabs-cloudtrail-mcp-server awslabs.cloudtrail-mcp-server` (stdio) | 배포·변경 이력         |
+| GitHub        | `github-mcp-server stdio` (Go 바이너리, 컨테이너 내장)                           | 커밋 diff·PR 조회      |
 
 AWS Knowledge 서버는 컨테이너에 설치된 FastMCP로 실행하고, CloudWatch와
 CloudTrail 서버는 컨테이너에 준비된 Python 패키지를 사용합니다. GitHub MCP
@@ -770,16 +772,16 @@ graph TB
 
 ### 장애 주입 API 목록
 
-| 엔드포인트 | 동작 | CloudWatch 알람 트리거 |
-|-----------|------|----------------------|
-| `POST /fault/db-leak` | DB 커넥션을 열고 닫지 않음 | RDS DatabaseConnections 급증 |
-| `POST /fault/db-leak/reset` | 누수된 커넥션 정리 | — |
-| `POST /fault/high-cpu` | CPU 집중 작업 실행 | ECS CPUUtilization 급증 |
-| `POST /fault/high-cpu/reset` | CPU 부하 중지 | — |
-| `POST /fault/high-memory` | 메모리 대량 할당 | ECS MemoryUtilization 급증 |
-| `POST /fault/high-memory/reset` | 할당 메모리 해제 | — |
-| `POST /fault/slow-query` | 의도적으로 느린 쿼리 실행 | RDS ReadLatency 급증 |
-| `POST /fault/slow-query/reset` | 느린 쿼리 중지 | — |
+| 엔드포인트                      | 동작                       | CloudWatch 알람 트리거       |
+| ------------------------------- | -------------------------- | ---------------------------- |
+| `POST /fault/db-leak`           | DB 커넥션을 열고 닫지 않음 | RDS DatabaseConnections 급증 |
+| `POST /fault/db-leak/reset`     | 누수된 커넥션 정리         | —                            |
+| `POST /fault/high-cpu`          | CPU 집중 작업 실행         | ECS CPUUtilization 급증      |
+| `POST /fault/high-cpu/reset`    | CPU 부하 중지              | —                            |
+| `POST /fault/high-memory`       | 메모리 대량 할당           | ECS MemoryUtilization 급증   |
+| `POST /fault/high-memory/reset` | 할당 메모리 해제           | —                            |
+| `POST /fault/slow-query`        | 의도적으로 느린 쿼리 실행  | RDS ReadLatency 급증         |
+| `POST /fault/slow-query/reset`  | 느린 쿼리 중지             | —                            |
 
 > **참고**: `high-cpu`와 `slow-query` 장애는 명시적으로 reset 호출할 때까지 지속됩니다.
 
@@ -794,14 +796,14 @@ cd packages/dashboard
 pnpm dev   # http://localhost:3100
 ```
 
-| 화면 / API | 용도 |
-|-----------|------|
-| 세션 목록 (`/`) | 상태별 통계 + 목록. 실행 상태 컬럼 포함 |
-| 리포트 상세 (`/report/:id`) | 보고서 렌더 + **플레이북 실행 절차 인라인 표시 + 승인 버튼**. 사람이 분석을 읽으면서 그 분석이 만든 절차를 승인한다 |
-| `POST /api/executions` | 승인 발행 (실행 요청 큐). `EXECUTION_QUEUE_URL` 미설정 시 503 |
-| `GET /api/executions/:rcaId` | 실행 시도 이력 (실패한 실행의 증거도 보존) |
-| `GET /api/retrospectives/:rcaId/:executionId` | 회고 조회 |
-| 회고 화면 (`/retrospective/:rcaId/:executionId`) | 이슈 · 실행 전 플레이북 · 실행 증거 · 갱신 diff 4단 비교 |
+| 화면 / API                                       | 용도                                                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| 세션 목록 (`/`)                                  | 상태별 통계 + 목록. 실행 상태 컬럼 포함                                                                             |
+| 리포트 상세 (`/report/:id`)                      | 보고서 렌더 + **플레이북 실행 절차 인라인 표시 + 승인 버튼**. 사람이 분석을 읽으면서 그 분석이 만든 절차를 승인한다 |
+| `POST /api/executions`                           | 승인 발행 (실행 요청 큐). `EXECUTION_QUEUE_URL` 미설정 시 503                                                       |
+| `GET /api/executions/:rcaId`                     | 실행 시도 이력 (실패한 실행의 증거도 보존)                                                                          |
+| `GET /api/retrospectives/:rcaId/:executionId`    | 회고 조회                                                                                                           |
+| 회고 화면 (`/retrospective/:rcaId/:executionId`) | 이슈 · 실행 전 플레이북 · 실행 증거 · 갱신 diff 4단 비교                                                            |
 
 `EXECUTION_QUEUE_URL`이 없으면 승인 발행이 503으로 실패합니다 — 잘못 설정된 대시보드가 조용히 승인한 것처럼 보이면 안 되기 때문입니다.
 
@@ -927,6 +929,7 @@ sequenceDiagram
 ```
 
 이 시나리오에서 RCA 에이전트는:
+
 - CloudWatch 메트릭에서 CPU 급증 시점 확인
 - CloudTrail에서 최근 배포/변경 없음 확인
 - 트래픽 패턴 정상 확인
@@ -1160,29 +1163,29 @@ flowchart TD
 
 ### 접근 패턴 일람
 
-| 접근 패턴 | 오퍼레이션 | 키 조건 | 사용처 |
-|-----------|-----------|---------|--------|
-| 세션 생성 (멱등) | `PutItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `attribute_not_exists(SK)` | 에이전트 시작 시 |
-| 중복 체크 | `GetItem` | `PK=RCA#{id}`, `SK={engine}#SESSION` | 알람 수신 시 |
-| 상태 전이 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state <> CANCELLED` | 파이프라인 각 단계 |
-| 취소 감지 | `GetItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `ProjectionExpression=state` | 파이프라인 주기적 폴링 |
-| 완료 마킹 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION` | 파이프라인 종료 시 |
-| 스팬 시작 | `PutItem` | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}` | 각 분석 단계 시작 |
-| 스팬 종료 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}` | 각 분석 단계 완료 |
-| 가설 배치 저장 | `BatchWriteItem` | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}` | 가설 생성/분기 시 |
-| 가설 상태 갱신 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}` | 가설 검증 결과 반영 |
-| 전체 트레이스 조회 | `Query` | `PK=RCA#{id}` | 대시보드 트레이스 뷰 |
-| 세션 목록 조회 | `Scan` | `FilterExpression: contains(SK, '#SESSION') AND begins_with(PK, 'RCA#')` | 대시보드 세션 목록 |
-| 세션 삭제 | `Query` → `BatchWriteItem` | `PK=RCA#{id}` 전체 아이템 삭제 | 대시보드 세션 삭제 |
-| 세션 취소 | `UpdateItem` | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state → CANCELLED` | 대시보드 취소 버튼 |
-| 실행 claim | `PutItem` | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, `attribute_not_exists(SK)` | 실행 워커가 승인 요청을 집을 때 (종료된 실행의 재전달은 중복으로 판정) |
-| 실행 상태 전이 | `UpdateItem` | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, claim token 조건 | 실행 → 검증 → 해결/미해결 |
-| 실행 이력 조회 | `Query` | `PK=RCA#{id}`, `begins_with(SK, 'EXEC#')` | 대시보드 실행 이력·회고 화면 |
+| 접근 패턴          | 오퍼레이션                 | 키 조건                                                                  | 사용처                                                                 |
+| ------------------ | -------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| 세션 생성 (멱등)   | `PutItem`                  | `PK=RCA#{id}`, `SK={engine}#SESSION`, `attribute_not_exists(SK)`         | 에이전트 시작 시                                                       |
+| 중복 체크          | `GetItem`                  | `PK=RCA#{id}`, `SK={engine}#SESSION`                                     | 알람 수신 시                                                           |
+| 상태 전이          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state <> CANCELLED`               | 파이프라인 각 단계                                                     |
+| 취소 감지          | `GetItem`                  | `PK=RCA#{id}`, `SK={engine}#SESSION`, `ProjectionExpression=state`       | 파이프라인 주기적 폴링                                                 |
+| 완료 마킹          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SESSION`                                     | 파이프라인 종료 시                                                     |
+| 스팬 시작          | `PutItem`                  | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}`                              | 각 분석 단계 시작                                                      |
+| 스팬 종료          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}`                              | 각 분석 단계 완료                                                      |
+| 가설 배치 저장     | `BatchWriteItem`           | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}`                              | 가설 생성/분기 시                                                      |
+| 가설 상태 갱신     | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}`                              | 가설 검증 결과 반영                                                    |
+| 전체 트레이스 조회 | `Query`                    | `PK=RCA#{id}`                                                            | 대시보드 트레이스 뷰                                                   |
+| 세션 목록 조회     | `Scan`                     | `FilterExpression: contains(SK, '#SESSION') AND begins_with(PK, 'RCA#')` | 대시보드 세션 목록                                                     |
+| 세션 삭제          | `Query` → `BatchWriteItem` | `PK=RCA#{id}` 전체 아이템 삭제                                           | 대시보드 세션 삭제                                                     |
+| 세션 취소          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state → CANCELLED`                | 대시보드 취소 버튼                                                     |
+| 실행 claim         | `PutItem`                  | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, `attribute_not_exists(SK)`      | 실행 워커가 승인 요청을 집을 때 (종료된 실행의 재전달은 중복으로 판정) |
+| 실행 상태 전이     | `UpdateItem`               | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, claim token 조건                | 실행 → 검증 → 해결/미해결                                              |
+| 실행 이력 조회     | `Query`                    | `PK=RCA#{id}`, `begins_with(SK, 'EXEC#')`                                | 대시보드 실행 이력·회고 화면                                           |
 
 ### GSI
 
-| 인덱스 이름 | 파티션 키 | 프로젝션 | 용도 |
-|-------------|----------|----------|------|
+| 인덱스 이름         | 파티션 키                  | 프로젝션  | 용도                            |
+| ------------------- | -------------------------- | --------- | ------------------------------- |
 | `idempotency-index` | `idempotency_key` (String) | KEYS_ONLY | 멱등성 키로 기존 세션 유무 조회 |
 
 ### DynamoDB 데이터 흐름
@@ -1253,37 +1256,37 @@ flowchart TD
     Q3 -->|"Yes"| Q4{"DynamoDB에<br/>세션이 생성되었는가?"}
     Q4 -->|"No"| A4["Fargate 로그 확인<br/>CloudWatch > Log groups"]
     Q4 -->|"Yes"| Q5{"세션 상태가<br/>FAILED인가?"}
-    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>CC Headless: 최대 30분)"]
+    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>CC Headless: 최대 60분)"]
     Q5 -->|"Yes"| A6["에러 원인 확인<br/>DDB의 error 필드 확인<br/>CloudWatch Logs 검색"]
 ```
 
 ### 확인할 CloudWatch Log Groups
 
-| 서비스 | Log Group | 확인 사항 |
-|--------|-----------|----------|
-| Fargate RCA Agent | `/ecs/rca-agent-*` | MCP 연결 실패, Bedrock API 오류 |
-| Fargate CC Headless | `/ecs/*/cc-headless` | CC CLI 오류 |
-| Playbook Execution | `/ecs/*/playbook-execution` | 실행 요청 수신, 명령 거부, 관측 실패, 회고 오류 |
-| Healthcare App | `/ecs/healthcare-*` | 장애 주입 동작, 트래픽 생성기 |
-| SQS DLQ | DLQ 메시지 수 | 처리 실패한 알람 메시지, 처리 실패한 실행 요청 |
+| 서비스              | Log Group                   | 확인 사항                                       |
+| ------------------- | --------------------------- | ----------------------------------------------- |
+| Fargate RCA Agent   | `/ecs/rca-agent-*`          | MCP 연결 실패, Bedrock API 오류                 |
+| Fargate CC Headless | `/ecs/*/cc-headless`        | CC CLI 오류                                     |
+| Playbook Execution  | `/ecs/*/playbook-execution` | 실행 요청 수신, 명령 거부, 관측 실패, 회고 오류 |
+| Healthcare App      | `/ecs/healthcare-*`         | 장애 주입 동작, 트래픽 생성기                   |
+| SQS DLQ             | DLQ 메시지 수               | 처리 실패한 알람 메시지, 처리 실패한 실행 요청  |
 
 ### 일반적인 문제와 해결책
 
-| 증상 | 원인 | 해결 |
-|------|------|------|
-| MCP 서버 연결 실패 | uvx 패키지 다운로드 실패 | NAT Gateway/인터넷 연결 확인 |
-| CC CLI 0초 완료 | HOME 디렉토리 미설정 | 컨테이너 환경변수 HOME=/tmp 확인 |
-| 중복 RCA 실행 | 멱등성 키 불일치 | DynamoDB GSI `idempotency-index` 확인 |
-| Bedrock API 오류 | 리전/모델 설정 오류 | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경변수 확인 |
-| 보고서 S3 업로드 실패 | IAM 권한 부족 | Task Role의 S3 PutObject 권한 확인 |
-| 세션이 "분석중"에서 멈춤 | 태스크 크래시/롤링 배포 중 SIGTERM | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨 |
-| 재처리가 너무 느림 | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음 | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, CC Headless 35분) |
-| 승인 버튼이 503으로 실패 | 대시보드에 `EXECUTION_QUEUE_URL` 미설정 | 환경변수 설정. 미설정 시 조용히 성공한 것처럼 보이지 않도록 의도적으로 503으로 실패한다 |
-| 승인이 409로 거부됨 | 분석이 COMPLETED가 아니거나, 리포트에 실행 절차가 없거나, 이미 진행 중인 실행이 있음 | 대시보드의 실행 이력에서 진행 중 실행 확인. 미확정 원인의 리포트는 실행 절차를 갖지 않는다 |
-| 실행이 UNRESOLVED로 끝남 | `success_criteria`를 관측하지 못했거나 관측이 기준을 만족하지 못함 | 실행 증거(S3)에서 절차별 관측 결과 확인. 관측되지 않은 결과를 해결로 기록하지 않는 것이 설계다 |
-| 절차가 수동 조치로 남음 | 명령이 파괴적으로 판정되었거나 작업 이름을 확정할 수 없었음 | 증거의 `failure_class`가 `BLOCKED_DESTRUCTIVE`/`BLOCKED_UNDECIDABLE`인지 확인. 사람이 직접 조치한다 |
-| 회고가 실행되지 않음 | 실행이 `RESOLVED`가 아님 | 정상 동작. 해소하지 못한 절차는 올바름이 입증되지 않았으므로 회고에 들어가지 않는다 |
-| 같은 승인이 두 번 실행됨 | 실행 요청 큐의 visibility timeout이 실행 상한보다 짧음 | `playbook-execution-stack.ts`의 visibility(4500초) > `EXECUTION_TIMEOUT_SECONDS`(3600초) 확인 |
+| 증상                     | 원인                                                                                 | 해결                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| MCP 서버 연결 실패       | uvx 패키지 다운로드 실패                                                             | NAT Gateway/인터넷 연결 확인                                                                        |
+| CC CLI 0초 완료          | HOME 디렉토리 미설정                                                                 | 컨테이너 환경변수 HOME=/tmp 확인                                                                    |
+| 중복 RCA 실행            | 멱등성 키 불일치                                                                     | DynamoDB GSI `idempotency-index` 확인                                                               |
+| Bedrock API 오류         | 리전/모델 설정 오류                                                                  | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경변수 확인                                                  |
+| 보고서 S3 업로드 실패    | IAM 권한 부족                                                                        | Task Role의 S3 PutObject 권한 확인                                                                  |
+| 세션이 "분석중"에서 멈춤 | 태스크 크래시/롤링 배포 중 SIGTERM                                                   | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨            |
+| 재처리가 너무 느림       | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음                              | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, CC Headless 35분)                 |
+| 승인 버튼이 503으로 실패 | 대시보드에 `EXECUTION_QUEUE_URL` 미설정                                              | 환경변수 설정. 미설정 시 조용히 성공한 것처럼 보이지 않도록 의도적으로 503으로 실패한다             |
+| 승인이 409로 거부됨      | 분석이 COMPLETED가 아니거나, 리포트에 실행 절차가 없거나, 이미 진행 중인 실행이 있음 | 대시보드의 실행 이력에서 진행 중 실행 확인. 미확정 원인의 리포트는 실행 절차를 갖지 않는다          |
+| 실행이 UNRESOLVED로 끝남 | `success_criteria`를 관측하지 못했거나 관측이 기준을 만족하지 못함                   | 실행 증거(S3)에서 절차별 관측 결과 확인. 관측되지 않은 결과를 해결로 기록하지 않는 것이 설계다      |
+| 절차가 수동 조치로 남음  | 명령이 파괴적으로 판정되었거나 작업 이름을 확정할 수 없었음                          | 증거의 `failure_class`가 `BLOCKED_DESTRUCTIVE`/`BLOCKED_UNDECIDABLE`인지 확인. 사람이 직접 조치한다 |
+| 회고가 실행되지 않음     | 실행이 `RESOLVED`가 아님                                                             | 정상 동작. 해소하지 못한 절차는 올바름이 입증되지 않았으므로 회고에 들어가지 않는다                 |
+| 같은 승인이 두 번 실행됨 | 실행 요청 큐의 visibility timeout이 실행 상한보다 짧음                               | `playbook-execution-stack.ts`의 visibility(4500초) > `EXECUTION_TIMEOUT_SECONDS`(3600초) 확인       |
 
 ---
 

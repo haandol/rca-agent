@@ -14,19 +14,19 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 
 동일한 CloudWatch 알람에 대해 두 가지 실행 엔진이 독립적으로 RCA를 수행합니다.
 
-| | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
-|---|---|---|
-| **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
-| **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 9단계 closed-loop 파이프라인 | 전문 서브 에이전트 오케스트레이션 |
-| **모델** | 단일 Sonnet 5 (Planning/Execution 행동 분리) | CC 기본 모델 (Sonnet 5) |
-| **타임아웃** | 종료 조건 및 시간 예산 | CC 프로세스 30분 제한 |
-| **동시성** | Fargate 태스크 스케일링 | Fargate 태스크 1 |
-| **쓰기 권한** | 없음 (읽기 전용 분석) | 없음 (읽기 전용 분석) |
-| **산출물** | 플레이북을 포함한 리포트 1개 | 플레이북을 포함한 리포트 1개 |
-| **실행 경로** | 두 엔진 공통 — 사용자 승인 후 별도 플레이북 실행 에이전트가 수행 |
-| **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
-| **구분** | DynamoDB `engine` 필드: `strands` vs `cc-headless` |
+|                   | Fargate Stack (Strands)                                          | Fargate Stack (CC Headless)         |
+| ----------------- | ---------------------------------------------------------------- | ----------------------------------- |
+| **실행 환경**     | ECS Fargate (Long Polling)                                       | ECS Fargate (Long Polling)          |
+| **에이전트 엔진** | Strands Agents SDK (Python)                                      | Claude Code CLI (headless, Bedrock) |
+| **RCA 방식**      | 9단계 closed-loop 파이프라인                                     | 전문 서브 에이전트 오케스트레이션   |
+| **모델**          | 단일 Sonnet 5 (Planning/Execution 행동 분리)                     | CC 기본 모델 (Sonnet 5)             |
+| **타임아웃**      | 종료 조건 및 시간 예산 (20분)                                    | CC 프로세스 60분 제한               |
+| **동시성**        | Fargate 태스크 스케일링                                          | Fargate 태스크 1                    |
+| **쓰기 권한**     | 없음 (읽기 전용 분석)                                            | 없음 (읽기 전용 분석)               |
+| **산출물**        | 플레이북을 포함한 리포트 1개                                     | 플레이북을 포함한 리포트 1개        |
+| **실행 경로**     | 두 엔진 공통 — 사용자 승인 후 별도 플레이북 실행 에이전트가 수행 |
+| **공유 리소스**   | SNS (알람/알림), DynamoDB, S3, S3 Vectors                        |
+| **구분**          | DynamoDB `engine` 필드: `strands` vs `cc-headless`               |
 
 ## System Architecture
 
@@ -163,7 +163,7 @@ stateDiagram-v2
     COMPLETED --> [*]
 ```
 
-단계별 timeout/재시도, 증거 소스, 플레이북 검색 우선(≥0.86) 등 세부 동작은 `packages/agent/` 소스와 관련 ADR을 참조하세요.
+단계별 timeout/재시도, 증거 소스, 플레이북 검색 우선(≥0.80) 등 세부 동작은 `packages/agent/` 소스와 관련 ADR을 참조하세요.
 
 ## Agent Pipeline — Fargate (CC Headless 오케스트레이터)
 
@@ -302,7 +302,7 @@ stateDiagram-v2
 - **Termination Check** — 순수 로직(LLM 미사용) → `TerminationDecision`
 - **F6 Branching** — Branching Agent → 자식 가설(depth=parent+1)
 - **F7 Report** — Report Agent → `RcaReport` → S3 Markdown + S3 Vectors 인덱싱
-- **F8 Playbook** — 기존 플레이북 검색(≥0.86) → 상세 로드(실패 시 후보 제외) → update or create → S3 Vectors 인덱싱
+- **F8 Playbook** — 기존 플레이북 검색(≥0.80) → 상세 로드(실패 시 후보 제외) → update or create → S3 Vectors 인덱싱
 - **F9 Notification** — `build_notification()` (플레이북 요약 포함) → SNS Publish. 수신자는 사람과 대시보드뿐이며 어떤 기계 동작도 트리거하지 않습니다. 복구 트리거용 필드(`fault_type`, 복구 검증 결과)는 담지 않고, 실행 절차 자체도 담지 않습니다 — 실행 주체는 저장된 리포트를 직접 읽으므로, 알림 payload를 실행 입력으로 쓰면 전달 과정에서 잘린 절차가 실행될 수 있습니다
 
 각 단계의 Pydantic 스키마 및 structured_output 정의는 `packages/agent/`의 ports/dto를 참조하세요.
@@ -349,7 +349,8 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 - **쓰기 도구 없음**: 분석 하네스에 쓰기 도구가 들어가면 사용자 승인 게이트가
   무의미해지므로, 하네스 계약 테스트가 양쪽 도구의 혼입을 모두 막음
 - **reclaim fencing**: claim 조건부 trace와 부작용 lease로 이전 실행의 늦은 쓰기를 차단
-- **실행 시간 제한**: Lambda 15분 제한은 없지만 CC 프로세스는 30분 후 종료
+- **실행 시간 제한**: Lambda 15분 제한은 없지만 CC 프로세스는 60분 후 종료. 이 엔진은
+  예산이 소진되면 산출물이 남지 않으므로 완주 회차 실측(24~29분)의 두 배를 예산으로 둠
 - **멱등성**: 알람별 안정 세션 키와 receive count/claim token으로 재전달을 제어
 - **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
 
@@ -363,29 +364,29 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 
 ## Technology Stack
 
-| Component | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
-|-----------|--------------|--------------|
-| 에이전트 엔진 | Strands Agents SDK (Python) | Claude Code CLI headless (Python) |
-| 실행 환경 | AWS ECS Fargate | AWS ECS Fargate |
-| 이벤트 수신 | SQS Long Polling | SQS Long Polling |
-| LLM 추론 | Bedrock — 단일 Sonnet 5 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 5 (CC 전문 서브 에이전트) |
-| MCP 도구 | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP |
-| 환경 설정 | python-dotenv (`env/local.env`) | ECS 환경변수 |
+| Component     | Fargate Stack (Strands)                                                          | Fargate Stack (CC Headless)                          |
+| ------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 에이전트 엔진 | Strands Agents SDK (Python)                                                      | Claude Code CLI headless (Python)                    |
+| 실행 환경     | AWS ECS Fargate                                                                  | AWS ECS Fargate                                      |
+| 이벤트 수신   | SQS Long Polling                                                                 | SQS Long Polling                                     |
+| LLM 추론      | Bedrock — 단일 Sonnet 5 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 5 (CC 전문 서브 에이전트)           |
+| MCP 도구      | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP                             | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP |
+| 환경 설정     | python-dotenv (`env/local.env`)                                                  | ECS 환경변수                                         |
 
-| Component (실행) | Technology |
-|-----------|-----------|
-| 실행 엔진 | Claude Code CLI headless — 분석 워커와 동일 이미지, `cc_headless.execution_main` 진입점 |
-| 실행 환경 | AWS ECS Fargate (상시 1 태스크) |
-| 트리거 | 실행 요청 SQS Queue (대시보드 승인 발행) + DLQ |
-| MCP 도구 | 읽기 전용 CloudWatch MCP + 서버 판정형 명령 실행·증거 기록 MCP + 회고 갱신 MCP |
-| 증거 저장 | Amazon S3 (주 보관) + DynamoDB (요약) |
-| 권한 | PowerUserAccess + 실행 대상 외 범위 명시적 Deny (시스템 유일의 쓰기 태스크 역할) |
+| Component (실행) | Technology                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| 실행 엔진        | Claude Code CLI headless — 분석 워커와 동일 이미지, `cc_headless.execution_main` 진입점 |
+| 실행 환경        | AWS ECS Fargate (상시 1 태스크)                                                         |
+| 트리거           | 실행 요청 SQS Queue (대시보드 승인 발행) + DLQ                                          |
+| MCP 도구         | 읽기 전용 CloudWatch MCP + 서버 판정형 명령 실행·증거 기록 MCP + 회고 갱신 MCP          |
+| 증거 저장        | Amazon S3 (주 보관) + DynamoDB (요약)                                                   |
+| 권한             | PowerUserAccess + 실행 대상 외 범위 명시적 Deny (시스템 유일의 쓰기 태스크 역할)        |
 
-| Component (공유) | Technology |
-|-----------|-----------|
-| 이벤트 라우팅 | Amazon SNS → 각 스택별 SQS Queue |
-| 임베딩 | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (플레이북 + 보고서 인덱스) |
-| 증거/보고서 저장 | Amazon S3 |
-| 세션 관리 | Amazon DynamoDB (`engine` 필드로 스택 구분, 실행은 `EXEC#` 접두사) |
-| 알림 | Amazon SNS |
-| 네트워크 보안 | VPC + PrivateLink |
+| Component (공유) | Technology                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| 이벤트 라우팅    | Amazon SNS → 각 스택별 SQS Queue                                                                |
+| 임베딩           | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (플레이북 + 보고서 인덱스) |
+| 증거/보고서 저장 | Amazon S3                                                                                       |
+| 세션 관리        | Amazon DynamoDB (`engine` 필드로 스택 구분, 실행은 `EXEC#` 접두사)                              |
+| 알림             | Amazon SNS                                                                                      |
+| 네트워크 보안    | VPC + PrivateLink                                                                               |

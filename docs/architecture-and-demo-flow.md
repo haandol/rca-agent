@@ -102,7 +102,7 @@ flowchart TD
         end
 
         subgraph F8["F8: Playbook"]
-            PB_SEARCH["S3 Vectors<br/>기존 플레이북 검색 (≥0.86)"]
+            PB_SEARCH["S3 Vectors<br/>기존 플레이북 검색 (≥0.80)"]
             PB_AGENT["Playbook Agent<br/>(Planning 티어: Sonnet 5)<br/>update or create"]
             PB_S3V["S3 Vectors 인덱싱"]
             PB_SEARCH --> PB_AGENT --> PB_S3V
@@ -231,34 +231,38 @@ flowchart LR
 
 ### 1.4. 단계별 데이터 흐름
 
-| 단계 | 입력 | 출력 | 모델 티어 | MCP 도구 |
-|------|------|------|----------|---------|
-| F1: Scoping | AlarmPayload | ScopingResult (severity, blast_radius, similar_reports, anomaly_start_time) | Execution | AWS Knowledge + CW + CT |
-| F2: Hypothesis Gen | ScopingResult | Hypothesis[] (3~5개, depth=0) | Planning | - |
-| F3: Prioritization | Hypothesis[] + ScopingResult | PrioritizedHypothesis[] (rank, plan) | Planning | - |
-| Beam Selection | PrioritizedHypothesis[] | 상위 N개 필터 (기본 3) | 순수 로직 | - |
-| F4: Evidence | Beam 가설 + ScopingResult | evidence_map (hypothesis_id → 요약) | Execution | AWS Knowledge + CW + CT + GH |
-| F5: Validation | Beam 가설 + evidence_map | ValidationJudgment[] + all_rejected | Execution | - |
-| Termination | judgments + hypotheses + start_time | TerminationDecision (should_terminate, reason) | 순수 로직 | - |
-| F6: Branching | NEEDS_INVESTIGATION 가설 + evidence | Child Hypothesis[] (depth+1) | Planning | - |
-| F7: Report | best_hypothesis + evidence + timeline | RcaReport (Markdown) → S3 저장 + S3 Vectors 인덱싱 | Planning | - |
-| F8: Playbook | RcaReport | Playbook (`execution_steps`, `verification_status=DRAFT`) → S3 Vectors 인덱싱 | Planning | - |
-| F9: Notification | RcaReport + Playbook | SNS 메시지 (presigned URL + 플레이북 요약) | 순수 로직 | - |
+| 단계               | 입력                                  | 출력                                                                          | 모델 티어 | MCP 도구                     |
+| ------------------ | ------------------------------------- | ----------------------------------------------------------------------------- | --------- | ---------------------------- |
+| F1: Scoping        | AlarmPayload                          | ScopingResult (severity, blast_radius, similar_reports, anomaly_start_time)   | Execution | AWS Knowledge + CW + CT      |
+| F2: Hypothesis Gen | ScopingResult                         | Hypothesis[] (3~5개, depth=0)                                                 | Planning  | -                            |
+| F3: Prioritization | Hypothesis[] + ScopingResult          | PrioritizedHypothesis[] (rank, plan)                                          | Planning  | -                            |
+| Beam Selection     | PrioritizedHypothesis[]               | 상위 N개 필터 (기본 3)                                                        | 순수 로직 | -                            |
+| F4: Evidence       | Beam 가설 + ScopingResult             | evidence_map (hypothesis_id → 요약)                                           | Execution | AWS Knowledge + CW + CT + GH |
+| F5: Validation     | Beam 가설 + evidence_map              | ValidationJudgment[] + all_rejected                                           | Execution | -                            |
+| Termination        | judgments + hypotheses + start_time   | TerminationDecision (should_terminate, reason)                                | 순수 로직 | -                            |
+| F6: Branching      | NEEDS_INVESTIGATION 가설 + evidence   | Child Hypothesis[] (depth+1)                                                  | Planning  | -                            |
+| F7: Report         | best_hypothesis + evidence + timeline | RcaReport (Markdown) → S3 저장 + S3 Vectors 인덱싱                            | Planning  | -                            |
+| F8: Playbook       | RcaReport                             | Playbook (`execution_steps`, `verification_status=DRAFT`) → S3 Vectors 인덱싱 | Planning  | -                            |
+| F9: Notification   | RcaReport + Playbook                  | SNS 메시지 (presigned URL + 플레이북 요약)                                    | 순수 로직 | -                            |
 
 ### 1.5. 주요 설정값
 
-| 상수 | 기본값 | 용도 |
-|------|--------|------|
-| `RCA_BEAM_WIDTH` | 3 | 루프당 검증할 가설 수 |
-| `RCA_MAX_VALIDATION_LOOPS` | 3 | 검증 루프 최대 반복 |
-| `RCA_MAX_REGENERATION_ROUNDS` | 2 | 전체 기각 시 재생성 최대 횟수 |
-| `RCA_TIME_BUDGET_SECONDS` | 1200 | 시간 예산 (20분) |
-| `RCA_MAX_TREE_DEPTH` | 5 | 가설 트리 최대 깊이 |
-| `TERMINATION_CONFIDENCE_THRESHOLD` | 0.9 | 종료 판단 신뢰도 임계치 |
-| `CONFIRMATION_THRESHOLD` | 0.8 | CONFIRMED 분류 임계치 |
-| `REJECTION_THRESHOLD` | 0.3 | REJECTED 분류 임계치 |
-| `MAX_BRANCHING_DEPTH` | 3 | 분기 최대 깊이 |
-| `ALARM_STALENESS_SECONDS` | 1800 | Stale 알람 판정 (30분) |
+| 상수                               | 기본값 | 용도                          |
+| ---------------------------------- | ------ | ----------------------------- |
+| `RCA_BEAM_WIDTH`                   | 3      | 루프당 검증할 가설 수         |
+| `RCA_MAX_VALIDATION_LOOPS`         | 3      | 검증 루프 최대 반복           |
+| `RCA_MAX_REGENERATION_ROUNDS`      | 2      | 전체 기각 시 재생성 최대 횟수 |
+| `RCA_TIME_BUDGET_SECONDS`          | 1200   | 시간 예산 (20분)              |
+| `RCA_MAX_TREE_DEPTH`               | 5      | 가설 트리 최대 깊이           |
+| `TERMINATION_CONFIDENCE_THRESHOLD` | 0.9    | 종료 판단 신뢰도 임계치       |
+| `CONFIRMATION_THRESHOLD`           | 0.8    | CONFIRMED 분류 임계치         |
+| `REJECTION_THRESHOLD`              | 0.3    | REJECTED 분류 임계치          |
+| `MAX_BRANCHING_DEPTH`              | 3      | 분기 최대 깊이                |
+| `ALARM_STALENESS_SECONDS`          | 1800   | Stale 알람 판정 (30분)        |
+
+Stale 판정 기준은 엔진별로 다릅니다. 이 엔진은 1800초를 쓰지만, CC Headless는 한 회차가
+분석 예산을 다 쓰면 그만큼의 대기가 다음 알람에 전가되므로 기준을 분석 예산(3600초)
+이상으로 묶습니다 — 짧으면 예산 초과 한 번이 뒤따르는 알람을 통째로 폐기합니다.
 
 ---
 
@@ -278,7 +282,7 @@ flowchart TD
         SQS["SQS Long Polling<br/>(WaitTimeSeconds=20)"]
         PARSE["AlarmPayload 파싱<br/>(SNS envelope unwrap)"]
         DEDUP["세션 claim<br/>(receive count + claim token)"]
-        STALE["Stale 알람 체크<br/>(30분 초과 → OUTDATED)"]
+        STALE["Stale 알람 체크<br/>(60분 초과 → OUTDATED)"]
         SESSION["세션 생성<br/>(engine: cc-headless)"]
         SQS --> PARSE --> DEDUP --> STALE --> SESSION
     end
@@ -357,10 +361,10 @@ stateDiagram-v2
     ALARM_RECEIVED --> [*]: 완료 세션 중복 → ACK
     ALARM_RECEIVED --> [*]: claim 경합/조회 실패 → 재전달
     ALARM_RECEIVED --> ANALYZING: 멱등성 체크 통과
-    ALARM_RECEIVED --> OUTDATED: Stale 알람 (30분 초과)
+    ALARM_RECEIVED --> OUTDATED: Stale 알람 (60분 초과)
 
     ANALYZING --> COMPLETED: CC CLI 성공<br/>보고서 S3 저장 + SNS 알림
-    ANALYZING --> FAILED: CC 오류 / 타임아웃 (30분)
+    ANALYZING --> FAILED: CC 오류 / 타임아웃 (60분)
     ANALYZING --> CANCELLED: 외부 취소 요청 감지<br/>(15초 간격 DDB 폴링)
 
     OUTDATED --> [*]
@@ -407,25 +411,25 @@ flowchart TD
 
 ### 2.4. MCP 서버 구성
 
-| MCP 서버 | 실행 방식 | 용도 |
-|---------|----------|------|
-| `aws-knowledge` | `fastmcp run https://knowledge-mcp.global.api.aws` | AWS 서비스 문서 참조, 장애 패턴 검색 |
-| `cloudwatch` | `uvx awslabs.cloudwatch-mcp-server` | 메트릭 조회, Logs Insights 쿼리, 알람 조회 |
-| `cloudtrail` | `uvx awslabs.cloudtrail-mcp-server` | 배포/변경 이벤트 조회, Lake SQL 분석 |
-| `github` | `github-mcp-server stdio` | 커밋 diff, PR diff, 파일 내용 조회 |
-| `rca-progress` | `fastmcp run` | 격리 산출물 저장 (쓰기 도구 없음) |
+| MCP 서버        | 실행 방식                                          | 용도                                       |
+| --------------- | -------------------------------------------------- | ------------------------------------------ |
+| `aws-knowledge` | `fastmcp run https://knowledge-mcp.global.api.aws` | AWS 서비스 문서 참조, 장애 패턴 검색       |
+| `cloudwatch`    | `uvx awslabs.cloudwatch-mcp-server`                | 메트릭 조회, Logs Insights 쿼리, 알람 조회 |
+| `cloudtrail`    | `uvx awslabs.cloudtrail-mcp-server`                | 배포/변경 이벤트 조회, Lake SQL 분석       |
+| `github`        | `github-mcp-server stdio`                          | 커밋 diff, PR diff, 파일 내용 조회         |
+| `rca-progress`  | `fastmcp run`                                      | 격리 산출물 저장 (쓰기 도구 없음)          |
 
 ### 2.5. Artifact Watcher 파일 → DDB 매핑
 
 canonical 산출물은 아래 다섯 가지이며 이 표가 전부입니다.
 
-| 파일 | DDB 스팬 타입 | 추가 동작 |
-|------|-------------|----------|
-| `scoping.json` | `SCOPING` | — |
-| `hypotheses.json` | `HYPOTHESIS_GENERATION` | HYPO# 레코드 batch write (최대 25개) |
-| `validation-N.json` | `VALIDATION_LOOP` | HYPO# 레코드 상태 갱신 (confirmed/rejected/closed/needs_investigation) |
-| `report.md` | `REPORT` | — |
-| `playbook.json` | `PLAYBOOK` | failure_type, tags 등 메타데이터 저장 |
+| 파일                | DDB 스팬 타입           | 추가 동작                                                              |
+| ------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| `scoping.json`      | `SCOPING`               | —                                                                      |
+| `hypotheses.json`   | `HYPOTHESIS_GENERATION` | HYPO# 레코드 batch write (최대 25개)                                   |
+| `validation-N.json` | `VALIDATION_LOOP`       | HYPO# 레코드 상태 갱신 (confirmed/rejected/closed/needs_investigation) |
+| `report.md`         | `REPORT`                | —                                                                      |
+| `playbook.json`     | `PLAYBOOK`              | failure_type, tags 등 메타데이터 저장                                  |
 
 ---
 
@@ -536,22 +540,22 @@ stateDiagram-v2
 
 ### 3.3. 왜 이 경계들이 이 위치에 있는가
 
-| 경계 | 위치 | 이유 |
-|------|------|------|
-| 승인 게이트 | 대시보드 → 실행 요청 큐 | 승인이 곧 메시지다. 실행 스택에 이벤트 구독이 없으므로 사람이 승인하지 않고 실행이 시작될 경로가 존재하지 않는다 |
-| 파괴적 조치 거부 | 실행 도구(서버) | IAM 액션 이름과 작업 이름 어휘가 일대일이 아니라 정책으로는 빈틈이 생기고, 정책 거부는 무엇이 왜 막혔는지 기록하거나 그 절차를 수동 조치로 남길 수 없다 |
-| 판정 불가 = 거부 | 실행 도구(서버) | 판정 불가를 허용으로 읽으면 셸 합성·중첩 호출로 거부 목록을 비울 수 있다 |
-| 해결 판정 | 서버(`execution_outcome.py`) | 에이전트의 최종 서술은 관측이 아니다. 기록된 관측만 완료의 근거가 된다 |
-| 삭제 금지 | 병합 코드(`playbook_merge.py`) | 프롬프트 지시만으로는 모델이 필드를 누락할 때 축적이 조용히 사라진다 |
-| 회고 진입 조건 | `RESOLVED`만 | 이슈를 해소하지 못한 절차는 올바름이 입증되지 않았다 |
+| 경계             | 위치                           | 이유                                                                                                                                                    |
+| ---------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 승인 게이트      | 대시보드 → 실행 요청 큐        | 승인이 곧 메시지다. 실행 스택에 이벤트 구독이 없으므로 사람이 승인하지 않고 실행이 시작될 경로가 존재하지 않는다                                        |
+| 파괴적 조치 거부 | 실행 도구(서버)                | IAM 액션 이름과 작업 이름 어휘가 일대일이 아니라 정책으로는 빈틈이 생기고, 정책 거부는 무엇이 왜 막혔는지 기록하거나 그 절차를 수동 조치로 남길 수 없다 |
+| 판정 불가 = 거부 | 실행 도구(서버)                | 판정 불가를 허용으로 읽으면 셸 합성·중첩 호출로 거부 목록을 비울 수 있다                                                                                |
+| 해결 판정        | 서버(`execution_outcome.py`)   | 에이전트의 최종 서술은 관측이 아니다. 기록된 관측만 완료의 근거가 된다                                                                                  |
+| 삭제 금지        | 병합 코드(`playbook_merge.py`) | 프롬프트 지시만으로는 모델이 필드를 누락할 때 축적이 조용히 사라진다                                                                                    |
+| 회고 진입 조건   | `RESOLVED`만                   | 이슈를 해소하지 못한 절차는 올바름이 입증되지 않았다                                                                                                    |
 
 ### 3.4. 실행 MCP 도구 구성
 
-| MCP 서버 | 용도 |
-|---------|------|
-| `cloudwatch` | `success_criteria` 관측 — 조치 이후 구간의 메트릭·로그 조회 (읽기 전용) |
-| `playbook-execution` | 서버 판정형 명령 실행(`run_playbook_command`), 절차 관측 기록(`record_step_outcome`), 해소 여부 기록(`record_resolution`) |
-| `playbook-retrospective` | 회고 갱신안 저장(`save_playbook_update`) |
+| MCP 서버                 | 용도                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `cloudwatch`             | `success_criteria` 관측 — 조치 이후 구간의 메트릭·로그 조회 (읽기 전용)                                                   |
+| `playbook-execution`     | 서버 판정형 명령 실행(`run_playbook_command`), 절차 관측 기록(`record_step_outcome`), 해소 여부 기록(`record_resolution`) |
+| `playbook-retrospective` | 회고 갱신안 저장(`save_playbook_update`)                                                                                  |
 
 분석 하네스와 실행 하네스는 도구를 공유하지 않습니다. 분석에 쓰기 도구가 들어가면
 승인 게이트가 무의미해지고, 실행이 분석 산출물 도구를 가지면 실행이 리포트를 바꿀
@@ -573,22 +577,22 @@ stateDiagram-v2
 
 ## 4. 두 스택 비교
 
-| | Fargate Stack (Strands) | Fargate Stack (CC Headless) |
-|---|---|---|
-| **실행 환경** | ECS Fargate (Long Polling) | ECS Fargate (Long Polling) |
-| **에이전트 엔진** | Strands Agents SDK (Python) | Claude Code CLI (headless, Bedrock) |
-| **RCA 방식** | 9단계 코드 기반 파이프라인 | RCA·Report 전문 에이전트 오케스트레이션 |
-| **모델** | 단일 Sonnet 5 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 5) |
-| **서브에이전트** | Strands Agent 인스턴스 (코드로 생성) | CC Agent tool (프롬프트로 스폰) |
-| **상태 관리** | Python 코드가 매 단계 DDB 업데이트 | Artifact Watcher가 파일 감시 → DDB 기록 |
-| **DDB 상태 수** | 7개 활성 상태 + 4개 terminal | 2개 활성 상태 + 4개 terminal |
-| **쓰기 권한** | 없음 (읽기 전용) | 없음 (읽기 전용) |
-| **산출물** | 플레이북을 포함한 리포트 1개 | 플레이북을 포함한 리포트 1개 |
-| **타임아웃** | 20분 (RCA_TIME_BUDGET_SECONDS) | 30분 (CC_TIMEOUT_SECONDS) |
-| **취소 감지** | update_state() 시 ConditionExpression | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
-| **증거 격리** | 가설별 독립 Agent 인스턴스 | CC 자체 컨텍스트 관리 |
-| **실행 경로** | 두 엔진 공통 — 사용자 승인 후 3장의 실행 에이전트가 수행 |
-| **공유 리소스** | SNS (알람/알림), DynamoDB, S3, S3 Vectors |
+|                   | Fargate Stack (Strands)                                               | Fargate Stack (CC Headless)                |
+| ----------------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| **실행 환경**     | ECS Fargate (Long Polling)                                            | ECS Fargate (Long Polling)                 |
+| **에이전트 엔진** | Strands Agents SDK (Python)                                           | Claude Code CLI (headless, Bedrock)        |
+| **RCA 방식**      | 9단계 코드 기반 파이프라인                                            | RCA·Report 전문 에이전트 오케스트레이션    |
+| **모델**          | 단일 Sonnet 5 + Planning/Execution 행동 분리 (adaptive thinking 유무) | CC 기본 모델 (Sonnet 5)                    |
+| **서브에이전트**  | Strands Agent 인스턴스 (코드로 생성)                                  | CC Agent tool (프롬프트로 스폰)            |
+| **상태 관리**     | Python 코드가 매 단계 DDB 업데이트                                    | Artifact Watcher가 파일 감시 → DDB 기록    |
+| **DDB 상태 수**   | 7개 활성 상태 + 4개 terminal                                          | 2개 활성 상태 + 4개 terminal               |
+| **쓰기 권한**     | 없음 (읽기 전용)                                                      | 없음 (읽기 전용)                           |
+| **산출물**        | 플레이북을 포함한 리포트 1개                                          | 플레이북을 포함한 리포트 1개               |
+| **타임아웃**      | 20분 (RCA_TIME_BUDGET_SECONDS)                                        | 60분 (CC_TIMEOUT_SECONDS)                  |
+| **취소 감지**     | update_state() 시 ConditionExpression                                 | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
+| **증거 격리**     | 가설별 독립 Agent 인스턴스                                            | CC 자체 컨텍스트 관리                      |
+| **실행 경로**     | 두 엔진 공통 — 사용자 승인 후 3장의 실행 에이전트가 수행              |
+| **공유 리소스**   | SNS (알람/알림), DynamoDB, S3, S3 Vectors                             |
 
 ---
 
@@ -726,7 +730,7 @@ sequenceDiagram
     Agent->>S3: reports/{rca_id}.md 저장
 
     Note over Agent,S3V: F8 플레이북 생성
-    Agent->>S3V: 기존 유사 플레이북 검색 (≥0.86)
+    Agent->>S3V: 기존 유사 플레이북 검색 (≥0.80)
     S3V-->>Agent: (해당 없음 → 신규 생성)
     Agent->>Bedrock: 플레이북 생성 요청 (Sonnet 5)
     Bedrock-->>Agent: DB 커넥션 누수 플레이북
@@ -740,36 +744,37 @@ sequenceDiagram
 
 ### 각 Phase별 산출물
 
-| Phase | 단계 | 주요 산출물 | 저장소 |
-|-------|------|-----------|--------|
-| 0 | 알람 수신 | AlarmPayload, RCA 세션 | DynamoDB |
-| 1 | F1 스코핑 | ScopingResult (severity=high, blast=multi) | - |
-| 2 | F2 가설 생성 | 가설 A/B/C (3개) | DynamoDB (HYPO#) |
-| 3 | F3 우선순위 + Beam Selection | A→B→C 검증 순서, 상위 3개 선택 | - |
-| 4 | F4 증거 수집 | 메트릭(커넥션 추이), 로그(Too many connections), 배포 이력, 코드 diff | S3, DynamoDB |
-| 5 | F5 검증 (1차) | A: NEEDS_INVESTIGATION, B/C: REJECTED | DynamoDB |
-| 6 | F6 분기 | A-1(풀 설정), A-2(커넥션 미반환) | DynamoDB (HYPO#) |
-| 4-5 | F4-F5 (2차) | A-1: REJECTED, A-2: CONFIRMED (0.92) | S3, DynamoDB |
-| - | REJECTED 처리 | A-1, A → REJECTED (확정된 근본원인 발견으로 기각) | DynamoDB |
-| 7 | F7 보고서 | RCA Report (Markdown) | S3 |
-| 8 | F8 플레이북 | DB 커넥션 누수 대응 플레이북 | S3 Vectors |
-| 9 | F9 알림 | SNS 알림 (presigned URL + 플레이북 포함) | SNS → SRE |
+| Phase | 단계                         | 주요 산출물                                                           | 저장소           |
+| ----- | ---------------------------- | --------------------------------------------------------------------- | ---------------- |
+| 0     | 알람 수신                    | AlarmPayload, RCA 세션                                                | DynamoDB         |
+| 1     | F1 스코핑                    | ScopingResult (severity=high, blast=multi)                            | -                |
+| 2     | F2 가설 생성                 | 가설 A/B/C (3개)                                                      | DynamoDB (HYPO#) |
+| 3     | F3 우선순위 + Beam Selection | A→B→C 검증 순서, 상위 3개 선택                                        | -                |
+| 4     | F4 증거 수집                 | 메트릭(커넥션 추이), 로그(Too many connections), 배포 이력, 코드 diff | S3, DynamoDB     |
+| 5     | F5 검증 (1차)                | A: NEEDS_INVESTIGATION, B/C: REJECTED                                 | DynamoDB         |
+| 6     | F6 분기                      | A-1(풀 설정), A-2(커넥션 미반환)                                      | DynamoDB (HYPO#) |
+| 4-5   | F4-F5 (2차)                  | A-1: REJECTED, A-2: CONFIRMED (0.92)                                  | S3, DynamoDB     |
+| -     | REJECTED 처리                | A-1, A → REJECTED (확정된 근본원인 발견으로 기각)                     | DynamoDB         |
+| 7     | F7 보고서                    | RCA Report (Markdown)                                                 | S3               |
+| 8     | F8 플레이북                  | DB 커넥션 누수 대응 플레이북                                          | S3 Vectors       |
+| 9     | F9 알림                      | SNS 알림 (presigned URL + 플레이북 포함)                              | SNS → SRE        |
 
 ### 데모에서 사용되는 MCP 도구
 
-| MCP 서버 | 도구 | 용도 |
-|---------|------|------|
-| AWS Knowledge MCP | `search_documentation`, `read_documentation` | AWS 서비스 문서 참조, 모범 사례 검색 |
-| CloudWatch MCP | `get_metric_data` | DB 커넥션 수, Latency, RequestCount, CPU 메트릭 조회 |
-| CloudWatch MCP | `execute_log_insights_query` | "Too many connections" 에러 로그 검색 |
-| CloudWatch MCP | `analyze_metric` | 커넥션 증가 트렌드 분석 |
-| CloudTrail MCP | `lookup_events` | ECS 배포 이벤트(RegisterTaskDefinition) 조회 |
-| GitHub MCP | `get_commit`, `list_commits` | 배포 커밋 diff 조회, 결함 패턴 탐지 |
-| GitHub MCP | `pull_request_read` | PR diff, 변경 파일 목록, 리뷰 코멘트 조회 |
+| MCP 서버          | 도구                                         | 용도                                                 |
+| ----------------- | -------------------------------------------- | ---------------------------------------------------- |
+| AWS Knowledge MCP | `search_documentation`, `read_documentation` | AWS 서비스 문서 참조, 모범 사례 검색                 |
+| CloudWatch MCP    | `get_metric_data`                            | DB 커넥션 수, Latency, RequestCount, CPU 메트릭 조회 |
+| CloudWatch MCP    | `execute_log_insights_query`                 | "Too many connections" 에러 로그 검색                |
+| CloudWatch MCP    | `analyze_metric`                             | 커넥션 증가 트렌드 분석                              |
+| CloudTrail MCP    | `lookup_events`                              | ECS 배포 이벤트(RegisterTaskDefinition) 조회         |
+| GitHub MCP        | `get_commit`, `list_commits`                 | 배포 커밋 diff 조회, 결함 패턴 탐지                  |
+| GitHub MCP        | `pull_request_read`                          | PR diff, 변경 파일 목록, 리뷰 코멘트 조회            |
 
 ### 종료 조건 매핑
 
 이 데모에서는 **CONFIRMED** 종료 조건이 트리거됩니다:
+
 - 가설 A-2 "코드에서 커넥션 미반환"이 confidence 0.92로 확정
 - 임계치 0.9 이상 → 즉시 종료 → 나머지 가설 REJECTED 처리 → 보고서 → 플레이북 → 알림
 
