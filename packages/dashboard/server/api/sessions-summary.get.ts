@@ -33,7 +33,12 @@ export default defineEventHandler(async () => {
           TableName: config.dynamodbTableName,
           IndexName: SESSION_LIST_INDEX,
           KeyConditionExpression: '#pk = :engine',
-          ExpressionAttributeNames: { '#pk': LIST_PARTITION_KEY },
+          // `state` is a DynamoDB reserved word, so it can only be named through
+          // an alias — and every alias a projection uses has to be declared here.
+          ExpressionAttributeNames: {
+            '#pk': LIST_PARTITION_KEY,
+            '#st': 'state',
+          },
           ExpressionAttributeValues: { ':engine': engine },
           ProjectionExpression: 'PK, #st, engine',
           ExclusiveStartKey: startKey,

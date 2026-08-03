@@ -505,3 +505,62 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
     'delete forwards the engine so it cannot remove the other engine’s session',
   );
 });
+
+test('every DynamoDB expression alias the dashboard uses is declared', async () => {
+  // An alias only fails at request time: `state` is a reserved word, so it can
+  // only be named through one, and a projection that uses `#st` without declaring
+  // it returns a 400 that no type check or unit test would have caught. This walks
+  // the handlers the way DynamoDB does — the aliases inside each expression, and
+  // the names declared beside it.
+  const { readdir } = await import('node:fs/promises');
+
+  const EXPRESSION_KEYS = [
+    'KeyConditionExpression',
+    'FilterExpression',
+    'ProjectionExpression',
+    'UpdateExpression',
+    'ConditionExpression',
+  ];
+
+  async function typescriptFiles(dir) {
+    const entries = await readdir(path.join(REPOSITORY_ROOT, dir), {
+      withFileTypes: true,
+    });
+    const files = [];
+    for (const entry of entries) {
+      const next = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) files.push(...(await typescriptFiles(next)));
+      else if (entry.name.endsWith('.ts')) files.push(next);
+    }
+    return files;
+  }
+
+  const files = await typescriptFiles('packages/dashboard/server');
+  assert.ok(files.length > 0, 'the scan found handlers to check');
+
+  for (const file of files) {
+    const source = await readRepositoryFile(file);
+    const declared = new Set(
+      [...source.matchAll(/'(#[A-Za-z_][A-Za-z0-9_]*)'\s*:/g)].map(
+        (match) => match[1],
+      ),
+    );
+
+    for (const key of EXPRESSION_KEYS) {
+      const pattern = new RegExp(
+        `${key}\\s*:\\s*((?:'[^']*'|"[^"]*"|\`[^\`]*\`|\\s*\\+\\s*)+)`,
+        'g',
+      );
+      for (const expression of source.matchAll(pattern)) {
+        for (const alias of expression[1].matchAll(
+          /#[A-Za-z_][A-Za-z0-9_]*/g,
+        )) {
+          assert.ok(
+            declared.has(alias[0]),
+            `${file} uses ${alias[0]} in ${key} without declaring it in ExpressionAttributeNames`,
+          );
+        }
+      }
+    }
+  }
+});
