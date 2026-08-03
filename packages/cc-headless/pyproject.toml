@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cc-headless"
 version = "0.1.1"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.35",
     "fastmcp>=2.0",
@@ -28,7 +28,7 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "N"]

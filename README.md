@@ -82,8 +82,8 @@ RCA 결과는 로컬 전용 Nuxt 대시보드(`packages/dashboard`, `http://loca
 
 ## 사전 요구사항
 
-- Node.js 20+, pnpm
-- Python 3.12+, [uv](https://docs.astral.sh/uv/)
+- Node.js 24+, pnpm
+- Python 3.13+, [uv](https://docs.astral.sh/uv/)
 - AWS CLI (인증 설정 완료)
 - [gh](https://cli.github.com/) (GitHub CLI)
 - Docker (컨테이너 빌드 및 배포용)

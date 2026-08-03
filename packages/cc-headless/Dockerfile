@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -9,9 +9,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ src/
 RUN uv sync --frozen --no-dev
 
-FROM node:22-slim AS node-dist
+FROM node:24-slim AS node-dist
 
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 COPY --from=node-dist /usr/local/bin/node /usr/local/bin/
 COPY --from=node-dist /usr/local/lib/node_modules /usr/local/lib/node_modules

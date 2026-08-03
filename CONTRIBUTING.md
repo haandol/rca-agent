@@ -187,9 +187,9 @@ git push -u origin feat/my-feature
 
 ### Python (Agent, Healthcare Sensor App)
 
-- **Python 버전**: 3.12+
+- **Python 버전**: 3.13+
 - **패키지 관리**: uv (`pyproject.toml`)
-- **린터/포매터**: ruff (`line-length=120`, `target-version="py312"`)
+- **린터/포매터**: ruff (`line-length=120`, `target-version="py313"`)
 - **타입 힌트**: Pydantic 모델 + `from __future__ import annotations`
 - **테스트**: pytest (`uv run pytest tests/`)
 - **환경 설정**: python-dotenv (`env/local.env`)

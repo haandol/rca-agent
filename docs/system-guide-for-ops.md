@@ -321,7 +321,7 @@ sequenceDiagram
 graph LR
     subgraph Fargate["🟦 Fargate Stack (Strands)"]
         direction TB
-        F_ENV["ECS Fargate<br/>Python 3.12"]
+        F_ENV["ECS Fargate<br/>Python 3.13"]
         F_SDK["Strands Agents SDK<br/>9단계 파이프라인"]
         F_MODEL["단일 모델<br/>Sonnet 5 + Planning/Execution 행동 분리"]
         F_TIME["시간 예산<br/>(기본 20분)"]
@@ -331,7 +331,7 @@ graph LR
 
     subgraph CcStack["🟧 CC Headless Stack (ECS Fargate)"]
         direction TB
-        L_ENV["ECS Fargate<br/>Node.js 22"]
+        L_ENV["ECS Fargate<br/>Node.js 24"]
         L_SDK["Claude Code CLI<br/>RCA · Report 전문 에이전트"]
         L_MODEL["단일 모델<br/>Sonnet 5"]
         L_TIME["프로세스 타임아웃<br/>(60분)"]

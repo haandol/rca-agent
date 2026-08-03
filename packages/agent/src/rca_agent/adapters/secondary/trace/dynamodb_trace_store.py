@@ -198,7 +198,7 @@ class TraceStore:
         parent_span_id: str | None = None,
         loop_index: int | None = None,
         input_summary: str = "",
-    ) -> Generator[Span, None, None]:
+    ) -> Generator[Span]:
         s = self.start_span(
             span_type,
             parent_span_id=parent_span_id,

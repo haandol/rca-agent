@@ -16,8 +16,8 @@ Claude Code on Bedrock headless 모드를 사용하는 RCA 오케스트레이터
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Python 3.12 |
-| Runtime | python:3.12-slim + Node.js 22 (CC CLI용) on ECS Fargate |
+| Language | Python 3.13 |
+| Runtime | python:3.13-slim + Node.js 24 (CC CLI용) on ECS Fargate |
 | Agent Engine | Claude Code CLI (headless, Bedrock backend) |
 | MCP Tools (분석) | 읽기 전용 CloudWatch/CloudTrail/GitHub MCP, 산출물 저장 MCP |
 | MCP Tools (실행) | 읽기 전용 CloudWatch MCP, 서버 판정형 명령 실행·증거 기록 MCP, 회고 갱신 MCP |

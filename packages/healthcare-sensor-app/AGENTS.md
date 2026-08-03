@@ -19,7 +19,7 @@ Healthcare Sensor App은 RCA 에이전트의 근본원인분석 정확도를 검
 ### Tech Stack
 
 - **Framework**: FastAPI
-- **Language**: Python 3.12+
+- **Language**: Python 3.13+
 - **Package Manager**: uv
 - **Architecture**: Hexagonal (Ports and Adapters)
 - **ORM**: SQLAlchemy 2.0 (async)
