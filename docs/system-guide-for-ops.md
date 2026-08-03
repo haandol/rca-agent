@@ -355,6 +355,7 @@ graph LR
 | **조치 실행**           | 두 엔진 공통 — 사용자 승인 후 별도 실행 스택이 수행 (8장) |
 | **이벤트 수신**         | SQS Long Polling                                          | SQS Long Polling                   |
 | **타임아웃**            | 20분 시간 예산 + 종료조건                                 | 60분 프로세스 제한                 |
+| **오래된 알람 스킵**    | 30분 초과 → OUTDATED                                      | 60분 초과 → OUTDATED               |
 | **동시성**              | Fargate 태스크 스케일링                                   | Fargate 태스크 스케일링            |
 | **비용 모델**           | 항시 실행 비용                                            | 항시 실행 비용                     |
 
@@ -980,7 +981,7 @@ stateDiagram-v2
     HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 분기 후 재루프
     REPORT_GENERATION --> COMPLETED: 보고서 + 플레이북 + 알림
 
-    ALARM_RECEIVED --> OUTDATED: 알람이 오래됨
+    ALARM_RECEIVED --> OUTDATED: 알람 나이 > 30분
     ALARM_RECEIVED --> CANCELLED: 대시보드 취소
     ALARM_RECEIVED --> FAILED: 오류 (SIGTERM 포함)
     SCOPING --> FAILED: 오류
@@ -1006,12 +1007,36 @@ stateDiagram-v2
     ANALYZING --> FAILED: CC 오류 / 타임아웃 / SIGTERM
     ANALYZING --> CANCELLED: 대시보드 취소
 
+    ALARM_RECEIVED --> OUTDATED: 알람 나이 > 60분
+
     COMPLETED --> [*]
     FAILED --> [*]
     CANCELLED --> [*]
+    OUTDATED --> [*]
 ```
 
 두 엔진의 세션 상태에 REMEDIATION이나 VERIFICATION은 없습니다. 분석이 복구를 수행하지 않기 때문입니다.
+
+### 오래된 알람 건너뛰기 (OUTDATED)
+
+두 엔진 모두 claim 직후, **첫 수신(`receive_count == 1`)일 때만** 알람의
+`state_change_time`으로 나이를 재고 기준을 넘으면 분석에 들어가지 않고 OUTDATED로
+종료합니다. 재전달된 메시지에는 이 검사를 적용하지 않습니다 — 재전달은 이미 시작된
+분석의 복구 경로이므로, 나이로 잘라내면 중단된 세션이 되살아나지 못합니다.
+
+| 엔진              | 기준     | 환경변수                                                   | 기본값의 근거                                                    |
+| ----------------- | -------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| Fargate (Strands) | **30분** | `ALARM_STALENESS_SECONDS` (기본 `1800`)                    | 단계 경계에서 예산을 평가하므로 시간 예산 20분 이상이면 충분하다 |
+| CC Headless       | **60분** | `ALARM_STALENESS_SECONDS` (미설정 시 `CC_TIMEOUT_SECONDS`) | 프로세스 타임아웃과 같은 값으로 고정된다                         |
+
+**두 값이 다른 것은 의도된 결정입니다.** CC Headless는 한 세션씩 직렬로 처리하므로
+한 회차가 예산을 다 쓰면 그만큼의 대기가 다음 알람에 그대로 전가됩니다. 건너뛰기
+기준이 그 엔진의 시간 예산보다 짧으면 예산 초과 **한 번**이 뒤따르는 여러 알람을
+통째로 폐기합니다. 그래서 이 엔진의 기준은 `CC_TIMEOUT_SECONDS` 아래로 내려가지
+않도록 코드가 `max()`로 강제합니다 — 환경변수를 30분으로 낮춰도 60분이 적용됩니다.
+
+기록되는 사유의 필드 이름은 엔진마다 다릅니다: Strands는 `error_reason`,
+CC Headless는 `outdated_reason`에 씁니다.
 
 ### 실행 상태 전이 (분석 세션과 별도)
 
@@ -1054,7 +1079,8 @@ erDiagram
         string idempotency_key "AlarmName#timestamp"
         string root_cause "확정된 근본 원인"
         boolean confirmed "근본 원인 확정 여부"
-        string error_reason "실패 사유"
+        string error_reason "실패 사유 (Strands는 OUTDATED 사유도 여기)"
+        string outdated_reason "OUTDATED 사유 (CC Headless)"
         string created_at "ISO 8601"
         string updated_at "ISO 8601"
         number ttl "TTL (90일)"
@@ -1272,21 +1298,23 @@ flowchart TD
 
 ### 일반적인 문제와 해결책
 
-| 증상                     | 원인                                                                                 | 해결                                                                                                |
-| ------------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| MCP 서버 연결 실패       | uvx 패키지 다운로드 실패                                                             | NAT Gateway/인터넷 연결 확인                                                                        |
-| CC CLI 0초 완료          | HOME 디렉토리 미설정                                                                 | 컨테이너 환경변수 HOME=/tmp 확인                                                                    |
-| 중복 RCA 실행            | 멱등성 키 불일치                                                                     | DynamoDB GSI `idempotency-index` 확인                                                               |
-| Bedrock API 오류         | 리전/모델 설정 오류                                                                  | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경변수 확인                                                  |
-| 보고서 S3 업로드 실패    | IAM 권한 부족                                                                        | Task Role의 S3 PutObject 권한 확인                                                                  |
-| 세션이 "분석중"에서 멈춤 | 태스크 크래시/롤링 배포 중 SIGTERM                                                   | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨            |
-| 재처리가 너무 느림       | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음                              | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, CC Headless 35분)                 |
-| 승인 버튼이 503으로 실패 | 대시보드에 `EXECUTION_QUEUE_URL` 미설정                                              | 환경변수 설정. 미설정 시 조용히 성공한 것처럼 보이지 않도록 의도적으로 503으로 실패한다             |
-| 승인이 409로 거부됨      | 분석이 COMPLETED가 아니거나, 리포트에 실행 절차가 없거나, 이미 진행 중인 실행이 있음 | 대시보드의 실행 이력에서 진행 중 실행 확인. 미확정 원인의 리포트는 실행 절차를 갖지 않는다          |
-| 실행이 UNRESOLVED로 끝남 | `success_criteria`를 관측하지 못했거나 관측이 기준을 만족하지 못함                   | 실행 증거(S3)에서 절차별 관측 결과 확인. 관측되지 않은 결과를 해결로 기록하지 않는 것이 설계다      |
-| 절차가 수동 조치로 남음  | 명령이 파괴적으로 판정되었거나 작업 이름을 확정할 수 없었음                          | 증거의 `failure_class`가 `BLOCKED_DESTRUCTIVE`/`BLOCKED_UNDECIDABLE`인지 확인. 사람이 직접 조치한다 |
-| 회고가 실행되지 않음     | 실행이 `RESOLVED`가 아님                                                             | 정상 동작. 해소하지 못한 절차는 올바름이 입증되지 않았으므로 회고에 들어가지 않는다                 |
-| 같은 승인이 두 번 실행됨 | 실행 요청 큐의 visibility timeout이 실행 상한보다 짧음                               | `playbook-execution-stack.ts`의 visibility(4500초) > `EXECUTION_TIMEOUT_SECONDS`(3600초) 확인       |
+| 증상                      | 원인                                                                                 | 해결                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP 서버 연결 실패        | uvx 패키지 다운로드 실패                                                             | NAT Gateway/인터넷 연결 확인                                                                                                                                                                                      |
+| CC CLI 0초 완료           | HOME 디렉토리 미설정                                                                 | 컨테이너 환경변수 HOME=/tmp 확인                                                                                                                                                                                  |
+| 중복 RCA 실행             | 멱등성 키 불일치                                                                     | DynamoDB GSI `idempotency-index` 확인                                                                                                                                                                             |
+| Bedrock API 오류          | 리전/모델 설정 오류                                                                  | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경변수 확인                                                                                                                                                                |
+| 보고서 S3 업로드 실패     | IAM 권한 부족                                                                        | Task Role의 S3 PutObject 권한 확인                                                                                                                                                                                |
+| 세션이 "분석중"에서 멈춤  | 태스크 크래시/롤링 배포 중 SIGTERM                                                   | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨                                                                                                                          |
+| 재처리가 너무 느림        | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음                              | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, CC Headless 35분)                                                                                                                               |
+| 승인 버튼이 503으로 실패  | 대시보드에 `EXECUTION_QUEUE_URL` 미설정                                              | 환경변수 설정. 미설정 시 조용히 성공한 것처럼 보이지 않도록 의도적으로 503으로 실패한다                                                                                                                           |
+| 승인이 409로 거부됨       | 분석이 COMPLETED가 아니거나, 리포트에 실행 절차가 없거나, 이미 진행 중인 실행이 있음 | 대시보드의 실행 이력에서 진행 중 실행 확인. 미확정 원인의 리포트는 실행 절차를 갖지 않는다                                                                                                                        |
+| 실행이 UNRESOLVED로 끝남  | `success_criteria`를 관측하지 못했거나 관측이 기준을 만족하지 못함                   | 실행 증거(S3)에서 절차별 관측 결과 확인. 관측되지 않은 결과를 해결로 기록하지 않는 것이 설계다                                                                                                                    |
+| 절차가 수동 조치로 남음   | 명령이 파괴적으로 판정되었거나 작업 이름을 확정할 수 없었음                          | 증거의 `failure_class`가 `BLOCKED_DESTRUCTIVE`/`BLOCKED_UNDECIDABLE`인지 확인. 사람이 직접 조치한다                                                                                                               |
+| 회고가 실행되지 않음      | 실행이 `RESOLVED`가 아님                                                             | 정상 동작. 해소하지 못한 절차는 올바름이 입증되지 않았으므로 회고에 들어가지 않는다                                                                                                                               |
+| 같은 승인이 두 번 실행됨  | 실행 요청 큐의 visibility timeout이 실행 상한보다 짧음                               | `playbook-execution-stack.ts`의 visibility(4500초) > `EXECUTION_TIMEOUT_SECONDS`(3600초) 확인                                                                                                                     |
+| 분석 없이 OUTDATED로 끝남 | 알람이 기준(Strands 30분 / CC Headless 60분)보다 오래됨                              | 정상 동작. 사유는 Strands `error_reason`, CC Headless `outdated_reason`에 있다. 큐가 밀렸는지 확인하고, 필요하면 `ALARM_STALENESS_SECONDS`를 올린다 (CC Headless는 `CC_TIMEOUT_SECONDS` 아래로는 내려가지 않는다) |
+| 한쪽 엔진만 OUTDATED      | 두 엔진의 기준이 다름 (30분 vs 60분)                                                 | 정상 동작. 값 차이는 ADR 0006이 정한 결정이며, 통일하면 CC Headless에서 예산 초과 한 번이 뒤따르는 알람을 폐기한다                                                                                                |
 
 ---
 
