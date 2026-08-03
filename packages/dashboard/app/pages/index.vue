@@ -37,23 +37,31 @@ type Row = SessionRow & {
 };
 
 /** Pages fetched after the first, in order. */
-const extraPages = ref<SessionRow[][]>([]);
-const nextCursor = ref('');
+const extraPages = ref<{ sessions: SessionRow[]; nextCursor: string }[]>([]);
 const loadingMore = ref(false);
 
-watch(
-  firstPage,
-  (page) => {
-    // A fresh first page invalidates everything after it.
-    extraPages.value = [];
-    nextCursor.value = page?.nextCursor ?? '';
-  },
-  { immediate: true },
-);
+/**
+ * Where the next page resumes.
+ *
+ * Derived rather than assigned from a watcher: a watcher does not run during
+ * server rendering, so the server drew no sentinel while the hydrating client
+ * drew one, and hydration reported a mismatched node. The last page fetched owns
+ * the cursor, and the first page owns it until another arrives.
+ */
+const nextCursor = computed(() => {
+  const lastExtra = extraPages.value.at(-1);
+  if (lastExtra) return lastExtra.nextCursor;
+  return firstPage.value?.nextCursor ?? '';
+});
+
+// A fresh first page invalidates everything fetched after it.
+watch(firstPage, () => {
+  extraPages.value = [];
+});
 
 const fetchedSessions = computed<SessionRow[]>(() => [
   ...(firstPage.value?.sessions ?? []),
-  ...extraPages.value.flat(),
+  ...extraPages.value.flatMap((page) => page.sessions),
 ]);
 
 /** Re-read both the list and the totals; used after a cancel or delete. */
@@ -206,11 +214,13 @@ async function showMore() {
     const page = await $fetch('/api/sessions', {
       query: { cursor: nextCursor.value },
     });
-    extraPages.value = [...extraPages.value, page.sessions];
-    nextCursor.value = page.nextCursor ?? '';
+    extraPages.value = [
+      ...extraPages.value,
+      { sessions: page.sessions, nextCursor: page.nextCursor ?? '' },
+    ];
   } catch {
-    // Leave the cursor as it was so the reader can try the same page again; a
-    // cleared cursor would claim the archive had ended.
+    // The cursor is unchanged, so the same page can be asked for again; clearing
+    // it would claim the archive had ended.
   } finally {
     loadingMore.value = false;
   }
