@@ -12,8 +12,9 @@ RCA 대시보드는 DynamoDB 세션 상태와 S3 보고서를 조회하는 로�
 
 ### Core Features
 
-- **세션 목록 조회**: DynamoDB에서 RCA 세션 전체를 스캔하여 시간순 기록으로 표시.
-  승인을 기다리는 건수를 첫 줄에서 밝히고, 각 세션의 소요시간을 막대 길이로 보여준다
+- **세션 목록 조회**: 엔진별 시간 역순 인덱스에서 한 페이지씩 읽어 시간순 기록으로 표시하고,
+  스크롤이 끝에 닿으면 커서로 다음 페이지를 잇는다. 승인을 기다리는 건수는 전체 기준 집계에서
+  오고, 각 세션의 소요시간은 막대 길이로 보여준다
 - **보고서 조회**: S3에 저장된 Markdown 보고서를 렌더링
 - **플레이북 조회**: DynamoDB에서 플레이북 데이터를 조회하여 렌더링. 실행 절차(`step_id`·의도·작업·성공 판정), 초안/검증됨 상태, 회고 개정 여부를 함께 보여준다. 회고 개정본이 있으면 그것이 렌더 대상이다 — 다음 실행의 근거가 최신 절차이기 때문이다
 - **트레이스 그래프**: DynamoDB 실행 트레이스를 Vue Flow 기반 DAG로 시각화 (가설 노드 + 스팬 노드)
@@ -74,8 +75,10 @@ packages/dashboard/
 │   └── app.vue                    # 루트 컴포넌트
 ├── server/
 │   ├── api/
-│   │   ├── sessions.get.ts        # GET /api/sessions — DynamoDB 세션 스캔
+│   │   ├── sessions.get.ts        # GET /api/sessions — 세션 인덱스 1페이지 + 커서
+│   │   ├── sessions-summary.get.ts # GET /api/sessions-summary — 전체 기준 집계
 │   │   ├── sessions/
+│   │   │   ├── [id]/index.get.ts  # GET /api/sessions/:id — 세션 1건
 │   │   │   ├── [id].delete.ts     # DELETE /api/sessions/:id — 세션 삭제
 │   │   │   └── [id]/
 │   │   │       └── cancel.post.ts # POST /api/sessions/:id/cancel — 세션 취소
@@ -94,6 +97,7 @@ packages/dashboard/
 │       ├── execution.ts           # EXEC# 항목 → 실행 상태·요약 정규화
 │       ├── progress.ts            # 스팬 → 도달한 최종 단계 (중단 지점 판정)
 │       ├── readiness.ts           # 완료된 분석이 승인 대기인지 판정 (승인 조건 3개)
+│       ├── sessionIndex.ts        # 세션 목록 인덱스 키 + 페이지 커서 인코딩
 │       └── fencing.ts             # 취소·삭제의 claim/lease 조건부 쓰기
 ├── nuxt.config.ts                 # Nuxt 설정 (포트 3100, runtimeConfig)
 ├── package.json
@@ -151,6 +155,17 @@ packages/dashboard/
 ### Common Mistakes to Avoid
 
 - 서버 사이드 API에서 AWS SDK 호출 시 클라이언트 사이드로 노출하지 않도록 주의 (`server/` 디렉토리 안에서만 AWS SDK 사용)
+- **세션 목록을 `Scan`으로 되돌리지 말 것.** 이 테이블은 세션 1건당 트레이스 항목이 약 7배이므로
+  순회 비용이 세션 수가 아니라 트레이스 총량에 비례하고, `Scan`은 정렬을 보장하지 않아 "최신 N건"을
+  저장소가 잘라줄 수 없다. 목록은 `session-by-engine-index`를 읽는다
+- 세션 목록 인덱스 키(`list_engine`/`list_created_at`)를 이미 있는 `engine`·`created_at`으로
+  대체하지 말 것. 가설·실행 항목도 그 두 속성을 갖고 있어 인덱스에 함께 들어오고(실측 91→641건),
+  한 페이지가 대부분 가설로 채워져 페이징이 성립하지 않는다. 세션만 쓰는 키여야 sparse index가 된다
+- 새 세션 쓰기 경로를 추가하면 인덱스 키도 함께 써야 한다. 빠뜨리면 그 세션은 목록에서 사라진다
+- 전체 집계를 목록 페이지 응답에 합치지 말 것. 페이지 기준으로 세면 "승인 대기 10건"이 "3건"으로
+  줄어 사람이 남은 일의 양을 틀리게 안다
+- DynamoDB 예약어(`state` 등)를 표현식에 직접 쓰지 말고, 별칭은 쓴 곳마다 `ExpressionAttributeNames`에
+  선언할 것. 미선언 별칭은 타입체크를 통과하고 요청 시점에 400으로 실패한다
 - **`COMPLETED`을 "할 일이 없다"로 읽지 말 것.** 분석이 끝났다는 뜻일 뿐이고, 승인 대기인지는
   세 조건(완료 · 실행 절차 존재 · 진행 중 실행 없음)으로만 판단된다. 이 판정은
   `server/utils/readiness.ts`에 있고 승인 엔드포인트가 강제하는 조건과 같아야 한다 —
