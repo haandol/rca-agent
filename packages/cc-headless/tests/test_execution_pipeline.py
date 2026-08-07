@@ -68,6 +68,7 @@ def _resolved_records() -> list[dict]:
         {
             "type": "step_outcome",
             "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 20 이하",
             "observation": "DatabaseConnections 12",
             "criteria_met": True,
         },
@@ -102,10 +103,12 @@ class RecordingRunner:
         execution_token,
         execution_id,
         approved_step_ids,
+        approved_success_criteria,
         cancel_checker=None,
     ):
         self.execution_prompts.append(prompt)
         self.approved_step_ids = approved_step_ids
+        self.approved_success_criteria = approved_success_criteria
         path = execution_workspace.evidence_path_for_token(execution_token)
         with path.open("a", encoding="utf-8") as handle:
             for record in self._records:
@@ -187,6 +190,7 @@ def test_an_approved_execution_runs_the_playbook_steps_and_resolves():
     assert "step-1" in runner.execution_prompts[0]
     assert "VitalIngestFailure" in runner.execution_prompts[0]
     assert runner.approved_step_ids == ("step-1",)
+    assert runner.approved_success_criteria == {"step-1": "DatabaseConnections 20 이하"}
 
 
 def test_a_redelivered_approval_does_not_run_a_second_time():
@@ -286,6 +290,7 @@ def test_a_blocked_step_is_recorded_and_the_execution_still_finishes():
             {
                 "type": "step_outcome",
                 "step_id": "step-1",
+                "success_criteria": "DatabaseConnections 20 이하",
                 "observation": "차단됨",
                 "criteria_met": False,
                 "manual_action_required": True,
@@ -401,11 +406,55 @@ def test_a_retrospective_with_no_correction_still_promotes_the_procedure():
     assert indexed["verification_status"] == "VERIFIED"
 
 
-def test_a_corrected_procedure_is_promoted_along_with_its_revision():
+@pytest.mark.parametrize("initial_status", ["DRAFT", "VERIFIED"])
+def test_a_corrected_procedure_is_published_as_a_draft(initial_status):
     runner = RecordingRunner(
         retrospective={
             "update": {"execution_steps": [{"step_id": "step-1", "action": "api 서비스를 강제 재배포하고 30초 대기"}]},
             "rationale": "첫 시도가 대기 없이 지표를 조회해 실패했다",
+        }
+    )
+    container = _container(runner, target=_target({**PLAYBOOK, "verification_status": initial_status}))
+
+    ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    revised = container.execution_store.save_playbook_revision.call_args.args[2]
+
+    assert revised["verification_status"] == "DRAFT"
+    assert revised["execution_steps"][0]["action"].endswith("30초 대기")
+
+
+def test_an_added_execution_step_keeps_the_revision_a_draft():
+    runner = RecordingRunner(
+        retrospective={
+            "update": {
+                "execution_steps": [
+                    {
+                        "step_id": "step-2",
+                        "intent": "회복 확인",
+                        "action": "오류 지표를 조회",
+                        "success_criteria": "오류 지표가 0",
+                    }
+                ]
+            },
+            "rationale": "해결 확인 절차가 누락됐다",
+        }
+    )
+    container = _container(runner)
+
+    ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    revised = container.execution_store.save_playbook_revision.call_args.args[2]
+
+    assert revised["verification_status"] == "DRAFT"
+    assert [step["step_id"] for step in revised["execution_steps"]] == ["step-1", "step-2"]
+
+
+def test_a_metadata_only_update_promotes_the_unchanged_procedure():
+    runner = RecordingRunner(
+        retrospective={
+            "update": {"temporary_mitigation": "서비스 재배포 후 지표 확인"},
+            "rationale": "완화 설명을 실행 결과에 맞게 명확히 했다",
         }
     )
     container = _container(runner)
@@ -415,7 +464,8 @@ def test_a_corrected_procedure_is_promoted_along_with_its_revision():
     revised = container.execution_store.save_playbook_revision.call_args.args[2]
 
     assert revised["verification_status"] == "VERIFIED"
-    assert revised["execution_steps"][0]["action"].endswith("30초 대기")
+    assert revised["temporary_mitigation"].endswith("지표 확인")
+    assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "UPDATED"
 
 
 def test_a_failed_retrospective_leaves_the_playbook_a_draft():
@@ -456,6 +506,7 @@ def test_an_unresolved_execution_never_promotes_the_playbook():
             {
                 "type": "step_outcome",
                 "step_id": "step-1",
+                "success_criteria": "DatabaseConnections 20 이하",
                 "observation": "DatabaseConnections 78",
                 "criteria_met": False,
             },
@@ -513,3 +564,42 @@ def test_an_evidence_save_failure_does_not_hide_that_the_execution_happened():
     assert ExecutionOrchestrator(container).process_message(APPROVAL)
 
     assert _states(container)[-1] is ExecutionState.RESOLVED
+
+
+def test_a_vector_publication_failure_does_not_report_no_change_or_write_a_revision():
+    runner = RecordingRunner()
+    container = _container(runner)
+    container.playbook_store.save_to_s3_vectors = Mock(side_effect=[False, True])
+
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    recorded = container.execution_store.record_retrospective.call_args.kwargs
+    indexed = container.playbook_store.save_to_s3_vectors.call_args_list
+
+    assert recorded["status"] == "FAILED"
+    container.execution_store.save_playbook_revision.assert_not_called()
+    assert indexed[0].args[0]["verification_status"] == "VERIFIED"
+    assert indexed[1].args[0]["verification_status"] == "DRAFT"
+
+
+def test_a_revision_failure_after_indexing_rolls_both_publications_back_and_reports_failed():
+    runner = RecordingRunner(
+        retrospective={
+            "update": {"temporary_mitigation": "서비스 재배포 후 지표 확인"},
+            "rationale": "완화 설명을 실행 결과에 맞게 명확히 했다",
+        }
+    )
+    container = _container(runner)
+    container.execution_store.save_playbook_revision = Mock(side_effect=[RuntimeError("ddb down"), None])
+
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    recorded = container.execution_store.record_retrospective.call_args.kwargs
+    revisions = container.execution_store.save_playbook_revision.call_args_list
+    indexed = container.playbook_store.save_to_s3_vectors.call_args_list
+
+    assert recorded["status"] == "FAILED"
+    assert revisions[0].args[2]["verification_status"] == "VERIFIED"
+    assert revisions[1].args[2]["verification_status"] == "DRAFT"
+    assert indexed[0].args[0]["verification_status"] == "VERIFIED"
+    assert indexed[1].args[0]["verification_status"] == "DRAFT"

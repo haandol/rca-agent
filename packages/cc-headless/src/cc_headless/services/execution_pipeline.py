@@ -30,7 +30,12 @@ from cc_headless.services.execution_request import (
 )
 from cc_headless.services.execution_state import ExecutionState, enters_retrospective
 from cc_headless.services.execution_workspace import ExecutionWorkspace
-from cc_headless.services.playbook_merge import merge_playbook_update, promote_to_verified
+from cc_headless.services.playbook_merge import (
+    PLAYBOOK_DRAFT,
+    VERIFICATION_STATUS_FIELD,
+    merge_playbook_update,
+    promote_to_verified,
+)
 
 logger = structlog.get_logger()
 
@@ -133,6 +138,7 @@ class ExecutionOrchestrator:
                 )
                 return True
             approved_step_ids: list[str] = []
+            approved_success_criteria: dict[str, str] = {}
             for step in steps:
                 step_id = step.get("step_id") if isinstance(step, dict) else None
                 if not isinstance(step_id, str) or not step_id.strip() or step_id.strip() in approved_step_ids:
@@ -145,7 +151,20 @@ class ExecutionOrchestrator:
                         error_reason=reason,
                     )
                     return True
-                approved_step_ids.append(step_id.strip())
+                success_criteria = step.get("success_criteria")
+                if not isinstance(success_criteria, str) or not success_criteria.strip():
+                    reason = "approved playbook has a missing or invalid success criterion"
+                    store.update_state(
+                        execution_id,
+                        rca_id=request.rca_id,
+                        state=ExecutionState.FAILED,
+                        claim_token=claim_token,
+                        error_reason=reason,
+                    )
+                    return True
+                normalized_step_id = step_id.strip()
+                approved_step_ids.append(normalized_step_id)
+                approved_success_criteria[normalized_step_id] = success_criteria
 
             prompt = build_execution_prompt(target, execution_id=execution_id)
 
@@ -160,6 +179,7 @@ class ExecutionOrchestrator:
                 execution_token=workspace.token,
                 execution_id=execution_id,
                 approved_step_ids=tuple(approved_step_ids),
+                approved_success_criteria=approved_success_criteria,
                 cancel_checker=_should_cancel,
             )
             # 에이전트가 실패를 보고하지 않고 아무것도 하지 않은 채 성공 종료할 수 있다.
@@ -369,7 +389,11 @@ class ExecutionOrchestrator:
                     **diff.to_dict(),
                 },
             )
-            self._publish_playbook(request, target, promote_to_verified(merged), execution_id)
+            if diff.corrected_steps or diff.added_steps:
+                published = {**merged, VERIFICATION_STATUS_FIELD: PLAYBOOK_DRAFT}
+            else:
+                published = promote_to_verified(merged)
+            self._publish_playbook(request, target, published, execution_id)
             store.record_retrospective(
                 execution_id,
                 rca_id=request.rca_id,
@@ -411,15 +435,51 @@ class ExecutionOrchestrator:
         두 저장소가 같은 내용을 보아야 한다 — 다음 실행은 개정본을 읽고 다음 RCA 의
         보강은 인덱스를 읽으므로, 한쪽만 갱신하면 승격이 한 경로에서만 보인다.
         """
-        self._c.execution_store.save_playbook_revision(
-            request.rca_id,
-            request.engine,
-            playbook,
-            execution_id=execution_id,
-        )
-        # 갱신된 절차가 다음 유사 장애의 검색 결과에 반영되도록 인덱스도 갱신한다.
-        self._c.playbook_store.save_to_s3_vectors(
-            playbook,
-            request.rca_id,
-            metric_name=target.metric_name,
-        )
+        # 개정본은 다음 실행이 읽는 권위 있는 사본이다. 인덱스를 먼저 쓰면 인덱스
+        # 실패 시 개정본이 새 상태로 노출되지 않는다.
+        try:
+            indexed = self._c.playbook_store.save_to_s3_vectors(
+                playbook,
+                request.rca_id,
+                metric_name=target.metric_name,
+            )
+        except Exception as exc:
+            self._restore_vector_index(request, target)
+            raise RuntimeError("playbook vector publication failed") from exc
+        if not indexed:
+            self._restore_vector_index(request, target)
+            raise RuntimeError("playbook vector publication did not persist the update")
+
+        try:
+            self._c.execution_store.save_playbook_revision(
+                request.rca_id,
+                request.engine,
+                playbook,
+                execution_id=execution_id,
+            )
+        except Exception as exc:
+            # 벡터 put 은 트랜잭션에 참여하지 못한다. 개정본 쓰기가 실패하면 승인된
+            # 이전 내용을 양쪽에 다시 써서 새 상태의 부분 노출을 가능한 한 줄인다.
+            try:
+                self._c.execution_store.save_playbook_revision(
+                    request.rca_id,
+                    request.engine,
+                    target.playbook,
+                    execution_id=execution_id,
+                )
+            finally:
+                self._restore_vector_index(request, target)
+            raise RuntimeError("playbook revision publication failed") from exc
+
+    def _restore_vector_index(self, request: ExecutionRequest, target: ExecutionTarget) -> None:
+        try:
+            restored = self._c.playbook_store.save_to_s3_vectors(
+                target.playbook,
+                request.rca_id,
+                metric_name=target.metric_name,
+            )
+        except Exception:
+            logger.exception("playbook_vector_rollback_failed")
+            return
+        if not restored:
+            logger.error("playbook_vector_rollback_not_persisted")

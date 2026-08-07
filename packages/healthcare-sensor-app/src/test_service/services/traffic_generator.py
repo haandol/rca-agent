@@ -86,9 +86,10 @@ async def run_traffic_generator(
             batch = _generate_batch()
             await sensor_service.ingest(batch)
 
+            patient = random.choice(PATIENTS)
+            await sensor_service.get_patient_vitals(patient, limit=20)
+
             if cycle % 6 == 0:
-                patient = random.choice(PATIENTS)
-                await sensor_service.get_patient_vitals(patient, limit=20)
                 await sensor_service.get_alerts(limit=10)
 
             cycle += 1

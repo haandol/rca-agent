@@ -74,10 +74,6 @@ class FakePool:
 class FakeEngine:
     def __init__(self) -> None:
         self.pool = FakePool()
-        self.connections: list[object] = []
-
-    async def connect(self) -> object:
-        return object()
 
     async def dispose(self) -> None:
         return None
@@ -194,10 +190,12 @@ async def test_read_path_stops_leaking_after_reset(adapter_factory) -> None:
 
 
 @pytest.mark.asyncio
-async def test_write_path_never_leaks_regardless_of_the_flag(adapter_factory) -> None:
+async def test_normal_write_session_closes_without_leaking_when_the_flag_is_on(adapter_factory) -> None:
     adapter, sessions = adapter_factory(fault_db_leak=True)
 
     async for session in adapter.session():
         assert isinstance(session, FakeSession)
 
     assert sessions[0].closed is True
+    assert sessions[0].committed is True
+    assert database_adapter._leaked_connections == []

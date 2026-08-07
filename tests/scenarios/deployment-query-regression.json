@@ -1,6 +1,7 @@
 {
   "id": "deployment-query-regression",
   "category": "code-change",
+  "executionModes": ["model-eval"],
   "alarm": {
     "name": "HealthcareApi-P99Latency",
     "metric": "TargetResponseTime",

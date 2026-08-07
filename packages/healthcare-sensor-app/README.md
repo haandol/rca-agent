@@ -157,9 +157,9 @@ Request/response 스키마는 `src/test_service/ports/dto/`와 `src/test_service
 # 장애 배포: FAULT_DB_LEAK=true 로 환경변수 변경 후 재배포
 FAULT_DB_LEAK=true docker compose up -d app
 
-# 결과: 모든 DB 요청에서 커넥션을 반환하지 않아 풀이 고갈됨
+# 결과: 5초 간격 환자 바이탈 조회가 세션을 반환하지 않아 풀이 점진적으로 고갈됨
 # CloudWatch 메트릭: DatabaseConnections 지속 상승 → Alarm 트리거
-# 로그: "DB connection not returned (FAULT_DB_LEAK enabled)"
+# 로그: "DB session not returned to the pool"
 
 # 복구: 환경변수 원복 후 재배포
 FAULT_DB_LEAK=false docker compose up -d app

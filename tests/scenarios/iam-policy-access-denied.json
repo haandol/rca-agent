@@ -1,6 +1,7 @@
 {
   "id": "iam-policy-access-denied",
   "category": "permissions",
+  "executionModes": ["model-eval"],
   "alarm": {
     "name": "RcaAgent-EvidenceFailures",
     "metric": "EvidenceCollectionErrors",

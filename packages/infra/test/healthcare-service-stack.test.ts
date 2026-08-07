@@ -102,6 +102,35 @@ test('cause-level alarms remain available as evidence', () => {
   expect(metricNames).toContain('MemoryUtilization');
 });
 
+test('only the symptom alarm publishes state changes to the RCA topic', () => {
+  const alarms = Object.values(
+    synthesize().findResources('AWS::CloudWatch::Alarm'),
+  ) as CfnResource[];
+  const entryAlarmName = 'RcaAgentDev-Healthcare-VitalIngestFailures';
+  const alarmsWithActions = alarms.filter(
+    (alarm) => (alarm.Properties?.AlarmActions as unknown[] | undefined)?.length,
+  );
+  const alarmsWithOkActions = alarms.filter(
+    (alarm) => (alarm.Properties?.OKActions as unknown[] | undefined)?.length,
+  );
+
+  expect(
+    alarmsWithActions.map((alarm) => alarm.Properties?.AlarmName),
+  ).toEqual([entryAlarmName]);
+  expect(
+    alarmsWithOkActions.map((alarm) => alarm.Properties?.AlarmName),
+  ).toEqual([entryAlarmName]);
+
+  const alarmActions = alarmsWithActions[0].Properties
+    ?.AlarmActions as unknown[];
+  const okActions = alarmsWithOkActions[0].Properties?.OKActions as unknown[];
+  expect(alarmActions).toHaveLength(1);
+  expect(okActions).toEqual(alarmActions);
+  expect(alarmActions[0]).toEqual({
+    'Fn::ImportValue': expect.stringContaining('AlarmTopic'),
+  });
+});
+
 test('the deployed revision is exposed to the container', () => {
   synthesize().hasResourceProperties('AWS::ECS::TaskDefinition', {
     ContainerDefinitions: Match.arrayWith([

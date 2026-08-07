@@ -1,11 +1,12 @@
-"""라이브 평가 어댑터 — 시나리오 하나를 운영 파이프라인으로 실행하고 정규화 결과를 낸다.
+"""모델 평가 어댑터 — 시나리오 하나를 공용 분석 파이프라인으로 실행한다.
 
-시나리오를 CloudWatch 알람 형태로 변환해 운영과 동일한 파이프라인을 한 번 돌리고,
-실행이 남긴 세션 결과를 공통 평가 스키마로 옮긴다. 분석 로직을 여기서 다시 구현하지
-않으므로 평가 결과가 운영 동작과 갈라지지 않는다.
+이 진입점은 루트 시나리오의 ``executionModes`` 에 ``model-eval`` 이 명시된 경우만
+받는다. 시나리오가 제공한 관측을 알람 사유에 의도적으로 덧붙여 모델의 분석 결과를
+채점하므로, 배포 환경의 E2E 동작이나 증거 소스에서 관측을 찾아내는 능력을 검증하지
+않는다.
 
-SQS 소비 루프를 거치지 않고 파이프라인을 직접 호출한다. 큐·구독·재전달 동작은 이
-경로로 검증되지 않는다.
+분석 로직은 다시 구현하지 않고 공용 ``PipelineOrchestrator`` 를 직접 호출한다. SQS
+소비, 구독, 재전달도 이 경로의 검증 대상이 아니다.
 
 표준 출력에는 결과 JSON 한 개만 기록한다. 진단 로그는 표준 오류로 보낸다.
 """
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 _SCHEMA_VERSION = 1
+_MODEL_EVAL_MODE = "model-eval"
 
 # 알람 상태 변경 시각이 rca_id 를 결정하므로, 같은 시나리오를 다시 실행하면 이전
 # 세션과 충돌한다. 실행 시각을 넣어 실행마다 새 세션을 만든다.
@@ -42,7 +44,7 @@ def _load_scenario(argv: list[str]) -> dict[str, Any]:
     return json.loads(sys.stdin.read())
 
 
-# 평가 하네스는 시나리오 관측 식별자가 산출물에 인용되었는지로 증거 커버리지를
+# model-eval 하네스는 제공된 관측 식별자가 산출물에 인용되었는지로 커버리지를
 # 측정한다. 두 엔진이 같은 기준으로 채점되어야 하므로 이 지시문은 엔진마다 동일하다.
 OBSERVATION_CITATION_INSTRUCTION = (
     "각 신호는 `[식별자] 요약` 형식이다. 어떤 신호를 결론의 근거로 사용했다면 "
@@ -51,11 +53,26 @@ OBSERVATION_CITATION_INSTRUCTION = (
 )
 
 
-def build_state_reason(state_reason: str, observations: list) -> str:
-    """관측 신호와 식별자 인용 지시를 알람 상태 사유에 덧붙인다.
+def _supports_model_eval(scenario: dict[str, Any]) -> bool:
+    execution_modes = scenario.get("executionModes")
+    return isinstance(execution_modes, list) and _MODEL_EVAL_MODE in execution_modes
 
-    실제 운영 알람에는 이 식별자가 없다. 평가에서만 부여되는 컨텍스트이며, 관측이
-    없으면 원래 상태 사유를 그대로 사용한다.
+
+def _require_model_eval(scenario: dict[str, Any]) -> None:
+    execution_modes = scenario.get("executionModes")
+    if execution_modes is None:
+        _fail("scenario executionModes is missing; this adapter requires 'model-eval'")
+    if not isinstance(execution_modes, list):
+        _fail("scenario executionModes must be an array containing 'model-eval'")
+    if _MODEL_EVAL_MODE not in execution_modes:
+        _fail("scenario executionModes does not include 'model-eval'; this adapter only supports model-eval")
+
+
+def build_state_reason(state_reason: str, observations: list) -> str:
+    """model-eval 관측 신호와 식별자 인용 지시를 알람 상태 사유에 덧붙인다.
+
+    이 식별자는 시나리오가 모델 평가에 제공하는 컨텍스트다. 관측이 없으면 원래 상태
+    사유를 그대로 사용한다.
     """
     lines = [
         f"- [{item.get('id')}] ({item.get('source')}) {item.get('summary')}"
@@ -69,13 +86,14 @@ def build_state_reason(state_reason: str, observations: list) -> str:
 
 
 def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict[str, Any]:
-    """시나리오를 CloudWatch 알람 SNS payload 로 변환한다.
+    """model-eval 시나리오를 CloudWatch 알람 모양의 payload 로 변환한다.
 
-    관측 신호를 NewStateReason 에 이어붙여, 파이프라인이 실제 알람에서 얻는 것과
-    같은 형태의 초기 컨텍스트를 받게 한다.
+    제공된 관측은 ``model-eval`` 이 명시된 시나리오에만 이어붙인다. 다른 모드의
+    시나리오로 직접 호출되면 원래 알람 사유를 보존한다.
     """
     alarm = scenario.get("alarm") or {}
-    state_reason = build_state_reason(alarm.get("stateReason", ""), scenario.get("observations") or [])
+    observations = scenario.get("observations") or [] if _supports_model_eval(scenario) else []
+    state_reason = build_state_reason(alarm.get("stateReason", ""), observations)
 
     envelope: dict[str, Any] = {
         "AlarmName": alarm.get("name", "EvalScenarioAlarm"),
@@ -90,7 +108,7 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict
 
 
 def _evidence_ids(corpus: str, scenario: dict[str, Any]) -> list[str]:
-    """결과가 실제로 인용한 시나리오 관측 식별자만 모은다.
+    """결과가 명시적으로 인용한 model-eval 관측 식별자만 모은다.
 
     인용되지 않은 관측은 포함하지 않아 누락이 커버리지 점수에 드러나게 한다.
     """
@@ -229,6 +247,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     argv = list(sys.argv if argv is None else argv)
     scenario = _load_scenario(argv)
+    _require_model_eval(scenario)
     scenario_id = scenario.get("id")
     if not isinstance(scenario_id, str) or not scenario_id:
         _fail("scenario id is missing")

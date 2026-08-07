@@ -9,6 +9,7 @@ from cc_headless import execution_mcp_server, retrospective_mcp_server
 from cc_headless.services import execution_workspace
 from cc_headless.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
+    APPROVED_SUCCESS_CRITERIA_ENV,
     EXECUTION_TOKEN_ENV,
     ExecutionWorkspace,
 )
@@ -20,6 +21,15 @@ def workspace(monkeypatch, tmp_path):
     monkeypatch.setattr(execution_workspace, "_WORKSPACE_ROOT", tmp_path / "executions")
     monkeypatch.setenv(EXECUTION_TOKEN_ENV, token)
     monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps(["step-1", "step-2"]))
+    monkeypatch.setenv(
+        APPROVED_SUCCESS_CRITERIA_ENV,
+        json.dumps(
+            {
+                "step-1": "DatabaseConnections 20 이하",
+                "step-2": "VitalIngestFailure 0",
+            }
+        ),
+    )
     created = ExecutionWorkspace(execution_id="exec-1", token=token)
     created.prepare()
     yield created
@@ -188,6 +198,21 @@ def test_a_step_outcome_and_resolution_are_recorded(workspace):
     assert records[0]["criteria_met"] is True
     assert records[1]["type"] == "resolution"
     assert records[1]["resolved"] is True
+
+
+def test_a_step_outcome_must_use_the_exact_approved_success_criteria(workspace):
+    result = json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1",
+            "DatabaseConnections 30 이하",
+            "DatabaseConnections 12",
+            criteria_met=True,
+        )
+    )
+
+    assert result["ok"] is False
+    assert "exactly match" in result["error"]
+    assert workspace.read_records() == []
 
 
 def test_an_unobservable_resolution_keeps_its_reason(workspace):

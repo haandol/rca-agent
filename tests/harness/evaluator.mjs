@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CONTRACT_EXTENSIONS = new Set(['.json', '.md', '.py']);
+export const SCENARIO_EXECUTION_MODES = ['deployed-e2e', 'model-eval'];
 
 export const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -27,7 +28,7 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'tests/fixtures/results',
   'packages/agent/src/rca_agent/prompts',
   'packages/agent/src/rca_agent/agent_factory.py',
-  // Each engine's live adapter decides how a run becomes a normalized result, so
+  // Each engine's model-eval adapter decides how a run becomes a normalized result, so
   // changing one changes what the scores mean and requires re-approval.
   'packages/agent/src/rca_agent/eval_adapter.py',
   'packages/cc-headless/src/cc_headless/eval_adapter.py',
@@ -142,6 +143,13 @@ export function validateScenario(scenario) {
     'scenario.id must be a kebab-case slug',
   );
   assertString(scenario.category, 'scenario.category');
+  assertStringArray(scenario.executionModes, 'scenario.executionModes');
+  assert.ok(
+    scenario.executionModes.every((mode) =>
+      SCENARIO_EXECUTION_MODES.includes(mode),
+    ),
+    `scenario.executionModes must contain only ${SCENARIO_EXECUTION_MODES.join(', ')}`,
+  );
   assertString(scenario.alarm?.name, 'scenario.alarm.name');
   assertString(scenario.alarm?.metric, 'scenario.alarm.metric');
   assertString(scenario.alarm?.stateReason, 'scenario.alarm.stateReason');

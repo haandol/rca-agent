@@ -156,9 +156,8 @@ def merge_playbook_update(existing: dict, update: object) -> tuple[dict, Playboo
 def promote_to_verified(playbook: dict) -> dict:
     """실행으로 입증된 절차를 검증됨으로 승격한다.
 
-    해결된 실행의 회고가 갱신을 반영하는 지점에서만 호출한다 — 해결 판정과 절차 교정을
-    모두 통과한 곳이 여기뿐이다. 이미 검증됨이면 그대로 둔다. 되돌리는 전이는 없으므로
-    이 함수에 반대 방향은 없다.
+    해결된 실행의 회고가 절차를 바꾸지 않은 경우에만 호출한다. 절차가 추가·교정된
+    경우에는 호출자가 새 내용이 아직 실행되지 않았음을 반영해 DRAFT로 게시한다.
     """
     promoted = dict(playbook)
     promoted[VERIFICATION_STATUS_FIELD] = PLAYBOOK_VERIFIED

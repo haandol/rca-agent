@@ -12,7 +12,7 @@ import {
   REPOSITORY_ROOT,
   validateBaseline,
 } from './evaluator.mjs';
-import { runLiveEvaluation, validateLiveEnvironment } from './live-cli.mjs';
+import { runModelEvaluation, validateModelEnvironment } from './model-cli.mjs';
 
 const fixturesDirectory = path.join(REPOSITORY_ROOT, 'tests/fixtures/results');
 const fakeEnginePath = path.join(
@@ -20,9 +20,9 @@ const fakeEnginePath = path.join(
   'tests/fixtures/fake-engine.mjs',
 );
 
-test('live evaluation fails with actionable missing command errors', () => {
+test('model evaluation fails with actionable missing command errors', () => {
   assert.throws(
-    () => validateLiveEnvironment({ AWS_REGION: 'ap-northeast-2' }),
+    () => validateModelEnvironment({ AWS_REGION: 'ap-northeast-2' }),
     /Missing RCA_EVAL_CC_HEADLESS_COMMAND/,
   );
 });
@@ -45,10 +45,10 @@ test('approval writes a baseline only to the explicit destination', async () => 
   assert.deepEqual(Object.keys(baseline.semanticScores), EXPECTED_ENGINES);
 });
 
-test('fake live commands run both engines and write normalized results and report', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'rca-live-'));
+test('fake model commands run both engines and write normalized results and report', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'rca-model-'));
   const baselinePath = path.join(directory, 'baseline.json');
-  const resultsDirectory = path.join(directory, 'live-results');
+  const resultsDirectory = path.join(directory, 'model-results');
   const reportPath = path.join(directory, 'report.json');
   await approveBaseline({
     resultsDirectory: fixturesDirectory,
@@ -68,7 +68,7 @@ test('fake live commands run both engines and write normalized results and repor
     ]),
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
   };
-  const outcome = await runLiveEvaluation({
+  const outcome = await runModelEvaluation({
     env,
     baselinePath,
     resultsDirectory,
@@ -77,11 +77,13 @@ test('fake live commands run both engines and write normalized results and repor
   });
 
   assert.equal(outcome.report.passed, true, outcome.report.failures.join('\n'));
-  assert.equal(outcome.report.live, true);
+  assert.equal(outcome.report.executionMode, 'model-eval');
   // Every scenario is run against every engine, so a new scenario has to appear
   // on both sides rather than being scored for one engine only.
   const scenarioCount = (
     await loadScenarios(path.join(REPOSITORY_ROOT, 'tests/scenarios'))
+  ).filter(({ executionModes }) =>
+    executionModes.includes('model-eval'),
   ).length;
   assert.equal(
     outcome.report.evaluations.length,

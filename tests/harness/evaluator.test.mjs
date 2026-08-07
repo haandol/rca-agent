@@ -12,6 +12,7 @@ import {
   loadScenarios,
   REPOSITORY_ROOT,
   REQUIRED_DIMENSIONS,
+  SCENARIO_EXECUTION_MODES,
   validateBaseline,
   validateResult,
   validateScenario,
@@ -40,7 +41,22 @@ test('scenario contract is engine-neutral and fixtures are physically separate',
     validateScenario(scenario);
     assert.equal(Object.hasOwn(scenario, 'engineSamples'), false);
     assert.ok(scenario.expectation.semanticTermGroups.length > 0);
+    assert.ok(scenario.executionModes.includes('model-eval'));
+    assert.ok(
+      scenario.executionModes.every((mode) =>
+        SCENARIO_EXECUTION_MODES.includes(mode),
+      ),
+    );
   }
+});
+
+test('only scenarios backed by a deployed fault advertise deployed E2E', async () => {
+  const scenarios = await loadScenarios(scenariosDirectory);
+  const deployed = scenarios
+    .filter(({ executionModes }) => executionModes.includes('deployed-e2e'))
+    .map(({ id }) => id);
+
+  assert.deepEqual(deployed, ['deployed-connection-leak-vital-ingest']);
 });
 
 test('normalized result loader reads both engines independently of scenarios', async () => {

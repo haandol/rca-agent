@@ -353,11 +353,11 @@ pnpm verify
 # 공통 RCA 시나리오 오프라인 평가
 pnpm eval:offline
 
-# AWS·실모델 라이브 평가 (명시적 환경 설정 필요)
-pnpm eval:live
+# 제공된 관측을 사용하는 실모델 의미 평가 (명시적 환경 설정 필요)
+pnpm eval:model
 ```
 
-라이브 엔진 command 계약과 의미 기준선 승인 절차는
+실모델 엔진 command 계약과 의미 기준선 승인 절차는
 [RCA Evaluation Harness](./tests/README.md)를 참조하세요.
 
 ## 문서

@@ -69,6 +69,7 @@ def assemble_evidence(
             tracked.success_criteria = _as_str(step.get("success_criteria"))
 
     attempt_counts: dict[str, int] = {}
+    criteria_mismatches: set[str] = set()
     for record in records:
         record_type = record.get("type")
         step_id = _as_str(record.get("step_id"), limit=200)
@@ -99,9 +100,10 @@ def assemble_evidence(
 
         elif record_type == "step_outcome" and step_id:
             step = evidence.step(step_id)
-            criteria = _as_str(record.get("success_criteria"))
-            if criteria:
-                step.success_criteria = criteria
+            criteria = record.get("success_criteria")
+            if not isinstance(criteria, str) or criteria != step.success_criteria:
+                criteria_mismatches.add(step_id)
+                continue
             step.observation = _as_str(record.get("observation"))
             step.resolved = bool(record.get("criteria_met"))
             if record.get("manual_action_required"):
@@ -116,6 +118,13 @@ def assemble_evidence(
                     f"{evidence.resolution_observation}\n[unobservable] {unobservable}".strip()
                 )
             evidence.resolution_confirmed = bool(record.get("resolved"))
+
+    for step_id in criteria_mismatches:
+        step = evidence.step(step_id)
+        step.resolved = False
+        step.observation = (
+            f"{step.observation}\n[invalid outcome] success_criteria did not match the approved playbook".strip()
+        )
 
     return evidence
 

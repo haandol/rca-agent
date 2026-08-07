@@ -612,5 +612,5 @@ CC 한 회차가 최대 60분을 점유한다. 그 사이 도착한 알람은 �
 | [ADR agent/0008](./adr/agent/0008-playbook-generation.md) | Search-First 병합과 실행 절차 요구사항 |
 | [ADR agent/0010](./adr/agent/0010-model-tier-architecture.md) | Sonnet 5 단일 모델 + Planning/Execution 분리 |
 | [ADR agent/0017](./adr/agent/0017-playbook-execution-agent.md) | 승인 게이트와 파괴적 액션 차단 |
-| [ADR agent/0018](./adr/agent/0018-playbook-retrospective.md) | 회고의 교정 범위와 단방향 승격 |
+| [ADR agent/0018](./adr/agent/0018-playbook-retrospective.md) | 회고의 교정 범위와 현재 절차 내용에 종속된 검증 상태 |
 | [ADR infra/0008](./adr/infra/0008-playbook-execution-stack.md) | 쓰기 권한 전용 실행 스택 |

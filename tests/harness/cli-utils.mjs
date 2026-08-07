@@ -15,7 +15,7 @@ export function parseCliOptions(args, { requireResults = false } = {}) {
   });
   if (requireResults && !values.results) {
     throw new Error(
-      'Missing --results <directory>. Pass a reviewed live result directory explicitly.',
+      'Missing --results <directory>. Pass a reviewed model-eval result directory explicitly.',
     );
   }
   return values;

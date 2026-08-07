@@ -83,11 +83,21 @@ pnpm --filter infra build && pnpm --filter infra test
 ## 1. 장애 주입 → 분석 완료까지
 
 ```bash
-python3 scripts/inject_deployment_fault.py status       # 시작 전 플래그 확인 (전부 false 여야 함)
-python3 scripts/inject_deployment_fault.py red-herring  # 무해한 배포를 먼저 심는다
+RUN_ID="deployed-e2e-$(date -u +%Y%m%dT%H%M%SZ)"
+TEST_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+ORIGINAL_DB_PARAMETER_GROUP=$(aws rds describe-db-instances \
+  --db-instance-identifier rcaagentdev-postgres \
+  --query 'DBInstances[0].DBParameterGroups[0].DBParameterGroupName' --output text)
+
+python3 scripts/inject_deployment_fault.py status --json
+python3 scripts/inject_deployment_fault.py red-herring --run-id "$RUN_ID" --json
 sleep 150
-python3 scripts/inject_deployment_fault.py db-leak      # 실제 원인이 되는 배포
+python3 scripts/inject_deployment_fault.py db-leak --run-id "$RUN_ID" --json
 ```
+
+`RUN_ID`는 호출자가 소유하며 무해한 배포, 실제 장애, 종료 정리에 모두 같은 값을
+사용한다. 각 배포 태스크 정의의 `RCA_TEST_RUN_ID`와 스크립트 JSON 출력을 실측 기록에
+남긴다.
 
 알람은 주입 후 **약 4분**에 뜬다. 커넥션 알람이 먼저, 증상 알람이 그 다음이다(순서
 계약 — ADR infra/0007).
@@ -101,12 +111,25 @@ aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
 
 ```bash
 aws dynamodb scan --table-name RcaAgentDevRcaSession \
-  --filter-expression "begins_with(PK, :p) AND contains(SK, :s)" \
-  --expression-attribute-values '{":p":{"S":"RCA#"},":s":{"S":"SESSION"}}' \
-  --query 'Items[].[PK.S,SK.S,state.S,created_at.S]' --output text | sort -k4 -r | head -5
+  --filter-expression "begins_with(PK, :p) AND contains(SK, :s) AND alarm_name = :a AND created_at >= :t" \
+  --expression-attribute-values "{\":p\":{\"S\":\"RCA#\"},\":s\":{\"S\":\"SESSION\"},\":a\":{\"S\":\"RcaAgentDev-Healthcare-VitalIngestFailures\"},\":t\":{\"S\":\"$TEST_STARTED_AT\"}}" \
+  --query 'Items[].[PK.S,SK.S,state.S,alarm_name.S,created_at.S,idempotency_key.S,alarm_data.S]' \
+  --output text | sort -k2
 ```
 
-**`COMPLETED` 이고 실행 절차가 있는 세션이 필요하다.** 확인:
+실측 증거로 인정할 세션은 이 실행에서 새로 생성된 두 행뿐이다. 반드시 다음을 모두
+확인한다.
+
+- `strands#SESSION`, `cc-headless#SESSION` 두 행이 모두 있다.
+- 두 행의 `alarm_name`은 `RcaAgentDev-Healthcare-VitalIngestFailures`다.
+- 두 행의 `created_at`은 `TEST_STARTED_AT` 이후다.
+- 두 행의 `idempotency_key`와 `alarm_data.StateChangeTime`이 같은 증상 알람 시각을
+  가리키며 같은 `RCA#...` 파티션에 있다.
+
+원인 지표 알람은 CloudWatch 증거로만 남고 세션을 만들면 안 된다. 과거
+`COMPLETED` 세션은 현재 배포 E2E의 증거로 재사용하지 않는다.
+
+새 세션이 **`COMPLETED`이고 실행 절차가 있는지** 확인한다.
 
 ```bash
 curl -s "http://localhost:3100/api/playbooks/<RCA_ID>?engine=<engine>" | python3 -c "
@@ -116,24 +139,13 @@ print('status:', d.get('verification_status'), '| steps:', len(d.get('execution_
 
 > **승인 대상 확보가 이 실측의 병목이다.** cc-headless 는 예산 소진(60분)이나 산출물 스키마
 > 위반으로 FAILED 할 수 있고, Strands 는 전 가설 기각으로 원인 미확정 리포트를 낼 수
-> 있다(그 경우 `execution_steps: 0` — 계약대로다). **어느 엔진이든 절차가 있는 리포트
-> 하나면 실측이 된다.** 기존 `COMPLETED` 세션을 재사용해도 되며, 실행 항목은 실행마다
-> 새로 생기므로 같은 리포트를 여러 번 승인할 수 있다.
+> 있다(그 경우 `execution_steps: 0` — 계약대로다). 이 실행에서 생성된 세션 중
+> **어느 엔진이든 절차가 있는 리포트 하나면 승인 이후 구간을 실측할 수 있다.**
 >
 > **절차의 내용도 회차마다 갈린다.** 배포가 원인인 장애에서 절차에 롤백이 없으면 결함이
 > 태스크 정의에 남아 실행이 `UNRESOLVED`로 끝나고, 회고는 해결된 실행만 받으므로 승격이
 > 일어나지 않는다. 승인 전에 절차를 읽어 롤백이 있는지 확인하면 그 회차의 결과를 미리
 > 가늠할 수 있다.
-
-절차 있는 세션을 전수 조사하려면:
-
-```bash
-aws dynamodb scan --table-name RcaAgentDevRcaSession \
-  --filter-expression "contains(SK, :s) AND #st = :c" \
-  --expression-attribute-names '{"#st":"state"}' \
-  --expression-attribute-values '{":s":{"S":"SESSION"},":c":{"S":"COMPLETED"}}' \
-  --query 'Items[].[PK.S,SK.S]' --output text
-```
 
 ---
 
@@ -208,14 +220,19 @@ aws dynamodb query --table-name RcaAgentDevRcaSession \
 
 ---
 
-## 4. 종료 후 반드시 정리 — 리셋만으로 끝나지 않는다
+## 4. 종료 후 반드시 정리
 
 ```bash
-python3 scripts/inject_deployment_fault.py reset
+# 임시 DB 파라미터 그룹이 없다면 이 형태로 한 번 실행한다.
+python3 scripts/inject_deployment_fault.py cleanup \
+  --run-id "$RUN_ID" \
+  --restore-db-parameter-group "$ORIGINAL_DB_PARAMETER_GROUP" \
+  --json
 ```
 
 > 리셋 API 호출만으로는 실행 중 프로세스 상태만 해소된다. **태스크 정의 플래그가 남아
-> 있으면 컨테이너 재기동 시 재발하므로** 반드시 `reset` 으로 리비전을 되돌린다.
+> 있으면 컨테이너 재기동 시 재발하므로** 반드시 `cleanup`으로 리비전을 되돌리고,
+> 서비스 안정화와 두 알람의 `OK` 복귀까지 기다린다.
 
 **실행이 성공했다면 에이전트가 만든 부산물이 남는다.** 플레이북 절차 3이 `max_connections`
 상향을 지시하고, 관리형 default 파라미터 그룹은 수정할 수 없으므로 에이전트가 **매번 임시
@@ -228,24 +245,27 @@ aws rds describe-db-parameter-groups \
   --query 'DBParameterGroups[?!starts_with(DBParameterGroupName, `default`)].DBParameterGroupName' \
   --output text
 
-# 기본 그룹으로 복귀 → 재부팅으로 적용 → 임시 그룹 삭제
-aws rds modify-db-instance --db-instance-identifier rcaagentdev-postgres \
-  --db-parameter-group-name default.postgres17 --apply-immediately
-# ParameterApplyStatus 가 pending-reboot 이 될 때까지 대기한 뒤
-aws rds reboot-db-instance --db-instance-identifier rcaagentdev-postgres
-# in-sync 확인 후
-aws rds delete-db-parameter-group --db-parameter-group-name <임시 그룹>
+# 이번 실행이 만든 그룹을 식별했다면 위 명령 대신 이 형태를 한 번 실행한다.
+python3 scripts/inject_deployment_fault.py cleanup \
+  --run-id "$RUN_ID" \
+  --restore-db-parameter-group "$ORIGINAL_DB_PARAMETER_GROUP" \
+  --delete-db-parameter-group "<이번 실행이 만든 임시 그룹>" \
+  --json
 ```
 
 최종 상태 확인:
 
 ```bash
-python3 scripts/inject_deployment_fault.py status   # 플래그 전부 false
+python3 scripts/inject_deployment_fault.py status --json
 aws rds describe-db-instances --db-instance-identifier rcaagentdev-postgres \
   --query 'DBInstances[0].[DBInstanceStatus,DBParameterGroups[0].DBParameterGroupName]' --output text
 aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
   --query 'MetricAlarms[].[AlarmName,StateValue]' --output text
 ```
+
+상태 출력의 모든 장애 플래그가 해제되고 `RCA_TEST_RUN_ID`가 같은 실행 ID인지,
+DB 파라미터 그룹이 시작 시 캡처한 값으로 돌아왔는지, 두 알람이 모두 `OK`인지
+확인한다. 발견 경로가 불명확한 커스텀 파라미터 그룹은 자동 삭제하지 않는다.
 
 ---
 

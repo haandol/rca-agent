@@ -20,7 +20,7 @@
     "test:contracts": "node --test tests/harness/*.test.mjs",
     "eval": "pnpm run eval:offline",
     "eval:offline": "node tests/harness/eval-cli.mjs",
-    "eval:live": "node tests/harness/live-cli.mjs",
+    "eval:model": "node tests/harness/model-cli.mjs",
     "eval:approve": "node tests/harness/approve-cli.mjs",
     "typecheck": "nx run-many -t typecheck",
     "verify": "pnpm run format:check && pnpm run lint && pnpm run test && pnpm run typecheck"

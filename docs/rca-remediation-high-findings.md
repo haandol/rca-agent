@@ -136,8 +136,7 @@
   - Agent tests: 448 passed, 4 xfailed
   - `pnpm verify`, 오프라인 평가 6건, Ruff, `git diff --check` 통과
 - **커밋/PR**: `e4e0776`
-- **남은 위험**: 실제 Bedrock 모델과 AWS 데이터로 수행하는 선택적 라이브 평가는
-  실행하지 않았다.
+- **남은 위험**: 실제 Bedrock 모델 의미 평가와 배포 E2E는 실행하지 않았다.
 - **영향**: 실제 CPU 원인 가설이 초기 생성 단계에서 DB leak로 잘못 라벨링되면,
   가설 설명이 확정되어도 DB reset이 실행될 수 있다.
 - **원인**: `fault_type`은 증거 수집 전에 모델이 선택하고 validation 결과는 이를

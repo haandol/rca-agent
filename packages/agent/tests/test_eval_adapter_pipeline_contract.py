@@ -1,8 +1,8 @@
-"""The eval adapter must run the production pipeline, not its own analysis.
+"""The model-eval adapter must delegate analysis to the shared pipeline.
 
-If the adapter ever grows a separate analysis path, live evaluation stops
-representing what the deployed engine does. These tests pin the call so that
-divergence fails here rather than silently producing misleading scores.
+These tests pin that delegation and the model-eval input contract. This path
+intentionally supplies scenario observations; it does not cover deployed event
+delivery or discovery from evidence sources.
 """
 
 import json
@@ -21,6 +21,7 @@ from rca_agent.ports.dto.models import (
 
 SCENARIO = {
     "id": "rds-connection-pool-exhaustion",
+    "executionModes": ["model-eval"],
     "alarm": {
         "name": "Healthcare-RdsHighConnections",
         "metric": "DatabaseConnections",
@@ -53,7 +54,7 @@ def _notification() -> NotificationMessage:
 
 
 class _RecordingOrchestrator:
-    """Stands in for the production orchestrator and records how it was called."""
+    """Stands in for the shared orchestrator and records how it was called."""
 
     calls: list[dict] = []
     result = True
@@ -145,7 +146,7 @@ def stdin_scenario(monkeypatch: pytest.MonkeyPatch):
     return _set
 
 
-def test_adapter_invokes_the_production_orchestrator(wired, stdin_scenario, capsys) -> None:
+def test_adapter_invokes_the_shared_orchestrator(wired, stdin_scenario, capsys) -> None:
     stdin_scenario(SCENARIO)
 
     _run(capsys)
@@ -248,14 +249,53 @@ def test_adapter_fails_when_no_session_exists(wired, stdin_scenario) -> None:
 
 
 def test_adapter_fails_on_a_scenario_without_an_id(wired, stdin_scenario) -> None:
-    stdin_scenario({"alarm": {"name": "A"}, "observations": []})
+    stdin_scenario({"executionModes": ["model-eval"], "alarm": {"name": "A"}, "observations": []})
 
     with pytest.raises(SystemExit):
         eval_adapter.main(["rca-agent-eval", ""])
 
 
+@pytest.mark.parametrize(
+    ("scenario", "expected_error"),
+    [
+        (
+            {
+                "id": "missing-execution-modes",
+                "alarm": {"name": "A", "stateReason": "threshold crossed"},
+                "observations": [{"id": "supplied", "summary": "must not reach the pipeline"}],
+            },
+            "scenario executionModes is missing",
+        ),
+        (
+            {
+                "id": "unsupported-execution-mode",
+                "executionModes": ["deployed-e2e"],
+                "alarm": {"name": "A", "stateReason": "threshold crossed"},
+                "observations": [{"id": "supplied", "summary": "must not reach the pipeline"}],
+            },
+            "scenario executionModes does not include 'model-eval'",
+        ),
+    ],
+)
+def test_adapter_rejects_scenarios_not_enabled_for_model_eval(
+    wired,
+    stdin_scenario,
+    capsys,
+    scenario,
+    expected_error,
+) -> None:
+    stdin_scenario(scenario)
+
+    with pytest.raises(SystemExit):
+        eval_adapter.main(["rca-agent-eval", ""])
+
+    assert expected_error in capsys.readouterr().err
+    assert _RecordingOrchestrator.calls == []
+    assert _Container.instances == []
+
+
 def test_adapter_does_not_consume_a_queue(wired, stdin_scenario, capsys) -> None:
-    # Evaluation bypasses delivery, so it must not require or use a queue URL.
+    # model-eval bypasses delivery, so it must not require or use a queue URL.
     stdin_scenario(SCENARIO)
 
     _run(capsys)

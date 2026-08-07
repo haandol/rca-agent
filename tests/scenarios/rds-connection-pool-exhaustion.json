@@ -1,6 +1,7 @@
 {
   "id": "rds-connection-pool-exhaustion",
   "category": "database",
+  "executionModes": ["model-eval"],
   "alarm": {
     "name": "HealthcareApi-Http5xx",
     "metric": "HTTPCode_Target_5XX_Count",

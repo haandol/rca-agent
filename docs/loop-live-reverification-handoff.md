@@ -36,7 +36,8 @@
 
 1. 검색이 1차 플레이북을 **후보로 찾는다** (임계값 0.80 통과)
 2. 상세 조회가 **회고 개정본**을 반환한다 (분석 원본이 아니라)
-3. 병합이 그 개정본을 기준으로 일어나고 `verification_status`가 `VERIFIED`로 유지된다
+3. 병합이 그 개정본을 기준으로 일어나고, 절차가 같으면 `VERIFIED`를 유지하며
+   `execution_steps`가 달라지면 `DRAFT`로 전환된다
 
 1단계에서 막히면 2·3단계는 실행되지 않는다. 1차 실측에서 정확히 그렇게 됐다.
 
@@ -172,7 +173,13 @@ done
 ### 3.1 시작 상태 확인
 
 ```bash
-python3 scripts/inject_deployment_fault.py status   # 세 플래그 전부 false/0
+RUN_ID="loop-reverify-$(date -u +%Y%m%dT%H%M%SZ)"
+TEST_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+ORIGINAL_DB_PARAMETER_GROUP=$(aws rds describe-db-instances \
+  --db-instance-identifier rcaagentdev-postgres \
+  --query 'DBInstances[0].DBParameterGroups[0].DBParameterGroupName' --output text)
+
+python3 scripts/inject_deployment_fault.py status --json
 aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
   --query 'MetricAlarms[?contains(AlarmName,`Rds`) || contains(AlarmName,`Vital`)].[AlarmName,StateValue]' \
   --output text                                     # 둘 다 OK
@@ -189,13 +196,19 @@ aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
 ### 3.2 주입
 
 ```bash
-python3 scripts/inject_deployment_fault.py red-herring   # 무해한 배포를 먼저
+python3 scripts/inject_deployment_fault.py red-herring --run-id "$RUN_ID" --json
 sleep 150
-python3 scripts/inject_deployment_fault.py db-leak       # 실제 원인
+python3 scripts/inject_deployment_fault.py db-leak --run-id "$RUN_ID" --json
 ```
 
 알람은 주입 후 **약 4분**에 뜬다. 커넥션 알람이 먼저, 증상 알람이 그 다음(순서 계약 —
 ADR infra/0007).
+
+`RUN_ID`는 1차 주입, 2차 주입, 최종 정리에 모두 같은 값을 사용한다. 새 세션은
+`alarm_name=RcaAgentDev-Healthcare-VitalIngestFailures`, `created_at >=
+TEST_STARTED_AT`이어야 하고, 두 엔진 행의 `idempotency_key`와 원본
+`alarm_data.StateChangeTime`이 같은 증상 알람 시각을 가리켜야 한다. 과거
+`COMPLETED` 세션은 이 실측의 증거로 사용하지 않는다.
 
 ### 3.3 분석 대기
 
@@ -305,7 +318,7 @@ OK인 것만 확인한 뒤 바로 재주입한다.
 ```bash
 aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
   --query 'MetricAlarms[?contains(AlarmName,`Rds`) || contains(AlarmName,`Vital`)].[AlarmName,StateValue]' --output text
-python3 scripts/inject_deployment_fault.py db-leak
+python3 scripts/inject_deployment_fault.py db-leak --run-id "$RUN_ID" --json
 ```
 
 > **1차 실측이 여기서 걸렸다.** 2차 분석이 1차 복구 흔적을 보고 원인을 "잔존·간헐적
@@ -355,9 +368,11 @@ aws dynamodb query --table-name RcaAgentDevRcaSession \
 
 | 결과 | 판정 |
 |------|------|
-| `playbook_id`가 1차와 **같고** `verification_status`가 `VERIFIED` | **루프가 닫혔다** ✅ |
+| 같은 id, 절차 동일, `VERIFIED` | 개정본 기반 병합과 상태 보존이 성립 |
+| 같은 id, 절차 변경, `DRAFT` | 개정본 기반 병합과 내용 종속 검증 상태가 성립 |
 | `playbook_id`가 다름 | 병합 미성립 — 4.2 로그로 어느 관문에서 막혔는지 확인 |
-| 같은 id인데 `DRAFT`로 떨어짐 | 병합이 승격을 취소했다 — 보존 규칙 결함 |
+| 같은 id, 절차 동일, `DRAFT` | 병합이 검증 상태를 잘못 취소함 |
+| 같은 id, 절차 변경, `VERIFIED` | 실행하지 않은 새 절차가 잘못 검증됨 |
 
 ---
 
@@ -458,8 +473,12 @@ PY
 ## 6. 마무리
 
 ```bash
-python3 scripts/inject_deployment_fault.py reset
-# 롤아웃 완료까지 약 3분, 알람 OK 전환까지 추가로 2분
+python3 scripts/inject_deployment_fault.py cleanup \
+  --run-id "$RUN_ID" \
+  --restore-db-parameter-group "$ORIGINAL_DB_PARAMETER_GROUP" \
+  --json
+# 이번 실행이 만든 임시 그룹을 명확히 식별한 경우에만
+# --delete-db-parameter-group "<그룹 이름>"을 같은 cleanup 명령에 추가한다.
 pkill -f "nuxt.*dev"
 ```
 
@@ -481,7 +500,7 @@ pkill -f "nuxt.*dev"
 | 미커밋 변경 | 배포 스크립트가 거부 | 먼저 커밋 |
 | `infra` 테스트 | gitignore된 `lib/**/*.js`를 Jest가 `.ts`보다 먼저 해석 | `pnpm --filter infra build && test` |
 | 리포트 버킷 오인 | `s3-reports-general-purpose-bucket-...`에서 404 | 실제는 `rca-agent-dev-evidence` (3.4) |
-| `inject...py status`가 stale | 롤백 후에도 `FAULT_DB_LEAK: true` | 서비스 태스크 정의로 확인 (3.1) |
+| 과거 `COMPLETED` 세션 혼입 | 이번 주입과 무관한 리포트가 승인됨 | 시작 시각, 증상 알람명, 두 엔진의 동일 원본 알람 시각 확인 |
 | CC 예산 소진 | CC 세션이 `FAILED` | 예산은 60분으로 올렸다. 그래도 소진되면 첫 산출물까지 걸린 시간을 로그로 확인한다 — 완주 회차는 10분, 소진 회차는 22분이었다 |
 | CC 회차가 큐를 점유 | 새 알람이 최대 60분 대기 | 정상이다. 대기 중 알람은 폐기되지 않지만 오래된 알람으로 분석을 시작할 수 있다 |
 | 대시보드 큐 URL 누락 | 승인이 503 | `EXECUTION_QUEUE_URL` 설정 (3.5) |
@@ -494,4 +513,4 @@ pkill -f "nuxt.*dev"
 | [실행 E2E 런북](./execution-live-e2e-runbook.md) | 승인 이후 구간의 일반 절차 |
 | [RCA에서 플레이북 실행까지](./rca-to-remediation-flow.md) | 흐름의 각 경계와 근거 |
 | [ADR agent/0008](./adr/agent/0008-playbook-generation.md) | Search-First, 임계값 0.80, 개정본 우선, 대칭 규정 |
-| [ADR agent/0018](./adr/agent/0018-playbook-retrospective.md) | 회고의 교정 범위와 단방향 승격 |
+| [ADR agent/0018](./adr/agent/0018-playbook-retrospective.md) | 회고의 교정 범위와 현재 절차 내용에 종속된 검증 상태 |

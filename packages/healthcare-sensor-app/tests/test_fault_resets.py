@@ -89,43 +89,15 @@ class FakePool:
 class FakeEngine:
     def __init__(self) -> None:
         self.pool = FakePool()
-        self.connections: list[FakeConnection] = []
-
-    async def connect(self) -> FakeConnection:
-        connection = FakeConnection()
-        self.connections.append(connection)
-        return connection
 
     async def dispose(self) -> None:
         return None
 
 
-class BlockingFakeEngine(FakeEngine):
-    def __init__(self) -> None:
-        super().__init__()
-        self.connect_started = asyncio.Event()
-        self.release_connect = asyncio.Event()
-
-    async def connect(self) -> FakeConnection:
-        self.connect_started.set()
-        await self.release_connect.wait()
-        return await super().connect()
-
-
-class ExistingLeakBlockingFakeEngine(FakeEngine):
-    def __init__(self, existing_leak: FakeConnection) -> None:
-        super().__init__()
-        self.existing_leak = existing_leak
-        self.connect_started = asyncio.Event()
-
-    async def connect(self) -> FakeConnection:
-        self.connect_started.set()
-        while not self.existing_leak.closed:
-            await asyncio.sleep(0)
-        return await super().connect()
-
-
 class FakeSession:
+    def __init__(self) -> None:
+        self.closed = False
+
     async def commit(self) -> None:
         return None
 
@@ -133,7 +105,7 @@ class FakeSession:
         return None
 
     async def close(self) -> None:
-        return None
+        self.closed = True
 
 
 class FakeThread:
@@ -554,69 +526,35 @@ async def test_db_leak_reset_clears_environment_driven_leaks(fault_client: Async
 
 
 @pytest.mark.asyncio
-async def test_db_leak_reset_waits_for_environment_leak_acquisition_race(
+async def test_db_leak_reset_waits_for_environment_leaked_session_to_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine = BlockingFakeEngine()
+    engine = FakeEngine()
+    session = BlockingCloseFakeConnection()
     monkeypatch.setattr(database_adapter, "create_async_engine", lambda *args, **kwargs: engine)
-    monkeypatch.setattr(database_adapter, "async_sessionmaker", lambda *args, **kwargs: FakeSession)
+    monkeypatch.setattr(database_adapter, "async_sessionmaker", lambda *args, **kwargs: lambda: session)
     settings = make_settings(fault_db_leak=True)
     adapter = database_adapter.SqlAlchemyDatabaseAdapter(settings)
 
-    async def use_session() -> None:
-        async for _ in adapter.session():
-            pass
-
-    session_task = asyncio.create_task(use_session())
-    await engine.connect_started.wait()
+    generator = adapter.leaky_session()
+    async for _ in generator:
+        break
 
     service = FaultInjectionService(adapter)
     transport = ASGITransport(app=make_app(service, settings))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         reset_task = asyncio.create_task(client.post("/fault/db-leak/reset"))
-        await asyncio.sleep(0)
+        await session.close_started.wait()
         assert reset_task.done() is False
         assert adapter._fault_db_leak is False
 
-        engine.release_connect.set()
-        await session_task
+        session.release_close.set()
         reset_response = await reset_task
 
-    assert reset_response.status_code == 200
-    assert reset_response.json() == {"closed": 0, "pool_checked_out": 0}
-    assert engine.connections[0].closed is True
-    assert database_adapter._leaked_connections == []
-
-
-@pytest.mark.asyncio
-async def test_db_leak_reset_closes_existing_leak_before_waiting_for_blocked_acquisition(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    existing_leak = FakeConnection()
-    engine = ExistingLeakBlockingFakeEngine(existing_leak)
-    monkeypatch.setattr(database_adapter, "create_async_engine", lambda *args, **kwargs: engine)
-    monkeypatch.setattr(database_adapter, "async_sessionmaker", lambda *args, **kwargs: FakeSession)
-    settings = make_settings(fault_db_leak=True)
-    adapter = database_adapter.SqlAlchemyDatabaseAdapter(settings)
-    database_adapter._leaked_connections.append(existing_leak)
-
-    async def use_session() -> None:
-        async for _ in adapter.session():
-            pass
-
-    session_task = asyncio.create_task(use_session())
-    await engine.connect_started.wait()
-
-    service = FaultInjectionService(adapter)
-    transport = ASGITransport(app=make_app(service, settings))
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        reset_response = await asyncio.wait_for(client.post("/fault/db-leak/reset"), timeout=1)
-    await session_task
-
+    await generator.aclose()
     assert reset_response.status_code == 200
     assert reset_response.json() == {"closed": 1, "pool_checked_out": 0}
-    assert existing_leak.closed is True
-    assert engine.connections[0].closed is True
+    assert session.closed is True
     assert database_adapter._leaked_connections == []
 
 
@@ -661,16 +599,23 @@ async def test_db_leak_reset_disables_future_environment_driven_leaks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine = FakeEngine()
+    sessions: list[FakeSession] = []
+
+    def session_factory() -> FakeSession:
+        session = FakeSession()
+        sessions.append(session)
+        return session
+
     monkeypatch.setattr(database_adapter, "create_async_engine", lambda *args, **kwargs: engine)
-    monkeypatch.setattr(database_adapter, "async_sessionmaker", lambda *args, **kwargs: FakeSession)
+    monkeypatch.setattr(database_adapter, "async_sessionmaker", lambda *args, **kwargs: session_factory)
     settings = make_settings(fault_db_leak=True)
     adapter = database_adapter.SqlAlchemyDatabaseAdapter(settings)
 
-    async for _ in adapter.session():
+    async for _ in adapter.leaky_session():
         pass
 
-    assert len(engine.connections) == 1
-    assert database_adapter._leaked_connections == engine.connections
+    assert sessions[0].closed is False
+    assert database_adapter._leaked_connections == [sessions[0]]
 
     service = FaultInjectionService(adapter)
     transport = ASGITransport(app=make_app(service, settings))
@@ -679,24 +624,33 @@ async def test_db_leak_reset_disables_future_environment_driven_leaks(
 
     assert reset_response.status_code == 200
     assert reset_response.json() == {"closed": 1, "pool_checked_out": 0}
-    assert engine.connections[0].closed is True
+    assert sessions[0].closed is True
     assert database_adapter._leaked_connections == []
 
-    async for _ in adapter.session():
+    async for _ in adapter.leaky_session():
         pass
 
-    assert len(engine.connections) == 1
+    assert sessions[1].closed is True
     assert database_adapter._leaked_connections == []
 
     new_engine = FakeEngine()
+    new_sessions: list[FakeSession] = []
+
+    def new_session_factory() -> FakeSession:
+        session = FakeSession()
+        new_sessions.append(session)
+        return session
+
     monkeypatch.setattr(database_adapter, "create_async_engine", lambda *args, **kwargs: new_engine)
+    monkeypatch.setattr(database_adapter, "async_sessionmaker", lambda *args, **kwargs: new_session_factory)
     new_adapter = database_adapter.SqlAlchemyDatabaseAdapter(settings)
 
-    async for _ in new_adapter.session():
+    async for _ in new_adapter.leaky_session():
         pass
 
     assert new_adapter._fault_db_leak is False
-    assert new_engine.connections == []
+    assert new_sessions[0].closed is True
+    assert database_adapter._leaked_connections == []
 
 
 @pytest.mark.asyncio

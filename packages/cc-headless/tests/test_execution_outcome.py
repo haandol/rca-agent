@@ -39,11 +39,18 @@ def _resolved_records() -> list[dict]:
         {
             "type": "step_outcome",
             "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 가 20 이하로 복귀",
             "observation": "DatabaseConnections 12",
             "criteria_met": True,
         },
         {"type": "attempt", "step_id": "step-2", "command": "aws cloudwatch get-metric-data", "succeeded": True},
-        {"type": "step_outcome", "step_id": "step-2", "observation": "0", "criteria_met": True},
+        {
+            "type": "step_outcome",
+            "step_id": "step-2",
+            "success_criteria": "VitalIngestFailure 가 0",
+            "observation": "0",
+            "criteria_met": True,
+        },
         {"type": "resolution", "observation": "증상 지표 정상", "resolved": True},
     )
 
@@ -96,12 +103,33 @@ def test_a_step_that_missed_its_criteria_blocks_completion_even_if_the_agent_cla
     records[3] = {
         "type": "step_outcome",
         "step_id": "step-2",
+        "success_criteria": "VitalIngestFailure 가 0",
         "observation": "VitalIngestFailure 4",
         "criteria_met": False,
     }
 
     verdict = judge_resolution(_assemble(records), agent_succeeded=True)
 
+    assert verdict.state is ExecutionState.UNRESOLVED
+    assert "step-2" in verdict.reason
+
+
+@pytest.mark.parametrize("supplied_criteria", ["VitalIngestFailure 5 이하", None])
+def test_a_model_supplied_criterion_cannot_replace_the_approved_criterion(supplied_criteria):
+    records = _resolved_records()
+    records[3] = {
+        "type": "step_outcome",
+        "step_id": "step-2",
+        "success_criteria": supplied_criteria,
+        "observation": "VitalIngestFailure 4",
+        "criteria_met": True,
+    }
+
+    evidence = _assemble(records)
+    verdict = judge_resolution(evidence, agent_succeeded=True)
+
+    assert evidence.step("step-2").success_criteria == "VitalIngestFailure 가 0"
+    assert evidence.step("step-2").resolved is False
     assert verdict.state is ExecutionState.UNRESOLVED
     assert "step-2" in verdict.reason
 
@@ -139,12 +167,19 @@ def test_a_blocked_step_is_marked_manual_and_does_not_stop_the_rest():
         {
             "type": "step_outcome",
             "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 가 20 이하로 복귀",
             "observation": "차단되어 수동 조치 필요",
             "criteria_met": False,
             "manual_action_required": True,
         },
         {"type": "attempt", "step_id": "step-2", "command": "aws cloudwatch get-metric-data", "succeeded": True},
-        {"type": "step_outcome", "step_id": "step-2", "observation": "0", "criteria_met": True},
+        {
+            "type": "step_outcome",
+            "step_id": "step-2",
+            "success_criteria": "VitalIngestFailure 가 0",
+            "observation": "0",
+            "criteria_met": True,
+        },
         {"type": "resolution", "observation": "일부 절차가 수동 조치로 남음", "resolved": False},
     )
 
@@ -178,6 +213,7 @@ def test_successful_criteria_requires_a_nonblank_observation():
     records[1] = {
         "type": "step_outcome",
         "step_id": "step-1",
+        "success_criteria": "DatabaseConnections 가 20 이하로 복귀",
         "observation": " ",
         "criteria_met": True,
     }

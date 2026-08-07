@@ -241,7 +241,7 @@ export class HealthcareServiceStack extends cdk.Stack {
     // failures the symptom alarm watches. Above the pool ceiling the leak would
     // starve requests while this metric stayed quiet, leaving the cause-level
     // evidence the agent is supposed to find absent from the timeline.
-    const dbConnAlarm = new cloudwatch.Alarm(this, 'RdsHighConnections', {
+    new cloudwatch.Alarm(this, 'RdsHighConnections', {
       alarmName: `${ns}-Healthcare-RdsHighConnections`,
       metric: new cloudwatch.Metric({
         namespace: 'AWS/RDS',
@@ -258,10 +258,8 @@ export class HealthcareServiceStack extends cdk.Stack {
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    dbConnAlarm.addAlarmAction(alarmAction);
-    dbConnAlarm.addOkAction(alarmAction);
 
-    const cpuAlarm = new cloudwatch.Alarm(this, 'EcsHighCPU', {
+    new cloudwatch.Alarm(this, 'EcsHighCPU', {
       alarmName: `${ns}-Healthcare-HighCPU`,
       metric: service.metricCpuUtilization({
         statistic: 'Average',
@@ -273,10 +271,8 @@ export class HealthcareServiceStack extends cdk.Stack {
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    cpuAlarm.addAlarmAction(alarmAction);
-    cpuAlarm.addOkAction(alarmAction);
 
-    const memAlarm = new cloudwatch.Alarm(this, 'EcsHighMemory', {
+    new cloudwatch.Alarm(this, 'EcsHighMemory', {
       alarmName: `${ns}-Healthcare-HighMemory`,
       metric: service.metricMemoryUtilization({
         statistic: 'Average',
@@ -288,7 +284,5 @@ export class HealthcareServiceStack extends cdk.Stack {
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    memAlarm.addAlarmAction(alarmAction);
-    memAlarm.addOkAction(alarmAction);
   }
 }

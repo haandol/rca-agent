@@ -1,3 +1,9 @@
+"""Contracts for model evaluation with supplied observations.
+
+The adapter reuses the shared analysis harness, but this path is not deployed
+E2E coverage and does not test discovery from evidence sources.
+"""
+
 import io
 import json
 import sys
@@ -9,6 +15,7 @@ from cc_headless.services.artifact_validation import CompletionArtifacts
 
 SCENARIO = {
     "id": "rds-connection-pool-exhaustion",
+    "executionModes": ["model-eval"],
     "alarm": {
         "name": "Healthcare-RdsHighConnections",
         "metric": "DatabaseConnections",
@@ -157,12 +164,72 @@ def test_alarm_context_carries_scenario_observations_into_the_prompt():
         assert observation["summary"] in alarm.state_reason
 
 
+def test_alarm_context_does_not_supply_observations_outside_model_eval():
+    scenario = {**SCENARIO, "executionModes": ["deployed-e2e"]}
+
+    alarm = eval_adapter._alarm_for(scenario)
+
+    assert alarm.state_reason == SCENARIO["alarm"]["stateReason"]
+    assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION not in alarm.state_reason
+    assert all(observation["id"] not in alarm.state_reason for observation in SCENARIO["observations"])
+
+
 def test_adapter_rejects_a_scenario_without_an_id(tmp_path):
     scenario = tmp_path / "scenario.json"
-    scenario.write_text(json.dumps({"alarm": {"name": "NoId"}}))
+    scenario.write_text(json.dumps({"executionModes": ["model-eval"], "alarm": {"name": "NoId"}}))
 
     with pytest.raises(SystemExit):
         eval_adapter.main(["cc-headless-eval", str(scenario)])
+
+
+@pytest.mark.parametrize(
+    ("scenario_payload", "expected_error"),
+    [
+        (
+            {
+                "id": "missing-execution-modes",
+                "alarm": {"name": "A", "stateReason": "threshold crossed"},
+                "observations": [{"id": "supplied", "summary": "must not reach the harness"}],
+            },
+            "scenario executionModes is missing",
+        ),
+        (
+            {
+                "id": "unsupported-execution-mode",
+                "executionModes": ["deployed-e2e"],
+                "alarm": {"name": "A", "stateReason": "threshold crossed"},
+                "observations": [{"id": "supplied", "summary": "must not reach the harness"}],
+            },
+            "scenario executionModes does not include 'model-eval'",
+        ),
+    ],
+)
+def test_adapter_rejects_scenarios_not_enabled_for_model_eval(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    scenario_payload,
+    expected_error,
+):
+    scenario = tmp_path / "scenario.json"
+    scenario.write_text(json.dumps(scenario_payload))
+
+    class _UnexpectedRunner:
+        def __init__(self):
+            pytest.fail("the analysis harness must not be constructed")
+
+    class _UnexpectedExecutionContext:
+        @classmethod
+        def create(cls, _scenario_id):
+            pytest.fail("the execution context must not be created")
+
+    monkeypatch.setattr(eval_adapter, "CcSubprocessRunner", _UnexpectedRunner)
+    monkeypatch.setattr(eval_adapter, "ExecutionContext", _UnexpectedExecutionContext)
+
+    with pytest.raises(SystemExit):
+        eval_adapter.main(["cc-headless-eval", str(scenario)])
+
+    assert expected_error in capsys.readouterr().err
 
 
 def test_adapter_fails_when_the_harness_run_does_not_succeed(tmp_path, monkeypatch):
@@ -183,8 +250,7 @@ def test_adapter_fails_when_the_harness_run_does_not_succeed(tmp_path, monkeypat
 
 
 def test_stdout_carries_only_the_result_even_when_the_harness_logs(monkeypatch, tmp_path, capsys):
-    # Production sends logs to stdout for the container log driver, but under
-    # evaluation stdout is the channel for the single normalized result.
+    # The shared harness may log to stdout; model-eval reserves it for one result.
     import logging
 
     from cc_headless.services.execution_context import ExecutionContext
@@ -254,7 +320,7 @@ def test_state_reason_asks_the_engine_to_cite_ids_it_relied_on():
 
 
 def test_state_reason_is_untouched_when_a_scenario_has_no_observations():
-    # Real production alarms carry no observation ids, so analysis must still work.
+    # A model-eval scenario may provide no observations.
     assert eval_adapter.build_state_reason("threshold crossed", []) == "threshold crossed"
 
 

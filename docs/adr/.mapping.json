@@ -62,8 +62,8 @@
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "엔진 중립 오프라인 계약과 선택적 라이브 평가 계층을 운영하고 실행은 평가하지 않는다."
+          "status": "Accepted (2026-08-07)",
+          "summary": "오프라인 계약, fixture 의미 회귀, 제공된 관측 기반 model-eval, 실제 전달·증거 탐색 deployed E2E를 분리한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
@@ -72,8 +72,8 @@
         },
         {
           "path": "docs/adr/agent/0018-playbook-retrospective.md",
-          "status": "Accepted (2026-07-31)",
-          "summary": "해결된 실행 직후 자동 회고가 실행 증거로 플레이북 절차를 교정하고, 초안에서 검증됨으로의 단방향 승격을 서버가 수행한다."
+          "status": "Accepted (2026-08-07)",
+          "summary": "해결된 실행 직후 자동 회고가 절차를 교정하고, 현재 execution_steps가 실행으로 입증됐을 때만 VERIFIED로 표시한다."
         }
       ]
     },

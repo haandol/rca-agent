@@ -77,10 +77,11 @@ pyproject.toml        # Python project configuration
 **해결 판정의 권위도 서버에 있다.** 에이전트의 최종 서술이 아니라 서버가 기록한 관측이
 실행 상태를 확정한다(`services/execution_outcome.py`).
 
-## Dev Commands (라이브 평가)
+## Dev Commands (실모델 의미 평가)
 
 ```bash
-# 시나리오 하나를 배포와 동일한 하네스로 실행하고 정규화 결과 JSON 을 출력
+# 제공된 관측으로 실모델 의미 품질을 평가하고 정규화 결과 JSON 을 출력
+# SQS 전달이나 실제 증거 탐색을 검증하는 배포 E2E 경로가 아니다.
 uv run cc-headless-eval ../../tests/scenarios/rds-connection-pool-exhaustion.json
 ```
 

@@ -53,7 +53,7 @@ function hasAwsCredentials(env) {
   );
 }
 
-export function validateLiveEnvironment(env = process.env) {
+export function validateModelEnvironment(env = process.env) {
   const commands = Object.fromEntries(
     EXPECTED_ENGINES.map((engine) => [
       engine,
@@ -62,7 +62,7 @@ export function validateLiveEnvironment(env = process.env) {
   );
   if (!(env.AWS_REGION || env.AWS_DEFAULT_REGION)) {
     throw new Error(
-      'Missing AWS_REGION (or AWS_DEFAULT_REGION). Set the AWS region used by both live engines.',
+      'Missing AWS_REGION (or AWS_DEFAULT_REGION). Set the AWS region used by both model-eval engines.',
     );
   }
   if (!hasAwsCredentials(env)) {
@@ -169,7 +169,7 @@ export function runEngineCommand({
   });
 }
 
-export async function runLiveEvaluation({
+export async function runModelEvaluation({
   env = process.env,
   repositoryRoot = REPOSITORY_ROOT,
   scenariosDirectory = path.join(repositoryRoot, 'tests/scenarios'),
@@ -178,14 +178,14 @@ export async function runLiveEvaluation({
   reportPath,
   timeoutMs = Number(env.RCA_EVAL_TIMEOUT_MS ?? 15 * 60 * 1000),
 } = {}) {
-  const commands = validateLiveEnvironment(env);
+  const commands = validateModelEnvironment(env);
   const runId = new Date().toISOString().replaceAll(/[:.]/g, '-');
   const actualResultsDirectory =
     resultsDirectory ??
     (env.RCA_EVAL_RESULTS_DIR
       ? path.resolve(repositoryRoot, env.RCA_EVAL_RESULTS_DIR)
       : undefined) ??
-    path.join(repositoryRoot, 'tests/results/live', runId, 'results');
+    path.join(repositoryRoot, 'tests/results/model', runId, 'results');
   const actualReportPath =
     reportPath ??
     (env.RCA_EVAL_REPORT
@@ -202,11 +202,17 @@ export async function runLiveEvaluation({
     readJsonFile(actualBaselinePath, 'baseline'),
     computeInputDigest({ repositoryRoot, scenariosDirectory }),
   ]);
+  const modelScenarios = scenarios.filter(({ executionModes }) =>
+    executionModes.includes('model-eval'),
+  );
+  if (modelScenarios.length === 0) {
+    throw new Error('No scenarios declare the model-eval execution mode.');
+  }
   await mkdir(actualResultsDirectory, { recursive: true });
 
   const results = [];
   for (const engine of EXPECTED_ENGINES) {
-    for (const scenario of scenarios) {
+    for (const scenario of modelScenarios) {
       const scenarioPath = path.join(scenariosDirectory, `${scenario.id}.json`);
       const result = await runEngineCommand({
         command: commands[engine],
@@ -225,7 +231,7 @@ export async function runLiveEvaluation({
   }
 
   const evaluation = await evaluateResults({
-    scenarios,
+    scenarios: modelScenarios,
     results,
     baseline,
     digest,
@@ -233,7 +239,7 @@ export async function runLiveEvaluation({
   const report = {
     ...evaluation,
     generatedAt: new Date().toISOString(),
-    live: true,
+    executionMode: 'model-eval',
     resultsDirectory: actualResultsDirectory,
   };
   await writeJsonFile(actualReportPath, report);
@@ -245,14 +251,14 @@ export async function runLiveEvaluation({
 }
 
 export async function main() {
-  const { report, reportPath, resultsDirectory } = await runLiveEvaluation();
+  const { report, reportPath, resultsDirectory } = await runModelEvaluation();
   if (!report.passed) {
     throw new Error(
-      `Live RCA evaluation failed; report: ${reportPath}\n- ${report.failures.join('\n- ')}`,
+      `Model RCA evaluation failed; report: ${reportPath}\n- ${report.failures.join('\n- ')}`,
     );
   }
   process.stdout.write(
-    `Live RCA evaluation passed. Results: ${resultsDirectory}\nReport: ${reportPath}\n`,
+    `Model RCA evaluation passed. Results: ${resultsDirectory}\nReport: ${reportPath}\n`,
   );
 }
 

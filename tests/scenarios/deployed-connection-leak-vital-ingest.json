@@ -1,6 +1,7 @@
 {
   "id": "deployed-connection-leak-vital-ingest",
   "category": "database",
+  "executionModes": ["model-eval", "deployed-e2e"],
   "alarm": {
     "name": "RcaAgentDev-Healthcare-VitalIngestFailures",
     "metric": "VitalIngestFailures",

@@ -51,11 +51,6 @@ def retain_environment_leaked_connection(
         return True
 
 
-def retain_close_failed_environment_connection(connection: AsyncClosable) -> None:
-    with _environment_database_leak_condition:
-        environment_leaked_connections.append(connection)
-
-
 def finish_environment_database_leak() -> None:
     global _environment_database_leak_acquisitions
     with _environment_database_leak_condition:

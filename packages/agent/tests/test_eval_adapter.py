@@ -8,6 +8,7 @@ from rca_agent.ports.dto.models import AlarmPayload, ExecutionStep, Notification
 
 SCENARIO = {
     "id": "rds-connection-pool-exhaustion",
+    "executionModes": ["model-eval"],
     "alarm": {
         "name": "Healthcare-RdsHighConnections",
         "metric": "DatabaseConnections",
@@ -62,7 +63,20 @@ def test_alarm_envelope_carries_scenario_observations_into_the_pipeline() -> Non
         assert observation["summary"] in envelope["NewStateReason"]
 
 
-def test_alarm_envelope_is_accepted_by_the_production_alarm_parser() -> None:
+def test_alarm_envelope_does_not_supply_observations_outside_model_eval() -> None:
+    scenario = {**SCENARIO, "executionModes": ["deployed-e2e"]}
+
+    envelope = eval_adapter._alarm_envelope(
+        scenario,
+        state_change_time="2026-07-29T00:00:00.000000+0000",
+    )
+
+    assert envelope["NewStateReason"] == SCENARIO["alarm"]["stateReason"]
+    assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION not in envelope["NewStateReason"]
+    assert all(observation["id"] not in envelope["NewStateReason"] for observation in SCENARIO["observations"])
+
+
+def test_alarm_envelope_is_accepted_by_the_shared_alarm_parser() -> None:
     envelope = eval_adapter._alarm_envelope(SCENARIO, state_change_time="2026-07-29T00:00:00.000000+0000")
 
     alarm = AlarmPayload.from_cloudwatch_sns(envelope)
@@ -72,7 +86,7 @@ def test_alarm_envelope_is_accepted_by_the_production_alarm_parser() -> None:
     assert alarm.trigger is not None
 
 
-def test_alarm_envelope_passes_the_production_processing_filter() -> None:
+def test_alarm_envelope_passes_the_shared_processing_filter() -> None:
     from rca_agent.services.pipeline import should_process
 
     envelope = eval_adapter._alarm_envelope(SCENARIO, state_change_time="2026-07-29T00:00:00.000000+0000")
@@ -100,7 +114,12 @@ def test_state_change_format_produces_a_distinct_session_per_run() -> None:
 
 
 def test_alarm_envelope_omits_the_trigger_when_the_scenario_has_no_metric() -> None:
-    scenario = {"id": "s", "alarm": {"name": "A", "stateReason": "r"}, "observations": []}
+    scenario = {
+        "id": "s",
+        "executionModes": ["model-eval"],
+        "alarm": {"name": "A", "stateReason": "r"},
+        "observations": [],
+    }
 
     envelope = eval_adapter._alarm_envelope(scenario, state_change_time="2026-07-29T00:00:00.000000+0000")
 
@@ -282,7 +301,7 @@ def test_state_reason_asks_the_engine_to_cite_ids_it_relied_on() -> None:
 
 
 def test_state_reason_is_untouched_when_a_scenario_has_no_observations() -> None:
-    # Real production alarms carry no observation ids, so analysis must still work.
+    # A model-eval scenario may provide no observations.
     assert eval_adapter.build_state_reason("threshold crossed", []) == "threshold crossed"
 
 

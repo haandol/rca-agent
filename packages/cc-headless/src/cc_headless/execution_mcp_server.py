@@ -25,6 +25,7 @@ from cc_headless.services.execution_evidence import (
 )
 from cc_headless.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
+    APPROVED_SUCCESS_CRITERIA_ENV,
     EXECUTION_TOKEN_ENV,
     evidence_path_for_token,
 )
@@ -64,6 +65,20 @@ def _approved_step_ids() -> frozenset[str]:
     if not isinstance(parsed, list):
         return frozenset()
     return frozenset(value.strip() for value in parsed if isinstance(value, str) and value.strip())
+
+
+def _approved_success_criteria() -> dict[str, str]:
+    try:
+        parsed = json.loads(os.environ.get(APPROVED_SUCCESS_CRITERIA_ENV, ""))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {
+        step_id.strip(): criterion
+        for step_id, criterion in parsed.items()
+        if isinstance(step_id, str) and step_id.strip() and isinstance(criterion, str) and criterion.strip()
+    }
 
 
 def _validate_step_id(step_id: str) -> str | None:
@@ -246,11 +261,26 @@ def record_step_outcome(
     if step_error:
         return json.dumps({"ok": False, "error": step_error}, ensure_ascii=False)
 
+    approved_criteria = _approved_success_criteria().get(step_id.strip())
+    if approved_criteria is None:
+        return json.dumps(
+            {"ok": False, "error": "approved success_criteria is unavailable for this step"},
+            ensure_ascii=False,
+        )
+    if success_criteria != approved_criteria:
+        return json.dumps(
+            {
+                "ok": False,
+                "error": "success_criteria does not exactly match the approved playbook",
+            },
+            ensure_ascii=False,
+        )
+
     ok = _append_record(
         {
             "type": "step_outcome",
             "step_id": step_id.strip(),
-            "success_criteria": redact(success_criteria),
+            "success_criteria": approved_criteria,
             "observation": redact(observation),
             "criteria_met": bool(criteria_met),
             "failure_class": str(parse_failure_class(failure_class)) if failure_class else None,
