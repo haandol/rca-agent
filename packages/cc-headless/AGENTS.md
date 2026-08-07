@@ -48,6 +48,7 @@ prompts/
     ├── artifacts/        # JSON 스키마 (scoping, hypotheses, validation, playbook)
     └── stages/           # 전문 에이전트 호출 순서
 mcp-config.json           # 분석 하네스 MCP 설정
+model-eval-mcp-config.json # 제공 관측 전용 평가 설정 — 산출물 저장 MCP만 허용
 execution-mcp-config.json # 실행 하네스 MCP 설정
 CLAUDE.md                 # 분석 하네스 지침
 EXECUTION.md              # 실행 하네스 지침
@@ -58,9 +59,9 @@ pyproject.toml        # Python project configuration
 ## 하네스 패리티
 
 `.claude/`, `.claude-execution/`, `prompts/`, `CLAUDE.md`, `EXECUTION.md`,
-`mcp-config.json`, `execution-mcp-config.json` 은 로컬 실행과 컨테이너 실행이 공유하는
-단일 하네스다. 이미지는 이 자산을 변환 없이 담고, 로컬에서 검증한 하네스가 그대로
-배포된다. MCP 설정에는 환경별 절대 경로를 넣지 않는다 —
+`mcp-config.json`, `model-eval-mcp-config.json`, `execution-mcp-config.json` 은 로컬
+실행과 컨테이너 실행이 공유하는 단일 하네스다. 이미지는 이 자산을 변환 없이 담고,
+로컬에서 검증한 하네스가 그대로 배포된다. MCP 설정에는 환경별 절대 경로를 넣지 않는다 —
 `tests/test_prompt_contracts.py` 와 `tests/test_execution_harness_contracts.py` 가
 이를 거부한다.
 

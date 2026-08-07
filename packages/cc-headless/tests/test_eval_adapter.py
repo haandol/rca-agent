@@ -7,6 +7,7 @@ E2E coverage and does not test discovery from evidence sources.
 import io
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,7 @@ SCENARIO = {
         {"id": "unreleased-session", "source": "github", "summary": "sessions are never closed"},
     ],
 }
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _playbook(**overrides) -> dict:
@@ -59,11 +61,11 @@ def _playbook(**overrides) -> dict:
     return playbook
 
 
-def _artifacts(**playbook_overrides) -> CompletionArtifacts:
+def _artifacts(*, confirmed: bool = True, **playbook_overrides) -> CompletionArtifacts:
     return CompletionArtifacts(
         report_markdown="# report",
         playbook=_playbook(**playbook_overrides),
-        confirmed=True,
+        confirmed=confirmed,
     )
 
 
@@ -249,7 +251,8 @@ def test_adapter_fails_when_the_harness_run_does_not_succeed(tmp_path, monkeypat
         eval_adapter.main(["cc-headless-eval", str(scenario)])
 
 
-def test_stdout_carries_only_the_result_even_when_the_harness_logs(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_stdout_carries_only_the_result_even_when_the_harness_logs(monkeypatch, tmp_path, capsys, confirmed):
     # The shared harness may log to stdout; model-eval reserves it for one result.
     import logging
 
@@ -259,14 +262,22 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(monkeypatch, 
         success = True
         result = "ok"
 
+    invocation = {}
+
     class _Runner:
-        def run(self, prompt, *, execution_token):
+        def run(self, prompt, *, execution_token, mcp_config, allowed_tools):
+            invocation.update(
+                prompt=prompt,
+                execution_token=execution_token,
+                mcp_config=mcp_config,
+                allowed_tools=allowed_tools,
+            )
             print("harness progress line")
             logging.getLogger("cc").info("structured log line")
             return _Result()
 
     monkeypatch.setattr(eval_adapter, "CcSubprocessRunner", _Runner)
-    monkeypatch.setattr(eval_adapter, "validate_completion_artifacts", lambda _dir: _artifacts())
+    monkeypatch.setattr(eval_adapter, "validate_completion_artifacts", lambda _dir: _artifacts(confirmed=confirmed))
     monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
     monkeypatch.setattr(ExecutionContext, "prepare", lambda self: tmp_path)
     monkeypatch.setattr(ExecutionContext, "cleanup", lambda self: None)
@@ -277,7 +288,14 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(monkeypatch, 
 
     payload = json.loads(captured.out)
     assert payload["scenarioId"] == SCENARIO["id"]
+    assert payload["rootCauseConfirmed"] is confirmed
     assert "harness progress line" in captured.err
+    assert invocation["mcp_config"] == str(PACKAGE_ROOT / "model-eval-mcp-config.json")
+    assert set(invocation["allowed_tools"]) == {
+        "Agent",
+        "Skill",
+        "mcp__rca-progress__save_artifact",
+    }
 
 
 def test_stdout_is_restored_even_when_the_harness_fails(monkeypatch, tmp_path):
@@ -288,7 +306,7 @@ def test_stdout_is_restored_even_when_the_harness_fails(monkeypatch, tmp_path):
         result = "boom"
 
     class _Runner:
-        def run(self, prompt, *, execution_token):
+        def run(self, prompt, **kwargs):
             return _Result()
 
     monkeypatch.setattr(eval_adapter, "CcSubprocessRunner", _Runner)
@@ -319,9 +337,23 @@ def test_state_reason_asks_the_engine_to_cite_ids_it_relied_on():
     assert "식별자" in reason
 
 
-def test_state_reason_is_untouched_when_a_scenario_has_no_observations():
-    # A model-eval scenario may provide no observations.
-    assert eval_adapter.build_state_reason("threshold crossed", []) == "threshold crossed"
+def test_state_reason_treats_supplied_observations_as_authoritative_incident_snapshot():
+    reason = eval_adapter.build_state_reason("threshold crossed", SCENARIO["observations"])
+
+    assert eval_adapter.MODEL_EVAL_EVIDENCE_INSTRUCTION in reason
+    assert "권위 있는 증거" in reason
+    assert "사고 시점의 스냅샷" in reason
+    assert "live" in reason
+    assert "조회 실패" in reason
+    assert "반박" in reason
+
+
+def test_state_reason_forbids_live_lookup_even_without_observations():
+    reason = eval_adapter.build_state_reason("threshold crossed", [])
+
+    assert "threshold crossed" in reason
+    assert eval_adapter.MODEL_EVAL_EVIDENCE_INSTRUCTION in reason
+    assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION not in reason
 
 
 def test_state_reason_skips_malformed_observation_entries():
@@ -335,3 +367,10 @@ def test_alarm_context_carries_the_citation_instruction():
     alarm = eval_adapter._alarm_for(SCENARIO)
 
     assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION in alarm.state_reason
+
+
+def test_model_eval_mcp_config_exposes_only_artifact_storage():
+    config = json.loads((PACKAGE_ROOT / "model-eval-mcp-config.json").read_text())
+
+    assert set(config["mcpServers"]) == {"rca-progress"}
+    assert config["mcpServers"]["rca-progress"]["args"][1] == ("{{PACKAGE_ROOT}}/src/cc_headless/mcp_server.py:mcp")

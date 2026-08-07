@@ -3,6 +3,7 @@
   "scenarioId": "deployment-query-regression",
   "engine": "strands",
   "rootCause": "The deployment introduced an N+1 query loop in the sensor response path.",
+  "rootCauseConfirmed": true,
   "evidenceIds": [
     "deployment-correlation",
     "query-volume-spike",

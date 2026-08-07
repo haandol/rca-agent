@@ -25,6 +25,7 @@ process.stdout.write(
     rootCause: `${firstTerms(scenario.expectation.rootCauseTermGroups)} ${firstTerms(
       scenario.expectation.semanticTermGroups,
     )}`,
+    rootCauseConfirmed: true,
     evidenceIds: scenario.expectation.requiredEvidenceIds,
     artifacts: scenario.expectation.requiredArtifacts,
     remediation: {

@@ -3,6 +3,7 @@
   "scenarioId": "rds-connection-pool-exhaustion",
   "engine": "cc-headless",
   "rootCause": "Application requests saturated the database pool and reached the configured maximum.",
+  "rootCauseConfirmed": true,
   "evidenceIds": ["pool-timeout-logs", "db-connections-maxed"],
   "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
   "remediation": {

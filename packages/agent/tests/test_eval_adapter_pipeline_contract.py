@@ -57,10 +57,13 @@ class _RecordingOrchestrator:
     """Stands in for the shared orchestrator and records how it was called."""
 
     calls: list[dict] = []
+    precollected_evidence_values: list[str | None] = []
     result = True
 
-    def __init__(self, container, shutdown_event=None) -> None:
+    def __init__(self, container, shutdown_event=None, *, precollected_evidence=None) -> None:
         self.container = container
+        self.precollected_evidence = precollected_evidence
+        type(self).precollected_evidence_values.append(precollected_evidence)
 
     def process_alarm(self, body, *, receive_count=1, message_id=None) -> bool:
         type(self).calls.append({"body": body, "receive_count": receive_count, "message_id": message_id})
@@ -116,6 +119,7 @@ class _Container:
 @pytest.fixture(autouse=True)
 def _reset() -> None:
     _RecordingOrchestrator.calls = []
+    _RecordingOrchestrator.precollected_evidence_values = []
     _RecordingOrchestrator.result = True
     _Container.instances = []
     _Container.handoff = CompletionHandoff(
@@ -128,7 +132,7 @@ def _reset() -> None:
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _RecordingOrchestrator)
-    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    monkeypatch.setattr("rca_agent.di.eval_container.EvalAppContainer", _Container)
 
 
 def _run(capsys) -> dict:
@@ -165,6 +169,34 @@ def test_adapter_hands_the_alarm_envelope_to_the_pipeline(wired, stdin_scenario,
     assert "connection-growth" in body["NewStateReason"]
 
 
+def test_adapter_injects_scenario_observations_as_precollected_evidence(
+    wired,
+    stdin_scenario,
+    capsys,
+) -> None:
+    stdin_scenario(SCENARIO)
+
+    _run(capsys)
+
+    rendered = eval_adapter.build_precollected_evidence(SCENARIO["observations"])
+    assert _RecordingOrchestrator.precollected_evidence_values == [rendered]
+    assert "connection-growth" in rendered
+    assert "connections grew monotonically" in rendered
+    assert "현재 시스템 상태로 대체하거나 보강하지 않는다" in rendered
+
+
+def test_adapter_passes_explicit_empty_evidence_when_no_observations_exist(
+    wired,
+    stdin_scenario,
+    capsys,
+) -> None:
+    stdin_scenario({**SCENARIO, "observations": []})
+
+    _run(capsys)
+
+    assert _RecordingOrchestrator.precollected_evidence_values == [""]
+
+
 def test_adapter_reads_back_the_session_the_pipeline_created(wired, stdin_scenario, capsys) -> None:
     stdin_scenario(SCENARIO)
 
@@ -185,10 +217,29 @@ def test_adapter_emits_exactly_one_normalized_result_object(wired, stdin_scenari
     assert payload["scenarioId"] == "rds-connection-pool-exhaustion"
     assert payload["engine"] == "strands"
     assert payload["rootCause"]
+    assert payload["rootCauseConfirmed"] is True
     assert payload["remediation"]["safeguards"]
     # 절차의 안전성이 채점되므로 절차가 실제로 조회되어야 한다.
     assert _Container.instances[0].playbook_store.requested == ["pb-1"]
     assert payload["remediation"]["unsafeSteps"] == []
+
+
+def test_adapter_uses_persisted_confirmation_as_the_normalized_authority(
+    wired,
+    stdin_scenario,
+    capsys,
+) -> None:
+    stdin_scenario(SCENARIO)
+    notification = _notification().model_copy(update={"confirmed": False})
+    _Container.handoff = CompletionHandoff(
+        rca_id="rca-1",
+        state=RcaSessionState.COMPLETED,
+        notification=notification,
+    )
+
+    payload = _run(capsys)
+
+    assert payload["rootCauseConfirmed"] is False
 
 
 def test_a_completed_session_is_scored_even_when_the_message_was_not_acked(wired, stdin_scenario, capsys) -> None:
@@ -318,7 +369,7 @@ def test_stdout_carries_only_the_result_even_when_the_pipeline_prints(
     # The harness requires exactly one JSON object on stdout. Progress text from
     # the model SDK must not contaminate it.
     monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _ChattyOrchestrator)
-    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    monkeypatch.setattr("rca_agent.di.eval_container.EvalAppContainer", _Container)
     stdin_scenario(SCENARIO)
 
     eval_adapter.main(["rca-agent-eval", ""])
@@ -331,7 +382,7 @@ def test_stdout_carries_only_the_result_even_when_the_pipeline_prints(
 
 def test_stdout_is_restored_after_the_run(monkeypatch: pytest.MonkeyPatch, stdin_scenario, capsys) -> None:
     monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _ChattyOrchestrator)
-    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    monkeypatch.setattr("rca_agent.di.eval_container.EvalAppContainer", _Container)
     stdin_scenario(SCENARIO)
     before = sys.stdout
 
@@ -342,7 +393,7 @@ def test_stdout_is_restored_after_the_run(monkeypatch: pytest.MonkeyPatch, stdin
 
 def test_stdout_is_restored_even_when_the_run_fails(monkeypatch: pytest.MonkeyPatch, stdin_scenario) -> None:
     monkeypatch.setattr("rca_agent.services.pipeline.PipelineOrchestrator", _ChattyOrchestrator)
-    monkeypatch.setattr("rca_agent.di.app_container.AppContainer", _Container)
+    monkeypatch.setattr("rca_agent.di.eval_container.EvalAppContainer", _Container)
     stdin_scenario(SCENARIO)
     _Container.handoff = None
     before = sys.stdout

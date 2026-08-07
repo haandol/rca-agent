@@ -3,6 +3,7 @@
   "scenarioId": "iam-policy-access-denied",
   "engine": "strands",
   "rootCause": "The IAM task role policy removed the logs:StartQuery permission, causing AccessDenied failures.",
+  "rootCauseConfirmed": true,
   "evidenceIds": [
     "access-denied-logs",
     "policy-change-event",

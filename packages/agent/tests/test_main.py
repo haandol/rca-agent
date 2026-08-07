@@ -35,6 +35,7 @@ from rca_agent.services.evidence import EvidenceCollectionSummary
 from rca_agent.services.pipeline import (
     PipelineOrchestrator,
     RunContext,
+    ValidationLoopState,
     parse_sns_envelope,
     prune_subtree,
 )
@@ -133,6 +134,82 @@ def _hypo_result(hypotheses=None):
 _P = "rca_agent.services.pipeline"
 
 
+class TestPrecollectedEvidence:
+    def test_precollected_evidence_bypasses_live_collection_for_new_hypotheses(self):
+        container = _make_container()
+        trace = MagicMock()
+        trace.span.return_value.__enter__.return_value = MagicMock()
+        run = _run_context(trace=trace)
+        hypotheses = [_make_hypothesis("h-1"), _make_hypothesis("h-branch")]
+        state = ValidationLoopState(hypotheses=hypotheses)
+        evidence = "[incident-metric] 사고 시점 연결 수가 단조 증가했다"
+
+        with patch(f"{_P}.run_evidence_collection") as collect:
+            PipelineOrchestrator(
+                container,
+                precollected_evidence=evidence,
+            )._loop_evidence(
+                state,
+                _scoping(),
+                hypotheses,
+                run,
+                MagicMock(span_id="loop-1"),
+            )
+
+        collect.assert_not_called()
+        assert state.evidence_map == {
+            "h-1": evidence,
+            "h-branch": evidence,
+        }
+
+    def test_default_path_still_collects_live_evidence(self):
+        container = _make_container()
+        trace = MagicMock()
+        trace.span.return_value.__enter__.return_value = MagicMock()
+        run = _run_context(trace=trace)
+        hypothesis = _make_hypothesis("h-1")
+        state = ValidationLoopState(hypotheses=[hypothesis])
+
+        with patch(
+            f"{_P}.run_evidence_collection",
+            return_value=EvidenceCollectionSummary(
+                evidence_map={"h-1": "live evidence"},
+                failed_ids=set(),
+            ),
+        ) as collect:
+            PipelineOrchestrator(container)._loop_evidence(
+                state,
+                _scoping(),
+                [hypothesis],
+                run,
+                MagicMock(span_id="loop-1"),
+            )
+
+        collect.assert_called_once()
+        assert collect.call_args.kwargs["mcp_clients"] == container.evidence_mcp_clients
+        assert state.evidence_map == {"h-1": "live evidence"}
+
+    def test_explicit_empty_precollected_evidence_still_blocks_live_lookup(self):
+        container = _make_container()
+        trace = MagicMock()
+        trace.span.return_value.__enter__.return_value = MagicMock()
+        run = _run_context(trace=trace)
+        hypothesis = _make_hypothesis("h-1")
+        state = ValidationLoopState(hypotheses=[hypothesis])
+
+        with patch(f"{_P}.run_evidence_collection") as collect:
+            PipelineOrchestrator(container, precollected_evidence="")._loop_evidence(
+                state,
+                _scoping(),
+                [hypothesis],
+                run,
+                MagicMock(span_id="loop-1"),
+            )
+
+        collect.assert_not_called()
+        assert state.evidence_map == {"h-1": ""}
+
+
 class TestProcessAlarmFullPipeline:
     """Test the full F1-F9 pipeline orchestration."""
 
@@ -144,6 +221,7 @@ class TestProcessAlarmFullPipeline:
         termination=None,
         notification_success=True,
         report_s3_key="reports/rca-1.md",
+        precollected_evidence=None,
     ):
         """Helper that patches all pipeline functions and runs process_alarm."""
         sr = _scoping()
@@ -247,7 +325,10 @@ class TestProcessAlarmFullPipeline:
         stack.append(notification_mock)
 
         try:
-            orchestrator = PipelineOrchestrator(container)
+            orchestrator = PipelineOrchestrator(
+                container,
+                precollected_evidence=precollected_evidence,
+            )
             result = orchestrator.process_alarm(_make_body())
             active["_container"] = container
             active["_result"] = result
@@ -266,6 +347,17 @@ class TestProcessAlarmFullPipeline:
         assert mocks["run_report_generation"].called
         assert mocks["run_playbook_generation"].called
         assert mocks["_result"] is True
+
+    def test_precollected_evidence_is_the_validation_map_and_skips_live_collection(self):
+        evidence = "[incident-observation] authoritative historical value"
+
+        mocks = self._run(precollected_evidence=evidence)
+
+        mocks["run_evidence_collection"].assert_not_called()
+        assert mocks["run_validation"].call_args.args[1] == {
+            "h-1": evidence,
+            "h-2": evidence,
+        }
 
     def test_completion_is_persisted_before_failed_notification_delivery(self):
         mocks = self._run(notification_success=False)

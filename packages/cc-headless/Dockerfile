@@ -45,7 +45,7 @@ COPY --from=builder /app/src /app/src
 COPY prompts/ ./prompts/
 COPY .claude/ ./.claude/
 COPY .claude-execution/ ./.claude-execution/
-COPY mcp-config.json execution-mcp-config.json ./
+COPY mcp-config.json model-eval-mcp-config.json execution-mcp-config.json ./
 COPY CLAUDE.md EXECUTION.md ./
 
 ENV PATH="/app/.venv/bin:$PATH"

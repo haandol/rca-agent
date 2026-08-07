@@ -55,6 +55,7 @@
     }
   ],
   "expectation": {
+    "requireConfirmedRootCause": true,
     "rootCauseTermGroups": [
       ["connection", "session", "커넥션", "세션"],
       [

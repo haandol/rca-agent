@@ -3,6 +3,7 @@
   "scenarioId": "deployed-connection-leak-vital-ingest",
   "engine": "cc-headless",
   "rootCause": "The task definition revision deployed to the Healthcare service turned on a read path whose database session is never closed, so each patient vital request leaked a connection and the pool drained gradually from the deployment onward while request volume stayed flat.",
+  "rootCauseConfirmed": true,
   "evidenceIds": [
     "vital-ingest-failures",
     "db-connections-climbing",

@@ -1,9 +1,9 @@
 """모델 평가 어댑터 — 시나리오 하나를 공용 분석 파이프라인으로 실행한다.
 
 이 진입점은 루트 시나리오의 ``executionModes`` 에 ``model-eval`` 이 명시된 경우만
-받는다. 시나리오가 제공한 관측을 알람 사유에 의도적으로 덧붙여 모델의 분석 결과를
-채점하므로, 배포 환경의 E2E 동작이나 증거 소스에서 관측을 찾아내는 능력을 검증하지
-않는다.
+받는다. 시나리오가 제공한 관측을 사고 시점의 권위 있는 사전수집 증거로 주입해 모델의
+분석 결과를 채점하므로, 배포 환경의 E2E 동작이나 현재 증거 소스에서 관측을 찾아내는
+능력을 검증하지 않는다.
 
 분석 로직은 다시 구현하지 않고 공용 ``PipelineOrchestrator`` 를 직접 호출한다. SQS
 소비, 구독, 재전달도 이 경로의 검증 대상이 아니다.
@@ -53,6 +53,14 @@ OBSERVATION_CITATION_INSTRUCTION = (
 )
 
 
+def _observation_lines(observations: list) -> list[str]:
+    return [
+        f"- [{item.get('id')}] ({item.get('source')}) {item.get('summary')}"
+        for item in observations
+        if isinstance(item, dict)
+    ]
+
+
 def _supports_model_eval(scenario: dict[str, Any]) -> bool:
     execution_modes = scenario.get("executionModes")
     return isinstance(execution_modes, list) and _MODEL_EVAL_MODE in execution_modes
@@ -74,15 +82,24 @@ def build_state_reason(state_reason: str, observations: list) -> str:
     이 식별자는 시나리오가 모델 평가에 제공하는 컨텍스트다. 관측이 없으면 원래 상태
     사유를 그대로 사용한다.
     """
-    lines = [
-        f"- [{item.get('id')}] ({item.get('source')}) {item.get('summary')}"
-        for item in observations
-        if isinstance(item, dict)
-    ]
+    lines = _observation_lines(observations)
     if not lines:
         return state_reason
     signals = "\n".join(lines)
     return f"{state_reason}\n\n관측된 신호:\n{signals}\n\n{OBSERVATION_CITATION_INSTRUCTION}"
+
+
+def build_precollected_evidence(observations: list) -> str:
+    """Render scenario observations as the validation stage's sole evidence."""
+    lines = _observation_lines(observations)
+    if not lines:
+        return ""
+    signals = "\n".join(lines)
+    return (
+        "다음은 사고 시점에 사전수집되어 이 평가에 제공된 권위 있는 증거다. "
+        "현재 시스템 상태로 대체하거나 보강하지 않는다.\n"
+        f"{signals}\n\n{OBSERVATION_CITATION_INSTRUCTION}"
+    )
 
 
 def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict[str, Any]:
@@ -257,7 +274,7 @@ def main(argv: list[str] | None = None) -> None:
         build_rca_id,
     )
     from rca_agent.config.settings import ENGINE
-    from rca_agent.di.app_container import AppContainer
+    from rca_agent.di.eval_container import EvalAppContainer
     from rca_agent.ports.dto.models import AlarmPayload, RcaSessionState
     from rca_agent.services.pipeline import PipelineOrchestrator
 
@@ -267,8 +284,11 @@ def main(argv: list[str] | None = None) -> None:
 
     with _stdout_reserved_for_the_result() as result_stream:
         # 평가는 큐를 소비하지 않으므로 queue_url 은 사용되지 않는다.
-        container = AppContainer("")
-        orchestrator = PipelineOrchestrator(container)
+        container = EvalAppContainer("")
+        orchestrator = PipelineOrchestrator(
+            container,
+            precollected_evidence=build_precollected_evidence(scenario.get("observations") or []),
+        )
 
         # process_alarm 의 False 는 "메시지를 ack 하지 말라"는 뜻이고, 알림 발행이 대기
         # 상태여도 False 가 된다. 평가는 알림 전달이 아니라 분석 결과를 채점하므로
@@ -297,6 +317,7 @@ def main(argv: list[str] | None = None) -> None:
             "scenarioId": scenario_id,
             "engine": ENGINE,
             "rootCause": _root_cause(notification),
+            "rootCauseConfirmed": notification.confirmed,
             "evidenceIds": _evidence_ids(corpus, scenario),
             "artifacts": _stages_reached(notification),
             "remediation": _remediation(_recorded_execution_steps(container, notification), notification),

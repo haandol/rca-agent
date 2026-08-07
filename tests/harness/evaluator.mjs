@@ -216,6 +216,13 @@ export function validateScenario(scenario) {
       'scenario.expectation.rejectedCauseTermGroups',
     );
   }
+  if (Object.hasOwn(expectation, 'requireConfirmedRootCause')) {
+    assert.equal(
+      typeof expectation.requireConfirmedRootCause,
+      'boolean',
+      'scenario.expectation.requireConfirmedRootCause must be a boolean',
+    );
+  }
   assert.equal(
     Object.hasOwn(scenario, 'engineSamples'),
     false,
@@ -240,6 +247,11 @@ export function validateResult(result) {
     'result.engine must be a kebab-case slug',
   );
   assertString(result.rootCause, 'result.rootCause');
+  assert.equal(
+    typeof result.rootCauseConfirmed,
+    'boolean',
+    'result.rootCauseConfirmed must be a boolean',
+  );
   assertStringArray(result.evidenceIds, 'result.evidenceIds');
   assertStringArray(result.artifacts, 'result.artifacts');
   assertString(result.remediation?.summary, 'result.remediation.summary');
@@ -363,7 +375,10 @@ export function evaluateScenario(scenario, result) {
     : 0;
 
   const dimensions = {
-    rootCauseIdentified: rootCauseCoverage === 1,
+    rootCauseIdentified:
+      rootCauseCoverage === 1 &&
+      (!scenario.expectation.requireConfirmedRootCause ||
+        result.rootCauseConfirmed === true),
     evidenceLinked: includesAll(
       result.evidenceIds,
       scenario.expectation.requiredEvidenceIds,

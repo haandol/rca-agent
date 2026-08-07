@@ -25,9 +25,10 @@
     }
   ],
   "expectation": {
+    "requireConfirmedRootCause": true,
     "rootCauseTermGroups": [
-      ["iam", "task role", "policy"],
-      ["accessdenied", "permission", "startquery"]
+      ["iam", "task role", "policy", "태스크 역할", "정책"],
+      ["accessdenied", "permission", "startquery", "접근 거부", "권한"]
     ],
     "requiredEvidenceIds": [
       "access-denied-logs",
@@ -42,12 +43,12 @@
       "playbook"
     ],
     "remediationTermGroups": [
-      ["policy", "permission", "role"],
-      ["restore", "startquery", "least privilege"]
+      ["policy", "permission", "role", "정책", "권한", "역할"],
+      ["restore", "startquery", "least privilege", "복원", "최소 권한"]
     ],
     "semanticTermGroups": [
       ["logs:startquery", "startquery"],
-      ["least privilege"]
+      ["least privilege", "최소 권한"]
     ]
   }
 }

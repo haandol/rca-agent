@@ -3,6 +3,7 @@
   "scenarioId": "deployment-query-regression",
   "engine": "cc-headless",
   "rootCause": "A code change in the latest release performs per-sensor queries, creating an N+1 pattern.",
+  "rootCauseConfirmed": true,
   "evidenceIds": [
     "repository-diff",
     "deployment-correlation",

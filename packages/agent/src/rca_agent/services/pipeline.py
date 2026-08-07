@@ -151,9 +151,19 @@ class ShutdownRequestedError(Exception):
 
 
 class PipelineOrchestrator:
-    def __init__(self, container, shutdown_event: Event | None = None):
+    def __init__(
+        self,
+        container,
+        shutdown_event: Event | None = None,
+        *,
+        precollected_evidence: str | None = None,
+    ):
         self._container = container
         self._shutdown_event = shutdown_event or Event()
+        # ``None`` keeps the operational discovery path. Any string, including
+        # an empty one, means the caller owns the evidence boundary and live
+        # evidence collection must not supplement or replace it.
+        self._precollected_evidence = precollected_evidence
 
     def _check_shutdown(self) -> None:
         if self._shutdown_event.is_set():
@@ -457,6 +467,7 @@ class PipelineOrchestrator:
     ) -> ValidationLoopState:
         trace = run.trace
         state = ValidationLoopState(hypotheses=hypotheses)
+        self._seed_precollected_evidence(state, hypotheses)
         state.timeline.append(f"Alarm received: {alarm.alarm_name}")
         state.timeline.append(f"Scoping complete: severity={scoping_result.initial_severity}")
         state.timeline.append(f"Initial hypotheses: {len(hypotheses)}")
@@ -640,6 +651,7 @@ class PipelineOrchestrator:
     ) -> None:
         c = self._container
         trace = run.trace
+        self._seed_precollected_evidence(state, active_hypotheses)
         c.session_store.update_state(
             run.rca_id,
             RcaSessionState.EVIDENCE_COLLECTION,
@@ -678,6 +690,16 @@ class PipelineOrchestrator:
         state.timeline.append(
             f"Loop {state.loop_count}: evidence for {len(new_hypotheses)} hypotheses (beam={len(active_hypotheses)})"
         )
+
+    def _seed_precollected_evidence(
+        self,
+        state: ValidationLoopState,
+        hypotheses: list[Hypothesis],
+    ) -> None:
+        if self._precollected_evidence is None:
+            return
+        for hypothesis in hypotheses:
+            state.evidence_map[hypothesis.hypothesis_id] = self._precollected_evidence
 
     def _loop_validation(
         self,

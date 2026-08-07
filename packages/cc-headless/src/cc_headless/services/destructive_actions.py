@@ -1,11 +1,14 @@
 """되돌릴 수 없는 조치의 판정.
 
 실행 경계는 대상 리소스를 제한하지 않는다. 대신 되돌릴 수 없는 작업을 거부한다.
-판정 기준은 제어 평면 작업 이름의 어휘이며, 이 모듈이 그 어휘의 단일 소스다.
+실행 명령 판정 기준은 제어 평면 작업 이름의 어휘이며, 이 모듈이 그 어휘의 단일
+소스다.
 
 두 소비처가 있다. 분석 단계는 플레이북 절차의 자연어 서술에서 파괴적 의도를 찾아
-평가에 쓰고, 실행 단계는 실제 명령에서 작업 이름을 추출해 실행 여부를 결정한다.
-같은 어휘를 쓰지 않으면 분석이 안전하다고 판정한 절차가 실행에서 차단된다.
+평가에 쓰고, 실행 단계는 실제 명령에서 작업 이름을 추출해 실행 여부를 결정한다. 자연어
+의미 판정은 명령 거부 동사와 분리한다. `close`, `release`, `disable` 같은 제어 평면
+동사는 보수적으로 실행을 거부하지만, 세션 정리나 기능 비활성화 절차 자체는 되돌릴 수
+있으므로 평가에서 파괴적으로 보지 않는다.
 """
 
 from __future__ import annotations
@@ -107,8 +110,28 @@ _SHELL_COMPOSITION = re.compile(r"[;&|`]|\$\(|\|\||&&|>\s|>>")
 # awscli 형태: `aws <service> <kebab-operation> ...`
 _AWSCLI_CALL = re.compile(r"\baws\s+([a-z0-9-]+)\s+([a-z0-9-]+)")
 
-# 자연어 서술에서 파괴적 의도를 찾기 위한 한국어 표현.
-_DESTRUCTIVE_KOREAN = (
+IRREVERSIBLE_ACTION_ENGLISH: frozenset[str] = frozenset(
+    {
+        "delete",
+        "deletion",
+        "terminate",
+        "termination",
+        "destroy",
+        "destruction",
+        "purge",
+        "erase",
+        "remove",
+        "removal",
+        "revoke",
+        "deregister",
+        "wipe",
+        "truncate",
+        "drop",
+        "shutdown",
+        "decommission",
+    }
+)
+IRREVERSIBLE_ACTION_KOREAN: tuple[str, ...] = (
     "삭제",
     "제거",
     "지운다",
@@ -117,10 +140,38 @@ _DESTRUCTIVE_KOREAN = (
     "폐기",
     "종료한다",
     "종료하고",
-    "회수",
-    "박탈",
+    "말소",
+    "영구 제거",
     "드롭",
-    "비활성화",
+)
+
+_IRREVERSIBLE_ACTION_ENGLISH_PATTERN = re.compile(
+    rf"\b(?:{'|'.join(re.escape(term) for term in sorted(IRREVERSIBLE_ACTION_ENGLISH))})\b",
+    re.IGNORECASE,
+)
+
+# 연결과 세션의 종료는 리소스 파기가 아니라 장애 복구를 위한 되돌릴 수 있는 정리다.
+_REVERSIBLE_SESSION_ACTION_ENGLISH = re.compile(
+    r"\b(?:"
+    r"(?:close|release|terminate|remove)\s+"
+    r"(?:(?:the|a|an)\s+)?(?:(?:stale|idle|leaked|database|pooled|open)\s+)*"
+    r"(?:connections?|sessions?)(?:\s+(?:and|or)\s+(?:connections?|sessions?))?"
+    r"|(?:closure|release|termination|removal)\s+of\s+"
+    r"(?:(?:the|a|an)\s+)?(?:(?:stale|idle|leaked|database|pooled|open)\s+)*"
+    r"(?:connections?|sessions?)(?:\s+(?:and|or)\s+(?:connections?|sessions?))?"
+    r"|(?:connections?|sessions?)\s+(?:closure|close|release|termination|removal)"
+    r")\b",
+    re.IGNORECASE,
+)
+_REVERSIBLE_SESSION_ACTION_KOREAN = re.compile(
+    r"(?:연결|커넥션)(?:\s*풀)?(?:을|를)?\s*"
+    r"(?:닫(?:는다|기|고)?|해제(?:한다|하기|하고)?|종료(?:한다|하기|하고|시킨다|시키기|시키고)?)"
+    r"|세션(?:을|를)?\s*"
+    r"(?:닫(?:는다|기|고)?|해제(?:한다|하기|하고)?|종료(?:한다|하기|하고|시킨다|시키기|시키고)?)"
+)
+_IRREVERSIBLE_KOREAN_RESOURCE_TERMINATION = re.compile(
+    r"(?:EC2|RDS|인스턴스|클러스터|데이터베이스|테이블|리소스|계정).{0,20}(?:종료|폐쇄)",
+    re.IGNORECASE,
 )
 
 
@@ -194,8 +245,10 @@ def describes_destructive_action(action: object) -> bool:
     """
     if not isinstance(action, str) or not action.strip():
         return False
-    lowered = action.lower()
-    for verb in DESTRUCTIVE_OPERATION_VERBS:
-        if re.search(rf"\b{verb}\b", lowered):
-            return True
-    return any(token in action for token in _DESTRUCTIVE_KOREAN)
+    without_reversible_sessions = _REVERSIBLE_SESSION_ACTION_ENGLISH.sub("", action)
+    without_reversible_sessions = _REVERSIBLE_SESSION_ACTION_KOREAN.sub("", without_reversible_sessions)
+    if _IRREVERSIBLE_ACTION_ENGLISH_PATTERN.search(without_reversible_sessions):
+        return True
+    return any(token in without_reversible_sessions for token in IRREVERSIBLE_ACTION_KOREAN) or bool(
+        _IRREVERSIBLE_KOREAN_RESOURCE_TERMINATION.search(without_reversible_sessions)
+    )

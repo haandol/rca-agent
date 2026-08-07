@@ -20,9 +20,10 @@
     }
   ],
   "expectation": {
+    "requireConfirmedRootCause": true,
     "rootCauseTermGroups": [
-      ["connection pool", "database pool"],
-      ["exhausted", "saturated", "maximum"]
+      ["connection pool", "database pool", "커넥션 풀", "연결 풀"],
+      ["exhausted", "saturated", "maximum", "고갈", "포화", "최대", "상한"]
     ],
     "requiredEvidenceIds": ["db-connections-maxed", "pool-timeout-logs"],
     "requiredArtifacts": [
@@ -33,12 +34,21 @@
       "playbook"
     ],
     "remediationTermGroups": [
-      ["pool", "connection"],
-      ["limit", "timeout", "capacity"]
+      ["pool", "connection", "풀", "커넥션", "연결"],
+      [
+        "limit",
+        "timeout",
+        "capacity",
+        "제한",
+        "한도",
+        "타임아웃",
+        "용량",
+        "상한"
+      ]
     ],
     "semanticTermGroups": [
-      ["traffic", "requests"],
-      ["bounded", "database capacity"]
+      ["traffic", "requests", "트래픽", "요청"],
+      ["bounded", "database capacity", "제한", "상한", "데이터베이스 용량"]
     ]
   }
 }

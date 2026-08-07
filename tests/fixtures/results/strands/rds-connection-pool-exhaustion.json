@@ -3,6 +3,7 @@
   "scenarioId": "rds-connection-pool-exhaustion",
   "engine": "strands",
   "rootCause": "The database connection pool was exhausted after traffic exceeded its maximum capacity.",
+  "rootCauseConfirmed": true,
   "evidenceIds": ["db-connections-maxed", "pool-timeout-logs"],
   "artifacts": ["scoping", "hypotheses", "validation", "report", "playbook"],
   "remediation": {

@@ -27,7 +27,7 @@ logger = structlog.get_logger()
 _CANCEL_CHECK_INTERVAL = 15
 
 
-def _find_file(name: str) -> str:
+def find_harness_file(name: str) -> str:
     current = Path(__file__).resolve().parent
     for parent in [current] + list(current.parents):
         candidate = parent / name
@@ -36,7 +36,7 @@ def _find_file(name: str) -> str:
     return f"/app/{name}"
 
 
-_MCP_CONFIG_PATH = _find_file("mcp-config.json")
+_MCP_CONFIG_PATH = find_harness_file("mcp-config.json")
 _WORKSPACE_SOURCE = Path(_MCP_CONFIG_PATH).parent
 _PACKAGE_ROOT_PLACEHOLDER = "{{PACKAGE_ROOT}}"
 _ROOT_AGENT = "orchestrator"
@@ -98,6 +98,7 @@ class CcSubprocessRunner(CcRunnerPort):
         *,
         execution_token: str,
         mcp_config: str | None = None,
+        allowed_tools: tuple[str, ...] | None = None,
         cancel_checker: Callable[[], bool] | None = None,
         rca_id: str | None = None,
         claim_token: str | None = None,
@@ -128,7 +129,7 @@ class CcSubprocessRunner(CcRunnerPort):
                 "--tools",
                 ",".join(_BUILTIN_TOOLS),
                 "--allowedTools",
-                ",".join(_ALLOWED_TOOLS),
+                ",".join(_ALLOWED_TOOLS if allowed_tools is None else allowed_tools),
             ]
 
             logger.info("cc_cli_started", mcp_config=resolved_mcp_config)

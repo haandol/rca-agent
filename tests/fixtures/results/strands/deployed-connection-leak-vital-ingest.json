@@ -3,6 +3,7 @@
   "scenarioId": "deployed-connection-leak-vital-ingest",
   "engine": "strands",
   "rootCause": "A deployed task definition revision enabled the leaky read path, so each patient vital request acquired a database session that was never returned and connections grew steadily until the pool was exhausted.",
+  "rootCauseConfirmed": true,
   "evidenceIds": [
     "vital-ingest-failures",
     "db-connections-climbing",

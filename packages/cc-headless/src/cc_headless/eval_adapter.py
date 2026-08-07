@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, NoReturn
 
-from cc_headless.adapters.secondary.cc.cc_subprocess_runner import CcSubprocessRunner
+from cc_headless.adapters.secondary.cc.cc_subprocess_runner import CcSubprocessRunner, find_harness_file
 from cc_headless.config.settings import ENGINE
 from cc_headless.ports.dto.models import AlarmContext
 from cc_headless.services.artifact_validation import (
@@ -30,6 +30,12 @@ from cc_headless.services.prompt_builder import build_prompt
 
 _SCHEMA_VERSION = 1
 _MODEL_EVAL_MODE = "model-eval"
+_MODEL_EVAL_MCP_CONFIG_PATH = find_harness_file("model-eval-mcp-config.json")
+_MODEL_EVAL_ALLOWED_TOOLS = (
+    "Agent",
+    "Skill",
+    "mcp__rca-progress__save_artifact",
+)
 _ARTIFACT_STAGES = {
     "scoping.json": "scoping",
     "hypotheses.json": "hypotheses",
@@ -49,6 +55,12 @@ OBSERVATION_CITATION_INSTRUCTION = (
     "각 신호는 `[식별자] 요약` 형식이다. 어떤 신호를 결론의 근거로 사용했다면 "
     "산출물의 해당 증거 항목에 그 식별자를 원문 그대로 함께 적는다. 근거로 쓰지 않은 "
     "신호의 식별자는 적지 않는다."
+)
+MODEL_EVAL_EVIDENCE_INSTRUCTION = (
+    "모델 평가 지시: 아래 제공 관측만 사고 분석의 권위 있는 증거로 사용한다. 제공 관측은 "
+    "현재 상태가 아니라 사고 시점의 스냅샷이다. 현재(live) AWS 또는 MCP 조회를 시도하지 "
+    "않는다. 현재 상태나 live 조회 실패를 근거로 제공 관측을 반박하거나 무효화하거나 "
+    "신뢰도를 낮추지 않는다."
 )
 
 
@@ -78,10 +90,15 @@ def build_state_reason(state_reason: str, observations: list) -> str:
         for item in observations
         if isinstance(item, dict)
     ]
-    if not lines:
-        return state_reason
-    signals = "\n".join(lines)
-    return f"{state_reason}\n\n관측된 신호:\n{signals}\n\n{OBSERVATION_CITATION_INSTRUCTION}"
+    sections = [state_reason, MODEL_EVAL_EVIDENCE_INSTRUCTION]
+    if lines:
+        sections.extend(
+            [
+                f"사고 시점 제공 관측:\n{'\n'.join(lines)}",
+                OBSERVATION_CITATION_INSTRUCTION,
+            ]
+        )
+    return "\n\n".join(section for section in sections if section)
 
 
 def _load_scenario(argv: list[str]) -> dict[str, Any]:
@@ -92,10 +109,12 @@ def _load_scenario(argv: list[str]) -> dict[str, Any]:
 
 def _alarm_for(scenario: dict[str, Any]) -> AlarmContext:
     alarm = scenario.get("alarm") or {}
-    observations = (scenario.get("observations") or []) if _supports_model_eval(scenario) else []
+    state_reason = alarm.get("stateReason", "")
+    if _supports_model_eval(scenario):
+        state_reason = build_state_reason(state_reason, scenario.get("observations") or [])
     return AlarmContext(
         alarm_name=alarm.get("name", "EvalScenarioAlarm"),
-        state_reason=build_state_reason(alarm.get("stateReason", ""), observations),
+        state_reason=state_reason,
         metric_name=alarm.get("metric"),
     )
 
@@ -206,6 +225,8 @@ def main(argv: list[str] | None = None) -> None:
             result = CcSubprocessRunner().run(
                 build_prompt(_alarm_for(scenario)),
                 execution_token=context.token,
+                mcp_config=_MODEL_EVAL_MCP_CONFIG_PATH,
+                allowed_tools=_MODEL_EVAL_ALLOWED_TOOLS,
             )
             if not result.success:
                 _fail(f"harness run failed: {result.result}")
@@ -220,6 +241,7 @@ def main(argv: list[str] | None = None) -> None:
                 "scenarioId": scenario_id,
                 "engine": ENGINE,
                 "rootCause": _root_cause(artifacts),
+                "rootCauseConfirmed": artifacts.confirmed,
                 "evidenceIds": _evidence_ids(artifact_dir, scenario),
                 "artifacts": _artifact_stages(artifact_dir),
                 "remediation": _remediation(artifacts),

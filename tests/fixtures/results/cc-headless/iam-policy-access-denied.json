@@ -3,6 +3,7 @@
   "scenarioId": "iam-policy-access-denied",
   "engine": "cc-headless",
   "rootCause": "A task role policy change caused AccessDenied by omitting logs:StartQuery.",
+  "rootCauseConfirmed": true,
   "evidenceIds": [
     "policy-change-event",
     "missing-action-diff",

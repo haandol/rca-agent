@@ -230,6 +230,20 @@ def test_runner_exposes_only_agent_skill_and_strict_mcp_tools(monkeypatch):
     assert allowed.isdisjoint(dangerous)
 
 
+def test_runner_can_narrow_tools_for_one_run_without_changing_operational_defaults(monkeypatch):
+    calls = _capture_processes(monkeypatch)
+    model_eval_tools = ("Agent", "Skill", "mcp__rca-progress__save_artifact")
+
+    CcSubprocessRunner().run(
+        "investigate supplied observations",
+        execution_token=EXECUTION_TOKEN,
+        allowed_tools=model_eval_tools,
+    )
+
+    args = calls[0]["args"]
+    assert tuple(args[args.index("--allowedTools") + 1].split(",")) == model_eval_tools
+
+
 def test_runner_uses_restricted_orchestrator_as_the_root_agent(monkeypatch):
     calls = _capture_processes(monkeypatch)
 

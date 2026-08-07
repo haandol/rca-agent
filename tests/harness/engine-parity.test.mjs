@@ -46,32 +46,39 @@ function pythonStringLiterals(source, name) {
   return new Set([...body.matchAll(/"([^"]+)"/g)].map((match) => match[1]));
 }
 
-// The analysis side scores whether a proposed procedure is safe and the
-// execution side decides whether a command runs. If those two vocabularies
-// drift, analysis marks a procedure safe that execution then refuses — or worse,
-// the reverse. The packages cannot import from each other, so this test is what
-// keeps them identical.
-test('both engines judge destructive actions with the same verb vocabulary', async () => {
-  const [agent, ccHeadless] = await Promise.all([
-    readRepositoryFile(AGENT_DESTRUCTIVE),
-    readRepositoryFile(CC_DESTRUCTIVE),
-  ]);
-
-  assert.deepEqual(
-    pythonStringLiterals(agent, 'DESTRUCTIVE_OPERATION_VERBS'),
-    pythonStringLiterals(ccHeadless, 'DESTRUCTIVE_OPERATION_VERBS'),
+// Execution command classification is deliberately stricter than natural
+// language scoring. Reversible procedures may still use operations that the
+// command boundary conservatively refuses to execute automatically.
+test('the execution command gate stays stricter than natural-language scoring', async () => {
+  const ccHeadless = await readRepositoryFile(CC_DESTRUCTIVE);
+  const commandVerbs = pythonStringLiterals(
+    ccHeadless,
+    'DESTRUCTIVE_OPERATION_VERBS',
   );
+  const naturalLanguageTerms = pythonStringLiterals(
+    ccHeadless,
+    'IRREVERSIBLE_ACTION_ENGLISH',
+  );
+
+  for (const reversibleVerb of ['close', 'release', 'disable']) {
+    assert.equal(commandVerbs.has(reversibleVerb), true);
+    assert.equal(naturalLanguageTerms.has(reversibleVerb), false);
+  }
 });
 
-test('both engines recognise the same Korean destructive phrasing', async () => {
+test('both engines recognise the same irreversible natural-language terms', async () => {
   const [agent, ccHeadless] = await Promise.all([
     readRepositoryFile(AGENT_DESTRUCTIVE),
     readRepositoryFile(CC_DESTRUCTIVE),
   ]);
 
   assert.deepEqual(
-    pythonStringLiterals(agent, '_DESTRUCTIVE_KOREAN'),
-    pythonStringLiterals(ccHeadless, '_DESTRUCTIVE_KOREAN'),
+    pythonStringLiterals(agent, 'IRREVERSIBLE_ACTION_ENGLISH'),
+    pythonStringLiterals(ccHeadless, 'IRREVERSIBLE_ACTION_ENGLISH'),
+  );
+  assert.deepEqual(
+    pythonStringLiterals(agent, 'IRREVERSIBLE_ACTION_KOREAN'),
+    pythonStringLiterals(ccHeadless, 'IRREVERSIBLE_ACTION_KOREAN'),
   );
 });
 

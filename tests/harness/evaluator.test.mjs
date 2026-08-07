@@ -40,6 +40,7 @@ test('scenario contract is engine-neutral and fixtures are physically separate',
   for (const scenario of scenarios) {
     validateScenario(scenario);
     assert.equal(Object.hasOwn(scenario, 'engineSamples'), false);
+    assert.equal(scenario.expectation.requireConfirmedRootCause, true);
     assert.ok(scenario.expectation.semanticTermGroups.length > 0);
     assert.ok(scenario.executionModes.includes('model-eval'));
     assert.ok(
@@ -111,6 +112,22 @@ test('mandatory gate rejects missing evidence and artifacts', async () => {
     Object.keys(evaluation.dimensions).sort(),
     [...REQUIRED_DIMENSIONS].sort(),
   );
+});
+
+test('mandatory gate rejects an explicitly unconfirmed matching root cause', async () => {
+  const [scenario] = await loadScenarios(scenariosDirectory);
+  const result = (await loadResults(fixturesDirectory)).find(
+    (candidate) => candidate.scenarioId === scenario.id,
+  );
+
+  const evaluation = evaluateScenario(scenario, {
+    ...result,
+    rootCauseConfirmed: false,
+  });
+
+  assert.equal(evaluation.passed, false);
+  assert.equal(evaluation.dimensions.rootCauseIdentified, false);
+  assert.equal(evaluation.semanticComponents.rootCauseCoverage, 1);
 });
 
 test('result contract rejects remediation safety claims without concrete safeguards', async () => {
@@ -256,10 +273,20 @@ test('each adapter builds the alarm reason with ids and the citation ask', async
   );
 
   for (const source of sources) {
-    assert.match(source, /def build_state_reason\(/);
+    const functionStart = source.indexOf('def build_state_reason(');
+    assert.notEqual(
+      functionStart,
+      -1,
+      'each adapter must build the alarm reason',
+    );
+    const nextFunction = source.indexOf('\n\ndef ', functionStart + 1);
+    const functionBody = source.slice(
+      functionStart,
+      nextFunction === -1 ? undefined : nextFunction,
+    );
     // The id must be bracketed so the instruction's `[식별자] 요약` shape holds.
     assert.match(source, /\[\{item\.get\('id'\)\}\]/);
-    assert.match(source, /OBSERVATION_CITATION_INSTRUCTION\}/);
+    assert.match(functionBody, /OBSERVATION_CITATION_INSTRUCTION/);
   }
 });
 
