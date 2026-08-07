@@ -72,6 +72,20 @@ def test_reversible_operational_actions_are_not_scored_as_destructive(action: st
 @pytest.mark.parametrize(
     "action",
     [
+        "기존 정책을 삭제하지 않고 누락된 권한만 추가한다",
+        "Do not delete the policy; add only logs:StartQuery",
+        "without deleting the role, restore the permission",
+        "스냅샷 삭제를 금지하고 태그만 갱신한다",
+        "Never destroy the database; restore its configuration",
+    ],
+)
+def test_explicitly_negated_irreversible_actions_are_not_scored_as_destructive(action: str) -> None:
+    assert describes_destructive_action(action) is False
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
         "delete the RDS instance",
         "deletion of the cluster",
         "terminate the EC2 instance",
@@ -102,6 +116,18 @@ def test_clearly_irreversible_actions_are_scored_as_destructive(action: str) -> 
 def test_reversible_phrase_does_not_hide_a_later_irreversible_action() -> None:
     action = "terminate the stale session, then delete the RDS instance"
 
+    assert describes_destructive_action(action) is True
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        "세션을 종료하되 RDS 인스턴스를 삭제한다",
+        "do not delete the snapshot, then terminate the instance",
+        "정책을 삭제하지 않고 오래된 클러스터를 종료한다",
+    ],
+)
+def test_negated_action_does_not_hide_a_later_irreversible_action(action: str) -> None:
     assert describes_destructive_action(action) is True
 
 

@@ -47,7 +47,16 @@
       ["query", "deployment", "release", "쿼리", "배포", "릴리스"]
     ],
     "semanticTermGroups": [
-      ["sensor", "response path", "센서", "응답 경로"],
+      [
+        "sensor",
+        "response path",
+        "response loop",
+        "센서",
+        "응답 경로",
+        "응답 루프",
+        "응답 처리 루프",
+        "반복문"
+      ],
       ["batch", "batch-query", "배치", "일괄 조회"]
     ]
   }

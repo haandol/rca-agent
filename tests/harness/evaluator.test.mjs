@@ -130,6 +130,28 @@ test('mandatory gate rejects an explicitly unconfirmed matching root cause', asy
   assert.equal(evaluation.semanticComponents.rootCauseCoverage, 1);
 });
 
+test('competing causes are rejected only when asserted, not when ruled out', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployed-connection-leak-vital-ingest',
+  );
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === scenario.id,
+  );
+
+  const ruledOut = evaluateScenario(scenario, {
+    ...result,
+    rootCause: `${result.rootCause} LOG_LEVEL 변경은 원인에서 제외되었다.`,
+  });
+  assert.equal(ruledOut.dimensions.competingCausesRejected, true);
+
+  const asserted = evaluateScenario(scenario, {
+    ...result,
+    rootCause: `${result.rootCause} LOG_LEVEL 변경도 장애 원인이다.`,
+  });
+  assert.equal(asserted.dimensions.competingCausesRejected, false);
+});
+
 test('result contract rejects remediation safety claims without concrete safeguards', async () => {
   const [result] = await loadResults(fixturesDirectory);
   const unsafeClaim = {

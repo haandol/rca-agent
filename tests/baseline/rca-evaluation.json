@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "approvedAt": "2026-08-07T09:25:14.456Z",
+  "approvedAt": "2026-08-07T12:59:21.974Z",
   "engines": ["cc-headless", "strands"],
   "contractInputs": [
     "tests/harness/evaluator.mjs",
@@ -20,7 +20,7 @@
     "packages/agent/src/rca_agent/services/destructive_actions.py",
     "packages/cc-headless/src/cc_headless/services/destructive_actions.py"
   ],
-  "inputDigest": "sha256:0bbb4e06296ef796c087cdf1d565718aa6073080a4925f33ed84cb221631f874",
+  "inputDigest": "sha256:95feeb93005583017853b57aef3370b4271cf61696ad1316b9843143734b7f69",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/eval_adapter.py",

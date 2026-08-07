@@ -4,7 +4,11 @@
   "engine": "strands",
   "rootCause": "The database connection pool was exhausted after traffic exceeded its maximum capacity.",
   "rootCauseConfirmed": true,
-  "evidenceIds": ["db-connections-maxed", "pool-timeout-logs"],
+  "evidenceIds": [
+    "db-connections-maxed",
+    "pool-timeout-logs",
+    "request-concurrency-over-pool-capacity"
+  ],
   "artifacts": ["scoping", "hypotheses", "validation", "report", "playbook"],
   "remediation": {
     "summary": "Restore service by reducing pool wait time and raising the connection limit within database capacity.",

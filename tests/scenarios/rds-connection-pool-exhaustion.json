@@ -17,6 +17,11 @@
       "id": "pool-timeout-logs",
       "source": "logs",
       "summary": "Requests failed while waiting for a connection from the application pool."
+    },
+    {
+      "id": "request-concurrency-over-pool-capacity",
+      "source": "cloudwatch",
+      "summary": "Request concurrency exceeded the configured application pool capacity while database CPU and storage remained healthy."
     }
   ],
   "expectation": {
@@ -25,7 +30,11 @@
       ["connection pool", "database pool", "커넥션 풀", "연결 풀"],
       ["exhausted", "saturated", "maximum", "고갈", "포화", "최대", "상한"]
     ],
-    "requiredEvidenceIds": ["db-connections-maxed", "pool-timeout-logs"],
+    "requiredEvidenceIds": [
+      "db-connections-maxed",
+      "pool-timeout-logs",
+      "request-concurrency-over-pool-capacity"
+    ],
     "requiredArtifacts": [
       "scoping",
       "hypotheses",
@@ -48,7 +57,19 @@
     ],
     "semanticTermGroups": [
       ["traffic", "requests", "트래픽", "요청"],
-      ["bounded", "database capacity", "제한", "상한", "데이터베이스 용량"]
+      [
+        "bounded",
+        "database capacity",
+        "pool capacity",
+        "max_size",
+        "max_connections",
+        "제한",
+        "한도",
+        "상한",
+        "데이터베이스 용량",
+        "풀 용량",
+        "설정 용량"
+      ]
     ]
   }
 }

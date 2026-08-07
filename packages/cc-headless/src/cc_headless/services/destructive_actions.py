@@ -150,6 +150,61 @@ _IRREVERSIBLE_ACTION_ENGLISH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# 명시적으로 금지된 비가역 동작은 절차가 요구하는 조치가 아니다. 부정 표현과 바로
+# 결합한 동작만 제거해, 같은 문장 뒤의 별도 비가역 동작은 계속 탐지한다.
+_IRREVERSIBLE_ACTION_ENGLISH_NEGATION_TERMS = (
+    r"delet(?:e|ion|ing)",
+    r"terminat(?:e|ion|ing)",
+    r"destroy(?:ed|ing)?",
+    r"destruct(?:ion|ive)",
+    r"purg(?:e|ing)",
+    r"eras(?:e|ing)",
+    r"remov(?:e|al|ing)",
+    r"revok(?:e|ing)",
+    r"deregister(?:ed|ing)?",
+    r"wip(?:e|ing)",
+    r"truncat(?:e|ion|ing)",
+    r"dropp?(?:ed|ing)?",
+    r"shut(?:down|ting\s+down)",
+    r"decommission(?:ed|ing)?",
+)
+_IRREVERSIBLE_ACTION_ENGLISH_NEGATION_PATTERN = "|".join(_IRREVERSIBLE_ACTION_ENGLISH_NEGATION_TERMS)
+_NEGATED_IRREVERSIBLE_ACTION_ENGLISH = re.compile(
+    rf"\b(?:"
+    rf"(?:(?:do|does|did|must|should|shall|will|would|can|could|may|might)\s+not"
+    rf"|(?:do|does|did|must|should|shall|will|would|can|could|may|might)n['’]t"
+    rf"|never|without|avoid(?:s|ed|ing)?)\s+"
+    rf"(?:{_IRREVERSIBLE_ACTION_ENGLISH_NEGATION_PATTERN})"
+    rf"|(?:{_IRREVERSIBLE_ACTION_ENGLISH_NEGATION_PATTERN})\s+"
+    rf"(?:is|are|was|were|must\s+be|should\s+be)\s+"
+    rf"(?:not\s+allowed|prohibited|forbidden)"
+    rf")\b",
+    re.IGNORECASE,
+)
+
+_IRREVERSIBLE_ACTION_KOREAN_NEGATION_STEMS = (
+    "영구 제거",
+    "삭제",
+    "제거",
+    "지우",
+    "파기",
+    "폐기",
+    "종료",
+    "말소",
+    "드롭",
+)
+_NEGATED_IRREVERSIBLE_ACTION_KOREAN = re.compile(
+    rf"(?:{'|'.join(re.escape(term) for term in _IRREVERSIBLE_ACTION_KOREAN_NEGATION_STEMS)})"
+    r"(?:을|를|은|는)?\s*"
+    r"(?:"
+    r"하지(?:는)?\s*(?:않(?:고|는다|도록|아야|을|은)?|말(?:고|라|아야)?|못(?:한다|하도록)?)"
+    r"|해\s*서는\s*안\s*된다"
+    r"|하면\s*안\s*된다"
+    r"|없이"
+    r"|금지(?:한다|된다|해야\s*한다)?"
+    r")"
+)
+
 # 연결과 세션의 종료는 리소스 파기가 아니라 장애 복구를 위한 되돌릴 수 있는 정리다.
 _REVERSIBLE_SESSION_ACTION_ENGLISH = re.compile(
     r"\b(?:"
@@ -247,8 +302,10 @@ def describes_destructive_action(action: object) -> bool:
         return False
     without_reversible_sessions = _REVERSIBLE_SESSION_ACTION_ENGLISH.sub("", action)
     without_reversible_sessions = _REVERSIBLE_SESSION_ACTION_KOREAN.sub("", without_reversible_sessions)
-    if _IRREVERSIBLE_ACTION_ENGLISH_PATTERN.search(without_reversible_sessions):
+    without_negated_actions = _NEGATED_IRREVERSIBLE_ACTION_ENGLISH.sub("", without_reversible_sessions)
+    without_negated_actions = _NEGATED_IRREVERSIBLE_ACTION_KOREAN.sub("", without_negated_actions)
+    if _IRREVERSIBLE_ACTION_ENGLISH_PATTERN.search(without_negated_actions):
         return True
-    return any(token in without_reversible_sessions for token in IRREVERSIBLE_ACTION_KOREAN) or bool(
-        _IRREVERSIBLE_KOREAN_RESOURCE_TERMINATION.search(without_reversible_sessions)
+    return any(token in without_negated_actions for token in IRREVERSIBLE_ACTION_KOREAN) or bool(
+        _IRREVERSIBLE_KOREAN_RESOURCE_TERMINATION.search(without_negated_actions)
     )

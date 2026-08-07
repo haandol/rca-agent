@@ -61,6 +61,9 @@ def test_natural_language_contract_uses_the_shared_irreversible_members():
         "유휴 데이터베이스 세션을 종료하고 기능 플래그를 비활성화한다.",
         "누수된 커넥션을 해제하고 연결 수를 확인한다.",
         "연결 닫기 후 지표를 확인한다.",
+        "기존 정책을 삭제하지 않고 누락된 권한만 추가한다.",
+        "Do not delete the policy; add only logs:StartQuery.",
+        "without deleting the role, restore the permission",
     ],
 )
 def test_reversible_natural_language_procedures_are_not_destructive(action):
@@ -84,6 +87,8 @@ def test_reversible_natural_language_procedures_are_not_destructive(action):
         "리소스를 영구 제거한다.",
         "인증서를 말소한다.",
         "세션을 종료하고 RDS 리소스를 삭제한다.",
+        "세션을 종료하되 RDS 인스턴스를 삭제한다.",
+        "do not delete the snapshot, then terminate the instance",
     ],
 )
 def test_obviously_destructive_natural_language_procedures_remain_unsafe(action):

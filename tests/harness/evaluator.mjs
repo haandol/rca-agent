@@ -90,6 +90,21 @@ function termGroupCoverage(text, groups) {
   return matched / groups.length;
 }
 
+const REJECTION_MARKER =
+  /\b(?:not|never|without|excluded?|rejected?|unrelated|ruled?\s+out|didn'?t|doesn'?t|isn'?t|wasn'?t|no\s+evidence)\b|(?:아닌|아니다|아니며|않|제외|배제|기각|무관|원인\s*아님)/i;
+
+function assertedTermGroupCoverage(text, groups) {
+  const clauses = normalize(text).split(/(?:[.!?;]\s*|\n+)/);
+  const matched = groups.filter((group) =>
+    clauses.some(
+      (clause) =>
+        group.some((term) => clause.includes(normalize(term))) &&
+        !REJECTION_MARKER.test(clause),
+    ),
+  ).length;
+  return matched / groups.length;
+}
+
 function includesAll(actual, expected) {
   const values = new Set(actual);
   return expected.every((value) => values.has(value));
@@ -365,13 +380,13 @@ export function evaluateScenario(scenario, result) {
     `${result.rootCause}\n${result.remediation.summary}`,
     scenario.expectation.semanticTermGroups,
   );
-  // Naming a competing cause as the root cause is a precision failure, not just
-  // a lower score. Absence of every rejected group is what makes the dimension
-  // pass, so a scenario without the field is trivially satisfied.
+  // Naming a competing cause as the root cause is a precision failure, but
+  // explicitly ruling it out is useful RCA evidence. Score only terms asserted
+  // in a clause without a rejection marker.
   const rejectedCauseTermGroups =
     scenario.expectation.rejectedCauseTermGroups ?? [];
   const rejectedCauseCoverage = rejectedCauseTermGroups.length
-    ? termGroupCoverage(result.rootCause, rejectedCauseTermGroups)
+    ? assertedTermGroupCoverage(result.rootCause, rejectedCauseTermGroups)
     : 0;
 
   const dimensions = {

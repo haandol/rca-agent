@@ -48,7 +48,16 @@
     ],
     "semanticTermGroups": [
       ["logs:startquery", "startquery"],
-      ["least privilege", "최소 권한"]
+      [
+        "least privilege",
+        "최소 권한",
+        "누락된 권한만",
+        "필요한 권한만",
+        "누락된 필수 액션",
+        "권한 범위",
+        "권한 복원",
+        "액션 diff"
+      ]
     ]
   }
 }

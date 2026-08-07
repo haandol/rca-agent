@@ -4,7 +4,11 @@
   "engine": "cc-headless",
   "rootCause": "Application requests saturated the database pool and reached the configured maximum.",
   "rootCauseConfirmed": true,
-  "evidenceIds": ["pool-timeout-logs", "db-connections-maxed"],
+  "evidenceIds": [
+    "pool-timeout-logs",
+    "db-connections-maxed",
+    "request-concurrency-over-pool-capacity"
+  ],
   "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
   "remediation": {
     "summary": "Adjust connection pool capacity and enforce a bounded acquisition timeout.",
