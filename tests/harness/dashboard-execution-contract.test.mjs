@@ -420,15 +420,25 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
   // still maps execution states to a tone directly; the session list collapses
   // the analysis and execution lifecycles into one outcome word, so its rule
   // lives in the shared vocabulary and is asserted by executing it below.
-  assert.match(
-    reportPage,
-    /state === 'RESOLVED'\) return 'text-success'/,
-    'report page marks only RESOLVED as success',
+  //
+  // The palette carries no red, so what marks a break is `mark-broken` — a rule
+  // under the word — rather than a colour. That is the whole reason this asserts
+  // a distinction rather than a specific class: the requirement is that the two
+  // states are told apart and that neither failure is dressed as success, not
+  // that either wears a particular hue.
+  const reportTone = reportPage.match(
+    /function executionTone\(state: string\): string \{[\s\S]*?\n\}/,
   );
+  assert.ok(reportTone, 'report page maps execution state to a tone');
   assert.match(
-    reportPage,
-    /'UNRESOLVED' \|\| state === 'FAILED'\) return 'text-error'/,
-    'report page marks unresolved and failed as errors',
+    reportTone[0],
+    /'UNRESOLVED' \|\| state === 'FAILED'\)[\s\S]*?mark-broken/,
+    'report page marks unresolved and failed as broken',
+  );
+  assert.doesNotMatch(
+    reportTone[0],
+    /state === 'RESOLVED'\)[\s\S]*?mark-broken/,
+    'report page does not mark a resolved execution as broken',
   );
 
   // The list derives its single word from the shared module, so it must not
@@ -454,7 +464,11 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
     executionState: 'RESOLVED',
   });
   assert.equal(resolved, 'RESOLVED');
-  assert.match(OUTCOME_TONE[resolved], /success/);
+  assert.doesNotMatch(
+    OUTCOME_TONE[resolved],
+    /mark-broken/,
+    'a resolved incident is not marked as broken',
+  );
 
   for (const failed of ['UNRESOLVED', 'FAILED', 'CANCELLED']) {
     const outcome = outcomeOf({
@@ -467,10 +481,53 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
       'UNRESOLVED',
       `${failed} execution must not read as resolved`,
     );
-    assert.doesNotMatch(
+    assert.match(
       OUTCOME_TONE[outcome],
-      /success/,
-      `${failed} execution must not be toned as success`,
+      /mark-broken/,
+      `${failed} execution must be marked as broken, not left to read as success`,
+    );
+    assert.notEqual(
+      OUTCOME_TONE[outcome],
+      OUTCOME_TONE[resolved],
+      `${failed} execution must not be toned the same as a resolved one`,
+    );
+  }
+
+  // Whatever marks a break must survive without colour, since a reader who
+  // cannot resolve the rule has only the word. Every outcome therefore carries a
+  // label, and the two that a person acts on are the only ones given the accent.
+  const { OUTCOME_LABEL } = await import(
+    pathToFileURL(
+      path.join(
+        REPOSITORY_ROOT,
+        'packages/dashboard/app/utils/sessionState.ts',
+      ),
+    ).href
+  );
+  for (const key of Object.keys(OUTCOME_TONE)) {
+    assert.ok(
+      OUTCOME_LABEL[key],
+      `${key} needs a word, because its tone alone cannot state it`,
+    );
+  }
+  for (const key of ['RUNNING', 'AWAITING']) {
+    assert.match(
+      OUTCOME_TONE[key],
+      /text-primary/,
+      `${key} is somebody's move, so it keeps the accent`,
+    );
+  }
+  for (const key of [
+    'RESOLVED',
+    'UNRESOLVED',
+    'NO_CAUSE',
+    'BROKEN',
+    'SKIPPED',
+  ]) {
+    assert.doesNotMatch(
+      OUTCOME_TONE[key],
+      /text-primary/,
+      `${key} needs no action, so it must not take the accent`,
     );
   }
 });
