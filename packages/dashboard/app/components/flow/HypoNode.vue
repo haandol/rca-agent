@@ -12,10 +12,10 @@ const props = defineProps<{ data: NodeData }>();
  * search discarding a hypothesis is the search working, not something failing.
  */
 const statusClass: Record<string, string> = {
-  CONFIRMED: 'border-success/55 bg-success/[0.06]',
+  CONFIRMED: 'border-primary/55 bg-primary/[0.06]',
   REJECTED: 'border-base-content/12 bg-base-100 opacity-55',
   CLOSED: 'border-base-content/12 bg-base-100 opacity-65',
-  NEEDS_INVESTIGATION: 'border-warning/45 bg-warning/[0.05]',
+  NEEDS_INVESTIGATION: 'border-base-content/30 bg-base-200',
   PENDING: 'border-base-content/15 bg-base-100',
 };
 
@@ -44,17 +44,17 @@ const confidence = computed(() =>
         class="text-[10px] font-medium"
         :class="
           data.status === 'CONFIRMED'
-            ? 'text-success'
+            ? 'text-primary'
             : data.status === 'NEEDS_INVESTIGATION'
-              ? 'text-warning'
-              : 'text-base-content/40'
+              ? 'text-base-content/78'
+              : 'text-base-content/65'
         "
       >
         {{ statusLabel[data.status] || data.status }}
       </span>
       <span
         v-if="confidence !== null"
-        class="ml-auto font-mono text-[10px] tabular-nums text-base-content/40"
+        class="ml-auto font-mono text-[10px] tabular-nums text-base-content/65"
       >
         {{ confidence }}%
       </span>

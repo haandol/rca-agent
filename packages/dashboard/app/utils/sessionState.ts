@@ -196,17 +196,23 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
  * Colour is spent only where a state has consequence.
  *
  * A resolved incident and a skipped alarm both need no action, so neither is
- * given emphasis. Ember marks the two that are somebody's move — a run in
+ * given emphasis. Sage marks the two that are somebody's move — a run in
  * progress and a report waiting on approval.
+ *
+ * The rest is set in ink at varying value, because the palette has no red: an
+ * unresolved incident cannot be stated as a hue, so it takes full ink plus the
+ * dotted rule of `mark-broken` to survive a scan. `OUTCOME_LABEL` is what
+ * actually names the outcome and must always be rendered alongside — a reader who
+ * cannot resolve the rule still has the word.
  */
 export const OUTCOME_TONE: Record<Outcome, string> = {
   RUNNING: 'text-primary',
   AWAITING: 'text-primary',
-  RESOLVED: 'text-success',
-  UNRESOLVED: 'text-error',
-  NO_CAUSE: 'text-base-content/45',
-  BROKEN: 'text-error/75',
-  SKIPPED: 'text-base-content/35',
+  RESOLVED: 'text-base-content/78',
+  UNRESOLVED: 'text-base-content mark-broken',
+  NO_CAUSE: 'text-base-content/68',
+  BROKEN: 'text-base-content/75 mark-broken',
+  SKIPPED: 'text-base-content/62',
 };
 
 /** Outcomes that put a session on somebody's desk. */

@@ -4,7 +4,7 @@ const colorMode = useState('colorMode', () => 'light');
 function applyTheme() {
   document.documentElement.setAttribute(
     'data-theme',
-    colorMode.value === 'dark' ? 'ledger-night' : 'ledger',
+    colorMode.value === 'dark' ? 'workflow-night' : 'workflow',
   );
 }
 
@@ -29,7 +29,7 @@ onMounted(applyTheme);
         <div class="flex items-baseline gap-3 min-w-0">
           <NuxtLink
             to="/"
-            class="font-serif text-[17px] font-semibold tracking-tight hover:text-primary transition-colors"
+            class="font-serif text-[19px] tracking-tight hover:text-primary transition-colors"
           >
             장애 기록
           </NuxtLink>

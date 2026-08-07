@@ -80,18 +80,25 @@ const rejectedCount = computed(
   () => hypotheses.value.filter((h) => h.status === 'REJECTED').length,
 );
 
+/**
+ * A confirmed hypothesis is the finding, so it takes full ink; a rejected one is
+ * a branch the search discarded and recedes. Rank is set by value, not by hue —
+ * the palette has one accent and it belongs to the live run and the approval.
+ */
 function statusTone(status: string): string {
-  if (status === 'CONFIRMED') return 'text-success';
-  if (status === 'NEEDS_INVESTIGATION') return 'text-warning';
-  if (status === 'REJECTED') return 'text-base-content/35';
-  return 'text-base-content/45';
+  if (status === 'CONFIRMED') return 'text-base-content font-medium';
+  if (status === 'NEEDS_INVESTIGATION') return 'text-base-content/78';
+  if (status === 'REJECTED') return 'text-base-content/62';
+  return 'text-base-content/68';
 }
 
+/** See the report page: a break is stated in the label and a rule, never in red. */
 function executionTone(state: string): string {
-  if (state === 'RESOLVED') return 'text-success';
-  if (state === 'UNRESOLVED' || state === 'FAILED') return 'text-error';
+  if (state === 'UNRESOLVED' || state === 'FAILED')
+    return 'text-base-content mark-broken';
   if (state === 'EXECUTING' || state === 'VERIFYING') return 'text-primary';
-  return 'text-base-content/45';
+  if (state === 'RESOLVED') return 'text-base-content/78';
+  return 'text-base-content/68';
 }
 
 const graph = computed(() => {
@@ -137,7 +144,7 @@ useHead({
     <header class="mb-9">
       <NuxtLink
         :to="reportLink"
-        class="text-[12px] text-base-content/45 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
@@ -145,19 +152,19 @@ useHead({
       <h1 class="font-serif text-[26px] leading-tight tracking-tight">
         분석이 실제로 시도한 것
       </h1>
-      <p class="text-[13px] text-base-content/50 mt-2.5 max-w-[62ch]">
+      <p class="text-[13px] text-base-content/70 mt-2.5 max-w-[62ch]">
         보고서는 살아남은 하나의 사슬만 말합니다. 여기에는 그 사슬에 이르기까지
         함께 세워졌던 가설과, 무엇이 왜 기각됐는지가 남아 있습니다.
       </p>
 
       <div
-        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-[12px] text-base-content/50"
+        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-[12px] text-base-content/70"
       >
         <span v-if="trace?.session">{{ trace.session.alarmName }}</span>
         <span class="font-mono">{{ trace?.session?.engine }}</span>
         <button
           v-if="trace?.session"
-          class="text-base-content/45 hover:text-primary"
+          class="text-base-content/68 hover:text-primary"
           @click="stateModalRef?.showModal()"
         >
           상태 전이 보기
@@ -167,7 +174,7 @@ useHead({
 
     <div
       v-if="status === 'pending'"
-      class="py-20 text-center text-[13px] text-base-content/40"
+      class="py-20 text-center text-[13px] text-base-content/65"
     >
       <span class="loading loading-spinner loading-sm" />
       <p class="mt-3">분석 경로를 읽고 있습니다</p>
@@ -199,26 +206,29 @@ useHead({
             >
               {{ execution.stateLabel }}
             </span>
-            <span class="text-base-content/50">
+            <span class="text-base-content/70">
               {{ execution.attempt }}회차 · 절차
               {{ execution.attemptedStepCount }}건
             </span>
-            <span v-if="execution.blockedCount" class="text-warning">
+            <span v-if="execution.blockedCount" class="text-base-content/78">
               수동 조치 {{ execution.blockedCount }}
             </span>
-            <span v-if="execution.failedStepCount" class="text-error">
+            <span
+              v-if="execution.failedStepCount"
+              class="text-base-content mark-broken"
+            >
               실패 {{ execution.failedStepCount }}
             </span>
             <NuxtLink
               v-if="execution.retrospectiveStatus"
               :to="`/retrospective/${id}/${execution.executionId}`"
-              class="text-info hover:underline underline-offset-2 ml-auto"
+              class="text-primary hover:underline underline-offset-2 ml-auto"
             >
               회고 {{ execution.retrospectiveStatus }}
             </NuxtLink>
             <span
               v-if="execution.errorReason"
-              class="text-base-content/40 w-full"
+              class="text-base-content/65 w-full"
             >
               {{ execution.errorReason }}
             </span>
@@ -232,7 +242,7 @@ useHead({
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
             세워진 가설
           </h2>
-          <span class="text-[11px] text-base-content/35">
+          <span class="text-[11px] text-base-content/62">
             {{ hypotheses.length }}개 중 채택 {{ confirmedCount }} · 기각
             {{ rejectedCount }}
           </span>
@@ -258,7 +268,7 @@ useHead({
                   class="font-serif text-[15px] leading-snug flex-1 min-w-0 group-hover:text-primary transition-colors"
                   :class="
                     hypothesis.status === 'REJECTED'
-                      ? 'text-base-content/50'
+                      ? 'text-base-content/70'
                       : ''
                   "
                 >
@@ -270,8 +280,8 @@ useHead({
                   class="font-mono text-[11px] tabular-nums shrink-0"
                   :class="
                     hypothesis.confidenceScore >= 0.8
-                      ? 'text-success'
-                      : 'text-base-content/35'
+                      ? 'text-primary'
+                      : 'text-base-content/62'
                   "
                 >
                   {{ Math.round((hypothesis.confidenceScore ?? 0) * 100) }}%
@@ -317,7 +327,7 @@ useHead({
         </ul>
       </section>
 
-      <p v-else class="font-serif text-[15px] text-base-content/50 py-8">
+      <p v-else class="font-serif text-[15px] text-base-content/70 py-8">
         기록된 가설이 없습니다. 이 엔진은 가설을 개별 항목으로 남기지 않거나,
         분석이 가설 생성 전에 멈췄습니다.
       </p>
@@ -325,13 +335,13 @@ useHead({
       <!-- The same facts as a shape, for anyone who reads structure faster -->
       <section class="mt-12 pt-7 border-t border-base-content/10">
         <button
-          class="flex items-baseline gap-2 text-[13px] text-base-content/55 hover:text-primary transition-colors"
+          class="flex items-baseline gap-2 text-[13px] text-base-content/72 hover:text-primary transition-colors"
           :aria-expanded="showGraph"
           @click="showGraph = !showGraph"
         >
           <span class="font-mono text-[11px]">{{ showGraph ? '−' : '+' }}</span>
           파이프라인 그래프
-          <span class="text-[11px] text-base-content/35">
+          <span class="text-[11px] text-base-content/62">
             스팬과 가설의 연결 구조
           </span>
         </button>
@@ -371,7 +381,7 @@ useHead({
                 {{ selectedNode.title || selectedNode.label }}
               </h3>
               <div
-                class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-2 text-[12px] text-base-content/50"
+                class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-2 text-[12px] text-base-content/70"
               >
                 <span
                   v-if="selectedNode.status"
@@ -394,11 +404,11 @@ useHead({
               />
               <div
                 v-if="selectedNode.error"
-                class="prose-field mt-4 text-error"
+                class="prose-field mt-4"
                 v-html="md(selectedNode.error)"
               />
             </template>
-            <p v-else class="text-[12.5px] text-base-content/40">
+            <p v-else class="text-[12.5px] text-base-content/65">
               노드를 선택하면 그 단계의 입출력이 표시됩니다.
             </p>
           </aside>

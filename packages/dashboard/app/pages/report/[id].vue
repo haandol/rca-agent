@@ -138,11 +138,19 @@ async function approveExecution() {
   }
 }
 
+/**
+ * The palette has no red, so a break cannot be stated in colour.
+ *
+ * `stateLabel` already says which outcome this was; this only sets how loudly it
+ * is set. An unresolved incident takes full ink and a dotted rule under the word
+ * so it survives a scan; a resolved one recedes, because it needs nothing.
+ */
 function executionTone(state: string): string {
-  if (state === 'RESOLVED') return 'text-success';
-  if (state === 'UNRESOLVED' || state === 'FAILED') return 'text-error';
+  if (state === 'UNRESOLVED' || state === 'FAILED')
+    return 'text-base-content mark-broken';
   if (state === 'EXECUTING' || state === 'VERIFYING') return 'text-primary';
-  return 'text-base-content/45';
+  if (state === 'RESOLVED') return 'text-base-content/78';
+  return 'text-base-content/68';
 }
 
 /**
@@ -176,7 +184,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
     <header class="mb-9">
       <NuxtLink
         to="/"
-        class="text-[12px] text-base-content/45 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
       >
         <span aria-hidden="true">←</span> 기록으로
       </NuxtLink>
@@ -190,7 +198,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
       <h1 v-else class="font-serif text-[26px] leading-tight">RCA 보고서</h1>
 
       <div
-        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/50"
+        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/70"
       >
         <span v-if="outcome" :class="OUTCOME_TONE[outcome]" class="font-medium">
           {{ OUTCOME_LABEL[outcome] }}
@@ -201,12 +209,12 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
         <span class="font-mono">{{ session?.engine }}</span>
         <span
           v-if="session?.confirmed === false"
-          class="text-base-content/40"
+          class="text-base-content/65"
           title="확정된 근본원인이 없으면 실행할 절차도 없습니다"
         >
           원인 미확정
         </span>
-        <span class="font-mono text-base-content/30 select-all" :title="id">
+        <span class="font-mono text-base-content/64 select-all" :title="id">
           {{ id.slice(0, 8) }}
         </span>
       </div>
@@ -215,7 +223,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
     <!-- Loading / missing -->
     <div
       v-if="status === 'pending'"
-      class="py-20 text-center text-[13px] text-base-content/40"
+      class="py-20 text-center text-[13px] text-base-content/65"
     >
       <span class="loading loading-spinner loading-sm" />
       <p class="mt-3">보고서를 읽고 있습니다</p>
@@ -229,7 +237,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
             : '보고서를 불러오지 못했습니다'
         }}
       </p>
-      <p class="text-[12px] text-base-content/40 font-mono mt-2">
+      <p class="text-[12px] text-base-content/65 font-mono mt-2">
         reports/{{ id }}.md
       </p>
     </div>
@@ -251,7 +259,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
             class="mt-11 pt-7 border-t border-base-content/10"
           >
             <button
-              class="flex items-baseline gap-2 text-[13px] text-base-content/55 hover:text-primary transition-colors"
+              class="flex items-baseline gap-2 text-[13px] text-base-content/72 hover:text-primary transition-colors"
               :aria-expanded="showFullReport"
               @click="showFullReport = !showFullReport"
             >
@@ -259,7 +267,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
                 showFullReport ? '−' : '+'
               }}</span>
               보고서 전문
-              <span class="text-[11px] text-base-content/35">
+              <span class="text-[11px] text-base-content/62">
                 영향 범위 · 증거 · 기각된 가설
               </span>
             </button>
@@ -277,11 +285,11 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
           <ol class="space-y-3.5">
             <li v-for="(moment, i) in timeline" :key="i" class="flex gap-3">
               <span
-                class="font-mono text-[11px] text-base-content/45 tabular-nums shrink-0 pt-[3px]"
+                class="font-mono text-[11px] text-base-content/68 tabular-nums shrink-0 pt-[3px]"
               >
                 {{ moment.time }}
               </span>
-              <span class="text-[12.5px] leading-snug text-base-content/70">
+              <span class="text-[12.5px] leading-snug text-base-content/78">
                 {{ moment.event }}
               </span>
             </li>
@@ -308,7 +316,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
           <span
             class="text-[12px]"
             :class="
-              isVerifiedPlaybook ? 'text-success' : 'text-base-content/45'
+              isVerifiedPlaybook ? 'text-primary' : 'text-base-content/68'
             "
             :title="
               isVerifiedPlaybook
@@ -319,7 +327,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
             {{ isVerifiedPlaybook ? '검증된 절차' : '초안' }}
           </span>
         </div>
-        <p class="text-[13px] text-base-content/50 max-w-[62ch]">
+        <p class="text-[13px] text-base-content/70 max-w-[62ch]">
           승인하면 쓰기 권한을 가진 별도 에이전트가 아래 순서대로 수행합니다.
           되돌릴 수 없는 조치는 서버가 거부하고 수동 조치로 남깁니다.
         </p>
@@ -327,14 +335,14 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
         <NuxtLink
           v-if="playbook.revisedByExecutionId"
           :to="`/retrospective/${id}/${playbook.revisedByExecutionId}`"
-          class="inline-block text-[12px] text-info hover:underline underline-offset-2 mt-4"
+          class="inline-block text-[12px] text-primary hover:underline underline-offset-2 mt-4"
         >
           이전 실행의 회고가 이 절차를 교정했습니다 — 무엇이 왜 바뀌었는지 →
         </NuxtLink>
 
         <p
           v-if="!executionSteps.length"
-          class="font-serif text-[15px] text-base-content/55 mt-6"
+          class="font-serif text-[15px] text-base-content/72 mt-6"
         >
           근본원인이 확정되지 않아 실행할 절차가 없습니다. 추가 조사가
           필요합니다.
@@ -353,13 +361,13 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
             <p class="text-[14px] leading-snug">{{ step.action }}</p>
             <p
               v-if="step.intent"
-              class="font-serif text-[13.5px] text-base-content/55 mt-1.5"
+              class="font-serif text-[13.5px] text-base-content/72 mt-1.5"
             >
               {{ step.intent }}
             </p>
             <p
               v-if="step.success_criteria"
-              class="text-[12px] text-success/85 mt-1.5"
+              class="text-[12px] text-primary mt-1.5"
             >
               성공 판정 · {{ step.success_criteria }}
             </p>
@@ -377,12 +385,12 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
           >
             {{ isPendingDecision ? '실행 승인' : '다시 실행 승인' }}
           </button>
-          <span v-if="blockedReason" class="text-[12px] text-base-content/45">
+          <span v-if="blockedReason" class="text-[12px] text-base-content/68">
             {{ blockedReason }}
           </span>
           <span
             v-else-if="session?.readiness"
-            class="text-[12px] text-base-content/45"
+            class="text-[12px] text-base-content/68"
           >
             {{ READINESS_LABEL[session.readiness] }} · 절차
             {{ executionSteps.length }}개
@@ -406,19 +414,22 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
               >
                 {{ execution.stateLabel }}
               </span>
-              <span class="text-base-content/50">
+              <span class="text-base-content/70">
                 {{ execution.attempt }}회차 · 절차
                 {{ execution.attemptedStepCount }}건
               </span>
-              <span v-if="execution.blockedCount" class="text-warning">
+              <span v-if="execution.blockedCount" class="text-base-content/78">
                 수동 조치 {{ execution.blockedCount }}
               </span>
-              <span v-if="execution.failedStepCount" class="text-error">
+              <span
+                v-if="execution.failedStepCount"
+                class="text-base-content mark-broken"
+              >
                 실패 {{ execution.failedStepCount }}
               </span>
               <span
                 v-if="execution.errorReason"
-                class="text-base-content/40 truncate max-w-[40ch]"
+                class="text-base-content/65 truncate max-w-[40ch]"
                 :title="execution.errorReason"
               >
                 {{ execution.errorReason }}
@@ -426,7 +437,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
               <NuxtLink
                 v-if="execution.retrospectiveStatus"
                 :to="`/retrospective/${id}/${execution.executionId}`"
-                class="text-info hover:underline underline-offset-2 ml-auto"
+                class="text-primary hover:underline underline-offset-2 ml-auto"
               >
                 회고 {{ execution.retrospectiveStatus }}
               </NuxtLink>
@@ -441,13 +452,13 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
       >
         <NuxtLink
           :to="engine ? `/trace/${id}?engine=${engine}` : `/trace/${id}`"
-          class="text-base-content/55 hover:text-primary"
+          class="text-base-content/72 hover:text-primary"
         >
           분석이 실제로 거친 경로
         </NuxtLink>
         <NuxtLink
           :to="engine ? `/playbook/${id}?engine=${engine}` : `/playbook/${id}`"
-          class="text-base-content/55 hover:text-primary"
+          class="text-base-content/72 hover:text-primary"
         >
           플레이북 전체
         </NuxtLink>
@@ -458,15 +469,18 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
     <dialog ref="approvalModal" class="modal">
       <div class="modal-box">
         <h3 class="font-serif text-[19px]">실행을 승인하시겠습니까?</h3>
-        <p class="text-[13.5px] text-base-content/65 mt-3 leading-relaxed">
+        <p class="text-[13.5px] text-base-content/76 mt-3 leading-relaxed">
           실행 에이전트가 {{ executionSteps.length }}개 절차를 대상 리소스에
           수행합니다. 되돌릴 수 없는 조치는 서버가 거부하고 해당 절차는 수동
           조치로 남습니다.
         </p>
-        <p v-if="latest" class="text-[12px] text-base-content/45 mt-3">
+        <p v-if="latest" class="text-[12px] text-base-content/68 mt-3">
           이 리포트의 마지막 실행 · {{ latest.stateLabel }}
         </p>
-        <p v-if="approvalError" class="text-[13px] text-error mt-3">
+        <p
+          v-if="approvalError"
+          class="text-[13px] text-base-content mark-broken mt-3"
+        >
           {{ approvalError }}
         </p>
         <div class="modal-action">

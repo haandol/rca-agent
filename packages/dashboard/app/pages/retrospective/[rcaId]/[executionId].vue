@@ -107,7 +107,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
     <header class="mb-10">
       <NuxtLink
         :to="`/report/${rcaId}?engine=${data?.execution?.engine ?? ''}`"
-        class="text-[12px] text-base-content/45 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
@@ -115,19 +115,19 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
       <h1 class="font-serif text-[26px] leading-tight tracking-tight">
         실행이 절차를 어떻게 고쳤는지
       </h1>
-      <p class="text-[13px] text-base-content/50 mt-2.5 max-w-[62ch]">
+      <p class="text-[13px] text-base-content/70 mt-2.5 max-w-[62ch]">
         회고는 사람의 승인 없이 플레이북을 고칩니다. 그 수정이 정당했는지는 아래
         네 가지를 순서대로 읽어야 판단할 수 있습니다.
       </p>
 
       <div
         v-if="data"
-        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-[12px] text-base-content/50"
+        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-[12px] text-base-content/70"
       >
         <span
           :class="
             data.execution.state === 'RESOLVED'
-              ? 'text-success font-medium'
+              ? 'text-primary font-medium'
               : ''
           "
         >
@@ -141,7 +141,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
 
     <div
       v-if="status === 'pending'"
-      class="py-20 text-center text-[13px] text-base-content/40"
+      class="py-20 text-center text-[13px] text-base-content/65"
     >
       <span class="loading loading-spinner loading-sm" />
       <p class="mt-3">회고를 읽고 있습니다</p>
@@ -162,11 +162,11 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
         </h2>
         <p
           v-if="data.issue.rootCause"
-          class="font-serif text-[14px] text-base-content/70"
+          class="font-serif text-[14px] text-base-content/78"
         >
           {{ data.issue.rootCause }}
         </p>
-        <p v-else class="text-[13px] text-base-content/40">
+        <p v-else class="text-[13px] text-base-content/65">
           확정된 근본원인이 기록되지 않았습니다.
         </p>
       </section>
@@ -181,7 +181,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
         </h2>
         <p
           v-if="!data.playbookBefore"
-          class="text-[13px] text-base-content/45 bg-base-200 rounded-box px-4 py-3"
+          class="text-[13px] text-base-content/68 bg-base-200 rounded-box px-4 py-3"
         >
           갱신 전 사본이 보존 기간을 지나 조회할 수 없습니다. 아래 diff의 기준을
           확인할 수 없습니다.
@@ -201,13 +201,13 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
             <p class="text-[13.5px] leading-snug">{{ step.action }}</p>
             <p
               v-if="step.success_criteria"
-              class="text-[12px] text-base-content/50 mt-1.5"
+              class="text-[12px] text-base-content/70 mt-1.5"
             >
               성공 판정 · {{ step.success_criteria }}
             </p>
           </li>
         </ol>
-        <p v-else class="text-[13px] text-base-content/40">
+        <p v-else class="text-[13px] text-base-content/65">
           절차가 없었습니다.
         </p>
       </section>
@@ -222,14 +222,14 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
         </h2>
         <p
           v-if="!data.evidence"
-          class="text-[13px] text-base-content/45 bg-base-200 rounded-box px-4 py-3"
+          class="text-[13px] text-base-content/68 bg-base-200 rounded-box px-4 py-3"
         >
           실행 증거를 조회할 수 없습니다.
         </p>
         <template v-else>
           <p
             v-if="data.evidence.resolution_observation"
-            class="font-serif text-[14px] text-base-content/70 bg-base-200 rounded-box px-4 py-3 whitespace-pre-line"
+            class="font-serif text-[14px] text-base-content/78 bg-base-200 rounded-box px-4 py-3 whitespace-pre-line"
           >
             {{ data.evidence.resolution_observation }}
           </p>
@@ -239,24 +239,28 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
             class="py-3.5 border-t border-base-content/[0.07] space-y-1.5"
           >
             <div class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-[11px] text-base-content/40">{{
+              <span class="font-mono text-[11px] text-base-content/65">{{
                 step.step_id
               }}</span>
               <span
                 class="text-[11px] font-medium"
-                :class="step.succeeded ? 'text-success' : 'text-error'"
+                :class="
+                  step.succeeded
+                    ? 'text-primary'
+                    : 'text-base-content mark-broken'
+                "
                 >{{ step.succeeded ? '성공' : '실패' }}</span
               >
-              <span v-if="step.blocked" class="text-[11px] text-warning"
+              <span v-if="step.blocked" class="text-[11px] text-base-content/78"
                 >차단</span
               >
               <span
                 v-if="step.manual_action_required"
-                class="text-[11px] text-warning"
+                class="text-[11px] text-base-content/78"
                 >수동 조치</span
               >
             </div>
-            <p v-if="step.observation" class="text-xs text-base-content/60">
+            <p v-if="step.observation" class="text-xs text-base-content/74">
               관측 · {{ step.observation }}
             </p>
 
@@ -267,24 +271,27 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
               class="text-xs font-mono bg-base-200 rounded px-2.5 py-1.5"
             >
               <div class="flex flex-wrap items-center gap-2">
-                <span class="text-base-content/35">
+                <span class="text-base-content/62">
                   #{{ attempt.attempt_index }}
                 </span>
                 <span
                   v-if="attempt.failure_class"
-                  class="text-base-content/45"
+                  class="text-base-content/68"
                   >{{ attempt.failure_class }}</span
                 >
               </div>
-              <p class="text-base-content/70 break-all mt-1">
+              <p class="text-base-content/78 break-all mt-1">
                 {{ attempt.command }}
               </p>
-              <p v-if="attempt.block_reason" class="text-warning/80 break-all">
+              <p
+                v-if="attempt.block_reason"
+                class="text-base-content/78 break-all"
+              >
                 {{ attempt.block_reason }}
               </p>
               <p
                 v-else-if="attempt.error_output"
-                class="text-error/70 break-all"
+                class="text-base-content mark-broken break-all"
               >
                 {{ attempt.error_output }}
               </p>
@@ -293,7 +300,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
             <!-- Attempts that simply ran. Kept, but out of the way. -->
             <details v-if="routineAttempts(step).length" class="group/d">
               <summary
-                class="text-xs text-base-content/45 cursor-pointer hover:text-base-content/70 transition-colors list-none flex items-center gap-1.5"
+                class="text-xs text-base-content/68 cursor-pointer hover:text-base-content/78 transition-colors list-none flex items-center gap-1.5"
               >
                 <span
                   class="inline-block transition-transform group-open/d:rotate-90"
@@ -306,9 +313,9 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
                 <p
                   v-for="(attempt, index) in routineAttempts(step)"
                   :key="`r-${index}`"
-                  class="text-xs font-mono text-base-content/50 bg-base-200 rounded px-2.5 py-1 break-all"
+                  class="text-xs font-mono text-base-content/70 bg-base-200 rounded px-2.5 py-1 break-all"
                 >
-                  <span class="text-base-content/30"
+                  <span class="text-base-content/64"
                     >#{{ attempt.attempt_index }}</span
                   >
                   {{ attempt.command }}
@@ -329,13 +336,13 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
         </h2>
         <p
           v-if="data.execution.retrospectiveSummary"
-          class="font-serif text-[14px] text-base-content/70 bg-base-200 rounded-box px-4 py-3"
+          class="font-serif text-[14px] text-base-content/78 bg-base-200 rounded-box px-4 py-3"
         >
           {{ data.execution.retrospectiveSummary }}
         </p>
         <p
           v-if="!diff"
-          class="text-[13px] text-base-content/45 bg-base-200 rounded-box px-4 py-3"
+          class="text-[13px] text-base-content/68 bg-base-200 rounded-box px-4 py-3"
         >
           갱신 diff가 없습니다. 교정할 절차 결함이 없었거나 회고가 실행되지
           않았습니다.
@@ -346,7 +353,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
             :key="String(corrected.step_id)"
             class="py-3.5 border-t border-base-content/[0.07] space-y-2.5"
           >
-            <span class="font-mono text-[11px] text-info"
+            <span class="font-mono text-[11px] text-primary"
               >{{ corrected.step_id }} 교정</span
             >
             <div
@@ -355,18 +362,18 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
               class="text-xs space-y-1"
             >
               <div class="label-sm">{{ change.field }}</div>
-              <p class="text-base-content/40 line-through break-words">
+              <p class="text-base-content/65 line-through break-words">
                 {{ change.before }}
               </p>
-              <p class="text-success break-words">{{ change.after }}</p>
+              <p class="text-primary break-words">{{ change.after }}</p>
             </div>
           </div>
           <div
             v-if="stringList('added_steps').length"
             class="flex items-center gap-2 text-xs"
           >
-            <span class="text-[11px] text-success">추가된 절차</span>
-            <span class="font-mono text-base-content/60">
+            <span class="text-[11px] text-primary">추가된 절차</span>
+            <span class="font-mono text-base-content/74">
               {{ stringList('added_steps').join(', ') }}
             </span>
           </div>
@@ -374,8 +381,8 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
             v-if="stringList('changed_fields').length"
             class="flex items-center gap-2 text-xs"
           >
-            <span class="text-[11px] text-base-content/45">변경된 필드</span>
-            <span class="font-mono text-base-content/60">
+            <span class="text-[11px] text-base-content/68">변경된 필드</span>
+            <span class="font-mono text-base-content/74">
               {{ stringList('changed_fields').join(', ') }}
             </span>
           </div>
@@ -384,12 +391,12 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
             v-if="stringList('preserved_steps').length"
             class="flex items-center gap-2 text-xs"
           >
-            <span class="text-[11px] text-base-content/45">유지된 절차</span>
-            <span class="font-mono text-base-content/60">
+            <span class="text-[11px] text-base-content/68">유지된 절차</span>
+            <span class="font-mono text-base-content/74">
               {{ stringList('preserved_steps').join(', ') }}
             </span>
           </div>
-          <p v-if="diff.rationale" class="text-xs text-base-content/50">
+          <p v-if="diff.rationale" class="text-xs text-base-content/70">
             근거 · {{ diff.rationale }}
           </p>
         </template>

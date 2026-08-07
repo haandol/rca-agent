@@ -40,7 +40,7 @@ useHead({
     <header class="mb-9">
       <NuxtLink
         :to="reportLink"
-        class="text-[12px] text-base-content/45 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
@@ -49,11 +49,11 @@ useHead({
         이 장애 유형에 대한 플레이북
       </h1>
       <div
-        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/50"
+        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/70"
       >
         <span
           v-if="playbook"
-          :class="isVerified ? 'text-success font-medium' : ''"
+          :class="isVerified ? 'text-primary font-medium' : ''"
           :title="
             isVerified
               ? '이 절차는 실행으로 이슈를 해소하고 회고를 거쳤습니다'
@@ -69,7 +69,7 @@ useHead({
 
     <div
       v-if="status === 'pending'"
-      class="py-20 text-center text-[13px] text-base-content/40"
+      class="py-20 text-center text-[13px] text-base-content/65"
     >
       <span class="loading loading-spinner loading-sm" />
       <p class="mt-3">플레이북을 읽고 있습니다</p>
@@ -77,18 +77,18 @@ useHead({
 
     <div v-else-if="error" class="py-20 text-center">
       <p class="font-serif text-[17px]">플레이북이 없습니다</p>
-      <p class="text-[12px] text-base-content/45 mt-2">
+      <p class="text-[12px] text-base-content/68 mt-2">
         RCA가 완료된 세션에서만 생성됩니다.
       </p>
     </div>
 
     <div v-else-if="playbook && playbook.spanStatus === 'FAILED'" class="py-8">
-      <h2 class="font-serif text-[18px] text-error">
+      <h2 class="font-serif text-[18px] mark-broken">
         플레이북 생성이 실패했습니다
       </h2>
       <p
         v-if="playbook.error"
-        class="text-[12.5px] font-mono bg-error/5 text-error rounded-box p-4 mt-4 break-words"
+        class="text-[12.5px] font-mono bg-base-200 rounded-box p-4 mt-4 break-words"
       >
         {{ playbook.error }}
       </p>
@@ -98,7 +98,7 @@ useHead({
       <NuxtLink
         v-if="playbook.revisedByExecutionId"
         :to="`/retrospective/${id}/${playbook.revisedByExecutionId}`"
-        class="inline-block text-[12px] text-info hover:underline underline-offset-2 mb-8"
+        class="inline-block text-[12px] text-primary hover:underline underline-offset-2 mb-8"
       >
         이전 실행의 회고가 이 절차를 교정했습니다 — 무엇이 왜 바뀌었는지 →
       </NuxtLink>
@@ -109,13 +109,13 @@ useHead({
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
             실행 절차
           </h2>
-          <span class="text-[11px] text-base-content/35">
+          <span class="text-[11px] text-base-content/62">
             승인 시 이 순서대로 수행됩니다
           </span>
         </div>
         <p
           v-if="!executionSteps.length"
-          class="font-serif text-[15px] text-base-content/55 mt-5"
+          class="font-serif text-[15px] text-base-content/72 mt-5"
         >
           근본원인이 확정되지 않아 실행할 절차가 없습니다.
         </p>
@@ -133,13 +133,13 @@ useHead({
             </p>
             <p
               v-if="step.action"
-              class="font-serif text-[13.5px] text-base-content/60 mt-1.5"
+              class="font-serif text-[13.5px] text-base-content/74 mt-1.5"
             >
               {{ step.action }}
             </p>
             <p
               v-if="step.success_criteria"
-              class="text-[12px] text-success/85 mt-1.5"
+              class="text-[12px] text-primary mt-1.5"
             >
               성공 판정 · {{ step.success_criteria }}
             </p>
@@ -162,7 +162,7 @@ useHead({
           <div class="prose-field" v-html="md(playbook.symptom_pattern)" />
           <p
             v-if="playbook.failure_type"
-            class="text-[12px] text-base-content/45 mt-3"
+            class="text-[12px] text-base-content/68 mt-3"
           >
             유형 · {{ playbook.failure_type }}
           </p>
@@ -176,18 +176,14 @@ useHead({
         </section>
 
         <section v-if="playbook.temporary_mitigation">
-          <h2
-            class="text-[11px] font-semibold uppercase tracking-[0.1em] text-warning mb-2.5"
-          >
+          <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
             우선 멈추려면
           </h2>
           <div class="prose-field" v-html="md(playbook.temporary_mitigation)" />
         </section>
 
         <section v-if="playbook.permanent_remediation">
-          <h2
-            class="text-[11px] font-semibold uppercase tracking-[0.1em] text-success mb-2.5"
-          >
+          <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
             다시 안 나게 하려면
           </h2>
           <div
@@ -197,9 +193,7 @@ useHead({
         </section>
 
         <section v-if="playbook.escalation_criteria">
-          <h2
-            class="text-[11px] font-semibold uppercase tracking-[0.1em] text-error mb-2.5"
-          >
+          <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
             사람을 불러야 할 때
           </h2>
           <div class="prose-field" v-html="md(playbook.escalation_criteria)" />
@@ -250,7 +244,7 @@ useHead({
         <span
           v-for="tag in playbook.tags"
           :key="tag"
-          class="font-mono text-[11px] text-base-content/50"
+          class="font-mono text-[11px] text-base-content/70"
         >
           {{ tag }}
         </span>
@@ -263,7 +257,7 @@ useHead({
         class="py-16 text-center"
       >
         <p class="font-serif text-[17px]">플레이북 내용이 비어 있습니다</p>
-        <p class="text-[12px] text-base-content/45 mt-2">
+        <p class="text-[12px] text-base-content/68 mt-2">
           메타데이터 기록 기능 배포 전에 실행된 세션일 수 있습니다.
         </p>
       </div>

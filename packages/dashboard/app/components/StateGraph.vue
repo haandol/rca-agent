@@ -220,7 +220,7 @@ const graphNodes = computed(() => {
 <template>
   <div class="flex gap-4" style="height: 520px">
     <div
-      class="flex-1 rounded-lg border border-base-content/10 overflow-hidden"
+      class="flex-1 rounded-box border border-base-content/10 overflow-hidden"
     >
       <VueFlow
         :nodes="graphNodes"
@@ -235,18 +235,18 @@ const graphNodes = computed(() => {
       >
         <template #node-stateNode="{ data }">
           <div
-            class="rounded-lg border px-3 py-2 text-center cursor-pointer transition-all hover:shadow-md min-w-[80px]"
+            class="rounded-box border px-3 py-2 text-center cursor-pointer transition-colors hover:border-base-content/40 min-w-[80px]"
             :class="[
               data.isCurrent
                 ? 'border-primary bg-primary/15 ring-2 ring-primary/30'
                 : data.visited
-                  ? 'border-success/40 bg-success/8'
+                  ? 'border-primary/40 bg-primary/[0.06]'
                   : data.isTerminal
                     ? data.state === 'FAILED'
-                      ? 'border-error/30 bg-error/5'
+                      ? 'border-base-content/45 bg-base-200'
                       : 'border-base-content/10 bg-base-200/50'
                     : 'border-base-content/10 bg-base-100',
-              data.isSelected ? 'ring-2 ring-info/40' : '',
+              data.isSelected ? 'ring-2 ring-base-content/25' : '',
             ]"
           >
             <div
@@ -293,8 +293,8 @@ const graphNodes = computed(() => {
             selectedState === currentState
               ? 'bg-primary/15 text-primary'
               : isVisited(selectedState)
-                ? 'bg-success/10 text-success'
-                : 'bg-base-content/5 text-base-content/40'
+                ? 'bg-primary/10 text-primary'
+                : 'bg-base-content/5 text-base-content/65'
           "
         >
           {{
@@ -305,12 +305,12 @@ const graphNodes = computed(() => {
                 : '대기'
           }}
         </span>
-        <p class="text-xs text-base-content/60 leading-relaxed mt-3">
+        <p class="text-xs text-base-content/74 leading-relaxed mt-3">
           {{ STATE_DESC[selectedState] || '' }}
         </p>
         <div v-if="transitions[selectedState]" class="mt-3">
           <div
-            class="text-[10px] font-medium text-base-content/40 uppercase tracking-wider mb-1"
+            class="text-[10px] font-medium text-base-content/65 uppercase tracking-wider mb-1"
           >
             전이 가능
           </div>
@@ -326,7 +326,7 @@ const graphNodes = computed(() => {
         </div>
         <div v-if="pipelineStates.includes(selectedState)" class="mt-2">
           <div
-            class="text-[10px] font-medium text-base-content/40 uppercase tracking-wider mb-1"
+            class="text-[10px] font-medium text-base-content/65 uppercase tracking-wider mb-1"
           >
             중단 전이
           </div>
@@ -342,7 +342,7 @@ const graphNodes = computed(() => {
       </template>
       <template v-else>
         <div
-          class="flex flex-col items-center justify-center h-full text-base-content/30 gap-2"
+          class="flex flex-col items-center justify-center h-full text-base-content/64 gap-2"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

@@ -11,7 +11,7 @@ defineProps<{ data: NodeData }>();
  */
 const statusClass: Record<string, string> = {
   COMPLETED: 'border-base-content/15 bg-base-100',
-  FAILED: 'border-error/55 bg-error/[0.06]',
+  FAILED: 'border-base-content/70 bg-base-200',
   RUNNING: 'border-primary/55 bg-primary/[0.06]',
   TIMED_OUT: 'border-base-content/12 bg-base-200',
 };
@@ -34,17 +34,25 @@ function formatDuration(ms: number | null | undefined): string {
         v-if="data.status === 'RUNNING'"
         class="size-[6px] rounded-full bg-primary shrink-0 animate-ember"
       />
+      <!-- The glyph is the only thing marking a failed span, and the palette has
+           no red to reinforce it, so it carries a label rather than aria-hidden.
+           Hidden, a screen reader heard this node exactly as a completed one. -->
       <span
         v-else-if="data.status === 'FAILED'"
-        class="text-error text-[11px] leading-none shrink-0"
-        aria-hidden="true"
+        class="text-[11px] leading-none shrink-0"
+        role="img"
+        aria-label="실패"
         >✕</span
       >
-      <span class="text-[11.5px] font-medium truncate">{{ data.label }}</span>
+      <span
+        class="text-[11.5px] font-medium truncate"
+        :class="data.status === 'FAILED' ? 'mark-broken' : ''"
+        >{{ data.label }}</span
+      >
     </div>
     <div
       v-if="data.durationMs"
-      class="font-mono text-[10px] text-base-content/35 mt-1 tabular-nums"
+      class="font-mono text-[10px] text-base-content/62 mt-1 tabular-nums"
     >
       {{ formatDuration(data.durationMs) }}
     </div>

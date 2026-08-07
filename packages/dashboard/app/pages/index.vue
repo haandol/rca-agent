@@ -513,7 +513,7 @@ useHead({ title: '장애 기록' });
           </template>
           <template v-else>기다리는 일이 없습니다</template>
         </h1>
-        <p class="text-[13px] text-base-content/45 mt-2">
+        <p class="text-[13px] text-base-content/68 mt-2">
           기록 {{ totalCount }}건
           <template v-if="!openCount"> · 모두 처리되었습니다</template>
         </p>
@@ -551,12 +551,12 @@ useHead({ title: '장애 기록' });
         <span class="group-hover:underline underline-offset-2">{{
           filter.label
         }}</span>
-        <span class="font-mono text-[11px] text-base-content/40">{{
+        <span class="font-mono text-[11px] text-base-content/65">{{
           filter.count
         }}</span>
       </button>
       <button
-        class="text-[12px] text-base-content/40 hover:text-primary ml-auto"
+        class="text-[12px] text-base-content/65 hover:text-primary ml-auto"
         @click="readinessModal?.showModal()"
       >
         상태 설명
@@ -566,7 +566,7 @@ useHead({ title: '장애 기록' });
     <!-- Loading -->
     <div
       v-if="status === 'pending' && !firstPage"
-      class="py-24 text-center text-[13px] text-base-content/40"
+      class="py-24 text-center text-[13px] text-base-content/65"
     >
       <span class="loading loading-spinner loading-sm" />
       <p class="mt-3">기록을 읽고 있습니다</p>
@@ -575,7 +575,7 @@ useHead({ title: '장애 기록' });
     <!-- Nothing recorded yet -->
     <div v-else-if="!totalCount" class="py-24 text-center">
       <p class="font-serif text-[19px]">아직 기록이 없습니다</p>
-      <p class="text-[13px] text-base-content/45 mt-2.5 max-w-md mx-auto">
+      <p class="text-[13px] text-base-content/68 mt-2.5 max-w-md mx-auto">
         CloudWatch 알람이 발생하면 두 엔진이 분석을 시작하고, 그 결과가
         시간순으로 여기 쌓입니다.
       </p>
@@ -633,7 +633,7 @@ useHead({ title: '장애 기록' });
             >
               {{ OUTCOME_LABEL[row.outcome] }}
             </span>
-            <span class="font-mono text-[11px] text-base-content/35">
+            <span class="font-mono text-[11px] text-base-content/62">
               {{ row.engine }}
             </span>
           </div>
@@ -651,7 +651,7 @@ useHead({ title: '장애 기록' });
               ]"
               :style="{ width: barWidth(row.durationMs) }"
             />
-            <span class="font-mono text-[11px] text-base-content/40">
+            <span class="font-mono text-[11px] text-base-content/65">
               {{ formatRun(row.durationMs) || '진행 중' }}
             </span>
           </div>
@@ -659,13 +659,13 @@ useHead({ title: '장애 기록' });
           <!-- One line of finding, in the report's own words. -->
           <p
             v-if="row.rootCause"
-            class="font-serif text-[14px] text-base-content/65 leading-snug mt-2 max-w-[64ch] line-clamp-2"
+            class="font-serif text-[14px] text-base-content/76 leading-snug mt-2 max-w-[64ch] line-clamp-2"
           >
             {{ stripInlineMarkup(row.rootCause) }}
           </p>
           <p
             v-else-if="row.errorReason"
-            class="text-[13px] text-base-content/45 mt-2 max-w-[64ch] truncate"
+            class="text-[13px] text-base-content/68 mt-2 max-w-[64ch] truncate"
             :title="row.errorReason"
           >
             {{ row.errorReason }}
@@ -678,7 +678,7 @@ useHead({ title: '장애 기록' });
               row.outcome === 'BROKEN' &&
               stoppedAtLabel(row.engine, row.stoppedAt)
             "
-            class="text-[12px] text-base-content/40 mt-1.5"
+            class="text-[12px] text-base-content/65 mt-1.5"
           >
             {{ stoppedAtLabel(row.engine, row.stoppedAt) }}
           </p>
@@ -695,20 +695,20 @@ useHead({ title: '장애 기록' });
             <NuxtLink
               v-if="row.retrospectiveStatus === 'UPDATED'"
               :to="`/retrospective/${row.rcaId}/${row.executionId}`"
-              class="text-[12px] text-info hover:underline underline-offset-2"
+              class="text-[12px] text-primary hover:underline underline-offset-2"
             >
               실행 뒤 절차가 교정됨
             </NuxtLink>
             <span
               v-if="row.executionBlockedCount"
-              class="text-[12px] text-warning"
+              class="text-[12px] text-base-content/78"
               title="되돌릴 수 없는 조치라 차단되어 수동 조치로 남은 절차"
             >
               수동 조치 {{ row.executionBlockedCount }}건
             </span>
             <span
               v-if="row.executionAttempts > 1"
-              class="text-[12px] text-base-content/40"
+              class="text-[12px] text-base-content/65"
             >
               실행 {{ row.executionAttempts }}회
             </span>
@@ -719,25 +719,25 @@ useHead({ title: '장애 기록' });
             >
               <NuxtLink
                 :to="`/trace/${row.rcaId}?engine=${row.engine}`"
-                class="text-base-content/45 hover:text-primary"
+                class="text-base-content/68 hover:text-primary"
               >
                 과정
               </NuxtLink>
               <NuxtLink
                 :to="`/playbook/${row.rcaId}?engine=${row.engine}`"
-                class="text-base-content/45 hover:text-primary"
+                class="text-base-content/68 hover:text-primary"
               >
                 플레이북
               </NuxtLink>
               <button
                 v-if="row.outcome === 'RUNNING'"
-                class="text-base-content/45 hover:text-warning"
+                class="text-base-content/68 hover:text-secondary"
                 @click="openCancelModal(row.rcaId, row.engine)"
               >
                 중단
               </button>
               <button
-                class="text-base-content/45 hover:text-error"
+                class="text-base-content/68 hover:text-base-content"
                 @click="openDeleteModal(row.rcaId, row.engine)"
               >
                 삭제
@@ -752,7 +752,7 @@ useHead({ title: '장애 기록' });
            the button covers the keyboard path to the same action. -->
       <div v-if="hasMore" ref="sentinel" class="-ml-[86px] pl-[86px] pt-7">
         <button
-          class="text-[13px] text-base-content/55 hover:text-primary transition-colors"
+          class="text-[13px] text-base-content/72 hover:text-primary transition-colors"
           @click="showMore()"
         >
           <span v-if="loadingMore" class="loading loading-spinner loading-xs" />
@@ -761,7 +761,7 @@ useHead({ title: '장애 기록' });
       </div>
       <p
         v-else-if="matchingRows.length"
-        class="-ml-[86px] pl-[86px] pt-7 text-[12px] text-base-content/35"
+        class="-ml-[86px] pl-[86px] pt-7 text-[12px] text-base-content/62"
       >
         기록의 처음까지 보았습니다
       </p>
@@ -771,7 +771,7 @@ useHead({ title: '장애 기록' });
     <dialog ref="readinessModal" class="modal">
       <div class="modal-box max-w-lg">
         <h3 class="font-serif text-[19px] mb-1">상태가 뜻하는 것</h3>
-        <p class="text-[12px] text-base-content/45 mb-5">
+        <p class="text-[12px] text-base-content/68 mb-5">
           분석이 끝났다는 것과 할 일이 남았다는 것은 다릅니다.
         </p>
         <dl class="space-y-4">
@@ -780,7 +780,7 @@ useHead({ title: '장애 기록' });
               {{ READINESS_LABEL[key] || key }}
             </dt>
             <dd
-              class="font-serif text-[14px] text-base-content/65 leading-relaxed mt-1"
+              class="font-serif text-[14px] text-base-content/76 leading-relaxed mt-1"
             >
               {{ desc }}
             </dd>
@@ -801,13 +801,16 @@ useHead({ title: '장애 기록' });
     <dialog ref="cancelModalRef" class="modal">
       <div class="modal-box max-w-sm">
         <h3 class="font-serif text-[18px]">분석을 중단합니다</h3>
-        <p class="text-[13px] text-base-content/65 mt-3 leading-relaxed">
+        <p class="text-[13px] text-base-content/76 mt-3 leading-relaxed">
           세션
           <span class="font-mono">{{ cancelTarget?.rcaId.slice(0, 8) }}</span>
           ({{ cancelTarget?.engine }})의 파이프라인이 다음 단계 전환 시점에
           종료됩니다.
         </p>
-        <p v-if="cancelError" class="text-[13px] text-error mt-3">
+        <p
+          v-if="cancelError"
+          class="text-[13px] text-base-content mark-broken mt-3"
+        >
           {{ cancelError }}
         </p>
         <div class="modal-action">
@@ -841,13 +844,16 @@ useHead({ title: '장애 기록' });
     <dialog ref="deleteModalRef" class="modal">
       <div class="modal-box max-w-sm">
         <h3 class="font-serif text-[18px]">기록을 삭제합니다</h3>
-        <p class="text-[13px] text-base-content/65 mt-3 leading-relaxed">
+        <p class="text-[13px] text-base-content/76 mt-3 leading-relaxed">
           세션
           <span class="font-mono">{{ deleteTarget?.rcaId.slice(0, 8) }}</span>
           ({{ deleteTarget?.engine }})의 데이터가 사라집니다. 되돌릴 수
           없습니다.
         </p>
-        <p v-if="deleteError" class="text-[13px] text-error mt-3">
+        <p
+          v-if="deleteError"
+          class="text-[13px] text-base-content mark-broken mt-3"
+        >
           {{ deleteError }}
         </p>
         <div class="modal-action">

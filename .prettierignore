@@ -5,3 +5,5 @@
 /.nx/workspace-data
 **/cdk.out
 **/.venv
+**/.output
+**/.nuxt

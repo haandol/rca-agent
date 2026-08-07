@@ -25,7 +25,7 @@ const hasChain = computed(() => props.links.length > 0);
       <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
         원인의 사슬
       </h2>
-      <span class="text-[11px] text-base-content/35">
+      <span class="text-[11px] text-base-content/62">
         {{ links.length }}단계로 좁혔습니다
       </span>
     </div>
@@ -40,7 +40,7 @@ const hasChain = computed(() => props.links.length > 0);
 
     <!-- The last link is where a fix belongs, so the page says so once rather
          than decorating every link. -->
-    <p class="text-[12px] text-base-content/40 mt-6 pl-8">
+    <p class="text-[12px] text-base-content/65 mt-6 pl-8">
       마지막 단계가 재발을 막는 지점입니다.
     </p>
   </section>
