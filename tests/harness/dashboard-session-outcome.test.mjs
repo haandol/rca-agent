@@ -32,8 +32,12 @@ const {
   STATE_LABEL,
 } = await importModule('packages/dashboard/app/utils/sessionState.ts');
 
-const { readinessOf, countExecutionSteps, READINESS } = await importModule(
+const { readinessOf, READINESS } = await importModule(
   'packages/dashboard/server/utils/readiness.ts',
+);
+
+const { countExecutionSteps } = await importModule(
+  'packages/dashboard/server/utils/playbook.ts',
 );
 
 const { furthestStage } = await importModule(
@@ -116,39 +120,59 @@ test('an unfinished or skipped analysis is never approvable', () => {
 });
 
 test('a retrospective revision decides how many steps are approvable', () => {
+  const step = (stepId) => ({
+    step_id: stepId,
+    action: `run ${stepId}`,
+    success_criteria: `${stepId} succeeds`,
+  });
+  const session = {
+    SK: 'strands#SESSION',
+    confirmed: true,
+    playbook_id: 'current',
+    playbook_span_id: 'abc',
+  };
   const playbookSpan = {
     SK: 'strands#SPAN#abc',
     engine: 'strands',
     span_type: 'PLAYBOOK',
     metadata: {
-      execution_steps: [{ step_id: 'a' }, { step_id: 'b' }],
+      playbook_id: 'current',
+      execution_steps: [step('a'), step('b')],
     },
   };
-  assert.equal(countExecutionSteps([playbookSpan], 'strands'), 2);
+  assert.equal(countExecutionSteps([session, playbookSpan], 'strands'), 2);
 
   // The revision is what the next execution runs, so it wins over what analysis
   // first recorded — counting the stale steps would offer a procedure that no
   // longer exists.
   const revision = {
     SK: 'strands#PLAYBOOK_REVISION',
+    playbook_id: 'current',
     playbook: JSON.stringify({
-      execution_steps: [{ step_id: 'a' }, { step_id: 'b' }, { step_id: 'c' }],
+      playbook_id: 'current',
+      execution_steps: [step('a'), step('b'), step('c')],
     }),
   };
-  assert.equal(countExecutionSteps([playbookSpan, revision], 'strands'), 3);
+  assert.equal(
+    countExecutionSteps([session, playbookSpan, revision], 'strands'),
+    3,
+  );
 
-  // A step with no id cannot be pointed at by evidence or corrected by a
-  // retrospective, so it is not approvable.
+  // Approval rejects the whole procedure when any step is incomplete; readiness
+  // must not offer a partially executable playbook that approval would refuse.
   const unnamed = {
     SK: 'strands#SPAN#abc',
     engine: 'strands',
     span_type: 'PLAYBOOK',
-    metadata: { execution_steps: [{ step_id: 'a' }, { intent: 'no id' }] },
+    metadata: {
+      playbook_id: 'current',
+      execution_steps: [step('a'), { intent: 'no id' }],
+    },
   };
-  assert.equal(countExecutionSteps([unnamed], 'strands'), 1);
+  assert.equal(countExecutionSteps([session, unnamed], 'strands'), 0);
 
   // One engine's playbook must not be counted for the other's row.
-  assert.equal(countExecutionSteps([playbookSpan], 'cc-headless'), 0);
+  assert.equal(countExecutionSteps([session, playbookSpan], 'cc-headless'), 0);
   assert.equal(countExecutionSteps([], 'strands'), 0);
 });
 

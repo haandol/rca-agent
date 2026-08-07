@@ -11,6 +11,12 @@ async function readRepositoryFile(relativePath) {
 }
 
 const EXECUTION_MODULE = 'packages/dashboard/server/utils/execution.ts';
+const PLAYBOOK_MODULE = 'packages/dashboard/server/utils/playbook.ts';
+const APPROVAL_MODULE = 'packages/dashboard/server/utils/executionApproval.ts';
+
+async function importRepositoryModule(relativePath) {
+  return import(pathToFileURL(path.join(REPOSITORY_ROOT, relativePath)).href);
+}
 
 // Recovery is no longer something analysis reports on. It is a separate
 // lifecycle a person approves, so what the dashboard must get right is the
@@ -27,17 +33,12 @@ test('the dashboard cannot publish an approval that the worker would reject', as
   // request that fails after the fact and reads as an approved-but-broken run.
   assert.match(source, /statusCode: 400[\s\S]*?Missing rcaId/);
   assert.match(source, /isAllowedEngine\(engine\)/);
+  assert.match(source, /isUuid\(approvalId\)/);
   assert.match(source, /state !== 'COMPLETED'/);
-  // The refusals are asserted on the condition each one guards rather than on its
-  // wording: these sentences are read by a person in a dialog and get rewritten,
-  // while the three conditions are the contract the worker also enforces.
-  assert.match(source, /!steps\.length/);
-  assert.match(source, /if \(running\)/);
-  assert.equal(
-    source.match(/statusCode: 409/g)?.length,
-    3,
-    'each of the three approval conditions refuses with a 409',
-  );
+  assert.match(source, /session\.confirmed !== true/);
+  assert.match(source, /!reportS3Key/);
+  assert.match(source, /HeadObjectCommand/);
+  assert.match(source, /validateExecutablePlaybook/);
 
   // No queue URL must fail loudly: a dashboard that silently skipped publishing
   // would look like it approved something.
@@ -48,37 +49,253 @@ test('the dashboard cannot publish an approval that the worker would reject', as
 });
 
 test('an approval carries a stable identifier so a resubmit cannot double-execute', async () => {
-  const source = await readRepositoryFile(
-    'packages/dashboard/server/api/executions.post.ts',
-  );
+  const [source, page] = await Promise.all([
+    readRepositoryFile('packages/dashboard/server/api/executions.post.ts'),
+    readRepositoryFile('packages/dashboard/app/pages/report/[id].vue'),
+  ]);
 
-  // The worker derives the execution id from approval_id, so the same approval
-  // claims the same execution instead of starting a second one.
+  assert.match(source, /const executionId = approvalId/);
+  assert.match(source, /execution_id: executionId/);
   assert.match(source, /approval_id: approvalId/);
   assert.match(source, /rca_id: rcaId/);
   assert.match(source, /engine,/);
+  assert.match(source, /requested_by: APPROVAL_REQUESTED_BY/);
+  assert.doesNotMatch(source, /requestedBy/);
+
+  // A failed publish retries the same reservation and snapshot.
+  assert.match(page, /pendingApprovalId\.value \?\?= crypto\.randomUUID\(\)/);
+  assert.match(page, /approvalId: pendingApprovalId\.value/);
+  assert.ok(
+    page.indexOf('pendingApprovalId.value = null') >
+      page.indexOf("await $fetch('/api/executions'"),
+    'the client clears the UUID only after the approval request succeeds',
+  );
 });
 
 test('a retrospective revision becomes the procedure the next execution runs', async () => {
+  const { resolveCurrentPlaybook } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const session = {
+    SK: 'strands#SESSION',
+    playbook_id: 'current',
+    playbook_span_id: 'selected-span',
+  };
+  const selectedSpan = {
+    SK: 'strands#SPAN#selected-span',
+    engine: 'strands',
+    span_type: 'PLAYBOOK',
+    metadata: { playbook_id: 'current', execution_steps: [] },
+  };
+  const wrongFirstSpan = {
+    SK: 'strands#SPAN#wrong-first',
+    engine: 'strands',
+    span_type: 'PLAYBOOK',
+    metadata: { playbook_id: 'other', execution_steps: [{ step_id: 'bad' }] },
+  };
+  const wrongRevision = {
+    SK: 'strands#PLAYBOOK_REVISION',
+    playbook_id: 'other',
+    playbook: JSON.stringify({
+      playbook_id: 'other',
+      execution_steps: [{ step_id: 'wrong-revision' }],
+    }),
+  };
+
+  assert.equal(
+    resolveCurrentPlaybook(
+      [wrongFirstSpan, wrongRevision, selectedSpan],
+      session,
+      'strands',
+    )?.sourceItem.SK,
+    selectedSpan.SK,
+    'a revision for another playbook and an arbitrary first span are ignored',
+  );
+
+  const matchingRevision = {
+    ...wrongRevision,
+    playbook_id: 'current',
+    playbook: JSON.stringify({
+      playbook_id: 'current',
+      execution_steps: [{ step_id: 'revised' }],
+    }),
+  };
+  assert.equal(
+    resolveCurrentPlaybook([selectedSpan, matchingRevision], session, 'strands')
+      ?.source,
+    'revision',
+  );
+});
+
+test('playbook selection is exact for CC sessions and conservative for legacy Strands sessions', async () => {
+  const { resolveCurrentPlaybook } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const ccPlaybook = {
+    playbook_id: 'cc-current',
+    execution_steps: [{ step_id: 'persisted' }],
+  };
+  const arbitrarySpan = {
+    SK: 'cc-headless#SPAN#other',
+    engine: 'cc-headless',
+    span_type: 'PLAYBOOK',
+    metadata: {
+      playbook_id: 'cc-current',
+      execution_steps: [{ step_id: 'span-copy' }],
+    },
+  };
+  const cc = resolveCurrentPlaybook(
+    [arbitrarySpan],
+    {
+      SK: 'cc-headless#SESSION',
+      playbook_id: 'cc-current',
+      playbook: JSON.stringify(ccPlaybook),
+    },
+    'cc-headless',
+  );
+  assert.deepEqual(cc?.playbook, ccPlaybook);
+  assert.equal(cc?.source, 'session');
+
+  const legacySession = { SK: 'SESSION', playbook_id: 'legacy' };
+  const legacySpan = (id) => ({
+    SK: `SPAN#${id}`,
+    span_type: 'PLAYBOOK',
+    metadata: { playbook_id: 'legacy', execution_steps: [] },
+  });
+  assert.equal(
+    resolveCurrentPlaybook(
+      [legacySpan('one'), legacySpan('two')],
+      legacySession,
+      'strands',
+    ),
+    null,
+    'legacy fallback rejects an ambiguous set of PLAYBOOK spans',
+  );
+  assert.equal(
+    resolveCurrentPlaybook([legacySpan('only')], legacySession, 'strands')
+      ?.source,
+    'legacy-span',
+  );
+});
+
+test('executable playbooks require complete uniquely identified steps', async () => {
+  const { countExecutionSteps, validateExecutablePlaybook } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const validStep = {
+    step_id: 'restart-service',
+    action: 'Restart the affected service',
+    success_criteria: 'Healthy task count returns to target',
+  };
+
+  assert.equal(
+    validateExecutablePlaybook({ execution_steps: [validStep] }).valid,
+    true,
+  );
+  for (const steps of [
+    [],
+    [null],
+    [{ ...validStep, action: ' ' }],
+    [{ ...validStep, success_criteria: '' }],
+    [validStep, { ...validStep }],
+  ]) {
+    assert.equal(
+      validateExecutablePlaybook({ execution_steps: steps }).valid,
+      false,
+      `invalid steps must be rejected: ${JSON.stringify(steps)}`,
+    );
+  }
+
+  const items = [
+    {
+      SK: 'cc-headless#SESSION',
+      confirmed: false,
+      playbook_id: 'pb-1',
+      playbook: JSON.stringify({
+        playbook_id: 'pb-1',
+        execution_steps: [validStep],
+      }),
+    },
+  ];
+  assert.equal(
+    countExecutionSteps(items, 'cc-headless'),
+    0,
+    'readiness cannot offer an unconfirmed procedure that approval rejects',
+  );
+});
+
+test('approval snapshots are deterministic and reservation retries require an exact match', async () => {
+  const { executionReservationMatches, serializePlaybookSnapshot, sha256Hex } =
+    await importRepositoryModule(APPROVAL_MODULE);
+  const first = serializePlaybookSnapshot({
+    z: 1,
+    nested: { b: true, a: '값' },
+  });
+  const second = serializePlaybookSnapshot({
+    nested: { a: '값', b: true },
+    z: 1,
+  });
+  assert.deepEqual(first, second);
+  assert.equal(sha256Hex(first), sha256Hex(second));
+
+  const request = {
+    execution_id: '11111111-1111-4111-8111-111111111111',
+    rca_id: 'rca-1',
+    engine: 'strands',
+    approval_id: '11111111-1111-4111-8111-111111111111',
+    requested_by: 'dashboard',
+    report_s3_key: 'reports/strands/rca-1.md',
+    approved_playbook_s3_key:
+      'approvals/rca-1/11111111-1111-4111-8111-111111111111/playbook.json',
+    playbook_digest: sha256Hex(first),
+  };
+  assert.equal(
+    executionReservationMatches(
+      { ...request, execution_state: 'PENDING_APPROVAL', attempt: 0 },
+      request,
+    ),
+    true,
+  );
+  assert.equal(
+    executionReservationMatches(
+      {
+        ...request,
+        execution_state: 'PENDING_APPROVAL',
+        attempt: 0,
+        playbook_digest: '0'.repeat(64),
+      },
+      request,
+    ),
+    false,
+  );
+});
+
+test('approval persistence precedes queue publication and carries the full worker contract', async () => {
   const source = await readRepositoryFile(
     'packages/dashboard/server/api/executions.post.ts',
   );
-  const playbookApi = await readRepositoryFile(
-    'packages/dashboard/server/api/playbooks/[id].get.ts',
-  );
-
-  // Showing the pre-retrospective steps while running the revised ones would
-  // mean a person approves a procedure that is not the one that executes.
+  assert.match(source, /PutObjectCommand/);
+  assert.match(source, /IfNoneMatch: '\*'/);
+  assert.match(source, /TransactWriteCommand/);
+  assert.match(source, /execution_state: 'PENDING_APPROVAL'/);
+  assert.match(source, /SK: ACTIVE_EXECUTION_SK/);
+  assert.match(source, /attempt: 0/);
+  assert.match(source, /ttl,/);
+  assert.match(source, /executionReservationMatches/);
   assert.ok(
-    source.indexOf('PLAYBOOK_REVISION') <
-      source.indexOf("span_type === 'PLAYBOOK'"),
-    'the approval check prefers the revision over the original span',
+    source.indexOf('await reserveExecution') <
+      source.indexOf('new SendMessageCommand'),
+    'the active reservation is authoritative before queue publication',
   );
-  assert.ok(
-    playbookApi.indexOf('PLAYBOOK_REVISION') <
-      playbookApi.indexOf('metadata[field]'),
-    'the playbook API prefers the revision over the original span',
-  );
+  for (const field of [
+    'execution_id',
+    'rca_id',
+    'engine',
+    'approval_id',
+    'requested_by',
+    'report_s3_key',
+    'approved_playbook_s3_key',
+    'playbook_digest',
+  ]) {
+    assert.ok(source.includes(field), `approval includes ${field}`);
+  }
 });
 
 test('a person deciding to approve can tell a proven procedure from a draft', async () => {
@@ -88,11 +305,13 @@ test('a person deciding to approve can tell a proven procedure from a draft', as
   ]);
 
   // The promotion is recorded on the revision, so reading the status off the
-  // analysis span alone would show a draft forever.
+  // analysis span alone would show a draft forever. The API reads it from the
+  // exact object returned by the shared revision-aware resolver.
+  assert.match(playbookApi, /resolveCurrentPlaybook/);
   assert.match(
     playbookApi,
-    /verification_status: text\('verification_status'\)/,
-    'the playbook API must read the status through the revision-first accessor',
+    /verification_status: readText\(playbook\.verification_status\)/,
+    'the playbook API must read the status from the resolved current playbook',
   );
 
   // Anything other than the recorded VERIFIED has to read as a draft: an
@@ -112,6 +331,30 @@ test('a person deciding to approve can tell a proven procedure from a draft', as
     reportPage,
     /\{\{\s*playbook\.verification_status\s*\}\}/,
     'the raw enum must never be rendered directly',
+  );
+});
+
+test('execution history is scoped to the report engine', async () => {
+  const [historyApi, reportPage, sessionApi] = await Promise.all([
+    readRepositoryFile(
+      'packages/dashboard/server/api/executions/[rcaId].get.ts',
+    ),
+    readRepositoryFile('packages/dashboard/app/pages/report/[id].vue'),
+    readRepositoryFile(
+      'packages/dashboard/server/api/sessions/[id]/index.get.ts',
+    ),
+  ]);
+  assert.match(historyApi, /isAllowedEngine\(engine\)/);
+  assert.match(
+    historyApi,
+    /execution\.engine === engine/,
+    'history excludes attempts belonging to the other analysis engine',
+  );
+  assert.match(reportPage, /query: \{ engine \}/);
+  assert.match(
+    sessionApi,
+    /execution\.engine === engine/,
+    'the report summary cannot be labelled by the other engine execution',
   );
 });
 
@@ -248,6 +491,7 @@ test('the report page gates approval on a confirmed procedure', async () => {
   // on the optional-chained form the gate itself uses, so this does not pass on
   // an unrelated mention of the same state elsewhere in the page.
   assert.match(source, /session\.value\?\.state === 'COMPLETED'/);
+  assert.match(source, /session\.value\?\.confirmed === true/);
   assert.match(source, /executionSteps\.value\.length > 0/);
   assert.match(source, /!inFlight\.value/);
   assert.match(source, /:disabled="!canApprove"/);

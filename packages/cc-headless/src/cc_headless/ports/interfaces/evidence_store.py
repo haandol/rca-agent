@@ -14,6 +14,9 @@ class EvidenceStorePort(ABC):
     def save_execution_evidence(self, execution_id: str, *, rca_id: str, evidence: dict) -> str: ...
 
     @abstractmethod
+    def load_approved_playbook(self, approved_playbook_s3_key: str, *, playbook_digest: str) -> dict: ...
+
+    @abstractmethod
     def save_playbook_snapshot(self, execution_id: str, *, rca_id: str, playbook: dict) -> str: ...
 
     @abstractmethod

@@ -106,7 +106,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
   <div>
     <header class="mb-10">
       <NuxtLink
-        :to="`/report/${rcaId}`"
+        :to="`/report/${rcaId}?engine=${data?.execution?.engine ?? ''}`"
         class="text-[12px] text-base-content/45 hover:text-primary inline-flex items-center gap-1.5 mb-4"
       >
         <span aria-hidden="true">←</span> 보고서로

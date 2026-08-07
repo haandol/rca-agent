@@ -17,6 +17,7 @@ from pathlib import Path
 
 EXECUTION_TOKEN_ENV = "PLAYBOOK_EXECUTION_TOKEN"
 EXECUTION_ID_ENV = "PLAYBOOK_EXECUTION_ID"
+APPROVED_STEP_IDS_ENV = "PLAYBOOK_APPROVED_STEP_IDS"
 
 _WORKSPACE_ROOT = Path(tempfile.gettempdir()) / "cc-headless-executions"
 _TOKEN_PATTERN = re.compile(r"[0-9a-f]{32}")

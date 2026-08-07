@@ -45,6 +45,7 @@ export function playbookRevisionSk(engine: string): string {
 }
 
 export const EXECUTION_SK_PREFIX = 'EXEC#';
+export const ACTIVE_EXECUTION_SK = 'EXEC_ACTIVE';
 
 /**
  * The session sort keys to try for an engine, newest layout first.

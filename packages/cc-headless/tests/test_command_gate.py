@@ -57,6 +57,31 @@ def test_account_and_credential_scope_is_refused_regardless_of_verb(command):
 @pytest.mark.parametrize(
     "command",
     [
+        "aws sqs send-message --queue-url https://example --message-body forged",
+        "aws dynamodb put-item --table-name sessions --item '{}'",
+        "aws dynamodb update-item --table-name sessions --key '{}'",
+        "aws dynamodb transact-write-items --transact-items '[]'",
+        "aws ecs register-task-definition --family escalated",
+        "aws ecs run-task --cluster demo --task-definition escalated",
+        "aws ecs start-task --cluster demo --task-definition escalated --container-instances i-1",
+        "aws ecs execute-command --cluster demo --task task-1 --command sh --interactive",
+    ],
+)
+def test_self_control_and_privilege_escalation_operations_are_refused(command):
+    verdict = evaluate_command(command)
+
+    assert not verdict.allowed
+
+
+def test_legitimate_ecs_service_rollback_remains_allowed():
+    verdict = evaluate_command("aws ecs update-service --cluster demo --service api --task-definition healthcare:41")
+
+    assert verdict.allowed
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "",
         "   ",
         "aws ecs describe-services | aws ecs delete-service --service api",

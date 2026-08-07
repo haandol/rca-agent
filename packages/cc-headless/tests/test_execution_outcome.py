@@ -164,6 +164,40 @@ def test_declared_steps_appear_in_the_evidence_even_when_never_attempted():
     assert evidence.attempted_step_count == 0
 
 
+def test_skipped_step_cannot_resolve_even_when_global_resolution_claims_success():
+    records = [record for record in _resolved_records() if record.get("step_id") != "step-2"]
+
+    verdict = judge_resolution(_assemble(records), agent_succeeded=True)
+
+    assert verdict.state is ExecutionState.UNRESOLVED
+    assert "not attempted" in verdict.reason
+
+
+def test_successful_criteria_requires_a_nonblank_observation():
+    records = _resolved_records()
+    records[1] = {
+        "type": "step_outcome",
+        "step_id": "step-1",
+        "observation": " ",
+        "criteria_met": True,
+    }
+
+    verdict = judge_resolution(_assemble(records), agent_succeeded=True)
+
+    assert verdict.state is ExecutionState.UNRESOLVED
+    assert "no recorded observation" in verdict.reason
+
+
+def test_global_resolution_requires_a_nonblank_observation():
+    records = _resolved_records()
+    records[-1] = {"type": "resolution", "observation": "", "resolved": True}
+
+    verdict = judge_resolution(_assemble(records), agent_succeeded=True)
+
+    assert verdict.state is ExecutionState.UNRESOLVED
+    assert "nonblank" in verdict.reason
+
+
 def test_evidence_assembly_redacts_credentials_from_recorded_commands():
     evidence = _assemble(
         _records(

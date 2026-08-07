@@ -817,6 +817,24 @@ class TestExecutionStepContract:
         assert [step.step_id for step in updated.execution_steps] == ["step-1"]
         assert updated.execution_steps[0].action == "web-service 를 강제 재배포한다"
 
+    def test_an_unconfirmed_update_never_restores_recorded_steps(self):
+        existing = Playbook(
+            playbook_id="p-1",
+            failure_type="Memory leak",
+            symptom_pattern="메모리 증가",
+            execution_steps=[ExecutionStep(**self._step())],
+            verification_status=PlaybookVerificationStatus.VERIFIED,
+        )
+        report = _make_report()
+        report.root_cause_confirmed = False
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True))
+
+        updated = _try_update_existing(existing, report, agent)
+
+        assert updated is not None
+        assert updated.execution_steps == []
+        assert updated.verification_status is PlaybookVerificationStatus.DRAFT
+
     def test_the_recorded_steps_survive_a_round_trip_through_the_trace(self):
         ddb = MagicMock()
         ddb.query.return_value = {
@@ -843,8 +861,7 @@ class TestExecutionStepContract:
         assert [step.step_id for step in detail.execution_steps] == ["step-1"]
         assert detail.execution_steps[0].success_criteria == "MemoryUtilization 이 60% 이하로 복귀"
 
-    def test_an_update_does_not_demote_a_verified_playbook(self):
-        """보강 한 번이 회고의 승격을 취소하면 검증됨이 아무것도 뜻하지 않는다."""
+    def test_an_update_without_step_changes_does_not_demote_a_verified_playbook(self):
         existing = Playbook(
             playbook_id="p-1",
             failure_type="Memory leak",
@@ -857,6 +874,40 @@ class TestExecutionStepContract:
         updated = _try_update_existing(existing, _make_report(), agent)
 
         assert updated is not None
+        assert updated.verification_status is PlaybookVerificationStatus.VERIFIED
+
+    def test_an_update_with_changed_steps_demotes_a_verified_playbook(self):
+        existing = Playbook(
+            playbook_id="p-1",
+            failure_type="Memory leak",
+            symptom_pattern="메모리 증가",
+            execution_steps=[ExecutionStep(**self._step())],
+            verification_status=PlaybookVerificationStatus.VERIFIED,
+        )
+        changed_step = ExecutionStepOutput(**self._step(action="web-service 를 롤링 재시작한다"))
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, execution_steps=[changed_step]))
+
+        updated = _try_update_existing(existing, _make_report(), agent)
+
+        assert updated is not None
+        assert updated.execution_steps[0].action == "web-service 를 롤링 재시작한다"
+        assert updated.verification_status is PlaybookVerificationStatus.DRAFT
+
+    def test_an_update_with_identical_steps_preserves_verified_status(self):
+        existing = Playbook(
+            playbook_id="p-1",
+            failure_type="Memory leak",
+            symptom_pattern="메모리 증가",
+            execution_steps=[ExecutionStep(**self._step())],
+            verification_status=PlaybookVerificationStatus.VERIFIED,
+        )
+        same_step = ExecutionStepOutput(**self._step())
+        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, execution_steps=[same_step]))
+
+        updated = _try_update_existing(existing, _make_report(), agent)
+
+        assert updated is not None
+        assert updated.execution_steps == existing.execution_steps
         assert updated.verification_status is PlaybookVerificationStatus.VERIFIED
 
     def test_an_update_to_a_draft_playbook_leaves_it_a_draft(self):

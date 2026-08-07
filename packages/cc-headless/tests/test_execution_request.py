@@ -8,10 +8,14 @@ from cc_headless.services.execution_request import (
 )
 
 APPROVAL = {
+    "execution_id": "execution-1",
     "rca_id": "rca-1",
     "engine": "cc-headless",
     "approval_id": "approval-1",
     "requested_by": "operator@example.com",
+    "report_s3_key": "reports/cc-headless/rca-1/report.md",
+    "approved_playbook_s3_key": "approved/rca-1/execution-1/playbook.json",
+    "playbook_digest": "a" * 64,
 }
 
 
@@ -23,28 +27,36 @@ def test_a_user_approval_becomes_an_execution_request():
     assert request.requested_by == "operator@example.com"
 
 
-def test_the_same_approval_always_derives_the_same_execution_id():
-    """재전달이 중복 실행이 되지 않으려면 식별자가 요청에서 결정론적으로 나와야 한다."""
+def test_the_request_uses_the_precreated_execution_id():
     first = parse_execution_request(json.dumps(APPROVAL))
-    second = parse_execution_request(json.dumps({**APPROVAL, "requested_by": "someone-else"}))
 
-    assert first.execution_id == second.execution_id
-
-
-def test_a_different_approval_derives_a_different_execution_id():
-    first = parse_execution_request(json.dumps(APPROVAL))
-    second = parse_execution_request(json.dumps({**APPROVAL, "approval_id": "approval-2"}))
-    other_engine = parse_execution_request(json.dumps({**APPROVAL, "engine": "strands"}))
-
-    assert len({first.execution_id, second.execution_id, other_engine.execution_id}) == 3
+    assert first.execution_id == "execution-1"
 
 
-@pytest.mark.parametrize("missing", ["rca_id", "engine", "approval_id"])
+@pytest.mark.parametrize("engine", ["strands", "cc-headless"])
+def test_only_shared_contract_engines_are_accepted(engine):
+    request = parse_execution_request(json.dumps({**APPROVAL, "engine": engine}))
+
+    assert request.engine == engine
+
+
+@pytest.mark.parametrize("missing", APPROVAL)
 def test_a_request_without_an_approval_subject_is_rejected(missing):
     payload = {key: value for key, value in APPROVAL.items() if key != missing}
 
     with pytest.raises(InvalidExecutionRequestError):
         parse_execution_request(json.dumps(payload))
+
+
+def test_an_unknown_engine_is_rejected():
+    with pytest.raises(InvalidExecutionRequestError):
+        parse_execution_request(json.dumps({**APPROVAL, "engine": "other"}))
+
+
+@pytest.mark.parametrize("digest", ["", "abc", "g" * 64])
+def test_an_invalid_playbook_digest_is_rejected(digest):
+    with pytest.raises(InvalidExecutionRequestError):
+        parse_execution_request(json.dumps({**APPROVAL, "playbook_digest": digest}))
 
 
 @pytest.mark.parametrize("blank", ["", "   "])

@@ -24,6 +24,7 @@ from cc_headless.services.artifact_validation import ArtifactValidationError, va
 from cc_headless.services.artifact_watcher import start_watcher
 from cc_headless.services.execution_context import ExecutionContext
 from cc_headless.services.playbook_merge import (
+    PLAYBOOK_DRAFT,
     VERIFICATION_STATUS_FIELD,
     merge_playbook_update,
     normalize_verification_status,
@@ -259,6 +260,8 @@ class PipelineOrchestrator:
                 claim_token=claim_token,
                 attempt=attempt,
             )
+            if not isinstance(report_key, str) or not report_key.strip():
+                raise RuntimeError("Report persistence returned no S3 key")
             c.report_store.send_notification(
                 rca_id,
                 alarm.alarm_name,
@@ -273,6 +276,8 @@ class PipelineOrchestrator:
                 rca_id,
                 root_cause_line,
                 report_key,
+                playbook=artifacts.playbook,
+                confirmed=artifacts.confirmed,
                 claim_token=claim_token,
                 side_effect_lease_token=side_effect_lease_token,
             )
@@ -374,10 +379,13 @@ class PipelineOrchestrator:
                 continue
 
             merged, diff = merge_playbook_update(existing, playbook)
-            # 식별자와 검증 상태는 기존 플레이북의 것을 유지한다. 병합이 획득한 검증
-            # 상태를 낮추면 보강 한 번이 회고의 승격을 취소한다.
             merged["playbook_id"] = hit.playbook_id
-            merged[VERIFICATION_STATUS_FIELD] = normalize_verification_status(existing.get(VERIFICATION_STATUS_FIELD))
+            procedures_unchanged = merged.get("execution_steps") == existing.get("execution_steps")
+            merged[VERIFICATION_STATUS_FIELD] = (
+                normalize_verification_status(existing.get(VERIFICATION_STATUS_FIELD))
+                if procedures_unchanged
+                else PLAYBOOK_DRAFT
+            )
             log.info(
                 "playbook_merged_into_existing",
                 playbook_id=hit.playbook_id,
@@ -386,6 +394,7 @@ class PipelineOrchestrator:
                 corrected_steps=len(diff.corrected_steps),
                 added_steps=len(diff.added_steps),
                 preserved_steps=len(diff.preserved_steps),
+                procedures_unchanged=procedures_unchanged,
             )
             return merged
 

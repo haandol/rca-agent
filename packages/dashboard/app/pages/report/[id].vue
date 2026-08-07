@@ -31,6 +31,9 @@ const { data: playbook } = useFetch(`/api/playbooks/${id}`, {
 });
 const { data: executionHistory, refresh: refreshExecutions } = useFetch(
   `/api/executions/${id}`,
+  {
+    query: { engine },
+  },
 );
 
 const outcome = computed(() =>
@@ -70,6 +73,7 @@ const canApprove = computed(
   () =>
     Boolean(session.value?.engine) &&
     session.value?.state === 'COMPLETED' &&
+    session.value?.confirmed === true &&
     executionSteps.value.length > 0 &&
     !inFlight.value,
 );
@@ -91,6 +95,8 @@ const isPendingDecision = computed(
 const blockedReason = computed(() => {
   if (canApprove.value) return '';
   if (inFlight.value) return '이미 진행 중인 실행이 있습니다';
+  if (session.value?.confirmed !== true)
+    return '근본원인이 확정되지 않아 승인할 수 없습니다';
   if (!executionSteps.value.length)
     return '근본원인이 확정되지 않아 승인할 절차가 없습니다';
   if (session.value?.state !== 'COMPLETED') return '분석이 완료되지 않았습니다';
@@ -100,15 +106,22 @@ const blockedReason = computed(() => {
 const approving = ref(false);
 const approvalError = ref('');
 const approvalModal = ref<HTMLDialogElement | null>(null);
+const pendingApprovalId = ref<string | null>(null);
 
 async function approveExecution() {
   approving.value = true;
   approvalError.value = '';
+  pendingApprovalId.value ??= crypto.randomUUID();
   try {
     await $fetch('/api/executions', {
       method: 'POST',
-      body: { rcaId: id, engine: session.value?.engine },
+      body: {
+        rcaId: id,
+        engine: session.value?.engine,
+        approvalId: pendingApprovalId.value,
+      },
     });
+    pendingApprovalId.value = null;
     approvalModal.value?.close();
     await refreshExecutions();
   } catch (err) {

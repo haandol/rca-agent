@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -246,6 +247,7 @@ class DynamoDbSessionStore(SessionStorePort):
         *,
         receive_count: int,
         message_id: str | None = None,
+        alarm_data: dict | None = None,
     ) -> SessionClaim:
         if not self._enabled:
             return SessionClaim(ClaimDisposition.CONTENDED)
@@ -278,6 +280,8 @@ class DynamoDbSessionStore(SessionStorePort):
             "list_created_at": {"S": now.isoformat()},
             "ttl": {"N": str(ttl)},
         }
+        if alarm_data is not None:
+            item["alarm_data"] = {"S": json.dumps(alarm_data, ensure_ascii=False)}
         try:
             self._dynamodb.put_item(
                 TableName=DYNAMODB_TABLE_NAME,
@@ -459,6 +463,8 @@ class DynamoDbSessionStore(SessionStorePort):
         fault_type: FaultType = FaultType.UNSUPPORTED,
         completion_notification: NotificationMessage | None = None,
         report_s3_key: str = "",
+        playbook_span_id: str = "",
+        playbook_id: str = "",
         claim_token: str | None = None,
     ) -> bool:
         extra_sets = {
@@ -468,6 +474,10 @@ class DynamoDbSessionStore(SessionStorePort):
             "fault_type": (":fault_type", {"S": fault_type.value}),
             "report_s3_key": (":report_s3_key", {"S": report_s3_key}),
         }
+        if playbook_span_id:
+            extra_sets["playbook_span_id"] = (":playbook_span_id", {"S": playbook_span_id})
+        if playbook_id:
+            extra_sets["playbook_id"] = (":playbook_id", {"S": playbook_id})
         if completion_notification is not None:
             extra_sets.update(
                 {
@@ -612,12 +622,14 @@ def claim_session(
     *,
     receive_count: int,
     message_id: str | None = None,
+    alarm_data: dict | None = None,
     dynamodb_client=None,
 ) -> SessionClaim:
     return DynamoDbSessionStore(dynamodb_client).claim_session(
         alarm,
         receive_count=receive_count,
         message_id=message_id,
+        alarm_data=alarm_data,
     )
 
 
@@ -644,6 +656,8 @@ def mark_completed(
     fault_type: FaultType = FaultType.UNSUPPORTED,
     completion_notification: NotificationMessage | None = None,
     report_s3_key: str = "",
+    playbook_span_id: str = "",
+    playbook_id: str = "",
     claim_token: str | None = None,
     dynamodb_client=None,
 ) -> bool:
@@ -655,6 +669,8 @@ def mark_completed(
         fault_type=fault_type,
         completion_notification=completion_notification,
         report_s3_key=report_s3_key,
+        playbook_span_id=playbook_span_id,
+        playbook_id=playbook_id,
         claim_token=claim_token,
     )
 

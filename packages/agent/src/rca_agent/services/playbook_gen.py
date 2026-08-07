@@ -15,6 +15,7 @@ from rca_agent.ports.dto.models import (
     ExecutionStep,
     Playbook,
     PlaybookMatch,
+    PlaybookVerificationStatus,
     RcaReport,
     ScopingResult,
 )
@@ -232,20 +233,24 @@ def _try_update_existing(
     logger.info("Updating playbook %s with new RCA findings", existing.playbook_id)
     # An empty field means the LLM had nothing to add, not that the step was
     # dropped — keep the recorded value so a merge never loses past procedure.
-    #
-    # 검증 상태도 그 보존 대상이다. 여기서 빠뜨리면 기본값 DRAFT로 떨어져, 실행으로
-    # 입증된 절차가 보강 한 번에 초안으로 되돌아간다. 분석은 이 값을 올릴 수 없지만
-    # 이미 획득한 값을 낮출 수도 없다.
+    if not report.root_cause_confirmed:
+        execution_steps = []
+    else:
+        updated_steps = build_execution_steps(output.execution_steps, confirmed=True)
+        execution_steps = updated_steps or existing.execution_steps
+    verification_status = (
+        existing.verification_status
+        if execution_steps == existing.execution_steps
+        else PlaybookVerificationStatus.DRAFT
+    )
+
     return Playbook(
         playbook_id=existing.playbook_id,
         failure_type=output.failure_type or existing.failure_type,
         symptom_pattern=output.symptom_pattern or existing.symptom_pattern,
         severity_criteria=output.severity_criteria or existing.severity_criteria,
         verification_steps=output.verification_steps or existing.verification_steps,
-        execution_steps=(
-            build_execution_steps(output.execution_steps, confirmed=report.root_cause_confirmed)
-            or existing.execution_steps
-        ),
+        execution_steps=execution_steps,
         temporary_mitigation=output.temporary_mitigation or existing.temporary_mitigation,
         permanent_remediation=output.permanent_remediation or existing.permanent_remediation,
         escalation_criteria=output.escalation_criteria or existing.escalation_criteria,
@@ -253,7 +258,7 @@ def _try_update_existing(
         related_metrics=output.related_metrics or existing.related_metrics,
         rca_id=report.rca_id,
         tags=output.tags or existing.tags,
-        verification_status=existing.verification_status,
+        verification_status=verification_status,
     )
 
 

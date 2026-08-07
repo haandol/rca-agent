@@ -27,6 +27,15 @@
         "AWS_REGION": "us-east-1",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
+    },
+    "awslabs.security-agent-mcp-server": {
+      "command": "uvx",
+      "args": ["awslabs.security-agent-mcp-server@latest"],
+      "env": {
+        "AWS_PROFILE": "default",
+        "AWS_REGION": "us-east-1",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
     }
   }
 }

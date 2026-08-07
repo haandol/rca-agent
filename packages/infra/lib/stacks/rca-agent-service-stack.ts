@@ -9,12 +9,13 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
+import { denyApprovalSnapshotMutation } from '../constructs/approval-snapshot-access';
 import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
   readonly alarmQueue: sqs.IQueue;
-  readonly alarmTopic: sns.ITopic;
+  readonly notificationTopic: sns.ITopic;
   readonly rcaSessionTable: dynamodb.ITable;
   readonly evidenceBucket: s3.IBucket;
   readonly vectorBucketName: string;
@@ -77,7 +78,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         SQS_QUEUE_URL: props.alarmQueue.queueUrl,
-        SNS_NOTIFICATION_TOPIC_ARN: props.alarmTopic.topicArn,
+        SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
         DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
         S3_EVIDENCE_BUCKET: props.evidenceBucket.bucketName,
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
@@ -138,6 +139,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
     props.rcaSessionTable.grantReadWriteData(taskDef.taskRole);
 
     props.evidenceBucket.grantReadWrite(taskDef.taskRole);
+    denyApprovalSnapshotMutation(taskDef.taskRole, props.evidenceBucket);
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -193,7 +195,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['sns:Publish'],
-        resources: [props.alarmTopic.topicArn],
+        resources: [props.notificationTopic.topicArn],
       }),
     );
   }

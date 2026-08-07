@@ -1,6 +1,8 @@
 import json
 from unittest.mock import Mock
 
+import pytest
+
 from cc_headless.adapters.secondary.report import s3_report_store
 from cc_headless.adapters.secondary.report.s3_report_store import S3ReportStore
 from cc_headless.ports.dto.models import AlarmContext
@@ -19,6 +21,13 @@ def test_report_key_is_isolated_by_attempt_and_claim(monkeypatch):
 
     assert key == "reports/cc-headless/rca-1/attempt-3-claim-abc/report.md"
     assert s3.put_object.call_args.kwargs["Key"] == key
+
+
+def test_configured_report_bucket_without_a_client_fails_instead_of_returning_a_key(monkeypatch):
+    monkeypatch.setattr(s3_report_store, "S3_REPORT_BUCKET", "rca-reports")
+
+    with pytest.raises(RuntimeError, match="S3 client"):
+        S3ReportStore().save_report("rca-1", "# report")
 
 
 def test_completion_notification_does_not_trigger_external_remediation_worker(monkeypatch):

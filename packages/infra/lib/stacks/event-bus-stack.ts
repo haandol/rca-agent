@@ -11,6 +11,7 @@ interface IProps extends cdk.StackProps {
 
 export class EventBusStack extends cdk.Stack {
   readonly alarmTopic: sns.ITopic;
+  readonly notificationTopic: sns.ITopic;
   readonly alarmQueue: sqs.IQueue;
   readonly deadLetterQueue: sqs.IQueue;
 
@@ -19,15 +20,33 @@ export class EventBusStack extends cdk.Stack {
 
     const ns = this.node.tryGetContext('ns') as string;
 
-    const alarmTopicConstruct = new AlarmTopic(
-      this,
-      'AlarmTopicConstruct',
-      props,
-    );
+    const alarmTopicConstruct = new AlarmTopic(this, 'AlarmTopicConstruct');
     this.alarmTopic = alarmTopicConstruct.topic;
+    this.notificationTopic = this.newNotificationTopic(
+      ns,
+      props.notificationEmail,
+    );
 
     this.deadLetterQueue = this.newDeadLetterQueue(ns);
     this.alarmQueue = this.newAlarmQueue(ns);
+  }
+
+  private newNotificationTopic(
+    ns: string,
+    notificationEmail: string,
+  ): sns.Topic {
+    const topic = new sns.Topic(this, 'AnalysisCompletionTopic', {
+      topicName: `${ns}AnalysisCompletion`,
+      displayName: 'RCA Analysis Completion',
+      enforceSSL: true,
+      tracingConfig: sns.TracingConfig.ACTIVE,
+    });
+
+    topic.addSubscription(
+      new snsSubscriptions.EmailSubscription(notificationEmail),
+    );
+
+    return topic;
   }
 
   private newDeadLetterQueue(ns: string): sqs.Queue {

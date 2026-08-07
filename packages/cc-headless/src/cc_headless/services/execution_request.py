@@ -7,12 +7,9 @@
 from __future__ import annotations
 
 import json
-import uuid
 from dataclasses import dataclass
 
-# 실행 식별자는 요청 내용에서 결정론적으로 파생한다. 같은 승인이 재전달되어도 같은
-# 식별자가 나와야 claim 이 중복 실행을 걸러낼 수 있다.
-_EXECUTION_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "rca-agent/playbook-execution")
+_ENGINES = frozenset({"strands", "cc-headless"})
 
 
 class InvalidExecutionRequestError(ValueError):
@@ -21,15 +18,14 @@ class InvalidExecutionRequestError(ValueError):
 
 @dataclass(frozen=True)
 class ExecutionRequest:
+    execution_id: str
     rca_id: str
     engine: str
     approval_id: str
-    requested_by: str = ""
-    report_s3_key: str = ""
-
-    @property
-    def execution_id(self) -> str:
-        return str(uuid.uuid5(_EXECUTION_NAMESPACE, f"{self.rca_id}#{self.engine}#{self.approval_id}"))
+    requested_by: str
+    report_s3_key: str
+    approved_playbook_s3_key: str
+    playbook_digest: str
 
 
 def _required_string(payload: dict, field: str) -> str:
@@ -58,10 +54,21 @@ def parse_execution_request(message_body: str) -> ExecutionRequest:
     if "AlarmName" in payload or "Trigger" in payload:
         raise InvalidExecutionRequestError("alarm notifications are not execution requests")
 
+    engine = _required_string(payload, "engine")
+    if engine not in _ENGINES:
+        raise InvalidExecutionRequestError("execution request engine must be strands or cc-headless")
+
+    digest = _required_string(payload, "playbook_digest").lower()
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise InvalidExecutionRequestError("execution request playbook_digest must be a SHA-256 hex digest")
+
     return ExecutionRequest(
+        execution_id=_required_string(payload, "execution_id"),
         rca_id=_required_string(payload, "rca_id"),
-        engine=_required_string(payload, "engine"),
+        engine=engine,
         approval_id=_required_string(payload, "approval_id"),
-        requested_by=str(payload.get("requested_by") or ""),
-        report_s3_key=str(payload.get("report_s3_key") or ""),
+        requested_by=_required_string(payload, "requested_by"),
+        report_s3_key=_required_string(payload, "report_s3_key"),
+        approved_playbook_s3_key=_required_string(payload, "approved_playbook_s3_key"),
+        playbook_digest=digest,
     )

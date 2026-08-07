@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
   const executions = items
     .filter((item) => isExecutionItem((item.SK as string) || ''))
     .map(readExecution)
-    .filter((execution) => !execution.engine || execution.engine === engine);
+    .filter((execution) => execution.engine === engine);
   const execution = latestExecution(executions);
 
   const spans = items

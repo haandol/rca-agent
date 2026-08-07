@@ -1,3 +1,5 @@
+import json
+
 import boto3
 import pytest
 from moto import mock_aws
@@ -250,6 +252,12 @@ def test_completion_atomically_persists_authoritative_report_key(session_store):
         "rca-1",
         "database connection leak",
         "reports/cc-headless/rca-1/attempt-1/report.md",
+        playbook={
+            "playbook_id": "playbook-1",
+            "verification_status": "DRAFT",
+            "execution_steps": [{"step_id": "step-1"}],
+        },
+        confirmed=True,
         claim_token=claim_token,
         side_effect_lease_token=lease_token,
     )
@@ -258,4 +266,7 @@ def test_completion_atomically_persists_authoritative_report_key(session_store):
     assert item["state"]["S"] == "COMPLETED"
     assert item["root_cause"]["S"] == "database connection leak"
     assert item["report_s3_key"]["S"] == "reports/cc-headless/rca-1/attempt-1/report.md"
+    assert item["playbook_id"]["S"] == "playbook-1"
+    assert json.loads(item["playbook"]["S"])["execution_steps"] == [{"step_id": "step-1"}]
+    assert item["confirmed"]["BOOL"] is True
     assert "side_effect_lease_token" not in item

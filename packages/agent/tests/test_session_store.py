@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -176,6 +177,39 @@ class TestSessionClaim:
         assert item["claim_token"]["S"] == claim.claim_token
         assert item["receive_count"]["N"] == "1"
         assert item["message_id"]["S"] == MESSAGE_ID
+
+    def test_first_delivery_persists_complete_raw_alarm_context(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        alarm_data = {
+            "AlarmName": "HighCPU",
+            "AlarmArn": alarm.alarm_arn,
+            "NewStateValue": "ALARM",
+            "NewStateReason": "Threshold crossed",
+            "StateChangeTime": "2025-06-01T12:00:00Z",
+            "Trigger": {
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/ECS",
+                "Dimensions": [
+                    {"name": "ClusterName", "value": "prod"},
+                    {"name": "ServiceName", "value": "web"},
+                ],
+                "Statistic": "Average",
+                "Period": 60,
+                "Threshold": 80,
+                "ComparisonOperator": "GreaterThanThreshold",
+            },
+        }
+
+        claim = store.claim_session(
+            alarm,
+            receive_count=1,
+            message_id=MESSAGE_ID,
+            alarm_data=alarm_data,
+        )
+
+        assert claim.acquired
+        item = _claimed_item(ddb, table_name, alarm)
+        assert json.loads(item["alarm_data"]["S"]) == alarm_data
 
     @pytest.mark.parametrize(
         "state",
@@ -903,6 +937,8 @@ class TestMarkCompleted:
                 fault_type=FaultType.DB_CONNECTION_LEAK,
                 completion_notification=notification,
                 report_s3_key="reports/strands/rca-123/attempt-1/report.md",
+                playbook_span_id="span-playbook-1",
+                playbook_id="playbook-1",
                 claim_token=CLAIM_TOKEN,
                 dynamodb_client=ddb,
             )
@@ -914,6 +950,8 @@ class TestMarkCompleted:
         assert values[":notification_pending"]["S"] == "PENDING"
         assert NotificationMessage.model_validate_json(values[":notification"]["S"]) == notification
         assert values[":report_s3_key"]["S"] == "reports/strands/rca-123/attempt-1/report.md"
+        assert values[":playbook_span_id"]["S"] == "span-playbook-1"
+        assert values[":playbook_id"]["S"] == "playbook-1"
 
     def test_storage_error_fails_closed(self):
         ddb = _ddb_with_state("REPORT_GENERATION")

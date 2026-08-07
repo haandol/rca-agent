@@ -16,6 +16,7 @@ from cc_headless.services.destructive_actions import (
     UndecidableCommandError,
     classify_command,
     is_destructive_operation,
+    is_self_control_operation,
 )
 
 # 실행 도구는 AWS 제어 평면 호출만 수행한다. 다른 실행 파일은 작업 이름을 추출할 수
@@ -85,6 +86,14 @@ def evaluate_command(command: str) -> GateVerdict:
         return GateVerdict(
             allowed=False,
             reason=f"{service} is outside the execution scope",
+            service=service,
+            operation=operation,
+            argv=tuple(argv),
+        )
+    if is_self_control_operation(service, operation):
+        return GateVerdict(
+            allowed=False,
+            reason=f"{service} {operation} is a self-control or privilege-escalation operation",
             service=service,
             operation=operation,
             argv=tuple(argv),

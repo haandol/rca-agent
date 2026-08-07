@@ -1,24 +1,34 @@
-import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
+import {
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+  type QueryCommandInput,
+} from '@aws-sdk/lib-dynamodb';
+
+type DataRecord = Record<string, unknown>;
 
 /**
- * Publishes a playbook execution request — the only entry point to execution.
- *
- * Nothing else in the system can start an execution: the worker consumes this
- * queue and has no event subscription. So this handler is where a person's
- * approval becomes a message, and it refuses to publish anything the worker
- * would then reject.
+ * Persist the approval before publishing it. The worker will only claim a queue
+ * message whose exact fields already exist in this PENDING_APPROVAL item.
  */
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
     rcaId?: string;
     engine?: string;
     approvalId?: string;
-    requestedBy?: string;
   }>(event);
 
   const rcaId = typeof body?.rcaId === 'string' ? body.rcaId.trim() : '';
-  const engine = typeof body?.engine === 'string' ? body.engine : '';
+  const engine = typeof body?.engine === 'string' ? body.engine.trim() : '';
+  const approvalId =
+    typeof body?.approvalId === 'string' ? body.approvalId.trim() : '';
+
   if (!rcaId) {
     throw createError({ statusCode: 400, statusMessage: 'Missing rcaId' });
   }
@@ -28,12 +38,15 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Missing or invalid engine',
     });
   }
+  if (!isUuid(approvalId)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'approvalId must be a UUID',
+    });
+  }
 
   const config = useRuntimeConfig();
   if (!config.executionQueueUrl) {
-    // Naming the variable is the point: this is a misconfiguration the person
-    // reading it can fix, and failing loudly is what keeps a dashboard that
-    // cannot publish from looking like it approved something.
     throw createError({
       statusCode: 503,
       statusMessage:
@@ -42,149 +55,362 @@ export default defineEventHandler(async (event) => {
   }
 
   const ddb = useDynamoDB();
-
-  const session = await ddb.send(
-    new GetCommand({
-      TableName: config.dynamodbTableName,
-      Key: { PK: rcaPk(rcaId), SK: sessionSk(engine) },
-    }),
+  const items = await readPartition(
+    ddb,
+    config.dynamodbTableName,
+    rcaPk(rcaId),
   );
-  if (!session.Item) {
+  const session = findSessionForEngine(items, engine);
+  if (!session) {
     throw createError({
       statusCode: 404,
       statusMessage: '세션을 찾을 수 없습니다.',
     });
   }
-  if (session.Item.state !== 'COMPLETED') {
-    // An unfinished analysis has no approved report behind it.
+  if (session.state !== 'COMPLETED') {
     throw createError({
       statusCode: 409,
       statusMessage: '분석이 완료되지 않아 승인할 수 없습니다.',
     });
   }
+  if (session.confirmed !== true) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: '근본원인이 확정되지 않아 승인할 수 없습니다.',
+    });
+  }
 
-  const steps = await approvedExecutionSteps(ddb, config, rcaId, engine);
-  if (!steps.length) {
-    // An unconfirmed root cause carries no execution steps, so there is nothing
-    // a person could have approved here.
+  const reportS3Key =
+    typeof session.report_s3_key === 'string'
+      ? session.report_s3_key.trim()
+      : '';
+  if (!reportS3Key) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: '승인할 리포트의 저장 위치가 없습니다.',
+    });
+  }
+  await requireReportObject(useS3(), config.s3ReportBucket, reportS3Key);
+
+  const resolved = resolveCurrentPlaybook(items, session, engine);
+  const validation = validateExecutablePlaybook(resolved?.playbook ?? null);
+  if (!resolved || !validation.valid) {
     throw createError({
       statusCode: 409,
       statusMessage:
-        '이 리포트에는 실행할 절차가 없습니다. 근본원인이 확정되지 않았습니다.',
+        validation.reason ||
+        '이 세션의 현재 플레이북을 정확히 확인할 수 없습니다.',
     });
   }
 
-  const running = await inFlightExecution(ddb, config, rcaId);
-  if (running) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: `아직 끝나지 않은 실행이 있습니다(${running.stateLabel}). 그 실행이 끝난 뒤에 다시 승인할 수 있습니다.`,
-    });
-  }
+  const snapshotBytes = serializePlaybookSnapshot(resolved.playbook);
+  const playbookDigest = sha256Hex(snapshotBytes);
+  const executionId = approvalId;
+  const approvedPlaybookS3Key = `approvals/${rcaId}/${executionId}/playbook.json`;
 
-  // A stable approval identifier is what makes the request idempotent: the
-  // worker derives the execution id from it, so a resubmitted approval claims
-  // the same execution instead of running a second one.
-  const approvalId =
-    typeof body?.approvalId === 'string' && body.approvalId.trim()
-      ? body.approvalId.trim()
-      : `${rcaId}#${engine}#${new Date().toISOString()}`;
+  await storeImmutableSnapshot({
+    bucket: config.s3ReportBucket,
+    key: approvedPlaybookS3Key,
+    bytes: snapshotBytes,
+    digest: playbookDigest,
+  });
 
-  await useSqs().send(
-    new SendMessageCommand({
-      QueueUrl: config.executionQueueUrl,
-      MessageBody: JSON.stringify({
-        rca_id: rcaId,
-        engine,
-        approval_id: approvalId,
-        requested_by:
-          typeof body?.requestedBy === 'string'
-            ? body.requestedBy
-            : 'dashboard',
-        report_s3_key:
-          typeof session.Item.report_s3_key === 'string'
-            ? session.Item.report_s3_key
-            : '',
+  const request: ExecutionRequestFields = {
+    execution_id: executionId,
+    rca_id: rcaId,
+    engine,
+    approval_id: approvalId,
+    requested_by: APPROVAL_REQUESTED_BY,
+    report_s3_key: reportS3Key,
+    approved_playbook_s3_key: approvedPlaybookS3Key,
+    playbook_digest: playbookDigest,
+  };
+  const reserved = await reserveExecution({
+    ddb,
+    tableName: config.dynamodbTableName,
+    request,
+  });
+
+  try {
+    await useSqs().send(
+      new SendMessageCommand({
+        QueueUrl: config.executionQueueUrl,
+        MessageBody: JSON.stringify(request),
       }),
-    }),
-  );
+    );
+  } catch {
+    throw createError({
+      statusCode: 503,
+      statusMessage:
+        '실행 요청 전송에 실패했습니다. 승인은 보존되었으므로 같은 요청으로 다시 시도하세요.',
+    });
+  }
 
   return {
     requested: true,
+    reserved,
     rcaId,
     engine,
     approvalId,
-    stepCount: steps.length,
+    executionId,
+    stepCount: validation.steps.length,
+    approvedPlaybookS3Key,
+    playbookDigest,
   };
 });
 
-async function approvedExecutionSteps(
+async function readPartition(
   ddb: ReturnType<typeof useDynamoDB>,
-  config: ReturnType<typeof useRuntimeConfig>,
-  rcaId: string,
-  engine: string,
-): Promise<unknown[]> {
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': rcaPk(rcaId) },
-    }),
-  );
-  const items = result.Items ?? [];
-
-  // A retrospective revision, if one exists, is what the next execution runs.
-  const revision = items.find(
-    (item) => (item.SK as string) === playbookRevisionSk(engine),
-  );
-  if (revision) {
-    const parsed = safeParse(revision.playbook);
-    const steps = parsed?.execution_steps;
-    if (Array.isArray(steps)) return steps;
-  }
-
-  const span = items.find(
-    (item) =>
-      (item.SK as string).startsWith(`${engine}#SPAN#`) &&
-      item.span_type === 'PLAYBOOK',
-  );
-  const metadata = span?.metadata as Record<string, unknown> | undefined;
-  const steps = metadata?.execution_steps;
-  return Array.isArray(steps) ? steps : [];
+  tableName: string,
+  partitionKey: string,
+): Promise<DataRecord[]> {
+  const items: DataRecord[] = [];
+  let startKey: QueryCommandInput['ExclusiveStartKey'];
+  do {
+    const result = await ddb.send(
+      new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': partitionKey },
+        ExclusiveStartKey: startKey,
+      }),
+    );
+    items.push(...(result.Items ?? []));
+    startKey = result.LastEvaluatedKey;
+  } while (startKey);
+  return items;
 }
 
-async function inFlightExecution(
-  ddb: ReturnType<typeof useDynamoDB>,
-  config: ReturnType<typeof useRuntimeConfig>,
-  rcaId: string,
-): Promise<ExecutionSummary | null> {
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: {
-        ':pk': rcaPk(rcaId),
-        ':prefix': EXECUTION_SK_PREFIX,
-      },
-    }),
-  );
-  const executions = (result.Items ?? []).map(readExecution);
-  return (
-    executions.find((execution) => !isTerminalExecution(execution.state)) ??
-    null
-  );
-}
-
-function safeParse(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'string') return null;
+async function requireReportObject(
+  s3: ReturnType<typeof useS3>,
+  bucket: string,
+  key: string,
+): Promise<void> {
   try {
-    const parsed = JSON.parse(value);
-    return parsed !== null &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (error) {
+    if (isMissingObject(error)) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: '승인할 리포트 객체가 S3에 없습니다.',
+      });
+    }
+    throw createError({
+      statusCode: 503,
+      statusMessage: '리포트 객체를 확인할 수 없습니다.',
+    });
   }
+}
+
+async function storeImmutableSnapshot({
+  bucket,
+  key,
+  bytes,
+  digest,
+}: {
+  bucket: string;
+  key: string;
+  bytes: Uint8Array;
+  digest: string;
+}): Promise<void> {
+  const s3 = useS3();
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    await verifyExistingSnapshot(s3, bucket, key, digest);
+    return;
+  } catch (error) {
+    if (!isMissingObject(error)) {
+      if (isHttpError(error)) throw error;
+      throw createError({
+        statusCode: 503,
+        statusMessage: '기존 승인 스냅샷을 확인할 수 없습니다.',
+      });
+    }
+  }
+
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: bytes,
+        ContentType: 'application/json; charset=utf-8',
+        Metadata: { sha256: digest },
+        IfNoneMatch: '*',
+      }),
+    );
+  } catch (error) {
+    if (httpStatus(error) === 412) {
+      await verifyExistingSnapshot(s3, bucket, key, digest);
+      return;
+    }
+    throw createError({
+      statusCode: 503,
+      statusMessage: '승인 플레이북 스냅샷을 저장할 수 없습니다.',
+    });
+  }
+}
+
+async function verifyExistingSnapshot(
+  s3: ReturnType<typeof useS3>,
+  bucket: string,
+  key: string,
+  expectedDigest: string,
+): Promise<void> {
+  try {
+    const existing = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+    );
+    const bytes =
+      (await existing.Body?.transformToByteArray()) ?? new Uint8Array();
+    if (sha256Hex(bytes) !== expectedDigest) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          '같은 승인 식별자에 다른 플레이북 스냅샷이 이미 존재합니다.',
+      });
+    }
+  } catch (error) {
+    if (isHttpError(error)) throw error;
+    throw createError({
+      statusCode: 503,
+      statusMessage: '기존 승인 스냅샷을 검증할 수 없습니다.',
+    });
+  }
+}
+
+async function reserveExecution({
+  ddb,
+  tableName,
+  request,
+}: {
+  ddb: ReturnType<typeof useDynamoDB>;
+  tableName: string;
+  request: ExecutionRequestFields;
+}): Promise<boolean> {
+  const now = new Date().toISOString();
+  const ttl = Math.floor(Date.now() / 1000) + APPROVAL_TTL_DAYS * 24 * 60 * 60;
+  const executionItem = {
+    PK: rcaPk(request.rca_id),
+    SK: executionSk(request.execution_id),
+    ...request,
+    execution_state: 'PENDING_APPROVAL',
+    attempt: 0,
+    created_at: now,
+    updated_at: now,
+    ttl,
+  };
+  const activeItem = {
+    PK: rcaPk(request.rca_id),
+    SK: ACTIVE_EXECUTION_SK,
+    execution_id: request.execution_id,
+    engine: request.engine,
+    created_at: now,
+    updated_at: now,
+    ttl,
+  };
+
+  try {
+    await ddb.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: tableName,
+              Item: executionItem,
+              ConditionExpression:
+                'attribute_not_exists(PK) AND attribute_not_exists(SK)',
+            },
+          },
+          {
+            Put: {
+              TableName: tableName,
+              Item: activeItem,
+              ConditionExpression:
+                'attribute_not_exists(PK) AND attribute_not_exists(SK)',
+            },
+          },
+        ],
+      }),
+    );
+    return true;
+  } catch (error) {
+    const [execution, active] = await Promise.all([
+      ddb.send(
+        new GetCommand({
+          TableName: tableName,
+          Key: {
+            PK: rcaPk(request.rca_id),
+            SK: executionSk(request.execution_id),
+          },
+          ConsistentRead: true,
+        }),
+      ),
+      ddb.send(
+        new GetCommand({
+          TableName: tableName,
+          Key: { PK: rcaPk(request.rca_id), SK: ACTIVE_EXECUTION_SK },
+          ConsistentRead: true,
+        }),
+      ),
+    ]);
+
+    if (
+      executionReservationMatches(execution.Item, request) &&
+      active.Item?.execution_id === request.execution_id
+    ) {
+      return false;
+    }
+
+    if (
+      errorName(error) === 'TransactionCanceledException' ||
+      execution.Item ||
+      active.Item
+    ) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          '다른 실행이 이미 활성 상태이거나 같은 승인 식별자의 내용이 일치하지 않습니다.',
+      });
+    }
+    throw createError({
+      statusCode: 503,
+      statusMessage: '실행 승인을 예약할 수 없습니다. 다시 시도하세요.',
+    });
+  }
+}
+
+function errorName(error: unknown): string {
+  return typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    typeof error.name === 'string'
+    ? error.name
+    : '';
+}
+
+function httpStatus(error: unknown): number {
+  if (typeof error !== 'object' || error === null || !('$metadata' in error)) {
+    return 0;
+  }
+  const metadata = error.$metadata as { httpStatusCode?: unknown };
+  return typeof metadata.httpStatusCode === 'number'
+    ? metadata.httpStatusCode
+    : 0;
+}
+
+function isMissingObject(error: unknown): boolean {
+  return (
+    httpStatus(error) === 404 ||
+    ['NotFound', 'NoSuchKey'].includes(errorName(error))
+  );
+}
+
+function isHttpError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'statusCode' in error &&
+    typeof error.statusCode === 'number'
+  );
 }

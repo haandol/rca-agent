@@ -18,6 +18,7 @@ from cc_headless.config.settings import (
 from cc_headless.ports.dto.models import CcResult
 from cc_headless.ports.interfaces.execution_runner import ExecutionRunnerPort
 from cc_headless.services.execution_workspace import (
+    APPROVED_STEP_IDS_ENV,
     EXECUTION_ID_ENV,
     EXECUTION_TOKEN_ENV,
     workspace_for_token,
@@ -117,12 +118,14 @@ class CcExecutionRunner(ExecutionRunnerPort):
         *,
         execution_token: str,
         execution_id: str,
+        approved_step_ids: tuple[str, ...],
         cancel_checker: Callable[[], bool] | None = None,
     ) -> CcResult:
         return self._run(
             prompt,
             execution_token=execution_token,
             execution_id=execution_id,
+            approved_step_ids=approved_step_ids,
             agent=_EXECUTION_AGENT,
             allowed_tools=_EXECUTION_TOOLS,
             timeout_seconds=EXECUTION_TIMEOUT_SECONDS,
@@ -156,6 +159,7 @@ class CcExecutionRunner(ExecutionRunnerPort):
         allowed_tools: tuple[str, ...],
         timeout_seconds: int,
         cancel_checker: Callable[[], bool] | None,
+        approved_step_ids: tuple[str, ...] = (),
     ) -> CcResult:
         workspace_for_token(execution_token)
 
@@ -193,6 +197,7 @@ class CcExecutionRunner(ExecutionRunnerPort):
                 "CLAUDE_CONFIG_DIR": str(Path(home) / ".claude"),
                 EXECUTION_TOKEN_ENV: execution_token,
                 EXECUTION_ID_ENV: execution_id,
+                APPROVED_STEP_IDS_ENV: json.dumps(approved_step_ids),
             }
 
             try:

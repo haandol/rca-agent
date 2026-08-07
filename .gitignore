@@ -83,3 +83,6 @@ packages/web/public/payment-e2e-*.js
 tests/results/live/
 packages/api-infra/config/loader.js
 packages/infra/config/loader.js
+
+# AWS Security Agent (scan config + findings reports with vulnerability details)
+.security-agent/

@@ -13,6 +13,10 @@ class ExecutionClaimDisposition(StrEnum):
     TERMINAL_DUPLICATE = "TERMINAL_DUPLICATE"
     # 다른 워커가 실행 중이거나 claim 이 아직 유효하다.
     CONTENDED = "CONTENDED"
+    # 사전 예약이 없거나 큐 요청과 예약 내용이 일치하지 않는다.
+    REJECTED = "REJECTED"
+    # 만료된 실행을 재수행하지 않고 실패로 종결했다.
+    EXPIRED_FAILED = "EXPIRED_FAILED"
 
 
 @dataclass(frozen=True)
@@ -67,11 +71,21 @@ class ExecutionStorePort(ABC):
         engine: str,
         approval_id: str,
         requested_by: str,
+        report_s3_key: str,
+        approved_playbook_s3_key: str,
+        playbook_digest: str,
         claim_seconds: int,
     ) -> ExecutionClaim: ...
 
     @abstractmethod
-    def load_target(self, rca_id: str, engine: str) -> ExecutionTarget: ...
+    def load_target(
+        self,
+        rca_id: str,
+        engine: str,
+        *,
+        report_s3_key: str,
+        playbook: dict,
+    ) -> ExecutionTarget: ...
 
     @abstractmethod
     def update_state(

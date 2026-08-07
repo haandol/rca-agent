@@ -16,6 +16,7 @@ from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     build_rca_id,
 )
 from rca_agent.adapters.secondary.trace.dynamodb_trace_store import SpanStatus, SpanType, TraceStore
+from rca_agent.config import settings
 from rca_agent.config.aws_sdk import SIDE_EFFECT_LEASE_SECONDS
 from rca_agent.config.settings import (
     ALARM_STALENESS_SECONDS,
@@ -208,6 +209,7 @@ class PipelineOrchestrator:
                 alarm,
                 receive_count=effective_receive_count,
                 message_id=effective_message_id,
+                alarm_data=alarm_data,
             )
         except Exception:
             logger.exception("Failed to claim RCA session for alarm %s", alarm.alarm_name)
@@ -1051,7 +1053,7 @@ class PipelineOrchestrator:
         trace.check_cancelled()
         # 플레이북이 리포트의 한 섹션이므로 리포트보다 먼저 만든다. 순서가 반대면
         # 리포트는 자신이 담아야 할 절차를 모르는 상태로 확정된다.
-        playbook = self._run_playbook(
+        playbook, playbook_span_id = self._run_playbook(
             rca_report,
             scoping_result,
             run,
@@ -1064,6 +1066,12 @@ class PipelineOrchestrator:
             claim_token=run.claim_token,
             attempt=run.attempt,
         )
+        if settings.S3_REPORT_BUCKET and not report_s3_key:
+            logger.error(
+                "Report persistence failed for RCA %s; leaving session retryable",
+                rca_report.rca_id,
+            )
+            return False
 
         with trace.span(
             SpanType.NOTIFICATION,
@@ -1089,6 +1097,8 @@ class PipelineOrchestrator:
                 fault_type=validated_fault_type,
                 completion_notification=notification,
                 report_s3_key=report_s3_key,
+                playbook_span_id=playbook_span_id or "",
+                playbook_id=playbook.playbook_id if playbook else "",
                 claim_token=run.claim_token,
             )
             if not completed:
@@ -1118,7 +1128,7 @@ class PipelineOrchestrator:
         rca_report,
         scoping_result,
         run: RunContext,
-    ) -> Playbook | None:
+    ) -> tuple[Playbook | None, str | None]:
         c = self._container
         trace = run.trace
         playbook_span = trace.start_span(
@@ -1164,7 +1174,7 @@ class PipelineOrchestrator:
                 playbook.playbook_id,
                 playbook.failure_type,
             )
-            return playbook
+            return playbook, playbook_span.span_id
         except (SessionCancelledError, SideEffectLeaseUnavailableError):
             raise
         except Exception:
@@ -1174,4 +1184,4 @@ class PipelineOrchestrator:
                 status=SpanStatus.FAILED,
                 error="Playbook generation failed",
             )
-            return None
+            return None, None

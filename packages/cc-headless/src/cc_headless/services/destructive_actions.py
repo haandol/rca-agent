@@ -58,6 +58,49 @@ OUT_OF_SCOPE_SERVICE_PREFIXES: frozenset[str] = frozenset(
     }
 )
 
+# 실행 워커 자신의 승인·상태·컴퓨트 경계를 조작하거나 권한을 확장할 수 있는 호출.
+# 이 작업들은 되돌릴 수 있더라도 장애 복구 절차가 아니며, 실행 경로가 자기 통제
+# 평면을 우회하는 수단이 된다.
+SELF_CONTROL_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("sqs", "send-message"),
+        ("sqs", "send-message-batch"),
+        ("ecs", "register-task-definition"),
+        ("ecs", "run-task"),
+        ("ecs", "start-task"),
+        ("ecs", "execute-command"),
+    }
+)
+_DYNAMODB_READ_OPERATIONS = frozenset(
+    {
+        "batch-get-item",
+        "describe-backup",
+        "describe-continuous-backups",
+        "describe-contributor-insights",
+        "describe-endpoints",
+        "describe-export",
+        "describe-global-table",
+        "describe-global-table-settings",
+        "describe-import",
+        "describe-kinesis-streaming-destination",
+        "describe-limits",
+        "describe-table",
+        "describe-table-replica-auto-scaling",
+        "describe-time-to-live",
+        "get-item",
+        "list-backups",
+        "list-contributor-insights",
+        "list-exports",
+        "list-global-tables",
+        "list-imports",
+        "list-tables",
+        "list-tags-of-resource",
+        "query",
+        "scan",
+        "transact-get-items",
+    }
+)
+
 # 셸 합성과 중첩 호출은 작업 이름을 신뢰할 수 없게 만든다. 판정 불가는 거부로 처리한다.
 _SHELL_COMPOSITION = re.compile(r"[;&|`]|\$\(|\|\||&&|>\s|>>")
 
@@ -100,6 +143,13 @@ def is_destructive_operation(service: str, operation: str) -> bool:
     if service.lower() in OUT_OF_SCOPE_SERVICE_PREFIXES:
         return True
     return _verb_of(operation) in DESTRUCTIVE_OPERATION_VERBS
+
+
+def is_self_control_operation(service: str, operation: str) -> bool:
+    normalized = (service.lower(), operation.lower())
+    if normalized in SELF_CONTROL_OPERATIONS:
+        return True
+    return normalized[0] == "dynamodb" and normalized[1] not in _DYNAMODB_READ_OPERATIONS
 
 
 def classify_command(command: str) -> tuple[str, str]:

@@ -39,10 +39,14 @@ PLAYBOOK = {
 }
 APPROVAL = json.dumps(
     {
+        "execution_id": "exec-1",
         "rca_id": RCA_ID,
         "engine": ENGINE,
         "approval_id": "approval-1",
         "requested_by": "operator",
+        "report_s3_key": "reports/cc-headless/rca-1/report.md",
+        "approved_playbook_s3_key": "approved/rca-1/exec-1/playbook.json",
+        "playbook_digest": "a" * 64,
     }
 )
 
@@ -91,8 +95,17 @@ class RecordingRunner:
         self.execution_prompts: list[str] = []
         self.retrospective_prompts: list[str] = []
 
-    def run_execution(self, prompt, *, execution_token, execution_id, cancel_checker=None):
+    def run_execution(
+        self,
+        prompt,
+        *,
+        execution_token,
+        execution_id,
+        approved_step_ids,
+        cancel_checker=None,
+    ):
         self.execution_prompts.append(prompt)
+        self.approved_step_ids = approved_step_ids
         path = execution_workspace.evidence_path_for_token(execution_token)
         with path.open("a", encoding="utf-8") as handle:
             for record in self._records:
@@ -129,6 +142,7 @@ def _container(runner, *, target=None, claim=None, retrospective_claimed=True):
         save_playbook_revision=Mock(),
     )
     evidence_store = SimpleNamespace(
+        load_approved_playbook=Mock(return_value=(target.playbook if target is not None else PLAYBOOK)),
         save_execution_evidence=Mock(return_value="executions/rca-1/exec-1/evidence.json"),
         save_playbook_snapshot=Mock(return_value="executions/rca-1/exec-1/playbook-before.json"),
         save_retrospective_diff=Mock(return_value="executions/rca-1/exec-1/retrospective-diff.json"),
@@ -172,11 +186,26 @@ def test_an_approved_execution_runs_the_playbook_steps_and_resolves():
     assert _states(container) == [ExecutionState.VERIFYING, ExecutionState.RESOLVED]
     assert "step-1" in runner.execution_prompts[0]
     assert "VitalIngestFailure" in runner.execution_prompts[0]
+    assert runner.approved_step_ids == ("step-1",)
 
 
 def test_a_redelivered_approval_does_not_run_a_second_time():
     runner = RecordingRunner()
     container = _container(runner, claim=ExecutionClaim(ExecutionClaimDisposition.TERMINAL_DUPLICATE))
+
+    handled = ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    assert handled
+    assert runner.execution_prompts == []
+
+
+@pytest.mark.parametrize(
+    "disposition",
+    [ExecutionClaimDisposition.REJECTED, ExecutionClaimDisposition.EXPIRED_FAILED],
+)
+def test_rejected_or_expired_reservations_are_acknowledged_without_execution(disposition):
+    runner = RecordingRunner()
+    container = _container(runner, claim=ExecutionClaim(disposition))
 
     handled = ExecutionOrchestrator(container).process_message(APPROVAL)
 
@@ -306,9 +335,11 @@ def test_the_playbook_snapshot_is_saved_before_the_run_so_the_diff_has_a_baselin
 
     ExecutionOrchestrator(container).process_message(APPROVAL)
 
-    snapshot = container.evidence_store.save_playbook_snapshot.call_args.kwargs["playbook"]
-
-    assert snapshot["execution_steps"][0]["action"] == "api 서비스를 강제 재배포"
+    container.evidence_store.save_playbook_snapshot.assert_not_called()
+    assert (
+        container.execution_store.record_retrospective.call_args.kwargs["playbook_snapshot_s3_key"]
+        == "approved/rca-1/exec-1/playbook.json"
+    )
 
 
 def test_a_resolved_execution_runs_the_retrospective_and_revises_the_playbook():

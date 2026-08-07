@@ -10,6 +10,7 @@ import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
+import { denyApprovalSnapshotMutation } from '../constructs/approval-snapshot-access';
 import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
@@ -166,6 +167,7 @@ export class CcHeadlessStack extends cdk.Stack {
     props.rcaSessionTable.grantReadWriteData(taskDef.taskRole);
 
     props.evidenceBucket.grantReadWrite(taskDef.taskRole);
+    denyApprovalSnapshotMutation(taskDef.taskRole, props.evidenceBucket);
 
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({

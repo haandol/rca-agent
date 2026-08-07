@@ -143,6 +143,7 @@ class TestProcessAlarmFullPipeline:
         validation_result=None,
         termination=None,
         notification_success=True,
+        report_s3_key="reports/rca-1.md",
     ):
         """Helper that patches all pipeline functions and runs process_alarm."""
         sr = _scoping()
@@ -181,7 +182,7 @@ class TestProcessAlarmFullPipeline:
 
         container = _make_container()
         container.session_store.create_session.return_value = session
-        container.report_store.save.return_value = "reports/rca-1.md"
+        container.report_store.save.return_value = report_s3_key
         container.session_store.mark_completed.return_value = True
         container.notification.send.return_value = notification_success
         container.session_store.mark_completion_notified.return_value = True
@@ -276,6 +277,8 @@ class TestProcessAlarmFullPipeline:
         assert completed.kwargs["fault_type"] == FaultType.UNSUPPORTED
         assert isinstance(completed.kwargs["completion_notification"], NotificationMessage)
         assert completed.kwargs["report_s3_key"] == "reports/rca-1.md"
+        assert completed.kwargs["playbook_span_id"] == "s-1"
+        assert completed.kwargs["playbook_id"] == "pb-1"
         assert completed.kwargs["claim_token"] == "claim-1"
         saved = container.report_store.save.call_args.kwargs
         assert saved["claim_token"] == "claim-1"
@@ -283,6 +286,31 @@ class TestProcessAlarmFullPipeline:
         # 리포트는 플레이북을 포함한 하나의 산출물이므로 절차 없이 저장되지 않는다.
         assert saved["playbook"] is not None
         container.session_store.mark_completion_notified.assert_not_called()
+
+    def test_claim_receives_complete_raw_alarm_context(self):
+        mocks = self._run()
+
+        claim = mocks["_container"].session_store.claim_session.call_args
+        assert claim.kwargs["alarm_data"] == _make_body()
+
+    def test_configured_report_failure_leaves_session_retryable(self):
+        with patch(f"{_P}.settings.S3_REPORT_BUCKET", "reports-bucket"):
+            mocks = self._run(report_s3_key="")
+
+        container = mocks["_container"]
+        assert mocks["_result"] is False
+        container.session_store.mark_completed.assert_not_called()
+        container.notification.send.assert_not_called()
+        container.report_store.save_vectors.assert_not_called()
+
+    def test_unconfigured_report_store_keeps_local_completion_behavior(self):
+        with patch(f"{_P}.settings.S3_REPORT_BUCKET", ""):
+            mocks = self._run(report_s3_key="")
+
+        container = mocks["_container"]
+        assert mocks["_result"] is True
+        container.session_store.mark_completed.assert_called_once()
+        container.notification.send.assert_called_once()
 
     def test_early_exit_on_no_hypotheses(self):
         empty_hr = HypothesisGenerationResult(

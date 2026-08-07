@@ -53,6 +53,7 @@ class SessionStorePort(ABC):
         *,
         receive_count: int,
         message_id: str | None = None,
+        alarm_data: dict | None = None,
     ) -> SessionClaim: ...
 
     @abstractmethod
@@ -93,6 +94,8 @@ class SessionStorePort(ABC):
         fault_type: FaultType = FaultType.UNSUPPORTED,
         completion_notification: NotificationMessage | None = None,
         report_s3_key: str = "",
+        playbook_span_id: str = "",
+        playbook_id: str = "",
         claim_token: str | None = None,
     ) -> bool: ...
 

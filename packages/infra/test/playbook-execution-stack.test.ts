@@ -25,6 +25,10 @@ type PolicyDocument = {
   Statement?: IamStatement[];
 };
 
+type TaskRoleArn = {
+  'Fn::GetAtt'?: [string, string];
+};
+
 type Synthesized = {
   execution: Template;
   healthcare: Template;
@@ -78,14 +82,43 @@ function synthesize(): Synthesized {
 }
 
 function taskRoleStatements(template: Template): IamStatement[] {
+  const taskDefinitions = Object.values(
+    template.findResources('AWS::ECS::TaskDefinition'),
+  ) as CfnResource[];
+  expect(taskDefinitions).toHaveLength(1);
+  const taskRoleArn = taskDefinitions[0].Properties?.TaskRoleArn as TaskRoleArn;
+  const taskRoleLogicalId = taskRoleArn?.['Fn::GetAtt']?.[0];
+  expect(taskRoleLogicalId).toEqual(expect.any(String));
+
   const policies = Object.values(
     template.findResources('AWS::IAM::Policy'),
   ) as CfnResource[];
-  return policies.flatMap(
-    (resource) =>
-      (resource.Properties?.PolicyDocument as PolicyDocument | undefined)
-        ?.Statement ?? [],
-  );
+  return policies
+    .filter((resource) => {
+      const roles = (resource.Properties?.Roles ?? []) as {
+        Ref?: string;
+      }[];
+      return roles.some((role) => role.Ref === taskRoleLogicalId);
+    })
+    .flatMap(
+      (resource) =>
+        (resource.Properties?.PolicyDocument as PolicyDocument | undefined)
+          ?.Statement ?? [],
+    );
+}
+
+function taskRole(template: Template): CfnResource {
+  const taskDefinition = Object.values(
+    template.findResources('AWS::ECS::TaskDefinition'),
+  )[0] as CfnResource;
+  const taskRoleArn = taskDefinition.Properties?.TaskRoleArn as TaskRoleArn;
+  const taskRoleLogicalId = taskRoleArn?.['Fn::GetAtt']?.[0];
+  if (!taskRoleLogicalId) {
+    throw new Error('Synthesized task definition has no task role');
+  }
+  const role = template.findResources('AWS::IAM::Role')[taskRoleLogicalId];
+  expect(role).toBeDefined();
+  return role as CfnResource;
 }
 
 function queue(template: Template, name: string): CfnResource | undefined {
@@ -183,9 +216,48 @@ test('execution reaches the target service, unlike analysis', () => {
 
 test('the execution role can write, which is what separates it from analysis', () => {
   const { execution } = synthesize();
-  const managedPolicies = JSON.stringify(execution.toJSON());
+  const managedPolicies = JSON.stringify(
+    taskRole(execution).Properties?.ManagedPolicyArns,
+  );
 
   expect(managedPolicies).toContain('PowerUserAccess');
+});
+
+test('PowerUserAccess cannot publish another request to the execution queue', () => {
+  const { execution } = synthesize();
+  const sendDeny = taskRoleStatements(execution).find((statement) => {
+    const actions = Array.isArray(statement.Action)
+      ? statement.Action
+      : [statement.Action];
+    return statement.Effect === 'Deny' && actions.includes('sqs:SendMessage');
+  });
+
+  expect(sendDeny).toBeDefined();
+  expect(JSON.stringify(sendDeny?.Resource)).toContain('RequestQueue');
+  expect(JSON.stringify(execution.toJSON())).toContain('PowerUserAccess');
+});
+
+test('execution can read but cannot alter an approved snapshot', () => {
+  const { execution } = synthesize();
+  const statements = taskRoleStatements(execution);
+  const approvalDeny = statements.find((statement) => {
+    const actions = Array.isArray(statement.Action)
+      ? statement.Action
+      : [statement.Action];
+    return (
+      statement.Effect === 'Deny' &&
+      actions.includes('s3:PutObject') &&
+      actions.includes('s3:DeleteObject')
+    );
+  });
+  const allowedActions = statements
+    .filter((statement) => statement.Effect !== 'Deny')
+    .flatMap((statement) =>
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action],
+    );
+
+  expect(JSON.stringify(approvalDeny?.Resource)).toContain('approvals/*');
+  expect(allowedActions).toContain('s3:GetObject*');
 });
 
 test('account, billing, and identity scopes are denied outright', () => {
@@ -250,6 +322,10 @@ test('a rollback can hand ECS the task definition it rolls back to', () => {
   expect(passRole[0].Condition?.StringEquals).toEqual({
     'iam:PassedToService': 'ecs-tasks.amazonaws.com',
   });
+  expect(passRole[0].Resource).toHaveLength(2);
+  const resources = JSON.stringify(passRole[0].Resource);
+  expect(resources).toContain('RcaAgentDevHealthcareTaskRole');
+  expect(resources).toContain('RcaAgentDevHealthcareExecutionRole');
 });
 
 test('destructive-action refusal is not expressed as an IAM deny', () => {

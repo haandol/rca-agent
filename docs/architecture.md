@@ -7,7 +7,7 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 시스템은 **읽기 전용 분석**과 **사용자 승인 기반 실행** 두 축으로 나뉩니다.
 
 - **분석**은 알람을 받아 플레이북을 포함한 리포트 하나를 만들고 끝납니다. 어떤 서비스나 인프라도 변경하지 않으며, 태스크 역할에 쓰기 권한이 없습니다.
-- **실행**은 별도 에이전트이며, 사람이 대시보드에서 플레이북 절차를 승인해 실행 요청 큐에 발행할 때만 시작됩니다. 실행 스택에는 이벤트 구독이 없으므로 **사람의 승인 없이 실행이 기동될 경로가 존재하지 않습니다** — 승인이 곧 메시지입니다.
+- **실행**은 별도 에이전트이며, 사람이 대시보드에서 플레이북 절차를 승인하면 승인 시점의 immutable S3 스냅샷과 SHA-256 digest, DynamoDB의 `PENDING_APPROVAL`·`EXEC_ACTIVE` 예약을 만든 뒤 실행 요청을 큐에 발행합니다. 워커는 예약과 메시지가 정확히 일치할 때만 실행하므로 **사람의 승인 없이 실행이 기동될 경로가 존재하지 않습니다**.
 - 분석 완료 알림은 어떤 기계 동작도 트리거하지 않습니다. 수신자는 사람과 대시보드뿐입니다.
 
 ## Dual-Stack Overview
@@ -77,6 +77,8 @@ graph TB
 
     subgraph Approval["사용자 승인 게이트"]
         APPROVE["👤 승인<br/>POST /api/executions"]
+        SNAPSHOT["S3 승인 스냅샷<br/>immutable + SHA-256"]
+        RESERVE["DynamoDB 사전 예약<br/>PENDING_APPROVAL + EXEC_ACTIVE"]
         SQS_EXEC["SQS Queue<br/>(실행 요청 + DLQ)"]
     end
 
@@ -114,7 +116,7 @@ graph TB
     DDB --> DASH
     S3 --> DASH
     DASH --> APPROVE
-    APPROVE --> SQS_EXEC --> ECS_EXEC
+    APPROVE --> SNAPSHOT --> RESERVE --> SQS_EXEC --> ECS_EXEC
     ECS_EXEC --> TARGET
     ECS_EXEC <--> BEDROCK_CC
     ECS_EXEC --> CW_MCP
@@ -123,7 +125,9 @@ graph TB
     ECS_EXEC <--> S3_VECTORS
 ```
 
-분석 완료 알림에서 실행 스택으로 가는 화살표는 없습니다. 알림은 사람과 대시보드만 소비하며, 실행으로 가는 유일한 간선은 승인입니다.
+분석 완료 알림에서 실행 스택으로 가는 화살표는 없습니다. 알림은 사람과 대시보드만
+소비합니다. 실행으로 가는 유일한 간선은 `사용자 승인 → immutable snapshot → 사전 예약
+→ 큐 요청`이며, 큐 메시지만 직접 넣어서는 워커가 실행 예약을 claim할 수 없습니다.
 
 ## Agent Pipeline — Fargate (Strands, 9단계)
 
@@ -207,6 +211,8 @@ lease 안에서만 시작합니다. 완료 게이트는 보고서와 플레이�
 flowchart TD
     REPORT["저장된 리포트<br/>플레이북 execution_steps<br/>(step_id · intent · action · success_criteria)"]
     HUMAN["👤 대시보드에서 절차 열람 후 승인<br/>POST /api/executions"]
+    SNAPSHOT["승인 시점 플레이북<br/>immutable S3 snapshot + SHA-256"]
+    RESERVE["실행 사전 예약<br/>PENDING_APPROVAL + EXEC_ACTIVE"]
     QUEUE["실행 요청 큐<br/>(이벤트 구독 없음 · visibility 4500s)"]
     WORKER["실행 워커<br/>execution_main long polling"]
     ALARM["알람 컨텍스트<br/>(리소스 식별자 · 리전)"]
@@ -220,7 +226,7 @@ flowchart TD
     RETRO["회고<br/>절차 결함만 교정"]
     PLAYBOOK["같은 playbook_id 로 갱신<br/>→ 다음 실행의 근거"]
 
-    REPORT --> HUMAN --> QUEUE --> WORKER
+    REPORT --> HUMAN --> SNAPSHOT --> RESERVE --> QUEUE --> WORKER
     ALARM -.->|실행 시점 매핑| WORKER
     WORKER --> GATE
     GATE -->|허용| RUN --> OBSERVE
@@ -232,23 +238,24 @@ flowchart TD
 
 **왜 이렇게 만들었는가**
 
-- **승인이 곧 메시지다.** 실행 스택에 이벤트 구독을 두지 않으므로, 사람이 승인하지 않고 실행이 시작될 경로가 존재하지 않습니다.
+- **승인은 정확한 내용에 묶인다.** 대시보드는 사람이 본 플레이북을 결정적 JSON 스냅샷으로 저장하고 SHA-256 digest를 계산합니다. 워커는 최신 개정본을 다시 고르지 않고 이 스냅샷의 digest를 검증해 실행하므로 승인 뒤 변경된 절차에는 새 승인이 필요합니다.
+- **메시지만으로는 실행할 수 없다.** 대시보드는 큐 발행 전에 `PENDING_APPROVAL` 실행과 `EXEC_ACTIVE`를 원자적으로 예약합니다. 워커는 요청의 모든 필드가 예약과 일치할 때만 claim하고, 실행 역할은 자기 큐에 메시지를 보낼 수 없습니다.
 - **파괴적 조치는 서버가 거부한다.** IAM 정책이나 프롬프트 지시가 아니라 실행 도구가 명령을 argv로 분해해 AWS 서비스와 작업 이름을 추출하고 거부 어휘와 대조합니다. **작업 이름을 확정할 수 없는 명령은 거부합니다** — 판정 불가를 허용으로 읽으면 셸 합성이나 중첩 호출로 거부 목록을 비울 수 있습니다.
-- **해결 판정의 권위는 서버에 있다.** 에이전트의 최종 서술은 관측이 아니므로 근거가 되지 않습니다. 관측되지 않았거나 기준을 만족하지 못하면 실행은 `UNRESOLVED`가 되며, 관측되지 않은 결과가 해결로 기록되는 일은 없습니다.
+- **해결 판정의 권위는 서버에 있다.** 승인 스냅샷에 선언된 모든 절차가 시도되고 관측을 남겨야 합니다. 에이전트의 최종 서술은 관측이 아니므로 근거가 되지 않으며, 건너뛴 절차나 빈 관측이 있으면 `RESOLVED`가 될 수 없습니다.
 - **거부는 실행을 중단시키지 않는다.** 거부된 절차는 증거에 남고 수동 조치로 표시되며, 남은 절차는 계속 수행됩니다.
 
 ### 실행 상태 전이
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING_APPROVAL: 승인 요청 발행
-    PENDING_APPROVAL --> EXECUTING: 워커 claim
+    [*] --> PENDING_APPROVAL: 스냅샷 저장 + 실행·활성 표식 예약
+    PENDING_APPROVAL --> EXECUTING: 예약과 큐 요청이 일치하면 워커 claim
     EXECUTING --> VERIFYING: 절차 수행 완료
     VERIFYING --> RESOLVED: 관측이 success_criteria 충족
     VERIFYING --> UNRESOLVED: 관측 없음 또는 미충족
     PENDING_APPROVAL --> CANCELLED
     PENDING_APPROVAL --> FAILED
-    EXECUTING --> FAILED
+    EXECUTING --> FAILED: 실행 실패 또는 claim 만료
     EXECUTING --> CANCELLED
     VERIFYING --> FAILED
     VERIFYING --> CANCELLED
@@ -267,6 +274,9 @@ stateDiagram-v2
 않고 저장된 리포트를 변경하지 않습니다. 하나의 리포트는 여러 번 실행될 수 있으며,
 실행 아이템은 같은 DynamoDB 파티션에 `EXEC#{execution_id}`로 저장됩니다 — 엔진
 접두사를 붙이지 않는데, 어느 엔진이 리포트를 만들었든 실행 경로는 하나이기 때문입니다.
+같은 RCA의 동시 승인은 `EXEC_ACTIVE` 조건부 쓰기로 하나만 허용됩니다. claim이 만료되면
+외부 쓰기 중복을 피하기 위해 자동 재실행하지 않고 `FAILED`로 종결하며, 사용자가 새 승인
+UUID로 다시 승인해야 합니다.
 
 ### 실행 증거
 
@@ -284,9 +294,9 @@ stateDiagram-v2
 - 교정 대상은 **절차의 결함으로 환원되는 실패**뿐입니다: 잘못된·누락된 인자, 빠진 선행 조건, 순서 오류, 해결 확정에 필요했던 검증 절차.
 - **일시적 오류는 교정하지 않습니다.** 같은 명령이 재시도로 성공했다면 절차 자체는 옳았습니다.
 - **삭제는 일어나지 않으며 이것은 프롬프트가 아니라 코드가 보장합니다.** 모델이 담지 않은 필드는 기존 값을 유지하고, `step_id`와 순서는 살아남고, 관측 가능한 성공 기준이 없는 새 절차는 버립니다.
-- 실행 시작 시점에 **갱신 전 플레이북 사본을 보존**합니다. 회고가 원본을 덮어쓰므로 사본이 없으면 갱신 diff의 기준이 사라집니다.
+- 승인 시점의 **immutable 플레이북 스냅샷을 보존**합니다. 이것이 실행 입력이자 회고 diff의 기준이므로 회고가 현재 개정본을 덮어써도 승인된 내용은 바뀌지 않습니다.
 - 갱신된 플레이북은 같은 `playbook_id`를 유지하며 다음 실행의 근거가 됩니다.
-- **회고가 갱신을 반영하면 `verification_status`가 `DRAFT` → `VERIFIED`로 승격됩니다.** 전이는 한 방향뿐이며 이후 분석이나 병합이 이 값을 낮추지 않습니다. 교정할 결함이 없어도 승격되지만(절차가 그대로 이슈를 해소한 것), 회고가 실패하면 승격도 없습니다. 이 값은 서버가 소유하며 모델이 갱신안에 담아도 무시됩니다.
+- **회고가 갱신을 반영하면 `verification_status`가 `DRAFT` → `VERIFIED`로 승격됩니다.** 교정할 결함이 없어도 승격되지만(절차가 그대로 이슈를 해소한 것), 회고가 실패하면 승격도 없습니다. 이후 설명·태그만 보강하면 상태를 유지하고, `execution_steps`가 추가·교정되면 새 절차는 아직 입증되지 않았으므로 `DRAFT`로 돌아갑니다. 이 값은 서버가 소유하며 모델이 갱신안에 담아도 무시됩니다.
 - 승격은 개정본과 검색 인덱스 양쪽에 함께 반영됩니다. 다음 실행은 개정본을, 다음 RCA의 보강은 인덱스를 읽습니다.
 - 회고 실패는 이미 확정된 해결을 되돌리지 않습니다.
 
@@ -357,9 +367,10 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 ### Playbook Execution (CC Headless 실행 워커)
 
 - **같은 이미지, 다른 진입점**: `python -m cc_headless.execution_main`. 하나의 하네스를 두 진입점으로 나눔
-- **트리거는 승인뿐**: 실행 요청 큐 long polling. 이벤트 구독이 없어 승인 없이 기동될 경로가 없음
-- **실행 근거**: 플레이북의 `execution_steps`. 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 매핑
+- **트리거는 승인뿐**: 승인 스냅샷과 `PENDING_APPROVAL`·`EXEC_ACTIVE` 예약을 거친 실행 요청 큐 long polling. 예약 없는 메시지는 거부
+- **실행 근거**: SHA-256으로 검증한 승인 시점 플레이북의 `execution_steps`. 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 매핑
 - **서버 판정형 게이트**: 파괴적 조치 거부와 해결 판정 모두 서버가 수행. 판정 불가는 거부
+- **재승인 경계**: claim 만료는 `FAILED`로 종결하고 자동 재실행하지 않음. 새 실행에는 새 사용자 승인 필요
 - **회고 연결**: `RESOLVED` 실행만 회고로 이어지고, 같은 `playbook_id`를 유지하며 절차를 교정
 
 ## Technology Stack

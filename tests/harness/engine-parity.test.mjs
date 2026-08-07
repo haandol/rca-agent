@@ -173,18 +173,21 @@ test('neither engine can mark a playbook verified during analysis', async () => 
   );
 });
 
-// The retrospective is the only actor that may promote a procedure, and the
-// promotion only holds if nothing downstream can quietly undo it. Each engine
-// enforces that in its own package, so this test is what keeps the one-way rule
-// from being a rule in only one of them.
-test('neither engine lets a model or a merge undo a promotion', async () => {
-  const [agentGeneration, agentStore, ccMerge] = await Promise.all([
+// The retrospective is the only actor that may promote a procedure. Later
+// analysis may enrich its description without losing that proof, but changing
+// the executable procedure creates an unproven revision that must return to
+// DRAFT. Each engine enforces this independently, so keep both branches aligned.
+test('both engines preserve verification only while procedures are unchanged', async () => {
+  const [agentGeneration, agentStore, ccMerge, ccPipeline] = await Promise.all([
     readRepositoryFile('packages/agent/src/rca_agent/services/playbook_gen.py'),
     readRepositoryFile(
       'packages/agent/src/rca_agent/adapters/secondary/playbook/s3_vectors_playbook_store.py',
     ),
     readRepositoryFile(
       'packages/cc-headless/src/cc_headless/services/playbook_merge.py',
+    ),
+    readRepositoryFile(
+      'packages/cc-headless/src/cc_headless/services/pipeline.py',
     ),
   ]);
 
@@ -197,13 +200,26 @@ test('neither engine lets a model or a merge undo a promotion', async () => {
     'the retrospective merge must ignore a model-supplied verification status',
   );
 
-  // Rebuilding a merged playbook field by field is where a promotion goes
-  // missing: an omitted field falls back to DRAFT instead of raising.
+  // Strands compares the final executable steps with the recorded procedure:
+  // equal steps retain VERIFIED, while any change invalidates that proof.
   assert.match(
     agentGeneration,
-    /verification_status=existing\.verification_status/,
-    'the Strands merge must carry the recorded status into the merged playbook',
+    /verification_status = \(\s*existing\.verification_status\s*if execution_steps == existing\.execution_steps\s*else PlaybookVerificationStatus\.DRAFT\s*\)/,
+    'the Strands merge must preserve unchanged procedures and draft changed ones',
   );
+
+  // CC Headless applies the same comparison after its additive merge.
+  assert.match(
+    ccPipeline,
+    /procedures_unchanged = merged\.get\("execution_steps"\) == existing\.get\("execution_steps"\)/,
+    'the CC merge must compare the resulting procedure with the recorded one',
+  );
+  assert.match(
+    ccPipeline,
+    /normalize_verification_status\(existing\.get\(VERIFICATION_STATUS_FIELD\)\)\s*if procedures_unchanged\s*else PLAYBOOK_DRAFT/,
+    'the CC merge must preserve unchanged procedures and draft changed ones',
+  );
+
   // Reloading a recorded playbook is the other place a promotion disappears:
   // a status the loader does not reconstruct comes back as the default draft.
   assert.match(
@@ -212,8 +228,7 @@ test('neither engine lets a model or a merge undo a promotion', async () => {
     'the Strands loader must reconstruct the recorded verification status',
   );
 
-  // The promotion itself must be one named operation with no inverse — a
-  // demotion helper anywhere would make the one-way rule a convention.
+  // Promotion remains a named retrospective operation. Analysis can only retain
+  // its result or invalidate it by changing the procedure.
   assert.match(ccMerge, /def promote_to_verified\(/);
-  assert.doesNotMatch(ccMerge, /def demote|def to_draft|def unverify/);
 });

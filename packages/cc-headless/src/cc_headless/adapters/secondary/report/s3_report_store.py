@@ -29,8 +29,10 @@ class S3ReportStore(ReportStorePort):
             key = f"reports/{ENGINE}/{rca_id}/{attempt_segment}/report.md"
         else:
             key = f"reports/{ENGINE}/{rca_id}.md"
-        if not S3_REPORT_BUCKET or not self._s3:
+        if not S3_REPORT_BUCKET:
             return key
+        if not self._s3:
+            raise RuntimeError("report bucket is configured but the S3 client is unavailable")
         self._s3.put_object(
             Bucket=S3_REPORT_BUCKET,
             Key=key,

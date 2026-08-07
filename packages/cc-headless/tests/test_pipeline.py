@@ -382,13 +382,12 @@ def test_report_artifact_is_uploaded_without_using_cli_fallback(monkeypatch, tmp
         claim_token=CLAIM_TOKEN,
         attempt=1,
     )
-    container.session_store.mark_completed.assert_called_once_with(
-        "rca-1",
-        "DB connection leak",
-        "reports/rca.md",
-        claim_token=CLAIM_TOKEN,
-        side_effect_lease_token="lease-token",
-    )
+    completed = container.session_store.mark_completed.call_args
+    assert completed.args == ("rca-1", "DB connection leak", "reports/rca.md")
+    assert completed.kwargs["playbook"]["playbook_id"] == "playbook-1"
+    assert completed.kwargs["confirmed"] is False
+    assert completed.kwargs["claim_token"] == CLAIM_TOKEN
+    assert completed.kwargs["side_effect_lease_token"] == "lease-token"
     container.report_store.send_notification.assert_called_once()
 
 
@@ -435,6 +434,9 @@ def test_confirmed_completion_publishes_a_report_with_its_playbook(monkeypatch, 
 
     assert result is True
     assert container.report_store.send_notification.call_args.kwargs["confirmed"] is True
+    completed = container.session_store.mark_completed.call_args.kwargs
+    assert completed["playbook"]["playbook_id"] == "playbook-1"
+    assert completed["confirmed"] is True
 
 
 class TestPlaybookSearchFirstMerge:
@@ -497,6 +499,9 @@ class TestPlaybookSearchFirstMerge:
 
         assert self._run(container, monkeypatch, tmp_path) is True
         assert self._saved(container)["playbook_id"] == "pb-existing"
+        # The session owns the exact validated artifact for this analysis. The
+        # search-index merge is future knowledge and must not replace it.
+        assert container.session_store.mark_completed.call_args.kwargs["playbook"]["playbook_id"] == "playbook-1"
 
     def test_merge_never_drops_accumulated_steps(self, monkeypatch, tmp_path):
         container = _container(None)
@@ -540,14 +545,24 @@ class TestPlaybookSearchFirstMerge:
         # 새 분석이 언급하지 않은 필드가 사라지면 축적이 조용히 되돌아간다.
         assert self._saved(container)["runbook_url"] == "https://runbook.example/db-leak"
 
-    def test_merge_does_not_lower_an_earned_verification_status(self, monkeypatch, tmp_path):
+    def test_changed_execution_steps_are_downgraded_to_draft(self, monkeypatch, tmp_path):
         container = _container(None)
         container.playbook_store.search_similar = Mock(return_value=[self._hit()])
         container.playbook_store.load_detail = Mock(return_value=self._existing())
 
         self._run(container, monkeypatch, tmp_path)
 
-        # 분석은 초안만 쓸 수 있지만, 이미 획득한 검증 상태를 낮출 수도 없다.
+        assert self._saved(container)["verification_status"] == "DRAFT"
+
+    def test_unchanged_execution_steps_preserve_verified_status(self, monkeypatch, tmp_path):
+        container = _container(None)
+        existing = self._existing()
+        existing["execution_steps"] = [dict(_STEP)]
+        container.playbook_store.search_similar = Mock(return_value=[self._hit()])
+        container.playbook_store.load_detail = Mock(return_value=existing)
+
+        self._run(container, monkeypatch, tmp_path)
+
         assert self._saved(container)["verification_status"] == "VERIFIED"
 
     def test_uses_the_merge_threshold_not_a_plain_retrieval_cutoff(self, monkeypatch, tmp_path):
@@ -746,6 +761,32 @@ def test_notification_failure_does_not_finalize_completed_session(monkeypatch, t
     assert result is False
     container.report_store.send_notification.assert_called_once()
     container.session_store.mark_failed.assert_called_once()
+    container.session_store.mark_completed.assert_not_called()
+
+
+def test_missing_report_key_does_not_finalize_completed_session(monkeypatch, tmp_path):
+    class ReportWriter:
+        def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
+            _write_required_report_artifacts(
+                artifact_dir_for_token(execution_token),
+                _valid_report("Connection leak"),
+            )
+            return CcResult(True, "complete", "{}")
+
+    container = _container(ReportWriter())
+    container.report_store.save_report.return_value = ""
+    _patch_runtime(monkeypatch, tmp_path)
+
+    result = PipelineOrchestrator(container)._run_rca(
+        "rca-1",
+        ALARM_DATA,
+        structlog.get_logger(),
+        CLAIM_TOKEN,
+    )
+
+    assert result is False
+    container.session_store.mark_failed.assert_called_once()
+    container.report_store.send_notification.assert_not_called()
     container.session_store.mark_completed.assert_not_called()
 
 

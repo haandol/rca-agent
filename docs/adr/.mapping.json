@@ -79,7 +79,7 @@
     },
     "tools": {
       "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",
-      "dependsOn": [],
+      "dependsOn": ["infra"],
       "adrs": [
         {
           "path": "docs/adr/tools/0001-metrics-collection.md",
@@ -105,6 +105,11 @@
           "path": "docs/adr/tools/0005-code-change-analysis.md",
           "status": "Accepted (2026-04-22)",
           "summary": "저장소 MCP 서버로 배포 코드 변경의 결함 후보를 읽기 전용으로 분석한다."
+        },
+        {
+          "path": "docs/adr/tools/0006-cross-account-tool-credentials.md",
+          "status": "Proposed",
+          "summary": "세션마다 대상 계정 위임 프로파일을 렌더링해 도구에 전달하고, 위임 실패는 세션 실패로 처리한다."
         }
       ]
     },
@@ -151,6 +156,11 @@
           "path": "docs/adr/infra/0008-playbook-execution-stack.md",
           "status": "Accepted (2026-07-30)",
           "summary": "플레이북 실행을 사용자 요청 큐로 기동되는 쓰기 권한 전용 Fargate 스택으로 운영한다."
+        },
+        {
+          "path": "docs/adr/infra/0009-multi-account-rca-hub-spoke.md",
+          "status": "Proposed",
+          "summary": "여러 계정의 RCA를 단일 허브에서 수행하고 대상 계정 권한을 스포크 위임 역할로 옮기며, 유입은 조직 경계와 계정 레지스트리로 제한하고 계정별 상한을 둔다."
         }
       ]
     }

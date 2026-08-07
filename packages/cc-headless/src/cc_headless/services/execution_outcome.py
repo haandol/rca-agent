@@ -55,6 +55,7 @@ def assemble_evidence(
     )
 
     declared_steps = playbook.get("execution_steps")
+    declared_step_ids: set[str] = set()
     if isinstance(declared_steps, list):
         for step in declared_steps:
             if not isinstance(step, dict):
@@ -62,6 +63,7 @@ def assemble_evidence(
             step_id = _as_str(step.get("step_id"), limit=200)
             if not step_id:
                 continue
+            declared_step_ids.add(step_id)
             tracked = evidence.step(step_id)
             tracked.intent = _as_str(step.get("intent"))
             tracked.success_criteria = _as_str(step.get("success_criteria"))
@@ -70,6 +72,8 @@ def assemble_evidence(
     for record in records:
         record_type = record.get("type")
         step_id = _as_str(record.get("step_id"), limit=200)
+        if step_id and step_id not in declared_step_ids:
+            continue
 
         if record_type == "attempt" and step_id:
             attempt_counts[step_id] = attempt_counts.get(step_id, 0) + 1
@@ -137,14 +141,27 @@ def judge_resolution(evidence: ExecutionEvidence, *, agent_succeeded: bool) -> R
             "observation did not confirm that the issue was resolved",
         )
 
-    unmet = [step.step_id for step in evidence.steps if step.attempts and step.resolved is False]
+    if not evidence.resolution_observation.strip():
+        return ResolutionVerdict(
+            ExecutionState.UNRESOLVED,
+            "resolved=true requires a nonblank resolution observation",
+        )
+
+    skipped = [step.step_id for step in evidence.steps if not step.attempts]
+    if skipped:
+        return ResolutionVerdict(
+            ExecutionState.UNRESOLVED,
+            f"steps were not attempted: {', '.join(skipped)}",
+        )
+
+    unmet = [step.step_id for step in evidence.steps if step.resolved is False]
     if unmet:
         return ResolutionVerdict(
             ExecutionState.UNRESOLVED,
             f"steps did not meet their success criteria: {', '.join(unmet)}",
         )
 
-    unobserved = [step.step_id for step in evidence.steps if step.attempts and step.resolved is None]
+    unobserved = [step.step_id for step in evidence.steps if step.resolved is None or not step.observation.strip()]
     if unobserved:
         return ResolutionVerdict(
             ExecutionState.UNRESOLVED,

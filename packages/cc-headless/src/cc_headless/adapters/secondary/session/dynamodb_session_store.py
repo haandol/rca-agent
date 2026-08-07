@@ -207,6 +207,8 @@ class DynamoDbSessionStore(SessionStorePort):
         root_cause: str,
         report_s3_key: str,
         *,
+        playbook: dict | None = None,
+        confirmed: bool = False,
         claim_token: str,
         side_effect_lease_token: str | None = None,
     ) -> None:
@@ -214,10 +216,14 @@ class DynamoDbSessionStore(SessionStorePort):
             return
         self._validate_transition(rca_id, "COMPLETED", claim_token)
         condition = _TERMINAL_COND
+        current_playbook = playbook or {}
         values = {
             ":state": {"S": "COMPLETED"},
             ":rc": {"S": root_cause},
             ":report_s3_key": {"S": report_s3_key},
+            ":playbook": {"S": json.dumps(current_playbook, ensure_ascii=False)},
+            ":playbook_id": {"S": str(current_playbook.get("playbook_id", ""))[:200]},
+            ":confirmed": {"BOOL": confirmed},
             ":now": {"S": _now_iso()},
             ":completed": {"S": "COMPLETED"},
             ":failed": {"S": "FAILED"},
@@ -226,7 +232,8 @@ class DynamoDbSessionStore(SessionStorePort):
             ":claim": {"S": claim_token},
         }
         update = (
-            "SET #state = :state, root_cause = :rc, report_s3_key = :report_s3_key, updated_at = :now "
+            "SET #state = :state, root_cause = :rc, report_s3_key = :report_s3_key, "
+            "playbook = :playbook, playbook_id = :playbook_id, confirmed = :confirmed, updated_at = :now "
             "REMOVE side_effect_lease_token, side_effect_lease_name, side_effect_lease_expires_at"
         )
         if side_effect_lease_token:

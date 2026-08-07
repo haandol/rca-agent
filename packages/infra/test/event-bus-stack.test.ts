@@ -31,16 +31,14 @@ function topicPolicyStatements(template: Template): PolicyStatement[] {
   const policies = template.findResources('AWS::SNS::TopicPolicy');
   return Object.values(policies).flatMap(
     (policy) =>
-      (policy.Properties?.PolicyDocument?.Statement ??
-        []) as PolicyStatement[],
+      (policy.Properties?.PolicyDocument?.Statement ?? []) as PolicyStatement[],
   );
 }
 
 /** The statement that lets CloudWatch publish alarms into the RCA topic. */
 function cloudwatchPublishStatement(template: Template): PolicyStatement {
   const match = topicPolicyStatements(template).find(
-    (statement) =>
-      statement?.Principal?.Service === 'cloudwatch.amazonaws.com',
+    (statement) => statement?.Principal?.Service === 'cloudwatch.amazonaws.com',
   );
   expect(match).toBeDefined();
   return match!;
@@ -92,6 +90,39 @@ test('the topic requires TLS and delivers alarms to the queue unwrapped', () => 
       statement?.Condition?.Bool?.['aws:SecureTransport'] === 'false',
   );
   expect(denyInsecure).toBeDefined();
+});
+
+test('analysis completion is isolated from incident ingestion', () => {
+  const template = synthesizeEventBus();
+  const topics = template.findResources('AWS::SNS::Topic');
+  const alarmTopic = Object.entries(topics).find(
+    ([, topic]) => topic.Properties?.TopicName === `${NS}Alarm`,
+  );
+  const notificationTopic = Object.entries(topics).find(
+    ([, topic]) => topic.Properties?.TopicName === `${NS}AnalysisCompletion`,
+  );
+  expect(alarmTopic).toBeDefined();
+  expect(notificationTopic).toBeDefined();
+
+  const subscriptions = Object.values(
+    template.findResources('AWS::SNS::Subscription'),
+  );
+  const queueSubscription = subscriptions.find(
+    (subscription) => subscription.Properties?.Protocol === 'sqs',
+  );
+  const humanSubscription = subscriptions.find(
+    (subscription) => subscription.Properties?.Protocol === 'email',
+  );
+
+  expect(queueSubscription?.Properties?.TopicArn).toEqual({
+    Ref: alarmTopic![0],
+  });
+  expect(humanSubscription?.Properties).toEqual(
+    expect.objectContaining({
+      Endpoint: 'ops@example.com',
+      TopicArn: { Ref: notificationTopic![0] },
+    }),
+  );
 });
 
 test('failed alarm messages are retained rather than dropped', () => {

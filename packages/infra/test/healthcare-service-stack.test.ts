@@ -115,6 +115,22 @@ test('the deployed revision is exposed to the container', () => {
   });
 });
 
+test('task roles have stable names for scoped pass-role permission', () => {
+  const roles = Object.values(
+    synthesize().findResources('AWS::IAM::Role'),
+  ) as CfnResource[];
+  const roleNames = roles
+    .map((role) => role.Properties?.RoleName)
+    .filter((roleName): roleName is string => typeof roleName === 'string');
+
+  expect(roleNames).toEqual(
+    expect.arrayContaining([
+      'RcaAgentDevHealthcareTaskRole',
+      'RcaAgentDevHealthcareExecutionRole',
+    ]),
+  );
+});
+
 function alarmThreshold(template: Template, alarmName: string): number {
   const alarms = Object.values(
     template.findResources('AWS::CloudWatch::Alarm'),

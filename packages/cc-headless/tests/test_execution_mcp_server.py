@@ -8,6 +8,7 @@ import pytest
 from cc_headless import execution_mcp_server, retrospective_mcp_server
 from cc_headless.services import execution_workspace
 from cc_headless.services.execution_workspace import (
+    APPROVED_STEP_IDS_ENV,
     EXECUTION_TOKEN_ENV,
     ExecutionWorkspace,
 )
@@ -18,6 +19,7 @@ def workspace(monkeypatch, tmp_path):
     token = uuid.uuid4().hex
     monkeypatch.setattr(execution_workspace, "_WORKSPACE_ROOT", tmp_path / "executions")
     monkeypatch.setenv(EXECUTION_TOKEN_ENV, token)
+    monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps(["step-1", "step-2"]))
     created = ExecutionWorkspace(execution_id="exec-1", token=token)
     created.prepare()
     yield created
@@ -102,6 +104,20 @@ def test_a_command_without_a_step_id_is_rejected(workspace, spawned):
     spawned.assert_not_called()
 
 
+def test_an_undeclared_step_id_cannot_run_or_record_an_outcome(workspace, spawned):
+    command = json.loads(
+        execution_mcp_server.run_playbook_command("step-unknown", "aws ecs update-service --service api")
+    )
+    outcome = json.loads(
+        execution_mcp_server.record_step_outcome("step-unknown", "healthy", "healthy", criteria_met=True)
+    )
+
+    assert command["ok"] is False
+    assert outcome["ok"] is False
+    assert workspace.read_records() == []
+    spawned.assert_not_called()
+
+
 def test_credentials_in_a_recorded_command_are_redacted(workspace, spawned):
     execution_mcp_server.run_playbook_command(
         "step-1", "aws rds modify-db-instance --db-instance-identifier demo --master-user-password hunter2"
@@ -178,6 +194,13 @@ def test_an_unobservable_resolution_keeps_its_reason(workspace):
     execution_mcp_server.record_resolution("메트릭 조회 실패", resolved=False, unobservable_reason="지표 반영 지연")
 
     assert workspace.read_records()[0]["unobservable_reason"] == "지표 반영 지연"
+
+
+def test_resolved_true_requires_a_nonblank_observation(workspace):
+    result = json.loads(execution_mcp_server.record_resolution("  ", resolved=True))
+
+    assert result["ok"] is False
+    assert workspace.read_records() == []
 
 
 def test_tools_refuse_to_act_without_an_execution_context(monkeypatch, tmp_path):

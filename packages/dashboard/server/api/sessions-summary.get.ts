@@ -70,10 +70,7 @@ export default defineEventHandler(async () => {
       const executions = items
         .filter((entry) => isExecutionItem((entry.SK as string) || ''))
         .map(readExecution)
-        .filter(
-          (execution) =>
-            !execution.engine || execution.engine === session.engine,
-        );
+        .filter((execution) => execution.engine === session.engine);
 
       return {
         engine: session.engine,

@@ -16,7 +16,6 @@ from cc_headless.ports.interfaces.execution_store import (
     ExecutionClaimDisposition,
     ExecutionClaimLostError,
     ExecutionTarget,
-    ExecutionTargetUnavailableError,
 )
 from cc_headless.services.execution_evidence import ExecutionEvidence
 from cc_headless.services.execution_outcome import assemble_evidence, judge_resolution
@@ -67,10 +66,19 @@ class ExecutionOrchestrator:
             engine=request.engine,
             approval_id=request.approval_id,
             requested_by=request.requested_by,
+            report_s3_key=request.report_s3_key,
+            approved_playbook_s3_key=request.approved_playbook_s3_key,
+            playbook_digest=request.playbook_digest,
             claim_seconds=EXECUTION_CLAIM_SECONDS,
         )
         if claim.disposition is ExecutionClaimDisposition.TERMINAL_DUPLICATE:
             log.info("execution_terminal_duplicate_acknowledged")
+            return True
+        if claim.disposition is ExecutionClaimDisposition.REJECTED:
+            log.error("execution_reservation_rejected")
+            return True
+        if claim.disposition is ExecutionClaimDisposition.EXPIRED_FAILED:
+            log.error("execution_expired_and_failed_reapproval_required")
             return True
         if not claim.acquired:
             log.info("execution_claim_contended")
@@ -91,8 +99,17 @@ class ExecutionOrchestrator:
 
         try:
             try:
-                target = store.load_target(request.rca_id, request.engine)
-            except ExecutionTargetUnavailableError as exc:
+                playbook = self._c.evidence_store.load_approved_playbook(
+                    request.approved_playbook_s3_key,
+                    playbook_digest=request.playbook_digest,
+                )
+                target = store.load_target(
+                    request.rca_id,
+                    request.engine,
+                    report_s3_key=request.report_s3_key,
+                    playbook=playbook,
+                )
+            except Exception as exc:
                 log.error("execution_target_unavailable", detail=str(exc))
                 store.update_state(
                     execution_id,
@@ -102,14 +119,6 @@ class ExecutionOrchestrator:
                     error_reason=str(exc),
                 )
                 return True
-
-            # 갱신 전 사본을 실행 시작 시점에 보존한다. 회고가 원본을 덮어쓰므로 사후에
-            # 복원할 수 없고, 이 사본이 없으면 갱신 diff 의 기준이 사라진다.
-            snapshot_key = self._c.evidence_store.save_playbook_snapshot(
-                execution_id,
-                rca_id=request.rca_id,
-                playbook=target.playbook,
-            )
 
             steps = target.playbook.get("execution_steps")
             if not isinstance(steps, list) or not steps:
@@ -123,6 +132,20 @@ class ExecutionOrchestrator:
                     error_reason=reason,
                 )
                 return True
+            approved_step_ids: list[str] = []
+            for step in steps:
+                step_id = step.get("step_id") if isinstance(step, dict) else None
+                if not isinstance(step_id, str) or not step_id.strip() or step_id.strip() in approved_step_ids:
+                    reason = "approved playbook has invalid or duplicate execution step IDs"
+                    store.update_state(
+                        execution_id,
+                        rca_id=request.rca_id,
+                        state=ExecutionState.FAILED,
+                        claim_token=claim_token,
+                        error_reason=reason,
+                    )
+                    return True
+                approved_step_ids.append(step_id.strip())
 
             prompt = build_execution_prompt(target, execution_id=execution_id)
 
@@ -136,6 +159,7 @@ class ExecutionOrchestrator:
                 prompt,
                 execution_token=workspace.token,
                 execution_id=execution_id,
+                approved_step_ids=tuple(approved_step_ids),
                 cancel_checker=_should_cancel,
             )
             # 에이전트가 실패를 보고하지 않고 아무것도 하지 않은 채 성공 종료할 수 있다.
@@ -198,7 +222,16 @@ class ExecutionOrchestrator:
             )
 
             if enters_retrospective(verdict.state):
-                self._retrospect(execution_id, request, target, evidence, claim_token, workspace, snapshot_key, log)
+                self._retrospect(
+                    execution_id,
+                    request,
+                    target,
+                    evidence,
+                    claim_token,
+                    workspace,
+                    request.approved_playbook_s3_key,
+                    log,
+                )
             return True
         except ExecutionClaimLostError:
             # 다른 워커가 같은 실행을 이어받았다. 이 워커의 쓰기는 더 이상 유효하지 않다.

@@ -24,6 +24,7 @@ from cc_headless.services.execution_evidence import (
     redact_arguments,
 )
 from cc_headless.services.execution_workspace import (
+    APPROVED_STEP_IDS_ENV,
     EXECUTION_TOKEN_ENV,
     evidence_path_for_token,
 )
@@ -53,6 +54,24 @@ def _append_record(record: dict) -> bool:
         handle.flush()
         os.fsync(handle.fileno())
     return True
+
+
+def _approved_step_ids() -> frozenset[str]:
+    try:
+        parsed = json.loads(os.environ.get(APPROVED_STEP_IDS_ENV, ""))
+    except json.JSONDecodeError:
+        return frozenset()
+    if not isinstance(parsed, list):
+        return frozenset()
+    return frozenset(value.strip() for value in parsed if isinstance(value, str) and value.strip())
+
+
+def _validate_step_id(step_id: str) -> str | None:
+    if not isinstance(step_id, str) or not step_id.strip():
+        return "step_id is required"
+    if step_id.strip() not in _approved_step_ids():
+        return "step_id is not declared in the approved playbook"
+    return None
 
 
 def _classify_exit(stderr: str, returncode: int) -> FailureClass:
@@ -96,8 +115,9 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
                  명령 치환)은 판정 불가로 거부된다.
         intent: 이 명령이 절차의 무엇을 달성하려는지.
     """
-    if not isinstance(step_id, str) or not step_id.strip():
-        return json.dumps({"ok": False, "error": "step_id is required"}, ensure_ascii=False)
+    step_error = _validate_step_id(step_id)
+    if step_error:
+        return json.dumps({"ok": False, "error": step_error}, ensure_ascii=False)
 
     verdict = evaluate_command(command)
     safe_command = redact(command)
@@ -222,8 +242,9 @@ def record_step_outcome(
         failure_class: 만족하지 못한 경우의 분류.
         manual_action_required: 이 절차가 사람의 조치로 남아야 하는지.
     """
-    if not isinstance(step_id, str) or not step_id.strip():
-        return json.dumps({"ok": False, "error": "step_id is required"}, ensure_ascii=False)
+    step_error = _validate_step_id(step_id)
+    if step_error:
+        return json.dumps({"ok": False, "error": step_error}, ensure_ascii=False)
 
     ok = _append_record(
         {
@@ -254,6 +275,12 @@ def record_resolution(observation: str, resolved: bool, unobservable_reason: str
         resolved: 관측이 해소를 확인했는지.
         unobservable_reason: 관측으로 확정할 수 없었던 이유.
     """
+    if resolved and (not isinstance(observation, str) or not observation.strip()):
+        return json.dumps(
+            {"ok": False, "error": "resolved=true requires a nonblank observation"},
+            ensure_ascii=False,
+        )
+
     ok = _append_record(
         {
             "type": "resolution",

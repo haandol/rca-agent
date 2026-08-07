@@ -56,6 +56,8 @@ class SessionStorePort(ABC):
         root_cause: str,
         report_s3_key: str,
         *,
+        playbook: dict | None = None,
+        confirmed: bool = False,
         claim_token: str,
         side_effect_lease_token: str | None = None,
     ) -> None: ...

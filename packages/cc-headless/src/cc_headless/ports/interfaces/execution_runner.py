@@ -20,6 +20,7 @@ class ExecutionRunnerPort(ABC):
         *,
         execution_token: str,
         execution_id: str,
+        approved_step_ids: tuple[str, ...],
         cancel_checker: Callable[[], bool] | None = None,
     ) -> CcResult: ...
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import structlog
@@ -31,6 +32,29 @@ class S3EvidenceStore(EvidenceStorePort):
             ContentType="application/json",
         )
         return key
+
+    def load_approved_playbook(self, approved_playbook_s3_key: str, *, playbook_digest: str) -> dict:
+        """승인 시점의 바이트를 검증한 뒤 플레이북 객체로 해석한다."""
+        if not S3_EVIDENCE_BUCKET or not self._s3:
+            raise RuntimeError("approved playbook store is unavailable")
+        response = self._s3.get_object(
+            Bucket=S3_EVIDENCE_BUCKET,
+            Key=approved_playbook_s3_key,
+        )
+        body = response.get("Body")
+        if body is None:
+            raise RuntimeError("approved playbook snapshot has no body")
+        raw = body.read()
+        actual_digest = hashlib.sha256(raw).hexdigest()
+        if actual_digest != playbook_digest:
+            raise RuntimeError("approved playbook digest does not match the stored snapshot")
+        try:
+            playbook = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("approved playbook snapshot is not valid JSON") from exc
+        if not isinstance(playbook, dict):
+            raise RuntimeError("approved playbook snapshot must be a JSON object")
+        return playbook
 
     def save_execution_evidence(self, execution_id: str, *, rca_id: str, evidence: dict) -> str:
         return self._put_json(

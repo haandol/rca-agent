@@ -127,9 +127,7 @@ export default defineEventHandler(async (event) => {
       const executions = partitionItems
         .filter((entry) => isExecutionItem((entry.SK as string) || ''))
         .map(readExecution)
-        .filter(
-          (execution) => !execution.engine || execution.engine === engine,
-        );
+        .filter((execution) => execution.engine === engine);
       const execution = latestExecution(executions);
 
       // A terminal state overwrites the stage it happened in, so how far a

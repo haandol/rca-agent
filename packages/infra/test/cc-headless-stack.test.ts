@@ -13,7 +13,9 @@ type CfnResource = {
 };
 
 type IamStatement = {
+  Effect?: string;
   Action?: string | string[];
+  Resource?: unknown;
 };
 
 type PolicyDocument = {
@@ -88,8 +90,7 @@ function taskRoleStatements(template: Template): IamStatement[] {
   expect(taskDefinitions).toHaveLength(1);
 
   const taskRoleArn = taskDefinitions[0].Properties?.TaskRoleArn as
-    | TaskRoleArn
-    | undefined;
+    TaskRoleArn | undefined;
   const taskRoleLogicalId = taskRoleArn?.['Fn::GetAtt']?.[0];
   expect(taskRoleLogicalId).toEqual(expect.any(String));
 
@@ -161,6 +162,29 @@ test('CC task role has no ECS service write permissions', () => {
     );
 
   expect(ecsActions).toEqual([]);
+});
+
+test('CC can read but cannot alter an approved snapshot', () => {
+  const { ccHeadless } = synthesize();
+  const statements = taskRoleStatements(ccHeadless);
+  const approvalDeny = statements.find((statement) => {
+    const actions = Array.isArray(statement.Action)
+      ? statement.Action
+      : [statement.Action];
+    return (
+      statement.Effect === 'Deny' &&
+      actions.includes('s3:PutObject') &&
+      actions.includes('s3:DeleteObject')
+    );
+  });
+  const allowedActions = statements
+    .filter((statement) => statement.Effect !== 'Deny')
+    .flatMap((statement) =>
+      Array.isArray(statement.Action) ? statement.Action : [statement.Action],
+    );
+
+  expect(JSON.stringify(approvalDeny?.Resource)).toContain('approvals/*');
+  expect(allowedActions).toContain('s3:GetObject*');
 });
 
 test('the analysis task role holds no write permission at all', () => {

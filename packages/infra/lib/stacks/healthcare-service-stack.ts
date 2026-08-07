@@ -10,6 +10,10 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as cloudmap from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
 import { grantEcrPull } from '../constructs/ecr-access';
+import {
+  healthcareExecutionRoleName,
+  healthcareTaskRoleName,
+} from '../constructs/healthcare-role-names';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -63,10 +67,21 @@ export class HealthcareServiceStack extends cdk.Stack {
     ns: string,
     props: IProps,
   ): ecs.FargateTaskDefinition {
+    const taskRole = new iam.Role(this, 'TaskRole', {
+      roleName: healthcareTaskRoleName(ns),
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+    const executionRole = new iam.Role(this, 'ExecutionRole', {
+      roleName: healthcareExecutionRoleName(ns),
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       family: `${ns}Healthcare`,
       cpu: 512,
       memoryLimitMiB: 1024,
+      taskRole,
+      executionRole,
       runtimePlatform: {
         cpuArchitecture: ecs.CpuArchitecture.ARM64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,

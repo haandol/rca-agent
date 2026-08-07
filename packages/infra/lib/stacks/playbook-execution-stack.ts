@@ -7,7 +7,12 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
+import { denyApprovalSnapshotMutation } from '../constructs/approval-snapshot-access';
 import { grantEcrPull } from '../constructs/ecr-access';
+import {
+  healthcareExecutionRoleName,
+  healthcareTaskRoleName,
+} from '../constructs/healthcare-role-names';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
@@ -148,23 +153,32 @@ export class PlaybookExecutionStack extends cdk.Stack {
       portMappings: [{ containerPort: 8080 }],
     });
 
-    this.grantTaskPermissions(taskDef, props, requestQueue);
+    this.grantTaskPermissions(ns, taskDef, props, requestQueue);
     grantEcrPull(taskDef);
 
     return taskDef;
   }
 
   private grantTaskPermissions(
+    ns: string,
     taskDef: ecs.FargateTaskDefinition,
     props: IProps,
     requestQueue: sqs.Queue,
   ): void {
     requestQueue.grantConsumeMessages(taskDef.taskRole);
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.DENY,
+        actions: ['sqs:SendMessage'],
+        resources: [requestQueue.queueArn],
+      }),
+    );
 
     props.rcaSessionTable.grantReadWriteData(taskDef.taskRole);
 
     // Execution evidence and the pre-execution playbook copy land here.
     props.evidenceBucket.grantReadWrite(taskDef.taskRole);
+    denyApprovalSnapshotMutation(taskDef.taskRole, props.evidenceBucket);
 
     // The retrospective reindexes the playbook it revised so the next similar
     // incident retrieves the corrected procedure.
@@ -198,7 +212,7 @@ export class PlaybookExecutionStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchReadOnlyAccess'),
     );
 
-    this.grantExecutionWritePermissions(taskDef);
+    this.grantExecutionWritePermissions(ns, taskDef);
   }
 
   /**
@@ -222,6 +236,7 @@ export class PlaybookExecutionStack extends cdk.Stack {
    * than implied by a managed policy's contents.
    */
   private grantExecutionWritePermissions(
+    ns: string,
     taskDef: ecs.FargateTaskDefinition,
   ): void {
     taskDef.taskRole.addManagedPolicy(
@@ -267,7 +282,20 @@ export class PlaybookExecutionStack extends cdk.Stack {
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['iam:PassRole'],
-        resources: ['*'],
+        resources: [
+          this.formatArn({
+            service: 'iam',
+            region: '',
+            resource: 'role',
+            resourceName: healthcareTaskRoleName(ns),
+          }),
+          this.formatArn({
+            service: 'iam',
+            region: '',
+            resource: 'role',
+            resourceName: healthcareExecutionRoleName(ns),
+          }),
+        ],
         conditions: {
           StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' },
         },
