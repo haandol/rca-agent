@@ -11,15 +11,18 @@ class ReportStorePort(ABC):
         self,
         report: RcaReport,
         *,
-        playbook: Playbook,
+        playbook: Playbook | None,
         claim_token: str | None = None,
         attempt: int | None = None,
     ) -> str:
         """Persist the report with its playbook as one artifact.
 
-        The playbook is required, not optional: a report a person approves has to
-        show the procedure that will run. Rendering the narrative without it would
-        put the approval button behind a document that omits what gets executed.
+        The argument is explicit rather than defaulted: a report a person approves
+        has to show the procedure that will run, so omitting it must be a decision
+        the caller states. None means playbook generation failed, and the report
+        still has to reach the person — the analysis result is the deliverable and
+        the playbook is an asset for later. The narrative then says no procedure
+        exists instead of implying one that was never written.
         """
 
     @abstractmethod

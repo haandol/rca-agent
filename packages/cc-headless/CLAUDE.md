@@ -22,11 +22,14 @@ RCA가 미확정이어도 `report-specialist`는 반드시 호출한다.
 
 ## 역할과 도구
 
-| 역할 | 허용 도구 | 책임 |
-|------|----------|------|
-| 메인 오케스트레이터 | Agent, Skill | 순서와 결과 전달 |
-| RCA | 읽기 전용 AWS/GitHub MCP, `save_artifact` | 스코핑, 가설, 검증 |
-| Report | `save_artifact` | RCA 결과로 `report.md`, `playbook.json` 저장 |
+| 역할                | 허용 도구                                          | 책임                                         |
+| ------------------- | -------------------------------------------------- | -------------------------------------------- |
+| 메인 오케스트레이터 | Agent, Skill                                       | 순서와 결과 전달                             |
+| RCA                 | 읽기 전용 AWS/GitHub MCP, `save_analysis_artifact` | 스코핑, 가설, 검증                           |
+| Report              | `save_report_artifact`                             | RCA 결과로 `report.md`, `playbook.json` 저장 |
+
+저장 도구가 역할별로 갈라져 있어 각 역할은 자기 산출물만 저장할 수 있다. 역할 분리는
+프롬프트 지시가 아니라 도구 경계로 강제된다.
 
 메인 세션은 `orchestrator` agent로 실행되며 `Agent(rca-specialist,
 report-specialist)`와 `Skill`만 허용한다.
@@ -47,20 +50,20 @@ provider/tool failure를 명시적으로 보고한 뒤에만 동일한 단계 �
 
 ## 산출물
 
-| 파일명 | 작성 주체 |
-|--------|----------|
-| `scoping.json` | RCA |
-| `hypotheses.json` | RCA |
-| `validation-{N}.json` | RCA |
-| `report.md` | Report |
-| `playbook.json` | Report |
+| 파일명                | 작성 주체 |
+| --------------------- | --------- |
+| `scoping.json`        | RCA       |
+| `hypotheses.json`     | RCA       |
+| `validation-{N}.json` | RCA       |
+| `report.md`           | Report    |
+| `playbook.json`       | Report    |
 
 `report.md`와 `playbook.json`은 하나의 리포트를 이루는 두 표현이다. `report.md`의
 `## 대응 플레이북` 서술과 `playbook.json`의 `execution_steps`는 같은 `step_id`를 같은
 순서로 담아야 한다.
 
 모든 JSON은 valid object여야 한다. 경로 직접 접근과 임의 파일 생성·수정·삭제는
-금지하며, 산출물 저장은 `save_artifact`만 사용한다.
+금지하며, 산출물 저장은 각 역할에 부여된 저장 도구만 사용한다.
 
 ## 금지 사항
 

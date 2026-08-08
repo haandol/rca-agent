@@ -79,9 +79,21 @@ def artifact_home(monkeypatch, tmp_path):
     context.cleanup()
 
 
+def _save(filename: str, content: str) -> str:
+    """Route through the tool whose role owns the filename.
+
+    Existing cases assert the shape and path rules both tools share, so they call
+    the owning tool rather than repeating themselves per role. The role boundary
+    itself is asserted separately.
+    """
+    if filename in {"report.md", "playbook.json"}:
+        return mcp_server.save_report_artifact(filename, content)
+    return mcp_server.save_analysis_artifact(filename, content)
+
+
 def _save_rejected(filename: str, content: str) -> bool:
     try:
-        result = json.loads(mcp_server.save_artifact(filename, content))
+        result = json.loads(_save(filename, content))
     except (OSError, ValueError):
         return True
     return result.get("ok") is False
@@ -115,7 +127,7 @@ def test_save_artifact_rejects_path_traversal_and_nested_paths(artifact_home, fi
 def test_save_artifact_accepts_canonical_names(artifact_home, filename):
     content = _minimal_valid_artifact(filename)
 
-    result = json.loads(mcp_server.save_artifact(filename, content))
+    result = json.loads(_save(filename, content))
 
     assert result["ok"] is True
     assert Path(result["path"]) == artifact_home / filename
@@ -138,7 +150,7 @@ def test_save_artifact_rejects_playbook_missing_a_required_field(artifact_home, 
     artifact = json.loads(_minimal_valid_artifact("playbook.json"))
     del artifact[missing]
 
-    result = json.loads(mcp_server.save_artifact("playbook.json", json.dumps(artifact)))
+    result = json.loads(_save("playbook.json", json.dumps(artifact)))
 
     assert result["ok"] is False
     assert missing in result["error"]
@@ -149,7 +161,7 @@ def test_save_artifact_rejection_tells_the_agent_to_save_again(artifact_home):
     artifact = json.loads(_minimal_valid_artifact("playbook.json"))
     del artifact["severity_criteria"]
 
-    result = json.loads(mcp_server.save_artifact("playbook.json", json.dumps(artifact)))
+    result = json.loads(_save("playbook.json", json.dumps(artifact)))
 
     assert "save again" in result["error"]
 
@@ -190,7 +202,7 @@ def test_save_artifact_rejects_wrong_stage_value(artifact_home):
 def test_save_artifact_still_accepts_validation_loops_without_shape_rules(artifact_home):
     # Validation artifacts are checked against hypotheses the save call cannot
     # see, so their shape stays with the completion gate.
-    result = json.loads(mcp_server.save_artifact("validation-1.json", "{}"))
+    result = json.loads(_save("validation-1.json", "{}"))
 
     assert result["ok"] is True
 
@@ -204,7 +216,7 @@ def test_save_artifact_preserves_existing_file_when_atomic_replace_fails(artifac
 
     monkeypatch.setattr(os, "replace", _replace_failure)
     with suppress(OSError):
-        mcp_server.save_artifact("report.md", "new report")
+        _save("report.md", "new report")
 
     assert target.read_text() == "stable report"
 
@@ -217,7 +229,7 @@ def test_save_artifact_rejects_missing_or_invalid_execution_token(monkeypatch, t
     else:
         monkeypatch.setenv(RUN_TOKEN_ENV, token)
 
-    result = json.loads(mcp_server.save_artifact("report.md", "must not be written"))
+    result = json.loads(_save("report.md", "must not be written"))
 
     assert result["ok"] is False
     assert not (tmp_path / "runs").exists()
@@ -227,7 +239,7 @@ def test_save_artifact_rejects_valid_token_without_prepared_run_directory(monkey
     monkeypatch.setattr(execution_context, "_ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setenv(RUN_TOKEN_ENV, uuid.uuid4().hex)
 
-    result = json.loads(mcp_server.save_artifact("report.md", "must not be written"))
+    result = json.loads(_save("report.md", "must not be written"))
 
     assert result["ok"] is False
 
@@ -242,7 +254,7 @@ def test_save_artifact_rejects_symlinked_run_directory(monkeypatch, tmp_path):
     monkeypatch.setattr(execution_context, "_ARTIFACT_ROOT", artifact_root)
     monkeypatch.setenv(RUN_TOKEN_ENV, token)
 
-    result = json.loads(mcp_server.save_artifact("report.md", "must not be written"))
+    result = json.loads(_save("report.md", "must not be written"))
 
     assert result["ok"] is False
     assert not outside.joinpath("report.md").exists()
@@ -272,7 +284,7 @@ def test_save_artifact_rejects_a_playbook_claiming_it_was_verified(artifact_home
     artifact = json.loads(_minimal_valid_artifact("playbook.json"))
     artifact["verification_status"] = "VERIFIED"
 
-    result = json.loads(mcp_server.save_artifact("playbook.json", json.dumps(artifact)))
+    result = json.loads(_save("playbook.json", json.dumps(artifact)))
 
     assert result["ok"] is False
     assert "DRAFT" in result["error"]
@@ -285,7 +297,7 @@ def test_save_artifact_rejects_execution_steps_missing_their_contract(artifact_h
         del step[missing]
         artifact["execution_steps"] = [step]
 
-        result = json.loads(mcp_server.save_artifact("playbook.json", json.dumps(artifact)))
+        result = json.loads(_save("playbook.json", json.dumps(artifact)))
 
         assert result["ok"] is False, missing
         assert missing in result["error"]
@@ -298,7 +310,41 @@ def test_save_artifact_rejects_duplicate_execution_step_ids(artifact_home):
     step = {field: "value" for field in artifact_validation._EXECUTION_STEP_FIELDS}
     artifact["execution_steps"] = [dict(step), dict(step)]
 
-    result = json.loads(mcp_server.save_artifact("playbook.json", json.dumps(artifact)))
+    result = json.loads(_save("playbook.json", json.dumps(artifact)))
 
     assert result["ok"] is False
     assert "unique" in result["error"]
+
+
+class TestEachRoleOnlySavesItsOwnArtifacts:
+    """산출물의 작성 주체를 도구 경계로 강제한다.
+
+    한 도구가 모든 파일명을 받으면 어느 역할이 무엇을 썼는지 서버가 알 수 없어, 분석
+    역할이 리포트를 써도 완료 게이트를 통과한다. 그러면 역할 분리가 프롬프트 지시로만
+    남는다.
+    """
+
+    @pytest.mark.parametrize("filename", ["report.md", "playbook.json"])
+    def test_analysis_cannot_save_report_artifacts(self, artifact_home, filename):
+        content = _minimal_valid_artifact(filename)
+
+        result = json.loads(mcp_server.save_analysis_artifact(filename, content))
+
+        assert result["ok"] is False
+        assert not (artifact_home / filename).exists()
+
+    @pytest.mark.parametrize("filename", ["scoping.json", "hypotheses.json", "validation-1.json"])
+    def test_report_cannot_save_analysis_artifacts(self, artifact_home, filename):
+        content = _minimal_valid_artifact(filename)
+
+        result = json.loads(mcp_server.save_report_artifact(filename, content))
+
+        assert result["ok"] is False
+        assert not (artifact_home / filename).exists()
+
+    def test_refusal_names_the_role_so_the_agent_stops_retrying(self, artifact_home):
+        result = json.loads(mcp_server.save_analysis_artifact("report.md", _minimal_valid_artifact("report.md")))
+
+        # 형태 오류처럼 읽히면 에이전트가 내용을 고쳐 같은 도구로 다시 시도한다.
+        assert "role" in result["error"]
+        assert "담당 역할" in result["error"]

@@ -55,7 +55,8 @@ _MODEL_EVAL_MCP_CONFIG_PATH = find_harness_file("model-eval-mcp-config.json")
 _MODEL_EVAL_ALLOWED_TOOLS = (
     "Agent",
     "Skill",
-    "mcp__rca-progress__save_artifact",
+    "mcp__rca-progress__save_analysis_artifact",
+    "mcp__rca-progress__save_report_artifact",
 )
 _ARTIFACT_STAGES = {
     "scoping.json": "scoping",

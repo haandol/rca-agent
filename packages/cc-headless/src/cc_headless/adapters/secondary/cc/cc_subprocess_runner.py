@@ -48,7 +48,10 @@ _ALLOWED_TOOLS = (
     "mcp__cloudwatch__*",
     "mcp__cloudtrail__*",
     "mcp__github__*",
-    "mcp__rca-progress__save_artifact",
+    # 역할별로 갈라진 저장 도구를 실행 전체에는 함께 허용하고, 어느 역할이 어느
+    # 도구를 갖는지는 각 에이전트 정의가 정한다.
+    "mcp__rca-progress__save_analysis_artifact",
+    "mcp__rca-progress__save_report_artifact",
 )
 
 

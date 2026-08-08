@@ -296,6 +296,29 @@ class TestReportCarriesItsPlaybook:
         assert key == ""
         s3.put_object.assert_not_called()
 
+    def test_saves_the_report_when_playbook_generation_failed(self):
+        """플레이북 생성 실패가 완성된 리포트를 버리게 해서는 안 된다.
+
+        플레이북은 미래를 위한 자산이고 이번 RCA의 결과물은 리포트다. 절차가 없는
+        리포트는 승인 화면이 실행할 절차를 찾지 못해 실행을 제공하지 않으므로, 절차
+        없이 저장하는 것이 승인 게이트를 약화시키지 않는다.
+        """
+        s3 = MagicMock()
+        store = S3ReportStore(s3_client=s3)
+
+        with patch(
+            "rca_agent.adapters.secondary.report.s3_report_store.S3_REPORT_BUCKET",
+            "reports-bucket",
+        ):
+            key = store.save(self._report(), playbook=None)
+
+        assert key
+        body = s3.put_object.call_args.kwargs["Body"]
+        assert "## 대응 플레이북" in body
+        # 없는 절차를 있는 것처럼 읽히게 하지 않는다.
+        assert "플레이북 생성이 실패해" in body
+        assert "초안" not in body
+
 
 def test_claimed_reports_use_isolated_attempt_keys():
     report = RcaReport(

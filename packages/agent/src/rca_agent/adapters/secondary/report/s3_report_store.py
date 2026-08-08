@@ -40,7 +40,7 @@ class S3ReportStore(ReportStorePort):
         self,
         report: RcaReport,
         *,
-        playbook: Playbook,
+        playbook: Playbook | None,
         claim_token: str | None = None,
         attempt: int | None = None,
     ) -> str:
@@ -54,8 +54,10 @@ class S3ReportStore(ReportStorePort):
             key = f"reports/{ENGINE}/{report.rca_id}.md"
 
         body = _render_markdown(report, playbook)
-        # 서술과 구조가 어긋난 리포트는 저장하지 않는다. 사람은 서술을 읽고 승인하는데
-        # 실행은 구조를 따라가므로, 둘이 다르면 승인 게이트가 형식만 남는다.
+        # 사람은 서술을 읽고 승인하는데 실행은 구조를 따라가므로, 둘이 어긋난 리포트는
+        # 저장하지 않는다. 이 엔진에서 절차 섹션은 모델이 쓰지 않고 실행 주체가 읽는
+        # 것과 같은 플레이북에서 렌더링되므로, 이 검사가 막는 것은 모델의 발산이 아니라
+        # 렌더러가 절차를 빠뜨리거나 재배열하는 회귀다.
         mismatch = _step_mismatch(body, playbook)
         if mismatch:
             logger.error("Refusing to save report %s: %s", report.rca_id, mismatch)
@@ -167,7 +169,7 @@ class S3ReportStore(ReportStorePort):
 _PLAYBOOK_SECTION = "## 대응 플레이북"
 
 
-def _render_playbook_section(playbook: Playbook) -> list[str]:
+def _render_playbook_section(playbook: Playbook | None) -> list[str]:
     """Render the procedure a person reads before approving it.
 
     A draft label is fixed into the body because analysis has never run any of
@@ -176,6 +178,15 @@ def _render_playbook_section(playbook: Playbook) -> list[str]:
     since, and the body is fixed at analysis time.
     """
     lines = [_PLAYBOOK_SECTION, ""]
+    if playbook is None:
+        lines.extend(
+            [
+                "플레이북 생성이 실패해 이 리포트에는 실행 절차가 없다. 원인 분석 결과는 "
+                "위 내용으로 완결이며, 승인할 절차가 없으므로 실행 대상이 아니다.",
+                "",
+            ]
+        )
+        return lines
     if not playbook.execution_steps:
         lines.extend(
             [
@@ -215,14 +226,14 @@ def _render_playbook_section(playbook: Playbook) -> list[str]:
     return lines
 
 
-def _step_mismatch(body: str, playbook: Playbook) -> str:
+def _step_mismatch(body: str, playbook: Playbook | None) -> str:
     """Return why the narrative and the structure disagree, or an empty string.
 
     Checks identifiers and their order, not prose: the narrative is free to
     describe a step differently, but it must describe the same steps in the same
     sequence the execution agent will follow.
     """
-    step_ids = [step.step_id for step in playbook.execution_steps]
+    step_ids = [step.step_id for step in playbook.execution_steps] if playbook else []
     if not step_ids:
         return ""
 
@@ -241,7 +252,7 @@ def _step_mismatch(body: str, playbook: Playbook) -> str:
     return ""
 
 
-def _render_markdown(report: RcaReport, playbook: Playbook) -> str:
+def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
     confirmed_label = "Confirmed" if report.root_cause_confirmed else "Unconfirmed (most likely candidate)"
     lines = [
         f"# RCA Report: {report.rca_id}",

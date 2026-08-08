@@ -116,7 +116,7 @@ def test_runner_overrides_background_wait_ceiling_only_in_child(monkeypatch):
     CcSubprocessRunner().run(
         "evaluate",
         execution_token=EXECUTION_TOKEN,
-        allowed_tools=("Agent", "Skill", "mcp__rca-progress__save_artifact"),
+        allowed_tools=("Agent", "Skill", "mcp__rca-progress__save_analysis_artifact"),
     )
 
     assert [call["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] for call in calls] == ["0", "0"]
@@ -237,7 +237,8 @@ def test_runner_exposes_only_agent_skill_and_strict_mcp_tools(monkeypatch):
         "mcp__cloudwatch__*",
         "mcp__cloudtrail__*",
         "mcp__github__*",
-        "mcp__rca-progress__save_artifact",
+        "mcp__rca-progress__save_analysis_artifact",
+        "mcp__rca-progress__save_report_artifact",
     }
     # Analysis is read-only: the only side effect this run may cause is saving an
     # artifact. Recovery lives in a separate agent behind a user approval.
@@ -247,7 +248,7 @@ def test_runner_exposes_only_agent_skill_and_strict_mcp_tools(monkeypatch):
 
 def test_runner_can_narrow_tools_for_one_run_without_changing_operational_defaults(monkeypatch):
     calls = _capture_processes(monkeypatch)
-    model_eval_tools = ("Agent", "Skill", "mcp__rca-progress__save_artifact")
+    model_eval_tools = ("Agent", "Skill", "mcp__rca-progress__save_analysis_artifact")
 
     CcSubprocessRunner().run(
         "investigate supplied observations",

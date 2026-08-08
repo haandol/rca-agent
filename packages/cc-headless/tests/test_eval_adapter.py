@@ -810,7 +810,8 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
     assert set(invocation["allowed_tools"]) == {
         "Agent",
         "Skill",
-        "mcp__rca-progress__save_artifact",
+        "mcp__rca-progress__save_analysis_artifact",
+        "mcp__rca-progress__save_report_artifact",
     }
     assert not tmp_path.joinpath("failure-diagnostics").exists()
 

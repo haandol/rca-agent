@@ -82,9 +82,12 @@ def test_role_agents_enforce_distinct_tool_boundaries():
         "mcp__cloudwatch__*",
         "mcp__cloudtrail__*",
         "mcp__github__*",
-        "mcp__rca-progress__save_artifact",
+        "mcp__rca-progress__save_analysis_artifact",
     }
-    assert report_tools == {"Skill", "mcp__rca-progress__save_artifact"}
+    assert report_tools == {"Skill", "mcp__rca-progress__save_report_artifact"}
+    # 저장 도구가 갈라져 있어야 작성 주체가 경계가 된다. 두 역할이 같은 저장 도구를
+    # 공유하면 분석 역할이 리포트를 써도 완료 게이트를 통과한다.
+    assert rca_tools.isdisjoint(report_tools - {"Skill"})
 
 
 def test_no_role_agent_can_change_a_service():
@@ -170,11 +173,11 @@ def test_hypothesis_guidance_uses_shared_category_vocabulary(relative_path):
     assert EXPECTED_CATEGORIES.issubset(set(re.findall(r"\b[A-Z][A-Z_]+\b", text)))
 
 
-def test_rca_progress_skill_only_documents_implemented_storage_tool():
+def test_rca_progress_skill_only_documents_implemented_storage_tools():
     text = (SKILLS_DIR / "progress-reporting" / "SKILL.md").read_text()
     documented = set(re.findall(r"^### `([a-z_]+)\(", text, re.MULTILINE))
 
-    assert documented == {"save_artifact"}
+    assert documented == {"save_analysis_artifact", "save_report_artifact"}
 
 
 def test_prompt_forbids_shell_arbitrary_http_ecs_and_unmanaged_file_writes():
@@ -244,7 +247,13 @@ def test_orchestrator_agent_waits_for_terminal_notification_before_retry():
 def test_the_analysis_harness_exposes_no_write_capability():
     from cc_headless.adapters.secondary.cc.cc_subprocess_runner import _ALLOWED_TOOLS
 
-    write_tools = {tool for tool in _ALLOWED_TOOLS if "rca-progress" in tool and "save_artifact" not in tool}
+    # 산출물 저장 외의 rca-progress 도구는 분석 실행에 존재해서는 안 된다. 저장 도구는
+    # 역할별로 갈라져 있으므로 두 이름 모두 저장으로 센다.
+    artifact_writers = {
+        "mcp__rca-progress__save_analysis_artifact",
+        "mcp__rca-progress__save_report_artifact",
+    }
+    write_tools = {tool for tool in _ALLOWED_TOOLS if "rca-progress" in tool} - artifact_writers
 
     assert write_tools == set()
 

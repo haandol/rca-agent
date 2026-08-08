@@ -14,7 +14,7 @@ RCA 전문 에이전트는 검증 루프를 최대 3회 수행한다:
 3. 가설 검증 (신뢰도 평가)
 4. 가설 분기 (NEEDS_INVESTIGATION 시) — **`expansion_blocked=true`이면 이 단계를 건너뛴다**
 5. 결과를 validation JSON 스키마로 정리
-6. `save_artifact("validation-{N}.json", ...)`로 산출물 저장 (Python watcher가 DDB에 반영)
+6. `save_analysis_artifact("validation-{N}.json", ...)`로 산출물 저장 (Python watcher가 DDB에 반영)
 
 ## 검증 컨텍스트
 
@@ -136,7 +136,7 @@ NEEDS_INVESTIGATION 가설에 대해:
 
 ## 산출물 저장
 
-검증 루프를 마치면 `save_artifact("validation-1.json", "<validation JSON>")`을
+검증 루프를 마치면 `save_analysis_artifact("validation-1.json", "<validation JSON>")`을
 한 번 호출한다. Python watcher가 파일을 감지해 span과 가설 상태를 DDB에 반영한다.
 
 ## 종료 조건

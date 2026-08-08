@@ -14,18 +14,23 @@ DynamoDB를 직접 수정하지 않는다. Python watcher가 저장된 산출물
 
 ## 사용 가능한 도구
 
-### `save_artifact(filename, content)`
+저장 도구는 역할별로 갈라져 있다. 자신에게 부여된 도구만 보이며, 다른 역할의
+산출물은 도구가 없어 저장할 수 없다.
 
-현재 세션의 산출물을 원자적으로 저장한다. 허용되는 파일명은 다음뿐이다.
+### `save_analysis_artifact(filename, content)` — 분석 역할
 
 - `scoping.json`
 - `hypotheses.json`
 - `validation-{N}.json` (`N`은 1 이상의 정수)
+
+### `save_report_artifact(filename, content)` — 보고 역할
+
 - `playbook.json`
 - `report.md`
 
-JSON 산출물은 각 prompt section에 정의된 스키마를 따라야 한다. 경로, 하위
-디렉터리, 임의 확장자는 사용할 수 없다.
+두 도구 모두 현재 세션의 산출물을 원자적으로 저장한다. JSON 산출물은 각 prompt
+section에 정의된 스키마를 따라야 한다. 경로, 하위 디렉터리, 임의 확장자는 사용할 수
+없다. 자신의 역할이 담당하지 않는 파일명을 넘기면 `ok: false`로 거부된다.
 
 저장 도구는 산출물의 형태를 저장 시점에 검사한다. 스키마의 필수 키가 없거나 빈
 문자열이면 `ok: false`와 함께 누락된 필드명을 반환하고 파일은 저장되지 않는다.

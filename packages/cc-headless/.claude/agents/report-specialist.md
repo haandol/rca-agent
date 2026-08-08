@@ -1,7 +1,7 @@
 ---
 name: report-specialist
 description: RCA 결과로 플레이북을 포함한 단일 리포트를 저장하는 전문 에이전트
-tools: Skill, mcp__rca-progress__save_artifact
+tools: Skill, mcp__rca-progress__save_report_artifact
 ---
 
 # Report Specialist
@@ -25,5 +25,6 @@ tools: Skill, mcp__rca-progress__save_artifact
 **복구를 수행하지 않았다.** 실행 결과, 정상화, 사후 검증을 만들어내지 않는다. 서비스
 변경, HTTP, Bash, ECS 변경도 수행하지 않는다.
 
-`report.md`와 `playbook.json`을 모두 `save_artifact`로 저장한 뒤 보고서 Markdown을
-최종 응답으로 반환한다.
+`report.md`와 `playbook.json`을 모두 `save_report_artifact`로 저장한 뒤 보고서
+Markdown을 최종 응답으로 반환한다. 분석 산출물을 저장하는 도구는 없다 — 분석 결과는
+오케스트레이터가 전달한 내용을 쓰고 다시 저장하지 않는다.

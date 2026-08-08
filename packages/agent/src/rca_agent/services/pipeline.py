@@ -1156,8 +1156,9 @@ class PipelineOrchestrator:
         logger.info("RCA report generated: %s", rca_report.rca_id)
 
         trace.check_cancelled()
-        # 플레이북이 리포트의 한 섹션이므로 리포트보다 먼저 만든다. 순서가 반대면
-        # 리포트는 자신이 담아야 할 절차를 모르는 상태로 확정된다.
+        # 플레이북은 확정된 리포트를 입력으로 만든다 — 조치 방안과 조치 항목이 절차의
+        # 재료이므로 순서를 뒤집으면 플레이북이 그 재료를 잃는다. 리포트 본문의 절차
+        # 섹션은 그래서 모델이 쓰지 않고 이 플레이북에서 렌더링된다.
         playbook, playbook_span_id = self._run_playbook(
             rca_report,
             scoping_result,
@@ -1283,7 +1284,10 @@ class PipelineOrchestrator:
         except (SessionCancelledError, SideEffectLeaseUnavailableError):
             raise
         except Exception:
-            logger.exception("Playbook generation failed, continuing pipeline")
+            # 플레이북은 미래를 위한 자산이고 이번 RCA의 결과물은 리포트다. 자산 생성
+            # 실패로 결과 전달을 막지 않으므로 리포트는 절차 없이 저장되고, 승인 화면은
+            # 실행할 절차를 찾지 못해 실행을 제공하지 않는다.
+            logger.exception("Playbook generation failed, saving the report without a procedure")
             trace.end_span(
                 playbook_span,
                 status=SpanStatus.FAILED,
