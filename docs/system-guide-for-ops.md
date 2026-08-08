@@ -1240,7 +1240,7 @@ sequenceDiagram
     SA->>DDB: UpdateItem SK=strands#SESSION (state=COMPLETED)
 
     Note over CCA,DDB: 3. 파이프라인 실행 (CC Headless)
-    CCA->>CCA: save_artifact로 실행별 산출물 저장
+    CCA->>CCA: 역할별 저장 도구로 실행별 산출물 저장
     CCA->>DDB: artifact watcher가 SPAN/HYPO 아이템 기록
     CCA->>DDB: BatchWriteItem SK=cc-headless#HYPO#{id} × N
     CCA->>DDB: UpdateItem SK=cc-headless#SESSION (state=COMPLETED)

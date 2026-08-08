@@ -5,7 +5,7 @@ Updated: 2026-08-08
 
 ## Status
 
-Accepted (2026-07-31)
+Accepted (2026-08-08)
 
 ## Context
 

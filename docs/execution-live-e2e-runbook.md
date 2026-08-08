@@ -189,8 +189,8 @@ test "$FAULT_COMPLETED_AT" = "$(python3 -c \
   "$E2E_EVIDENCE_DIR/db-leak.json")"
 ```
 
-알람은 주입 후 **약 4분**에 뜬다. 커넥션 알람이 먼저, 증상 알람이 그 다음이다(순서
-계약 — ADR infra/0007).
+알람은 주입 후 **약 4분**에 뜬다. 커넥션 알람이 먼저, 증상 알람이 그 다음이다 — 데모의
+임계치·주입량이 이 순서를 보증하도록 정합되어 있다.
 
 ```bash
 aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
