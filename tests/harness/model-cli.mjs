@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -10,7 +10,13 @@ import {
   REPOSITORY_ROOT,
   validateResult,
 } from './evaluator.mjs';
-import { isMain, readJsonFile, writeJsonFile } from './cli-utils.mjs';
+import {
+  isMain,
+  parseCliOptions,
+  readJsonFile,
+  resolveFrom,
+  writeJsonFile,
+} from './cli-utils.mjs';
 
 const COMMAND_ENV = {
   'cc-headless': 'RCA_EVAL_CC_HEADLESS_COMMAND',
@@ -55,6 +61,31 @@ async function preserveResultValidationDiagnostics({
   }
 }
 
+export function resolveRequestedEngines(requested) {
+  if (!requested || requested.length === 0) {
+    return EXPECTED_ENGINES;
+  }
+  const unknown = requested.filter(
+    (engine) => !EXPECTED_ENGINES.includes(engine),
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown engine(s): ${unknown.join(', ')}. Expected one of ${EXPECTED_ENGINES.join(', ')}.`,
+    );
+  }
+  // Keep the declared order regardless of flag order so a resumed run writes
+  // and reports engines the same way a full run does.
+  return EXPECTED_ENGINES.filter((engine) => requested.includes(engine));
+}
+
+async function readExistingResult(resultPath) {
+  try {
+    return JSON.parse(await readFile(resultPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function parseCommand(value, variableName) {
   if (!value) {
     throw new Error(
@@ -91,9 +122,14 @@ function hasAwsCredentials(env) {
   );
 }
 
-export function validateModelEnvironment(env = process.env) {
+export function validateModelEnvironment(
+  env = process.env,
+  engines = EXPECTED_ENGINES,
+) {
+  // Only the engines this run drives need a command: requiring the other one
+  // would defeat the point of narrowing the run.
   const commands = Object.fromEntries(
-    EXPECTED_ENGINES.map((engine) => [
+    engines.map((engine) => [
       engine,
       parseCommand(env[COMMAND_ENV[engine]], COMMAND_ENV[engine]),
     ]),
@@ -108,25 +144,29 @@ export function validateModelEnvironment(env = process.env) {
       'Missing AWS credentials. Set AWS_PROFILE, an access-key pair, a container credential URI, or web-identity variables.',
     );
   }
-  if (env.CLAUDE_CODE_USE_BEDROCK !== '1') {
-    throw new Error(
-      'CLAUDE_CODE_USE_BEDROCK must be 1 so CC Headless model evaluation uses the deployed Bedrock backend.',
-    );
-  }
-  if (!env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
-    throw new Error(
-      'Missing ANTHROPIC_DEFAULT_SONNET_MODEL. Set it to the model ID deployed by the CC Headless task.',
-    );
-  }
-  if (!env.RCA_EVAL_DEPLOYED_CC_MODEL) {
-    throw new Error(
-      'Missing RCA_EVAL_DEPLOYED_CC_MODEL. Set it to the model ID from the deployed CC Headless task definition.',
-    );
-  }
-  if (env.ANTHROPIC_DEFAULT_SONNET_MODEL !== env.RCA_EVAL_DEPLOYED_CC_MODEL) {
-    throw new Error(
-      'Model contract mismatch: ANTHROPIC_DEFAULT_SONNET_MODEL must exactly match RCA_EVAL_DEPLOYED_CC_MODEL.',
-    );
+  // The deployed-model parity contract belongs to CC Headless, so it is enforced
+  // exactly when that engine is in scope.
+  if (engines.includes('cc-headless')) {
+    if (env.CLAUDE_CODE_USE_BEDROCK !== '1') {
+      throw new Error(
+        'CLAUDE_CODE_USE_BEDROCK must be 1 so CC Headless model evaluation uses the deployed Bedrock backend.',
+      );
+    }
+    if (!env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
+      throw new Error(
+        'Missing ANTHROPIC_DEFAULT_SONNET_MODEL. Set it to the model ID deployed by the CC Headless task.',
+      );
+    }
+    if (!env.RCA_EVAL_DEPLOYED_CC_MODEL) {
+      throw new Error(
+        'Missing RCA_EVAL_DEPLOYED_CC_MODEL. Set it to the model ID from the deployed CC Headless task definition.',
+      );
+    }
+    if (env.ANTHROPIC_DEFAULT_SONNET_MODEL !== env.RCA_EVAL_DEPLOYED_CC_MODEL) {
+      throw new Error(
+        'Model contract mismatch: ANTHROPIC_DEFAULT_SONNET_MODEL must exactly match RCA_EVAL_DEPLOYED_CC_MODEL.',
+      );
+    }
   }
   return commands;
 }
@@ -244,9 +284,11 @@ export async function runModelEvaluation({
   baselinePath,
   resultsDirectory,
   reportPath,
+  engines,
   timeoutMs = Number(env.RCA_EVAL_TIMEOUT_MS ?? DEFAULT_MODEL_TIMEOUT_MS),
 } = {}) {
-  const commands = validateModelEnvironment(env);
+  const requestedEngines = resolveRequestedEngines(engines);
+  const commands = validateModelEnvironment(env, requestedEngines);
   const runId = new Date().toISOString().replaceAll(/[:.]/g, '-');
   const actualResultsDirectory =
     resultsDirectory ??
@@ -279,7 +321,7 @@ export async function runModelEvaluation({
   await mkdir(actualResultsDirectory, { recursive: true });
 
   const results = [];
-  for (const engine of EXPECTED_ENGINES) {
+  for (const engine of requestedEngines) {
     for (const scenario of modelScenarios) {
       const scenarioPath = path.join(scenariosDirectory, `${scenario.id}.json`);
       const result = await runEngineCommand({
@@ -304,16 +346,46 @@ export async function runModelEvaluation({
     }
   }
 
+  // An engine this run skipped may already have results in the same directory
+  // from an earlier partial run. Load them so the report reflects everything the
+  // round has accumulated -- that is what makes a resumed run reach approval.
+  const reusedEngines = [];
+  for (const engine of EXPECTED_ENGINES) {
+    if (requestedEngines.includes(engine)) {
+      continue;
+    }
+    const reused = [];
+    for (const scenario of modelScenarios) {
+      const existing = await readExistingResult(
+        path.join(actualResultsDirectory, engine, `${scenario.id}.json`),
+      );
+      if (existing) {
+        reused.push(existing);
+      }
+    }
+    if (reused.length > 0) {
+      reusedEngines.push(engine);
+      results.push(...reused);
+    }
+  }
+
+  const coveredEngines = EXPECTED_ENGINES.filter(
+    (engine) =>
+      requestedEngines.includes(engine) || reusedEngines.includes(engine),
+  );
   const evaluation = await evaluateResults({
     scenarios: modelScenarios,
     results,
     baseline,
     digest,
+    engines: coveredEngines,
   });
   const report = {
     ...evaluation,
     generatedAt: new Date().toISOString(),
     executionMode: 'model-eval',
+    enginesRun: requestedEngines,
+    enginesReused: reusedEngines,
     modelContract: {
       anthropicDefaultSonnetModel: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
       deployedCcHeadlessModel: env.RCA_EVAL_DEPLOYED_CC_MODEL,
@@ -330,16 +402,36 @@ export async function runModelEvaluation({
   };
 }
 
-export async function main() {
-  const { report, reportPath, resultsDirectory } = await runModelEvaluation();
+export async function main(args = process.argv.slice(2)) {
+  const options = parseCliOptions(args, { allowEngine: true });
+  const { report, reportPath, resultsDirectory } = await runModelEvaluation({
+    engines: options.engine,
+    resultsDirectory: options.results
+      ? resolveFrom(REPOSITORY_ROOT, options.results)
+      : undefined,
+    baselinePath: options.baseline
+      ? resolveFrom(REPOSITORY_ROOT, options.baseline)
+      : undefined,
+    reportPath: options.report
+      ? resolveFrom(REPOSITORY_ROOT, options.report)
+      : undefined,
+  });
   if (!report.passed) {
     throw new Error(
       `Model RCA evaluation failed; report: ${reportPath}\n- ${report.failures.join('\n- ')}`,
     );
   }
   process.stdout.write(
-    `Model RCA evaluation passed. Results: ${resultsDirectory}\nReport: ${reportPath}\n`,
+    `Model RCA evaluation passed for ${report.engines.join(', ')}. Results: ${resultsDirectory}\nReport: ${reportPath}\n`,
   );
+  if (!report.enginesComplete) {
+    const missing = EXPECTED_ENGINES.filter(
+      (engine) => !report.engines.includes(engine),
+    );
+    process.stdout.write(
+      `Partial round: ${missing.join(', ')} not covered. Approval needs every engine — rerun with --engine ${missing.join(' --engine ')} --results ${resultsDirectory}\n`,
+    );
+  }
 }
 
 if (isMain(import.meta.url)) {

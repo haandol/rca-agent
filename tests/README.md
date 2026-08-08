@@ -36,7 +36,21 @@ pnpm eval:model
 
 Strands 어댑터는 SQS 소비 루프를 거치지 않고 공용 분석 파이프라인을 직접
 호출한다. DynamoDB 세션 테이블, S3 보고서 버킷, Bedrock, CloudWatch·CloudTrail
-조회 권한이 필요하다.
+조회 권한이 필요하다. **`DYNAMODB_TABLE_NAME`을 반드시 설정한다** — 이 값이 없으면
+세션 스토어가 비활성이 되고, 그 상태가 활성 인시던트 경합과 같은 로그·같은 반환값으로
+나타나 "다른 실행이 이미 처리 중"으로 오진하게 된다. 이 어댑터는 세션에 기록된
+상태를 완료 판정의 권위로 삼으므로 스토어 없이는 결과를 낼 수 없다.
+
+```bash
+export DYNAMODB_TABLE_NAME=<세션 테이블>
+export S3_REPORT_BUCKET=<보고서 버킷>
+export S3_EVIDENCE_BUCKET=<증거 버킷>
+export S3_VECTOR_BUCKET_NAME=<벡터 버킷>
+```
+
+평가 실행은 이 테이블과 버킷에 세션·스팬·보고서·플레이북을 실제로 쓴다. 배포 환경의
+리소스를 지정하면 운영 데이터와 섞이므로, 실행 후 남은 세션과 활성 인시던트 항목을
+정리한다. 활성 인시던트를 남기면 같은 알람의 실제 장애가 억제될 수 있다.
 
 cc-headless 어댑터는 배포된 것과 같은 하네스를 로컬에서 한 번 실행한다. Claude
 Code CLI와 하네스가 참조하는 MCP 서버 실행기가 로컬에 설치되어 있어야 하고,
@@ -48,7 +62,23 @@ Bedrock 및 CloudWatch·CloudTrail 조회 권한이 필요하다.
 호출별 기본 상한은 배포 실행 상한과 같은 60분이며,
 `RCA_EVAL_TIMEOUT_MS`로 더 짧게 설정할 수 있다.
 
-`pnpm eval:model`은 두 엔진의 command를 모두 요구한다.
+`pnpm eval:model`은 기본적으로 두 엔진을 모두 실행하며, 실행할 엔진의 command만
+요구한다. `--engine`으로 엔진을 좁히면 그 엔진만 실행하고 나머지 엔진의 command와
+CC Headless 모델 패리티 변수는 검사하지 않는다.
+
+```bash
+# 한 엔진만 실행 (진단·부분 확인용)
+pnpm eval:model --engine strands
+
+# 남은 엔진을 같은 회차에 이어 실행 — 앞선 결과를 재사용해 회차가 전수를 채운다
+pnpm eval:model --engine cc-headless --results tests/results/model/<run-id>/results
+```
+
+한 엔진의 회차가 수십 분을 쓰므로, 다른 엔진의 실패나 환경 설정 오류 때문에 이미
+통과한 회차를 버리지 않도록 실행을 나눌 수 있다. 보고서의 `engines`,
+`enginesRun`, `enginesReused`, `enginesComplete`가 그 회차가 실제로 무엇을
+측정했는지 기록한다. **기준선 승인은 두 엔진 전수가 모였을 때만 성립한다** —
+부분 실행은 진단 수단이고 승인 근거가 아니다.
 
 각 command는 JSON 문자열 배열이다. `{scenario}`는 시나리오 파일의 절대 경로,
 `{scenarioId}`는 시나리오 ID로 치환된다. `{scenario}`를 사용하지 않으면 시나리오
@@ -100,6 +130,13 @@ JSON이 표준 입력으로 전달된다.
 pnpm eval:approve --results tests/results/model/<run-id>/results
 ```
 
+승인은 **선언된 모든 엔진의 모든 시나리오 결과**를 요구한다. 한 엔진만 담긴 결과
+디렉터리로 승인하려 하면 어느 엔진이 빠졌는지와 함께 거부된다 — 기준선의 목적이 두
+엔진을 같은 품질 계약으로 비교하는 것이므로, 한 엔진만으로 승인하면 비교 근거가 없는
+값이 기준선의 이름을 갖는다. 엔진을 나눠 실행했다면 같은 결과 디렉터리에 나머지 엔진을
+이어 실행한 뒤 승인한다.
+
 프롬프트, skill, MCP 또는 시나리오 입력이 변경되면 digest 게이트가 실패한다.
 평가 정책과 정규화 결과 fixture도 digest 입력이다. 기준선은 의미 점수를 저장하지
 않으며, 변경 결과를 검토하지 않은 상태에서 fixture만으로 digest를 갱신하지 않는다.
+부분 실행 사이에 계약 입력을 바꾸면 승인 시점의 digest가 달라져 거부된다.

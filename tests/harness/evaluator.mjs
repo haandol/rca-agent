@@ -601,6 +601,11 @@ export async function evaluateResults({
   results,
   baseline,
   digest,
+  // A run may deliberately cover a subset of engines. Scoring only those engines
+  // keeps a partial round's report about what it actually measured; the report
+  // still records the scope so nothing reads a subset as full coverage, and
+  // approval separately requires every declared engine.
+  engines: requestedEngines,
 }) {
   const scenarioById = new Map(
     scenarios.map((scenario) => [scenario.id, scenario]),
@@ -614,7 +619,10 @@ export async function evaluateResults({
   if (baseline) {
     validateBaseline(baseline);
   }
-  const engines = baseline?.engines ?? EXPECTED_ENGINES;
+  const declaredEngines = baseline?.engines ?? EXPECTED_ENGINES;
+  const engines = requestedEngines
+    ? declaredEngines.filter((engine) => requestedEngines.includes(engine))
+    : declaredEngines;
 
   for (const engine of engines) {
     for (const scenario of scenarios) {
@@ -668,6 +676,10 @@ export async function evaluateResults({
     inputDigest: digest.digest,
     baselineInputDigest: baseline?.inputDigest ?? null,
     digestMatches,
+    // What this report covered, so a passing partial round is never mistaken for
+    // one that measured every engine.
+    engines,
+    enginesComplete: engines.length === declaredEngines.length,
     failures,
     evaluations,
   };
@@ -682,6 +694,18 @@ export function createBaseline({
     report.passed,
     true,
     `cannot approve a failing evaluation: ${report.failures.join('; ')}`,
+  );
+  // A partial round is a diagnostic aid, not approval evidence: the baseline
+  // exists to compare both engines against one quality contract, so approving
+  // from one engine would give a value with no comparison behind it the
+  // baseline's name. Named explicitly because the count assertion below would
+  // otherwise reject it with arithmetic that hides the reason.
+  assert.deepEqual(
+    EXPECTED_ENGINES.filter((engine) =>
+      report.evaluations.some((evaluation) => evaluation.engine === engine),
+    ),
+    EXPECTED_ENGINES,
+    `approval requires every engine (${EXPECTED_ENGINES.join(', ')}); run the missing engine into the same results directory first`,
   );
   assert.equal(
     report.evaluations.length,

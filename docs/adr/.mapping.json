@@ -62,8 +62,8 @@
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
-          "status": "Accepted (2026-08-07)",
-          "summary": "네 평가 계층을 분리하고, model-eval은 배포 모델 패리티와 경쟁 원인별 명시적 기각 근거를 엔진 공통 계약으로 검증한다."
+          "status": "Accepted (2026-08-08)",
+          "summary": "네 평가 계층을 분리하고, model-eval은 배포 모델 패리티와 경쟁 원인별 명시적 기각 근거를 엔진 공통 계약으로 검증하며, 실행은 엔진별로 나눌 수 있어도 기준선 승인은 두 엔진 전수를 요구한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",

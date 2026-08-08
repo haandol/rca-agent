@@ -3,13 +3,20 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
-export function parseCliOptions(args, { requireResults = false } = {}) {
+export function parseCliOptions(
+  args,
+  { requireResults = false, allowEngine = false } = {},
+) {
   const { values } = parseArgs({
     args,
     options: {
       baseline: { type: 'string' },
       report: { type: 'string' },
       results: { type: 'string' },
+      // Repeatable so one run can cover a subset of engines: a real-model round
+      // costs tens of minutes per engine, and re-running a passing engine only
+      // because another one's environment was misconfigured wastes that round.
+      ...(allowEngine ? { engine: { type: 'string', multiple: true } } : {}),
     },
     strict: true,
   });

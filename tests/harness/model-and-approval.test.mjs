@@ -7,12 +7,15 @@ import test from 'node:test';
 import { approveBaseline } from './approve-cli.mjs';
 import { readJsonFile } from './cli-utils.mjs';
 import {
+  computeInputDigest,
+  createBaseline,
   EXPECTED_ENGINES,
   loadScenarios,
   REPOSITORY_ROOT,
   validateBaseline,
 } from './evaluator.mjs';
 import {
+  resolveRequestedEngines,
   runEngineCommand,
   runModelEvaluation,
   validateModelEnvironment,
@@ -309,4 +312,127 @@ test('fake model commands run both engines and write normalized results and repo
     const engineDirectory = path.join(resultsDirectory, engine);
     assert.equal((await stat(engineDirectory)).isDirectory(), true);
   }
+  assert.deepEqual(outcome.report.enginesRun, EXPECTED_ENGINES);
+  assert.deepEqual(outcome.report.enginesReused, []);
+  assert.equal(outcome.report.enginesComplete, true);
+});
+
+test('an engine selection is validated against the declared engines', () => {
+  assert.deepEqual(resolveRequestedEngines(undefined), EXPECTED_ENGINES);
+  assert.deepEqual(resolveRequestedEngines([]), EXPECTED_ENGINES);
+  assert.deepEqual(resolveRequestedEngines(['strands']), ['strands']);
+  // Declared order wins over flag order so a resumed run reports like a full one.
+  assert.deepEqual(
+    resolveRequestedEngines(['strands', 'cc-headless']),
+    EXPECTED_ENGINES,
+  );
+  assert.throws(
+    () => resolveRequestedEngines(['stands']),
+    /Unknown engine\(s\): stands/,
+  );
+});
+
+test('one engine can be evaluated alone and the report says so', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'rca-model-one-'));
+  const baselinePath = path.join(directory, 'baseline.json');
+  const resultsDirectory = path.join(directory, 'model-results');
+  await approveBaseline({
+    resultsDirectory: fixturesDirectory,
+    baselinePath,
+    approvedAt: '2026-07-21T00:00:00.000Z',
+  });
+
+  const outcome = await runModelEvaluation({
+    // Only the engine under evaluation needs a command configured; requiring the
+    // other one would defeat the point of narrowing the run.
+    env: {
+      ...process.env,
+      AWS_PROFILE: 'fake-test-profile',
+      AWS_REGION: 'ap-northeast-2',
+      RCA_EVAL_STRANDS_COMMAND: JSON.stringify([
+        process.execPath,
+        fakeEnginePath,
+        'strands',
+      ]),
+      RCA_EVAL_CC_HEADLESS_COMMAND: undefined,
+      CLAUDE_CODE_USE_BEDROCK: undefined,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
+      RCA_EVAL_DEPLOYED_CC_MODEL: undefined,
+    },
+    baselinePath,
+    resultsDirectory,
+    reportPath: path.join(directory, 'report.json'),
+    engines: ['strands'],
+    timeoutMs: 10_000,
+  });
+
+  assert.equal(outcome.report.passed, true, outcome.report.failures.join('\n'));
+  assert.deepEqual(outcome.report.engines, ['strands']);
+  assert.equal(outcome.report.enginesComplete, false);
+  // The skipped engine must not be scored as a missing result — the round did
+  // not claim to cover it.
+  assert.deepEqual(outcome.report.failures, []);
+  assert.ok(
+    outcome.report.evaluations.every(({ engine }) => engine === 'strands'),
+  );
+  await assert.rejects(
+    async () => stat(path.join(resultsDirectory, 'cc-headless')),
+    /ENOENT/,
+  );
+});
+
+test('a partial round cannot be approved until the other engine runs into it', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'rca-model-partial-'));
+  const baselinePath = path.join(directory, 'baseline.json');
+  const resultsDirectory = path.join(directory, 'model-results');
+  await approveBaseline({
+    resultsDirectory: fixturesDirectory,
+    baselinePath,
+    approvedAt: '2026-07-21T00:00:00.000Z',
+  });
+
+  const baseCommand = [process.execPath, fakeEnginePath];
+  const env = {
+    ...process.env,
+    AWS_PROFILE: 'fake-test-profile',
+    AWS_REGION: 'ap-northeast-2',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'fake.deployed-model',
+    RCA_EVAL_DEPLOYED_CC_MODEL: 'fake.deployed-model',
+    CLAUDE_CODE_USE_BEDROCK: '1',
+    RCA_EVAL_CC_HEADLESS_COMMAND: JSON.stringify([
+      ...baseCommand,
+      'cc-headless',
+      '{scenario}',
+    ]),
+    RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
+  };
+  const common = {
+    env,
+    baselinePath,
+    resultsDirectory,
+    reportPath: path.join(directory, 'report.json'),
+    timeoutMs: 10_000,
+  };
+
+  const first = await runModelEvaluation({ ...common, engines: ['strands'] });
+  assert.equal(first.report.enginesComplete, false);
+  const digest = await computeInputDigest();
+  assert.throws(
+    () => createBaseline({ report: first.report, digest }),
+    /approval requires every engine/,
+    'one engine must not be able to define the baseline both engines are compared against',
+  );
+
+  // The second run covers the remaining engine and reuses what is already on
+  // disk, so the round reaches full coverage without repeating the first engine.
+  const second = await runModelEvaluation({
+    ...common,
+    engines: ['cc-headless'],
+  });
+  assert.equal(second.report.passed, true, second.report.failures.join('\n'));
+  assert.deepEqual(second.report.enginesRun, ['cc-headless']);
+  assert.deepEqual(second.report.enginesReused, ['strands']);
+  assert.equal(second.report.enginesComplete, true);
+  assert.deepEqual(second.report.engines, EXPECTED_ENGINES);
+  assert.doesNotThrow(() => createBaseline({ report: second.report, digest }));
 });
