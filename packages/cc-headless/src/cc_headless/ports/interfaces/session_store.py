@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -9,6 +10,34 @@ class ClaimDisposition(StrEnum):
     CLAIMED = "CLAIMED"
     TERMINAL_DUPLICATE = "TERMINAL_DUPLICATE"
     CONTENDED = "CONTENDED"
+
+
+class IncidentClaimDisposition(StrEnum):
+    PROCEED = "PROCEED"
+    SUPPRESSED = "SUPPRESSED"
+    CONTENDED = "CONTENDED"
+
+
+@dataclass(frozen=True)
+class IncidentAlarm:
+    alarm_name: str
+    alarm_arn: str | None = None
+    region: str = "us-east-1"
+    state_change_time: datetime | None = None
+    new_state: str = "ALARM"
+
+
+@dataclass(frozen=True)
+class IncidentClaim:
+    disposition: IncidentClaimDisposition
+    candidate_rca_id: str
+    generation: int | None = None
+    reason: str = ""
+    retryable: bool = False
+
+    @property
+    def acquired(self) -> bool:
+        return self.disposition is IncidentClaimDisposition.PROCEED
 
 
 @dataclass(frozen=True)
@@ -35,6 +64,17 @@ class SideEffectLeaseUnavailableError(RuntimeError):
 
 
 class SessionStorePort(ABC):
+    @abstractmethod
+    def claim_incident(
+        self,
+        alarm: IncidentAlarm,
+        *,
+        cooldown_seconds: int,
+    ) -> IncidentClaim: ...
+
+    @abstractmethod
+    def record_recovery(self, alarm: IncidentAlarm) -> bool: ...
+
     @abstractmethod
     def claim_session(
         self,

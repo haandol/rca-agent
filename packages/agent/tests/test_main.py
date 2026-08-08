@@ -5,8 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rca_agent.adapters.secondary.session.dynamodb_session_store import SessionCancelledError
+from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    SessionCancelledError,
+    build_idempotency_key,
+    build_rca_id,
+)
 from rca_agent.ports.dto.models import (
+    AlarmPayload,
     BranchingResult,
     CompletionHandoff,
     FaultType,
@@ -28,6 +33,8 @@ from rca_agent.ports.dto.models import (
 )
 from rca_agent.ports.interfaces.session_store import (
     ClaimDisposition,
+    IncidentClaim,
+    IncidentClaimDisposition,
     SessionClaim,
     SideEffectLeaseUnavailableError,
 )
@@ -75,6 +82,12 @@ def _make_body(alarm_name="HighCPU"):
 def _make_container():
     container = MagicMock()
     container.session_store = MagicMock()
+    container.session_store.claim_incident.side_effect = lambda alarm, **_: IncidentClaim(
+        IncidentClaimDisposition.PROCEED,
+        build_rca_id(build_idempotency_key(alarm)),
+        1,
+    )
+    container.session_store.record_recovery.return_value = True
     container.session_store.claim_session.return_value = SessionClaim(
         ClaimDisposition.CLAIMED,
         "claim-1",
@@ -787,6 +800,61 @@ class TestProcessAlarmFullPipeline:
         assert result is False
         mock_scoping.assert_not_called()
 
+    def test_suppressed_incident_is_acknowledged_without_session_claim(self):
+        container = _make_container()
+        container.session_store.claim_incident.side_effect = None
+        container.session_store.claim_incident.return_value = IncidentClaim(
+            IncidentClaimDisposition.SUPPRESSED,
+            "existing-rca",
+            1,
+            "strands#SESSION is SCOPING",
+        )
+
+        result = PipelineOrchestrator(container).process_alarm(_make_body())
+
+        assert result is True
+        container.session_store.claim_session.assert_not_called()
+
+    def test_retryable_suppressed_incident_is_not_acknowledged(self):
+        container = _make_container()
+        container.session_store.claim_incident.side_effect = None
+        container.session_store.claim_incident.return_value = IncidentClaim(
+            IncidentClaimDisposition.SUPPRESSED,
+            "existing-rca",
+            1,
+            "incident has no recovery observation",
+            retryable=True,
+        )
+
+        result = PipelineOrchestrator(container).process_alarm(_make_body())
+
+        assert result is False
+        container.session_store.claim_session.assert_not_called()
+
+    def test_ok_records_recovery_before_skipping_session_creation(self):
+        container = _make_container()
+        body = {
+            **_make_body(),
+            "NewStateValue": "OK",
+            "StateChangeTime": "2026-08-07T14:05:00+00:00",
+        }
+
+        result = PipelineOrchestrator(container).process_alarm(body)
+
+        assert result is True
+        recovery_alarm = container.session_store.record_recovery.call_args.args[0]
+        assert recovery_alarm.new_state == "OK"
+        container.session_store.claim_incident.assert_not_called()
+        container.session_store.claim_session.assert_not_called()
+
+    def test_ok_is_not_acked_when_recovery_cannot_be_recorded(self):
+        container = _make_container()
+        container.session_store.record_recovery.return_value = False
+        body = {**_make_body(), "NewStateValue": "OK"}
+
+        assert PipelineOrchestrator(container).process_alarm(body) is False
+        container.session_store.claim_session.assert_not_called()
+
     def test_initial_stale_alarm_is_marked_outdated(self):
         container = _make_container()
         body = {
@@ -801,6 +869,7 @@ class TestProcessAlarmFullPipeline:
         assert result is True
         container.session_store.mark_outdated.assert_called_once()
         assert container.session_store.mark_outdated.call_args.kwargs["claim_token"] == "claim-1"
+        container.session_store.claim_incident.assert_not_called()
         orchestrator._run_pipeline.assert_not_called()
 
     def test_redelivery_bypasses_initial_staleness_check(self):
@@ -822,6 +891,25 @@ class TestProcessAlarmFullPipeline:
         assert result is True
         container.session_store.mark_outdated.assert_not_called()
         orchestrator._run_pipeline.assert_called_once()
+
+    def test_outdated_stale_redelivery_does_not_open_active_incident(self):
+        container = _make_container()
+        body = {
+            **_make_body(),
+            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+        }
+        alarm = AlarmPayload.from_cloudwatch_sns(body)
+        rca_id = build_rca_id(build_idempotency_key(alarm))
+        container.session_store.get_completion_handoff.return_value = CompletionHandoff(
+            rca_id=rca_id,
+            state=RcaSessionState.OUTDATED,
+        )
+
+        result = PipelineOrchestrator(container).process_alarm(body, receive_count=2)
+
+        assert result is True
+        container.session_store.claim_incident.assert_not_called()
+        container.session_store.claim_session.assert_not_called()
 
     def test_terminal_duplicate_flushes_pending_completion_handoff(self):
         container = _make_container()

@@ -1,17 +1,27 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scenarioId": "rds-connection-pool-exhaustion",
   "engine": "strands",
   "rootCause": "The database connection pool was exhausted after traffic exceeded its maximum capacity.",
   "rootCauseConfirmed": true,
+  "rootFaultType": "unsupported",
+  "rootCauseEvidenceIds": [
+    "db-connections-maxed",
+    "pool-timeout-logs",
+    "request-concurrency-over-pool-capacity"
+  ],
   "evidenceIds": [
     "db-connections-maxed",
     "pool-timeout-logs",
     "request-concurrency-over-pool-capacity"
   ],
+  "competingCauseJudgments": [],
   "artifacts": ["scoping", "hypotheses", "validation", "report", "playbook"],
   "remediation": {
     "summary": "Restore service by reducing pool wait time and raising the connection limit within database capacity.",
+    "available": true,
+    "verificationStatus": "DRAFT",
+    "executionSteps": [],
     "safe": true,
     "unsafeSteps": [],
     "safeguards": {

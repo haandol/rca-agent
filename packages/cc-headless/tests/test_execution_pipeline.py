@@ -143,6 +143,7 @@ def _container(runner, *, target=None, claim=None, retrospective_claimed=True):
         claim_retrospective=Mock(return_value=retrospective_claimed),
         record_retrospective=Mock(),
         save_playbook_revision=Mock(),
+        publish_playbook_revision=Mock(),
     )
     evidence_store = SimpleNamespace(
         load_approved_playbook=Mock(return_value=(target.playbook if target is not None else PLAYBOOK)),
@@ -479,6 +480,20 @@ def test_a_failed_retrospective_leaves_the_playbook_a_draft():
     container.playbook_store.save_to_s3_vectors.assert_not_called()
 
 
+def test_zero_exit_retrospective_without_persisted_attestation_is_not_promoted():
+    runner = RecordingRunner(retrospective_success=True)
+    container = _container(runner)
+
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    recorded = container.execution_store.record_retrospective.call_args.kwargs
+    assert recorded["status"] == "FAILED"
+    assert "without a persisted attestation" in recorded["summary"]
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.execution_store.publish_playbook_revision.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
+
+
 def test_an_agent_that_does_nothing_still_leaves_its_response_to_read():
     """실측에서 에이전트가 절차를 하나도 시도하지 않고 성공 종료했다.
 
@@ -556,33 +571,49 @@ def test_the_retrospective_prompt_carries_the_evidence_and_the_pre_execution_ste
     assert "TRANSIENT" in prompt
 
 
-def test_an_evidence_save_failure_does_not_hide_that_the_execution_happened():
+@pytest.mark.parametrize("failure_mode", ["empty-key", "save-error"])
+def test_missing_durable_evidence_fails_retrospective_without_hiding_resolution(failure_mode):
     runner = RecordingRunner()
     container = _container(runner)
-    container.evidence_store.save_execution_evidence = Mock(side_effect=RuntimeError("s3 down"))
+    if failure_mode == "empty-key":
+        container.evidence_store.save_execution_evidence = Mock(return_value="")
+    else:
+        container.evidence_store.save_execution_evidence = Mock(side_effect=RuntimeError("s3 down"))
 
     assert ExecutionOrchestrator(container).process_message(APPROVAL)
 
     assert _states(container)[-1] is ExecutionState.RESOLVED
+    terminal_update = container.execution_store.update_state.call_args_list[-1].kwargs
+    assert terminal_update["evidence_s3_key"] == ""
+    assert "durable execution evidence is unavailable" in terminal_update["retrospective_failure_reason"]
+    assert runner.retrospective_prompts == []
+    container.execution_store.claim_retrospective.assert_not_called()
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
 
 
-def test_a_vector_publication_failure_does_not_report_no_change_or_write_a_revision():
-    runner = RecordingRunner()
+def test_a_vector_publication_failure_leaves_only_a_staged_revision_and_reports_failed():
+    runner = RecordingRunner(
+        retrospective={
+            "update": {},
+            "rationale": "실행 증거에서 교정할 절차 결함을 찾지 못했다",
+        }
+    )
     container = _container(runner)
-    container.playbook_store.save_to_s3_vectors = Mock(side_effect=[False, True])
+    container.playbook_store.save_to_s3_vectors = Mock(return_value=False)
 
     assert ExecutionOrchestrator(container).process_message(APPROVAL)
 
     recorded = container.execution_store.record_retrospective.call_args.kwargs
-    indexed = container.playbook_store.save_to_s3_vectors.call_args_list
 
     assert recorded["status"] == "FAILED"
-    container.execution_store.save_playbook_revision.assert_not_called()
-    assert indexed[0].args[0]["verification_status"] == "VERIFIED"
-    assert indexed[1].args[0]["verification_status"] == "DRAFT"
+    staged = container.execution_store.save_playbook_revision.call_args
+    assert staged.args[2]["verification_status"] == "VERIFIED"
+    container.execution_store.publish_playbook_revision.assert_not_called()
+    assert container.playbook_store.save_to_s3_vectors.call_args.kwargs["publication_id"] == "exec-1"
 
 
-def test_a_revision_failure_after_indexing_rolls_both_publications_back_and_reports_failed():
+def test_a_revision_staging_failure_never_publishes_verified_to_the_index():
     runner = RecordingRunner(
         retrospective={
             "update": {"temporary_mitigation": "서비스 재배포 후 지표 확인"},
@@ -590,16 +621,29 @@ def test_a_revision_failure_after_indexing_rolls_both_publications_back_and_repo
         }
     )
     container = _container(runner)
-    container.execution_store.save_playbook_revision = Mock(side_effect=[RuntimeError("ddb down"), None])
+    container.execution_store.save_playbook_revision = Mock(side_effect=RuntimeError("ddb down"))
 
     assert ExecutionOrchestrator(container).process_message(APPROVAL)
 
     recorded = container.execution_store.record_retrospective.call_args.kwargs
-    revisions = container.execution_store.save_playbook_revision.call_args_list
-    indexed = container.playbook_store.save_to_s3_vectors.call_args_list
 
     assert recorded["status"] == "FAILED"
-    assert revisions[0].args[2]["verification_status"] == "VERIFIED"
-    assert revisions[1].args[2]["verification_status"] == "DRAFT"
-    assert indexed[0].args[0]["verification_status"] == "VERIFIED"
-    assert indexed[1].args[0]["verification_status"] == "DRAFT"
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
+    container.execution_store.publish_playbook_revision.assert_not_called()
+
+
+def test_a_revision_commit_failure_leaves_verified_search_fail_closed():
+    runner = RecordingRunner(
+        retrospective={
+            "update": {},
+            "rationale": "실행 증거에서 교정할 절차 결함을 찾지 못했다",
+        }
+    )
+    container = _container(runner)
+    container.execution_store.publish_playbook_revision.side_effect = RuntimeError("ddb down")
+
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "FAILED"
+    container.execution_store.save_playbook_revision.assert_called_once()
+    assert container.playbook_store.save_to_s3_vectors.call_args.kwargs["publication_id"] == "exec-1"

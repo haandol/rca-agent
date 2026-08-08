@@ -42,8 +42,8 @@
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "CC Headless가 단일 소스 하네스로 읽기 전용 RCA·Report 에이전트를 오케스트레이션한다."
+          "status": "Accepted (2026-08-08)",
+          "summary": "CC Headless가 단일 소스 하네스로 읽기 전용 RCA·Report 에이전트를 오케스트레이션하고, Stop hook은 진행 중 task의 중복 호출을 막으며 명시적 terminal failure 뒤에만 동일 역할을 한 번 재시도한다."
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
@@ -63,7 +63,7 @@
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
           "status": "Accepted (2026-08-07)",
-          "summary": "오프라인 계약, fixture 의미 회귀, 제공된 관측 기반 model-eval, 실제 전달·증거 탐색 deployed E2E를 분리한다."
+          "summary": "네 평가 계층을 분리하고, model-eval은 배포 모델 패리티와 경쟁 원인별 명시적 기각 근거를 엔진 공통 계약으로 검증한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
@@ -72,8 +72,8 @@
         },
         {
           "path": "docs/adr/agent/0018-playbook-retrospective.md",
-          "status": "Accepted (2026-08-07)",
-          "summary": "해결된 실행 직후 자동 회고가 절차를 교정하고, 현재 execution_steps가 실행으로 입증됐을 때만 VERIFIED로 표시한다."
+          "status": "Accepted (2026-08-08)",
+          "summary": "해결된 실행 직후 영속화된 회고가 절차를 교정하고, publication token이 일치하는 정식 개정본이 있을 때만 VERIFIED로 표시한다."
         }
       ]
     },
@@ -120,7 +120,7 @@
         {
           "path": "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
           "status": "Accepted (2026-04-21)",
-          "summary": "SNS와 SQS로 알람을 각 ECS Fargate RCA 엔진에 전달하고, 발행은 이 배포가 소유한 알람으로 제한한다."
+          "summary": "SNS와 SQS로 알람을 각 RCA 엔진에 전달하고, 전역 active incident와 안정화 cooldown으로 같은 장애의 재알람을 억제하며, 발행은 이 배포가 소유한 알람으로 제한한다."
         },
         {
           "path": "docs/adr/infra/0002-evidence-storage.md",
@@ -139,8 +139,8 @@
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
-          "status": "Accepted (2026-07-31)",
-          "summary": "파이프라인 스팬·가설 상태·플레이북 실행 시도와 회고 개정본을 세션과 같은 파티션의 실행 trace로 기록한다."
+          "status": "Accepted (2026-08-08)",
+          "summary": "파이프라인 스팬·가설 상태·플레이북 실행 시도와 회고 개정 준비본·정식 개정본을 세션과 같은 파티션의 실행 trace로 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",

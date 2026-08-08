@@ -73,10 +73,15 @@ def build_execution_prompt(target: ExecutionTarget, *, execution_id: str) -> str
 ## 수행 계약
 
 1. 절차마다 `run_playbook_command` 로 명령을 실행한다. 실패하면 오류 출력으로 인자를
-   교정해 다시 시도하고, 거부된 명령은 우회하지 않는다.
+   교정해 다시 시도하고, 거부된 명령은 우회하지 않는다. verification-only 절차도
+   안전한 읽기 전용 AWS CLI 명령을 최소 한 번 이 도구로 실행한다. CloudWatch MCP 직접
+   조회는 성공 기준 관측에는 사용할 수 있지만 attempt 증거가 아니므로 이를 대신하지
+   못한다.
 2. 절차마다 `record_step_outcome` 으로 `success_criteria` 관측 결과를 기록한다.
 3. 마지막에 `record_resolution` 으로 이슈 해소 여부를 기록한다. 관측으로 확정할 수
-   없으면 `resolved=false` 와 사유를 남긴다.
+   없으면 `resolved=false` 와 사유를 남긴다. `resolved=true` 호출이
+   `missing_attempt_step_ids` 또는 `missing_outcome_step_ids` 를 반환하면 최종 응답
+   전에 해당 절차 기록을 보완하고 `record_resolution` 을 다시 호출한다.
 """
 
 

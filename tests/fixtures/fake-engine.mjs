@@ -15,24 +15,43 @@ async function readStdin() {
 const scenario = JSON.parse(
   scenarioPath ? await readFile(scenarioPath, 'utf8') : await readStdin(),
 );
-const firstTerms = (groups) => groups.map(([term]) => term).join(' ');
+const executionSteps = scenario.expectation.requireExecutableRemediation
+  ? [
+      {
+        stepId: 'restore-service',
+        intent: 'Return the affected service to a healthy configuration.',
+        action: 'Apply the approved reversible service change.',
+        successCriteria: 'The alarm and related error signal recover.',
+      },
+    ]
+  : [];
 
 process.stdout.write(
   JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     scenarioId: scenario.id,
     engine,
-    rootCause: `${firstTerms(scenario.expectation.rootCauseTermGroups)} ${firstTerms(
-      scenario.expectation.semanticTermGroups,
-    )}`,
+    rootCause: 'The supplied observations support a confirmed causal finding.',
     rootCauseConfirmed: true,
+    rootFaultType: scenario.expectation.acceptedRootFaultTypes[0],
+    rootCauseEvidenceIds: scenario.expectation.requiredRootCauseEvidenceIds,
     evidenceIds: scenario.expectation.requiredEvidenceIds,
+    competingCauseJudgments: (scenario.expectation.competingCauses ?? []).map(
+      (cause) => ({
+        causeId: cause.id,
+        judgment: 'rejected',
+        rationale: `Evidence rejects ${cause.id}.`,
+        evidenceIds: cause.requiredEvidenceIds,
+      }),
+    ),
     artifacts: scenario.expectation.requiredArtifacts,
     remediation: {
-      summary: `${firstTerms(
-        scenario.expectation.remediationTermGroups,
-      )} ${firstTerms(scenario.expectation.semanticTermGroups)}`,
+      summary: 'Use the reviewed procedure and verify the observed recovery.',
+      available: true,
+      verificationStatus: 'DRAFT',
+      executionSteps,
       safe: true,
+      unsafeSteps: [],
       safeguards: {
         preconditions:
           'Confirm the target resource and current incident state.',

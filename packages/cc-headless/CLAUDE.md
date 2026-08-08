@@ -31,6 +31,20 @@ RCA가 미확정이어도 `report-specialist`는 반드시 호출한다.
 메인 세션은 `orchestrator` agent로 실행되며 `Agent(rca-specialist,
 report-specialist)`와 `Skill`만 허용한다.
 
+## 비대화형 실패 처리
+
+이 워커는 비대화형이다. 사용자 입력이나 진행 여부를 요청하지 않고 사용자 확인을
+기다리지 않는다.
+
+진행 중이거나 background에서 실행 중인 Agent 전문 에이전트 호출은 실패가 아니다.
+산출물 누락이나 경과 시간만으로 실패를 추론하지 않는다. 기존 task가 실행 중이면 같은
+전문 에이전트를 다시 호출하지 않고 현재 turn을 종료한 뒤 task notification을 기다린다.
+
+Agent 결과나 task notification이 필수 산출물 완료 전의 terminal interruption 또는
+provider/tool failure를 명시적으로 보고한 뒤에만 동일한 단계 입력으로 동일한 전문
+에이전트를 한 번 재호출한다. 재시도도 실패하면 실행을 명시적으로 실패시키고 종료한다.
+오케스트레이터는 누락 산출물을 직접 작성·보완하거나 다른 역할에 대신 작성시키지 않는다.
+
 ## 산출물
 
 | 파일명 | 작성 주체 |

@@ -388,6 +388,32 @@ def test_a_revision_cannot_change_an_already_approved_snapshot(store):
     assert target.playbook["execution_steps"][0]["action"] == "api 서비스를 강제 재배포"
 
 
+def test_revision_is_staged_before_atomic_publication(store):
+    execution_store, ddb = store
+    revised = {**PLAYBOOK, "verification_status": "VERIFIED"}
+
+    execution_store.save_playbook_revision(RCA_ID, ENGINE, revised, execution_id=EXECUTION_ID)
+
+    stage_key = {
+        "PK": {"S": f"RCA#{RCA_ID}"},
+        "SK": {"S": f"{ENGINE}#PLAYBOOK_REVISION_STAGE#{EXECUTION_ID}"},
+    }
+    canonical_key = {
+        "PK": {"S": f"RCA#{RCA_ID}"},
+        "SK": {"S": f"{ENGINE}#PLAYBOOK_REVISION"},
+    }
+    staged = ddb.get_item(TableName=TABLE, Key=stage_key, ConsistentRead=True)["Item"]
+    assert staged["publication_status"]["S"] == "PENDING"
+    assert "Item" not in ddb.get_item(TableName=TABLE, Key=canonical_key, ConsistentRead=True)
+
+    execution_store.publish_playbook_revision(RCA_ID, ENGINE, revised, execution_id=EXECUTION_ID)
+
+    published = ddb.get_item(TableName=TABLE, Key=canonical_key, ConsistentRead=True)["Item"]
+    assert published["publication_status"]["S"] == "PUBLISHED"
+    assert published["revised_by_execution_id"]["S"] == EXECUTION_ID
+    assert "Item" not in ddb.get_item(TableName=TABLE, Key=stage_key, ConsistentRead=True)
+
+
 def test_only_one_retrospective_runs_per_execution(store):
     execution_store, ddb = store
     claim = _claim(execution_store)
@@ -396,7 +422,11 @@ def test_only_one_retrospective_runs_per_execution(store):
         EXECUTION_ID, rca_id=RCA_ID, state=ExecutionState.VERIFYING, claim_token=claim.claim_token
     )
     execution_store.update_state(
-        EXECUTION_ID, rca_id=RCA_ID, state=ExecutionState.RESOLVED, claim_token=claim.claim_token
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        state=ExecutionState.RESOLVED,
+        claim_token=claim.claim_token,
+        evidence_s3_key="executions/rca-1/exec-1/evidence.json",
     )
 
     first = execution_store.claim_retrospective(EXECUTION_ID, rca_id=RCA_ID, claim_token=claim.claim_token)
@@ -404,6 +434,69 @@ def test_only_one_retrospective_runs_per_execution(store):
 
     assert first
     assert not second
+
+
+def test_a_resolved_execution_without_evidence_records_failed_retrospective_and_cannot_claim(store):
+    execution_store, ddb = store
+    claim = _claim(execution_store)
+    _put_completed_session(ddb)
+    execution_store.update_state(
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        state=ExecutionState.VERIFYING,
+        claim_token=claim.claim_token,
+    )
+    execution_store.update_state(
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        state=ExecutionState.RESOLVED,
+        claim_token=claim.claim_token,
+        retrospective_failure_reason="durable execution evidence is unavailable",
+    )
+
+    item = _execution_item(ddb)
+
+    assert item["execution_state"]["S"] == "RESOLVED"
+    assert "evidence_s3_key" not in item
+    assert item["retrospective_status"]["S"] == "FAILED"
+    assert "durable execution evidence" in item["retrospective_summary"]["S"]
+    assert not execution_store.claim_retrospective(
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        claim_token=claim.claim_token,
+    )
+
+
+@pytest.mark.parametrize("empty_evidence_attribute", [False, True])
+def test_a_retrospective_claim_requires_a_non_empty_evidence_key(store, empty_evidence_attribute):
+    execution_store, ddb = store
+    claim = _claim(execution_store)
+    _put_completed_session(ddb)
+    execution_store.update_state(
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        state=ExecutionState.VERIFYING,
+        claim_token=claim.claim_token,
+    )
+    execution_store.update_state(
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        state=ExecutionState.RESOLVED,
+        claim_token=claim.claim_token,
+    )
+    if empty_evidence_attribute:
+        ddb.update_item(
+            TableName=TABLE,
+            Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": f"EXEC#{EXECUTION_ID}"}},
+            UpdateExpression="SET evidence_s3_key = :empty",
+            ExpressionAttributeValues={":empty": {"S": ""}},
+        )
+
+    assert not execution_store.claim_retrospective(
+        EXECUTION_ID,
+        rca_id=RCA_ID,
+        claim_token=claim.claim_token,
+    )
 
 
 @pytest.mark.parametrize("state", [ExecutionState.UNRESOLVED, ExecutionState.FAILED, ExecutionState.CANCELLED])

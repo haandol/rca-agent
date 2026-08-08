@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "approvedAt": "2026-08-07T12:59:21.974Z",
+  "schemaVersion": 2,
+  "approvedAt": "2026-08-08T03:19:17.680Z",
   "engines": ["cc-headless", "strands"],
   "contractInputs": [
     "tests/harness/evaluator.mjs",
@@ -20,7 +20,7 @@
     "packages/agent/src/rca_agent/services/destructive_actions.py",
     "packages/cc-headless/src/cc_headless/services/destructive_actions.py"
   ],
-  "inputDigest": "sha256:95feeb93005583017853b57aef3370b4271cf61696ad1316b9843143734b7f69",
+  "inputDigest": "sha256:219c9d026bc73c1218bbbe571536fd54be471cbb17d90a46b6afdc967f5e1856",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/eval_adapter.py",
@@ -76,19 +76,5 @@
     "tests/scenarios/deployment-query-regression.json",
     "tests/scenarios/iam-policy-access-denied.json",
     "tests/scenarios/rds-connection-pool-exhaustion.json"
-  ],
-  "semanticScores": {
-    "cc-headless": {
-      "deployed-connection-leak-vital-ingest": 0.95,
-      "deployment-query-regression": 1,
-      "iam-policy-access-denied": 1,
-      "rds-connection-pool-exhaustion": 1
-    },
-    "strands": {
-      "deployed-connection-leak-vital-ingest": 0.95,
-      "deployment-query-regression": 1,
-      "iam-policy-access-denied": 1,
-      "rds-connection-pool-exhaustion": 1
-    }
-  }
+  ]
 }

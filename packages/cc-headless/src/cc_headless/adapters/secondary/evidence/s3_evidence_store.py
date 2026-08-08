@@ -3,12 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 
-import structlog
-
 from cc_headless.config.settings import S3_EVIDENCE_BUCKET
 from cc_headless.ports.interfaces.evidence_store import EvidenceStorePort
-
-logger = structlog.get_logger()
 
 # 실행 단위로 경로가 갈라진다. 같은 리포트를 여러 번 실행할 수 있으므로 리포트
 # 단위로 묶으면 재실행이 앞선 증거를 덮어쓴다.
@@ -22,9 +18,10 @@ class S3EvidenceStore(EvidenceStorePort):
         self._s3 = s3_client
 
     def _put_json(self, key: str, payload: dict) -> str:
-        if not S3_EVIDENCE_BUCKET or not self._s3:
-            logger.info("evidence_bucket_not_configured", key=key)
-            return key
+        if not S3_EVIDENCE_BUCKET:
+            raise RuntimeError("evidence bucket is not configured")
+        if self._s3 is None:
+            raise RuntimeError("S3 evidence client is unavailable")
         self._s3.put_object(
             Bucket=S3_EVIDENCE_BUCKET,
             Key=key,
@@ -35,7 +32,7 @@ class S3EvidenceStore(EvidenceStorePort):
 
     def load_approved_playbook(self, approved_playbook_s3_key: str, *, playbook_digest: str) -> dict:
         """승인 시점의 바이트를 검증한 뒤 플레이북 객체로 해석한다."""
-        if not S3_EVIDENCE_BUCKET or not self._s3:
+        if not S3_EVIDENCE_BUCKET or self._s3 is None:
             raise RuntimeError("approved playbook store is unavailable")
         response = self._s3.get_object(
             Bucket=S3_EVIDENCE_BUCKET,

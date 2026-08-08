@@ -50,6 +50,7 @@ ALARM_STALENESS_SECONDS = max(
     int(os.environ.get("ALARM_STALENESS_SECONDS", "0")) or CC_TIMEOUT_SECONDS,
     CC_TIMEOUT_SECONDS,
 )
+ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS = int(os.environ.get("ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS", "300"))
 
 # The analysis run holds no side-effect lease of its own beyond the final
 # publication, so the lease only has to outlive report/playbook persistence and

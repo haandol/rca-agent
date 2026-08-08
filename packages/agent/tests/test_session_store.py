@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -14,6 +14,8 @@ from rca_agent.adapters.secondary.session import dynamodb_session_store
 from rca_agent.adapters.secondary.session.dynamodb_session_store import (
     DynamoDbSessionStore,
     SessionCancelledError,
+    build_active_incident_pk,
+    build_alarm_identity,
     build_idempotency_key,
     build_rca_id,
     check_duplicate,
@@ -31,6 +33,7 @@ from rca_agent.ports.dto.models import (
 )
 from rca_agent.ports.interfaces.session_store import (
     ClaimDisposition,
+    IncidentClaimDisposition,
     SessionOwnershipCheckError,
     SideEffectLeaseUnavailableError,
 )
@@ -162,6 +165,342 @@ def _advance_to(
         assert store.update_state(rca_id, state, claim_token=claim_token)
         if state is target:
             return
+
+
+def _alarm_at(alarm: AlarmPayload, moment: datetime, *, state: str = "ALARM") -> AlarmPayload:
+    return alarm.model_copy(update={"state_change_time": moment, "new_state": state})
+
+
+def _incident_item(ddb, table_name: str, alarm: AlarmPayload) -> dict:
+    return ddb.get_item(
+        TableName=table_name,
+        Key={
+            "PK": {"S": build_active_incident_pk(alarm)},
+            "SK": {"S": "ACTIVE_INCIDENT"},
+        },
+        ConsistentRead=True,
+    )["Item"]
+
+
+class TestActiveIncident:
+    def test_uses_alarm_arn_or_stable_name_fallback_for_identity(self, alarm):
+        assert build_alarm_identity(alarm) == alarm.alarm_arn
+        without_arn = alarm.model_copy(update={"alarm_arn": None})
+        assert build_alarm_identity(without_arn) == "cloudwatch:us-east-1:alarm:HighCPU"
+        assert build_active_incident_pk(alarm).startswith("ALARM#")
+        assert len(build_active_incident_pk(alarm)) == len("ALARM#") + 64
+
+    def test_same_event_is_allowed_for_each_engine_session(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+
+        first = store.claim_incident(alarm, cooldown_seconds=300)
+        second = store.claim_incident(alarm, cooldown_seconds=300)
+
+        assert first.disposition is IncidentClaimDisposition.PROCEED
+        assert second.disposition is IncidentClaimDisposition.PROCEED
+        assert first.candidate_rca_id == second.candidate_rca_id
+        assert first.generation == second.generation == 1
+        ddb.put_item(
+            TableName=table_name,
+            Item={
+                "PK": {"S": f"RCA#{first.candidate_rca_id}"},
+                "SK": {"S": "cc-headless#SESSION"},
+                "state": {"S": "ALARM_RECEIVED"},
+            },
+        )
+        assert _claim(store, alarm, 1).acquired
+
+    def test_newer_alarm_is_deferred_while_analysis_is_active(self, claim_store, alarm):
+        store, _, _ = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        assert opened.acquired
+        assert _claim(store, alarm, 1).acquired
+        realarm = _alarm_at(alarm, alarm.state_change_time + timedelta(minutes=18))
+
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert claim.candidate_rca_id == opened.candidate_rca_id
+        assert "strands#SESSION" in claim.reason
+        assert claim.retryable
+
+    def test_newer_alarm_is_deferred_while_execution_is_active(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        ddb.put_item(
+            TableName=table_name,
+            Item={
+                "PK": {"S": f"RCA#{opened.candidate_rca_id}"},
+                "SK": {"S": "EXEC_ACTIVE"},
+                "execution_id": {"S": "exec-1"},
+            },
+        )
+        realarm = _alarm_at(alarm, alarm.state_change_time + timedelta(minutes=18))
+
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert claim.reason == "EXEC_ACTIVE exists"
+        assert claim.retryable
+
+    def test_ok_immediate_realarm_is_suppressed_during_cooldown(self, claim_store, alarm):
+        store, _, _ = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        ok_at = alarm.state_change_time + timedelta(minutes=10)
+        assert store.record_recovery(_alarm_at(alarm, ok_at, state="OK"))
+
+        realarm = _alarm_at(alarm, ok_at + timedelta(seconds=299))
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert claim.candidate_rca_id == opened.candidate_rca_id
+        assert claim.reason == "recovery cooldown has not elapsed"
+        assert not claim.retryable
+
+    def test_ok_before_alarm_persists_watermark_and_applies_event_time_cooldown(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        ok_at = alarm.state_change_time
+        recovery = _alarm_at(alarm, ok_at, state="OK")
+
+        assert store.record_recovery(recovery)
+        watermark = _incident_item(ddb, table_name, alarm)
+        assert watermark["last_ok_at"]["S"] == ok_at.isoformat()
+        assert "candidate_rca_id" not in watermark
+        assert "generation" not in watermark
+
+        during_cooldown = _alarm_at(alarm, ok_at + timedelta(seconds=299))
+        suppressed = store.claim_incident(during_cooldown, cooldown_seconds=300)
+        assert suppressed.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert suppressed.reason == "recovery cooldown has not elapsed"
+        assert not suppressed.retryable
+
+        at_boundary = _alarm_at(alarm, ok_at + timedelta(seconds=300))
+        opened = store.claim_incident(at_boundary, cooldown_seconds=300)
+        assert opened.disposition is IncidentClaimDisposition.PROCEED
+        assert opened.generation == 1
+        item = _incident_item(ddb, table_name, alarm)
+        assert item["candidate_rca_id"]["S"] == opened.candidate_rca_id
+        assert item["opened_at"]["S"] == at_boundary.state_change_time.isoformat()
+        assert "last_ok_at" not in item
+
+    def test_terminal_incident_without_ok_defers_newer_alarm(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        assert _claim(store, alarm, 1).acquired
+        ddb.update_item(
+            TableName=table_name,
+            Key=_session_key_for_test(opened.candidate_rca_id),
+            UpdateExpression="SET #state = :completed",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={":completed": {"S": "COMPLETED"}},
+        )
+
+        realarm = _alarm_at(alarm, alarm.state_change_time + timedelta(minutes=18))
+        pending = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert pending.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert pending.candidate_rca_id == opened.candidate_rca_id
+        assert pending.reason == "incident has no recovery observation"
+        assert pending.retryable
+
+    def test_alarm_before_ok_proceeds_when_recovery_arrives(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        assert _claim(store, alarm, 1).acquired
+        ddb.update_item(
+            TableName=table_name,
+            Key=_session_key_for_test(opened.candidate_rca_id),
+            UpdateExpression="SET #state = :completed",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={":completed": {"S": "COMPLETED"}},
+        )
+        ok_at = alarm.state_change_time + timedelta(minutes=10)
+        realarm = _alarm_at(alarm, ok_at + timedelta(seconds=300))
+
+        pending = store.claim_incident(realarm, cooldown_seconds=300)
+        assert pending.retryable
+
+        assert store.record_recovery(_alarm_at(alarm, ok_at, state="OK"))
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.PROCEED
+        assert claim.generation == 2
+        assert claim.candidate_rca_id != opened.candidate_rca_id
+        assert store.claim_incident(realarm, cooldown_seconds=300).candidate_rca_id == claim.candidate_rca_id
+
+    def test_alarm_before_ok_while_active_defers_until_recovery_and_terminal_state(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        assert _claim(store, alarm, 1).acquired
+        ok_at = alarm.state_change_time + timedelta(minutes=10)
+        realarm = _alarm_at(alarm, ok_at + timedelta(seconds=300))
+
+        before_ok = store.claim_incident(realarm, cooldown_seconds=300)
+        assert before_ok.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert before_ok.retryable
+        assert "strands#SESSION" in before_ok.reason
+
+        assert store.record_recovery(_alarm_at(alarm, ok_at, state="OK"))
+        before_terminal = store.claim_incident(realarm, cooldown_seconds=300)
+        assert before_terminal.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert before_terminal.retryable
+        assert "recovery observed but" in before_terminal.reason
+
+        ddb.update_item(
+            TableName=table_name,
+            Key=_session_key_for_test(opened.candidate_rca_id),
+            UpdateExpression="SET #state = :completed",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={":completed": {"S": "COMPLETED"}},
+        )
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.PROCEED
+        assert claim.generation == 2
+
+    def test_recovery_older_than_current_generation_is_ignored(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        store.claim_incident(alarm, cooldown_seconds=300)
+
+        older_ok = alarm.state_change_time - timedelta(minutes=1)
+        assert store.record_recovery(_alarm_at(alarm, older_ok, state="OK"))
+
+        item = _incident_item(ddb, table_name, alarm)
+        assert "last_ok_at" not in item
+
+    def test_terminal_sessions_after_cooldown_allow_new_generation(self, claim_store, alarm):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        assert _claim(store, alarm, 1).acquired
+        ddb.update_item(
+            TableName=table_name,
+            Key=_session_key_for_test(opened.candidate_rca_id),
+            UpdateExpression="SET #state = :completed",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={":completed": {"S": "COMPLETED"}},
+        )
+        ok_at = alarm.state_change_time + timedelta(minutes=10)
+        assert store.record_recovery(_alarm_at(alarm, ok_at, state="OK"))
+        realarm = _alarm_at(alarm, ok_at + timedelta(seconds=301))
+
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.PROCEED
+        assert claim.generation == 2
+        assert claim.candidate_rca_id != opened.candidate_rca_id
+        item = _incident_item(ddb, table_name, alarm)
+        assert item["candidate_rca_id"]["S"] == claim.candidate_rca_id
+        assert item["generation"]["N"] == "2"
+        assert "last_ok_at" not in item
+
+    def test_generation_condition_conflict_preserves_winner(self, claim_store, alarm, monkeypatch):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        ok_at = alarm.state_change_time + timedelta(minutes=10)
+        assert store.record_recovery(_alarm_at(alarm, ok_at, state="OK"))
+        contender = _alarm_at(alarm, ok_at + timedelta(seconds=301))
+        winner_alarm = _alarm_at(alarm, ok_at + timedelta(seconds=302))
+        winner_rca_id = build_rca_id(build_idempotency_key(winner_alarm))
+        original_transact = ddb.transact_write_items
+        injected = False
+
+        def racing_transact(**kwargs):
+            nonlocal injected
+            if not injected:
+                injected = True
+                ddb.update_item(
+                    TableName=table_name,
+                    Key={
+                        "PK": {"S": build_active_incident_pk(alarm)},
+                        "SK": {"S": "ACTIVE_INCIDENT"},
+                    },
+                    UpdateExpression=(
+                        "SET candidate_rca_id = :candidate, generation = :generation, "
+                        "opened_at = :opened, last_alarm_at = :alarm REMOVE last_ok_at"
+                    ),
+                    ExpressionAttributeValues={
+                        ":candidate": {"S": winner_rca_id},
+                        ":generation": {"N": "2"},
+                        ":opened": {"S": winner_alarm.state_change_time.isoformat()},
+                        ":alarm": {"S": winner_alarm.state_change_time.isoformat()},
+                    },
+                )
+            return original_transact(**kwargs)
+
+        monkeypatch.setattr(ddb, "transact_write_items", racing_transact)
+
+        claim = store.claim_incident(contender, cooldown_seconds=300)
+
+        assert injected
+        assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert claim.candidate_rca_id == winner_rca_id
+        assert claim.candidate_rca_id != opened.candidate_rca_id
+        assert _incident_item(ddb, table_name, alarm)["candidate_rca_id"]["S"] == winner_rca_id
+
+    def test_same_candidate_touch_retries_after_concurrent_generation_promotion(
+        self,
+        claim_store,
+        alarm,
+        monkeypatch,
+    ):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        winner_alarm = _alarm_at(alarm, alarm.state_change_time + timedelta(minutes=20))
+        winner_rca_id = build_rca_id(build_idempotency_key(winner_alarm))
+        original_update = ddb.update_item
+        promoted = False
+
+        def promote_before_touch(**kwargs):
+            nonlocal promoted
+            if not promoted and "last_alarm_at" in kwargs.get("UpdateExpression", ""):
+                promoted = True
+                original_update(
+                    TableName=table_name,
+                    Key={
+                        "PK": {"S": build_active_incident_pk(alarm)},
+                        "SK": {"S": "ACTIVE_INCIDENT"},
+                    },
+                    UpdateExpression=(
+                        "SET candidate_rca_id = :candidate, generation = :generation, "
+                        "opened_at = :opened, last_alarm_at = :alarm"
+                    ),
+                    ExpressionAttributeValues={
+                        ":candidate": {"S": winner_rca_id},
+                        ":generation": {"N": "2"},
+                        ":opened": {"S": winner_alarm.state_change_time.isoformat()},
+                        ":alarm": {"S": winner_alarm.state_change_time.isoformat()},
+                    },
+                )
+            return original_update(**kwargs)
+
+        monkeypatch.setattr(ddb, "update_item", promote_before_touch)
+
+        claim = store.claim_incident(alarm, cooldown_seconds=300)
+
+        assert promoted
+        assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert claim.candidate_rca_id == winner_rca_id
+        assert claim.candidate_rca_id != opened.candidate_rca_id
+        item = _incident_item(ddb, table_name, alarm)
+        assert item["candidate_rca_id"]["S"] == winner_rca_id
+        assert item["generation"]["N"] == "2"
+
+    def test_incident_gate_preserves_existing_session_redelivery_semantics(self, claim_store, alarm):
+        store, _, _ = claim_store
+        assert store.claim_incident(alarm, cooldown_seconds=300).acquired
+        first = _claim(store, alarm, 1)
+        assert first.acquired
+
+        assert store.claim_incident(alarm, cooldown_seconds=300).acquired
+        assert _claim(store, alarm, 1).disposition is ClaimDisposition.CONTENDED
+        assert _claim(store, alarm, 2).acquired
+
+
+def _session_key_for_test(rca_id: str) -> dict:
+    return {
+        "PK": {"S": f"RCA#{rca_id}"},
+        "SK": {"S": "strands#SESSION"},
+    }
 
 
 class TestSessionClaim:

@@ -16,8 +16,17 @@ from cc_headless.ports.interfaces.playbook_store import PlaybookMatch
 _MODULE = "cc_headless.adapters.secondary.playbook.s3_vectors_playbook_store"
 
 
-def _match(playbook_id: str = "pb-1", rca_id: str = "rca-7") -> PlaybookMatch:
-    return PlaybookMatch(playbook_id=playbook_id, similarity=0.9, rca_id=rca_id)
+def _match(
+    playbook_id: str = "pb-1",
+    rca_id: str = "rca-7",
+    publication_id: str = "exec-9",
+) -> PlaybookMatch:
+    return PlaybookMatch(
+        playbook_id=playbook_id,
+        similarity=0.9,
+        rca_id=rca_id,
+        publication_id=publication_id,
+    )
 
 
 def _span_item() -> dict:
@@ -70,7 +79,15 @@ def _revision_item(playbook_id: str = "pb-1") -> dict:
         "playbook_id": {"S": playbook_id},
         "playbook": {"S": json.dumps(revised, ensure_ascii=False)},
         "revised_by_execution_id": {"S": "exec-9"},
+        "publication_status": {"S": "PUBLISHED"},
     }
+
+
+def _staged_revision_item(playbook_id: str = "pb-1") -> dict:
+    item = _revision_item(playbook_id)
+    item["SK"] = {"S": "cc-headless#PLAYBOOK_REVISION_STAGE#exec-9"}
+    item["publication_status"] = {"S": "PENDING"}
+    return item
 
 
 class TestLoadDetailPrefersTheRetrospectiveRevision:
@@ -98,6 +115,17 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
 
         assert detail is not None
         assert detail["verification_status"] == "VERIFIED"
+
+    @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_pending_revision_is_not_loaded_after_a_failed_commit(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [_span_item(), _staged_revision_item()]}
+
+        detail = self._store(ddb).load_detail(_match())
+
+        assert detail is not None
+        assert detail["verification_status"] == "DRAFT"
+        assert detail["temporary_mitigation"] == "원본 조치"
 
     @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_falls_back_to_the_span_without_a_revision(self):
@@ -204,6 +232,7 @@ class TestSearchSimilar:
         # 유사도를 추측해 순위에 넣지 않는다 — 무관한 플레이북에 병합될 수 있다.
         assert matches == []
 
+    @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
     def test_hit_reports_whether_the_procedure_was_proven(self):
         s3v = MagicMock()
@@ -212,14 +241,75 @@ class TestSearchSimilar:
                 {
                     "key": "pb-1",
                     "distance": 0.01,
-                    "metadata": {"rca_id": "rca-1", "verification_status": "VERIFIED"},
+                    "metadata": {
+                        "rca_id": "rca-1",
+                        "verification_status": "VERIFIED",
+                        "publication_id": "exec-9",
+                    },
                 }
             ]
         }
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [_revision_item()]}
 
-        matches = self._store(s3v, self._embedding()).search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
+        store = S3VectorsPlaybookStore(s3v, self._embedding(), ddb)
+        matches = store.search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
 
         assert matches[0].verification_status == "VERIFIED"
+
+    @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
+    def test_verified_vector_is_downgraded_when_revision_commit_is_missing(self):
+        s3v = MagicMock()
+        s3v.query_vectors.return_value = {
+            "vectors": [
+                {
+                    "key": "pb-1",
+                    "distance": 0.01,
+                    "metadata": {
+                        "rca_id": "rca-1",
+                        "verification_status": "VERIFIED",
+                        "publication_id": "exec-9",
+                    },
+                }
+            ]
+        }
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [_staged_revision_item()]}
+
+        store = S3VectorsPlaybookStore(s3v, self._embedding(), ddb)
+        matches = store.search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
+
+        assert matches[0].verification_status == "DRAFT"
+
+    @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
+    def test_verified_vector_is_downgraded_when_committed_revision_is_draft(self):
+        s3v = MagicMock()
+        s3v.query_vectors.return_value = {
+            "vectors": [
+                {
+                    "key": "pb-1",
+                    "distance": 0.01,
+                    "metadata": {
+                        "rca_id": "rca-1",
+                        "verification_status": "VERIFIED",
+                        "publication_id": "exec-9",
+                    },
+                }
+            ]
+        }
+        revision = _revision_item()
+        playbook = json.loads(revision["playbook"]["S"])
+        playbook["verification_status"] = "DRAFT"
+        revision["playbook"] = {"S": json.dumps(playbook)}
+        ddb = MagicMock()
+        ddb.query.return_value = {"Items": [revision]}
+
+        store = S3VectorsPlaybookStore(s3v, self._embedding(), ddb)
+        matches = store.search_similar("query", threshold=PLAYBOOK_UPDATE_THRESHOLD)
+
+        assert matches[0].verification_status == "DRAFT"
 
     @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
     def test_a_record_without_a_status_reads_as_a_draft(self):
@@ -278,6 +368,27 @@ class TestIndexMetadata:
         metadata = s3v.put_vectors.call_args.kwargs["vectors"][0]["metadata"]
         # 승격이 개정본에만 반영되면 검색 결과에서는 초안으로 남는다.
         assert metadata["verification_status"] == "VERIFIED"
+
+    @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
+    def test_indexes_the_revision_publication_id(self):
+        s3v = MagicMock()
+        embedding = MagicMock()
+        embedding.embed_document.return_value = [0.1]
+        store = S3VectorsPlaybookStore(s3v, embedding)
+
+        store.save_to_s3_vectors(
+            {
+                "playbook_id": "pb-1",
+                "failure_type": "DB connection leak",
+                "symptom_pattern": "커넥션 상승",
+                "verification_status": "VERIFIED",
+            },
+            "rca-1",
+            publication_id="exec-9",
+        )
+
+        metadata = s3v.put_vectors.call_args.kwargs["vectors"][0]["metadata"]
+        assert metadata["publication_id"] == "exec-9"
 
     @patch(f"{_MODULE}.S3_VECTOR_BUCKET_NAME", "vectors")
     def test_an_unknown_status_is_indexed_as_a_draft(self):

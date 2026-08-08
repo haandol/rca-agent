@@ -9,6 +9,7 @@ from threading import Event
 import structlog
 
 from cc_headless.config.settings import (
+    ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS,
     ALARM_STALENESS_SECONDS,
     PLAYBOOK_UPDATE_THRESHOLD,
     SIDE_EFFECT_LEASE_SECONDS,
@@ -17,6 +18,8 @@ from cc_headless.di.container import Container
 from cc_headless.ports.dto.models import AlarmContext, parse_alarm
 from cc_headless.ports.interfaces.session_store import (
     ClaimDisposition,
+    IncidentAlarm,
+    IncidentClaimDisposition,
     SessionCancelledError,
     SessionOwnershipCheckError,
 )
@@ -84,11 +87,14 @@ class PipelineOrchestrator:
         self._shutdown_event = shutdown_event or Event()
 
     def process_message(self, message_body: str, *, receive_count: int = 1) -> bool:
-        from cc_headless.adapters.secondary.session.dynamodb_session_store import build_rca_id
+        from cc_headless.adapters.secondary.session.dynamodb_session_store import (
+            build_idempotency_key,
+            build_rca_id,
+        )
 
         alarm_data = parse_sns_envelope(message_body)
 
-        if not should_process(alarm_data):
+        if not alarm_data.get("AlarmName"):
             logger.info(
                 "skipping_non_alarm_message",
                 alarm_name=alarm_data.get("AlarmName"),
@@ -99,20 +105,90 @@ class PipelineOrchestrator:
         alarm = parse_alarm(alarm_data)
 
         ts_raw = alarm.state_change_time
-        if ts_raw:
-            dt = datetime.fromisoformat(ts_raw.replace("+0000", "+00:00"))
-            ts = dt.isoformat()
-        else:
-            ts = "unknown"
-        idempotency_key = f"{alarm.alarm_name}#{ts}"
+        dt = datetime.fromisoformat(ts_raw.replace("+0000", "+00:00")) if ts_raw else None
+        incident_alarm = IncidentAlarm(
+            alarm_name=alarm.alarm_name,
+            alarm_arn=alarm_data.get("AlarmArn") or None,
+            region=alarm.region,
+            state_change_time=dt,
+            new_state=alarm_data.get("NewStateValue", "ALARM"),
+        )
+        store = self._c.session_store
+        if incident_alarm.new_state == "OK":
+            try:
+                recorded = store.record_recovery(incident_alarm)
+            except Exception:
+                logger.exception("alarm_recovery_record_failed", alarm_name=alarm.alarm_name)
+                return False
+            if not recorded:
+                logger.error("alarm_recovery_store_unavailable", alarm_name=alarm.alarm_name)
+                return False
+            logger.info("alarm_recovery_recorded", alarm_name=alarm.alarm_name)
+            return True
+
+        if not should_process(alarm_data):
+            logger.info(
+                "skipping_non_alarm_message",
+                alarm_name=alarm.alarm_name,
+                new_state_value=alarm_data.get("NewStateValue"),
+            )
+            return True
+
+        idempotency_key = build_idempotency_key(incident_alarm)
 
         rca_id = build_rca_id(idempotency_key)
         log = logger.bind(alarm_name=alarm.alarm_name, idempotency_key=idempotency_key, rca_id=rca_id)
         log.info("alarm_received")
 
-        store = self._c.session_store
-
         effective_receive_count = max(receive_count, 1)
+        if ts_raw and effective_receive_count == 1:
+            age_seconds = (datetime.now(UTC) - dt).total_seconds()
+            if age_seconds > ALARM_STALENESS_SECONDS:
+                claim_token = store.claim_session(
+                    rca_id,
+                    alarm.alarm_name,
+                    idempotency_key,
+                    receive_count=effective_receive_count,
+                    alarm_data=alarm_data,
+                )
+                if claim_token.disposition is ClaimDisposition.TERMINAL_DUPLICATE:
+                    log.info("terminal_duplicate_acknowledged", receive_count=receive_count)
+                    return True
+                if not claim_token.acquired:
+                    log.info("session_claim_contended", receive_count=receive_count)
+                    return False
+                log.info(
+                    "stale_alarm_skipped",
+                    age_seconds=int(age_seconds),
+                    threshold=ALARM_STALENESS_SECONDS,
+                )
+                store.mark_outdated(
+                    rca_id,
+                    f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold",
+                    claim_token=claim_token.claim_token,
+                )
+                return True
+
+        try:
+            incident_claim = store.claim_incident(
+                incident_alarm,
+                cooldown_seconds=ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS,
+            )
+        except Exception:
+            log.exception("active_incident_claim_failed")
+            return False
+        if incident_claim.disposition is IncidentClaimDisposition.SUPPRESSED:
+            log.info(
+                "active_incident_suppressed",
+                candidate_rca_id=incident_claim.candidate_rca_id,
+                reason=incident_claim.reason,
+                retryable=incident_claim.retryable,
+            )
+            return not incident_claim.retryable
+        if not incident_claim.acquired or incident_claim.candidate_rca_id != rca_id:
+            log.info("active_incident_claim_contended")
+            return False
+
         claim_token = store.claim_session(
             rca_id,
             alarm.alarm_name,
@@ -126,22 +202,6 @@ class PipelineOrchestrator:
         if not claim_token.acquired:
             log.info("session_claim_contended", receive_count=receive_count)
             return False
-
-        if ts_raw and effective_receive_count == 1:
-            dt = datetime.fromisoformat(ts_raw.replace("+0000", "+00:00"))
-            age_seconds = (datetime.now(UTC) - dt).total_seconds()
-            if age_seconds > ALARM_STALENESS_SECONDS:
-                log.info(
-                    "stale_alarm_skipped",
-                    age_seconds=int(age_seconds),
-                    threshold=ALARM_STALENESS_SECONDS,
-                )
-                store.mark_outdated(
-                    rca_id,
-                    f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold",
-                    claim_token=claim_token.claim_token,
-                )
-                return True
 
         return self._run_rca(
             rca_id,

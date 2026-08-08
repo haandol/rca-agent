@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from botocore.exceptions import ClientError
 
@@ -19,6 +20,8 @@ from rca_agent.ports.dto.models import (
 )
 from rca_agent.ports.interfaces.session_store import (
     ClaimDisposition,
+    IncidentClaim,
+    IncidentClaimDisposition,
     SessionClaim,
     SessionOwnershipCheckError,
     SessionStorePort,
@@ -26,6 +29,12 @@ from rca_agent.ports.interfaces.session_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_INCIDENT_SK = "ACTIVE_INCIDENT"
+_ANALYSIS_SESSION_SKS = ("strands#SESSION", "SESSION", "cc-headless#SESSION")
+_ACTIVE_EXECUTION_SK = "EXEC_ACTIVE"
+_INCIDENT_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
+_INCIDENT_CLAIM_RETRIES = 3
 
 
 def build_idempotency_key(alarm: AlarmPayload) -> str:
@@ -37,6 +46,17 @@ def build_rca_id(idempotency_key: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, idempotency_key))
 
 
+def build_alarm_identity(alarm: AlarmPayload) -> str:
+    if alarm.alarm_arn:
+        return alarm.alarm_arn
+    return f"cloudwatch:{alarm.region}:alarm:{alarm.alarm_name}"
+
+
+def build_active_incident_pk(alarm: AlarmPayload) -> str:
+    identity_hash = hashlib.sha256(build_alarm_identity(alarm).encode()).hexdigest()
+    return f"ALARM#{identity_hash}"
+
+
 def _resolve_message_id(alarm: AlarmPayload, message_id: str | None) -> str:
     if message_id:
         return message_id
@@ -45,6 +65,32 @@ def _resolve_message_id(alarm: AlarmPayload, message_id: str | None) -> str:
 
 def _session_key(rca_id: str) -> dict:
     return {"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}}
+
+
+def _incident_key(alarm: AlarmPayload) -> dict:
+    return {"PK": {"S": build_active_incident_pk(alarm)}, "SK": {"S": _ACTIVE_INCIDENT_SK}}
+
+
+def _candidate_key(rca_id: str, sk: str) -> dict:
+    return {"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": sk}}
+
+
+def _event_time(alarm: AlarmPayload) -> datetime:
+    event_time = alarm.state_change_time or datetime.now(UTC)
+    if event_time.tzinfo is None:
+        return event_time.replace(tzinfo=UTC)
+    return event_time.astimezone(UTC)
+
+
+def _iso(moment: datetime) -> str:
+    return moment.astimezone(UTC).isoformat()
+
+
+def _parse_iso(value: str) -> datetime:
+    moment = datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
 
 
 class SessionCancelledError(Exception):
@@ -118,6 +164,484 @@ class DynamoDbSessionStore(SessionStorePort):
             ConsistentRead=True,
         )
         return resp.get("Item")
+
+    def _get_incident(self, alarm: AlarmPayload) -> dict | None:
+        if not self._enabled:
+            return None
+        response = self._dynamodb.get_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key=_incident_key(alarm),
+            ConsistentRead=True,
+        )
+        return response.get("Item")
+
+    def _get_candidate_item(self, rca_id: str, sk: str) -> dict | None:
+        response = self._dynamodb.get_item(
+            TableName=DYNAMODB_TABLE_NAME,
+            Key=_candidate_key(rca_id, sk),
+            ConsistentRead=True,
+        )
+        return response.get("Item")
+
+    @staticmethod
+    def _incident_ttl() -> int:
+        return int(time.time()) + SESSION_TTL_DAYS * 86400
+
+    def _touch_last_alarm(
+        self,
+        alarm: AlarmPayload,
+        *,
+        candidate_rca_id: str,
+        generation: int,
+        event_time: datetime,
+    ) -> bool:
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_incident_key(alarm),
+                UpdateExpression="SET last_alarm_at = :alarm, updated_at = :now, #ttl = :ttl",
+                ConditionExpression=(
+                    "candidate_rca_id = :candidate AND generation = :generation "
+                    "AND (attribute_not_exists(last_alarm_at) OR last_alarm_at < :alarm)"
+                ),
+                ExpressionAttributeNames={"#ttl": "ttl"},
+                ExpressionAttributeValues={
+                    ":candidate": {"S": candidate_rca_id},
+                    ":generation": {"N": str(generation)},
+                    ":alarm": {"S": _iso(event_time)},
+                    ":now": {"S": datetime.now(UTC).isoformat()},
+                    ":ttl": {"N": str(self._incident_ttl())},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise SessionOwnershipCheckError(candidate_rca_id) from exc
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_incident_key(alarm),
+                UpdateExpression="SET updated_at = :now, #ttl = :ttl",
+                ConditionExpression="candidate_rca_id = :candidate AND generation = :generation",
+                ExpressionAttributeNames={"#ttl": "ttl"},
+                ExpressionAttributeValues={
+                    ":candidate": {"S": candidate_rca_id},
+                    ":generation": {"N": str(generation)},
+                    ":now": {"S": datetime.now(UTC).isoformat()},
+                    ":ttl": {"N": str(self._incident_ttl())},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise SessionOwnershipCheckError(candidate_rca_id) from exc
+
+    def _suppressed_incident(
+        self,
+        alarm: AlarmPayload,
+        *,
+        candidate_rca_id: str,
+        generation: int,
+        event_time: datetime,
+        reason: str,
+        retryable: bool = False,
+    ) -> IncidentClaim:
+        self._touch_last_alarm(
+            alarm,
+            candidate_rca_id=candidate_rca_id,
+            generation=generation,
+            event_time=event_time,
+        )
+        return IncidentClaim(
+            IncidentClaimDisposition.SUPPRESSED,
+            candidate_rca_id,
+            generation,
+            reason,
+            retryable,
+        )
+
+    def _candidate_activity(self, candidate_rca_id: str) -> tuple[bool, str]:
+        for sk in _ANALYSIS_SESSION_SKS:
+            item = self._get_candidate_item(candidate_rca_id, sk)
+            if not item:
+                continue
+            state = item.get("state", {}).get("S", "")
+            if state not in _INCIDENT_TERMINAL_STATES:
+                return True, f"{sk} is {state or 'unknown'}"
+        if self._get_candidate_item(candidate_rca_id, _ACTIVE_EXECUTION_SK):
+            return True, "EXEC_ACTIVE exists"
+        return False, ""
+
+    def _open_first_incident(
+        self,
+        alarm: AlarmPayload,
+        *,
+        candidate_rca_id: str,
+        event_time: datetime,
+    ) -> IncidentClaim | None:
+        now = datetime.now(UTC).isoformat()
+        try:
+            self._dynamodb.put_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Item={
+                    **_incident_key(alarm),
+                    "alarm_identity": {"S": build_alarm_identity(alarm)},
+                    "alarm_name": {"S": alarm.alarm_name},
+                    "candidate_rca_id": {"S": candidate_rca_id},
+                    "generation": {"N": "1"},
+                    "opened_at": {"S": _iso(event_time)},
+                    "last_alarm_at": {"S": _iso(event_time)},
+                    "created_at": {"S": now},
+                    "updated_at": {"S": now},
+                    "ttl": {"N": str(self._incident_ttl())},
+                },
+                ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return None
+            raise SessionOwnershipCheckError(candidate_rca_id) from exc
+        return IncidentClaim(IncidentClaimDisposition.PROCEED, candidate_rca_id, 1)
+
+    def _open_incident_from_recovery(
+        self,
+        alarm: AlarmPayload,
+        *,
+        previous_last_ok: str,
+        candidate_rca_id: str,
+        event_time: datetime,
+    ) -> bool:
+        now = datetime.now(UTC).isoformat()
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_incident_key(alarm),
+                UpdateExpression=(
+                    "SET candidate_rca_id = :candidate, generation = :generation, "
+                    "opened_at = :opened, last_alarm_at = :alarm, updated_at = :now, #ttl = :ttl "
+                    "REMOVE last_ok_at"
+                ),
+                ConditionExpression=(
+                    "attribute_exists(SK) AND attribute_not_exists(candidate_rca_id) "
+                    "AND attribute_not_exists(generation) AND last_ok_at = :previous_last_ok"
+                ),
+                ExpressionAttributeNames={"#ttl": "ttl"},
+                ExpressionAttributeValues={
+                    ":candidate": {"S": candidate_rca_id},
+                    ":generation": {"N": "1"},
+                    ":opened": {"S": _iso(event_time)},
+                    ":alarm": {"S": _iso(event_time)},
+                    ":now": {"S": now},
+                    ":ttl": {"N": str(self._incident_ttl())},
+                    ":previous_last_ok": {"S": previous_last_ok},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise SessionOwnershipCheckError(candidate_rca_id) from exc
+
+    def _advance_incident(
+        self,
+        alarm: AlarmPayload,
+        *,
+        previous_candidate: str,
+        previous_generation: int,
+        previous_last_ok: str,
+        candidate_rca_id: str,
+        event_time: datetime,
+    ) -> bool:
+        terminal_condition = "attribute_not_exists(SK) OR #state IN (:completed, :failed, :outdated, :cancelled)"
+        terminal_values = {
+            ":completed": {"S": "COMPLETED"},
+            ":failed": {"S": "FAILED"},
+            ":outdated": {"S": "OUTDATED"},
+            ":cancelled": {"S": "CANCELLED"},
+        }
+        condition_checks = [
+            {
+                "ConditionCheck": {
+                    "TableName": DYNAMODB_TABLE_NAME,
+                    "Key": _candidate_key(previous_candidate, sk),
+                    "ConditionExpression": terminal_condition,
+                    "ExpressionAttributeNames": {"#state": "state"},
+                    "ExpressionAttributeValues": terminal_values,
+                }
+            }
+            for sk in _ANALYSIS_SESSION_SKS
+        ]
+        condition_checks.append(
+            {
+                "ConditionCheck": {
+                    "TableName": DYNAMODB_TABLE_NAME,
+                    "Key": _candidate_key(previous_candidate, _ACTIVE_EXECUTION_SK),
+                    "ConditionExpression": "attribute_not_exists(SK)",
+                }
+            }
+        )
+        now = datetime.now(UTC).isoformat()
+        update = {
+            "Update": {
+                "TableName": DYNAMODB_TABLE_NAME,
+                "Key": _incident_key(alarm),
+                "UpdateExpression": (
+                    "SET candidate_rca_id = :candidate, generation = :generation, "
+                    "opened_at = :opened, last_alarm_at = :alarm, updated_at = :now, #ttl = :ttl "
+                    "REMOVE last_ok_at"
+                ),
+                "ConditionExpression": (
+                    "candidate_rca_id = :previous_candidate AND generation = :previous_generation "
+                    "AND last_ok_at = :previous_last_ok"
+                ),
+                "ExpressionAttributeNames": {"#ttl": "ttl"},
+                "ExpressionAttributeValues": {
+                    ":candidate": {"S": candidate_rca_id},
+                    ":generation": {"N": str(previous_generation + 1)},
+                    ":opened": {"S": _iso(event_time)},
+                    ":alarm": {"S": _iso(event_time)},
+                    ":now": {"S": now},
+                    ":ttl": {"N": str(self._incident_ttl())},
+                    ":previous_candidate": {"S": previous_candidate},
+                    ":previous_generation": {"N": str(previous_generation)},
+                    ":previous_last_ok": {"S": previous_last_ok},
+                },
+            }
+        }
+        try:
+            self._dynamodb.transact_write_items(TransactItems=[update, *condition_checks])
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] in {
+                "TransactionCanceledException",
+                "ConditionalCheckFailedException",
+            }:
+                return False
+            raise SessionOwnershipCheckError(candidate_rca_id) from exc
+
+    def claim_incident(
+        self,
+        alarm: AlarmPayload,
+        *,
+        cooldown_seconds: int,
+    ) -> IncidentClaim:
+        candidate_rca_id = build_rca_id(build_idempotency_key(alarm))
+        if not self._enabled:
+            return IncidentClaim(
+                IncidentClaimDisposition.CONTENDED,
+                candidate_rca_id,
+                reason="incident store is unavailable",
+            )
+        event_time = _event_time(alarm)
+        cooldown = timedelta(seconds=max(cooldown_seconds, 0))
+
+        for _ in range(_INCIDENT_CLAIM_RETRIES):
+            try:
+                incident = self._get_incident(alarm)
+            except ClientError as exc:
+                raise SessionOwnershipCheckError(candidate_rca_id) from exc
+            if not incident:
+                opened = self._open_first_incident(
+                    alarm,
+                    candidate_rca_id=candidate_rca_id,
+                    event_time=event_time,
+                )
+                if opened:
+                    return opened
+                continue
+
+            current_candidate = incident.get("candidate_rca_id", {}).get("S", "")
+            generation_raw = incident.get("generation", {}).get("N", "")
+            try:
+                generation = int(generation_raw or "0")
+            except (TypeError, ValueError):
+                return IncidentClaim(
+                    IncidentClaimDisposition.CONTENDED,
+                    candidate_rca_id,
+                    reason="active incident generation is invalid",
+                )
+            last_ok_raw = incident.get("last_ok_at", {}).get("S", "")
+            if not current_candidate:
+                if generation_raw or not last_ok_raw:
+                    return IncidentClaim(
+                        IncidentClaimDisposition.CONTENDED,
+                        candidate_rca_id,
+                        reason="active incident record is invalid",
+                    )
+                try:
+                    last_ok = _parse_iso(last_ok_raw)
+                except ValueError:
+                    return IncidentClaim(
+                        IncidentClaimDisposition.CONTENDED,
+                        candidate_rca_id,
+                        reason="active incident recovery timestamp is invalid",
+                    )
+                if event_time < last_ok + cooldown:
+                    return IncidentClaim(
+                        IncidentClaimDisposition.SUPPRESSED,
+                        candidate_rca_id,
+                        reason="recovery cooldown has not elapsed",
+                    )
+                if self._open_incident_from_recovery(
+                    alarm,
+                    previous_last_ok=last_ok_raw,
+                    candidate_rca_id=candidate_rca_id,
+                    event_time=event_time,
+                ):
+                    return IncidentClaim(IncidentClaimDisposition.PROCEED, candidate_rca_id, 1)
+                continue
+
+            if generation < 1:
+                return IncidentClaim(
+                    IncidentClaimDisposition.CONTENDED,
+                    candidate_rca_id,
+                    reason="active incident record is invalid",
+                )
+            if current_candidate == candidate_rca_id:
+                if not self._touch_last_alarm(
+                    alarm,
+                    candidate_rca_id=candidate_rca_id,
+                    generation=generation,
+                    event_time=event_time,
+                ):
+                    continue
+                return IncidentClaim(IncidentClaimDisposition.PROCEED, candidate_rca_id, generation)
+
+            opened_at_raw = incident.get("opened_at", {}).get("S", "")
+            try:
+                opened_at = _parse_iso(opened_at_raw)
+            except ValueError:
+                return IncidentClaim(
+                    IncidentClaimDisposition.CONTENDED,
+                    candidate_rca_id,
+                    generation,
+                    "active incident opened timestamp is invalid",
+                )
+            if event_time <= opened_at:
+                return self._suppressed_incident(
+                    alarm,
+                    candidate_rca_id=current_candidate,
+                    generation=generation,
+                    event_time=event_time,
+                    reason="alarm is not newer than active incident",
+                )
+
+            active, active_reason = self._candidate_activity(current_candidate)
+            if active:
+                if last_ok_raw:
+                    try:
+                        last_ok = _parse_iso(last_ok_raw)
+                    except ValueError:
+                        return IncidentClaim(
+                            IncidentClaimDisposition.CONTENDED,
+                            candidate_rca_id,
+                            generation,
+                            "active incident recovery timestamp is invalid",
+                        )
+                    if event_time < last_ok + cooldown:
+                        return self._suppressed_incident(
+                            alarm,
+                            candidate_rca_id=current_candidate,
+                            generation=generation,
+                            event_time=event_time,
+                            reason="recovery cooldown has not elapsed",
+                        )
+                    return self._suppressed_incident(
+                        alarm,
+                        candidate_rca_id=current_candidate,
+                        generation=generation,
+                        event_time=event_time,
+                        reason=f"recovery observed but {active_reason}",
+                        retryable=True,
+                    )
+                return self._suppressed_incident(
+                    alarm,
+                    candidate_rca_id=current_candidate,
+                    generation=generation,
+                    event_time=event_time,
+                    reason=active_reason,
+                    retryable=True,
+                )
+
+            if not last_ok_raw:
+                return self._suppressed_incident(
+                    alarm,
+                    candidate_rca_id=current_candidate,
+                    generation=generation,
+                    event_time=event_time,
+                    reason="incident has no recovery observation",
+                    retryable=True,
+                )
+            try:
+                last_ok = _parse_iso(last_ok_raw)
+            except ValueError:
+                return IncidentClaim(
+                    IncidentClaimDisposition.CONTENDED,
+                    candidate_rca_id,
+                    generation,
+                    "active incident recovery timestamp is invalid",
+                )
+            if event_time < last_ok + cooldown:
+                return self._suppressed_incident(
+                    alarm,
+                    candidate_rca_id=current_candidate,
+                    generation=generation,
+                    event_time=event_time,
+                    reason="recovery cooldown has not elapsed",
+                )
+            if self._advance_incident(
+                alarm,
+                previous_candidate=current_candidate,
+                previous_generation=generation,
+                previous_last_ok=last_ok_raw,
+                candidate_rca_id=candidate_rca_id,
+                event_time=event_time,
+            ):
+                return IncidentClaim(
+                    IncidentClaimDisposition.PROCEED,
+                    candidate_rca_id,
+                    generation + 1,
+                )
+
+        return IncidentClaim(
+            IncidentClaimDisposition.CONTENDED,
+            candidate_rca_id,
+            reason="active incident changed during claim",
+        )
+
+    def record_recovery(self, alarm: AlarmPayload) -> bool:
+        if not self._enabled:
+            return False
+        recovery_at = _iso(_event_time(alarm))
+        now = datetime.now(UTC).isoformat()
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_incident_key(alarm),
+                UpdateExpression=(
+                    "SET alarm_identity = :identity, alarm_name = :alarm_name, "
+                    "last_ok_at = :recovery, created_at = if_not_exists(created_at, :now), "
+                    "updated_at = :now, #ttl = :ttl"
+                ),
+                ConditionExpression=(
+                    "(attribute_not_exists(opened_at) OR opened_at <= :recovery) AND "
+                    "(attribute_not_exists(last_ok_at) OR last_ok_at < :recovery)"
+                ),
+                ExpressionAttributeNames={"#ttl": "ttl"},
+                ExpressionAttributeValues={
+                    ":identity": {"S": build_alarm_identity(alarm)},
+                    ":alarm_name": {"S": alarm.alarm_name},
+                    ":recovery": {"S": recovery_at},
+                    ":now": {"S": now},
+                    ":ttl": {"N": str(self._incident_ttl())},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return True
+            raise SessionOwnershipCheckError(alarm.alarm_name) from exc
 
     def _validate_transition(
         self,

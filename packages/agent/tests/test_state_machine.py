@@ -401,6 +401,10 @@ class TestPipelineFinalizeBeforeReport:
     """
 
     def test_pipeline_closes_pending_on_confirmed_termination(self):
+        from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+            build_idempotency_key,
+            build_rca_id,
+        )
         from rca_agent.ports.dto.models import (
             HypothesisGenerationResult,
             RcaReport,
@@ -408,7 +412,12 @@ class TestPipelineFinalizeBeforeReport:
             ValidationJudgment,
             ValidationResult,
         )
-        from rca_agent.ports.interfaces.session_store import ClaimDisposition, SessionClaim
+        from rca_agent.ports.interfaces.session_store import (
+            ClaimDisposition,
+            IncidentClaim,
+            IncidentClaimDisposition,
+            SessionClaim,
+        )
         from rca_agent.services.pipeline import PipelineOrchestrator
 
         confirmed_h = _make_hypothesis("h-1", HypothesisStatus.PENDING, 0.95)
@@ -465,6 +474,11 @@ class TestPipelineFinalizeBeforeReport:
 
         container = MagicMock()
         container.report_store.save.return_value = "reports/rca-1.md"
+        container.session_store.claim_incident.side_effect = lambda alarm, **_: IncidentClaim(
+            IncidentClaimDisposition.PROCEED,
+            build_rca_id(build_idempotency_key(alarm)),
+            1,
+        )
         container.session_store.claim_session.return_value = SessionClaim(
             ClaimDisposition.CLAIMED,
             "claim-1",

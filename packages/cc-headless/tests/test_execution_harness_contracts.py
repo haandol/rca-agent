@@ -4,11 +4,15 @@ from pathlib import Path
 
 import pytest
 
+from cc_headless.ports.interfaces.execution_store import ExecutionTarget
+from cc_headless.services.execution_prompt import build_execution_prompt
+
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 EXECUTION_AGENTS_DIR = PACKAGE_ROOT / ".claude-execution" / "agents"
 EXECUTION_MCP_CONFIG = json.loads((PACKAGE_ROOT / "execution-mcp-config.json").read_text())
 ANALYSIS_MCP_CONFIG = json.loads((PACKAGE_ROOT / "mcp-config.json").read_text())
 EXECUTION_GUIDANCE = (PACKAGE_ROOT / "EXECUTION.md").read_text()
+EXECUTION_OPERATOR_GUIDANCE = (EXECUTION_AGENTS_DIR / "execution-operator.md").read_text()
 
 EXPECTED_EXECUTION_AGENTS = {
     "execution-orchestrator",
@@ -176,6 +180,39 @@ def test_the_execution_guidance_documents_the_option_ordering_the_gate_requires(
     # 알려주지 않으면 모든 명령이 거부된다.
     assert "작업 이름 뒤에" in EXECUTION_GUIDANCE
     assert "aws <service> <operation>" in EXECUTION_GUIDANCE
+
+
+def test_execution_prompt_requires_attempt_evidence_for_verification_only_steps():
+    target = ExecutionTarget(
+        rca_id="rca-1",
+        engine="cc-headless",
+        alarm_name="VitalIngestFailure",
+        playbook={
+            "playbook_id": "pb-1",
+            "failure_type": "ingest failure",
+            "execution_steps": [
+                {
+                    "step_id": "verify_ingest_recovery",
+                    "intent": "verify recovery",
+                    "action": "observe the ingest alarm",
+                    "success_criteria": "alarm is OK",
+                }
+            ],
+        },
+    )
+
+    prompt = build_execution_prompt(target, execution_id="exec-1")
+
+    for guidance in (prompt, EXECUTION_OPERATOR_GUIDANCE):
+        assert "verification-only" in guidance
+        assert "읽기 전용 AWS CLI" in guidance
+        assert "`run_playbook_command`" in guidance
+        assert "CloudWatch MCP" in guidance
+        assert "직접" in guidance and "조회" in guidance
+        assert "attempt 증거가 아니" in guidance
+        assert "missing_attempt_step_ids" in guidance
+        assert "missing_outcome_step_ids" in guidance
+        assert "`record_resolution`" in guidance and "다시 호출" in guidance
 
 
 def test_the_retrospective_agent_only_corrects_procedure_defects():

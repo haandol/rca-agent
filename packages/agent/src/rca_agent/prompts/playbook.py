@@ -41,6 +41,10 @@ failure on a different resource.
 - **`success_criteria` must be observable.** State which metric returns to which range \
 rather than "restored to normal". Without it the execution agent cannot confirm that \
 the issue was resolved, and an unconfirmed execution is never recorded as resolved.
+- **A verification-only step still needs an execution attempt.** Describe a safe, \
+read-only AWS CLI observation in `action` without hard-coding the command. During \
+approved execution it must call `run_playbook_command` at least once; a direct \
+CloudWatch MCP query is not attempt evidence.
 - **Never include an irreversible action** — deleting resources, data, snapshots, or \
 backups, terminating instances, revoking credentials, or account/organization-level \
 changes. The execution layer refuses these, which leaves the step a manual action. \
@@ -102,8 +106,10 @@ without specific numbers, thresholds, percentages, or timestamps.
 existing `step_id` for a step you are correcting — evidence from past executions points \
 at those identifiers. Leave the list empty to keep the recorded steps as they are. Every \
 step needs a resource-naming `action` and an observable `success_criteria`, and no step \
-may contain an irreversible action. Leave the list empty when the new RCA's root cause \
-is unconfirmed.
+may contain an irreversible action. A verification-only step must describe a safe, \
+read-only AWS CLI observation and must still call `run_playbook_command` at least once \
+during execution; a direct CloudWatch MCP query is not attempt evidence. Leave the list \
+empty when the new RCA's root cause is unconfirmed.
 """
 
 PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE = """\

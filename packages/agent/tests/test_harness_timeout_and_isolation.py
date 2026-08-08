@@ -7,6 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rca_agent.adapters.secondary.session.dynamodb_session_store import (
+    build_idempotency_key,
+    build_rca_id,
+)
 from rca_agent.di.app_container import AppContainer
 from rca_agent.ports.dto.models import (
     Hypothesis,
@@ -14,7 +18,12 @@ from rca_agent.ports.dto.models import (
     HypothesisStatus,
     ValidationJudgment,
 )
-from rca_agent.ports.interfaces.session_store import ClaimDisposition, SessionClaim
+from rca_agent.ports.interfaces.session_store import (
+    ClaimDisposition,
+    IncidentClaim,
+    IncidentClaimDisposition,
+    SessionClaim,
+)
 from rca_agent.services.pipeline import PipelineOrchestrator, ValidationLoopState
 from rca_agent.services.validation import validate_hypothesis
 from rca_agent.utils.timeout import call_with_timeout
@@ -91,6 +100,11 @@ class TestExecutionStateIsolation:
 
     def test_each_alarm_receives_its_own_monotonic_start_time(self):
         container = MagicMock()
+        container.session_store.claim_incident.side_effect = lambda alarm, **_: IncidentClaim(
+            IncidentClaimDisposition.PROCEED,
+            build_rca_id(build_idempotency_key(alarm)),
+            1,
+        )
         container.session_store.claim_session.side_effect = [
             SessionClaim(ClaimDisposition.CLAIMED, "claim-first", 1),
             SessionClaim(ClaimDisposition.CLAIMED, "claim-second", 1),

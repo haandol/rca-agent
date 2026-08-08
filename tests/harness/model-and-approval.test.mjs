@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,7 +12,11 @@ import {
   REPOSITORY_ROOT,
   validateBaseline,
 } from './evaluator.mjs';
-import { runModelEvaluation, validateModelEnvironment } from './model-cli.mjs';
+import {
+  runEngineCommand,
+  runModelEvaluation,
+  validateModelEnvironment,
+} from './model-cli.mjs';
 
 const fixturesDirectory = path.join(REPOSITORY_ROOT, 'tests/fixtures/results');
 const fakeEnginePath = path.join(
@@ -24,6 +28,197 @@ test('model evaluation fails with actionable missing command errors', () => {
   assert.throws(
     () => validateModelEnvironment({ AWS_REGION: 'ap-northeast-2' }),
     /Missing RCA_EVAL_CC_HEADLESS_COMMAND/,
+  );
+});
+
+test('model evaluation requires the deployed CC Bedrock model contract', () => {
+  const commands = {
+    AWS_PROFILE: 'fake-test-profile',
+    AWS_REGION: 'us-east-1',
+    RCA_EVAL_CC_HEADLESS_COMMAND: '["cc-headless"]',
+    RCA_EVAL_STRANDS_COMMAND: '["strands"]',
+  };
+
+  assert.throws(
+    () => validateModelEnvironment(commands),
+    /CLAUDE_CODE_USE_BEDROCK must be 1/,
+  );
+  assert.throws(
+    () =>
+      validateModelEnvironment({
+        ...commands,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+      }),
+    /Missing ANTHROPIC_DEFAULT_SONNET_MODEL/,
+  );
+  assert.throws(
+    () =>
+      validateModelEnvironment({
+        ...commands,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'model-under-test',
+      }),
+    /Missing RCA_EVAL_DEPLOYED_CC_MODEL/,
+  );
+  assert.throws(
+    () =>
+      validateModelEnvironment({
+        ...commands,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'model-under-test',
+        RCA_EVAL_DEPLOYED_CC_MODEL: 'different-deployed-model',
+      }),
+    /Model contract mismatch/,
+  );
+});
+
+test('model command receives its isolated failure evidence directory', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'rca-model-failure-'));
+  const failureDirectory = path.join(
+    directory,
+    'failures',
+    'strands',
+    'scenario-1',
+  );
+  const script = `
+    process.stdout.write(JSON.stringify({
+      schemaVersion: 2,
+      scenarioId: "scenario-1",
+      engine: "strands",
+      rootCause: "A human-readable conclusion.",
+      rootCauseConfirmed: true,
+      rootFaultType: "db-leak",
+      rootCauseEvidenceIds: ["evidence-1"],
+      evidenceIds: ["evidence-1"],
+      artifacts: ["scoping", "hypotheses", "validation", "report", "playbook"],
+      competingCauseJudgments: [],
+      remediation: {
+        summary: "A human-readable response.",
+        available: true,
+        verificationStatus: "DRAFT",
+        executionSteps: [{
+          stepId: "restore-service",
+          intent: "Restore service.",
+          action: "Apply the approved reversible change.",
+          successCriteria: "The alarm recovers."
+        }],
+        safe: true,
+        unsafeSteps: [],
+        safeguards: {
+          preconditions: "confirmed",
+          approval: "required",
+          rollback: "previous revision",
+          verification: "alarm OK"
+        }
+      },
+      failureDirectory: process.env.RCA_EVAL_FAILURE_DIR
+    }));
+  `;
+
+  const result = await runEngineCommand({
+    command: [process.execPath, '-e', script],
+    engine: 'strands',
+    failureDirectory,
+    scenario: { id: 'scenario-1' },
+    scenarioPath: path.join(directory, 'scenario-1.json'),
+    env: process.env,
+    timeoutMs: 10_000,
+  });
+
+  assert.equal(result.failureDirectory, failureDirectory);
+});
+
+test('model command preserves parsed payloads that fail result validation', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'rca-model-invalid-'));
+  const failureDirectory = path.join(directory, 'failures');
+  const validResult = {
+    schemaVersion: 2,
+    scenarioId: 'scenario-1',
+    engine: 'strands',
+    rootCause: 'A human-readable conclusion.',
+    rootCauseConfirmed: true,
+    rootFaultType: 'db-leak',
+    rootCauseEvidenceIds: ['evidence-1'],
+    evidenceIds: ['evidence-1'],
+    artifacts: ['report'],
+    competingCauseJudgments: [],
+    remediation: {
+      summary: 'A human-readable response.',
+      available: true,
+      verificationStatus: 'DRAFT',
+      executionSteps: [
+        {
+          stepId: 'restore-service',
+          intent: 'Restore service.',
+          action: 'Apply the approved reversible change.',
+          successCriteria: 'The alarm recovers.',
+        },
+      ],
+      safe: true,
+      unsafeSteps: [],
+      safeguards: {
+        preconditions: 'confirmed',
+        approval: 'required',
+        rollback: 'previous revision',
+        verification: 'alarm OK',
+      },
+    },
+  };
+  const { rootCause: _rootCause, ...schemaInvalid } = validResult;
+  const wrongIdentity = {
+    ...validResult,
+    scenarioId: 'different-scenario',
+  };
+
+  for (const payload of [schemaInvalid, wrongIdentity]) {
+    const script = `process.stdout.write(${JSON.stringify(
+      JSON.stringify(payload),
+    )});`;
+    await assert.rejects(
+      runEngineCommand({
+        command: [process.execPath, '-e', script],
+        engine: 'strands',
+        failureDirectory,
+        scenario: { id: 'scenario-1' },
+        scenarioPath: path.join(directory, 'scenario-1.json'),
+        env: process.env,
+        timeoutMs: 10_000,
+      }),
+      /returned an invalid normalized result/,
+    );
+  }
+
+  const entries = await readdir(failureDirectory, { withFileTypes: true });
+  assert.equal(entries.length, 2);
+  assert.ok(entries.every((entry) => entry.isDirectory()));
+  assert.equal(new Set(entries.map(({ name }) => name)).size, 2);
+  const diagnostics = await Promise.all(
+    entries.map(({ name }) =>
+      readJsonFile(
+        path.join(failureDirectory, name, 'diagnostic.json'),
+        'model validation diagnostic',
+      ),
+    ),
+  );
+  const schemaDiagnostic = diagnostics.find(
+    ({ normalizedResult }) => !normalizedResult.rootCause,
+  );
+  const identityDiagnostic = diagnostics.find(
+    ({ normalizedResult }) =>
+      normalizedResult.scenarioId === 'different-scenario',
+  );
+
+  assert.equal(schemaDiagnostic.schemaVersion, 1);
+  assert.deepEqual(schemaDiagnostic.normalizedResult, schemaInvalid);
+  assert.match(schemaDiagnostic.validationError, /rootCause must be a string/);
+  assert.deepEqual(identityDiagnostic.normalizedResult, wrongIdentity);
+  assert.match(identityDiagnostic.validationError, /result identity must be/);
+  assert.ok(
+    diagnostics.every(
+      (diagnostic) =>
+        !Object.hasOwn(diagnostic, 'stdout') &&
+        !Object.hasOwn(diagnostic, 'rawStdout'),
+    ),
   );
 });
 
@@ -42,7 +237,15 @@ test('approval writes a baseline only to the explicit destination', async () => 
     baseline,
   );
   assert.equal(baseline.approvedAt, '2026-07-21T00:00:00.000Z');
-  assert.deepEqual(Object.keys(baseline.semanticScores), EXPECTED_ENGINES);
+  assert.equal(baseline.schemaVersion, 2);
+  assert.deepEqual(Object.keys(baseline).sort(), [
+    'approvedAt',
+    'contractInputs',
+    'engines',
+    'inputDigest',
+    'inputFiles',
+    'schemaVersion',
+  ]);
 });
 
 test('fake model commands run both engines and write normalized results and report', async () => {
@@ -61,6 +264,9 @@ test('fake model commands run both engines and write normalized results and repo
     ...process.env,
     AWS_PROFILE: 'fake-test-profile',
     AWS_REGION: 'ap-northeast-2',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'fake.deployed-model',
+    RCA_EVAL_DEPLOYED_CC_MODEL: 'fake.deployed-model',
+    CLAUDE_CODE_USE_BEDROCK: '1',
     RCA_EVAL_CC_HEADLESS_COMMAND: JSON.stringify([
       ...baseCommand,
       'cc-headless',
@@ -77,7 +283,13 @@ test('fake model commands run both engines and write normalized results and repo
   });
 
   assert.equal(outcome.report.passed, true, outcome.report.failures.join('\n'));
+  assert.equal(outcome.report.schemaVersion, 2);
   assert.equal(outcome.report.executionMode, 'model-eval');
+  assert.deepEqual(outcome.report.modelContract, {
+    anthropicDefaultSonnetModel: 'fake.deployed-model',
+    deployedCcHeadlessModel: 'fake.deployed-model',
+    matches: true,
+  });
   // Every scenario is run against every engine, so a new scenario has to appear
   // on both sides rather than being scored for one engine only.
   const scenarioCount = (

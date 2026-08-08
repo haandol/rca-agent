@@ -28,6 +28,7 @@ from cc_headless.services.execution_state import (
 _EXEC_SK = "EXEC#{execution_id}"
 _ACTIVE_EXEC_SK = "EXEC_ACTIVE"
 _PLAYBOOK_REVISION_SK = "{engine}#PLAYBOOK_REVISION"
+_PLAYBOOK_REVISION_STAGE_SK = "{engine}#PLAYBOOK_REVISION_STAGE#{execution_id}"
 
 _CLAIM_OWNED = "attribute_exists(SK) AND claim_token = :claim"
 
@@ -325,6 +326,7 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         summary: dict | None = None,
         error_reason: str = "",
         evidence_s3_key: str = "",
+        retrospective_failure_reason: str = "",
     ) -> None:
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             return
@@ -351,9 +353,19 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         if error_reason:
             sets.append("error_reason = :error")
             values[":error"] = {"S": error_reason[:1000]}
+        evidence_s3_key = evidence_s3_key.strip()
         if evidence_s3_key:
             sets.append("evidence_s3_key = :evidence_key")
             values[":evidence_key"] = {"S": evidence_s3_key}
+        if retrospective_failure_reason:
+            sets.extend(
+                [
+                    "retrospective_status = :retrospective_failed",
+                    "retrospective_summary = :retrospective_summary",
+                ]
+            )
+            values[":retrospective_failed"] = {"S": "FAILED"}
+            values[":retrospective_summary"] = {"S": retrospective_failure_reason[:1000]}
 
         update = "SET " + ", ".join(sets)
         if is_terminal(state):
@@ -418,10 +430,13 @@ class DynamoDbExecutionStore(ExecutionStorePort):
                 Key=self._key(rca_id, execution_id),
                 UpdateExpression="SET retrospective_status = :running, updated_at = :now",
                 ConditionExpression=(
-                    f"{_CLAIM_OWNED} AND execution_state = :resolved AND attribute_not_exists(retrospective_status)"
+                    f"{_CLAIM_OWNED} AND execution_state = :resolved "
+                    "AND attribute_exists(evidence_s3_key) AND evidence_s3_key <> :empty "
+                    "AND attribute_not_exists(retrospective_status)"
                 ),
                 ExpressionAttributeValues={
                     ":claim": {"S": claim_token},
+                    ":empty": {"S": ""},
                     ":running": {"S": "RUNNING"},
                     ":resolved": {"S": str(ExecutionState.RESOLVED)},
                     ":now": {"S": _now_iso()},
@@ -485,11 +500,7 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         *,
         execution_id: str,
     ) -> None:
-        """갱신된 플레이북을 같은 식별자로 저장한다.
-
-        새 식별자로 분기하면 같은 장애 유형의 지식이 흩어지므로, 개정본은 항목을
-        덮어쓰며 어느 실행이 갱신했는지만 함께 남긴다.
-        """
+        """인덱스 게시 전에 실행별 개정본을 내구성 있게 준비한다."""
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             return
         now = _now_iso()
@@ -497,14 +508,75 @@ class DynamoDbExecutionStore(ExecutionStorePort):
             TableName=DYNAMODB_TABLE_NAME,
             Item={
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": _PLAYBOOK_REVISION_SK.format(engine=engine)},
+                "SK": {
+                    "S": _PLAYBOOK_REVISION_STAGE_SK.format(
+                        engine=engine,
+                        execution_id=execution_id,
+                    )
+                },
                 "engine": {"S": engine},
                 "playbook_id": {"S": str(playbook.get("playbook_id", ""))[:200]},
                 "playbook": {"S": json.dumps(playbook, ensure_ascii=False)},
                 "revised_by_execution_id": {"S": execution_id},
+                "publication_status": {"S": "PENDING"},
                 "updated_at": {"S": now},
                 "ttl": {"N": _ttl()},
             },
+        )
+
+    def publish_playbook_revision(
+        self,
+        rca_id: str,
+        engine: str,
+        playbook: dict,
+        *,
+        execution_id: str,
+    ) -> None:
+        """준비된 개정본을 검색 인덱스와 대응하는 정식 개정본으로 확정한다."""
+        if not DYNAMODB_TABLE_NAME or not self._ddb:
+            return
+        now = _now_iso()
+        stage_key = {
+            "PK": {"S": f"RCA#{rca_id}"},
+            "SK": {
+                "S": _PLAYBOOK_REVISION_STAGE_SK.format(
+                    engine=engine,
+                    execution_id=execution_id,
+                )
+            },
+        }
+        self._ddb.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": DYNAMODB_TABLE_NAME,
+                        "Item": {
+                            "PK": {"S": f"RCA#{rca_id}"},
+                            "SK": {"S": _PLAYBOOK_REVISION_SK.format(engine=engine)},
+                            "engine": {"S": engine},
+                            "playbook_id": {"S": str(playbook.get("playbook_id", ""))[:200]},
+                            "playbook": {"S": json.dumps(playbook, ensure_ascii=False)},
+                            "revised_by_execution_id": {"S": execution_id},
+                            "publication_status": {"S": "PUBLISHED"},
+                            "updated_at": {"S": now},
+                            "ttl": {"N": _ttl()},
+                        },
+                    }
+                },
+                {
+                    "Delete": {
+                        "TableName": DYNAMODB_TABLE_NAME,
+                        "Key": stage_key,
+                        "ConditionExpression": (
+                            "revised_by_execution_id = :execution AND publication_status = :pending"
+                        ),
+                        "ExpressionAttributeValues": {
+                            ":execution": {"S": execution_id},
+                            ":pending": {"S": "PENDING"},
+                        },
+                    }
+                },
+            ]
         )
 
 

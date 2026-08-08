@@ -20,6 +20,25 @@ class ClaimDisposition(StrEnum):
     CONTENDED = "CONTENDED"
 
 
+class IncidentClaimDisposition(StrEnum):
+    PROCEED = "PROCEED"
+    SUPPRESSED = "SUPPRESSED"
+    CONTENDED = "CONTENDED"
+
+
+@dataclass(frozen=True)
+class IncidentClaim:
+    disposition: IncidentClaimDisposition
+    candidate_rca_id: str
+    generation: int | None = None
+    reason: str = ""
+    retryable: bool = False
+
+    @property
+    def acquired(self) -> bool:
+        return self.disposition is IncidentClaimDisposition.PROCEED
+
+
 @dataclass(frozen=True)
 class SessionClaim:
     disposition: ClaimDisposition
@@ -40,6 +59,17 @@ class SideEffectLeaseUnavailableError(SessionOwnershipCheckError):
 
 
 class SessionStorePort(ABC):
+    @abstractmethod
+    def claim_incident(
+        self,
+        alarm: AlarmPayload,
+        *,
+        cooldown_seconds: int,
+    ) -> IncidentClaim: ...
+
+    @abstractmethod
+    def record_recovery(self, alarm: AlarmPayload) -> bool: ...
+
     @abstractmethod
     def check_duplicate(self, alarm: AlarmPayload) -> bool: ...
 

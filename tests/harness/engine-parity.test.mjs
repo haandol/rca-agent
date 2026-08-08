@@ -11,6 +11,12 @@ const CC_DESTRUCTIVE =
   'packages/cc-headless/src/cc_headless/services/destructive_actions.py';
 const AGENT_EMBED_KEY = 'packages/agent/src/rca_agent/utils/embed_key.py';
 const CC_EMBED_KEY = 'packages/cc-headless/src/cc_headless/utils/embed_key.py';
+const AGENT_SESSION_STORE =
+  'packages/agent/src/rca_agent/adapters/secondary/session/dynamodb_session_store.py';
+const CC_SESSION_STORE =
+  'packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py';
+const AGENT_SETTINGS = 'packages/agent/src/rca_agent/config/settings.py';
+const CC_SETTINGS = 'packages/cc-headless/src/cc_headless/config/settings.py';
 
 async function readRepositoryFile(relativePath) {
   return readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8');
@@ -24,8 +30,12 @@ async function readRepositoryFile(relativePath) {
 function pythonStringLiterals(source, name) {
   const start = source.indexOf(name);
   assert.notEqual(start, -1, `${name} is missing`);
-  const open = source.indexOf('(', start);
-  assert.notEqual(open, -1, `${name} has no opening delimiter`);
+  const delimiters = [
+    source.indexOf('(', start),
+    source.indexOf('{', start),
+  ].filter((index) => index !== -1);
+  assert.ok(delimiters.length > 0, `${name} has no opening delimiter`);
+  const open = Math.min(...delimiters);
 
   let depth = 0;
   let end = -1;
@@ -80,6 +90,44 @@ test('both engines recognise the same irreversible natural-language terms', asyn
     pythonStringLiterals(agent, 'IRREVERSIBLE_ACTION_KOREAN'),
     pythonStringLiterals(ccHeadless, 'IRREVERSIBLE_ACTION_KOREAN'),
   );
+});
+
+test('both engines share the same active incident identity and lifecycle vocabulary', async () => {
+  const [agentStore, ccStore, agentSettings, ccSettings] = await Promise.all([
+    readRepositoryFile(AGENT_SESSION_STORE),
+    readRepositoryFile(CC_SESSION_STORE),
+    readRepositoryFile(AGENT_SETTINGS),
+    readRepositoryFile(CC_SETTINGS),
+  ]);
+
+  for (const source of [agentStore, ccStore]) {
+    assert.match(source, /_ACTIVE_INCIDENT_SK = "ACTIVE_INCIDENT"/);
+    assert.match(
+      source,
+      /return f"cloudwatch:\{alarm\.region\}:alarm:\{alarm\.alarm_name\}"/,
+    );
+    assert.match(
+      source,
+      /hashlib\.sha256\(build_alarm_identity\(alarm\)\.encode\(\)\)\.hexdigest\(\)/,
+    );
+    assert.match(source, /_ACTIVE_EXECUTION_SK = "EXEC_ACTIVE"/);
+  }
+
+  assert.deepEqual(
+    pythonStringLiterals(agentStore, '_ANALYSIS_SESSION_SKS'),
+    pythonStringLiterals(ccStore, '_ANALYSIS_SESSION_SKS'),
+  );
+  assert.deepEqual(
+    pythonStringLiterals(agentStore, '_INCIDENT_TERMINAL_STATES'),
+    pythonStringLiterals(ccStore, '_INCIDENT_TERMINAL_STATES'),
+  );
+
+  const cooldown = (source) =>
+    source.match(
+      /ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS = int\(os\.environ\.get\("ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS", "(\d+)"\)\)/,
+    )?.[1];
+  assert.equal(cooldown(agentSettings), cooldown(ccSettings));
+  assert.equal(cooldown(agentSettings), '300');
 });
 
 /**

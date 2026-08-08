@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -16,6 +16,44 @@ const COMMAND_ENV = {
   'cc-headless': 'RCA_EVAL_CC_HEADLESS_COMMAND',
   strands: 'RCA_EVAL_STRANDS_COMMAND',
 };
+const DEFAULT_MODEL_TIMEOUT_MS = 60 * 60 * 1000;
+
+async function preserveResultValidationDiagnostics({
+  failureDirectory,
+  result,
+  validationError,
+}) {
+  if (!failureDirectory) {
+    return;
+  }
+
+  try {
+    await mkdir(failureDirectory, { recursive: true, mode: 0o700 });
+    const destination = await mkdtemp(
+      path.join(failureDirectory, 'result-validation-'),
+    );
+    await writeFile(
+      path.join(destination, 'diagnostic.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          normalizedResult: result,
+          validationError: validationError.message,
+        },
+        null,
+        2,
+      )}\n`,
+      { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+    );
+    process.stderr.write(
+      `eval result validation diagnostics preserved at ${destination}\n`,
+    );
+  } catch (error) {
+    process.stderr.write(
+      `failed to preserve eval result validation diagnostics: ${error.message}\n`,
+    );
+  }
+}
 
 function parseCommand(value, variableName) {
   if (!value) {
@@ -70,16 +108,37 @@ export function validateModelEnvironment(env = process.env) {
       'Missing AWS credentials. Set AWS_PROFILE, an access-key pair, a container credential URI, or web-identity variables.',
     );
   }
+  if (env.CLAUDE_CODE_USE_BEDROCK !== '1') {
+    throw new Error(
+      'CLAUDE_CODE_USE_BEDROCK must be 1 so CC Headless model evaluation uses the deployed Bedrock backend.',
+    );
+  }
+  if (!env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
+    throw new Error(
+      'Missing ANTHROPIC_DEFAULT_SONNET_MODEL. Set it to the model ID deployed by the CC Headless task.',
+    );
+  }
+  if (!env.RCA_EVAL_DEPLOYED_CC_MODEL) {
+    throw new Error(
+      'Missing RCA_EVAL_DEPLOYED_CC_MODEL. Set it to the model ID from the deployed CC Headless task definition.',
+    );
+  }
+  if (env.ANTHROPIC_DEFAULT_SONNET_MODEL !== env.RCA_EVAL_DEPLOYED_CC_MODEL) {
+    throw new Error(
+      'Model contract mismatch: ANTHROPIC_DEFAULT_SONNET_MODEL must exactly match RCA_EVAL_DEPLOYED_CC_MODEL.',
+    );
+  }
   return commands;
 }
 
 export function runEngineCommand({
   command,
   engine,
+  failureDirectory,
   scenario,
   scenarioPath,
   env = process.env,
-  timeoutMs = 15 * 60 * 1000,
+  timeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
 }) {
   const usesScenarioPath = command.some((argument) =>
     argument.includes('{scenario}'),
@@ -93,7 +152,10 @@ export function runEngineCommand({
   return new Promise((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd: REPOSITORY_ROOT,
-      env,
+      env: {
+        ...env,
+        ...(failureDirectory ? { RCA_EVAL_FAILURE_DIR: failureDirectory } : {}),
+      },
       shell: false,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -122,7 +184,7 @@ export function runEngineCommand({
         ),
       );
     });
-    child.on('close', (code, signal) => {
+    child.on('close', async (code, signal) => {
       clearTimeout(timer);
       if (timedOut) {
         reject(new Error(`${engine} command timed out after ${timeoutMs}ms`));
@@ -157,9 +219,15 @@ export function runEngineCommand({
         }
         resolve(result);
       } catch (error) {
+        await preserveResultValidationDiagnostics({
+          failureDirectory,
+          result,
+          validationError: error,
+        });
         reject(
           new Error(
             `${engine} returned an invalid normalized result: ${error.message}`,
+            { cause: error },
           ),
         );
       }
@@ -176,7 +244,7 @@ export async function runModelEvaluation({
   baselinePath,
   resultsDirectory,
   reportPath,
-  timeoutMs = Number(env.RCA_EVAL_TIMEOUT_MS ?? 15 * 60 * 1000),
+  timeoutMs = Number(env.RCA_EVAL_TIMEOUT_MS ?? DEFAULT_MODEL_TIMEOUT_MS),
 } = {}) {
   const commands = validateModelEnvironment(env);
   const runId = new Date().toISOString().replaceAll(/[:.]/g, '-');
@@ -217,6 +285,12 @@ export async function runModelEvaluation({
       const result = await runEngineCommand({
         command: commands[engine],
         engine,
+        failureDirectory: path.join(
+          path.dirname(actualResultsDirectory),
+          'failures',
+          engine,
+          scenario.id,
+        ),
         scenario,
         scenarioPath,
         env,
@@ -240,6 +314,12 @@ export async function runModelEvaluation({
     ...evaluation,
     generatedAt: new Date().toISOString(),
     executionMode: 'model-eval',
+    modelContract: {
+      anthropicDefaultSonnetModel: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
+      deployedCcHeadlessModel: env.RCA_EVAL_DEPLOYED_CC_MODEL,
+      matches:
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL === env.RCA_EVAL_DEPLOYED_CC_MODEL,
+    },
     resultsDirectory: actualResultsDirectory,
   };
   await writeJsonFile(actualReportPath, report);

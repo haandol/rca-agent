@@ -3,6 +3,7 @@
 /coverage
 /.nx/cache
 /.nx/workspace-data
+/tests/results
 **/cdk.out
 **/.venv
 **/.output

@@ -2,7 +2,7 @@ import importlib
 
 from cc_headless.config import settings
 
-_SETTING_ENV_NAMES = ("SIDE_EFFECT_LEASE_SECONDS",)
+_SETTING_ENV_NAMES = ("ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS", "SIDE_EFFECT_LEASE_SECONDS")
 
 
 def _reload_with_defaults(monkeypatch):
@@ -40,4 +40,12 @@ def test_side_effect_lease_cannot_be_configured_below_its_floor(monkeypatch):
         defaults = importlib.reload(settings)
 
         assert defaults.SIDE_EFFECT_LEASE_SECONDS == 60
+    importlib.reload(settings)
+
+
+def test_active_incident_cooldown_defaults_to_five_minutes(monkeypatch):
+    with monkeypatch.context() as isolated:
+        defaults = _reload_with_defaults(isolated)
+
+        assert defaults.ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS == 300
     importlib.reload(settings)

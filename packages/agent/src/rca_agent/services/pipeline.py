@@ -19,6 +19,7 @@ from rca_agent.adapters.secondary.trace.dynamodb_trace_store import SpanStatus, 
 from rca_agent.config import settings
 from rca_agent.config.aws_sdk import SIDE_EFFECT_LEASE_SECONDS
 from rca_agent.config.settings import (
+    ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS,
     ALARM_STALENESS_SECONDS,
     RCA_BEAM_WIDTH,
     RCA_MAX_REGENERATION_ROUNDS,
@@ -26,6 +27,7 @@ from rca_agent.config.settings import (
 )
 from rca_agent.ports.dto.models import (
     AlarmPayload,
+    CompletionHandoff,
     FaultType,
     Hypothesis,
     HypothesisStatus,
@@ -38,6 +40,7 @@ from rca_agent.ports.dto.models import (
 )
 from rca_agent.ports.interfaces.session_store import (
     ClaimDisposition,
+    IncidentClaimDisposition,
     SideEffectLeaseUnavailableError,
 )
 from rca_agent.services.branching import run_branching
@@ -194,6 +197,24 @@ class PipelineOrchestrator:
         start_time = time.monotonic()
         alarm_data = parse_sns_envelope(body)
 
+        if not alarm_data.get("AlarmName"):
+            logger.info("Skipping message without AlarmName")
+            return True
+
+        alarm = AlarmPayload.from_cloudwatch_sns(alarm_data)
+        store = self._container.session_store
+        if alarm.new_state == "OK":
+            try:
+                recorded = store.record_recovery(alarm)
+            except Exception:
+                logger.exception("Failed to record alarm recovery for %s", alarm.alarm_name)
+                return False
+            if not recorded:
+                logger.error("Alarm recovery store unavailable for %s", alarm.alarm_name)
+                return False
+            logger.info("Recorded alarm recovery: name=%s", alarm.alarm_name)
+            return True
+
         if not should_process(alarm_data):
             logger.info(
                 "Skipping non-alarm message: AlarmName=%s, NewStateValue=%s",
@@ -202,7 +223,6 @@ class PipelineOrchestrator:
             )
             return True
 
-        alarm = AlarmPayload.from_cloudwatch_sns(alarm_data)
         logger.info(
             "Parsed alarm: name=%s, resource=%s, service=%s",
             alarm.alarm_name,
@@ -210,10 +230,59 @@ class PipelineOrchestrator:
             alarm.service_name,
         )
 
-        store = self._container.session_store
         rca_id = build_rca_id(build_idempotency_key(alarm))
         effective_receive_count = max(receive_count, 1)
         effective_message_id = message_id or f"direct:{rca_id}"
+        stale = self._is_stale(alarm)
+        initial_stale = effective_receive_count == 1 and stale
+        if effective_receive_count > 1 and stale:
+            try:
+                existing_handoff = store.get_completion_handoff(rca_id)
+            except Exception:
+                logger.exception("Failed to check stale RCA redelivery: rca_id=%s", rca_id)
+                return False
+            if existing_handoff and existing_handoff.state in (
+                RcaSessionState.OUTDATED,
+                RcaSessionState.CANCELLED,
+            ):
+                logger.info(
+                    "Acknowledging terminal stale RCA redelivery: rca_id=%s state=%s",
+                    rca_id,
+                    existing_handoff.state,
+                )
+                return True
+            if existing_handoff and existing_handoff.state == RcaSessionState.COMPLETED:
+                try:
+                    return self._flush_completion_handoff(
+                        rca_id,
+                        claim_token=None,
+                        handoff=existing_handoff,
+                    )
+                except Exception:
+                    logger.exception("Failed to flush stale RCA redelivery handoff: rca_id=%s", rca_id)
+                    return False
+        if not initial_stale:
+            try:
+                incident_claim = store.claim_incident(
+                    alarm,
+                    cooldown_seconds=ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS,
+                )
+            except Exception:
+                logger.exception("Failed to claim active incident for alarm %s", alarm.alarm_name)
+                return False
+            if incident_claim.disposition is IncidentClaimDisposition.SUPPRESSED:
+                logger.info(
+                    "Suppressing alarm for active incident: alarm=%s candidate_rca_id=%s reason=%s retryable=%s",
+                    alarm.alarm_name,
+                    incident_claim.candidate_rca_id,
+                    incident_claim.reason,
+                    incident_claim.retryable,
+                )
+                return not incident_claim.retryable
+            if not incident_claim.acquired or incident_claim.candidate_rca_id != rca_id:
+                logger.info("Active incident claim contended for alarm %s", alarm.alarm_name)
+                return False
+
         try:
             claim = store.claim_session(
                 alarm,
@@ -241,7 +310,7 @@ class PipelineOrchestrator:
 
         claim_token = claim.claim_token
         attempt = claim.attempt or effective_receive_count
-        if effective_receive_count == 1 and self._skip_if_stale(
+        if initial_stale and self._skip_if_stale(
             alarm,
             store,
             rca_id=rca_id,
@@ -306,8 +375,15 @@ class PipelineOrchestrator:
                 logger.exception("Failed to record pipeline failure for RCA session %s", rca_id)
             return False
 
-    def _flush_completion_handoff(self, rca_id: str, *, claim_token: str | None) -> bool:
-        handoff = self._container.session_store.get_completion_handoff(rca_id)
+    def _flush_completion_handoff(
+        self,
+        rca_id: str,
+        *,
+        claim_token: str | None,
+        handoff: CompletionHandoff | None = None,
+    ) -> bool:
+        if handoff is None:
+            handoff = self._container.session_store.get_completion_handoff(rca_id)
         if handoff is None:
             logger.warning("Duplicate RCA %s has no persisted session handoff", rca_id)
             return False
@@ -355,6 +431,13 @@ class PipelineOrchestrator:
             claim_token=claim_token,
         )
         return True
+
+    @staticmethod
+    def _is_stale(alarm: AlarmPayload) -> bool:
+        if not alarm.state_change_time:
+            return False
+        age_seconds = (datetime.now(UTC) - alarm.state_change_time).total_seconds()
+        return age_seconds > ALARM_STALENESS_SECONDS
 
     def _run_pipeline(self, alarm, run: RunContext) -> bool:
         store = self._container.session_store

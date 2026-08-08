@@ -1,9 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scenarioId": "deployed-connection-leak-vital-ingest",
   "engine": "cc-headless",
-  "rootCause": "The task definition revision deployed to the Healthcare service turned on a read path whose database session is never closed, so each patient vital request leaked a connection and the pool drained gradually from the deployment onward while request volume stayed flat.",
+  "rootCause": "The task definition revision deployed to the Healthcare service turned on a read path whose database session is never closed, so each patient vital request leaked a connection and the pool drained gradually from the deployment onward. Flat request volume ruled out a traffic surge, healthy RDS resources ruled out instance saturation, and the unrelated LOG_LEVEL-only deployment was excluded because it did not align with failure onset.",
   "rootCauseConfirmed": true,
+  "rootFaultType": "db-leak",
+  "rootCauseEvidenceIds": [
+    "vital-ingest-failures",
+    "db-connections-climbing",
+    "session-not-returned-logs",
+    "task-definition-deployment",
+    "fault-flag-enabled-in-revision",
+    "leaky-session-read-path"
+  ],
   "evidenceIds": [
     "vital-ingest-failures",
     "db-connections-climbing",
@@ -12,11 +21,42 @@
     "fault-flag-enabled-in-revision",
     "leaky-session-read-path",
     "request-volume-flat",
-    "rds-resources-healthy"
+    "rds-resources-healthy",
+    "unrelated-log-level-deployment"
+  ],
+  "competingCauseJudgments": [
+    {
+      "causeId": "traffic-surge",
+      "judgment": "rejected",
+      "rationale": "Request volume remained flat through the incident.",
+      "evidenceIds": ["request-volume-flat"]
+    },
+    {
+      "causeId": "rds-resource-saturation",
+      "judgment": "rejected",
+      "rationale": "RDS CPU and free storage remained healthy.",
+      "evidenceIds": ["rds-resources-healthy"]
+    },
+    {
+      "causeId": "log-level-deployment",
+      "judgment": "rejected",
+      "rationale": "The LOG_LEVEL-only revision did not align with failure onset.",
+      "evidenceIds": ["unrelated-log-level-deployment"]
+    }
   ],
   "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
   "remediation": {
     "summary": "Reset the leaked connection pool with a forced redeploy of the Healthcare service, then roll the task definition back to the revision that closed its sessions.",
+    "available": true,
+    "verificationStatus": "DRAFT",
+    "executionSteps": [
+      {
+        "stepId": "restore-healthy-revision",
+        "intent": "Return the service to the last healthy task definition.",
+        "action": "Redeploy the Healthcare service with the previously healthy task definition revision.",
+        "successCriteria": "Database connections stabilize and vital ingest failures return to zero."
+      }
+    ],
     "safe": true,
     "unsafeSteps": [],
     "safeguards": {

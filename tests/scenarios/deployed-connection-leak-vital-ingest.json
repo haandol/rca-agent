@@ -56,28 +56,15 @@
   ],
   "expectation": {
     "requireConfirmedRootCause": true,
-    "rootCauseTermGroups": [
-      ["connection", "session", "커넥션", "세션"],
-      [
-        "leak",
-        "not returned",
-        "never closed",
-        "not released",
-        "누수",
-        "반환되지 않",
-        "고갈"
-      ],
-      [
-        "deploy",
-        "task definition",
-        "taskdefinition",
-        "registertaskdefinition",
-        "updateservice",
-        "revision",
-        "배포",
-        "태스크 정의",
-        "리비전"
-      ]
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["db-leak"],
+    "requiredRootCauseEvidenceIds": [
+      "vital-ingest-failures",
+      "db-connections-climbing",
+      "session-not-returned-logs",
+      "task-definition-deployment",
+      "fault-flag-enabled-in-revision",
+      "leaky-session-read-path"
     ],
     "requiredEvidenceIds": [
       "vital-ingest-failures",
@@ -87,7 +74,8 @@
       "fault-flag-enabled-in-revision",
       "leaky-session-read-path",
       "request-volume-flat",
-      "rds-resources-healthy"
+      "rds-resources-healthy",
+      "unrelated-log-level-deployment"
     ],
     "requiredArtifacts": [
       "scoping",
@@ -96,53 +84,19 @@
       "report",
       "playbook"
     ],
-    "remediationTermGroups": [
-      ["connection", "session", "pool", "커넥션", "세션", "풀"],
-      ["reset", "release", "close", "리셋", "해제", "반환"],
-      [
-        "task definition",
-        "revision",
-        "roll back",
-        "rollback",
-        "redeploy",
-        "태스크 정의",
-        "리비전",
-        "롤백",
-        "재배포"
-      ]
-    ],
-    "semanticTermGroups": [
-      ["vital", "patient", "바이탈", "환자"],
-      ["traffic", "requests", "demand", "트래픽", "요청량"],
-      [
-        "gradual",
-        "steadily",
-        "linear",
-        "over time",
-        "점진",
-        "선형",
-        "누적",
-        "지속"
-      ]
-    ],
-    "rejectedCauseTermGroups": [
-      [
-        "traffic surge",
-        "traffic spike",
-        "load spike",
-        "request surge",
-        "트래픽 급증",
-        "트래픽 폭증",
-        "부하 급증"
-      ],
-      [
-        "undersized instance",
-        "instance saturation",
-        "storage exhausted",
-        "인스턴스 부족",
-        "스토리지 부족"
-      ],
-      ["log level", "log_level", "logging configuration", "로그 레벨"]
+    "competingCauses": [
+      {
+        "id": "traffic-surge",
+        "requiredEvidenceIds": ["request-volume-flat"]
+      },
+      {
+        "id": "rds-resource-saturation",
+        "requiredEvidenceIds": ["rds-resources-healthy"]
+      },
+      {
+        "id": "log-level-deployment",
+        "requiredEvidenceIds": ["unrelated-log-level-deployment"]
+      }
     ]
   }
 }

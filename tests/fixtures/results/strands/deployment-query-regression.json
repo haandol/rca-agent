@@ -1,17 +1,34 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scenarioId": "deployment-query-regression",
   "engine": "strands",
   "rootCause": "The deployment introduced an N+1 query loop in the sensor response path.",
   "rootCauseConfirmed": true,
+  "rootFaultType": "slow-query",
+  "rootCauseEvidenceIds": [
+    "deployment-correlation",
+    "query-volume-spike",
+    "repository-diff"
+  ],
   "evidenceIds": [
     "deployment-correlation",
     "query-volume-spike",
     "repository-diff"
   ],
+  "competingCauseJudgments": [],
   "artifacts": ["scoping", "hypotheses", "validation", "report", "playbook"],
   "remediation": {
     "summary": "Rollback the deployment, then replace the per-sensor query with a batched query.",
+    "available": true,
+    "verificationStatus": "DRAFT",
+    "executionSteps": [
+      {
+        "stepId": "restore-query-path",
+        "intent": "Restore the last healthy query behavior.",
+        "action": "Roll back the affected service deployment to the last healthy revision.",
+        "successCriteria": "Query volume per request and p99 latency return to their healthy ranges."
+      }
+    ],
     "safe": true,
     "unsafeSteps": [],
     "safeguards": {

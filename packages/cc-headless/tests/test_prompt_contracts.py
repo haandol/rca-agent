@@ -204,6 +204,43 @@ def test_main_prompt_orders_rca_before_mandatory_report(monkeypatch):
     assert "2단계: 조건부 Remediation" not in prompt
 
 
+def test_compiled_prompt_and_workspace_wait_for_terminal_specialist_failure(monkeypatch):
+    monkeypatch.setattr("cc_headless.services.prompt_builder._PROMPTS_DIR", PROMPTS_DIR)
+    prompt = build_prompt(AlarmContext(alarm_name="NonInteractiveContract"))
+    workspace = (PACKAGE_ROOT / "CLAUDE.md").read_text()
+
+    for guidance in (prompt, workspace):
+        normalized = " ".join(guidance.split())
+        assert "이 워커는 비대화형이다" in normalized
+        assert "사용자 입력이나 진행 여부를 요청하지 않고" in normalized
+        assert "진행 중이거나 background에서 실행 중인 Agent 전문 에이전트 호출은 실패가 아니다" in normalized
+        assert "산출물 누락이나 경과 시간만으로 실패를 추론하지 않는다" in normalized
+        assert "기존 task가 실행 중이면 같은 전문 에이전트를 다시 호출하지 않고" in normalized
+        assert "task notification을 기다린다" in normalized
+        assert "terminal interruption 또는 provider/tool failure를 명시적으로 보고한 뒤에만" in normalized
+        assert "동일한 전문 에이전트를 한 번 재호출한다" in normalized
+        assert "재시도도 실패하면 실행을 명시적으로 실패시키고 종료한다" in normalized
+        assert "누락 산출물을 직접 작성·보완하거나 다른 역할에 대신 작성시키지 않는다" in normalized
+
+
+def test_orchestrator_agent_waits_for_terminal_notification_before_retry():
+    orchestrator = (AGENTS_DIR / "orchestrator.md").read_text()
+    normalized = " ".join(orchestrator.split())
+
+    assert "Never ask for user input or wait for user confirmation" in normalized
+    assert "still running or in the background is not a failure" in normalized
+    assert "Missing artifacts or elapsed time do not prove failure" in normalized
+    assert "Do not invoke any specialist again while its existing task is in flight" in normalized
+    assert "wait for its task notification" in normalized
+    assert "only after its Agent result or task notification explicitly reports a terminal" in normalized
+    assert "Retry the same specialist once with the same stage input" in normalized
+    assert "fail the run" in normalized
+    assert "Never write or complete a specialist's artifacts directly" in normalized
+    assert _frontmatter_value(AGENTS_DIR / "orchestrator.md", "tools") == (
+        "Agent(rca-specialist, report-specialist), Skill"
+    )
+
+
 def test_the_analysis_harness_exposes_no_write_capability():
     from cc_headless.adapters.secondary.cc.cc_subprocess_runner import _ALLOWED_TOOLS
 

@@ -1,17 +1,34 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scenarioId": "deployment-query-regression",
   "engine": "cc-headless",
   "rootCause": "A code change in the latest release performs per-sensor queries, creating an N+1 pattern.",
   "rootCauseConfirmed": true,
+  "rootFaultType": "slow-query",
+  "rootCauseEvidenceIds": [
+    "deployment-correlation",
+    "query-volume-spike",
+    "repository-diff"
+  ],
   "evidenceIds": [
     "repository-diff",
     "deployment-correlation",
     "query-volume-spike"
   ],
+  "competingCauseJudgments": [],
   "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
   "remediation": {
     "summary": "Revert the release and deploy a batch-query implementation after verification.",
+    "available": true,
+    "verificationStatus": "DRAFT",
+    "executionSteps": [
+      {
+        "stepId": "restore-query-path",
+        "intent": "Restore the last healthy query behavior.",
+        "action": "Roll back the affected service deployment to the last healthy revision.",
+        "successCriteria": "Query volume per request and p99 latency return to their healthy ranges."
+      }
+    ],
     "safe": true,
     "unsafeSteps": [],
     "safeguards": {

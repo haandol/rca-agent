@@ -138,6 +138,7 @@ class CcSubprocessRunner(CcRunnerPort):
                 **os.environ,
                 "HOME": home,
                 "CLAUDE_CONFIG_DIR": str(Path(home) / ".claude"),
+                "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0",
                 RUN_TOKEN_ENV: execution_token,
             }
             if rca_id:

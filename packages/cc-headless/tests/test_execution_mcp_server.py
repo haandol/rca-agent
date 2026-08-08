@@ -20,15 +20,10 @@ def workspace(monkeypatch, tmp_path):
     token = uuid.uuid4().hex
     monkeypatch.setattr(execution_workspace, "_WORKSPACE_ROOT", tmp_path / "executions")
     monkeypatch.setenv(EXECUTION_TOKEN_ENV, token)
-    monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps(["step-1", "step-2"]))
+    monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps(["step-1"]))
     monkeypatch.setenv(
         APPROVED_SUCCESS_CRITERIA_ENV,
-        json.dumps(
-            {
-                "step-1": "DatabaseConnections 20 이하",
-                "step-2": "VitalIngestFailure 0",
-            }
-        ),
+        json.dumps({"step-1": "DatabaseConnections 20 이하"}),
     )
     created = ExecutionWorkspace(execution_id="exec-1", token=token)
     created.prepare()
@@ -183,24 +178,90 @@ def test_failure_classification_separates_procedure_defects_from_transient_error
     assert result["failure_class"] == expected
 
 
-def test_a_step_outcome_and_resolution_are_recorded(workspace):
+def test_a_verification_only_step_succeeds_after_a_read_only_cli_attempt(workspace, spawned):
+    attempt = json.loads(
+        execution_mcp_server.run_playbook_command(
+            "step-1",
+            "aws cloudwatch describe-alarms --alarm-names VitalIngestFailure",
+            "verify ingest recovery",
+        )
+    )
+    outcome = json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1",
+            "DatabaseConnections 20 이하",
+            "DatabaseConnections 12",
+            criteria_met=True,
+        )
+    )
+    resolution = json.loads(execution_mcp_server.record_resolution("증상 지표 정상", resolved=True))
+
+    records = workspace.read_records()
+
+    assert attempt["ok"] is True
+    assert outcome["ok"] is True
+    assert resolution["ok"] is True
+    assert [record["type"] for record in records] == ["attempt", "step_outcome", "resolution"]
+    assert records[0]["arguments"] == {"service": "cloudwatch", "operation": "describe-alarms"}
+    assert records[1]["criteria_met"] is True
+    assert records[2]["resolved"] is True
+
+
+def test_a_verification_only_outcome_without_an_attempt_is_rejected(workspace):
+    result = json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1",
+            "DatabaseConnections 20 이하",
+            "DatabaseConnections 12",
+            criteria_met=True,
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["missing_attempt_step_ids"] == ["step-1"]
+    assert "preceding run_playbook_command attempt" in result["error"]
+    assert workspace.read_records() == []
+
+
+def test_resolved_true_reports_every_approved_step_missing_attempt_or_outcome(
+    workspace,
+    spawned,
+    monkeypatch,
+):
+    monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps(["step-1", "step-2", "step-3"]))
+    monkeypatch.setenv(
+        APPROVED_SUCCESS_CRITERIA_ENV,
+        json.dumps(
+            {
+                "step-1": "DatabaseConnections 20 이하",
+                "step-2": "VitalIngestFailure 0",
+                "step-3": "Alarm state OK",
+            }
+        ),
+    )
+    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
     execution_mcp_server.record_step_outcome(
         "step-1",
         "DatabaseConnections 20 이하",
         "DatabaseConnections 12",
         criteria_met=True,
     )
-    execution_mcp_server.record_resolution("증상 지표 정상", resolved=True)
+    execution_mcp_server.run_playbook_command(
+        "step-3",
+        "aws cloudwatch describe-alarms --alarm-names VitalIngestFailure",
+    )
 
-    records = workspace.read_records()
+    result = json.loads(execution_mcp_server.record_resolution("증상 지표 정상", resolved=True))
 
-    assert records[0]["type"] == "step_outcome"
-    assert records[0]["criteria_met"] is True
-    assert records[1]["type"] == "resolution"
-    assert records[1]["resolved"] is True
+    assert result["ok"] is False
+    assert result["missing_attempt_step_ids"] == ["step-2"]
+    assert result["missing_outcome_step_ids"] == ["step-2", "step-3"]
+    assert not any(record["type"] == "resolution" for record in workspace.read_records())
 
 
-def test_a_step_outcome_must_use_the_exact_approved_success_criteria(workspace):
+def test_a_step_outcome_must_use_the_exact_approved_success_criteria(workspace, spawned):
+    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+
     result = json.loads(
         execution_mcp_server.record_step_outcome(
             "step-1",
@@ -212,12 +273,19 @@ def test_a_step_outcome_must_use_the_exact_approved_success_criteria(workspace):
 
     assert result["ok"] is False
     assert "exactly match" in result["error"]
-    assert workspace.read_records() == []
+    assert [record["type"] for record in workspace.read_records()] == ["attempt"]
 
 
 def test_an_unobservable_resolution_keeps_its_reason(workspace):
-    execution_mcp_server.record_resolution("메트릭 조회 실패", resolved=False, unobservable_reason="지표 반영 지연")
+    result = json.loads(
+        execution_mcp_server.record_resolution(
+            "메트릭 조회 실패",
+            resolved=False,
+            unobservable_reason="지표 반영 지연",
+        )
+    )
 
+    assert result["ok"] is True
     assert workspace.read_records()[0]["unobservable_reason"] == "지표 반영 지연"
 
 

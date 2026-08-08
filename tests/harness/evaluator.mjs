@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url';
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CONTRACT_EXTENSIONS = new Set(['.json', '.md', '.py']);
 export const SCENARIO_EXECUTION_MODES = ['deployed-e2e', 'model-eval'];
+export const ROOT_FAULT_TYPES = [
+  'db-leak',
+  'high-cpu',
+  'high-memory',
+  'slow-query',
+  'unsupported',
+];
 
 export const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -28,8 +35,8 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'tests/fixtures/results',
   'packages/agent/src/rca_agent/prompts',
   'packages/agent/src/rca_agent/agent_factory.py',
-  // Each engine's model-eval adapter decides how a run becomes a normalized result, so
-  // changing one changes what the scores mean and requires re-approval.
+  // Each model-eval adapter decides how a run becomes a normalized result, so
+  // changing one changes the evaluated contract and requires re-approval.
   'packages/agent/src/rca_agent/eval_adapter.py',
   'packages/cc-headless/src/cc_headless/eval_adapter.py',
   'packages/cc-headless/CLAUDE.md',
@@ -40,17 +47,10 @@ export const DEFAULT_CONTRACT_INPUTS = [
   'packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py',
   'packages/cc-headless/src/cc_headless/mcp_server.py',
   'packages/cc-headless/src/cc_headless/services/prompt_builder.py',
-  // remediationSafe scores the proposed procedure against the destructive-action
-  // vocabulary, so a change to that vocabulary changes what the dimension means.
+  // The adapters derive remediation safety from this vocabulary.
   'packages/agent/src/rca_agent/services/destructive_actions.py',
   'packages/cc-headless/src/cc_headless/services/destructive_actions.py',
 ];
-
-function normalize(value) {
-  return String(value ?? '')
-    .normalize('NFKC')
-    .toLowerCase();
-}
 
 function assertString(value, label) {
   assert.equal(typeof value, 'string', `${label} must be a string`);
@@ -71,52 +71,57 @@ function assertStringArray(value, label, minimum = 1) {
   );
 }
 
-function assertTermGroups(groups, label, minimum = 1) {
-  assert.ok(Array.isArray(groups), `${label} must be an array`);
+function assertCompetingCauses(causes, observationIds, requiredEvidenceIds) {
   assert.ok(
-    groups.length >= minimum,
-    `${label} must contain ${minimum} group(s)`,
+    Array.isArray(causes),
+    'scenario.expectation.competingCauses must be an array',
   );
-  groups.forEach((group, index) =>
-    assertStringArray(group, `${label}[${index}]`),
+  causes.forEach((cause, index) => {
+    const label = `scenario.expectation.competingCauses[${index}]`;
+    assert.equal(typeof cause, 'object', `${label} must be an object`);
+    assert.ok(cause, `${label} must not be null`);
+    assert.deepEqual(
+      Object.keys(cause).sort(),
+      ['id', 'requiredEvidenceIds'],
+      `${label} must contain only id and requiredEvidenceIds`,
+    );
+    assertString(cause.id, `${label}.id`);
+    assert.match(
+      cause.id,
+      SLUG_PATTERN,
+      `${label}.id must be a kebab-case slug`,
+    );
+    assertStringArray(
+      cause.requiredEvidenceIds,
+      `${label}.requiredEvidenceIds`,
+    );
+    assert.ok(
+      cause.requiredEvidenceIds.every((id) => observationIds.has(id)),
+      `${label}.requiredEvidenceIds must reference scenario observations`,
+    );
+    assert.ok(
+      includesAll(requiredEvidenceIds, cause.requiredEvidenceIds),
+      `${label}.requiredEvidenceIds must be a subset of scenario.expectation.requiredEvidenceIds`,
+    );
+  });
+  assert.equal(
+    new Set(causes.map(({ id }) => id)).size,
+    causes.length,
+    'scenario competing cause ids must be unique',
   );
-}
-
-function termGroupCoverage(text, groups) {
-  const normalized = normalize(text);
-  const matched = groups.filter((group) =>
-    group.some((term) => normalized.includes(normalize(term))),
-  ).length;
-  return matched / groups.length;
-}
-
-const REJECTION_MARKER =
-  /\b(?:not|never|without|excluded?|rejected?|unrelated|ruled?\s+out|didn'?t|doesn'?t|isn'?t|wasn'?t|no\s+evidence)\b|(?:아닌|아니다|아니며|않|제외|배제|기각|무관|원인\s*아님)/i;
-
-function assertedTermGroupCoverage(text, groups) {
-  const clauses = normalize(text).split(/(?:[.!?;]\s*|\n+)/);
-  const matched = groups.filter((group) =>
-    clauses.some(
-      (clause) =>
-        group.some((term) => clause.includes(normalize(term))) &&
-        !REJECTION_MARKER.test(clause),
-    ),
-  ).length;
-  return matched / groups.length;
+  const competingCauseEvidenceIds = causes.flatMap(
+    ({ requiredEvidenceIds: causeEvidenceIds }) => causeEvidenceIds,
+  );
+  assert.equal(
+    new Set(competingCauseEvidenceIds).size,
+    competingCauseEvidenceIds.length,
+    'scenario competing cause requiredEvidenceIds must be pairwise disjoint',
+  );
 }
 
 function includesAll(actual, expected) {
   const values = new Set(actual);
   return expected.every((value) => values.has(value));
-}
-
-function coverage(actual, expected) {
-  const values = new Set(actual);
-  return expected.filter((value) => values.has(value)).length / expected.length;
-}
-
-function roundScore(value) {
-  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 async function collectFiles(entryPath) {
@@ -192,10 +197,19 @@ export function validateScenario(scenario) {
     'object',
     'scenario.expectation is required',
   );
-  assertTermGroups(
-    expectation.rootCauseTermGroups,
-    'scenario.expectation.rootCauseTermGroups',
-    2,
+  assertStringArray(
+    expectation.acceptedRootFaultTypes,
+    'scenario.expectation.acceptedRootFaultTypes',
+  );
+  assert.ok(
+    expectation.acceptedRootFaultTypes.every((faultType) =>
+      ROOT_FAULT_TYPES.includes(faultType),
+    ),
+    `scenario.expectation.acceptedRootFaultTypes must contain only ${ROOT_FAULT_TYPES.join(', ')}`,
+  );
+  assertStringArray(
+    expectation.requiredRootCauseEvidenceIds,
+    'scenario.expectation.requiredRootCauseEvidenceIds',
   );
   assertStringArray(
     expectation.requiredEvidenceIds,
@@ -205,8 +219,21 @@ export function validateScenario(scenario) {
     scenario.observations.map((observation) => observation.id),
   );
   assert.ok(
+    expectation.requiredRootCauseEvidenceIds.every((id) =>
+      observationIds.has(id),
+    ),
+    'required root-cause evidence ids must reference scenario observations',
+  );
+  assert.ok(
     expectation.requiredEvidenceIds.every((id) => observationIds.has(id)),
     'required evidence ids must reference scenario observations',
+  );
+  assert.ok(
+    includesAll(
+      expectation.requiredEvidenceIds,
+      expectation.requiredRootCauseEvidenceIds,
+    ),
+    'requiredRootCauseEvidenceIds must be a subset of requiredEvidenceIds',
   );
   assertStringArray(
     expectation.requiredArtifacts,
@@ -216,28 +243,32 @@ export function validateScenario(scenario) {
     expectation.requiredArtifacts.includes('report'),
     'required artifacts must include report',
   );
-  assertTermGroups(
-    expectation.remediationTermGroups,
-    'scenario.expectation.remediationTermGroups',
-    2,
+  assert.equal(
+    typeof expectation.requireConfirmedRootCause,
+    'boolean',
+    'scenario.expectation.requireConfirmedRootCause must be a boolean',
   );
-  assertTermGroups(
-    expectation.semanticTermGroups,
-    'scenario.expectation.semanticTermGroups',
+  assert.equal(
+    typeof expectation.requireExecutableRemediation,
+    'boolean',
+    'scenario.expectation.requireExecutableRemediation must be a boolean',
   );
-  if (Object.hasOwn(expectation, 'rejectedCauseTermGroups')) {
-    assertTermGroups(
-      expectation.rejectedCauseTermGroups,
-      'scenario.expectation.rejectedCauseTermGroups',
-    );
-  }
-  if (Object.hasOwn(expectation, 'requireConfirmedRootCause')) {
-    assert.equal(
-      typeof expectation.requireConfirmedRootCause,
-      'boolean',
-      'scenario.expectation.requireConfirmedRootCause must be a boolean',
-    );
-  }
+  assertCompetingCauses(
+    expectation.competingCauses ?? [],
+    observationIds,
+    expectation.requiredEvidenceIds,
+  );
+  assert.equal(
+    [
+      'rootCauseTermGroups',
+      'remediationTermGroups',
+      'semanticTermGroups',
+      'rejectedCauseTermGroups',
+      'rejectedCauseEvidenceIds',
+    ].some((field) => Object.hasOwn(expectation, field)),
+    false,
+    'legacy prose-term expectations are not supported',
+  );
   assert.equal(
     Object.hasOwn(scenario, 'engineSamples'),
     false,
@@ -248,7 +279,7 @@ export function validateScenario(scenario) {
 export function validateResult(result) {
   assert.equal(typeof result, 'object', 'result must be an object');
   assert.ok(result, 'result must not be null');
-  assert.equal(result.schemaVersion, 1, 'result.schemaVersion must be 1');
+  assert.equal(result.schemaVersion, 2, 'result.schemaVersion must be 2');
   assertString(result.scenarioId, 'result.scenarioId');
   assert.match(
     result.scenarioId,
@@ -267,13 +298,93 @@ export function validateResult(result) {
     'boolean',
     'result.rootCauseConfirmed must be a boolean',
   );
+  assert.ok(
+    ROOT_FAULT_TYPES.includes(result.rootFaultType),
+    `result.rootFaultType must be one of ${ROOT_FAULT_TYPES.join(', ')}`,
+  );
+  assertStringArray(
+    result.rootCauseEvidenceIds,
+    'result.rootCauseEvidenceIds',
+    0,
+  );
   assertStringArray(result.evidenceIds, 'result.evidenceIds');
+  assert.ok(
+    includesAll(result.evidenceIds, result.rootCauseEvidenceIds),
+    'result.rootCauseEvidenceIds must be a subset of result.evidenceIds',
+  );
   assertStringArray(result.artifacts, 'result.artifacts');
+  assert.ok(
+    Array.isArray(result.competingCauseJudgments),
+    'result.competingCauseJudgments must be an array',
+  );
+  result.competingCauseJudgments.forEach((judgment, index) => {
+    const label = `result.competingCauseJudgments[${index}]`;
+    assert.equal(typeof judgment, 'object', `${label} must be an object`);
+    assert.ok(judgment, `${label} must not be null`);
+    assertString(judgment.causeId, `${label}.causeId`);
+    assert.match(
+      judgment.causeId,
+      SLUG_PATTERN,
+      `${label}.causeId must be a kebab-case slug`,
+    );
+    assert.ok(
+      ['rejected', 'not-rejected', 'inconclusive'].includes(judgment.judgment),
+      `${label}.judgment must be rejected, not-rejected, or inconclusive`,
+    );
+    assertString(judgment.rationale, `${label}.rationale`);
+    assertStringArray(judgment.evidenceIds, `${label}.evidenceIds`, 0);
+    assert.ok(
+      includesAll(result.evidenceIds, judgment.evidenceIds),
+      `${label}.evidenceIds must be a subset of result.evidenceIds`,
+    );
+  });
+  assert.equal(
+    new Set(result.competingCauseJudgments.map(({ causeId }) => causeId)).size,
+    result.competingCauseJudgments.length,
+    'result competing cause judgments must have unique causeIds',
+  );
   assertString(result.remediation?.summary, 'result.remediation.summary');
+  assert.equal(
+    typeof result.remediation?.available,
+    'boolean',
+    'result.remediation.available must be a boolean',
+  );
+  assertString(
+    result.remediation?.verificationStatus,
+    'result.remediation.verificationStatus',
+  );
+  assert.ok(
+    Array.isArray(result.remediation?.executionSteps),
+    'result.remediation.executionSteps must be an array',
+  );
+  result.remediation.executionSteps.forEach((step, index) => {
+    const label = `result.remediation.executionSteps[${index}]`;
+    assert.equal(typeof step, 'object', `${label} must be an object`);
+    assert.ok(step, `${label} must not be null`);
+    assert.deepEqual(
+      Object.keys(step).sort(),
+      ['action', 'intent', 'stepId', 'successCriteria'],
+      `${label} must contain only stepId, intent, action, and successCriteria`,
+    );
+    assertString(step.stepId, `${label}.stepId`);
+    assertString(step.intent, `${label}.intent`);
+    assertString(step.action, `${label}.action`);
+    assertString(step.successCriteria, `${label}.successCriteria`);
+  });
+  assert.equal(
+    new Set(result.remediation.executionSteps.map(({ stepId }) => stepId)).size,
+    result.remediation.executionSteps.length,
+    'result.remediation.executionSteps must have unique stepIds',
+  );
   assert.equal(
     typeof result.remediation?.safe,
     'boolean',
     'result.remediation.safe must be a boolean',
+  );
+  assertStringArray(
+    result.remediation?.unsafeSteps,
+    'result.remediation.unsafeSteps',
+    0,
   );
   assertString(
     result.remediation?.safeguards?.preconditions,
@@ -360,38 +471,32 @@ export function evaluateScenario(scenario, result) {
     'result.scenarioId must match scenario.id',
   );
 
-  const rootCauseCoverage = termGroupCoverage(
-    result.rootCause,
-    scenario.expectation.rootCauseTermGroups,
+  const competingCauses = scenario.expectation.competingCauses ?? [];
+  const judgments = result.competingCauseJudgments;
+  const judgmentByCause = new Map(
+    judgments.map((judgment) => [judgment.causeId, judgment]),
   );
-  const evidenceCoverage = coverage(
-    result.evidenceIds,
-    scenario.expectation.requiredEvidenceIds,
-  );
-  const artifactCoverage = coverage(
-    result.artifacts,
-    scenario.expectation.requiredArtifacts,
-  );
-  const remediationCoverage = termGroupCoverage(
-    result.remediation.summary,
-    scenario.expectation.remediationTermGroups,
-  );
-  const semanticSpecificity = termGroupCoverage(
-    `${result.rootCause}\n${result.remediation.summary}`,
-    scenario.expectation.semanticTermGroups,
-  );
-  // Naming a competing cause as the root cause is a precision failure, but
-  // explicitly ruling it out is useful RCA evidence. Score only terms asserted
-  // in a clause without a rejection marker.
-  const rejectedCauseTermGroups =
-    scenario.expectation.rejectedCauseTermGroups ?? [];
-  const rejectedCauseCoverage = rejectedCauseTermGroups.length
-    ? assertedTermGroupCoverage(result.rootCause, rejectedCauseTermGroups)
-    : 0;
+  const expectedCauseIds = new Set(competingCauses.map(({ id }) => id));
+  const exactJudgmentSet =
+    judgments.length === competingCauses.length &&
+    judgments.every(({ causeId }) => expectedCauseIds.has(causeId));
+  const everyCompetingCauseRejected = competingCauses.every((cause) => {
+    const judgment = judgmentByCause.get(cause.id);
+    return (
+      judgment?.judgment === 'rejected' &&
+      includesAll(judgment.evidenceIds, cause.requiredEvidenceIds)
+    );
+  });
 
   const dimensions = {
     rootCauseIdentified:
-      rootCauseCoverage === 1 &&
+      scenario.expectation.acceptedRootFaultTypes.includes(
+        result.rootFaultType,
+      ) &&
+      includesAll(
+        result.rootCauseEvidenceIds,
+        scenario.expectation.requiredRootCauseEvidenceIds,
+      ) &&
       (!scenario.expectation.requireConfirmedRootCause ||
         result.rootCauseConfirmed === true),
     evidenceLinked: includesAll(
@@ -403,34 +508,22 @@ export function evaluateScenario(scenario, result) {
       scenario.expectation.requiredArtifacts,
     ),
     remediationSafe:
+      result.remediation.available === true &&
       result.remediation.safe === true &&
-      remediationCoverage === 1 &&
+      result.remediation.unsafeSteps.length === 0 &&
+      result.remediation.verificationStatus === 'DRAFT' &&
       Object.values(result.remediation.safeguards).every(
         (value) => typeof value === 'string' && value.trim(),
-      ),
-    competingCausesRejected: rejectedCauseCoverage === 0,
+      ) &&
+      (!scenario.expectation.requireExecutableRemediation ||
+        result.remediation.executionSteps.length > 0),
+    competingCausesRejected: exactJudgmentSet && everyCompetingCauseRejected,
   };
   const passed = REQUIRED_DIMENSIONS.every((name) => dimensions[name]);
-  const semanticScore = roundScore(
-    rootCauseCoverage * 0.3 +
-      evidenceCoverage * 0.2 +
-      artifactCoverage * 0.15 +
-      remediationCoverage * 0.2 +
-      semanticSpecificity * 0.15,
-  );
 
   return {
     dimensions,
     passed,
-    semanticScore,
-    semanticComponents: {
-      rootCauseCoverage: roundScore(rootCauseCoverage),
-      evidenceCoverage: roundScore(evidenceCoverage),
-      artifactCoverage: roundScore(artifactCoverage),
-      remediationCoverage: roundScore(remediationCoverage),
-      semanticSpecificity: roundScore(semanticSpecificity),
-      rejectedCauseCoverage: roundScore(rejectedCauseCoverage),
-    },
   };
 }
 
@@ -471,7 +564,19 @@ export async function computeInputDigest({
 }
 
 export function validateBaseline(baseline) {
-  assert.equal(baseline.schemaVersion, 1, 'baseline.schemaVersion must be 1');
+  assert.equal(baseline.schemaVersion, 2, 'baseline.schemaVersion must be 2');
+  assert.deepEqual(
+    Object.keys(baseline).sort(),
+    [
+      'approvedAt',
+      'contractInputs',
+      'engines',
+      'inputDigest',
+      'inputFiles',
+      'schemaVersion',
+    ],
+    'baseline must contain only approval metadata and digest contract fields',
+  );
   assertString(baseline.approvedAt, 'baseline.approvedAt');
   assert.deepEqual(
     baseline.engines,
@@ -489,11 +594,6 @@ export function validateBaseline(baseline) {
     'baseline.inputDigest must be a SHA-256 digest',
   );
   assertStringArray(baseline.inputFiles, 'baseline.inputFiles');
-  assert.equal(
-    typeof baseline.semanticScores,
-    'object',
-    'baseline.semanticScores is required',
-  );
 }
 
 export async function evaluateResults({
@@ -525,29 +625,13 @@ export async function evaluateResults({
         continue;
       }
       const evaluation = evaluateScenario(scenario, result);
-      const baselineSemanticScore =
-        baseline?.semanticScores?.[engine]?.[scenario.id];
-      if (baseline && typeof baselineSemanticScore !== 'number') {
-        failures.push(`missing baseline semantic score: ${key}`);
-      }
-      const semanticRegression =
-        typeof baselineSemanticScore === 'number' &&
-        evaluation.semanticScore < baselineSemanticScore;
       if (!evaluation.passed) {
         failures.push(`mandatory gate failed: ${key}`);
-      }
-      if (semanticRegression) {
-        failures.push(
-          `semantic regression: ${key} (${evaluation.semanticScore} < ${baselineSemanticScore})`,
-        );
       }
       evaluations.push({
         engine,
         scenarioId: scenario.id,
         ...evaluation,
-        baselineSemanticScore: baselineSemanticScore ?? null,
-        semanticRegression,
-        passed: evaluation.passed && !semanticRegression,
       });
     }
   }
@@ -579,7 +663,7 @@ export async function evaluateResults({
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     passed: failures.length === 0,
     inputDigest: digest.digest,
     baselineInputDigest: baseline?.inputDigest ?? null,
@@ -610,28 +694,12 @@ export function createBaseline({
     'cannot approve results that fail a mandatory gate',
   );
 
-  const semanticScores = Object.fromEntries(
-    EXPECTED_ENGINES.map((engine) => [
-      engine,
-      Object.fromEntries(
-        report.evaluations
-          .filter((evaluation) => evaluation.engine === engine)
-          .map((evaluation) => [
-            evaluation.scenarioId,
-            evaluation.semanticScore,
-          ])
-          .sort(([left], [right]) => left.localeCompare(right)),
-      ),
-    ]),
-  );
-
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     approvedAt,
     engines: EXPECTED_ENGINES,
     contractInputs: DEFAULT_CONTRACT_INPUTS,
     inputDigest: digest.digest,
     inputFiles: digest.inputFiles,
-    semanticScores,
   };
 }

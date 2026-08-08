@@ -26,9 +26,12 @@
   ],
   "expectation": {
     "requireConfirmedRootCause": true,
-    "rootCauseTermGroups": [
-      ["n+1", "per-sensor query", "query loop", "센서별 쿼리", "쿼리 루프"],
-      ["deployment", "code change", "release", "배포", "코드 변경", "릴리스"]
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["slow-query"],
+    "requiredRootCauseEvidenceIds": [
+      "deployment-correlation",
+      "query-volume-spike",
+      "repository-diff"
     ],
     "requiredEvidenceIds": [
       "deployment-correlation",
@@ -41,23 +44,6 @@
       "validation",
       "report",
       "playbook"
-    ],
-    "remediationTermGroups": [
-      ["rollback", "revert", "batch", "롤백", "되돌리", "배치", "일괄 조회"],
-      ["query", "deployment", "release", "쿼리", "배포", "릴리스"]
-    ],
-    "semanticTermGroups": [
-      [
-        "sensor",
-        "response path",
-        "response loop",
-        "센서",
-        "응답 경로",
-        "응답 루프",
-        "응답 처리 루프",
-        "반복문"
-      ],
-      ["batch", "batch-query", "배치", "일괄 조회"]
     ]
   }
 }

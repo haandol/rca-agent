@@ -1,7 +1,7 @@
 # ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate
 
 Date: 2026-04-21
-Updated: 2026-07-31
+Updated: 2026-08-07
 
 ## Status
 
@@ -63,9 +63,57 @@ flowchart LR
    - ALARM_RECEIVED에서 ANALYZING, FAILED, CANCELLED로 전이 가능
    - ANALYZING에서 COMPLETED, FAILED, CANCELLED로 전이 가능
 
-5. **이중 멱등성 체크**: SQS Visibility Timeout으로 동일 메시지 중복 처리를 1차 방지하고, DynamoDB에 알람 ID + 타임스탬프 기반 멱등성 키로 2차 중복을 방지한다. 기존 진행 중인 RCA가 있으면 새 메시지를 스킵한다.
+5. **이벤트 멱등성과 장애 생명주기 분리**: 알람 이름과 `StateChangeTime`으로 만든
+   결정적 RCA ID는 같은 이벤트의 재전달만 식별한다. 같은 장애 중에 CloudWatch 상태가
+   `OK → ALARM`으로 다시 바뀌면 `StateChangeTime`이 달라지므로, 이 ID만으로는 중복
+   분석을 막을 수 없다. 따라서 알람 ARN을 우선하고 ARN이 없으면 리전과 알람 이름을
+   조합한 안정 식별자를 사용해 알람별 전역 활성 장애 레코드를 별도로 둔다.
 
-6. **DLQ(Dead Letter Queue)를 통한 실패 메시지 보존**: 메시지 처리가 최대 3회 재시도 후에도 실패하면 DLQ로 이동하여 메시지를 보존한다. 이를 통해 장애 원인 사후 분석과 수동 재처리가 가능하다.
+   활성 장애 레코드는 다음 논리 키와 생명주기 정보를 공유 계약으로 사용한다.
+
+   - 키: `PK = ALARM#<stable-identity-hash>`, `SK = ACTIVE_INCIDENT`
+   - 식별: 원본 안정 알람 식별자, 알람 이름, 현재 candidate RCA ID, incident generation
+   - 시각: 장애가 열린 시각, 마지막 `ALARM` 시각, 마지막 `OK` 시각
+   - 보존: 세션과 같은 보존 기간의 TTL
+
+   동일 candidate RCA ID는 활성 장애를 새로 열지 않고 통과시킨다. 이 때문에 같은
+   CloudWatch 이벤트를 받은 Strands와 CC Headless가 같은 `RCA#<candidate>` 파티션의
+   각자 세션 아이템을 독립적으로 만들 수 있다. 그 뒤의 엔진별 세션 claim이 같은 엔진의
+   중복 delivery를 계속 차단한다.
+
+6. **활성 장애 억제와 안정 복구 구간**: 현재 candidate와 다른 `ALARM` 이벤트는 먼저
+   이벤트 시각으로 기존 장애와의 순서를 판정한다.
+
+   - 현재 generation의 시작보다 오래되었거나 같은 이벤트와, 마지막 `OK` 뒤 안정화
+     cooldown 안에 발생한 이벤트는 같은 장애의 지연·진동으로 보고 성공적으로 소비한다.
+   - 그보다 새로운 이벤트인데 현재 candidate의 분석 세션이 non-terminal이거나
+     `EXEC_ACTIVE`가 존재하면 메시지를 확인하지 않고 재전달로 보류한다.
+   - 새로운 이벤트인데 아직 `OK`가 관측되지 않았으면 전달 순서가 뒤바뀌었을 수 있으므로
+     메시지를 확인하지 않고 재전달로 보류한다.
+
+   두 분석 세션이 모두 terminal이고 활성 실행이 없으며 마지막 `OK` 뒤 cooldown이 지난
+   경우에만 새 candidate와 다음 generation을 연다. 새 generation 전환은 활성 장애
+   레코드의 기존 candidate, 두 엔진 세션의 terminal 상태, `EXEC_ACTIVE` 부재를 한
+   DynamoDB 트랜잭션의 조건으로 검증한다. 조건 충돌 시 승자의 값을 다시 읽어 같은
+   candidate면 진행하고 다른 candidate면 억제한다. 이 조건부 쓰기가 두 엔진과 중복
+   delivery의 동시 경쟁을 직렬화한다. cooldown은 배포 설정이며 기본값은 300초다.
+
+7. **복구 이벤트 기록 우선**: `OK` 이벤트는 RCA 세션을 만들지 않는다. 각 분석 파이프라인은
+   non-ALARM으로 건너뛰기 전에 활성 장애 레코드의 마지막 `OK` 시각을 단조 증가
+   조건으로 기록하고 메시지를 확인한다. `OK`가 첫 `ALARM`보다 먼저 전달돼도 candidate가
+   없는 recovery-only watermark를 생성한다. 뒤늦은 `ALARM`은 이 watermark와 이벤트
+   시각을 비교해 오래된 장애면 억제하고 cooldown 뒤의 새 장애면 첫 generation을 연다.
+   오래된 `OK` 재전달은 더 최신 복구 시각을 덮어쓰지 않는다.
+
+8. **stale 판정 선행**: 최초 수신부터 staleness 상한을 넘은 `ALARM`은 엔진별 세션에
+   `OUTDATED`로 남기되 전역 활성 장애를 열지 않는다. 과거 이벤트가 recovery 없는
+   candidate를 만들어 현재 장애를 막지 않아야 한다.
+
+9. **관측 계보와 운영 키 분리**: `RCA_TEST_RUN_ID` 같은 테스트 실행 표식은 배포와 증거를
+   연결하는 선택적 관측 계보다. 활성 장애의 식별, 억제, generation 전환 조건에는
+   사용하지 않는다.
+
+10. **DLQ(Dead Letter Queue)를 통한 실패 메시지 보존**: 메시지 처리가 최대 3회 재시도 후에도 실패하면 DLQ로 이동하여 메시지를 보존한다. 이를 통해 장애 원인 사후 분석과 수동 재처리가 가능하다.
 
 ### 지원 알람 유형
 
@@ -116,7 +164,8 @@ flowchart LR
 - 장시간 RCA 실행에 타임아웃 제약 없음
 - DLQ로 실패 메시지를 보존하여 사후 분석 및 재처리 가능
 - DynamoDB 상태 관리로 RCA 진행 상황 실시간 추적 가능
-- 이중 멱등성 체크로 중복 RCA 실행 방지
+- 이벤트 멱등성과 활성 장애 억제를 분리해 같은 장애의 재알람으로 인한 중복 RCA 실행 방지
+- `OK` 복구와 안정화 cooldown을 기록해 짧은 상태 진동을 하나의 incident generation으로 처리
 - 외부 계정의 알람이 분석을 기동할 수 없어, 인증 없는 진입점의 비용 소모 경로가 닫힌다
 
 ### Negative
@@ -124,6 +173,9 @@ flowchart LR
 - Fargate 상시 실행으로 알람이 없는 시간에도 컴퓨팅 비용 발생 (이벤트 기반 RunTask 대비 비용 증가)
 - SQS Long Polling 기반이므로 최대 20초의 폴링 간격 지연이 발생할 수 있음
 - SNS → SQS → Fargate 3계층 구조로 인프라 구성요소가 증가
+- 알람마다 전역 활성 장애 레코드가 추가되고 새 generation 전환에 DynamoDB 트랜잭션 읽기·쓰기 비용이 발생
+- `OK`가 전달되지 않으면 새 generation 후보가 재시도 후 DLQ로 이동할 수 있으므로
+  운영자가 복구 이벤트 전달과 활성 장애 레코드를 함께 점검해야 할 수 있음
 - 알람을 다른 스택이나 계정으로 옮기면 토픽 정책의 출처 조건도 함께 넓혀야 한다. 조건을 갱신하지 않으면 새 알람의 발행이 조용히 거부된다
 
 ### Risks
@@ -131,6 +183,7 @@ flowchart LR
 - Fargate Task가 비정상 종료되면 SQS 메시지가 Visibility Timeout 후 재처리되지만, 그 사이 알람 대응이 지연될 수 있다. 헬스체크 및 자동 재시작 정책으로 완화한다.
 - 대량 알람 동시 발생 시 단일 Fargate 인스턴스의 처리량이 병목이 될 수 있다. MVP 이후 오토스케일링 정책을 검토한다.
 - DynamoDB 멱등성 체크와 SQS 처리 사이 레이스 컨디션 가능성이 있다. DynamoDB Conditional Write로 원자적 세션 생성을 보장한다.
+- 두 분석 엔진 중 하나가 새 활성 장애 계약을 구현하지 않으면 그 엔진만 재알람을 중복 분석하거나 `OK`를 기록하지 않을 수 있다. 두 엔진은 동일한 키, terminal 판정, cooldown, 조건 충돌 동작을 구현해야 한다.
 
 ## Related
 

@@ -199,6 +199,7 @@ class CcExecutionRunner(ExecutionRunnerPort):
                 **os.environ,
                 "HOME": home,
                 "CLAUDE_CONFIG_DIR": str(Path(home) / ".claude"),
+                "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0",
                 EXECUTION_TOKEN_ENV: execution_token,
                 EXECUTION_ID_ENV: execution_id,
                 APPROVED_STEP_IDS_ENV: json.dumps(approved_step_ids),

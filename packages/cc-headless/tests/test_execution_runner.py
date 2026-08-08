@@ -1,4 +1,5 @@
 import json
+import os
 
 from cc_headless.adapters.secondary.cc import cc_execution_runner
 from cc_headless.adapters.secondary.cc.cc_execution_runner import CcExecutionRunner
@@ -43,3 +44,34 @@ def test_runner_passes_approved_step_ids_only_to_the_execution_server(monkeypatc
         "step-1": "healthy",
         "step-2": "no errors",
     }
+
+
+def test_runner_overrides_background_wait_ceiling_only_in_child(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "600000")
+    monkeypatch.setattr(execution_workspace, "_WORKSPACE_ROOT", tmp_path / "executions")
+    workspace = ExecutionWorkspace.create("exec-1")
+    workspace.prepare()
+
+    def _popen(args, **kwargs):
+        calls.append(kwargs)
+        return _Process()
+
+    monkeypatch.setattr(cc_execution_runner.subprocess, "Popen", _popen)
+    runner = CcExecutionRunner()
+
+    runner.run_execution(
+        "run",
+        execution_token=workspace.token,
+        execution_id="exec-1",
+        approved_step_ids=("step-1",),
+        approved_success_criteria={"step-1": "healthy"},
+    )
+    runner.run_retrospective(
+        "review",
+        execution_token=workspace.token,
+        execution_id="exec-1",
+    )
+
+    assert [call["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] for call in calls] == ["0", "0"]
+    assert os.environ["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "600000"

@@ -98,6 +98,7 @@ class ExecutionStorePort(ABC):
         summary: dict | None = None,
         error_reason: str = "",
         evidence_s3_key: str = "",
+        retrospective_failure_reason: str = "",
     ) -> None: ...
 
     @abstractmethod
@@ -121,6 +122,16 @@ class ExecutionStorePort(ABC):
 
     @abstractmethod
     def save_playbook_revision(
+        self,
+        rca_id: str,
+        engine: str,
+        playbook: dict,
+        *,
+        execution_id: str,
+    ) -> None: ...
+
+    @abstractmethod
+    def publish_playbook_revision(
         self,
         rca_id: str,
         engine: str,

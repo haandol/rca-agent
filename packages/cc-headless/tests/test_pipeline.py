@@ -8,13 +8,24 @@ from unittest.mock import Mock
 import structlog
 from structlog.testing import capture_logs
 
+from cc_headless.adapters.secondary.session.dynamodb_session_store import (
+    build_idempotency_key,
+    build_rca_id,
+)
 from cc_headless.config.settings import (
     ALARM_STALENESS_SECONDS,
     CC_TIMEOUT_SECONDS,
     PLAYBOOK_UPDATE_THRESHOLD,
 )
 from cc_headless.ports.dto.models import CcResult
-from cc_headless.ports.interfaces.session_store import ClaimDisposition, SessionClaim, SessionOwnershipCheckError
+from cc_headless.ports.interfaces.session_store import (
+    ClaimDisposition,
+    IncidentAlarm,
+    IncidentClaim,
+    IncidentClaimDisposition,
+    SessionClaim,
+    SessionOwnershipCheckError,
+)
 from cc_headless.services import execution_context, pipeline
 from cc_headless.services.execution_context import artifact_dir_for_token
 from cc_headless.services.pipeline import PipelineOrchestrator, extract_root_cause
@@ -38,6 +49,14 @@ class FinishedThread:
 
 def _container(runner):
     store = SimpleNamespace(
+        claim_incident=Mock(
+            side_effect=lambda alarm, **_: IncidentClaim(
+                IncidentClaimDisposition.PROCEED,
+                build_rca_id(build_idempotency_key(alarm)),
+                1,
+            )
+        ),
+        record_recovery=Mock(return_value=True),
         claim_session=Mock(return_value=SessionClaim(ClaimDisposition.CLAIMED, CLAIM_TOKEN, 1)),
         update_state=Mock(),
         is_terminated=Mock(return_value=False),
@@ -302,6 +321,7 @@ def test_initial_stale_alarm_is_still_rejected(monkeypatch):
 
     assert result is True
     run_rca.assert_not_called()
+    container.session_store.claim_incident.assert_not_called()
     container.session_store.mark_outdated.assert_called_once()
 
 
@@ -337,6 +357,119 @@ def test_terminal_duplicate_is_acknowledged_without_execution(monkeypatch):
 
     assert orchestrator.process_message(json.dumps(ALARM_DATA), receive_count=2) is True
     run_rca.assert_not_called()
+
+
+def test_evaluated_suppressed_incident_is_acknowledged_without_session_claim(monkeypatch):
+    container = _container(SimpleNamespace())
+    container.session_store.claim_incident.side_effect = None
+    container.session_store.claim_incident.return_value = IncidentClaim(
+        IncidentClaimDisposition.SUPPRESSED,
+        "existing-rca",
+        1,
+        "strands#SESSION is SCOPING",
+    )
+    orchestrator = PipelineOrchestrator(container)
+    run_rca = Mock(return_value=True)
+    monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
+
+    assert orchestrator.process_message(json.dumps(ALARM_DATA)) is True
+    container.session_store.claim_session.assert_not_called()
+    run_rca.assert_not_called()
+
+
+def test_suppressed_incident_is_retried_until_delayed_recovery_is_recorded(monkeypatch):
+    container = _container(SimpleNamespace())
+    alarm_at = datetime.now(UTC)
+    alarm_body = {**ALARM_DATA, "StateChangeTime": alarm_at.isoformat()}
+    candidate = build_rca_id(
+        build_idempotency_key(
+            IncidentAlarm(
+                alarm_name=alarm_body["AlarmName"],
+                region=alarm_body["Region"],
+                state_change_time=alarm_at,
+            )
+        )
+    )
+    container.session_store.claim_incident.side_effect = [
+        IncidentClaim(
+            IncidentClaimDisposition.SUPPRESSED,
+            "previous-rca",
+            1,
+            "incident has no recovery observation",
+            retryable=True,
+        ),
+        IncidentClaim(IncidentClaimDisposition.PROCEED, candidate, 2),
+        IncidentClaim(IncidentClaimDisposition.PROCEED, candidate, 2),
+    ]
+    container.session_store.claim_session.side_effect = [
+        SessionClaim(ClaimDisposition.CLAIMED, CLAIM_TOKEN, 2),
+        SessionClaim(ClaimDisposition.TERMINAL_DUPLICATE),
+    ]
+    orchestrator = PipelineOrchestrator(container)
+    run_rca = Mock(return_value=True)
+    monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
+
+    assert orchestrator.process_message(json.dumps(alarm_body), receive_count=1) is False
+    assert (
+        orchestrator.process_message(
+            json.dumps(
+                {
+                    **alarm_body,
+                    "NewStateValue": "OK",
+                    "StateChangeTime": (alarm_at - timedelta(seconds=301)).isoformat(),
+                }
+            )
+        )
+        is True
+    )
+    assert orchestrator.process_message(json.dumps(alarm_body), receive_count=2) is True
+    assert orchestrator.process_message(json.dumps(alarm_body), receive_count=3) is True
+
+    container.session_store.record_recovery.assert_called_once()
+    assert run_rca.call_count == 1
+
+
+def test_contended_incident_is_not_acknowledged(monkeypatch):
+    container = _container(SimpleNamespace())
+    container.session_store.claim_incident.side_effect = None
+    container.session_store.claim_incident.return_value = IncidentClaim(
+        IncidentClaimDisposition.CONTENDED,
+        "candidate-rca",
+    )
+    orchestrator = PipelineOrchestrator(container)
+    run_rca = Mock(return_value=True)
+    monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
+
+    assert orchestrator.process_message(json.dumps(ALARM_DATA)) is False
+    container.session_store.claim_session.assert_not_called()
+    run_rca.assert_not_called()
+
+
+def test_ok_records_recovery_before_non_alarm_skip():
+    container = _container(SimpleNamespace())
+    body = {
+        **ALARM_DATA,
+        "AlarmArn": "arn:aws:cloudwatch:us-east-1:123456789012:alarm:HighCPU",
+        "NewStateValue": "OK",
+        "StateChangeTime": "2026-08-07T14:05:00+00:00",
+    }
+
+    assert PipelineOrchestrator(container).process_message(json.dumps(body)) is True
+    recovery_alarm = container.session_store.record_recovery.call_args.args[0]
+    assert recovery_alarm.new_state == "OK"
+    assert recovery_alarm.alarm_arn == body["AlarmArn"]
+    container.session_store.claim_incident.assert_not_called()
+    container.session_store.claim_session.assert_not_called()
+
+
+def test_ok_is_not_acknowledged_when_recovery_cannot_be_recorded():
+    container = _container(SimpleNamespace())
+    container.session_store.record_recovery.return_value = False
+    body = {**ALARM_DATA, "NewStateValue": "OK"}
+
+    assert PipelineOrchestrator(container).process_message(json.dumps(body)) is False
+    container.session_store.claim_incident.assert_not_called()
+    container.session_store.claim_session.assert_not_called()
 
 
 def test_successful_run_requires_report_artifact(monkeypatch, tmp_path):

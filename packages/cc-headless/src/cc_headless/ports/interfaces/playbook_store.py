@@ -19,6 +19,7 @@ class PlaybookMatch:
     symptom_pattern: str = ""
     tags: list[str] = field(default_factory=list)
     rca_id: str = ""
+    publication_id: str = ""
     # 절차가 실행으로 입증되었는지는 상세를 로드하지 않고도 보여야 한다. 값이 없는
     # 레코드는 초안으로 읽는다 — 미검증 절차가 검증됨으로 보이면 안 된다.
     verification_status: str = "DRAFT"
@@ -45,4 +46,11 @@ class PlaybookStorePort(ABC):
         """
 
     @abstractmethod
-    def save_to_s3_vectors(self, playbook: dict, rca_id: str, *, metric_name: str = "") -> bool: ...
+    def save_to_s3_vectors(
+        self,
+        playbook: dict,
+        rca_id: str,
+        *,
+        metric_name: str = "",
+        publication_id: str = "",
+    ) -> bool: ...

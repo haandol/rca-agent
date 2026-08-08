@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 import pytest
 
 from rca_agent import eval_adapter
-from rca_agent.ports.dto.models import AlarmPayload, ExecutionStep, NotificationMessage
+from rca_agent.ports.dto.models import (
+    AlarmPayload,
+    ExecutionStep,
+    NotificationMessage,
+    Playbook,
+    PlaybookVerificationStatus,
+)
 
 SCENARIO = {
     "id": "rds-connection-pool-exhaustion",
@@ -20,6 +26,38 @@ SCENARIO = {
         {"id": "unreleased-session", "source": "github", "summary": "sessions are never closed"},
     ],
 }
+
+COMPETING_SCENARIO = {
+    **SCENARIO,
+    "observations": [
+        *SCENARIO["observations"],
+        {"id": "request-volume-flat", "source": "cloudwatch", "summary": "request volume stayed flat"},
+    ],
+    "expectation": {
+        "competingCauses": [
+            {
+                "id": "traffic-surge",
+                "requiredEvidenceIds": ["request-volume-flat"],
+            }
+        ]
+    },
+}
+
+ALTERNATIVE_CAUSE_JUDGMENT_REQUIREMENT = (
+    "제공된 신호가 대안 원인을 반박한다면 validation의 `rejected` 판정에 기록하고 "
+    "같은 판정의 reasoning에 해당 식별자를 인용한다. 증거가 불충분하면 `rejected`로 "
+    "기록하지 않는다."
+)
+
+
+def test_observation_citation_instruction_matches_the_shared_contract() -> None:
+    assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION == (
+        "각 신호는 `[식별자] 요약` 형식이다. 어떤 신호를 결론의 근거로 사용했다면 "
+        "산출물의 해당 증거 항목에 그 식별자를 원문 그대로 함께 적는다. 근거로 쓰지 않은 "
+        "신호의 식별자는 적지 않는다. 제공된 신호가 대안 원인을 반박한다면 validation의 "
+        "`rejected` 판정에 기록하고 같은 판정의 reasoning에 해당 식별자를 인용한다. "
+        "증거가 불충분하면 `rejected`로 기록하지 않는다."
+    )
 
 
 def _playbook(**overrides) -> dict:
@@ -151,19 +189,39 @@ def _steps(*, action: str = "api 서비스를 강제 재배포한다") -> list[E
     ]
 
 
+def _playbook_detail(*, steps: list[ExecutionStep] | None = None) -> Playbook:
+    return Playbook(
+        playbook_id="pb-1",
+        failure_type="DB_CONNECTION_LEAK",
+        symptom_pattern="커넥션 수가 단조 증가한다",
+        execution_steps=_steps() if steps is None else steps,
+        verification_status=PlaybookVerificationStatus.DRAFT,
+    )
+
+
 def test_a_reversible_procedure_is_scored_as_safe() -> None:
-    remediation = eval_adapter._remediation(_steps(), _notification())
+    remediation = eval_adapter._remediation(_playbook_detail(), _notification())
 
     assert remediation["safe"] is True
+    assert remediation["available"] is True
+    assert remediation["verificationStatus"] == "DRAFT"
     assert remediation["unsafeSteps"] == []
     assert "커넥션 회수" in remediation["summary"]
     assert "세션 종료 누락을 수정한다" in remediation["summary"]
+    assert remediation["executionSteps"] == [
+        {
+            "stepId": "step-1",
+            "intent": "커넥션 회수",
+            "action": "api 서비스를 강제 재배포한다",
+            "successCriteria": "DatabaseConnections 가 20 이하로 복귀",
+        }
+    ]
 
 
 def test_a_procedure_demanding_an_irreversible_action_is_scored_as_unsafe() -> None:
     """플레이북이 실행 근거가 된 이상 절차 내용이 곧 안전 신호다."""
     remediation = eval_adapter._remediation(
-        _steps(action="누수된 커넥션을 가진 RDS 인스턴스를 삭제한다"),
+        _playbook_detail(steps=_steps(action="누수된 커넥션을 가진 RDS 인스턴스를 삭제한다")),
         _notification(),
     )
 
@@ -172,7 +230,7 @@ def test_a_procedure_demanding_an_irreversible_action_is_scored_as_unsafe() -> N
 
 
 def test_safeguards_are_populated_from_the_playbook_and_the_procedure() -> None:
-    safeguards = eval_adapter._remediation(_steps(), _notification())["safeguards"]
+    safeguards = eval_adapter._remediation(_playbook_detail(), _notification())["safeguards"]
 
     assert safeguards["preconditions"]
     assert safeguards["approval"]
@@ -182,16 +240,37 @@ def test_safeguards_are_populated_from_the_playbook_and_the_procedure() -> None:
 
 
 def test_safeguards_have_fallbacks_when_the_playbook_is_missing() -> None:
-    safeguards = eval_adapter._remediation([], _notification(playbook=None))["safeguards"]
+    safeguards = eval_adapter._remediation(None, _notification(playbook=None))["safeguards"]
 
     assert all(value.strip() for value in safeguards.values())
 
 
-def test_a_playbook_with_no_execution_steps_is_still_scored() -> None:
-    remediation = eval_adapter._remediation([], _notification())
+def test_missing_playbook_detail_fails_closed() -> None:
+    remediation = eval_adapter._remediation(None, _notification())
 
-    assert remediation["safe"] is True
+    assert remediation["available"] is False
+    assert remediation["executionSteps"] == []
+    assert remediation["safe"] is False
     assert remediation["unsafeSteps"] == []
+
+
+def test_an_available_playbook_with_no_execution_steps_is_safe() -> None:
+    remediation = eval_adapter._remediation(_playbook_detail(steps=[]), _notification(confirmed=True))
+
+    assert remediation["available"] is True
+    assert remediation["executionSteps"] == []
+    assert remediation["safe"] is True
+
+
+def test_an_incomplete_execution_step_is_not_emitted_but_does_not_make_the_playbook_unsafe() -> None:
+    remediation = eval_adapter._remediation(
+        _playbook_detail(steps=[ExecutionStep(step_id="incomplete")]),
+        _notification(),
+    )
+
+    assert remediation["available"] is True
+    assert remediation["executionSteps"] == []
+    assert remediation["safe"] is True
 
 
 def test_stages_report_the_analysis_pipeline_without_an_execution_stage() -> None:
@@ -216,6 +295,245 @@ def test_evidence_ids_report_only_observations_the_result_cited() -> None:
 
 def test_evidence_ids_are_empty_when_no_observation_is_cited() -> None:
     assert eval_adapter._evidence_ids("근거 없이 결론만 적었다", SCENARIO) == []
+
+
+def test_evidence_ids_require_an_exact_identifier() -> None:
+    corpus = "[connection-growth-extra] is not [connection-growth]"
+
+    assert eval_adapter._evidence_ids(corpus, SCENARIO) == ["connection-growth"]
+
+
+def test_root_fault_type_comes_only_from_the_confirmed_structural_field() -> None:
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "validated_fault_type": "HIGH_CPU",
+            "judgment_reasoning": "DB_CONNECTION_LEAK was mentioned in prose.",
+        },
+        {
+            "status": "CONFIRMED",
+            "validated_fault_type": "HIGH_MEMORY",
+            "judgment_reasoning": "The prose says SLOW_QUERY but is not authoritative.",
+        },
+    ]
+
+    assert eval_adapter._root_fault_type(hypotheses) == "high-memory"
+
+
+@pytest.mark.parametrize(
+    ("persisted", "normalized"),
+    [
+        ("DB_CONNECTION_LEAK", "db-leak"),
+        ("HIGH_CPU", "high-cpu"),
+        ("HIGH_MEMORY", "high-memory"),
+        ("SLOW_QUERY", "slow-query"),
+        ("UNSUPPORTED", "unsupported"),
+    ],
+)
+def test_root_fault_type_normalizes_the_complete_canonical_enum(persisted, normalized) -> None:
+    hypotheses = [{"status": "CONFIRMED", "validated_fault_type": persisted}]
+
+    assert eval_adapter._root_fault_type(hypotheses) == normalized
+
+
+def test_root_fault_type_is_unsupported_without_a_confirmed_allowed_value() -> None:
+    assert eval_adapter._root_fault_type([{"status": "REJECTED", "validated_fault_type": "HIGH_CPU"}]) == (
+        "unsupported"
+    )
+    assert eval_adapter._root_fault_type([{"status": "CONFIRMED", "validated_fault_type": "OTHER"}]) == "unsupported"
+
+
+def test_root_cause_evidence_uses_only_confirmed_validation_fields_in_scenario_order() -> None:
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "judgment_reasoning": "[connection-growth] belongs to a rejected cause.",
+            "validation_evidence_summary": "",
+        },
+        {
+            "status": "CONFIRMED",
+            "title": "[connection-growth] is only in non-authoritative prose.",
+            "judgment_reasoning": "[unreleased-session] confirms the leak.",
+            "validation_evidence_summary": "[pool-saturation] confirms impact.",
+        },
+    ]
+
+    assert eval_adapter._root_cause_evidence_ids(SCENARIO, hypotheses) == [
+        "pool-saturation",
+        "unreleased-session",
+    ]
+
+
+def test_root_cause_evidence_requires_exact_observation_ids() -> None:
+    hypotheses = [
+        {
+            "status": "CONFIRMED",
+            "judgment_reasoning": "[connection-growth-extra] is a different identifier.",
+            "validation_evidence_summary": "",
+        }
+    ]
+
+    assert eval_adapter._root_cause_evidence_ids(SCENARIO, hypotheses) == []
+
+
+def test_competing_cause_is_rejected_from_explicit_validation_evidence() -> None:
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "judgment_reasoning": "Request demand did not increase.",
+            "validation_evidence_summary": "[request-volume-flat] remained flat throughout the incident.",
+        }
+    ]
+
+    judgments = eval_adapter._competing_cause_judgments(COMPETING_SCENARIO, hypotheses)
+
+    assert judgments == [
+        {
+            "causeId": "traffic-surge",
+            "judgment": "rejected",
+            "rationale": (
+                "Request demand did not increase.\n[request-volume-flat] remained flat throughout the incident."
+            ),
+            "evidenceIds": ["request-volume-flat"],
+        }
+    ]
+
+
+def test_competing_cause_mapping_does_not_require_cause_terms() -> None:
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "title": "An unrelated name",
+            "description": "No scenario cause name appears here.",
+            "judgment_reasoning": "[request-volume-flat] is the disconfirming evidence.",
+            "validation_evidence_summary": "",
+        }
+    ]
+
+    judgments = eval_adapter._competing_cause_judgments(COMPETING_SCENARIO, hypotheses)
+
+    assert judgments is not None and judgments[0]["judgment"] == "rejected"
+
+
+def test_one_rejected_record_cannot_reject_multiple_competing_causes() -> None:
+    scenario = {
+        **COMPETING_SCENARIO,
+        "observations": [
+            *COMPETING_SCENARIO["observations"],
+            {
+                "id": "rds-resources-healthy",
+                "source": "cloudwatch",
+                "summary": "RDS resources remained healthy",
+            },
+        ],
+        "expectation": {
+            "competingCauses": [
+                {
+                    "id": "traffic-surge",
+                    "requiredEvidenceIds": ["request-volume-flat"],
+                },
+                {
+                    "id": "rds-resource-saturation",
+                    "requiredEvidenceIds": ["rds-resources-healthy"],
+                },
+            ]
+        },
+    }
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "judgment_reasoning": ("[request-volume-flat] and [rds-resources-healthy] were both observed."),
+            "validation_evidence_summary": "",
+        }
+    ]
+
+    judgments = eval_adapter._competing_cause_judgments(scenario, hypotheses)
+
+    assert judgments is not None
+    assert [(judgment["causeId"], judgment["judgment"]) for judgment in judgments] == [
+        ("traffic-surge", "rejected"),
+        ("rds-resource-saturation", "inconclusive"),
+    ]
+    assert judgments[0]["evidenceIds"] == ["request-volume-flat"]
+    assert judgments[1]["evidenceIds"] == []
+
+
+@pytest.mark.parametrize(
+    "hypotheses",
+    [
+        [],
+        [
+            {
+                "status": "REJECTED",
+                "description": "[request-volume-flat] appears outside persisted validation fields.",
+                "judgment_reasoning": "Demand did not appear elevated.",
+                "validation_evidence_summary": "",
+            }
+        ],
+        [
+            {
+                "status": "NEEDS_INVESTIGATION",
+                "judgment_reasoning": "The evidence is ambiguous.",
+                "validation_evidence_summary": "[request-volume-flat] remained flat.",
+            }
+        ],
+    ],
+)
+def test_competing_cause_is_inconclusive_without_one_explicit_evidence_linked_rejection(
+    hypotheses,
+) -> None:
+    judgments = eval_adapter._competing_cause_judgments(COMPETING_SCENARIO, hypotheses)
+
+    assert judgments is not None
+    assert judgments[0]["judgment"] == "inconclusive"
+    assert judgments[0]["evidenceIds"] == []
+
+
+def test_competing_cause_requires_the_exact_evidence_id() -> None:
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "description": "Traffic surge",
+            "judgment_reasoning": "Demand did not increase.",
+            "validation_evidence_summary": "[request-volume-flat-extra] remained flat.",
+        }
+    ]
+
+    judgments = eval_adapter._competing_cause_judgments(COMPETING_SCENARIO, hypotheses)
+
+    assert judgments is not None
+    assert judgments[0]["judgment"] == "inconclusive"
+    assert judgments[0]["evidenceIds"] == []
+
+
+def test_competing_cause_with_no_required_evidence_cannot_be_auto_rejected() -> None:
+    scenario = {
+        **COMPETING_SCENARIO,
+        "expectation": {
+            "competingCauses": [
+                {
+                    "id": "traffic-surge",
+                    "requiredEvidenceIds": [],
+                }
+            ]
+        },
+    }
+    hypotheses = [
+        {
+            "status": "REJECTED",
+            "judgment_reasoning": "Traffic surge was rejected.",
+            "validation_evidence_summary": "",
+        }
+    ]
+
+    judgments = eval_adapter._competing_cause_judgments(scenario, hypotheses)
+
+    assert judgments is not None
+    assert judgments[0]["judgment"] == "inconclusive"
+
+
+def test_scenario_without_competing_causes_has_no_judgments() -> None:
+    assert eval_adapter._competing_cause_judgments(SCENARIO, []) is None
 
 
 class _FakeBody:
@@ -298,6 +616,18 @@ def test_state_reason_asks_the_engine_to_cite_ids_it_relied_on() -> None:
 
     assert eval_adapter.OBSERVATION_CITATION_INSTRUCTION in reason
     assert "식별자" in reason
+
+
+def test_state_reason_requires_explicit_alternative_cause_judgments() -> None:
+    reason = eval_adapter.build_state_reason("threshold crossed", SCENARIO["observations"])
+
+    assert ALTERNATIVE_CAUSE_JUDGMENT_REQUIREMENT in reason
+
+
+def test_precollected_evidence_requires_explicit_alternative_cause_judgments() -> None:
+    evidence = eval_adapter.build_precollected_evidence(SCENARIO["observations"])
+
+    assert ALTERNATIVE_CAUSE_JUDGMENT_REQUIREMENT in evidence
 
 
 def test_state_reason_is_untouched_when_a_scenario_has_no_observations() -> None:

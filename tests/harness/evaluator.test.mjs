@@ -12,6 +12,7 @@ import {
   loadScenarios,
   REPOSITORY_ROOT,
   REQUIRED_DIMENSIONS,
+  ROOT_FAULT_TYPES,
   SCENARIO_EXECUTION_MODES,
   validateBaseline,
   validateResult,
@@ -41,7 +42,23 @@ test('scenario contract is engine-neutral and fixtures are physically separate',
     validateScenario(scenario);
     assert.equal(Object.hasOwn(scenario, 'engineSamples'), false);
     assert.equal(scenario.expectation.requireConfirmedRootCause, true);
-    assert.ok(scenario.expectation.semanticTermGroups.length > 0);
+    assert.equal(
+      typeof scenario.expectation.requireExecutableRemediation,
+      'boolean',
+    );
+    assert.ok(scenario.expectation.acceptedRootFaultTypes.length > 0);
+    assert.ok(
+      scenario.expectation.acceptedRootFaultTypes.every((faultType) =>
+        ROOT_FAULT_TYPES.includes(faultType),
+      ),
+    );
+    for (const legacyField of [
+      'rootCauseTermGroups',
+      'remediationTermGroups',
+      'semanticTermGroups',
+    ]) {
+      assert.equal(Object.hasOwn(scenario.expectation, legacyField), false);
+    }
     assert.ok(scenario.executionModes.includes('model-eval'));
     assert.ok(
       scenario.executionModes.every((mode) =>
@@ -60,6 +77,76 @@ test('only scenarios backed by a deployed fault advertise deployed E2E', async (
   assert.deepEqual(deployed, ['deployed-connection-leak-vital-ingest']);
 });
 
+test('scenario root and competing-cause evidence must be unambiguous observations', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployed-connection-leak-vital-ingest',
+  );
+  const unknownRootEvidence = structuredClone(scenario);
+  unknownRootEvidence.expectation.requiredRootCauseEvidenceIds = [
+    'unknown-root-evidence',
+  ];
+  assert.throws(
+    () => validateScenario(unknownRootEvidence),
+    /required root-cause evidence ids must reference scenario observations/,
+  );
+
+  const rootEvidenceOutsideGlobal = structuredClone(scenario);
+  rootEvidenceOutsideGlobal.expectation.requiredEvidenceIds =
+    rootEvidenceOutsideGlobal.expectation.requiredEvidenceIds.filter(
+      (id) =>
+        id !==
+        rootEvidenceOutsideGlobal.expectation.requiredRootCauseEvidenceIds[0],
+    );
+  assert.throws(
+    () => validateScenario(rootEvidenceOutsideGlobal),
+    /requiredRootCauseEvidenceIds must be a subset of requiredEvidenceIds/,
+  );
+
+  const causeEvidenceOutsideGlobal = structuredClone(scenario);
+  causeEvidenceOutsideGlobal.expectation.requiredEvidenceIds =
+    causeEvidenceOutsideGlobal.expectation.requiredEvidenceIds.filter(
+      (id) => id !== 'unrelated-log-level-deployment',
+    );
+  assert.throws(
+    () => validateScenario(causeEvidenceOutsideGlobal),
+    /competingCauses\[2\]\.requiredEvidenceIds must be a subset of scenario\.expectation\.requiredEvidenceIds/,
+  );
+
+  const unknownEvidence = structuredClone(scenario);
+  unknownEvidence.expectation.competingCauses[2].requiredEvidenceIds = [
+    'unknown-red-herring',
+  ];
+
+  assert.throws(
+    () => validateScenario(unknownEvidence),
+    /requiredEvidenceIds must reference scenario observations/,
+  );
+
+  const duplicateCause = structuredClone(scenario);
+  duplicateCause.expectation.competingCauses[2].id =
+    duplicateCause.expectation.competingCauses[0].id;
+  assert.throws(
+    () => validateScenario(duplicateCause),
+    /scenario competing cause ids must be unique/,
+  );
+
+  const overlappingEvidence = structuredClone(scenario);
+  overlappingEvidence.expectation.competingCauses[1].requiredEvidenceIds.push(
+    overlappingEvidence.expectation.competingCauses[0].requiredEvidenceIds[0],
+  );
+  assert.throws(
+    () => validateScenario(overlappingEvidence),
+    /requiredEvidenceIds must be pairwise disjoint/,
+  );
+
+  const proseTerms = structuredClone(scenario);
+  proseTerms.expectation.competingCauses[0].terms = ['ignored prose'];
+  assert.throws(
+    () => validateScenario(proseTerms),
+    /must contain only id and requiredEvidenceIds/,
+  );
+});
+
 test('normalized result loader reads both engines independently of scenarios', async () => {
   const [scenarios, results] = await Promise.all([
     loadScenarios(scenariosDirectory),
@@ -72,6 +159,43 @@ test('normalized result loader reads both engines independently of scenarios', a
     EXPECTED_ENGINES,
   );
   results.forEach(validateResult);
+});
+
+test('normalized result root-cause evidence must be globally cited', async () => {
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === 'deployment-query-regression',
+  );
+  const missingRootCitation = {
+    ...result,
+    evidenceIds: result.evidenceIds.filter(
+      (id) => id !== result.rootCauseEvidenceIds[0],
+    ),
+  };
+
+  assert.throws(
+    () => validateResult(missingRootCitation),
+    /rootCauseEvidenceIds must be a subset of result\.evidenceIds/,
+  );
+});
+
+test('normalized result competing-cause evidence must be globally cited', async () => {
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' &&
+      scenarioId === 'deployed-connection-leak-vital-ingest',
+  );
+  const missingJudgmentCitation = {
+    ...result,
+    evidenceIds: result.evidenceIds.filter(
+      (id) => id !== 'unrelated-log-level-deployment',
+    ),
+  };
+
+  assert.throws(
+    () => validateResult(missingJudgmentCitation),
+    /competingCauseJudgments\[2\]\.evidenceIds must be a subset of result\.evidenceIds/,
+  );
 });
 
 test('input digest protects CC Headless agent definitions', async () => {
@@ -92,13 +216,19 @@ test('input digest protects CC Headless agent definitions', async () => {
 });
 
 test('mandatory gate rejects missing evidence and artifacts', async () => {
-  const [scenario] = await loadScenarios(scenariosDirectory);
+  const [baseScenario] = await loadScenarios(scenariosDirectory);
+  const scenario = structuredClone(baseScenario);
+  scenario.observations.push({
+    id: 'additional-global-evidence',
+    source: 'logs',
+    summary: 'Additional incident context required by the cloned scenario.',
+  });
+  scenario.expectation.requiredEvidenceIds.push('additional-global-evidence');
   const result = (await loadResults(fixturesDirectory)).find(
     (candidate) => candidate.scenarioId === scenario.id,
   );
   const incomplete = {
     ...result,
-    evidenceIds: [scenario.expectation.requiredEvidenceIds[0]],
     artifacts: ['report'],
   };
 
@@ -114,7 +244,78 @@ test('mandatory gate rejects missing evidence and artifacts', async () => {
   );
 });
 
-test('mandatory gate rejects an explicitly unconfirmed matching root cause', async () => {
+test('arbitrary root-cause and remediation prose passes with correct structure', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployment-query-regression',
+  );
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === scenario.id,
+  );
+
+  const evaluation = evaluateScenario(scenario, {
+    ...result,
+    rootCause: 'An entirely different human explanation remains acceptable.',
+    remediation: {
+      ...result.remediation,
+      summary: 'A free-form operator note can describe the proposed response.',
+    },
+  });
+
+  assert.equal(evaluation.passed, true);
+  assert.deepEqual(Object.keys(evaluation).sort(), ['dimensions', 'passed']);
+});
+
+test('keyword-rich prose cannot compensate for a wrong fault type or root evidence', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployment-query-regression',
+  );
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === scenario.id,
+  );
+  const proseOnly = {
+    rootCause:
+      'N+1 per-sensor query loop deployment code change release slow query.',
+    remediation: {
+      ...result.remediation,
+      summary: 'Rollback revert batch query deployment release.',
+    },
+  };
+  for (const structuralError of [
+    { rootFaultType: 'high-cpu' },
+    { rootCauseEvidenceIds: [] },
+  ]) {
+    const evaluation = evaluateScenario(scenario, {
+      ...result,
+      ...proseOnly,
+      ...structuralError,
+    });
+    assert.equal(evaluation.passed, false);
+    assert.equal(evaluation.dimensions.rootCauseIdentified, false);
+  }
+});
+
+test('root-cause evidence is evaluated separately from global evidence', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployment-query-regression',
+  );
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === scenario.id,
+  );
+  const evaluation = evaluateScenario(scenario, {
+    ...result,
+    rootCauseEvidenceIds: [],
+    evidenceIds: scenario.expectation.requiredEvidenceIds,
+  });
+
+  assert.equal(evaluation.dimensions.rootCauseIdentified, false);
+  assert.equal(evaluation.dimensions.evidenceLinked, true);
+  assert.equal(evaluation.passed, false);
+});
+
+test('mandatory gate rejects an explicitly unconfirmed structural root cause', async () => {
   const [scenario] = await loadScenarios(scenariosDirectory);
   const result = (await loadResults(fixturesDirectory)).find(
     (candidate) => candidate.scenarioId === scenario.id,
@@ -127,10 +328,50 @@ test('mandatory gate rejects an explicitly unconfirmed matching root cause', asy
 
   assert.equal(evaluation.passed, false);
   assert.equal(evaluation.dimensions.rootCauseIdentified, false);
-  assert.equal(evaluation.semanticComponents.rootCauseCoverage, 1);
 });
 
-test('competing causes are rejected only when asserted, not when ruled out', async () => {
+test('competing causes require exact rejected judgments with per-cause evidence', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployed-connection-leak-vital-ingest',
+  );
+  const results = await loadResults(fixturesDirectory);
+  const result = results.find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === scenario.id,
+  );
+
+  const inconclusiveResult = {
+    ...result,
+    competingCauseJudgments: result.competingCauseJudgments.map((judgment) =>
+      judgment.causeId === 'log-level-deployment'
+        ? { ...judgment, judgment: 'inconclusive', evidenceIds: [] }
+        : judgment,
+    ),
+  };
+  assert.doesNotThrow(() => validateResult(inconclusiveResult));
+
+  const inconclusive = evaluateScenario(scenario, inconclusiveResult);
+  assert.equal(inconclusive.dimensions.competingCausesRejected, false);
+
+  const explicitlyRejected = evaluateScenario(scenario, result);
+  assert.equal(explicitlyRejected.dimensions.competingCausesRejected, true);
+
+  const extraCause = evaluateScenario(scenario, {
+    ...result,
+    competingCauseJudgments: [
+      ...result.competingCauseJudgments,
+      {
+        causeId: 'unexpected-cause',
+        judgment: 'rejected',
+        rationale: 'The recorded judgment is not part of the scenario.',
+        evidenceIds: [],
+      },
+    ],
+  });
+  assert.equal(extraCause.dimensions.competingCausesRejected, false);
+});
+
+test('competing-cause evidence cannot receive aggregate cross-credit', async () => {
   const scenario = (await loadScenarios(scenariosDirectory)).find(
     ({ id }) => id === 'deployed-connection-leak-vital-ingest',
   );
@@ -138,75 +379,111 @@ test('competing causes are rejected only when asserted, not when ruled out', asy
     ({ engine, scenarioId }) =>
       engine === 'strands' && scenarioId === scenario.id,
   );
-
-  const ruledOut = evaluateScenario(scenario, {
-    ...result,
-    rootCause: `${result.rootCause} LOG_LEVEL 변경은 원인에서 제외되었다.`,
-  });
-  assert.equal(ruledOut.dimensions.competingCausesRejected, true);
-
-  const asserted = evaluateScenario(scenario, {
-    ...result,
-    rootCause: `${result.rootCause} LOG_LEVEL 변경도 장애 원인이다.`,
-  });
-  assert.equal(asserted.dimensions.competingCausesRejected, false);
-});
-
-test('result contract rejects remediation safety claims without concrete safeguards', async () => {
-  const [result] = await loadResults(fixturesDirectory);
-  const unsafeClaim = {
-    ...result,
-    remediation: {
-      summary: result.remediation.summary,
-      safe: true,
-    },
-  };
-
-  assert.throws(
-    () => validateResult(unsafeClaim),
-    /result\.remediation\.safeguards\.preconditions must be a string/,
+  const rotatedEvidence = result.competingCauseJudgments.map(
+    (judgment, index, judgments) => ({
+      ...judgment,
+      evidenceIds: judgments[(index + 1) % judgments.length].evidenceIds,
+    }),
   );
-});
-
-test('semantic regression fails even when all mandatory dimensions pass', async () => {
-  const scenarios = await loadScenarios(scenariosDirectory);
-  const results = await loadResults(fixturesDirectory);
-  const target = results.find(
-    ({ engine, scenarioId }) =>
-      engine === 'strands' && scenarioId === 'deployment-query-regression',
-  );
-  const regressed = {
-    ...target,
-    rootCause: 'The deployment introduced an N+1 query loop.',
-    remediation: {
-      safe: true,
-      summary: 'Rollback the deployment query release.',
-      safeguards: target.remediation.safeguards,
-    },
-  };
-  const direct = evaluateScenario(
-    scenarios.find(({ id }) => id === regressed.scenarioId),
-    regressed,
-  );
-  assert.equal(direct.passed, true);
-  assert.ok(direct.semanticScore < 1);
-
-  const digest = await computeInputDigest();
-  const baseline = await loadBaseline();
-  const report = await evaluateResults({
-    scenarios,
-    results: results.map((result) => (result === target ? regressed : result)),
-    baseline,
-    digest,
+  const evaluation = evaluateScenario(scenario, {
+    ...result,
+    competingCauseJudgments: rotatedEvidence,
   });
 
-  assert.equal(report.passed, false);
-  assert.ok(
-    report.failures.some((failure) =>
-      failure.startsWith(
-        'semantic regression: strands/deployment-query-regression',
+  assert.deepEqual(
+    new Set(rotatedEvidence.flatMap(({ evidenceIds }) => evidenceIds)),
+    new Set(
+      scenario.expectation.competingCauses.flatMap(
+        ({ requiredEvidenceIds }) => requiredEvidenceIds,
       ),
     ),
+  );
+  assert.equal(evaluation.dimensions.competingCausesRejected, false);
+});
+
+test('result contract requires complete remediation structure and unique step ids', async () => {
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' &&
+      scenarioId === 'deployed-connection-leak-vital-ingest',
+  );
+  const missingAvailability = {
+    ...result,
+    remediation: { ...result.remediation },
+  };
+  delete missingAvailability.remediation.available;
+  assert.throws(
+    () => validateResult(missingAvailability),
+    /result\.remediation\.available must be a boolean/,
+  );
+
+  const duplicateStep = {
+    ...result,
+    remediation: {
+      ...result.remediation,
+      executionSteps: [
+        result.remediation.executionSteps[0],
+        result.remediation.executionSteps[0],
+      ],
+    },
+  };
+  assert.throws(
+    () => validateResult(duplicateStep),
+    /must have unique stepIds/,
+  );
+
+  const blankCriterion = structuredClone(result);
+  blankCriterion.remediation.executionSteps[0].successCriteria = ' ';
+  assert.throws(
+    () => validateResult(blankCriterion),
+    /successCriteria must not be empty/,
+  );
+
+  const blankSafeguard = structuredClone(result);
+  blankSafeguard.remediation.safeguards.approval = ' ';
+  assert.throws(
+    () => validateResult(blankSafeguard),
+    /safeguards\.approval must not be empty/,
+  );
+});
+
+test('remediation availability, safety, draft status, and executability fail closed', async () => {
+  const scenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'deployed-connection-leak-vital-ingest',
+  );
+  const result = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === scenario.id,
+  );
+  const variants = [
+    { ...result.remediation, available: false },
+    { ...result.remediation, safe: false },
+    { ...result.remediation, unsafeSteps: ['restore-healthy-revision'] },
+    { ...result.remediation, verificationStatus: 'VERIFIED' },
+    { ...result.remediation, executionSteps: [] },
+  ];
+
+  for (const remediation of variants) {
+    const evaluation = evaluateScenario(scenario, {
+      ...result,
+      remediation,
+    });
+    assert.equal(evaluation.dimensions.remediationSafe, false);
+    assert.equal(evaluation.passed, false);
+  }
+
+  const nonExecutableScenario = (await loadScenarios(scenariosDirectory)).find(
+    ({ id }) => id === 'iam-policy-access-denied',
+  );
+  const nonExecutableResult = (await loadResults(fixturesDirectory)).find(
+    ({ engine, scenarioId }) =>
+      engine === 'strands' && scenarioId === nonExecutableScenario.id,
+  );
+  assert.equal(nonExecutableResult.remediation.executionSteps.length, 0);
+  assert.equal(
+    evaluateScenario(nonExecutableScenario, nonExecutableResult).dimensions
+      .remediationSafe,
+    true,
   );
 });
 
@@ -237,7 +514,7 @@ test('digest drift blocks an otherwise passing result set', async () => {
   );
 });
 
-test('reviewed fixtures pass mandatory, semantic, and digest baseline gates', async () => {
+test('fixtures and approved baseline pass structural and digest gates', async () => {
   const [scenarios, results, baseline, digest] = await Promise.all([
     loadScenarios(scenariosDirectory),
     loadResults(fixturesDirectory),
@@ -245,16 +522,38 @@ test('reviewed fixtures pass mandatory, semantic, and digest baseline gates', as
     computeInputDigest(),
   ]);
 
-  const report = await evaluateResults({
+  const mandatoryReport = await evaluateResults({
+    scenarios,
+    results,
+    digest,
+  });
+  assert.equal(
+    mandatoryReport.passed,
+    true,
+    mandatoryReport.failures.join('\n'),
+  );
+  assert.ok(
+    mandatoryReport.evaluations.every((evaluation) => evaluation.passed),
+  );
+  assert.equal(mandatoryReport.schemaVersion, 2);
+  assert.ok(
+    mandatoryReport.evaluations.every(
+      (evaluation) =>
+        JSON.stringify(Object.keys(evaluation).sort()) ===
+        JSON.stringify(['dimensions', 'engine', 'passed', 'scenarioId']),
+    ),
+  );
+
+  const baselineReport = await evaluateResults({
     scenarios,
     results,
     baseline,
     digest,
   });
 
-  assert.equal(report.passed, true, report.failures.join('\n'));
-  assert.equal(report.digestMatches, true);
-  assert.ok(report.evaluations.every((evaluation) => evaluation.passed));
+  assert.equal(baselineReport.passed, true, baselineReport.failures.join('\n'));
+  assert.equal(baselineReport.digestMatches, true);
+  assert.deepEqual(baselineReport.failures, []);
 });
 
 test('both engines receive the same observation citation instruction', async () => {
@@ -282,6 +581,9 @@ test('both engines receive the same observation citation instruction', async () 
     'the citation instruction must be identical across engines',
   );
   assert.match(instructions[0], /식별자/);
+  assert.match(instructions[0], /대안 원인/);
+  assert.match(instructions[0], /`rejected`/);
+  assert.match(instructions[0], /같은 판정.*식별자/);
 });
 
 test('each adapter builds the alarm reason with ids and the citation ask', async () => {
@@ -368,7 +670,7 @@ test('both engines judge remediation safety by the same rule', async () => {
     );
     assert.match(
       source,
-      /"safe": not destructive/,
+      /"safe": [^\n]*not destructive/,
       'a procedure demanding an irreversible action must score unsafe',
     );
     // The refused steps have to be named, or a reader cannot tell which step

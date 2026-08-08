@@ -117,11 +117,23 @@ class _Container:
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> None:
+def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
     _RecordingOrchestrator.calls = []
     _RecordingOrchestrator.precollected_evidence_values = []
     _RecordingOrchestrator.result = True
     _Container.instances = []
+    monkeypatch.setattr(
+        eval_adapter,
+        "_validation_hypotheses",
+        lambda _container, _notification: [
+            {
+                "status": "CONFIRMED",
+                "validated_fault_type": "DB_CONNECTION_LEAK",
+                "judgment_reasoning": "[connection-growth] confirms the connection leak.",
+                "validation_evidence_summary": "",
+            }
+        ],
+    )
     _Container.handoff = CompletionHandoff(
         rca_id="rca-1",
         state=RcaSessionState.COMPLETED,
@@ -213,15 +225,76 @@ def test_adapter_emits_exactly_one_normalized_result_object(wired, stdin_scenari
 
     payload = _run(capsys)
 
-    assert payload["schemaVersion"] == 1
+    assert payload["schemaVersion"] == 2
     assert payload["scenarioId"] == "rds-connection-pool-exhaustion"
     assert payload["engine"] == "strands"
     assert payload["rootCause"]
     assert payload["rootCauseConfirmed"] is True
+    assert payload["rootFaultType"] == "db-leak"
+    assert payload["rootCauseEvidenceIds"] == ["connection-growth"]
+    assert payload["evidenceIds"] == ["connection-growth"]
     assert payload["remediation"]["safeguards"]
+    assert payload["remediation"]["available"] is True
+    assert payload["remediation"]["verificationStatus"] == "DRAFT"
+    assert payload["remediation"]["executionSteps"] == [
+        {
+            "stepId": "step-1",
+            "intent": "커넥션 회수",
+            "action": "api 서비스를 강제 재배포한다",
+            "successCriteria": "DatabaseConnections 가 20 이하",
+        }
+    ]
+    assert payload["remediation"]["safe"] is True
+    assert payload["competingCauseJudgments"] == []
     # 절차의 안전성이 채점되므로 절차가 실제로 조회되어야 한다.
     assert _Container.instances[0].playbook_store.requested == ["pb-1"]
     assert payload["remediation"]["unsafeSteps"] == []
+
+
+def test_adapter_emits_explicit_competing_cause_judgments(
+    wired,
+    stdin_scenario,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = {
+        **SCENARIO,
+        "observations": [
+            *SCENARIO["observations"],
+            {"id": "request-volume-flat", "source": "cloudwatch", "summary": "request volume stayed flat"},
+        ],
+        "expectation": {
+            "competingCauses": [
+                {
+                    "id": "traffic-surge",
+                    "requiredEvidenceIds": ["request-volume-flat"],
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(
+        eval_adapter,
+        "_validation_hypotheses",
+        lambda _container, _notification: [
+            {
+                "status": "REJECTED",
+                "judgment_reasoning": "Request volume did not increase.",
+                "validation_evidence_summary": "[request-volume-flat] remained flat.",
+            }
+        ],
+    )
+    stdin_scenario(scenario)
+
+    payload = _run(capsys)
+
+    assert payload["competingCauseJudgments"] == [
+        {
+            "causeId": "traffic-surge",
+            "judgment": "rejected",
+            "rationale": ("Request volume did not increase.\n[request-volume-flat] remained flat."),
+            "evidenceIds": ["request-volume-flat"],
+        }
+    ]
 
 
 def test_adapter_uses_persisted_confirmation_as_the_normalized_authority(

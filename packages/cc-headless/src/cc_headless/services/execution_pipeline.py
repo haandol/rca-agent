@@ -39,6 +39,8 @@ from cc_headless.services.playbook_merge import (
 
 logger = structlog.get_logger()
 
+_MISSING_EVIDENCE_RETROSPECTIVE_REASON = "durable execution evidence is unavailable; retrospective was not started"
+
 
 class ExecutionOrchestrator:
     def __init__(self, container: ExecutionContainer, shutdown_event: Event | None = None):
@@ -201,7 +203,7 @@ class ExecutionOrchestrator:
             )
 
             if cc_result.cancelled:
-                return self._finish(
+                self._finish(
                     execution_id,
                     request,
                     evidence,
@@ -210,6 +212,7 @@ class ExecutionOrchestrator:
                     "execution was cancelled",
                     log,
                 )
+                return True
 
             store.update_state(
                 execution_id,
@@ -231,7 +234,7 @@ class ExecutionOrchestrator:
                 resolution_recorded=evidence.resolution_confirmed is not None,
                 attempted=evidence.attempted_step_count,
             )
-            self._finish(
+            evidence_key = self._finish(
                 execution_id,
                 request,
                 evidence,
@@ -241,7 +244,7 @@ class ExecutionOrchestrator:
                 log,
             )
 
-            if enters_retrospective(verdict.state):
+            if enters_retrospective(verdict.state) and evidence_key:
                 self._retrospect(
                     execution_id,
                     request,
@@ -282,11 +285,12 @@ class ExecutionOrchestrator:
         state: ExecutionState,
         reason: str,
         log: structlog.stdlib.BoundLogger,
-    ) -> bool:
+    ) -> str:
         """증거를 먼저 보존한 뒤 상태를 확정한다.
 
         실행이 실패·미해결로 끝나도 증거는 지우지 않는다. 자동 회고의 입력은 아니지만
-        사람이 원인을 읽는 유일한 자료다.
+        사람이 원인을 읽는 유일한 자료다. 해결된 실행의 증거를 보존하지 못하면 실행
+        결과는 유지하되 회고를 실패로 확정해 갱신 입력이 없는 게시를 막는다.
         """
         evidence.final_state = str(state)
         if state is not ExecutionState.RESOLVED:
@@ -294,15 +298,23 @@ class ExecutionOrchestrator:
 
         evidence_key = ""
         try:
-            evidence_key = self._c.evidence_store.save_execution_evidence(
+            saved_key = self._c.evidence_store.save_execution_evidence(
                 execution_id,
                 rca_id=request.rca_id,
                 evidence=evidence.to_dict(),
             )
+            if isinstance(saved_key, str):
+                evidence_key = saved_key.strip()
+            if not evidence_key:
+                log.error("execution_evidence_save_returned_empty_key")
         except Exception:
             # 증거 저장 실패를 실행 실패로 처리하지 않는다. 실행은 이미 일어났고 그
             # 사실을 상태로는 남겨야 한다.
             log.exception("execution_evidence_save_failed")
+
+        retrospective_failure_reason = ""
+        if state is ExecutionState.RESOLVED and not evidence_key:
+            retrospective_failure_reason = _MISSING_EVIDENCE_RETROSPECTIVE_REASON
 
         self._c.execution_store.update_state(
             execution_id,
@@ -312,8 +324,9 @@ class ExecutionOrchestrator:
             summary=evidence.summary(),
             error_reason="" if state is ExecutionState.RESOLVED else reason,
             evidence_s3_key=evidence_key,
+            retrospective_failure_reason=retrospective_failure_reason,
         )
-        return True
+        return evidence_key
 
     def _retrospect(
         self,
@@ -352,19 +365,21 @@ class ExecutionOrchestrator:
                 return
 
             saved = workspace.read_retrospective()
-            if saved is None:
-                # 교정할 결함이 없었다는 것은 절차가 그대로 이슈를 해소했다는 뜻이므로
-                # 승격은 일어난다. 갱신 없는 회고도 절차를 확인한 회고다.
-                self._publish_playbook(request, target, promote_to_verified(target.playbook), execution_id)
+            if (
+                saved is None
+                or not isinstance(saved.get("update"), dict)
+                or not isinstance(saved.get("rationale"), str)
+                or not saved["rationale"].strip()
+            ):
                 store.record_retrospective(
                     execution_id,
                     rca_id=request.rca_id,
                     claim_token=claim_token,
-                    status="NO_CHANGE",
-                    summary="retrospective found no procedure defect to correct",
+                    status="FAILED",
+                    summary="retrospective exited without a persisted attestation",
                     playbook_snapshot_s3_key=snapshot_key,
                 )
-                log.info("retrospective_no_change", promoted=True)
+                log.error("retrospective_attestation_missing")
                 return
 
             merged, diff = merge_playbook_update(target.playbook, saved.get("update"))
@@ -432,24 +447,10 @@ class ExecutionOrchestrator:
     ) -> None:
         """회고를 통과한 플레이북을 개정본과 검색 인덱스 양쪽에 반영한다.
 
-        두 저장소가 같은 내용을 보아야 한다 — 다음 실행은 개정본을 읽고 다음 RCA 의
-        보강은 인덱스를 읽으므로, 한쪽만 갱신하면 승격이 한 경로에서만 보인다.
+        DynamoDB 준비본이 먼저 내구성 있게 저장되고, 벡터 게시 뒤 정식 개정본으로
+        확정된다. 벡터의 게시 식별자와 정식 개정본이 일치하기 전에는 검색 어댑터가
+        VERIFIED 를 노출하지 않는다.
         """
-        # 개정본은 다음 실행이 읽는 권위 있는 사본이다. 인덱스를 먼저 쓰면 인덱스
-        # 실패 시 개정본이 새 상태로 노출되지 않는다.
-        try:
-            indexed = self._c.playbook_store.save_to_s3_vectors(
-                playbook,
-                request.rca_id,
-                metric_name=target.metric_name,
-            )
-        except Exception as exc:
-            self._restore_vector_index(request, target)
-            raise RuntimeError("playbook vector publication failed") from exc
-        if not indexed:
-            self._restore_vector_index(request, target)
-            raise RuntimeError("playbook vector publication did not persist the update")
-
         try:
             self._c.execution_store.save_playbook_revision(
                 request.rca_id,
@@ -458,28 +459,26 @@ class ExecutionOrchestrator:
                 execution_id=execution_id,
             )
         except Exception as exc:
-            # 벡터 put 은 트랜잭션에 참여하지 못한다. 개정본 쓰기가 실패하면 승인된
-            # 이전 내용을 양쪽에 다시 써서 새 상태의 부분 노출을 가능한 한 줄인다.
-            try:
-                self._c.execution_store.save_playbook_revision(
-                    request.rca_id,
-                    request.engine,
-                    target.playbook,
-                    execution_id=execution_id,
-                )
-            finally:
-                self._restore_vector_index(request, target)
-            raise RuntimeError("playbook revision publication failed") from exc
+            raise RuntimeError("playbook revision staging failed") from exc
 
-    def _restore_vector_index(self, request: ExecutionRequest, target: ExecutionTarget) -> None:
         try:
-            restored = self._c.playbook_store.save_to_s3_vectors(
-                target.playbook,
+            indexed = self._c.playbook_store.save_to_s3_vectors(
+                playbook,
                 request.rca_id,
                 metric_name=target.metric_name,
+                publication_id=execution_id,
             )
-        except Exception:
-            logger.exception("playbook_vector_rollback_failed")
-            return
-        if not restored:
-            logger.error("playbook_vector_rollback_not_persisted")
+        except Exception as exc:
+            raise RuntimeError("playbook vector publication failed") from exc
+        if not indexed:
+            raise RuntimeError("playbook vector publication did not persist the update")
+
+        try:
+            self._c.execution_store.publish_playbook_revision(
+                request.rca_id,
+                request.engine,
+                playbook,
+                execution_id=execution_id,
+            )
+        except Exception as exc:
+            raise RuntimeError("playbook revision commit failed") from exc

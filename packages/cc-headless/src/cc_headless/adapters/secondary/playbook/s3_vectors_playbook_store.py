@@ -88,6 +88,14 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             if similarity < threshold:
                 continue
             metadata = item.get("metadata", {})
+            publication_id = str(metadata.get("publication_id", ""))
+            verification_status = normalize_verification_status(metadata.get("verification_status"))
+            if verification_status == "VERIFIED" and not self._revision_is_published(
+                metadata.get("rca_id", ""),
+                item.get("key", ""),
+                publication_id,
+            ):
+                verification_status = "DRAFT"
             matches.append(
                 PlaybookMatch(
                     playbook_id=item.get("key", ""),
@@ -96,10 +104,36 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                     symptom_pattern=metadata.get("symptom_pattern", ""),
                     tags=_parse_tags(metadata.get("tags")),
                     rca_id=metadata.get("rca_id", ""),
-                    verification_status=normalize_verification_status(metadata.get("verification_status")),
+                    publication_id=publication_id,
+                    verification_status=verification_status,
                 )
             )
         return matches
+
+    def _revision_is_published(
+        self,
+        rca_id: str,
+        playbook_id: str,
+        publication_id: str,
+    ) -> bool:
+        if not DYNAMODB_TABLE_NAME or self._ddb is None or not rca_id or not playbook_id or not publication_id:
+            return False
+        try:
+            result = self._ddb.query(
+                TableName=DYNAMODB_TABLE_NAME,
+                KeyConditionExpression="PK = :pk",
+                ExpressionAttributeValues={":pk": {"S": f"RCA#{rca_id}"}},
+                ConsistentRead=True,
+            )
+        except Exception:
+            logger.error(
+                "playbook_revision_publication_check_failed",
+                rca_id=rca_id,
+                traceback=traceback.format_exc(),
+            )
+            return False
+        revision = _revision_playbook(result.get("Items", []), playbook_id, publication_id)
+        return revision is not None and normalize_verification_status(revision.get("verification_status")) == "VERIFIED"
 
     def load_detail(self, match: PlaybookMatch) -> dict | None:
         """후보의 현재 절차를 로드한다.
@@ -130,7 +164,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
 
         items = result.get("Items", [])
 
-        revision = _revision_playbook(items, match.playbook_id)
+        revision = _revision_playbook(items, match.playbook_id, match.publication_id)
         if revision is not None:
             logger.info("playbook_detail_from_revision", playbook_id=match.playbook_id)
             return revision
@@ -144,7 +178,14 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             )
         return recorded
 
-    def save_to_s3_vectors(self, playbook: dict, rca_id: str, *, metric_name: str = "") -> bool:
+    def save_to_s3_vectors(
+        self,
+        playbook: dict,
+        rca_id: str,
+        *,
+        metric_name: str = "",
+        publication_id: str = "",
+    ) -> bool:
         if not self._enabled or self._embedding is None:
             logger.info("s3_vectors_not_configured")
             return False
@@ -177,6 +218,8 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             # 한다. 승격이 개정본에만 반영되면 검색 결과에서는 초안으로 남는다.
             "verification_status": normalize_verification_status(playbook.get("verification_status")),
         }
+        if publication_id:
+            metadata["publication_id"] = publication_id
 
         try:
             self._s3v.put_vectors(
@@ -202,7 +245,11 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             return False
 
 
-def _revision_playbook(items: list[dict], playbook_id: str) -> dict | None:
+def _revision_playbook(
+    items: list[dict],
+    playbook_id: str,
+    publication_id: str,
+) -> dict | None:
     """회고 개정본을 돌려준다. 없거나 해석 불가면 None.
 
     해석 불가를 병합 포기 사유로 삼지 않는다 — 아직 병합 가능한 원본이 남아 있으므로,
@@ -212,6 +259,10 @@ def _revision_playbook(items: list[dict], playbook_id: str) -> dict | None:
         if not item.get("SK", {}).get("S", "").endswith("#PLAYBOOK_REVISION"):
             continue
         if item.get("playbook_id", {}).get("S") != playbook_id:
+            continue
+        if item.get("publication_status", {}).get("S") != "PUBLISHED":
+            continue
+        if not publication_id or item.get("revised_by_execution_id", {}).get("S") != publication_id:
             continue
         raw = item.get("playbook", {}).get("S")
         if not raw:

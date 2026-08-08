@@ -108,6 +108,21 @@ def test_runner_preserves_parent_environment_without_mutating_home(monkeypatch):
     assert os.environ.get("HOME") == parent_home
 
 
+def test_runner_overrides_background_wait_ceiling_only_in_child(monkeypatch):
+    calls = _capture_processes(monkeypatch)
+    monkeypatch.setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "600000")
+
+    CcSubprocessRunner().run("analyze", execution_token=EXECUTION_TOKEN)
+    CcSubprocessRunner().run(
+        "evaluate",
+        execution_token=EXECUTION_TOKEN,
+        allowed_tools=("Agent", "Skill", "mcp__rca-progress__save_artifact"),
+    )
+
+    assert [call["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] for call in calls] == ["0", "0"]
+    assert os.environ["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "600000"
+
+
 def test_runner_default_mcp_config_is_an_existing_absolute_file(monkeypatch):
     configs = []
 

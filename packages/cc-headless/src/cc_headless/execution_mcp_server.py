@@ -57,14 +57,35 @@ def _append_record(record: dict) -> bool:
     return True
 
 
-def _approved_step_ids() -> frozenset[str]:
+def _read_records() -> list[dict] | None:
+    """서버가 기록한 현재 실행의 증거를 읽는다. 깨진 줄은 증거로 인정하지 않는다."""
+    path = _evidence_file()
+    if path is None:
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    records: list[dict] = []
+    for line in raw.splitlines():
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            records.append(parsed)
+    return records
+
+
+def _approved_step_ids() -> tuple[str, ...]:
     try:
         parsed = json.loads(os.environ.get(APPROVED_STEP_IDS_ENV, ""))
     except json.JSONDecodeError:
-        return frozenset()
+        return ()
     if not isinstance(parsed, list):
-        return frozenset()
-    return frozenset(value.strip() for value in parsed if isinstance(value, str) and value.strip())
+        return ()
+    normalized = (value.strip() for value in parsed if isinstance(value, str) and value.strip())
+    return tuple(dict.fromkeys(normalized))
 
 
 def _approved_success_criteria() -> dict[str, str]:
@@ -267,6 +288,24 @@ def record_step_outcome(
             {"ok": False, "error": "approved success_criteria is unavailable for this step"},
             ensure_ascii=False,
         )
+
+    records = _read_records()
+    if records is None:
+        return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
+    normalized_step_id = step_id.strip()
+    has_attempt = any(
+        record.get("type") == "attempt" and record.get("step_id") == normalized_step_id for record in records
+    )
+    if not has_attempt:
+        return json.dumps(
+            {
+                "ok": False,
+                "error": "record_step_outcome requires a preceding run_playbook_command attempt",
+                "missing_attempt_step_ids": [normalized_step_id],
+            },
+            ensure_ascii=False,
+        )
+
     if success_criteria != approved_criteria:
         return json.dumps(
             {
@@ -310,6 +349,31 @@ def record_resolution(observation: str, resolved: bool, unobservable_reason: str
             {"ok": False, "error": "resolved=true requires a nonblank observation"},
             ensure_ascii=False,
         )
+
+    if resolved:
+        approved_step_ids = _approved_step_ids()
+        if not approved_step_ids:
+            return json.dumps(
+                {"ok": False, "error": "approved step list is unavailable"},
+                ensure_ascii=False,
+            )
+        records = _read_records()
+        if records is None:
+            return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
+        attempted_step_ids = {record.get("step_id") for record in records if record.get("type") == "attempt"}
+        outcome_step_ids = {record.get("step_id") for record in records if record.get("type") == "step_outcome"}
+        missing_attempt_step_ids = [step_id for step_id in approved_step_ids if step_id not in attempted_step_ids]
+        missing_outcome_step_ids = [step_id for step_id in approved_step_ids if step_id not in outcome_step_ids]
+        if missing_attempt_step_ids or missing_outcome_step_ids:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": ("resolved=true requires attempt and outcome evidence for every approved playbook step"),
+                    "missing_attempt_step_ids": missing_attempt_step_ids,
+                    "missing_outcome_step_ids": missing_outcome_step_ids,
+                },
+                ensure_ascii=False,
+            )
 
     ok = _append_record(
         {
