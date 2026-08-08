@@ -11,11 +11,30 @@
     "request-concurrency-over-pool-capacity"
   ],
   "evidenceIds": [
-    "pool-timeout-logs",
     "db-connections-maxed",
-    "request-concurrency-over-pool-capacity"
+    "pool-timeout-logs",
+    "request-concurrency-over-pool-capacity",
+    "connections-flat-at-ceiling-not-climbing",
+    "sessions-returned-to-pool",
+    "no-fault-flag-in-deployed-revision"
   ],
-  "competingCauseJudgments": [],
+  "competingCauseJudgments": [
+    {
+      "causeId": "connection-leak",
+      "judgment": "rejected",
+      "rationale": "Connections reached the ceiling with the concurrency rise and stayed flat [connections-flat-at-ceiling-not-climbing], and every checked-out connection returned to the pool [sessions-returned-to-pool], so the pool is saturated by demand rather than losing connections.",
+      "evidenceIds": [
+        "connections-flat-at-ceiling-not-climbing",
+        "sessions-returned-to-pool"
+      ]
+    },
+    {
+      "causeId": "deployment-introduced-fault",
+      "judgment": "rejected",
+      "rationale": "No deployment precedes the onset and the running revision enables no injectable fault flag [no-fault-flag-in-deployed-revision].",
+      "evidenceIds": ["no-fault-flag-in-deployed-revision"]
+    }
+  ],
   "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
   "remediation": {
     "summary": "Adjust connection pool capacity and enforce a bounded acquisition timeout.",

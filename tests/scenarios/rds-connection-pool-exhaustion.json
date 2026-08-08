@@ -22,6 +22,21 @@
       "id": "request-concurrency-over-pool-capacity",
       "source": "cloudwatch",
       "summary": "Request concurrency exceeded the configured application pool capacity while database CPU and storage remained healthy."
+    },
+    {
+      "id": "connections-flat-at-ceiling-not-climbing",
+      "source": "cloudwatch",
+      "summary": "DatabaseConnections reached the ceiling together with the concurrency rise and stayed flat there, rather than climbing monotonically while request volume held steady."
+    },
+    {
+      "id": "sessions-returned-to-pool",
+      "source": "logs",
+      "summary": "Checked-out connections returned to the pool after each request completed, and no session-not-returned warning appears in the window."
+    },
+    {
+      "id": "no-fault-flag-in-deployed-revision",
+      "source": "cloudtrail",
+      "summary": "No deployment precedes the onset, and the running task definition revision enables none of the injectable fault flags."
     }
   ],
   "expectation": {
@@ -36,7 +51,23 @@
     "requiredEvidenceIds": [
       "db-connections-maxed",
       "pool-timeout-logs",
-      "request-concurrency-over-pool-capacity"
+      "request-concurrency-over-pool-capacity",
+      "connections-flat-at-ceiling-not-climbing",
+      "sessions-returned-to-pool",
+      "no-fault-flag-in-deployed-revision"
+    ],
+    "competingCauses": [
+      {
+        "id": "connection-leak",
+        "requiredEvidenceIds": [
+          "connections-flat-at-ceiling-not-climbing",
+          "sessions-returned-to-pool"
+        ]
+      },
+      {
+        "id": "deployment-introduced-fault",
+        "requiredEvidenceIds": ["no-fault-flag-in-deployed-revision"]
+      }
     ],
     "requiredArtifacts": [
       "scoping",
