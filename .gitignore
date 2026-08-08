@@ -80,9 +80,12 @@ packages/card-news/.claude/settings.local.json
 # E2E test scripts (generated at runtime, contain credentials)
 packages/web/public/e2e-*.js
 packages/web/public/payment-e2e-*.js
-tests/results/live/
 packages/api-infra/config/loader.js
 packages/infra/config/loader.js
+
+# Real-model and deployed-E2E evaluation output (per-run results, reports and
+# failure diagnostics; the reviewed baseline lives in tests/baseline/ instead)
+tests/results/
 
 # AWS Security Agent (scan config + findings reports with vulnerability details)
 .security-agent/
