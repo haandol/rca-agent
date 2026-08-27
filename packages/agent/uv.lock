@@ -1327,7 +1327,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.35" },
     { name = "moto", extras = ["s3", "dynamodb", "sqs"], marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pydantic-settings", specifier = ">=2.7" },
+    { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25" },
     { name = "python-dotenv", specifier = ">=1.0" },
