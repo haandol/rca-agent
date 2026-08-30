@@ -178,8 +178,17 @@ test('the worker runs the execution entrypoint of the analysis image', () => {
     ContainerDefinitions: Match.arrayWith([
       Match.objectLike({
         Name: 'playbook-execution',
-        Command: ['python', '-m', 'cc_headless.execution_main'],
+        Command: ['python', '-m', 'codex_headless.execution_main'],
         Environment: Match.arrayWith([
+          {
+            Name: 'CODEX_MODEL',
+            Value: 'global.openai.gpt-5.6-sol',
+          },
+          { Name: 'CODEX_REASONING_EFFORT', Value: 'high' },
+          {
+            Name: 'CODEX_MODEL_PROVIDER',
+            Value: 'amazon-bedrock-runtime',
+          },
           Match.objectLike({ Name: 'EXECUTION_QUEUE_URL' }),
           { Name: 'EXECUTION_TIMEOUT_SECONDS', Value: '3600' },
         ]),
@@ -356,6 +365,7 @@ test('the execution role can persist evidence and reindex a revised playbook', (
   expect(actions).toEqual(
     expect.arrayContaining([
       's3vectors:PutVectors',
+      'bedrock:CallWithBearerToken',
       'bedrock:InvokeModel',
       'sqs:ReceiveMessage',
     ]),
@@ -383,7 +393,7 @@ test('dev pins no image tag and no feature-flag task count', () => {
   ) as {
     execution?: { imageTag?: string; desiredCount?: number };
     agent?: { imageTag?: string };
-    ccHeadless?: { imageTag?: string };
+    codexHeadless?: { imageTag?: string };
     healthcare?: { imageTag?: string };
   };
 
@@ -393,7 +403,7 @@ test('dev pins no image tag and no feature-flag task count', () => {
   // exactly how the execution worker first came up without its entry point.
   for (const service of [
     'agent',
-    'ccHeadless',
+    'codexHeadless',
     'healthcare',
     'execution',
   ] as const) {

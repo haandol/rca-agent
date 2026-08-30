@@ -123,13 +123,15 @@ export class PlaybookExecutionStack extends cdk.Stack {
       image: ecs.ContainerImage.fromRegistry(
         `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/cc-headless:${props.imageTag}`,
       ),
-      command: ['python', '-m', 'cc_headless.execution_main'],
+      command: ['python', '-m', 'codex_headless.execution_main'],
       essential: true,
       stopTimeout: cdk.Duration.seconds(120),
       environment: {
         AWS_REGION: cdk.Aws.REGION,
-        CLAUDE_CODE_USE_BEDROCK: '1',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'global.anthropic.claude-sonnet-5',
+        CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+        CODEX_REASONING_EFFORT: 'high',
+        CODEX_MODEL_PROVIDER: 'amazon-bedrock-runtime',
+        CODEX_BEDROCK_BASE_URL: `https://bedrock-runtime.${cdk.Aws.REGION}.amazonaws.com/openai/v1`,
         EXECUTION_QUEUE_URL: requestQueue.queueUrl,
         EXECUTION_TIMEOUT_SECONDS: String(EXECUTION_TIMEOUT_SECONDS),
         DYNAMODB_TABLE_NAME: props.rcaSessionTable.tableName,
@@ -200,6 +202,7 @@ export class PlaybookExecutionStack extends cdk.Stack {
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: [
+          'bedrock:CallWithBearerToken',
           'bedrock:InvokeModel',
           'bedrock:InvokeModelWithResponseStream',
         ],

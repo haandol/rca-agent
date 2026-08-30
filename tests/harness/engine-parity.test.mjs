@@ -8,15 +8,17 @@ import { REPOSITORY_ROOT } from './evaluator.mjs';
 const AGENT_DESTRUCTIVE =
   'packages/agent/src/rca_agent/services/destructive_actions.py';
 const CC_DESTRUCTIVE =
-  'packages/cc-headless/src/cc_headless/services/destructive_actions.py';
+  'packages/codex-headless/src/codex_headless/services/destructive_actions.py';
 const AGENT_EMBED_KEY = 'packages/agent/src/rca_agent/utils/embed_key.py';
-const CC_EMBED_KEY = 'packages/cc-headless/src/cc_headless/utils/embed_key.py';
+const CC_EMBED_KEY =
+  'packages/codex-headless/src/codex_headless/utils/embed_key.py';
 const AGENT_SESSION_STORE =
   'packages/agent/src/rca_agent/adapters/secondary/session/dynamodb_session_store.py';
 const CC_SESSION_STORE =
-  'packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py';
+  'packages/codex-headless/src/codex_headless/adapters/secondary/session/dynamodb_session_store.py';
 const AGENT_SETTINGS = 'packages/agent/src/rca_agent/config/settings.py';
-const CC_SETTINGS = 'packages/cc-headless/src/cc_headless/config/settings.py';
+const CC_SETTINGS =
+  'packages/codex-headless/src/codex_headless/config/settings.py';
 
 async function readRepositoryFile(relativePath) {
   return readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8');
@@ -178,7 +180,7 @@ test('both engines record the same execution step fields', async () => {
   const [agentValidation, ccValidation] = await Promise.all([
     readRepositoryFile('packages/agent/src/rca_agent/ports/dto/models.py'),
     readRepositoryFile(
-      'packages/cc-headless/src/cc_headless/services/artifact_validation.py',
+      'packages/codex-headless/src/codex_headless/services/artifact_validation.py',
     ),
   ]);
 
@@ -199,7 +201,7 @@ test('neither engine can mark a playbook verified during analysis', async () => 
   const [agentModels, ccValidation] = await Promise.all([
     readRepositoryFile('packages/agent/src/rca_agent/ports/dto/models.py'),
     readRepositoryFile(
-      'packages/cc-headless/src/cc_headless/services/artifact_validation.py',
+      'packages/codex-headless/src/codex_headless/services/artifact_validation.py',
     ),
   ]);
 
@@ -239,10 +241,10 @@ test('both engines preserve verification only while procedures are unchanged', a
       'packages/agent/src/rca_agent/adapters/secondary/playbook/s3_vectors_playbook_store.py',
     ),
     readRepositoryFile(
-      'packages/cc-headless/src/cc_headless/services/playbook_merge.py',
+      'packages/codex-headless/src/codex_headless/services/playbook_merge.py',
     ),
     readRepositoryFile(
-      'packages/cc-headless/src/cc_headless/services/pipeline.py',
+      'packages/codex-headless/src/codex_headless/services/pipeline.py',
     ),
   ]);
 
@@ -263,7 +265,7 @@ test('both engines preserve verification only while procedures are unchanged', a
     'the Strands merge must preserve unchanged procedures and draft changed ones',
   );
 
-  // CC Headless applies the same comparison after its additive merge.
+  // Codex Headless applies the same comparison after its additive merge.
   assert.match(
     ccPipeline,
     /procedures_unchanged = merged\.get\("execution_steps"\) == existing\.get\("execution_steps"\)/,

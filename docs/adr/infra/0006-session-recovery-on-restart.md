@@ -9,7 +9,7 @@ Accepted (2026-07-31)
 
 ## Context
 
-CC Headless 태스크는 배포, 비정상 종료, 수동 중지 중에도 장시간 RCA를 수행할 수
+Codex Headless 태스크는 배포, 비정상 종료, 수동 중지 중에도 장시간 RCA를 수행할 수
 있다. 처리 중인 SQS 메시지를 먼저 삭제하면 태스크 장애 후 분석을 복구할 수 없다.
 반대로 재전달 메시지가 기존 진행 세션과 동시에 실행되면 복구 액션과 보고서가
 중복될 수 있다.
@@ -148,5 +148,5 @@ lease가 없을 때만 삭제하고, 그 밖의 경우는 거부해 사람이 �
 ## Related
 
 - [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md)
-- [ADR infra/0003: CC Headless 실행 인프라](0003-lambda-cc-headless-stack.md)
+- [ADR infra/0003: Codex Headless 실행 인프라](0003-lambda-cc-headless-stack.md)
 - [ADR infra/0005: 실행 트레이스](0005-execution-trace-dynamodb.md)

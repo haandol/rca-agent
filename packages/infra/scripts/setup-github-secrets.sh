@@ -34,7 +34,7 @@ if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$REGI
 else
   aws secretsmanager create-secret \
     --name "$SECRET_NAME" \
-    --description "GitHub Personal Access Token for RCA Agent and CC Headless" \
+    --description "GitHub Personal Access Token for RCA Agent and Codex Headless" \
     --secret-string "$TOKEN" \
     --region "$REGION"
   echo "  새 시크릿 생성 완료"

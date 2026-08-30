@@ -1,15 +1,15 @@
-# ADR 0003: CC Headless 오케스트레이터 실행 인프라
+# ADR 0003: Codex Headless 오케스트레이터 실행 인프라
 
 Date: 2026-04-22
-Updated: 2026-07-31
+Updated: 2026-08-30
 
 ## Status
 
-Accepted (2026-07-30)
+Accepted (2026-08-30)
 
 ## Context
 
-CC Headless는 장시간 RCA와 전문 서브 에이전트 호출을 수행하므로 짧은 서버리스
+Codex Headless는 장시간 RCA와 전문 서브 에이전트 호출을 수행하므로 짧은 서버리스
 실행보다 상시 워커가 적합하다.
 
 이 태스크는 **분석만 수행한다.** 복구는 사용자 승인 뒤의 별도 스택이 수행하므로
@@ -27,9 +27,14 @@ CC Headless는 장시간 RCA와 전문 서브 에이전트 호출을 수행하�
 
 ## Decision
 
-CC Headless는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 운영한다.
-알람마다 격리된 Claude Code 실행을 만들고 메인 에이전트가 RCA와 Report 서브
+Codex Headless는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 운영한다.
+알람마다 격리된 Codex 비대화형 실행을 만들고 메인 에이전트가 RCA와 Report 전문
 에이전트를 조정한다.
+
+Codex는 Amazon Bedrock Runtime의 OpenAI Responses 호환 경로에서
+Global Inference Profile `global.openai.gpt-5.6-sol`을 reasoning effort `high`로
+호출한다. 태스크 역할의 AWS 자격 증명으로 단기 bearer token을 만들며 OpenAI API
+키나 장기 정적 토큰을 배포하지 않는다.
 
 태스크에는 AWS 관측·변경 이력·코드 조회용 읽기 도구와 산출물 저장 도구만 제공한다.
 **태스크 역할에는 어떤 변경 권한도 부여하지 않는다** — 복구 권한은 실행 스택의
@@ -39,7 +44,7 @@ CC Headless는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 
 대상 서비스에 직접 연결할 이유가 없고, 연결 경로가 있으면 프롬프트 우회로 요청을
 보낼 여지가 남는다.
 
-산출물 디렉터리와 Claude 작업·홈 디렉터리는 실행마다 새로 만들고 종료 후
+산출물 디렉터리와 Codex 작업·홈 디렉터리는 실행마다 새로 만들고 종료 후
 정리한다. wrapper는 산출물 생성을 감지하여 세션 트레이스를 기록한다. SQS 메시지는
 플레이북을 포함한 필수 리포트가 저장되고 세션이 완료된 뒤에만 확인 처리한다.
 
@@ -50,7 +55,7 @@ CC Headless는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 
 내려받지 않으므로, 이미지 태그 하나가 코드와 하네스 버전을 동시에 고정한다.
 로컬 검증에 쓴 하네스와 배포된 하네스가 같은 커밋에서 나온다.
 
-에이전트 실행에 필요한 런타임(Claude Code CLI, MCP 서버 실행기, 읽기 전용 MCP
+에이전트 실행에 필요한 런타임(Codex CLI, MCP 서버 실행기, 읽기 전용 MCP
 서버)도 같은 이미지에 사전 설치하고, 실행 중 외부 패키지 해석에 의존하지 않는다.
 프라이빗 서브넷에서 네트워크가 제한되거나 외부 레지스트리가 흔들려도 하네스가
 로컬에서 검증된 구성 그대로 기동되어야 하기 때문이다. 같은 이유로 CLI와 외부
@@ -58,6 +63,11 @@ MCP 서버 버전은 이미지에서 고정한다.
 
 하네스 자산만 바뀐 변경도 이미지 재빌드와 서비스 재배포를 거친다. 실행 중
 자산을 교체하는 경로는 두지 않는다.
+
+신규 세션과 산출물의 기능 식별자는 `codex-headless`다. 기존 배포를 제자리에서
+교체하고 ECR 이미지 저장소, 큐, ECS 서비스의 물리 이름은 유지한다. 물리 이름을
+바꾸어 리소스를 재생성하거나 대기 메시지를 새 큐로 옮기는 작업은 이 결정의 범위가
+아니다.
 
 ## 대안 검토
 
@@ -104,7 +114,7 @@ MCP 서버 버전은 이미지에서 고정한다.
 
 ## Related
 
-- [ADR agent/0011: CC Headless 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md)
+- [ADR agent/0011: Codex Headless 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md)
 - [ADR infra/0008: 플레이북 실행 인프라](0008-playbook-execution-stack.md) — 쓰기 권한을 가진 별도 스택
 - [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md)
 - [ADR infra/0005: 실행 트레이스](0005-execution-trace-dynamodb.md)

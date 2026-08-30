@@ -35,14 +35,14 @@ git log --oneline -1
 
 ```bash
 git diff --stat <배포태그>..HEAD -- packages/agent        # Strands 분석 워커
-git diff --stat <배포태그>..HEAD -- packages/cc-headless  # CC 분석 워커와 실행 워커 공용
+git diff --stat <배포태그>..HEAD -- packages/codex-headless  # Codex 분석 워커와 실행 워커 공용
 ```
 
 재배포가 필요하면:
 
 ```bash
 pnpm --filter infra run deploy:service -- agent        # Strands 분석 워커
-pnpm --filter infra run deploy:service -- cc-headless  # CC 분석 워커
+pnpm --filter infra run deploy:service -- codex-headless  # Codex 분석 워커
 pnpm --filter infra run deploy:service -- execution    # 실행 워커 (이미지 + IAM 정책)
 ```
 
@@ -266,7 +266,7 @@ from collections import defaultdict
 source_path, transition_path, output_path = sys.argv[1:]
 symptom_alarm = "RcaAgentDev-Healthcare-VitalIngestFailures"
 causal_alarm = "RcaAgentDev-Healthcare-RdsHighConnections"
-expected_engines = {"strands", "cc-headless"}
+expected_engines = {"strands", "codex-headless"}
 expected_state_change = json.load(open(transition_path))["stateChangeTime"]
 
 def decode(value):
@@ -321,7 +321,7 @@ assert len(primary) == 2, (
 assert {row.get("engine") for row in primary} == expected_engines
 assert {row.get("SK") for row in primary} == {
     "strands#SESSION",
-    "cc-headless#SESSION",
+    "codex-headless#SESSION",
 }
 expected_key = f"{symptom_alarm}#{expected_state_change}"
 assert all(row.get("idempotency_key") == expected_key for row in primary)
@@ -395,7 +395,7 @@ RCA_ID=$(python3 -c \
 실측 증거로 인정할 세션은 이 실행에서 새로 생성된 두 행뿐이다. 반드시 다음을 모두
 확인한다.
 
-- `strands#SESSION`, `cc-headless#SESSION` 두 행이 모두 있다.
+- `strands#SESSION`, `codex-headless#SESSION` 두 행이 모두 있다.
 - 두 행의 `alarm_name`은 `RcaAgentDev-Healthcare-VitalIngestFailures`다.
 - 두 행의 `created_at`은 `db-leak.completedAt` 이후다.
 - 두 행의 `idempotency_key`와 `alarm_data.StateChangeTime`이 같은 증상 알람 시각을
@@ -570,7 +570,7 @@ aws logs filter-log-events --log-group-name /ecs/RcaAgentDev/healthcare \
 
 ```bash
 REPORT_BUCKET=rca-agent-dev-evidence
-for ENGINE in strands cc-headless; do
+for ENGINE in strands codex-headless; do
   REPORT_KEY=$(python3 -c \
     'import json,sys; print(json.load(open(sys.argv[1]))["sessions"][sys.argv[2]]["reportS3Key"])' \
     "$LINEAGE_JSON" "$ENGINE")
@@ -590,12 +590,12 @@ aws s3 sync "s3://rca-agent-dev-evidence/rca/${RCA_ID}/evidence/" \
 rg -n -i \
   'VitalIngestFailures|VitalIngestAttempts|DatabaseConnections|RdsHighConnections|RegisterTaskDefinition|UpdateService|task definition|CloudTrail|DB session not returned|database_adapter|leaky_session|FAULT_DB_LEAK|LOG_LEVEL|red.herring|unrelated|excluded|ruled out|배제|제외|기각' \
   "$E2E_EVIDENCE_DIR/strands-report.md" \
-  "$E2E_EVIDENCE_DIR/cc-headless-report.md" \
+  "$E2E_EVIDENCE_DIR/codex-headless-report.md" \
   "$E2E_EVIDENCE_DIR/strands-evidence" \
   "$E2E_EVIDENCE_DIR/"*-analysis-records.json
 ```
 
-Strands의 가설별 원본 증거는 `rca/<RCA_ID>/evidence/`에 보존된다. CC Headless의
+Strands의 가설별 원본 증거는 `rca/<RCA_ID>/evidence/`에 보존된다. Codex Headless의
 canonical 중간 JSON은 태스크의 격리 임시 디렉터리에만 존재하므로, durable 원본은
 세션이 가리킨 `report.md`와 DynamoDB의 HYPO/validation trace다. CC 리포트에 아래
 source detail이 없으면 임시 산출물이 있었을 것이라고 추정하지 말고 live evidence
@@ -621,7 +621,7 @@ discovery 실패로 판정한다.
 그 문자열만 있으면 live CloudWatch/CloudTrail/log/code discovery 증거로 인정하지
 않는다. 위 원본의 시각, 값, ARN/리비전, 이벤트, 로그, 파일/함수와 대조되어야 한다.
 
-> **승인 대상 확보가 이 실측의 병목이다.** cc-headless 는 예산 소진(60분)이나 산출물 스키마
+> **승인 대상 확보가 이 실측의 병목이다.** codex-headless 는 예산 소진(60분)이나 산출물 스키마
 > 위반으로 FAILED 할 수 있고, Strands 는 전 가설 기각으로 원인 미확정 리포트를 낼 수
 > 있다(그 경우 `execution_steps: 0` — 계약대로다). 이 실행에서 생성된 세션 중
 > **어느 엔진이든 절차가 있는 리포트 하나면 승인 이후 구간을 실측할 수 있다.**

@@ -37,7 +37,7 @@ const STRANDS_TRANSITIONS: Record<string, string[]> = {
   REPORT_GENERATION: ['COMPLETED'],
 };
 
-const CC_HEADLESS_TRANSITIONS: Record<string, string[]> = {
+const HEADLESS_TRANSITIONS: Record<string, string[]> = {
   ALARM_RECEIVED: ['ANALYZING'],
   ANALYZING: ['COMPLETED'],
 };
@@ -53,7 +53,11 @@ const STRANDS_HAPPY_PATH = [
   'COMPLETED',
 ];
 
-const CC_HEADLESS_HAPPY_PATH = ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'];
+const HEADLESS_HAPPY_PATH = ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'];
+
+const isHeadlessEngine = computed(
+  () => props.engine === 'codex-headless' || props.engine === 'cc-headless',
+);
 
 // 성공 종료(COMPLETED)는 해피 패스 안에서 이미 그려지므로, 그래프가 따로 배치하는
 // 종료 상태는 중단 경로뿐이다. 노드 생성·레이아웃 제외·배치가 모두 같은 목록을 봐야
@@ -62,12 +66,10 @@ const abortStates = TERMINAL_STATES.filter((s) => s !== 'COMPLETED');
 const abortStateSet = new Set<string>(abortStates);
 
 const happyPath = computed(() =>
-  props.engine === 'cc-headless' ? CC_HEADLESS_HAPPY_PATH : STRANDS_HAPPY_PATH,
+  isHeadlessEngine.value ? HEADLESS_HAPPY_PATH : STRANDS_HAPPY_PATH,
 );
 const transitions = computed(() =>
-  props.engine === 'cc-headless'
-    ? CC_HEADLESS_TRANSITIONS
-    : STRANDS_TRANSITIONS,
+  isHeadlessEngine.value ? HEADLESS_TRANSITIONS : STRANDS_TRANSITIONS,
 );
 const pipelineStates = computed(() =>
   happyPath.value.filter((s) => !isTerminalState(s)),
@@ -142,14 +144,13 @@ const graph = computed(() => {
     });
   }
 
-  const loopEdges: [string, string, string][] =
-    props.engine === 'cc-headless'
-      ? []
-      : [
-          ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_GENERATION', '재생성'],
-          ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_PRIORITIZATION', '재우선순위'],
-          ['HYPOTHESIS_VALIDATION', 'EVIDENCE_COLLECTION', '추가 증거'],
-        ];
+  const loopEdges: [string, string, string][] = isHeadlessEngine.value
+    ? []
+    : [
+        ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_GENERATION', '재생성'],
+        ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_PRIORITIZATION', '재우선순위'],
+        ['HYPOTHESIS_VALIDATION', 'EVIDENCE_COLLECTION', '추가 증거'],
+      ];
   for (const [from, to, label] of loopEdges) {
     edges.push({
       id: `e-loop-${from}-${to}`,

@@ -133,6 +133,6 @@ Adapter의 존재를 알지 못한다.
 ## Related
 
 - [ADR agent/0010: 모델 티어 아키텍처](0010-model-tier-architecture.md) — 모델 생성 경로가 Container를 통해 주입됨
-- [ADR agent/0011: CC Headless 전문 서브 에이전트 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — CC Headless 패키지에도 동일 구조 적용
+- [ADR agent/0011: Codex Headless 전문 서브 에이전트 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — Codex Headless 패키지에도 동일 구조 적용
 - [ADR agent/0014: 계층형 증거 수집 세션 격리](0014-hierarchical-evidence-session-isolation.md) — 증거 수집이 저장소 Port를 통해 직접 영속화
 - [ADR agent/0016: RCA 평가 테스트 하네스](0016-rca-evaluation-test-harness.md) — 오프라인 계약 테스트가 이 구조를 전제로 함

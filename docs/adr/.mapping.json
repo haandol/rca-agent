@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/haandol/alps-writer-mcp/main/templates/adr/mapping.schema.json",
   "categories": {
     "agent": {
-      "feature": "Strands 파이프라인과 CC 전문 서브 에이전트 오케스트레이션 및 공통 평가 하네스",
+      "feature": "Strands 파이프라인과 Codex 전문 서브 에이전트 오케스트레이션 및 공통 평가 하네스",
       "dependsOn": [],
       "adrs": [
         {
@@ -37,13 +37,13 @@
         },
         {
           "path": "docs/adr/agent/0010-model-tier-architecture.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "단일 Sonnet 5 모델을 thinking 유무로 분리하고 sampling 파라미터와 effort를 전달하지 않는다."
+          "status": "Accepted (2026-08-30)",
+          "summary": "Strands는 Sonnet 5의 Planning/Execution 행동 분리를 유지하고, Codex Headless 분석·실행·회고는 Bedrock Global Inference Profile gpt-5.6-sol을 reasoning high로 고정하며 fallback하지 않는다."
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-          "status": "Accepted (2026-08-08)",
-          "summary": "CC Headless가 단일 소스 하네스로 읽기 전용 RCA·Report 에이전트를 오케스트레이션하고, 산출물의 작성 주체는 역할별로 갈라진 저장 도구가 강제하며, Stop hook은 진행 중 task의 중복 호출을 막고 명시적 terminal failure 뒤에만 동일 역할을 한 번 재시도한다."
+          "status": "Accepted (2026-08-30)",
+          "summary": "Codex Headless가 단일 소스 하네스로 읽기 전용 RCA·Report 전문 에이전트를 오케스트레이션하고 역할별 저장 도구와 완료 게이트로 산출물 경계를 강제한다."
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
@@ -62,8 +62,8 @@
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
-          "status": "Accepted (2026-08-08)",
-          "summary": "네 평가 계층을 분리하고, model-eval은 배포 모델 패리티와 경쟁 원인별 명시적 기각 근거를 엔진 공통 계약으로 검증하며, 실행은 엔진별로 나눌 수 있어도 기준선 승인은 두 엔진 전수를 요구한다."
+          "status": "Accepted (2026-08-30)",
+          "summary": "네 평가 계층을 분리하고 Codex Headless 평가는 배포와 동일한 gpt-5.6-sol·reasoning high·Bedrock Runtime 조합일 때만 품질 증거로 인정한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
@@ -79,7 +79,9 @@
     },
     "tools": {
       "feature": "MCP 도구 통합 — CloudWatch / CloudTrail / GitHub MCP 서버",
-      "dependsOn": ["infra"],
+      "dependsOn": [
+        "infra"
+      ],
       "adrs": [
         {
           "path": "docs/adr/tools/0001-metrics-collection.md",
@@ -129,8 +131,8 @@
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
-          "status": "Accepted (2026-07-30)",
-          "summary": "CC Headless를 하네스 동봉 이미지의 읽기 전용 단일 Fargate 분석 워커로 운영한다."
+          "status": "Accepted (2026-08-30)",
+          "summary": "Codex Headless를 하네스 동봉 이미지의 읽기 전용 Fargate 분석 워커로 운영하고 Bedrock Runtime Global Inference Profile을 태스크 역할로 호출하며 기존 물리 리소스명은 유지한다."
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
@@ -139,8 +141,8 @@
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
-          "status": "Accepted (2026-08-08)",
-          "summary": "파이프라인 스팬·가설 상태·플레이북 실행 시도와 회고 개정 준비본·정식 개정본을 세션과 같은 파티션의 실행 trace로 기록한다."
+          "status": "Accepted (2026-08-30)",
+          "summary": "신규 Codex 트레이스와 세션은 codex-headless 식별자를 사용하고 기존 cc-headless 기록은 읽기 호환으로 유지하며 분석·실행·회고 trace를 같은 파티션에 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",

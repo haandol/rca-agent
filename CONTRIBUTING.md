@@ -48,7 +48,7 @@
 | Scope         | 대상                                                      |
 | ------------- | --------------------------------------------------------- |
 | `agent`       | RCA 에이전트 코어 (`packages/agent/`)                     |
-| `cc-headless` | CC on Bedrock headless 에이전트 (`packages/cc-headless/`) |
+| `codex-headless` | Codex on Bedrock Runtime headless 에이전트 (`packages/codex-headless/`) |
 | `infra`       | AWS CDK 인프라 (`packages/infra/`)                        |
 | `sensor`      | 헬스케어 센서 앱 (`packages/healthcare-sensor-app/`)      |
 | `dashboard`   | RCA 대시보드 (`packages/dashboard/`)                      |

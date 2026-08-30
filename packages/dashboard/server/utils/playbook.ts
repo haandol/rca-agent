@@ -89,7 +89,7 @@ export function resolveCurrentPlaybook(
     }
   }
 
-  if (engine === 'cc-headless') {
+  if (engine === 'codex-headless' || engine === 'cc-headless') {
     const persisted = asObject(session.playbook);
     if (persisted && belongsToPlaybook(persisted, playbookId)) {
       return { playbook: persisted, source: 'session', sourceItem: session };

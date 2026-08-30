@@ -31,7 +31,7 @@
 | Sub-Agent | Directory | Language | Lint/Build |
 |-----------|-----------|----------|------------|
 | **Agent** | `packages/agent/` | Python | `uv run ruff check`, `uv run pytest` |
-| **CC Headless** | [`packages/cc-headless/`](../packages/cc-headless/AGENTS.md) | Python | `uv run ruff check`, `uv run pytest` |
+| **Codex Headless** | [`packages/codex-headless/`](../packages/codex-headless/AGENTS.md) | Python | `uv run ruff check`, `uv run pytest` |
 | **Infra** | [`packages/infra/`](../packages/infra/AGENTS.md) | TypeScript (CDK) | `pnpm lint`, `pnpm build`, `pnpm test` |
 | **Healthcare Sensor App** | [`packages/healthcare-sensor-app/`](../packages/healthcare-sensor-app/AGENTS.md) | Python (FastAPI) | `uv run ruff check`, `uv run pytest` |
 | **Dashboard** | [`packages/dashboard/`](../packages/dashboard/AGENTS.md) | TypeScript (Nuxt.js 4, DaisyUI 5) | `pnpm dev`, `pnpm build` |

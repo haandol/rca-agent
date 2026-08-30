@@ -351,7 +351,7 @@ const runningCount = computed(() => counts.value.get('RUNNING') ?? 0);
 
 const readinessModal = ref<HTMLDialogElement | null>(null);
 
-const ALLOWED_ENGINES = new Set(['strands', 'cc-headless']);
+const ALLOWED_ENGINES = new Set(['strands', 'codex-headless', 'cc-headless']);
 const cancelTarget = ref<{ rcaId: string; engine: string } | null>(null);
 const cancelling = ref(false);
 const cancelModalRef = ref<HTMLDialogElement | null>(null);

@@ -79,5 +79,5 @@ Accepted (2026-04-22)
 ## Related
 
 - [ADR tools/0004: 배포 이력 조회](0004-deploy-history.md) — 의심 배포를 식별하는 이전 단계
-- [ADR agent/0011: CC Headless 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md) — RCA 역할의 읽기 전용 도구 경계
+- [ADR agent/0011: Codex Headless 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md) — RCA 역할의 읽기 전용 도구 경계
 - [ADR infra/0007: 데모 증상 알람과 배포 기반 장애 주입](../infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md) — 코드 변경 분석이 결론에 기여하는 시나리오

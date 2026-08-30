@@ -82,7 +82,7 @@ Accepted (2026-08-08)
    - **사실 기반 절단**: 각 "왜?"의 답은 수집된 증거 또는 타임라인 이벤트와 연결되어야 하며, 추측이면 사슬을 거기서 자르고 "증거 부족" 으로 명시.
    - **Blameless 톤**: 사람·팀을 비난하지 않고 시스템 관점으로만 기술.
 
-   가드레일은 가설 생성 단계에도 동일하게 적용된다([ADR agent/0002](0002-hypothesis-tree-lifecycle.md)). CC Headless 엔진도 시스템 프롬프트의 공통 원칙과 보고서 단계 프롬프트로 같은 가드레일을 주입한다([ADR agent/0011](0011-cc-headless-prompt-driven-rca.md)) — 두 엔진의 보고서가 같은 품질 기준으로 비교되어야 하기 때문이다.
+   가드레일은 가설 생성 단계에도 동일하게 적용된다([ADR agent/0002](0002-hypothesis-tree-lifecycle.md)). Codex Headless 엔진도 시스템 프롬프트의 공통 원칙과 보고서 단계 프롬프트로 같은 가드레일을 주입한다([ADR agent/0011](0011-cc-headless-prompt-driven-rca.md)) — 두 엔진의 보고서가 같은 품질 기준으로 비교되어야 하기 때문이다.
 
 7. **실행 결과는 보고서에 담지 않는다**: 보고서는 분석 시점에 확정되고, 실행은 그 뒤 사용자 승인으로 시작되어 여러 번 시도될 수 있다([ADR agent/0017](0017-playbook-execution-agent.md)). 실행 결과를 보고서 본문에 쓰면 확정된 문서를 사후에 변경해야 하고, 재실행 시 어느 시도의 결과인지 모호해진다. 실행 상태와 증거는 실행 생명주기가 보유하며 보고서는 이를 참조하지 않는다.
 
@@ -136,6 +136,6 @@ Accepted (2026-08-08)
 - [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 5 Whys 가드레일이 가설 생성·분기에도 적용됨
 - [ADR agent/0006: 중단 조건 판단](0006-termination-conditions.md) — 중단 후 보고서 생성으로 전이
 - [ADR agent/0008: 플레이북 생성](0008-playbook-generation.md) — 리포트에 포함되는 플레이북의 구조
-- [ADR agent/0011: CC Headless 전문 서브 에이전트 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — CC Headless의 보고서 프롬프트에도 동일 가드레일 주입
+- [ADR agent/0011: Codex Headless 전문 서브 에이전트 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — Codex Headless의 보고서 프롬프트에도 동일 가드레일 주입
 - [ADR agent/0017: 플레이북 실행 에이전트](0017-playbook-execution-agent.md) — 리포트와 분리된 실행 생명주기
 - [ADR agent/0018: 플레이북 회고](0018-playbook-retrospective.md) — 승인 화면이 표기하는 검증 상태를 승격시키는 단계

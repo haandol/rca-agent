@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const CONTRACT_EXTENSIONS = new Set(['.json', '.md', '.py']);
+const CONTRACT_EXTENSIONS = new Set(['.json', '.md', '.py', '.toml']);
 export const SCENARIO_EXECUTION_MODES = ['deployed-e2e', 'model-eval'];
 export const ROOT_FAULT_TYPES = [
   'db-leak',
@@ -28,7 +28,7 @@ export const REQUIRED_DIMENSIONS = [
   'competingCausesRejected',
 ];
 
-export const EXPECTED_ENGINES = ['cc-headless', 'strands'];
+export const EXPECTED_ENGINES = ['codex-headless', 'strands'];
 
 export const DEFAULT_CONTRACT_INPUTS = [
   'tests/harness/evaluator.mjs',
@@ -38,18 +38,16 @@ export const DEFAULT_CONTRACT_INPUTS = [
   // Each model-eval adapter decides how a run becomes a normalized result, so
   // changing one changes the evaluated contract and requires re-approval.
   'packages/agent/src/rca_agent/eval_adapter.py',
-  'packages/cc-headless/src/cc_headless/eval_adapter.py',
-  'packages/cc-headless/CLAUDE.md',
-  'packages/cc-headless/.claude/agents',
-  'packages/cc-headless/prompts',
-  'packages/cc-headless/.claude/skills',
-  'packages/cc-headless/mcp-config.json',
-  'packages/cc-headless/src/cc_headless/adapters/secondary/cc/cc_subprocess_runner.py',
-  'packages/cc-headless/src/cc_headless/mcp_server.py',
-  'packages/cc-headless/src/cc_headless/services/prompt_builder.py',
+  'packages/codex-headless/src/codex_headless/eval_adapter.py',
+  'packages/codex-headless/harness',
+  'packages/codex-headless/prompts',
+  'packages/codex-headless/src/codex_headless/adapters/secondary/codex/codex_harness.py',
+  'packages/codex-headless/src/codex_headless/adapters/secondary/codex/codex_subprocess_runner.py',
+  'packages/codex-headless/src/codex_headless/mcp_server.py',
+  'packages/codex-headless/src/codex_headless/services/prompt_builder.py',
   // The adapters derive remediation safety from this vocabulary.
   'packages/agent/src/rca_agent/services/destructive_actions.py',
-  'packages/cc-headless/src/cc_headless/services/destructive_actions.py',
+  'packages/codex-headless/src/codex_headless/services/destructive_actions.py',
 ];
 
 function assertString(value, label) {

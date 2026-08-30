@@ -10,7 +10,7 @@
  *
  * The state names themselves are the engines' contract, not this module's. Both
  * engines write their own transitions — Strands moves through the nine pipeline
- * stages, CC Headless collapses them into a single ANALYZING — so this module
+ * stages, the headless engines collapse them into a single ANALYZING — so this module
  * only names what the engines record and must not be treated as the source of
  * which transitions are legal.
  */
@@ -50,7 +50,7 @@ export const STATE_DESC: Record<string, string> = {
   // 분석은 읽기 전용이다. 복구는 사용자가 플레이북 실행을 승인한 뒤 쓰기 권한을 가진
   // 별도 에이전트가 수행하므로, 이 단계의 설명이 복구를 암시하면 안 된다.
   ANALYZING:
-    'CC Headless 엔진이 프롬프트 주도로 읽기 전용 RCA·보고서 전문 에이전트를 자율 실행 중인 상태',
+    'Codex Headless 엔진이 프롬프트 주도로 읽기 전용 RCA·보고서 전문 에이전트를 자율 실행 중인 상태',
   COMPLETED:
     'RCA 분석이 정상 완료되어 보고서가 S3에 저장되고 알림이 발송된 상태',
   FAILED: '파이프라인 실행 중 오류가 발생하여 분석이 중단된 상태',
@@ -58,7 +58,7 @@ export const STATE_DESC: Record<string, string> = {
   // 판정 근거는 TTL이 아니라 알람 나이다. 기준은 엔진마다 다르다 — 예산 소진 한 번이
   // 뒤따르는 알람을 폐기하지 않으려면 기준이 그 엔진의 시간 예산 이상이어야 한다.
   OUTDATED:
-    '알람이 너무 오래되어 분석에 들어가지 않고 종료된 상태. 첫 수신 시점에 알람 나이가 기준(Strands 30분, CC Headless 60분)을 넘으면 이 상태가 된다.',
+    '알람이 너무 오래되어 분석에 들어가지 않고 종료된 상태. 첫 수신 시점에 알람 나이가 기준(Strands 30분, Codex Headless 60분)을 넘으면 이 상태가 된다.',
 };
 
 /**
@@ -80,7 +80,7 @@ export const TERMINAL_STATES = [
  * Used to say how far a stopped run got: a terminal state overwrites the stage it
  * happened in, so '3단계 중 스코핑에서' has to be derived from this order rather
  * than read off the session. The two engines have genuinely different lengths
- * (Strands moves through the pipeline stage by stage, CC Headless collapses them
+ * (Strands moves through the pipeline stage by stage, headless engines collapse them
  * into a single autonomous run), and flattening them to a common length would
  * claim a precision neither engine reports.
  */
@@ -95,6 +95,7 @@ export const ENGINE_TRACK: Record<string, readonly string[]> = {
     'REPORT_GENERATION',
     'COMPLETED',
   ],
+  'codex-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
   'cc-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
 };
 

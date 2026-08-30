@@ -46,7 +46,7 @@ test('live E2E runbook binds sessions to the exact post-fault ALARM transition',
   assert.match(runbook, /row\["state_change_time"\] == expected_state_change/);
   assert.match(runbook, /primary lineage must contain exactly two sessions/);
   assert.match(runbook, /"strands#SESSION"/);
-  assert.match(runbook, /"cc-headless#SESSION"/);
+  assert.match(runbook, /"codex-headless#SESSION"/);
   assert.match(
     runbook,
     /sessions must be COMPLETED before evidence inspection/,

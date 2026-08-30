@@ -16,7 +16,11 @@
  */
 
 /** The engines whose records this dashboard is willing to act on. */
-export const ALLOWED_ENGINES = ['strands', 'cc-headless'] as const;
+export const ALLOWED_ENGINES = [
+  'strands',
+  'codex-headless',
+  'cc-headless',
+] as const;
 
 export type Engine = (typeof ALLOWED_ENGINES)[number];
 

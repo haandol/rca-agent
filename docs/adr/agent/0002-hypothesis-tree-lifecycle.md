@@ -75,7 +75,7 @@ flowchart TD
   - **사실 기반 검증성**: `description`에 "어떤 증거로 어떻게 검증할 것인가" 를 함께 명시. 검증 불가능한 추상적·심리적 원인은 금지.
   - **Blameless 톤**: 사람·팀을 특정하지 않고 시스템 관점으로만 작성.
 
-  동일 가드레일이 cc-headless 엔진의 `hypothesis-generation` skill·서브에이전트 프롬프트에도 적용된다([ADR 0011](0011-cc-headless-prompt-driven-rca.md)). 보고서 단계 5 Whys 작성 규칙은 [ADR 0007](0007-rca-report-generation.md) 참조.
+  동일 가드레일이 codex-headless 엔진의 `hypothesis-generation` skill·서브에이전트 프롬프트에도 적용된다([ADR 0011](0011-cc-headless-prompt-driven-rca.md)). 보고서 단계 5 Whys 작성 규칙은 [ADR 0007](0007-rca-report-generation.md) 참조.
 
 ### 2. Accepted Review Gate (매 검증 루프 진입 시)
 
@@ -149,7 +149,7 @@ flowchart TD
 
 ### 7. 루프 종료 시 정리
 
-검증 루프가 종료되면(CONFIRMED 발견, 타임 버짓 소진, 최대 루프 도달 등) PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설을 **CLOSED**로 처리한다. REJECTED는 증거에 의해 명시적으로 기각된 가설에만 사용하고, 예산 소진/미검증으로 종료된 가설은 CLOSED로 구분한다. best_hypothesis로 선택된 가설은 제외한다. 모든 가설이 CONFIRMED/REJECTED/CLOSED 중 하나의 최종 상태를 갖게 하여 세션 완료 시 상태 일관성을 보장한다. CC Headless에서도 산출물 파싱과 프롬프트로 동일 동작을 구현한다.
+검증 루프가 종료되면(CONFIRMED 발견, 타임 버짓 소진, 최대 루프 도달 등) PENDING 또는 NEEDS_INVESTIGATION 상태로 남은 가설을 **CLOSED**로 처리한다. REJECTED는 증거에 의해 명시적으로 기각된 가설에만 사용하고, 예산 소진/미검증으로 종료된 가설은 CLOSED로 구분한다. best_hypothesis로 선택된 가설은 제외한다. 모든 가설이 CONFIRMED/REJECTED/CLOSED 중 하나의 최종 상태를 갖게 하여 세션 완료 시 상태 일관성을 보장한다. Codex Headless에서도 산출물 파싱과 프롬프트로 동일 동작을 구현한다.
 
 ### 대안 검토
 

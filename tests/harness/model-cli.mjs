@@ -19,7 +19,7 @@ import {
 } from './cli-utils.mjs';
 
 const COMMAND_ENV = {
-  'cc-headless': 'RCA_EVAL_CC_HEADLESS_COMMAND',
+  'codex-headless': 'RCA_EVAL_CODEX_HEADLESS_COMMAND',
   strands: 'RCA_EVAL_STRANDS_COMMAND',
 };
 const DEFAULT_MODEL_TIMEOUT_MS = 60 * 60 * 1000;
@@ -144,27 +144,43 @@ export function validateModelEnvironment(
       'Missing AWS credentials. Set AWS_PROFILE, an access-key pair, a container credential URI, or web-identity variables.',
     );
   }
-  // The deployed-model parity contract belongs to CC Headless, so it is enforced
+  // The deployed-model parity contract belongs to Codex Headless, so it is enforced
   // exactly when that engine is in scope.
-  if (engines.includes('cc-headless')) {
-    if (env.CLAUDE_CODE_USE_BEDROCK !== '1') {
+  if (engines.includes('codex-headless')) {
+    if (env.CODEX_MODEL !== 'global.openai.gpt-5.6-sol') {
       throw new Error(
-        'CLAUDE_CODE_USE_BEDROCK must be 1 so CC Headless model evaluation uses the deployed Bedrock backend.',
+        'CODEX_MODEL must be global.openai.gpt-5.6-sol for Codex Headless model evaluation.',
       );
     }
-    if (!env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
+    if (env.CODEX_REASONING_EFFORT !== 'high') {
       throw new Error(
-        'Missing ANTHROPIC_DEFAULT_SONNET_MODEL. Set it to the model ID deployed by the CC Headless task.',
+        'CODEX_REASONING_EFFORT must be high for Codex Headless model evaluation.',
       );
     }
-    if (!env.RCA_EVAL_DEPLOYED_CC_MODEL) {
+    if (env.CODEX_MODEL_PROVIDER !== 'amazon-bedrock-runtime') {
       throw new Error(
-        'Missing RCA_EVAL_DEPLOYED_CC_MODEL. Set it to the model ID from the deployed CC Headless task definition.',
+        'CODEX_MODEL_PROVIDER must be amazon-bedrock-runtime for Codex Headless model evaluation.',
       );
     }
-    if (env.ANTHROPIC_DEFAULT_SONNET_MODEL !== env.RCA_EVAL_DEPLOYED_CC_MODEL) {
+    for (const variable of [
+      'RCA_EVAL_DEPLOYED_CODEX_MODEL',
+      'RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT',
+      'RCA_EVAL_DEPLOYED_CODEX_PROVIDER',
+    ]) {
+      if (!env[variable]) {
+        throw new Error(
+          `Missing ${variable}. Set it from the deployed Codex Headless task definition.`,
+        );
+      }
+    }
+    if (
+      env.CODEX_MODEL !== env.RCA_EVAL_DEPLOYED_CODEX_MODEL ||
+      env.CODEX_REASONING_EFFORT !==
+        env.RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT ||
+      env.CODEX_MODEL_PROVIDER !== env.RCA_EVAL_DEPLOYED_CODEX_PROVIDER
+    ) {
       throw new Error(
-        'Model contract mismatch: ANTHROPIC_DEFAULT_SONNET_MODEL must exactly match RCA_EVAL_DEPLOYED_CC_MODEL.',
+        'Codex model contract mismatch: local model, reasoning effort, and provider must match the deployed task.',
       );
     }
   }
@@ -387,10 +403,18 @@ export async function runModelEvaluation({
     enginesRun: requestedEngines,
     enginesReused: reusedEngines,
     modelContract: {
-      anthropicDefaultSonnetModel: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-      deployedCcHeadlessModel: env.RCA_EVAL_DEPLOYED_CC_MODEL,
+      codexModel: env.CODEX_MODEL,
+      codexReasoningEffort: env.CODEX_REASONING_EFFORT,
+      codexProvider: env.CODEX_MODEL_PROVIDER,
+      deployedCodexModel: env.RCA_EVAL_DEPLOYED_CODEX_MODEL,
+      deployedCodexReasoningEffort:
+        env.RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT,
+      deployedCodexProvider: env.RCA_EVAL_DEPLOYED_CODEX_PROVIDER,
       matches:
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL === env.RCA_EVAL_DEPLOYED_CC_MODEL,
+        env.CODEX_MODEL === env.RCA_EVAL_DEPLOYED_CODEX_MODEL &&
+        env.CODEX_REASONING_EFFORT ===
+          env.RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT &&
+        env.CODEX_MODEL_PROVIDER === env.RCA_EVAL_DEPLOYED_CODEX_PROVIDER,
     },
     resultsDirectory: actualResultsDirectory,
   };

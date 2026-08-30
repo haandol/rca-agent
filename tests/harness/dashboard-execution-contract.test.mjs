@@ -134,8 +134,8 @@ test('playbook selection is exact for CC sessions and conservative for legacy St
     execution_steps: [{ step_id: 'persisted' }],
   };
   const arbitrarySpan = {
-    SK: 'cc-headless#SPAN#other',
-    engine: 'cc-headless',
+    SK: 'codex-headless#SPAN#other',
+    engine: 'codex-headless',
     span_type: 'PLAYBOOK',
     metadata: {
       playbook_id: 'cc-current',
@@ -145,11 +145,11 @@ test('playbook selection is exact for CC sessions and conservative for legacy St
   const cc = resolveCurrentPlaybook(
     [arbitrarySpan],
     {
-      SK: 'cc-headless#SESSION',
+      SK: 'codex-headless#SESSION',
       playbook_id: 'cc-current',
       playbook: JSON.stringify(ccPlaybook),
     },
-    'cc-headless',
+    'codex-headless',
   );
   assert.deepEqual(cc?.playbook, ccPlaybook);
   assert.equal(cc?.source, 'session');
@@ -205,7 +205,7 @@ test('executable playbooks require complete uniquely identified steps', async ()
 
   const items = [
     {
-      SK: 'cc-headless#SESSION',
+      SK: 'codex-headless#SESSION',
       confirmed: false,
       playbook_id: 'pb-1',
       playbook: JSON.stringify({
@@ -215,7 +215,7 @@ test('executable playbooks require complete uniquely identified steps', async ()
     },
   ];
   assert.equal(
-    countExecutionSteps(items, 'cc-headless'),
+    countExecutionSteps(items, 'codex-headless'),
     0,
     'readiness cannot offer an unconfirmed procedure that approval rejects',
   );
@@ -693,7 +693,7 @@ test('the session index stays session-only, and old sessions are backfilled into
   // Both engines write the keys, or that engine's sessions never appear.
   for (const enginePath of [
     'packages/agent/src/rca_agent/adapters/secondary/session/dynamodb_session_store.py',
-    'packages/cc-headless/src/cc_headless/adapters/secondary/session/dynamodb_session_store.py',
+    'packages/codex-headless/src/codex_headless/adapters/secondary/session/dynamodb_session_store.py',
   ]) {
     const source = await readRepositoryFile(enginePath);
     assert.match(source, /"list_engine"/, `${enginePath} writes the index key`);
@@ -724,11 +724,13 @@ test('dashboard state graph selects the engine-specific lifecycle', async () => 
   assert.match(graphSource, /engine: string/);
   assert.match(
     graphSource,
-    /CC_HEADLESS_HAPPY_PATH = \['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'\]/,
+    /HEADLESS_HAPPY_PATH = \['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'\]/,
   );
+  assert.match(graphSource, /props\.engine === 'codex-headless'/);
+  assert.match(graphSource, /props\.engine === 'cc-headless'/);
   assert.match(
     graphSource,
-    /props\.engine === 'cc-headless' \? CC_HEADLESS_HAPPY_PATH : STRANDS_HAPPY_PATH/,
+    /isHeadlessEngine\.value \? HEADLESS_HAPPY_PATH : STRANDS_HAPPY_PATH/,
   );
   assert.match(graphSource, /ANALYZING: \['COMPLETED'\]/);
   assert.match(tracePageSource, /:engine="trace\.session\.engine"/);
@@ -751,7 +753,7 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
   );
   assert.doesNotMatch(
     endpointSource,
-    /const engines = \['strands', 'cc-headless'\]/,
+    /const engines = \['strands', 'codex-headless'\]/,
   );
 
   // The legacy fallback and the hypothesis scoping are shared key helpers now,
@@ -768,6 +770,9 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
     'strands#SESSION',
     'SESSION',
   ]);
+  assert.deepEqual(sessionSkCandidates('codex-headless'), [
+    'codex-headless#SESSION',
+  ]);
   assert.deepEqual(sessionSkCandidates('cc-headless'), ['cc-headless#SESSION']);
 
   // Only hypotheses belonging to the resolved session representation are closed.
@@ -775,6 +780,10 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
   assert.equal(
     hypothesisSkPrefix('strands', 'strands#SESSION'),
     'strands#HYPO#',
+  );
+  assert.equal(
+    hypothesisSkPrefix('codex-headless', 'codex-headless#SESSION'),
+    'codex-headless#HYPO#',
   );
   assert.equal(
     hypothesisSkPrefix('cc-headless', 'cc-headless#SESSION'),

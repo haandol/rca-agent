@@ -18,13 +18,13 @@
 ```mermaid
 flowchart TB
     CW["CloudWatch 알람"]
-    ENG["RCA 분석 엔진<br/>Strands · CC Headless<br/>읽기 전용"]
+    ENG["RCA 분석 엔진<br/>Strands · Codex Headless<br/>읽기 전용"]
     REP["리포트 1개<br/>report.md + playbook.json<br/>verification_status = DRAFT"]
     APV["사람이 대시보드에서 절차 열람 후 승인<br/>POST /api/executions"]
     SNP["승인 시점 플레이북 고정<br/>immutable S3 snapshot + SHA-256"]
     RSV["실행 사전 예약<br/>PENDING_APPROVAL + EXEC_ACTIVE"]
     QUE["실행 요청 큐<br/>이벤트 구독 없음"]
-    WRK["플레이북 실행 에이전트<br/>cc_headless.execution_main"]
+    WRK["플레이북 실행 에이전트<br/>codex_headless.execution_main"]
     GATE["실행 도구의 파괴성 판정<br/>argv 분해 → 서비스·작업 이름 → 거부 어휘 대조"]
     RUN["명령 실행"]
     MAN["거부 → 수동 조치로 남김<br/>나머지 절차는 계속"]
@@ -52,7 +52,7 @@ flowchart TB
 
 ## 2. 분석 — 읽기 전용이고 리포트 하나로 끝난다
 
-같은 CloudWatch 알람을 SNS가 두 개의 SQS 큐로 팬아웃하고, Strands 엔진과 CC Headless
+같은 CloudWatch 알람을 SNS가 두 개의 SQS 큐로 팬아웃하고, Strands 엔진과 Codex Headless
 엔진이 각자 독립적으로 RCA를 수행한다. 두 엔진을 유지하는 이유는 같은 입력으로 RCA 품질을
 비교하기 위한 것이며, 실행 경로는 두 엔진이 공유한다.
 
@@ -74,7 +74,7 @@ sequenceDiagram
     participant U as 대시보드 (사람)
 
     CW->>SNS: 알람 상태 전이
-    SNS->>SQS: 팬아웃 (Strands · CC Headless)
+    SNS->>SQS: 팬아웃 (Strands · Codex Headless)
     SQS-->>ENG: 알람 메시지
     ENG->>ENG: 세션 claim (조건부 쓰기)
     ENG->>ENG: 스코핑 → 가설 → 증거 → 검증
@@ -151,7 +151,7 @@ UUID를 사용하거나 같은 RCA에 다른 활성 승인이 있으면 거부�
 
 ## 5. 실행 — 절차를 명령으로 옮긴다
 
-실행은 분석과 별개의 워커다. 진입점은 `python -m cc_headless.execution_main`이며 분석
+실행은 분석과 별개의 워커다. 진입점은 `python -m codex_headless.execution_main`이며 분석
 워커와 **같은 컨테이너 이미지를 다른 진입점으로** 실행한다. 하나의 하네스를 두 진입점으로
 나눈 것이므로 실행 도구와 분석 도구가 같은 프로세스에 들어가는 일이 없다.
 
@@ -402,7 +402,7 @@ Strands 엔진은 새 분석에서 플레이북을 만들 때 기존 플레이�
 
 | | 분석 | 실행 |
 |---|------|------|
-| 진입점 | `main.py` (엔진별) | `python -m cc_headless.execution_main` |
+| 진입점 | `main.py` (엔진별) | `python -m codex_headless.execution_main` |
 | 트리거 | CloudWatch 알람 (SNS→SQS) | 대시보드가 발행한 실행 요청 큐 메시지 |
 | 이벤트 구독 | 있음 (알람) | **없음** |
 | 배치 | ECS Fargate 상시 | ECS Fargate 상시 1 태스크 |

@@ -1,0 +1,14 @@
+name = "rca-specialist"
+sandbox_mode = "read-only"
+approval_policy = "never"
+web_search = "disabled"
+
+[mcp_servers.rca-progress]
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/codex_headless/mcp_server.py:mcp"]
+enabled_tools = ["save_analysis_artifact"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.rca-progress.env]
+FASTMCP_LOG_LEVEL = "ERROR"

@@ -1258,7 +1258,7 @@ class PipelineOrchestrator:
                 playbook_span,
                 output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),
                 # 실행 주체가 이 메타데이터에서 절차를 읽으므로 두 엔진이 같은 모양을
-                # 써야 한다. cc-headless 의 PLAYBOOK 스팬 메타데이터가 기준이다.
+                # 써야 한다. 산출물 기반 headless 엔진의 PLAYBOOK 스팬 메타데이터가 기준이다.
                 metadata={
                     "playbook_id": playbook.playbook_id,
                     "failure_type": playbook.failure_type,

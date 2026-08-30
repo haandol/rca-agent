@@ -21,11 +21,14 @@ pnpm verify
 ```bash
 export AWS_PROFILE=rca-dev
 export AWS_REGION=us-east-1
-export CLAUDE_CODE_USE_BEDROCK=1
-export ANTHROPIC_DEFAULT_SONNET_MODEL=global.anthropic.claude-sonnet-5
-export RCA_EVAL_DEPLOYED_CC_MODEL=global.anthropic.claude-sonnet-5
+export CODEX_MODEL=global.openai.gpt-5.6-sol
+export CODEX_REASONING_EFFORT=high
+export CODEX_MODEL_PROVIDER=amazon-bedrock-runtime
+export RCA_EVAL_DEPLOYED_CODEX_MODEL=global.openai.gpt-5.6-sol
+export RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT=high
+export RCA_EVAL_DEPLOYED_CODEX_PROVIDER=amazon-bedrock-runtime
 export RCA_EVAL_STRANDS_COMMAND='["uv","run","--project","packages/agent","rca-agent-eval","{scenario}"]'
-export RCA_EVAL_CC_HEADLESS_COMMAND='["uv","run","--project","packages/cc-headless","cc-headless-eval","{scenario}"]'
+export RCA_EVAL_CODEX_HEADLESS_COMMAND='["uv","run","--project","packages/codex-headless","codex-headless-eval","{scenario}"]'
 pnpm eval:model
 ```
 
@@ -52,26 +55,26 @@ export S3_VECTOR_BUCKET_NAME=<벡터 버킷>
 리소스를 지정하면 운영 데이터와 섞이므로, 실행 후 남은 세션과 활성 인시던트 항목을
 정리한다. 활성 인시던트를 남기면 같은 알람의 실제 장애가 억제될 수 있다.
 
-cc-headless 어댑터는 배포된 것과 같은 하네스를 로컬에서 한 번 실행한다. Claude
-Code CLI와 하네스가 참조하는 MCP 서버 실행기가 로컬에 설치되어 있어야 하고,
+codex-headless 어댑터는 배포된 것과 같은 하네스를 로컬에서 한 번 실행한다. Codex
+CLI와 하네스가 참조하는 MCP 서버 실행기가 로컬에 설치되어 있어야 하고,
 Bedrock 및 CloudWatch·CloudTrail 조회 권한이 필요하다.
-배포 전 확인한 CC Headless task definition의 모델 값을
-`RCA_EVAL_DEPLOYED_CC_MODEL`에 명시한다. 하네스는 이 값과
-`ANTHROPIC_DEFAULT_SONNET_MODEL`의 정확한 일치를 실행 전에 검사하고 두 값을
-보고서의 `modelContract`에 기록한다. 결정적 테스트에서 AWS를 자동 조회하지 않는다.
+배포 전 확인한 Codex Headless task definition의 모델, reasoning effort, provider를
+`RCA_EVAL_DEPLOYED_CODEX_*` 변수에 명시한다. 하네스는 로컬 값과 배포 값의 정확한
+일치를 실행 전에 검사하고 보고서의 `modelContract`에 기록한다. 결정적 테스트에서
+AWS를 자동 조회하지 않는다.
 호출별 기본 상한은 배포 실행 상한과 같은 60분이며,
 `RCA_EVAL_TIMEOUT_MS`로 더 짧게 설정할 수 있다.
 
 `pnpm eval:model`은 기본적으로 두 엔진을 모두 실행하며, 실행할 엔진의 command만
 요구한다. `--engine`으로 엔진을 좁히면 그 엔진만 실행하고 나머지 엔진의 command와
-CC Headless 모델 패리티 변수는 검사하지 않는다.
+Codex Headless 모델 패리티 변수는 검사하지 않는다.
 
 ```bash
 # 한 엔진만 실행 (진단·부분 확인용)
 pnpm eval:model --engine strands
 
 # 남은 엔진을 같은 회차에 이어 실행 — 앞선 결과를 재사용해 회차가 전수를 채운다
-pnpm eval:model --engine cc-headless --results tests/results/model/<run-id>/results
+pnpm eval:model --engine codex-headless --results tests/results/model/<run-id>/results
 ```
 
 한 엔진의 회차가 수십 분을 쓰므로, 다른 엔진의 실패나 환경 설정 오류 때문에 이미

@@ -55,7 +55,7 @@ flowchart LR
    - HYPOTHESIS_VALIDATION에서 추가 증거 필요 시 EVIDENCE_COLLECTION으로 재진입 가능
    - 모든 non-terminal 상태에서 FAILED, OUTDATED, CANCELLED로 전이 가능
 
-   **CC Headless 엔진 상태 전이**:
+   **Codex Headless 엔진 상태 전이**:
 
    ```
    ALARM_RECEIVED → ANALYZING → COMPLETED
@@ -77,7 +77,7 @@ flowchart LR
    - 보존: 세션과 같은 보존 기간의 TTL
 
    동일 candidate RCA ID는 활성 장애를 새로 열지 않고 통과시킨다. 이 때문에 같은
-   CloudWatch 이벤트를 받은 Strands와 CC Headless가 같은 `RCA#<candidate>` 파티션의
+   CloudWatch 이벤트를 받은 Strands와 Codex Headless가 같은 `RCA#<candidate>` 파티션의
    각자 세션 아이템을 독립적으로 만들 수 있다. 그 뒤의 엔진별 세션 claim이 같은 엔진의
    중복 delivery를 계속 차단한다.
 

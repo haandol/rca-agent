@@ -172,7 +172,10 @@ test('a retrospective revision decides how many steps are approvable', () => {
   assert.equal(countExecutionSteps([session, unnamed], 'strands'), 0);
 
   // One engine's playbook must not be counted for the other's row.
-  assert.equal(countExecutionSteps([session, playbookSpan], 'cc-headless'), 0);
+  assert.equal(
+    countExecutionSteps([session, playbookSpan], 'codex-headless'),
+    0,
+  );
   assert.equal(countExecutionSteps([], 'strands'), 0);
 });
 
@@ -188,7 +191,7 @@ test('a stopped run says which stage it stopped at', () => {
   // Nothing recorded, or a stage off this engine's track, admits to nothing
   // rather than inventing a position.
   assert.equal(stoppedAtLabel('strands', ''), '');
-  assert.equal(stoppedAtLabel('cc-headless', 'EVIDENCE_COLLECTION'), '');
+  assert.equal(stoppedAtLabel('codex-headless', 'EVIDENCE_COLLECTION'), '');
 });
 
 test('the furthest span decides the stage, whatever order the spans arrive in', () => {
@@ -216,12 +219,12 @@ test('the furthest span decides the stage, whatever order the spans arrive in', 
   );
   assert.equal(furthestStage([], 'strands'), '');
 
-  // CC Headless runs the analysis as one stage, so any work means ANALYZING —
+  // Codex Headless runs the analysis as one stage, so any work means ANALYZING —
   // not a Strands stage name it never enters.
   assert.equal(
     furthestStage(
-      [{ spanType: 'REPORT', engine: 'cc-headless' }],
-      'cc-headless',
+      [{ spanType: 'REPORT', engine: 'codex-headless' }],
+      'codex-headless',
     ),
     'ANALYZING',
   );
@@ -244,7 +247,7 @@ test('every outcome and readiness a row can hold has a Korean label and a tone',
   for (const readiness of READINESS) {
     assert.ok(READINESS_LABEL[readiness], `${readiness} has a label`);
   }
-  for (const engine of ['strands', 'cc-headless']) {
+  for (const engine of ['strands', 'codex-headless']) {
     for (const stage of engineTrack(engine)) {
       assert.ok(STATE_LABEL[stage], `${stage} has a label`);
     }
@@ -256,7 +259,7 @@ test('every outcome and readiness a row can hold has a Korean label and a tone',
 });
 
 test('the causal chain survives both engines’ prose, and never half-parses', () => {
-  // Strands separates with '→', CC Headless with '—'; the report page leads with
+  // Strands separates with '→', Codex Headless with '—'; the report page leads with
   // this chain, so a drift in either would leave the page with nothing to show.
   const strands = parseCausalChain(
     [

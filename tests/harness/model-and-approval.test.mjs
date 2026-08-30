@@ -30,48 +30,61 @@ const fakeEnginePath = path.join(
 test('model evaluation fails with actionable missing command errors', () => {
   assert.throws(
     () => validateModelEnvironment({ AWS_REGION: 'ap-northeast-2' }),
-    /Missing RCA_EVAL_CC_HEADLESS_COMMAND/,
+    /Missing RCA_EVAL_CODEX_HEADLESS_COMMAND/,
   );
 });
 
-test('model evaluation requires the deployed CC Bedrock model contract', () => {
+test('model evaluation requires the deployed Codex model contract', () => {
   const commands = {
     AWS_PROFILE: 'fake-test-profile',
     AWS_REGION: 'us-east-1',
-    RCA_EVAL_CC_HEADLESS_COMMAND: '["cc-headless"]',
+    RCA_EVAL_CODEX_HEADLESS_COMMAND: '["codex-headless"]',
     RCA_EVAL_STRANDS_COMMAND: '["strands"]',
   };
 
   assert.throws(
     () => validateModelEnvironment(commands),
-    /CLAUDE_CODE_USE_BEDROCK must be 1/,
+    /CODEX_MODEL must be global\.openai\.gpt-5\.6-sol/,
   );
   assert.throws(
     () =>
       validateModelEnvironment({
         ...commands,
-        CLAUDE_CODE_USE_BEDROCK: '1',
+        CODEX_MODEL: 'global.openai.gpt-5.6-sol',
       }),
-    /Missing ANTHROPIC_DEFAULT_SONNET_MODEL/,
+    /CODEX_REASONING_EFFORT must be high/,
   );
   assert.throws(
     () =>
       validateModelEnvironment({
         ...commands,
-        CLAUDE_CODE_USE_BEDROCK: '1',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'model-under-test',
+        CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+        CODEX_REASONING_EFFORT: 'high',
       }),
-    /Missing RCA_EVAL_DEPLOYED_CC_MODEL/,
+    /CODEX_MODEL_PROVIDER must be amazon-bedrock-runtime/,
   );
   assert.throws(
     () =>
       validateModelEnvironment({
         ...commands,
-        CLAUDE_CODE_USE_BEDROCK: '1',
-        ANTHROPIC_DEFAULT_SONNET_MODEL: 'model-under-test',
-        RCA_EVAL_DEPLOYED_CC_MODEL: 'different-deployed-model',
+        CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+        CODEX_REASONING_EFFORT: 'high',
+        CODEX_MODEL_PROVIDER: 'amazon-bedrock-runtime',
       }),
-    /Model contract mismatch/,
+    /Missing RCA_EVAL_DEPLOYED_CODEX_MODEL/,
+  );
+  assert.throws(
+    () =>
+      validateModelEnvironment({
+        ...commands,
+        CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+        CODEX_REASONING_EFFORT: 'high',
+        CODEX_MODEL_PROVIDER: 'amazon-bedrock-runtime',
+        RCA_EVAL_DEPLOYED_CODEX_MODEL: 'different-deployed-model',
+        RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT: 'high',
+        RCA_EVAL_DEPLOYED_CODEX_PROVIDER: 'amazon-bedrock-runtime',
+      }),
+    /Codex model contract mismatch/,
   );
 });
 
@@ -267,12 +280,15 @@ test('fake model commands run both engines and write normalized results and repo
     ...process.env,
     AWS_PROFILE: 'fake-test-profile',
     AWS_REGION: 'ap-northeast-2',
-    ANTHROPIC_DEFAULT_SONNET_MODEL: 'fake.deployed-model',
-    RCA_EVAL_DEPLOYED_CC_MODEL: 'fake.deployed-model',
-    CLAUDE_CODE_USE_BEDROCK: '1',
-    RCA_EVAL_CC_HEADLESS_COMMAND: JSON.stringify([
+    CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+    CODEX_REASONING_EFFORT: 'high',
+    CODEX_MODEL_PROVIDER: 'amazon-bedrock-runtime',
+    RCA_EVAL_DEPLOYED_CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+    RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT: 'high',
+    RCA_EVAL_DEPLOYED_CODEX_PROVIDER: 'amazon-bedrock-runtime',
+    RCA_EVAL_CODEX_HEADLESS_COMMAND: JSON.stringify([
       ...baseCommand,
-      'cc-headless',
+      'codex-headless',
       '{scenario}',
     ]),
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
@@ -289,8 +305,12 @@ test('fake model commands run both engines and write normalized results and repo
   assert.equal(outcome.report.schemaVersion, 2);
   assert.equal(outcome.report.executionMode, 'model-eval');
   assert.deepEqual(outcome.report.modelContract, {
-    anthropicDefaultSonnetModel: 'fake.deployed-model',
-    deployedCcHeadlessModel: 'fake.deployed-model',
+    codexModel: 'global.openai.gpt-5.6-sol',
+    codexReasoningEffort: 'high',
+    codexProvider: 'amazon-bedrock-runtime',
+    deployedCodexModel: 'global.openai.gpt-5.6-sol',
+    deployedCodexReasoningEffort: 'high',
+    deployedCodexProvider: 'amazon-bedrock-runtime',
     matches: true,
   });
   // Every scenario is run against every engine, so a new scenario has to appear
@@ -323,7 +343,7 @@ test('an engine selection is validated against the declared engines', () => {
   assert.deepEqual(resolveRequestedEngines(['strands']), ['strands']);
   // Declared order wins over flag order so a resumed run reports like a full one.
   assert.deepEqual(
-    resolveRequestedEngines(['strands', 'cc-headless']),
+    resolveRequestedEngines(['strands', 'codex-headless']),
     EXPECTED_ENGINES,
   );
   assert.throws(
@@ -354,10 +374,13 @@ test('one engine can be evaluated alone and the report says so', async () => {
         fakeEnginePath,
         'strands',
       ]),
-      RCA_EVAL_CC_HEADLESS_COMMAND: undefined,
-      CLAUDE_CODE_USE_BEDROCK: undefined,
-      ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
-      RCA_EVAL_DEPLOYED_CC_MODEL: undefined,
+      RCA_EVAL_CODEX_HEADLESS_COMMAND: undefined,
+      CODEX_MODEL: undefined,
+      CODEX_REASONING_EFFORT: undefined,
+      CODEX_MODEL_PROVIDER: undefined,
+      RCA_EVAL_DEPLOYED_CODEX_MODEL: undefined,
+      RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT: undefined,
+      RCA_EVAL_DEPLOYED_CODEX_PROVIDER: undefined,
     },
     baselinePath,
     resultsDirectory,
@@ -376,7 +399,7 @@ test('one engine can be evaluated alone and the report says so', async () => {
     outcome.report.evaluations.every(({ engine }) => engine === 'strands'),
   );
   await assert.rejects(
-    async () => stat(path.join(resultsDirectory, 'cc-headless')),
+    async () => stat(path.join(resultsDirectory, 'codex-headless')),
     /ENOENT/,
   );
 });
@@ -396,12 +419,15 @@ test('a partial round cannot be approved until the other engine runs into it', a
     ...process.env,
     AWS_PROFILE: 'fake-test-profile',
     AWS_REGION: 'ap-northeast-2',
-    ANTHROPIC_DEFAULT_SONNET_MODEL: 'fake.deployed-model',
-    RCA_EVAL_DEPLOYED_CC_MODEL: 'fake.deployed-model',
-    CLAUDE_CODE_USE_BEDROCK: '1',
-    RCA_EVAL_CC_HEADLESS_COMMAND: JSON.stringify([
+    CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+    CODEX_REASONING_EFFORT: 'high',
+    CODEX_MODEL_PROVIDER: 'amazon-bedrock-runtime',
+    RCA_EVAL_DEPLOYED_CODEX_MODEL: 'global.openai.gpt-5.6-sol',
+    RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT: 'high',
+    RCA_EVAL_DEPLOYED_CODEX_PROVIDER: 'amazon-bedrock-runtime',
+    RCA_EVAL_CODEX_HEADLESS_COMMAND: JSON.stringify([
       ...baseCommand,
-      'cc-headless',
+      'codex-headless',
       '{scenario}',
     ]),
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
@@ -427,10 +453,10 @@ test('a partial round cannot be approved until the other engine runs into it', a
   // disk, so the round reaches full coverage without repeating the first engine.
   const second = await runModelEvaluation({
     ...common,
-    engines: ['cc-headless'],
+    engines: ['codex-headless'],
   });
   assert.equal(second.report.passed, true, second.report.failures.join('\n'));
-  assert.deepEqual(second.report.enginesRun, ['cc-headless']);
+  assert.deepEqual(second.report.enginesRun, ['codex-headless']);
   assert.deepEqual(second.report.enginesReused, ['strands']);
   assert.equal(second.report.enginesComplete, true);
   assert.deepEqual(second.report.engines, EXPECTED_ENGINES);

@@ -28,7 +28,9 @@ export default defineEventHandler(async (event) => {
   const ddb = useDynamoDB();
   const s3 = useS3();
 
-  const engines = engineFilter ? [engineFilter] : ['cc-headless', 'strands'];
+  const engines = engineFilter
+    ? [engineFilter]
+    : ['codex-headless', 'cc-headless', 'strands'];
 
   const attempts: string[] = [];
   for (const engine of engines) {

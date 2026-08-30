@@ -1,0 +1,27 @@
+model = "{{CODEX_MODEL}}"
+model_provider = "{{CODEX_MODEL_PROVIDER}}"
+model_reasoning_effort = "{{CODEX_REASONING_EFFORT}}"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[mcp_servers.playbook-retrospective]
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/codex_headless/retrospective_mcp_server.py:mcp"]
+enabled_tools = ["save_playbook_update"]
+default_tools_approval_mode = "approve"
+env_vars = ["PLAYBOOK_EXECUTION_TOKEN", "PLAYBOOK_EXECUTION_ID"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.playbook-retrospective.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+PLAYBOOK_EXECUTION_TOKEN = "{{PLAYBOOK_EXECUTION_TOKEN}}"
+PLAYBOOK_EXECUTION_ID = "{{PLAYBOOK_EXECUTION_ID}}"
+
+[model_providers.amazon-bedrock-runtime]
+base_url = "{{BEDROCK_BASE_URL}}"
+
+[model_providers.amazon-bedrock-runtime.auth]
+command = "python"
+args = ["-m", "codex_headless.bedrock_token"]

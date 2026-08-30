@@ -204,7 +204,7 @@ class TestActiveIncident:
             TableName=table_name,
             Item={
                 "PK": {"S": f"RCA#{first.candidate_rca_id}"},
-                "SK": {"S": "cc-headless#SESSION"},
+                "SK": {"S": "codex-headless#SESSION"},
                 "state": {"S": "ALARM_RECEIVED"},
             },
         )

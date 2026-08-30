@@ -2,14 +2,14 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 수행하는 closed-loop 에이전트 시스템입니다. 두 가지 실행 엔진(Strands Agents SDK 9단계 파이프라인 / CC on Bedrock headless 전문 서브 에이전트 오케스트레이션)을 지원하며, MCP 서버를 통해 CloudWatch, CloudTrail, GitHub 데이터 소스를 자동 분석합니다.
+AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 수행하는 closed-loop 에이전트 시스템입니다. 두 가지 실행 엔진(Strands Agents SDK 9단계 파이프라인 / Codex on Bedrock Runtime headless 전문 서브 에이전트 오케스트레이션)을 지원하며, MCP 서버를 통해 CloudWatch, CloudTrail, GitHub 데이터 소스를 자동 분석합니다.
 
 ## 패키지 구성
 
 | Package | Description | Tech |
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet 모델 + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
-| [`packages/cc-headless`](./packages/cc-headless/) | CC on Bedrock headless 오케스트레이터 — RCA → 조건부 Remediation → Report 전문 서브 에이전트 실행 | Python, Claude Code CLI, ECS Fargate |
+| [`packages/codex-headless`](./packages/codex-headless/) | Codex on Bedrock Runtime headless 오케스트레이터 — 읽기 전용 RCA → Report와 승인 기반 실행 → 회고 | Python, Codex CLI, ECS Fargate |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, DynamoDB, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, PostgreSQL |
 | [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, Vue Flow |
@@ -18,12 +18,12 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 
 ### Dual-Stack RCA 실행
 - **Fargate Stack (Strands)**: CloudWatch Alarm → SNS → SQS → ECS Fargate, 9단계 closed-loop 파이프라인 (Scoping → Hypothesis → Prioritization → Beam Selection → Evidence → Validation → Branching → Report → Playbook → Notification)
-- **Fargate Stack (CC Headless)**: CloudWatch Alarm → SNS → SQS → ECS Fargate, 역할별 전문 서브 에이전트 오케스트레이션
+- **Fargate Stack (Codex Headless)**: CloudWatch Alarm → SNS → SQS → ECS Fargate, 역할별 전문 서브 에이전트 오케스트레이션
 - 동일 SNS 토픽을 독립 구독하여 A/B 비교 가능
 - DynamoDB `engine` 필드로 실행 엔진 구분, `IDEMP#` 키로 멱등성 보장
 
 ### Strands Agent Stack
-- 단일 모델(Sonnet 4.6) + Planning/Execution 행동 분리 (Planning은 adaptive thinking, Execution은 thinking 없음)
+- 단일 모델(Sonnet 5) + Planning/Execution 행동 분리 (Planning은 adaptive thinking, Execution은 thinking 없음)
 - 가설별 독립 Agent 인스턴스로 증거 수집 세션 격리 (컨텍스트 오버플로우 방지)
 - 계층적 부모 요약 주입으로 하위 가설 증거 수집 컨텍스트 강화
 - Beam Search 탐색: 우선순위 상위 N개(기본 3) 가설만 선택적 검증
@@ -33,14 +33,14 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 - 유사 보고서 검색: 스코핑 시 과거 RCA 보고서의 "증상 → 근본 원인" 경로를 활용하여 가설 생성 정확도 향상
 - 플레이북 검색 우선(search-first) 전략: 유사 플레이북 업데이트 또는 신규 생성
 
-### CC Headless Stack
-- Claude Code CLI headless 모드 + Bedrock 백엔드 (ECS Fargate)
-- RCA, 조건부 Remediation, Report 전문 서브 에이전트를 순차 호출
-- RCA는 읽기 전용 MCP만 사용하고, Remediation은 확정 원인에 매칭되는 Healthcare reset만 실행
-- Report는 실제 복구 결과를 포함한 `report.md`와 `playbook.json` 생성
+### Codex Headless Stack
+- Codex CLI headless 모드 + Bedrock Runtime Global Inference Profile
+- 모델 `global.openai.gpt-5.6-sol`, reasoning effort `high`
+- 분석은 RCA → Report 전문 에이전트를 순차 호출하고 어떤 복구도 수행하지 않음
+- 사용자가 승인한 플레이북만 별도 실행 워커가 수행하며, 해결 후 회고가 절차를 교정
 
 ### 공통 — Hexagonal Architecture
-- 양쪽 패키지(agent, cc-headless) 모두 Ports & Adapters 패턴 적용
+- 양쪽 패키지(agent, codex-headless) 모두 Ports & Adapters 패턴 적용
 - 비즈니스 로직(services/)은 Port 인터페이스(ports/interfaces/)에만 의존, 인프라 구체 클래스(adapters/)와 분리
 - DI Container로 AWS Adapter(DynamoDB, S3, SNS, Bedrock)를 lazy-init 주입
 - DTO(ports/dto/)를 공유 데이터 모델로 사용
@@ -54,11 +54,11 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 
 ## 대시보드로 보는 동작 흐름
 
-RCA 결과는 로컬 전용 Nuxt 대시보드(`packages/dashboard`, `http://localhost:3100`)에서 확인합니다. DynamoDB 세션 상태와 S3 보고서/증거를 로컬 AWS 크레덴셜(`~/.aws`)로 직접 조회하며, Strands / CC Headless 두 엔진의 결과를 나란히 비교할 수 있습니다.
+RCA 결과는 로컬 전용 Nuxt 대시보드(`packages/dashboard`, `http://localhost:3100`)에서 확인합니다. DynamoDB 세션 상태와 S3 보고서/증거를 로컬 AWS 크레덴셜(`~/.aws`)로 직접 조회하며, Strands / Codex Headless 두 엔진의 결과를 나란히 비교할 수 있습니다.
 
 ### 1. 세션 목록
 
-알람별 RCA 실행 이력을 상태(완료/실패/진행 중) 통계와 함께 나열합니다. 각 행에서 엔진(strands / cc-headless), 근본 원인 요약, 트레이스·보고서·플레이북으로의 바로가기를 제공합니다.
+알람별 RCA 실행 이력을 상태(완료/실패/진행 중) 통계와 함께 나열합니다. 각 행에서 엔진(strands / codex-headless), 근본 원인 요약, 트레이스·보고서·플레이북으로의 바로가기를 제공합니다.
 
 ![세션 목록](./docs/images/dashboard-sessions.png)
 
@@ -111,8 +111,8 @@ pnpm nx run-many -t lint
 cd packages/agent
 uv sync --extra dev
 
-# CC Headless (Python)
-cd packages/cc-headless
+# Codex Headless (Python)
+cd packages/codex-headless
 uv sync --extra dev
 
 # Healthcare Sensor App (Python)
@@ -211,7 +211,7 @@ npx cdk deploy RcaAgentDevHealthcareServiceStack
 
 | 스택 | 설명 |
 |------|------|
-| `EcrStack` | ECR 레포지토리 (rca-agent, cc-headless, healthcare) |
+| `EcrStack` | ECR 레포지토리 (Codex 이미지는 기존 `cc-headless` 물리 이름 유지) |
 | `NetworkStack` | VPC, 서브넷, NAT Gateway |
 | `EventBusStack` | SNS 토픽, SQS 큐 (알람 → 에이전트 연결) |
 | `DatabaseStack` | DynamoDB 테이블 (RCA 세션) |
@@ -219,7 +219,7 @@ npx cdk deploy RcaAgentDevHealthcareServiceStack
 | `RdsStack` | RDS PostgreSQL (Healthcare 서비스용) |
 | `HealthcareServiceStack` | Healthcare 센서 앱 (ECS Fargate + CloudWatch 알람 + Cloud Map DNS) |
 | `RcaAgentServiceStack` | Strands RCA 에이전트 (ECS Fargate) |
-| `CcHeadlessStack` | CC Headless RCA 에이전트 (ECS Fargate) |
+| `CodexHeadlessStack` | Codex Headless RCA 에이전트 (배포 스택 물리 이름은 `CcHeadlessStack` 유지) |
 
 ## 데모 시나리오: DB 커넥션 누수 장애
 
@@ -229,7 +229,7 @@ Healthcare 센서 서비스에 DB 커넥션 누수 장애를 주입하고, RCA �
 
 - 인프라 배포 완료 (`npx cdk deploy --all`)
 - Healthcare 서비스 ECS 태스크 실행 중 (background traffic generator가 CloudWatch baseline 메트릭 축적)
-- RCA 에이전트(Strands 또는 CC Headless) ECS 태스크 실행 중
+- RCA 에이전트(Strands 또는 Codex Headless) ECS 태스크 실행 중
 
 ### Step 1. 장애 주입
 
@@ -261,7 +261,7 @@ CloudWatch Alarm → SNS → SQS 경로로 알람이 전달되면, RCA 에이전
 8. **Playbook**: 재사용 가능한 대응 플레이북 생성 및 S3 Vectors 인덱싱
 9. **Notification**: SNS 알림 발행 (presigned URL + 플레이북 포함)
 
-**CC Headless Agent (서브 에이전트 오케스트레이션)**: 동일한 알람을 독립적으로 수신하여 RCA → 조건부 Remediation → Report 역할을 순서대로 실행합니다.
+**Codex Headless Agent (서브 에이전트 오케스트레이션)**: 동일한 알람을 독립적으로 수신하여 RCA → 조건부 Remediation → Report 역할을 순서대로 실행합니다.
 
 ### Step 3. 결과 확인
 
@@ -306,7 +306,7 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `BEDROCK_MODEL_ID` | `global.anthropic.claude-sonnet-4-6` | Planning/Execution 공용 모델 (단일 Sonnet 4.6) |
+| `BEDROCK_MODEL_ID` | `global.anthropic.claude-sonnet-5` | Planning/Execution 공용 모델 |
 | `BEDROCK_MAX_TOKENS` | `16384` | 모델 최대 토큰 |
 | `THINKING_ENABLED` | `false` | Planning 호출 시 adaptive thinking 피처플래그 |
 | `SQS_QUEUE_URL` | - | SQS 큐 URL (필수) |
@@ -315,16 +315,18 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 | `SNS_NOTIFICATION_TOPIC_ARN` | - | RCA 완료 알림 SNS 토픽 |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | - | GitHub MCP 인증 (Secrets Manager에서 주입) |
 
-전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요. Strands 자동 복구는 별도 Remediation Agent의 desired count로 제어하며 기본값은 0입니다.
+전체 환경변수 목록은 [`packages/agent/env/local.env`](./packages/agent/env/local.env)를 참조하세요.
 
-### CC Headless (packages/cc-headless)
+### Codex Headless (packages/codex-headless)
 
 ECS Fargate 환경변수로 설정됩니다 (CDK 스택에서 자동 주입).
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `CLAUDE_CODE_USE_BEDROCK` | `1` | Bedrock 백엔드 활성화 |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | `global.anthropic.claude-sonnet-4-6` | CC 기본 모델 |
+| `CODEX_MODEL` | `global.openai.gpt-5.6-sol` | Bedrock Global Inference Profile |
+| `CODEX_REASONING_EFFORT` | `high` | Codex reasoning effort |
+| `CODEX_MODEL_PROVIDER` | `amazon-bedrock-runtime` | Codex Bedrock Runtime provider |
+| `CODEX_BEDROCK_BASE_URL` | 리전 기반 | Bedrock Runtime OpenAI-compatible endpoint |
 | `DYNAMODB_TABLE_NAME` | - | 공유 RCA 세션 테이블 |
 | `S3_EVIDENCE_BUCKET` | - | 공유 증거 버킷 |
 | `S3_VECTOR_BUCKET_NAME` | - | 공유 S3 Vectors 버킷 |

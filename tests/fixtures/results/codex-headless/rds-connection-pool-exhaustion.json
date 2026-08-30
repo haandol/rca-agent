@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "rds-connection-pool-exhaustion",
+  "engine": "codex-headless",
+  "rootCause": "Application requests saturated the database pool and reached the configured maximum.",
+  "rootCauseConfirmed": true,
+  "rootFaultType": "unsupported",
+  "rootCauseEvidenceIds": [
+    "db-connections-maxed",
+    "pool-timeout-logs",
+    "request-concurrency-over-pool-capacity"
+  ],
+  "evidenceIds": [
+    "db-connections-maxed",
+    "pool-timeout-logs",
+    "request-concurrency-over-pool-capacity",
+    "connections-flat-at-ceiling-not-climbing",
+    "sessions-returned-to-pool",
+    "no-fault-flag-in-deployed-revision"
+  ],
+  "competingCauseJudgments": [
+    {
+      "causeId": "connection-leak",
+      "judgment": "rejected",
+      "rationale": "Connections reached the ceiling with the concurrency rise and stayed flat [connections-flat-at-ceiling-not-climbing], and every checked-out connection returned to the pool [sessions-returned-to-pool], so the pool is saturated by demand rather than losing connections.",
+      "evidenceIds": [
+        "connections-flat-at-ceiling-not-climbing",
+        "sessions-returned-to-pool"
+      ]
+    },
+    {
+      "causeId": "deployment-introduced-fault",
+      "judgment": "rejected",
+      "rationale": "No deployment precedes the onset and the running revision enables no injectable fault flag [no-fault-flag-in-deployed-revision].",
+      "evidenceIds": ["no-fault-flag-in-deployed-revision"]
+    }
+  ],
+  "artifacts": ["scoping", "hypotheses", "validation", "playbook", "report"],
+  "remediation": {
+    "summary": "Adjust connection pool capacity and enforce a bounded acquisition timeout.",
+    "available": true,
+    "verificationStatus": "DRAFT",
+    "executionSteps": [],
+    "safe": true,
+    "unsafeSteps": [],
+    "safeguards": {
+      "preconditions": "Confirm database capacity, current pool saturation, and the target service configuration.",
+      "approval": "Require the database or service owner to approve the capacity change.",
+      "rollback": "Restore the prior pool settings if database load, timeout rate, or errors worsen.",
+      "verification": "Verify pool utilization, acquisition timeouts, database connections, and request latency."
+    }
+  }
+}

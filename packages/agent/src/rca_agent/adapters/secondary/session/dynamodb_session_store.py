@@ -31,7 +31,12 @@ from rca_agent.ports.interfaces.session_store import (
 logger = logging.getLogger(__name__)
 
 _ACTIVE_INCIDENT_SK = "ACTIVE_INCIDENT"
-_ANALYSIS_SESSION_SKS = ("strands#SESSION", "SESSION", "cc-headless#SESSION")
+_ANALYSIS_SESSION_SKS = (
+    "strands#SESSION",
+    "SESSION",
+    "codex-headless#SESSION",
+    "cc-headless#SESSION",
+)
 _ACTIVE_EXECUTION_SK = "EXEC_ACTIVE"
 _INCIDENT_TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
 _INCIDENT_CLAIM_RETRIES = 3

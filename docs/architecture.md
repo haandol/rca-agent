@@ -14,19 +14,19 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 
 동일한 CloudWatch 알람에 대해 두 가지 실행 엔진이 독립적으로 RCA를 수행합니다.
 
-|                   | Fargate Stack (Strands)                                          | Fargate Stack (CC Headless)         |
+|                   | Fargate Stack (Strands)                                          | Fargate Stack (Codex Headless)         |
 | ----------------- | ---------------------------------------------------------------- | ----------------------------------- |
 | **실행 환경**     | ECS Fargate (Long Polling)                                       | ECS Fargate (Long Polling)          |
-| **에이전트 엔진** | Strands Agents SDK (Python)                                      | Claude Code CLI (headless, Bedrock) |
+| **에이전트 엔진** | Strands Agents SDK (Python)                                      | Codex CLI (headless, Bedrock) |
 | **RCA 방식**      | 9단계 closed-loop 파이프라인                                     | 전문 서브 에이전트 오케스트레이션   |
-| **모델**          | 단일 Sonnet 5 (Planning/Execution 행동 분리)                     | CC 기본 모델 (Sonnet 5)             |
-| **타임아웃**      | 종료 조건 및 시간 예산 (20분)                                    | CC 프로세스 60분 제한               |
+| **모델**          | 단일 Sonnet 5 (Planning/Execution 행동 분리)                     | Global `gpt-5.6-sol`, reasoning `high` |
+| **타임아웃**      | 종료 조건 및 시간 예산 (20분)                                    | Codex 프로세스 60분 제한            |
 | **동시성**        | Fargate 태스크 스케일링                                          | Fargate 태스크 1                    |
 | **쓰기 권한**     | 없음 (읽기 전용 분석)                                            | 없음 (읽기 전용 분석)               |
 | **산출물**        | 플레이북을 포함한 리포트 1개                                     | 플레이북을 포함한 리포트 1개        |
 | **실행 경로**     | 두 엔진 공통 — 사용자 승인 후 별도 플레이북 실행 에이전트가 수행 |
 | **공유 리소스**   | SNS (알람/알림), DynamoDB, S3, S3 Vectors                        |
-| **구분**          | DynamoDB `engine` 필드: `strands` vs `cc-headless`               |
+| **구분**          | DynamoDB `engine` 필드: `strands` vs `codex-headless`               |
 
 ## System Architecture
 
@@ -44,13 +44,13 @@ graph TB
 
     subgraph Compute["에이전트 실행 (Dual-Stack)"]
         ECS["ECS Fargate<br/>Strands Agent (main.py)"]
-        ECS_CC["ECS Fargate<br/>CC Headless (main.py)"]
+        ECS_CC["ECS Fargate<br/>Codex Headless (main.py)"]
     end
 
     subgraph LLM["LLM 추론"]
         BEDROCK_PLAN["Amazon Bedrock<br/>Sonnet 5 + Adaptive Thinking<br/>(Planning: 가설·보고서·플레이북·분기·우선순위)"]
         BEDROCK_EXEC["Amazon Bedrock<br/>Sonnet 5 (thinking 없음)<br/>(Execution: 스코핑·증거 수집·검증)"]
-        BEDROCK_CC["Amazon Bedrock<br/>Sonnet 5<br/>(CC Headless 오케스트레이터)"]
+        BEDROCK_CC["Amazon Bedrock Runtime<br/>Global gpt-5.6-sol · high<br/>(Codex Headless 오케스트레이터)"]
     end
 
     subgraph DataTools["데이터 수집 도구 (MCP)"]
@@ -169,9 +169,9 @@ stateDiagram-v2
 
 단계별 timeout/재시도, 증거 소스, 플레이북 검색 우선(≥0.80) 등 세부 동작은 `packages/agent/` 소스와 관련 ADR을 참조하세요.
 
-## Agent Pipeline — Fargate (CC Headless 오케스트레이터)
+## Agent Pipeline — Fargate (Codex Headless 오케스트레이터)
 
-CC on Bedrock headless 메인 에이전트는 직접 RCA를 수행하지 않고, 한 실행 안에서
+Codex on Bedrock Runtime headless 메인 에이전트는 직접 RCA를 수행하지 않고, 한 실행 안에서
 RCA와 Report 두 전문 서브 에이전트만 순서대로 호출합니다. 이 실행에는 서비스나
 인프라를 바꾸는 도구가 없으며, 산출물은 플레이북을 포함한 리포트 하나로 끝납니다.
 플레이북은 사람이 승인한 뒤 별도 실행 에이전트가 수행할 초안입니다.
@@ -187,14 +187,14 @@ stateDiagram-v2
     RCA --> REPORT: 스코핑·가설·검증 산출물
     REPORT --> COMPLETION_GATE: 산출물 교차 검증
     COMPLETION_GATE --> COMPLETED: 보고서 저장 + 알림
-    ANALYZING --> FAILED: CC 오류 / 타임아웃
+    ANALYZING --> FAILED: Codex 오류 / 타임아웃
     COMPLETED --> [*]
     FAILED --> [*]
     SKIP --> [*]
     RETRY --> [*]
 ```
 
-CC CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션 claim을 잃은 실행은
+Codex CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션 claim을 잃은 실행은
 상태와 trace를 기록할 수 없고, S3·SNS 같은 외부 쓰기는 claim에 종속된 부작용
 lease 안에서만 시작합니다. 완료 게이트는 보고서와 플레이북의 상태·원인 참조가
 일치하는지, 그리고 플레이북의 `verification_status`가 `DRAFT`인지 확인합니다.
@@ -204,7 +204,7 @@ lease 안에서만 시작합니다. 완료 게이트는 보고서와 플레이�
 
 ## Playbook Execution — 사용자 승인 기반 실행 에이전트
 
-실행은 분석과 별개의 워커입니다. 진입점은 `python -m cc_headless.execution_main`이며,
+실행은 분석과 별개의 워커입니다. 진입점은 `python -m codex_headless.execution_main`이며,
 분석 워커와 같은 컨테이너 이미지를 다른 진입점으로 실행합니다.
 
 ```mermaid
@@ -321,10 +321,10 @@ UUID로 다시 승인해야 합니다.
 
 ### Hexagonal Architecture (Ports & Adapters)
 
-agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비즈니스 로직과 인프라를 분리합니다.
+agent/codex-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비즈니스 로직과 인프라를 분리합니다.
 
 ```
-패키지 구조 (agent, cc-headless 공통):
+패키지 구조 (agent, codex-headless 공통):
 ├── ports/                    # 인터페이스 계층
 │   ├── dto/                  # 공유 데이터 모델 (Pydantic)
 │   └── interfaces/           # 추상 Port (ABC)
@@ -351,22 +351,23 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 - **읽기 전용**: 복구 워커가 없고, 파이프라인은 리포트 하나로 끝남. 플레이북은
   `verification_status=DRAFT` 초안으로만 저장
 
-### Fargate Stack (CC Headless)
+### Fargate Stack (Codex Headless)
 
 - **전문 서브 에이전트**: RCA → Report 순서로 호출하고 역할별 도구 권한과 산출물
   계약을 분리. 오케스트레이터가 호출할 수 있는 전문 에이전트는 이 둘뿐
-- **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 `mcp-config.json`으로 구성
+- **MCP 도구 연동**: CloudWatch, CloudTrail, GitHub MCP 서버를 전문 에이전트별
+  Codex TOML 설정으로 구성
 - **쓰기 도구 없음**: 분석 하네스에 쓰기 도구가 들어가면 사용자 승인 게이트가
   무의미해지므로, 하네스 계약 테스트가 양쪽 도구의 혼입을 모두 막음
 - **reclaim fencing**: claim 조건부 trace와 부작용 lease로 이전 실행의 늦은 쓰기를 차단
-- **실행 시간 제한**: Lambda 15분 제한은 없지만 CC 프로세스는 60분 후 종료. 이 엔진은
+- **실행 시간 제한**: Lambda 15분 제한은 없지만 Codex 프로세스는 60분 후 종료. 이 엔진은
   예산이 소진되면 산출물이 남지 않으므로 완주 회차 실측(24~29분)의 두 배를 예산으로 둠
 - **멱등성**: 알람별 안정 세션 키와 receive count/claim token으로 재전달을 제어
-- **세션 추적**: 동일 DynamoDB 테이블, `engine: 'cc-headless'` 필드로 구분
+- **세션 추적**: 동일 DynamoDB 테이블, `engine: 'codex-headless'` 필드로 구분
 
-### Playbook Execution (CC Headless 실행 워커)
+### Playbook Execution (Codex Headless 실행 워커)
 
-- **같은 이미지, 다른 진입점**: `python -m cc_headless.execution_main`. 하나의 하네스를 두 진입점으로 나눔
+- **같은 이미지, 다른 진입점**: `python -m codex_headless.execution_main`. 하나의 하네스를 두 진입점으로 나눔
 - **트리거는 승인뿐**: 승인 스냅샷과 `PENDING_APPROVAL`·`EXEC_ACTIVE` 예약을 거친 실행 요청 큐 long polling. 예약 없는 메시지는 거부
 - **실행 근거**: SHA-256으로 검증한 승인 시점 플레이북의 `execution_steps`. 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 매핑
 - **서버 판정형 게이트**: 파괴적 조치 거부와 해결 판정 모두 서버가 수행. 판정 불가는 거부
@@ -375,18 +376,18 @@ agent/cc-headless 양쪽 패키지는 Hexagonal Architecture를 적용하여 비
 
 ## Technology Stack
 
-| Component     | Fargate Stack (Strands)                                                          | Fargate Stack (CC Headless)                          |
+| Component     | Fargate Stack (Strands)                                                          | Fargate Stack (Codex Headless)                          |
 | ------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 에이전트 엔진 | Strands Agents SDK (Python)                                                      | Claude Code CLI headless (Python)                    |
+| 에이전트 엔진 | Strands Agents SDK (Python)                                                      | Codex CLI headless (Python)                    |
 | 실행 환경     | AWS ECS Fargate                                                                  | AWS ECS Fargate                                      |
 | 이벤트 수신   | SQS Long Polling                                                                 | SQS Long Polling                                     |
-| LLM 추론      | Bedrock — 단일 Sonnet 5 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock — Sonnet 5 (CC 전문 서브 에이전트)           |
+| LLM 추론      | Bedrock — 단일 Sonnet 5 (Planning: adaptive thinking / Execution: thinking 없음) | Bedrock Runtime — Global `gpt-5.6-sol`, reasoning `high` |
 | MCP 도구      | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP                             | AWS Knowledge + CloudWatch + CloudTrail + GitHub MCP |
 | 환경 설정     | python-dotenv (`env/local.env`)                                                  | ECS 환경변수                                         |
 
 | Component (실행) | Technology                                                                              |
 | ---------------- | --------------------------------------------------------------------------------------- |
-| 실행 엔진        | Claude Code CLI headless — 분석 워커와 동일 이미지, `cc_headless.execution_main` 진입점 |
+| 실행 엔진        | Codex CLI headless — 분석 워커와 동일 이미지, `codex_headless.execution_main` 진입점 |
 | 실행 환경        | AWS ECS Fargate (상시 1 태스크)                                                         |
 | 트리거           | 실행 요청 SQS Queue (대시보드 승인 발행) + DLQ                                          |
 | MCP 도구         | 읽기 전용 CloudWatch MCP + 서버 판정형 명령 실행·증거 기록 MCP + 회고 갱신 MCP          |

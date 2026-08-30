@@ -79,9 +79,9 @@ flowchart TB
 flowchart LR
     CW["CloudWatch<br/>알람"] --> SNS["SNS 토픽"]
     SNS --> Q1["SQS<br/>Strands용"]
-    SNS --> Q2["SQS<br/>CC Headless용"]
+    SNS --> Q2["SQS<br/>Codex Headless용"]
     Q1 --> E1["Strands 엔진<br/>코드가 9단계를 지휘"]
-    Q2 --> E2["CC Headless 엔진<br/>프롬프트가 단계를 지휘"]
+    Q2 --> E2["Codex Headless 엔진<br/>프롬프트가 단계를 지휘"]
     E1 --> R1["리포트 A"]
     E2 --> R2["리포트 B"]
 
@@ -208,7 +208,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    CLI["claude -p --agent execution-orchestrator"]
+    CLI["codex exec --json --ephemeral"]
     ROOT["execution-orchestrator<br/>tools: Agent(execution-operator), Skill<br/><b>위임만 한다</b>"]
     WORKER["execution-operator<br/>tools: run_playbook_command,<br/>record_step_outcome,<br/>record_resolution, CloudWatch 조회"]
 

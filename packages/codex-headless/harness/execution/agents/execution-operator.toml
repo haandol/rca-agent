@@ -1,0 +1,23 @@
+name = "execution-operator"
+sandbox_mode = "read-only"
+approval_policy = "never"
+web_search = "disabled"
+
+[mcp_servers.cloudwatch]
+command = "uvx"
+args = ["awslabs.cloudwatch-mcp-server"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.cloudwatch.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.playbook-execution]
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/codex_headless/execution_mcp_server.py:mcp"]
+enabled_tools = ["run_playbook_command", "record_step_outcome", "record_resolution"]
+startup_timeout_sec = 30
+tool_timeout_sec = 360
+
+[mcp_servers.playbook-execution.env]
+FASTMCP_LOG_LEVEL = "ERROR"

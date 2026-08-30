@@ -1,0 +1,27 @@
+model = "{{CODEX_MODEL}}"
+model_provider = "{{CODEX_MODEL_PROVIDER}}"
+model_reasoning_effort = "{{CODEX_REASONING_EFFORT}}"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[features]
+multi_agent = true
+
+[agents]
+max_threads = 2
+
+[agents.rca-specialist]
+description = "CloudWatch 알람을 읽기 전용 증거로 분석하고 RCA 산출물을 저장한다."
+config_file = "{{CODEX_HOME}}/agents/rca-specialist.toml"
+
+[agents.report-specialist]
+description = "RCA 결과로 플레이북을 포함한 단일 리포트를 저장한다."
+config_file = "{{CODEX_HOME}}/agents/report-specialist.toml"
+
+[model_providers.amazon-bedrock-runtime]
+base_url = "{{BEDROCK_BASE_URL}}"
+
+[model_providers.amazon-bedrock-runtime.auth]
+command = "python"
+args = ["-m", "codex_headless.bedrock_token"]
