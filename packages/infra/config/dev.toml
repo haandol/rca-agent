@@ -15,7 +15,7 @@ notificationEmail = "dongkyl@amazon.com"
 
 [healthcare]
 
-[codexHeadless]
+[headlessCodex]
 
 # 실행 워커는 분석 워커와 같은 이미지를 다른 진입점으로 실행한다.
 [execution]

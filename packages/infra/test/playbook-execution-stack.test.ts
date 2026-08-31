@@ -178,7 +178,7 @@ test('the worker runs the execution entrypoint of the analysis image', () => {
     ContainerDefinitions: Match.arrayWith([
       Match.objectLike({
         Name: 'playbook-execution',
-        Command: ['python', '-m', 'codex_headless.execution_main'],
+        Command: ['python', '-m', 'headless_codex.execution_main'],
         Environment: Match.arrayWith([
           {
             Name: 'CODEX_MODEL',
@@ -393,7 +393,7 @@ test('dev pins no image tag and no feature-flag task count', () => {
   ) as {
     execution?: { imageTag?: string; desiredCount?: number };
     agent?: { imageTag?: string };
-    codexHeadless?: { imageTag?: string };
+    headlessCodex?: { imageTag?: string };
     healthcare?: { imageTag?: string };
   };
 
@@ -403,7 +403,7 @@ test('dev pins no image tag and no feature-flag task count', () => {
   // exactly how the execution worker first came up without its entry point.
   for (const service of [
     'agent',
-    'codexHeadless',
+    'headlessCodex',
     'healthcare',
     'execution',
   ] as const) {

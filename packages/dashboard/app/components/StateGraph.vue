@@ -56,7 +56,10 @@ const STRANDS_HAPPY_PATH = [
 const HEADLESS_HAPPY_PATH = ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'];
 
 const isHeadlessEngine = computed(
-  () => props.engine === 'codex-headless' || props.engine === 'cc-headless',
+  () =>
+    props.engine === 'headless-codex' ||
+    props.engine === 'codex-headless' ||
+    props.engine === 'cc-headless',
 );
 
 // 성공 종료(COMPLETED)는 해피 패스 안에서 이미 그려지므로, 그래프가 따로 배치하는

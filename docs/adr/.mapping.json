@@ -38,12 +38,12 @@
         {
           "path": "docs/adr/agent/0010-model-tier-architecture.md",
           "status": "Accepted (2026-08-30)",
-          "summary": "Strands는 Sonnet 5의 Planning/Execution 행동 분리를 유지하고, Codex Headless 분석·실행·회고는 Bedrock Global Inference Profile gpt-5.6-sol을 reasoning high로 고정하며 fallback하지 않는다."
+          "summary": "Strands는 Sonnet 5의 Planning/Execution 행동 분리를 유지하고, Headless Codex 분석·실행·회고는 Bedrock Global Inference Profile gpt-5.6-sol을 reasoning high로 고정하며 fallback하지 않는다."
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-          "status": "Accepted (2026-08-30)",
-          "summary": "Codex Headless가 단일 소스 하네스로 읽기 전용 RCA·Report 전문 에이전트를 오케스트레이션하고 역할별 저장 도구와 완료 게이트로 산출물 경계를 강제한다."
+          "status": "Accepted (2026-08-31)",
+          "summary": "Headless Codex가 단일 소스 하네스로 읽기 전용 RCA·Report 전문 에이전트를 오케스트레이션하고 역할별 저장 도구와 완료 게이트로 산출물 경계를 강제한다."
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
@@ -63,7 +63,7 @@
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
           "status": "Accepted (2026-08-30)",
-          "summary": "네 평가 계층을 분리하고 Codex Headless 평가는 배포와 동일한 gpt-5.6-sol·reasoning high·Bedrock Runtime 조합일 때만 품질 증거로 인정한다."
+          "summary": "네 평가 계층을 분리하고 Headless Codex 평가는 배포와 동일한 gpt-5.6-sol·reasoning high·Bedrock Runtime 조합일 때만 품질 증거로 인정한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
@@ -131,8 +131,8 @@
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
-          "status": "Accepted (2026-08-30)",
-          "summary": "Codex Headless를 하네스 동봉 이미지의 읽기 전용 Fargate 분석 워커로 운영하고 Bedrock Runtime Global Inference Profile을 태스크 역할로 호출하며 기존 물리 리소스명은 유지한다."
+          "status": "Accepted (2026-08-31)",
+          "summary": "Headless Codex는 하네스 동봉 읽기 전용 Fargate 워커와 Bedrock Runtime Global Inference Profile을 사용하고, 신규 식별자는 headless-codex이며 codex-headless·cc-headless는 읽기 호환으로만 유지하고 AWS 물리 이름은 cc-headless로 둔다."
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
@@ -141,8 +141,8 @@
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
-          "status": "Accepted (2026-08-30)",
-          "summary": "신규 Codex 트레이스와 세션은 codex-headless 식별자를 사용하고 기존 cc-headless 기록은 읽기 호환으로 유지하며 분석·실행·회고 trace를 같은 파티션에 기록한다."
+          "status": "Accepted (2026-08-31)",
+          "summary": "신규 Headless Codex 트레이스와 세션은 headless-codex 식별자를 사용하고 기존 codex-headless·cc-headless 기록은 읽기 호환으로 유지하며 분석·실행·회고 trace를 같은 파티션에 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",

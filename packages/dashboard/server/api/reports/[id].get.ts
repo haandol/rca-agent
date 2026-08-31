@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const engines = engineFilter
     ? [engineFilter]
-    : ['codex-headless', 'cc-headless', 'strands'];
+    : ['headless-codex', 'codex-headless', 'cc-headless', 'strands'];
 
   const attempts: string[] = [];
   for (const engine of engines) {

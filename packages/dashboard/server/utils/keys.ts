@@ -18,6 +18,7 @@
 /** The engines whose records this dashboard is willing to act on. */
 export const ALLOWED_ENGINES = [
   'strands',
+  'headless-codex',
   'codex-headless',
   'cc-headless',
 ] as const;

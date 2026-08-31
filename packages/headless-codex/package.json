@@ -1,0 +1,20 @@
+{
+  "name": "@org/headless-codex",
+  "version": "0.1.1",
+  "private": true,
+  "nx": {
+    "targets": {
+      "build": {
+        "cache": false
+      }
+    }
+  },
+  "scripts": {
+    "build": "docker build -t headless-codex .",
+    "lint": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff check src/ tests/",
+    "lint:fix": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff check --fix src/ tests/",
+    "format": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format src/ tests/",
+    "format:check": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format --check src/ tests/",
+    "test": "uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync pytest tests/"
+  }
+}

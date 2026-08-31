@@ -19,7 +19,7 @@ import {
 } from './cli-utils.mjs';
 
 const COMMAND_ENV = {
-  'codex-headless': 'RCA_EVAL_CODEX_HEADLESS_COMMAND',
+  'headless-codex': 'RCA_EVAL_HEADLESS_CODEX_COMMAND',
   strands: 'RCA_EVAL_STRANDS_COMMAND',
 };
 const DEFAULT_MODEL_TIMEOUT_MS = 60 * 60 * 1000;
@@ -144,22 +144,22 @@ export function validateModelEnvironment(
       'Missing AWS credentials. Set AWS_PROFILE, an access-key pair, a container credential URI, or web-identity variables.',
     );
   }
-  // The deployed-model parity contract belongs to Codex Headless, so it is enforced
+  // The deployed-model parity contract belongs to Headless Codex, so it is enforced
   // exactly when that engine is in scope.
-  if (engines.includes('codex-headless')) {
+  if (engines.includes('headless-codex')) {
     if (env.CODEX_MODEL !== 'global.openai.gpt-5.6-sol') {
       throw new Error(
-        'CODEX_MODEL must be global.openai.gpt-5.6-sol for Codex Headless model evaluation.',
+        'CODEX_MODEL must be global.openai.gpt-5.6-sol for Headless Codex model evaluation.',
       );
     }
     if (env.CODEX_REASONING_EFFORT !== 'high') {
       throw new Error(
-        'CODEX_REASONING_EFFORT must be high for Codex Headless model evaluation.',
+        'CODEX_REASONING_EFFORT must be high for Headless Codex model evaluation.',
       );
     }
     if (env.CODEX_MODEL_PROVIDER !== 'amazon-bedrock-runtime') {
       throw new Error(
-        'CODEX_MODEL_PROVIDER must be amazon-bedrock-runtime for Codex Headless model evaluation.',
+        'CODEX_MODEL_PROVIDER must be amazon-bedrock-runtime for Headless Codex model evaluation.',
       );
     }
     for (const variable of [
@@ -169,7 +169,7 @@ export function validateModelEnvironment(
     ]) {
       if (!env[variable]) {
         throw new Error(
-          `Missing ${variable}. Set it from the deployed Codex Headless task definition.`,
+          `Missing ${variable}. Set it from the deployed Headless Codex task definition.`,
         );
       }
     }

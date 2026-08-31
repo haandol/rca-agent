@@ -5,7 +5,7 @@ import { Construct } from 'constructs';
 export class EcrStack extends cdk.Stack {
   readonly rcaAgentRepo: ecr.IRepository;
   readonly healthcareRepo: ecr.IRepository;
-  readonly codexHeadlessRepo: ecr.IRepository;
+  readonly headlessCodexRepo: ecr.IRepository;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -15,7 +15,7 @@ export class EcrStack extends cdk.Stack {
     this.rcaAgentRepo = this.newRepository(`${ns.toLowerCase()}/rca-agent`);
     this.healthcareRepo = this.newRepository(`${ns.toLowerCase()}/healthcare`);
     // Keep the physical repository name so the runtime replacement is in-place.
-    this.codexHeadlessRepo = this.newRepository(
+    this.headlessCodexRepo = this.newRepository(
       `${ns.toLowerCase()}/cc-headless`,
     );
   }

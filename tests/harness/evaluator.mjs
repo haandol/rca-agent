@@ -28,7 +28,7 @@ export const REQUIRED_DIMENSIONS = [
   'competingCausesRejected',
 ];
 
-export const EXPECTED_ENGINES = ['codex-headless', 'strands'];
+export const EXPECTED_ENGINES = ['headless-codex', 'strands'];
 
 export const DEFAULT_CONTRACT_INPUTS = [
   'tests/harness/evaluator.mjs',
@@ -38,16 +38,16 @@ export const DEFAULT_CONTRACT_INPUTS = [
   // Each model-eval adapter decides how a run becomes a normalized result, so
   // changing one changes the evaluated contract and requires re-approval.
   'packages/agent/src/rca_agent/eval_adapter.py',
-  'packages/codex-headless/src/codex_headless/eval_adapter.py',
-  'packages/codex-headless/harness',
-  'packages/codex-headless/prompts',
-  'packages/codex-headless/src/codex_headless/adapters/secondary/codex/codex_harness.py',
-  'packages/codex-headless/src/codex_headless/adapters/secondary/codex/codex_subprocess_runner.py',
-  'packages/codex-headless/src/codex_headless/mcp_server.py',
-  'packages/codex-headless/src/codex_headless/services/prompt_builder.py',
+  'packages/headless-codex/src/headless_codex/eval_adapter.py',
+  'packages/headless-codex/harness',
+  'packages/headless-codex/prompts',
+  'packages/headless-codex/src/headless_codex/adapters/secondary/codex/codex_harness.py',
+  'packages/headless-codex/src/headless_codex/adapters/secondary/codex/codex_subprocess_runner.py',
+  'packages/headless-codex/src/headless_codex/mcp_server.py',
+  'packages/headless-codex/src/headless_codex/services/prompt_builder.py',
   // The adapters derive remediation safety from this vocabulary.
   'packages/agent/src/rca_agent/services/destructive_actions.py',
-  'packages/codex-headless/src/codex_headless/services/destructive_actions.py',
+  'packages/headless-codex/src/headless_codex/services/destructive_actions.py',
 ];
 
 function assertString(value, label) {

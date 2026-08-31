@@ -206,7 +206,7 @@ digest를 검증한 뒤 실행한다. 승인 뒤 회고나 재분석이 플레�
 - [ADR 0008: 플레이북 생성](0008-playbook-generation.md) — 실행 근거가 되는 플레이북의 구조
 - [ADR 0018: 플레이북 회고](0018-playbook-retrospective.md) — 실행 증거로 플레이북을 갱신하는 단계
 - [ADR 0007: RCA 보고서 생성](0007-rca-report-generation.md) — 플레이북을 포함한 단일 리포트
-- [ADR 0011: Codex Headless 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — 분석 파이프라인에서 복구 단계 제거
+- [ADR 0011: Headless Codex 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — 분석 파이프라인에서 복구 단계 제거
 - [ADR infra/0006: 세션 복구](../infra/0006-session-recovery-on-restart.md) — claim과 부작용 lease
 - [ADR infra/0008: 플레이북 실행 인프라](../infra/0008-playbook-execution-stack.md) — 실행 에이전트의 배포와 트리거 경로
 - [ADR infra/0009: 멀티 계정 RCA](../infra/0009-multi-account-rca-hub-spoke.md) — 승인이 허가하는 대상 좌표

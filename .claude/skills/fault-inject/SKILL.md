@@ -111,7 +111,7 @@ aws cloudwatch describe-alarms \
   --output table
 ```
 
-알람이 ALARM 상태로 전환되면 SNS→SQS 경로로 양쪽 에이전트(strands, codex-headless)에 알림이 전달된다. 알람 평가 주기(1분×2)에 따라 약 2-3분 후 ALARM으로 전환된다.
+알람이 ALARM 상태로 전환되면 SNS→SQS 경로로 양쪽 에이전트(strands, headless-codex)에 알림이 전달된다. 알람 평가 주기(1분×2)에 따라 약 2-3분 후 ALARM으로 전환된다.
 
 ### 5. RCA 세션 확인
 

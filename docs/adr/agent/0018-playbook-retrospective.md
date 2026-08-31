@@ -216,7 +216,7 @@ Accepted (2026-08-08)
   초안으로 전환함을 계약 테스트로 확인
 - 승인 화면이 개정본을 통해 상태를 읽고, 기록된 검증됨 외의 값은 초안으로 표시함을
   확인 — 분석 산출물만 읽으면 승격이 영구히 보이지 않는다
-- Agent 612, Codex Headless 662, Healthcare 42, Infra 39 테스트와 회고·엔진 패리티
+- Agent 612, Headless Codex 662, Healthcare 42, Infra 39 테스트와 회고·엔진 패리티
   계약 테스트, 오프라인 평가 8건, 전체 build·lint·typecheck 통과
 
 ## Related

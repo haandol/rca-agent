@@ -1,0 +1,51 @@
+name = "rca-specialist"
+sandbox_mode = "read-only"
+approval_policy = "never"
+web_search = "disabled"
+
+[mcp_servers.aws-knowledge]
+command = "fastmcp"
+args = ["run", "https://knowledge-mcp.global.api.aws"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.aws-knowledge.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.cloudwatch]
+command = "uvx"
+args = ["awslabs.cloudwatch-mcp-server"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.cloudwatch.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.cloudtrail]
+command = "uvx"
+args = ["awslabs.cloudtrail-mcp-server"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.cloudtrail.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.github]
+command = "github-mcp-server"
+args = ["stdio"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.github.env]
+GITHUB_READ_ONLY = "1"
+GITHUB_TOOLSETS = "repos,pull_requests"
+
+[mcp_servers.rca-progress]
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/mcp_server.py:mcp"]
+enabled_tools = ["save_analysis_artifact"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.rca-progress.env]
+FASTMCP_LOG_LEVEL = "ERROR"

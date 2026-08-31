@@ -5,14 +5,14 @@ set -euo pipefail
 #
 # Usage:
 #   bash deploy-service.sh <service-name>
-#   bash deploy-service.sh codex-headless
+#   bash deploy-service.sh headless-codex
 #   bash deploy-service.sh agent
 #   bash deploy-service.sh healthcare
 #   bash deploy-service.sh execution
-#   bash deploy-service.sh codex-headless execution   # 같은 이미지, 두 진입점
+#   bash deploy-service.sh headless-codex execution   # 같은 이미지, 두 진입점
 #   bash deploy-service.sh --list
-#   bash deploy-service.sh --skip-build codex-headless
-#   bash deploy-service.sh --status codex-headless
+#   bash deploy-service.sh --skip-build headless-codex
+#   bash deploy-service.sh --status headless-codex
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -49,25 +49,25 @@ lookup() {
     agent:repo)          echo "${ECR_NS}/rca-agent" ;;
     agent:cluster)       echo "${PREFIX}RcaAgent" ;;
     agent:service)       echo "${PREFIX}RcaAgent" ;;
-    codex-headless:ctx)     echo "packages/codex-headless" ;;
+    headless-codex:ctx)     echo "packages/headless-codex" ;;
     # The deployed repository and ECS service names stay stable for in-place replacement.
-    codex-headless:repo)    echo "${ECR_NS}/cc-headless" ;;
-    codex-headless:cluster) echo "${PREFIX}CcHeadless" ;;
-    codex-headless:service) echo "${PREFIX}CcHeadless" ;;
+    headless-codex:repo)    echo "${ECR_NS}/cc-headless" ;;
+    headless-codex:cluster) echo "${PREFIX}CcHeadless" ;;
+    headless-codex:service) echo "${PREFIX}CcHeadless" ;;
     healthcare:ctx)      echo "packages/healthcare-sensor-app" ;;
     healthcare:repo)     echo "${ECR_NS}/healthcare" ;;
     healthcare:cluster)  echo "${PREFIX}Healthcare" ;;
     healthcare:service)  echo "${PREFIX}Healthcare" ;;
     # 실행 워커는 분석 워커와 같은 이미지를 다른 진입점으로 띄운다. 그래서 빌드
-    # 컨텍스트와 리포지토리가 codex-headless 와 동일하고, 배포 대상 스택만 다르다.
-    execution:ctx)       echo "packages/codex-headless" ;;
+    # 컨텍스트와 리포지토리가 headless-codex 와 동일하고, 배포 대상 스택만 다르다.
+    execution:ctx)       echo "packages/headless-codex" ;;
     execution:repo)      echo "${ECR_NS}/cc-headless" ;;
     execution:cluster)   echo "${PREFIX}PlaybookExecution" ;;
     execution:service)   echo "${PREFIX}PlaybookExecution" ;;
     agent:stack)         echo "${PREFIX}RcaAgentServiceStack" ;;
     agent:tagenv)        echo "AGENT_IMAGE_TAG" ;;
-    codex-headless:stack)   echo "${PREFIX}CcHeadlessStack" ;;
-    codex-headless:tagenv)  echo "CODEX_HEADLESS_IMAGE_TAG" ;;
+    headless-codex:stack)   echo "${PREFIX}CcHeadlessStack" ;;
+    headless-codex:tagenv)  echo "HEADLESS_CODEX_IMAGE_TAG" ;;
     healthcare:stack)    echo "${PREFIX}HealthcareServiceStack" ;;
     healthcare:tagenv)   echo "HEALTHCARE_IMAGE_TAG" ;;
     execution:stack)     echo "${PREFIX}PlaybookExecutionStack" ;;
@@ -76,7 +76,7 @@ lookup() {
   esac
 }
 
-ALL_SERVICES="agent codex-headless healthcare execution"
+ALL_SERVICES="agent headless-codex healthcare execution"
 
 log() { echo -e "\033[1;34m▶ $*\033[0m"; }
 err() { echo -e "\033[1;31m✗ $*\033[0m" >&2; }

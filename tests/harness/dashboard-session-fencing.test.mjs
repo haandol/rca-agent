@@ -114,7 +114,9 @@ test('a fenced claim token cannot collide with a live one', () => {
 test('session records are recognised across engines and the legacy layout', () => {
   assert.ok(isSessionSortKey('SESSION'));
   assert.ok(isSessionSortKey('strands#SESSION'));
+  assert.ok(isSessionSortKey('headless-codex#SESSION'));
   assert.ok(isSessionSortKey('codex-headless#SESSION'));
+  assert.ok(isSessionSortKey('cc-headless#SESSION'));
   assert.ok(!isSessionSortKey('strands#HYPO#h1'));
   assert.ok(!isSessionSortKey('EXEC#e1'));
 });

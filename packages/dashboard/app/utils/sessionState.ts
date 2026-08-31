@@ -50,7 +50,7 @@ export const STATE_DESC: Record<string, string> = {
   // 분석은 읽기 전용이다. 복구는 사용자가 플레이북 실행을 승인한 뒤 쓰기 권한을 가진
   // 별도 에이전트가 수행하므로, 이 단계의 설명이 복구를 암시하면 안 된다.
   ANALYZING:
-    'Codex Headless 엔진이 프롬프트 주도로 읽기 전용 RCA·보고서 전문 에이전트를 자율 실행 중인 상태',
+    'Headless Codex 엔진이 프롬프트 주도로 읽기 전용 RCA·보고서 전문 에이전트를 자율 실행 중인 상태',
   COMPLETED:
     'RCA 분석이 정상 완료되어 보고서가 S3에 저장되고 알림이 발송된 상태',
   FAILED: '파이프라인 실행 중 오류가 발생하여 분석이 중단된 상태',
@@ -58,7 +58,7 @@ export const STATE_DESC: Record<string, string> = {
   // 판정 근거는 TTL이 아니라 알람 나이다. 기준은 엔진마다 다르다 — 예산 소진 한 번이
   // 뒤따르는 알람을 폐기하지 않으려면 기준이 그 엔진의 시간 예산 이상이어야 한다.
   OUTDATED:
-    '알람이 너무 오래되어 분석에 들어가지 않고 종료된 상태. 첫 수신 시점에 알람 나이가 기준(Strands 30분, Codex Headless 60분)을 넘으면 이 상태가 된다.',
+    '알람이 너무 오래되어 분석에 들어가지 않고 종료된 상태. 첫 수신 시점에 알람 나이가 기준(Strands 30분, Headless Codex 60분)을 넘으면 이 상태가 된다.',
 };
 
 /**
@@ -95,6 +95,7 @@ export const ENGINE_TRACK: Record<string, readonly string[]> = {
     'REPORT_GENERATION',
     'COMPLETED',
   ],
+  'headless-codex': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
   'codex-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
   'cc-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
 };

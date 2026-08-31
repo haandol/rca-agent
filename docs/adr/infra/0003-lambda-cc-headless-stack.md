@@ -1,15 +1,15 @@
-# ADR 0003: Codex Headless 오케스트레이터 실행 인프라
+# ADR 0003: Headless Codex 오케스트레이터 실행 인프라
 
 Date: 2026-04-22
-Updated: 2026-08-30
+Updated: 2026-08-31
 
 ## Status
 
-Accepted (2026-08-30)
+Accepted (2026-08-31)
 
 ## Context
 
-Codex Headless는 장시간 RCA와 전문 서브 에이전트 호출을 수행하므로 짧은 서버리스
+Headless Codex는 장시간 RCA와 전문 서브 에이전트 호출을 수행하므로 짧은 서버리스
 실행보다 상시 워커가 적합하다.
 
 이 태스크는 **분석만 수행한다.** 복구는 사용자 승인 뒤의 별도 스택이 수행하므로
@@ -27,7 +27,7 @@ Codex Headless는 장시간 RCA와 전문 서브 에이전트 호출을 수행�
 
 ## Decision
 
-Codex Headless는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 운영한다.
+Headless Codex는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 운영한다.
 알람마다 격리된 Codex 비대화형 실행을 만들고 메인 에이전트가 RCA와 Report 전문
 에이전트를 조정한다.
 
@@ -64,10 +64,11 @@ MCP 서버 버전은 이미지에서 고정한다.
 하네스 자산만 바뀐 변경도 이미지 재빌드와 서비스 재배포를 거친다. 실행 중
 자산을 교체하는 경로는 두지 않는다.
 
-신규 세션과 산출물의 기능 식별자는 `codex-headless`다. 기존 배포를 제자리에서
-교체하고 ECR 이미지 저장소, 큐, ECS 서비스의 물리 이름은 유지한다. 물리 이름을
-바꾸어 리소스를 재생성하거나 대기 메시지를 새 큐로 옮기는 작업은 이 결정의 범위가
-아니다.
+신규 세션과 산출물의 기능 식별자는 `headless-codex`다. 읽기·승인 호환 식별자는
+`codex-headless`와 `cc-headless`이며, 신규 쓰기에는 사용하지 않는다.
+
+ECR 이미지 저장소, 큐, ECS 서비스의 물리 이름은 `cc-headless`다. 물리 리소스
+재생성과 대기 메시지 마이그레이션은 이 결정의 범위가 아니다.
 
 ## 대안 검토
 
@@ -114,7 +115,7 @@ MCP 서버 버전은 이미지에서 고정한다.
 
 ## Related
 
-- [ADR agent/0011: Codex Headless 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md)
+- [ADR agent/0011: Headless Codex 전문 서브 에이전트 오케스트레이션](../agent/0011-cc-headless-prompt-driven-rca.md)
 - [ADR infra/0008: 플레이북 실행 인프라](0008-playbook-execution-stack.md) — 쓰기 권한을 가진 별도 스택
 - [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md)
 - [ADR infra/0005: 실행 트레이스](0005-execution-trace-dynamodb.md)

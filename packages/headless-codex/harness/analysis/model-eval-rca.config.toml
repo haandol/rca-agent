@@ -1,0 +1,29 @@
+model = "{{CODEX_MODEL}}"
+model_provider = "{{CODEX_MODEL_PROVIDER}}"
+model_reasoning_effort = "{{CODEX_REASONING_EFFORT}}"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[mcp_servers.rca-progress]
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/mcp_server.py:mcp"]
+enabled_tools = ["save_analysis_artifact"]
+default_tools_approval_mode = "approve"
+env_vars = ["RCA_EXECUTION_TOKEN", "RCA_SESSION_ID", "RCA_CLAIM_TOKEN", "RCA_ATTEMPT"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.rca-progress.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+RCA_EXECUTION_TOKEN = "{{RCA_EXECUTION_TOKEN}}"
+RCA_SESSION_ID = "{{RCA_SESSION_ID}}"
+RCA_CLAIM_TOKEN = "{{RCA_CLAIM_TOKEN}}"
+RCA_ATTEMPT = "{{RCA_ATTEMPT}}"
+
+[model_providers.amazon-bedrock-runtime]
+base_url = "{{BEDROCK_BASE_URL}}"
+
+[model_providers.amazon-bedrock-runtime.auth]
+command = "python"
+args = ["-m", "headless_codex.bedrock_token"]

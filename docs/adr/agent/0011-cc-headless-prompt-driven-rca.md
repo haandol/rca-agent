@@ -1,15 +1,15 @@
-# ADR 0011: Codex Headless 전문 서브 에이전트 오케스트레이션
+# ADR 0011: Headless Codex 전문 서브 에이전트 오케스트레이션
 
 Date: 2026-04-22
-Updated: 2026-08-30
+Updated: 2026-08-31
 
 ## Status
 
-Accepted (2026-08-30)
+Accepted (2026-08-31)
 
 ## Context
 
-Codex Headless는 하나의 장시간 실행 안에서 스코핑, 가설 탐색, 증거 수집, 보고서
+Headless Codex는 하나의 장시간 실행 안에서 스코핑, 가설 탐색, 증거 수집, 보고서
 작성을 수행한다. 단일 에이전트가 모든 책임을 직접 수행하면 프롬프트가 커지고,
 각 단계의 성공과 실패를 독립적으로 검증하기 어렵다.
 
@@ -37,7 +37,7 @@ Codex의 전문 에이전트는 같은 실행 컨텍스트 안에서 역할별 �
 
 ## Decision
 
-Codex Headless의 메인 에이전트는 직접 분석하지 않는 오케스트레이터로 동작하며, 한
+Headless Codex의 메인 에이전트는 직접 분석하지 않는 오케스트레이터로 동작하며, 한
 실행 안에서 다음 전문 서브 에이전트를 순차 호출한다.
 
 1. **RCA 에이전트**는 관측·변경 이력·코드 정보를 읽어 스코핑, 가설 생성,
@@ -201,5 +201,5 @@ CLI 호출 인자(비대화형 실행, 루트 지침, MCP 설정 범위, 세션 
 
 - [ADR 0007: RCA 보고서 생성](0007-rca-report-generation.md) — Report 에이전트가 만드는 단일 리포트
 - [ADR 0017: 플레이북 실행 에이전트](0017-playbook-execution-agent.md) — 분석 실행에서 분리된 복구 주체
-- [ADR infra/0003: Codex Headless 실행 인프라](../infra/0003-lambda-cc-headless-stack.md)
+- [ADR infra/0003: Headless Codex 실행 인프라](../infra/0003-lambda-cc-headless-stack.md)
 - [ADR infra/0005: 실행 트레이스](../infra/0005-execution-trace-dynamodb.md)

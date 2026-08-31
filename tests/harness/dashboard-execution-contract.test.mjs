@@ -133,26 +133,28 @@ test('playbook selection is exact for CC sessions and conservative for legacy St
     playbook_id: 'cc-current',
     execution_steps: [{ step_id: 'persisted' }],
   };
-  const arbitrarySpan = {
-    SK: 'codex-headless#SPAN#other',
-    engine: 'codex-headless',
-    span_type: 'PLAYBOOK',
-    metadata: {
-      playbook_id: 'cc-current',
-      execution_steps: [{ step_id: 'span-copy' }],
-    },
-  };
-  const cc = resolveCurrentPlaybook(
-    [arbitrarySpan],
-    {
-      SK: 'codex-headless#SESSION',
-      playbook_id: 'cc-current',
-      playbook: JSON.stringify(ccPlaybook),
-    },
-    'codex-headless',
-  );
-  assert.deepEqual(cc?.playbook, ccPlaybook);
-  assert.equal(cc?.source, 'session');
+  for (const engine of ['headless-codex', 'codex-headless', 'cc-headless']) {
+    const arbitrarySpan = {
+      SK: `${engine}#SPAN#other`,
+      engine,
+      span_type: 'PLAYBOOK',
+      metadata: {
+        playbook_id: 'cc-current',
+        execution_steps: [{ step_id: 'span-copy' }],
+      },
+    };
+    const cc = resolveCurrentPlaybook(
+      [arbitrarySpan],
+      {
+        SK: `${engine}#SESSION`,
+        playbook_id: 'cc-current',
+        playbook: JSON.stringify(ccPlaybook),
+      },
+      engine,
+    );
+    assert.deepEqual(cc?.playbook, ccPlaybook);
+    assert.equal(cc?.source, 'session');
+  }
 
   const legacySession = { SK: 'SESSION', playbook_id: 'legacy' };
   const legacySpan = (id) => ({
@@ -205,7 +207,7 @@ test('executable playbooks require complete uniquely identified steps', async ()
 
   const items = [
     {
-      SK: 'codex-headless#SESSION',
+      SK: 'headless-codex#SESSION',
       confirmed: false,
       playbook_id: 'pb-1',
       playbook: JSON.stringify({
@@ -215,7 +217,7 @@ test('executable playbooks require complete uniquely identified steps', async ()
     },
   ];
   assert.equal(
-    countExecutionSteps(items, 'codex-headless'),
+    countExecutionSteps(items, 'headless-codex'),
     0,
     'readiness cannot offer an unconfirmed procedure that approval rejects',
   );
@@ -495,7 +497,7 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
 
   // Whatever marks a break must survive without colour, since a reader who
   // cannot resolve the rule has only the word. Every outcome therefore carries a
-  // label, and the two that a person acts on are the only ones given the accent.
+  // label, while active work keeps the semantic colours defined by DESIGN.md.
   const { OUTCOME_LABEL } = await import(
     pathToFileURL(
       path.join(
@@ -510,13 +512,8 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
       `${key} needs a word, because its tone alone cannot state it`,
     );
   }
-  for (const key of ['RUNNING', 'AWAITING']) {
-    assert.match(
-      OUTCOME_TONE[key],
-      /text-primary/,
-      `${key} is somebody's move, so it keeps the accent`,
-    );
-  }
+  assert.match(OUTCOME_TONE.RUNNING, /text-info/);
+  assert.match(OUTCOME_TONE.AWAITING, /text-warning/);
   for (const key of [
     'RESOLVED',
     'UNRESOLVED',
@@ -526,8 +523,8 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
   ]) {
     assert.doesNotMatch(
       OUTCOME_TONE[key],
-      /text-primary/,
-      `${key} needs no action, so it must not take the accent`,
+      /text-info/,
+      `${key} is not analysis in progress, so it must not borrow that tone`,
     );
   }
 });
@@ -693,7 +690,7 @@ test('the session index stays session-only, and old sessions are backfilled into
   // Both engines write the keys, or that engine's sessions never appear.
   for (const enginePath of [
     'packages/agent/src/rca_agent/adapters/secondary/session/dynamodb_session_store.py',
-    'packages/codex-headless/src/codex_headless/adapters/secondary/session/dynamodb_session_store.py',
+    'packages/headless-codex/src/headless_codex/adapters/secondary/session/dynamodb_session_store.py',
   ]) {
     const source = await readRepositoryFile(enginePath);
     assert.match(source, /"list_engine"/, `${enginePath} writes the index key`);
@@ -726,6 +723,7 @@ test('dashboard state graph selects the engine-specific lifecycle', async () => 
     graphSource,
     /HEADLESS_HAPPY_PATH = \['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'\]/,
   );
+  assert.match(graphSource, /props\.engine === 'headless-codex'/);
   assert.match(graphSource, /props\.engine === 'codex-headless'/);
   assert.match(graphSource, /props\.engine === 'cc-headless'/);
   assert.match(
@@ -753,7 +751,7 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
   );
   assert.doesNotMatch(
     endpointSource,
-    /const engines = \['strands', 'codex-headless'\]/,
+    /const engines = \['strands', 'headless-codex'\]/,
   );
 
   // The legacy fallback and the hypothesis scoping are shared key helpers now,
@@ -770,6 +768,9 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
     'strands#SESSION',
     'SESSION',
   ]);
+  assert.deepEqual(sessionSkCandidates('headless-codex'), [
+    'headless-codex#SESSION',
+  ]);
   assert.deepEqual(sessionSkCandidates('codex-headless'), [
     'codex-headless#SESSION',
   ]);
@@ -780,6 +781,10 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
   assert.equal(
     hypothesisSkPrefix('strands', 'strands#SESSION'),
     'strands#HYPO#',
+  );
+  assert.equal(
+    hypothesisSkPrefix('headless-codex', 'headless-codex#SESSION'),
+    'headless-codex#HYPO#',
   );
   assert.equal(
     hypothesisSkPrefix('codex-headless', 'codex-headless#SESSION'),

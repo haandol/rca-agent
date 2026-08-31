@@ -351,7 +351,12 @@ const resolvedCount = computed(() => counts.value.get('RESOLVED') ?? 0);
 
 const readinessModal = ref<HTMLDialogElement | null>(null);
 
-const ALLOWED_ENGINES = new Set(['strands', 'codex-headless', 'cc-headless']);
+const ALLOWED_ENGINES = new Set([
+  'strands',
+  'headless-codex',
+  'codex-headless',
+  'cc-headless',
+]);
 const cancelTarget = ref<{ rcaId: string; engine: string } | null>(null);
 const cancelling = ref(false);
 const cancelModalRef = ref<HTMLDialogElement | null>(null);

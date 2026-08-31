@@ -123,7 +123,7 @@ export class PlaybookExecutionStack extends cdk.Stack {
       image: ecs.ContainerImage.fromRegistry(
         `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/cc-headless:${props.imageTag}`,
       ),
-      command: ['python', '-m', 'codex_headless.execution_main'],
+      command: ['python', '-m', 'headless_codex.execution_main'],
       essential: true,
       stopTimeout: cdk.Duration.seconds(120),
       environment: {

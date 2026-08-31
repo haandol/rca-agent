@@ -34,6 +34,7 @@ _ACTIVE_INCIDENT_SK = "ACTIVE_INCIDENT"
 _ANALYSIS_SESSION_SKS = (
     "strands#SESSION",
     "SESSION",
+    "headless-codex#SESSION",
     "codex-headless#SESSION",
     "cc-headless#SESSION",
 )

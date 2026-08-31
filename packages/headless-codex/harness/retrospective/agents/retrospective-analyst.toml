@@ -1,0 +1,14 @@
+name = "retrospective-analyst"
+sandbox_mode = "read-only"
+approval_policy = "never"
+web_search = "disabled"
+
+[mcp_servers.playbook-retrospective]
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/retrospective_mcp_server.py:mcp"]
+enabled_tools = ["save_playbook_update"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.playbook-retrospective.env]
+FASTMCP_LOG_LEVEL = "ERROR"

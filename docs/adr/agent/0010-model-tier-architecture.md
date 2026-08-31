@@ -9,7 +9,7 @@ Accepted (2026-08-30)
 
 ## Context
 
-RCA 시스템은 Strands 파이프라인과 Codex Headless 오케스트레이터를 독립 실행한다.
+RCA 시스템은 Strands 파이프라인과 Headless Codex 오케스트레이터를 독립 실행한다.
 두 엔진은 오케스트레이션과 모델 런타임이 다르므로, 평가는 같은 RCA 산출물 계약을
 충족하는 두 시스템을 비교한다.
 
@@ -19,7 +19,7 @@ Strands 파이프라인 안에서도 단계별 추론 깊이는 다르다. 가�
 출력을 함께 생성하는 과정에서 증거·타임스탬프 누락이 늘어난다. 따라서 Strands는
 한 모델 세대를 유지하되 단계별 사고 동작만 나눈다.
 
-Codex Headless는 분석, 승인된 플레이북 실행, 회고를 하나의 Codex 런타임 계열로
+Headless Codex는 분석, 승인된 플레이북 실행, 회고를 하나의 Codex 런타임 계열로
 운영한다. 이 경로는 도구 사용과 다단계 위임의 품질을 우선하며, 실행마다 모델이나
 추론 강도가 달라지면 같은 이미지와 하네스를 재현할 수 없다.
 
@@ -29,7 +29,7 @@ Codex Headless는 분석, 승인된 플레이북 실행, 회고를 하나의 Cod
   않아야 한다.
 - 보고서·플레이북에 증거와 타임스탬프가 누락되지 않아야 한다.
 - Strands 안에서는 단계별 추론 깊이 차이를 유지해 불필요한 사고 비용을 줄여야 한다.
-- Codex Headless의 분석·실행·회고는 같은 모델과 추론 강도로 재현 가능해야 한다.
+- Headless Codex의 분석·실행·회고는 같은 모델과 추론 강도로 재현 가능해야 한다.
 - 모델 호출은 태스크 역할의 AWS 자격 증명 경계 안에서 이루어져야 한다.
 - 요청한 모델이나 추론 프로필을 사용할 수 없을 때 다른 모델로 대체해서는 안 된다.
 
@@ -40,9 +40,9 @@ Codex Headless는 분석, 승인된 플레이북 실행, 회고를 하나의 Cod
 | 실행 엔진 | 모델 | 추론 계약 |
 |------|------|----------|
 | Strands | Claude Sonnet 5 세대 | Planning은 adaptive thinking, Execution은 thinking 없음 |
-| Codex Headless | Bedrock Global Inference Profile `global.openai.gpt-5.6-sol` | 분석·실행·회고 모두 reasoning effort `high` |
+| Headless Codex | Bedrock Global Inference Profile `global.openai.gpt-5.6-sol` | 분석·실행·회고 모두 reasoning effort `high` |
 
-Codex Headless는 Amazon Bedrock Runtime의 OpenAI Responses 호환 경로를 사용한다.
+Headless Codex는 Amazon Bedrock Runtime의 OpenAI Responses 호환 경로를 사용한다.
 인증 경계는 ECS 태스크 역할이며 OpenAI API 키나 장기 정적 토큰을 배포하지 않는다.
 요청한 Global Inference Profile을 호출할 수 없으면 실행을 실패시키고 기존
 SQS 재전달·DLQ 정책에 맡긴다. 다른 모델로 자동 대체하지 않는다.
@@ -65,7 +65,7 @@ Strands의 Sonnet 5 호출 표면에는 두 가지 제약이 있다.
    현재 대상 플랫폼 배포에서 허용되지 않는다. Planning/Execution 구분은 adaptive
    활성 여부만으로 표현한다.
 
-Codex Headless는 sampling 파라미터를 별도로 고정하지 않고 Codex 런타임의
+Headless Codex는 sampling 파라미터를 별도로 고정하지 않고 Codex 런타임의
 Responses 요청 계약을 따른다. reasoning effort는 `high`를 명시해 기본값 변화가
 실행 품질과 지연을 바꾸지 못하게 한다.
 
@@ -119,7 +119,7 @@ Responses 요청 계약을 따른다. reasoning effort는 `high`를 명시해 �
   사라진다.
 - 모델 엔드포인트·할당량·설정이 단일화되어 운용이 단순해진다.
 - 각 엔진의 모델과 추론 강도가 명시되어 배포·실모델 평가 결과를 재현할 수 있다.
-- Codex Headless는 전역 용량 라우팅을 사용하면서 태스크 역할 밖의 장기 비밀을 요구하지 않는다.
+- Headless Codex는 전역 용량 라우팅을 사용하면서 태스크 역할 밖의 장기 비밀을 요구하지 않는다.
 
 ### Negative
 
@@ -132,7 +132,7 @@ Responses 요청 계약을 따른다. reasoning effort는 `high`를 명시해 �
   두 단계로만 표현된다.
 - 두 엔진이 다른 모델 계열을 사용하므로 결과 차이를 오케스트레이션 차이만으로
   해석할 수 없다. 평가는 시스템 전체의 계약 충족 여부를 비교해야 한다.
-- Codex Headless가 `high` 추론을 고정하므로 낮은 effort보다 지연과 비용이 증가할 수 있다.
+- Headless Codex가 `high` 추론을 고정하므로 낮은 effort보다 지연과 비용이 증가할 수 있다.
 
 ### Risks
 

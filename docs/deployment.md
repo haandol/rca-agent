@@ -21,7 +21,7 @@ pnpm cdk deploy <StackName>   # 특정 스택 배포
 | RdsStack | PostgreSQL 17.4 (Healthcare 서비스용) |
 | HealthcareServiceStack | ECS Fargate — Healthcare 센서 서비스 + Cloud Map Private DNS |
 | RcaAgentServiceStack | ECS Fargate — Strands RCA 에이전트 (읽기 전용) |
-| CodexHeadlessStack | ECS Fargate — Codex headless RCA 에이전트 (배포 스택 물리 이름은 `CcHeadlessStack` 유지) |
+| HeadlessCodexStack | ECS Fargate — Headless Codex RCA 에이전트 (배포 스택 물리 이름은 `CcHeadlessStack` 유지) |
 | PlaybookExecutionStack | ECS Fargate — 사용자 승인 기반 플레이북 실행 워커 + 실행 요청 큐/DLQ (desiredCount 1) |
 
 모든 서비스는 Private subnet에 배포되며, 인바운드 트래픽이 차단됩니다. 자세한 스택 의존관계와 IAM 권한은 [`packages/infra/AGENTS.md`](../packages/infra/AGENTS.md)를 참조하세요.
@@ -41,7 +41,7 @@ pnpm cdk deploy <StackName>   # 특정 스택 배포
 ### 서비스 단위 배포
 
 ```bash
-pnpm --filter infra run deploy:service -- codex-headless execution   # 같은 이미지, 두 진입점
+pnpm --filter infra run deploy:service -- headless-codex execution   # 같은 이미지, 두 진입점
 pnpm --filter infra run deploy:service -- --list
 pnpm --filter infra run deploy:service -- --status execution
 ```
@@ -58,22 +58,22 @@ pnpm --filter infra run deploy:service -- --status execution
 
 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, 알람 메시지 수신 시 RCA 워크플로우를 자동 시작합니다.
 
-## Agent — Fargate (Codex Headless 분석 워커)
+## Agent — Fargate (Headless Codex 분석 워커)
 
-Codex Headless 분석 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 알람 큐를 Long Polling으로 구독하며, Codex CLI가 RCA → Report 전문 서브 에이전트를 순서대로 호출해 플레이북을 포함한 리포트 하나를 만들고 종료합니다. 진입점은 `python -m codex_headless.main`이며, 태스크 역할에 쓰기 권한이 없고 Healthcare 서비스로의 네트워크 경로도 없습니다.
+Headless Codex 분석 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 알람 큐를 Long Polling으로 구독하며, Codex CLI가 RCA → Report 전문 서브 에이전트를 순서대로 호출해 플레이북을 포함한 리포트 하나를 만들고 종료합니다. 진입점은 `python -m headless_codex.main`이며, 태스크 역할에 쓰기 권한이 없고 Healthcare 서비스로의 네트워크 경로도 없습니다.
 
 모델은 Bedrock Runtime Global Inference Profile `global.openai.gpt-5.6-sol`이고
 reasoning effort는 `high`입니다. 태스크 역할의 AWS 자격 증명으로 단기 bearer
 token을 생성하며 OpenAI API 키를 배포하지 않습니다.
 
 ```bash
-cd packages/codex-headless
-docker build -t codex-headless .
+cd packages/headless-codex
+docker build -t headless-codex .
 ```
 
-## Playbook Execution — Fargate (Codex Headless 실행 워커)
+## Playbook Execution — Fargate (Headless Codex 실행 워커)
 
-실행 워커는 **분석 워커와 같은 컨테이너 이미지를 다른 진입점으로** 실행합니다: `python -m codex_headless.execution_main`. 하나의 하네스를 두 진입점으로 나눈 구성이라 이미지를 따로 빌드하지 않습니다.
+실행 워커는 **분석 워커와 같은 컨테이너 이미지를 다른 진입점으로** 실행합니다: `python -m headless_codex.execution_main`. 하나의 하네스를 두 진입점으로 나눈 구성이라 이미지를 따로 빌드하지 않습니다.
 
 - 실행 요청 큐를 Long Polling으로 구독합니다. 대시보드의 `POST /api/executions`가 발행한 승인 요청만 소비하며, 이벤트 구독이 없어 승인 없이 시작될 경로가 없습니다.
 - 실행 근거는 리포트에 담긴 플레이북의 `execution_steps`(`step_id`, `intent`, `action`, `success_criteria`)입니다. `action`은 자연어 서술이고, 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 옵니다.

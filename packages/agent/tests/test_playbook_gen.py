@@ -643,7 +643,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
             ],
         }
         return {
-            "SK": {"S": "codex-headless#PLAYBOOK_REVISION"},
+            "SK": {"S": "headless-codex#PLAYBOOK_REVISION"},
             "playbook_id": {"S": "p-1"},
             "playbook": {"S": json.dumps(revised, ensure_ascii=False)},
             "revised_by_execution_id": {"S": "exec-9"},

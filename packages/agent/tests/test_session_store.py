@@ -204,7 +204,7 @@ class TestActiveIncident:
             TableName=table_name,
             Item={
                 "PK": {"S": f"RCA#{first.candidate_rca_id}"},
-                "SK": {"S": "codex-headless#SESSION"},
+                "SK": {"S": "headless-codex#SESSION"},
                 "state": {"S": "ALARM_RECEIVED"},
             },
         )
@@ -222,6 +222,30 @@ class TestActiveIncident:
         assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
         assert claim.candidate_rca_id == opened.candidate_rca_id
         assert "strands#SESSION" in claim.reason
+        assert claim.retryable
+
+    @pytest.mark.parametrize(
+        "session_sk",
+        ["headless-codex#SESSION", "codex-headless#SESSION", "cc-headless#SESSION"],
+    )
+    def test_newer_alarm_is_deferred_while_headless_analysis_is_active(self, claim_store, alarm, session_sk):
+        store, ddb, table_name = claim_store
+        opened = store.claim_incident(alarm, cooldown_seconds=300)
+        ddb.put_item(
+            TableName=table_name,
+            Item={
+                "PK": {"S": f"RCA#{opened.candidate_rca_id}"},
+                "SK": {"S": session_sk},
+                "state": {"S": "ALARM_RECEIVED"},
+            },
+        )
+        realarm = _alarm_at(alarm, alarm.state_change_time + timedelta(minutes=18))
+
+        claim = store.claim_incident(realarm, cooldown_seconds=300)
+
+        assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
+        assert claim.candidate_rca_id == opened.candidate_rca_id
+        assert session_sk in claim.reason
         assert claim.retryable
 
     def test_newer_alarm_is_deferred_while_execution_is_active(self, claim_store, alarm):

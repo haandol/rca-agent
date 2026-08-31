@@ -25,7 +25,7 @@ const ConfigSchema = z.object({
   // "언젠가 푸시된 이미지"가 되어 배포된 코드를 태그로 식별할 수 없게 된다.
   agent: z.object({ imageTag: z.string().optional() }),
   healthcare: z.object({ imageTag: z.string().optional() }),
-  codexHeadless: z.object({ imageTag: z.string().optional() }),
+  headlessCodex: z.object({ imageTag: z.string().optional() }),
   execution: z.object({ imageTag: z.string().optional() }),
   storage: z
     .object({
@@ -57,11 +57,11 @@ type IRawConfig = z.infer<typeof ConfigSchema>;
 type IServiceImage = { readonly imageTag: string };
 type IConfig = Omit<
   IRawConfig,
-  'agent' | 'healthcare' | 'codexHeadless' | 'execution'
+  'agent' | 'healthcare' | 'headlessCodex' | 'execution'
 > & {
   readonly agent: IServiceImage;
   readonly healthcare: IServiceImage;
-  readonly codexHeadless: IServiceImage;
+  readonly headlessCodex: IServiceImage;
   readonly execution: IServiceImage;
 };
 
@@ -81,7 +81,7 @@ const parsed = result.data;
 const IMAGE_TAG_ENV_KEYS = {
   agent: 'AGENT_IMAGE_TAG',
   healthcare: 'HEALTHCARE_IMAGE_TAG',
-  codexHeadless: 'CODEX_HEADLESS_IMAGE_TAG',
+  headlessCodex: 'HEADLESS_CODEX_IMAGE_TAG',
   execution: 'EXECUTION_IMAGE_TAG',
 } as const;
 
@@ -115,9 +115,9 @@ export const Config: IConfig = {
   },
   agent: { ...parsed.agent, imageTag: imageTagFor('agent') },
   healthcare: { ...parsed.healthcare, imageTag: imageTagFor('healthcare') },
-  codexHeadless: {
-    ...parsed.codexHeadless,
-    imageTag: imageTagFor('codexHeadless'),
+  headlessCodex: {
+    ...parsed.headlessCodex,
+    imageTag: imageTagFor('headlessCodex'),
   },
   execution: { ...parsed.execution, imageTag: imageTagFor('execution') },
 };

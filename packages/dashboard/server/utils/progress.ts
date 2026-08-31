@@ -44,6 +44,7 @@ const TRACK: Record<string, readonly string[]> = {
     'REPORT_GENERATION',
     'COMPLETED',
   ],
+  'headless-codex': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
   'codex-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
   'cc-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
 };
@@ -68,7 +69,11 @@ export function furthestStage(
   for (const span of spans) {
     // The headless engines record the same span vocabulary but run the whole analysis
     // as one stage, so any work it logged means it had reached ANALYZING.
-    if (engine === 'codex-headless' || engine === 'cc-headless') {
+    if (
+      engine === 'headless-codex' ||
+      engine === 'codex-headless' ||
+      engine === 'cc-headless'
+    ) {
       if (SPAN_TYPE_TO_STATE[span.spanType]) {
         best = Math.max(best, track.indexOf('ANALYZING'));
       }

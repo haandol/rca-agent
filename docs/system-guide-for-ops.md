@@ -10,7 +10,7 @@
 4. [데이터 흐름 — 알람부터 보고서까지](#4-데이터-흐름--알람부터-보고서까지)
 5. [두 가지 RCA 엔진 비교](#5-두-가지-rca-엔진-비교)
 6. [Fargate 엔진 — 9단계 파이프라인](#6-fargate-엔진--9단계-파이프라인)
-7. [Codex Headless 엔진 — ECS Fargate](#7-codex-headless-엔진--ecs-fargate)
+7. [Headless Codex 엔진 — ECS Fargate](#7-headless-codex-엔진--ecs-fargate)
 8. [플레이북 실행 — 사용자 승인 게이트](#8-플레이북-실행--사용자-승인-게이트)
 9. [MCP 서버 — 외부 데이터 수집 도구](#9-mcp-서버--외부-데이터-수집-도구)
 10. [Healthcare Sensor App — 데모용 서비스](#10-healthcare-sensor-app--데모용-서비스)
@@ -60,14 +60,14 @@ graph TB
     subgraph Routing["이벤트 라우팅 (SNS → SQS)"]
         SNS["SNS Topic<br/>(알람 팬아웃)"]
         SQS_F["SQS Queue #1<br/>(Fargate용)"]
-        SQS_L["SQS Queue #2<br/>(Codex Headless용)"]
+        SQS_L["SQS Queue #2<br/>(Headless Codex용)"]
     end
 
     subgraph DualStack["Dual-Stack RCA 엔진"]
         subgraph FargateStack["🟦 Fargate Stack"]
             ECS["ECS Fargate Task<br/>Python · Strands SDK<br/>9단계 파이프라인"]
         end
-        subgraph CodexHeadlessStack["🟧 Codex Headless Stack"]
+        subgraph HeadlessCodexStack["🟧 Headless Codex Stack"]
             CCFARGATE["ECS Fargate<br/>Node.js · Codex CLI<br/>프롬프트 주도 RCA"]
         end
     end
@@ -141,7 +141,7 @@ graph TB
     EXEC <--> S3V
 
     style FargateStack fill:#e3f2fd,stroke:#1565c0
-    style CodexHeadlessStack fill:#fff3e0,stroke:#ef6c00
+    style HeadlessCodexStack fill:#fff3e0,stroke:#ef6c00
     style Tools fill:#e8f5e9,stroke:#388e3c
     style Gate fill:#fff8e1,stroke:#f9a825
     style ExecStack fill:#ffebee,stroke:#c62828
@@ -151,7 +151,7 @@ graph TB
 
 **왜 두 개의 엔진을 사용하나요?**
 
-|      | Fargate (Strands)                                | Fargate (Codex Headless)           |
+|      | Fargate (Strands)                                | Fargate (Headless Codex)           |
 | ---- | ------------------------------------------------ | ------------------------------- |
 | 장점 | 정교한 9단계 분석, 가설 트리 탐색, 플레이북 학습 | 프롬프트 주도로 유연, 코드 간단 |
 | 단점 | 항시 실행, 비용 발생                             | 동작이 덜 예측 가능             |
@@ -175,7 +175,7 @@ graph TB
         STORAGE["🗄️ StorageStack<br/>S3 + S3 Vectors"]
         RDS["🐘 RdsStack<br/>PostgreSQL 17.4"]
         AGENT["🟦 RcaAgentServiceStack<br/>ECS Fargate (RCA · 읽기 전용)"]
-        CC["🟧 CodexHeadlessStack<br/>ECS Fargate (RCA · 읽기 전용)"]
+        CC["🟧 HeadlessCodexStack<br/>ECS Fargate (RCA · 읽기 전용)"]
         HEALTH["🏥 HealthcareServiceStack<br/>ECS Fargate (데모)"]
         EXEC["🟥 PlaybookExecutionStack<br/>실행 요청 큐 + DLQ<br/>ECS Fargate (쓰기 권한)"]
     end
@@ -220,13 +220,13 @@ graph TB
 | **VPC**                              | 모든 서비스의 네트워크                                 | Public + Private Subnet, NAT Gateway                                           |
 | **SNS (알람 수신)**                  | CloudWatch 알람 팬아웃                                 | 1개 토픽 → 2개 SQS로 분배                                                      |
 | **SQS (Fargate용)**                  | Fargate Long Polling                                   | visibility=25분, retention=4일, DLQ 연결                                       |
-| **SQS (Codex Headless용)**              | Codex Headless Long Polling                               | visibility=35분, retention=4일, DLQ 연결                                       |
+| **SQS (Headless Codex용)**              | Headless Codex Long Polling                               | visibility=35분, retention=4일, DLQ 연결                                       |
 | **SQS (실행 요청용)**                | 대시보드 승인 발행 → 실행 워커 소비                    | visibility=75분(4500초), retention=4일, DLQ 연결. 이벤트 구독 없음             |
 | **DynamoDB**                         | RCA 세션 상태 + 실행 이력 관리                         | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성)                                        |
 | **S3 (Evidence)**                    | 수집 증거 + 보고서 + 실행 증거 + 갱신 전 플레이북 사본 | 60일 lifecycle, S3 managed encryption                                          |
 | **S3 Vectors**                       | 플레이북/보고서 임베딩 검색                            | cosine 유사도, 1536차원 벡터 (Cohere Embed V4)                                 |
 | **ECS Fargate**                      | RCA Agent + Healthcare App                             | ARM64, 1vCPU, 2GB RAM                                                          |
-| **ECS Fargate (Codex Headless)**        | Codex Headless RCA                                        | ARM64, 1vCPU, 2GB RAM                                                          |
+| **ECS Fargate (Headless Codex)**        | Headless Codex RCA                                        | ARM64, 1vCPU, 2GB RAM                                                          |
 | **ECS Fargate (Playbook Execution)** | 승인된 플레이북 실행 + 회고                            | ARM64, 1vCPU, 2GB RAM, desiredCount 1 (상시)                                   |
 | **RDS PostgreSQL**                   | Healthcare 센서 데이터                                 | PostgreSQL 17.4                                                                |
 | **ECR**                              | Docker 이미지 레지스트리                               | rca-agent, healthcare, 기존 `cc-headless` 물리 이름의 Codex 이미지 3개 |
@@ -245,7 +245,7 @@ graph TB
 | visibility timeout | 4500초 > 실행 상한 3600초                                                                   | 실행 중인 요청이 재전달되어 두 번 실행되지 않게                                                                                                         |
 | 태스크 수          | 상시 1                                                                                      | 태스크 수로 기능을 여닫는 것은 트리거가 이벤트 구독이던 시절의 장치다. 승인 게이트가 있으면 큐가 이미 실행 여부를 결정한다                              |
 
-분석 스택(`CodexHeadlessStack`)은 Healthcare 서비스로의 네트워크 경로도, `HEALTHCARE_*` 환경변수도 갖지 않습니다. 대상 서비스에 접근하는 것은 실행 스택뿐입니다.
+분석 스택(`HeadlessCodexStack`)은 Healthcare 서비스로의 네트워크 경로도, `HEALTHCARE_*` 환경변수도 갖지 않습니다. 대상 서비스에 접근하는 것은 실행 스택뿐입니다.
 
 ---
 
@@ -258,9 +258,9 @@ sequenceDiagram
     participant CW as CloudWatch<br/>Alarm
     participant SNS as SNS Topic<br/>(알람 팬아웃)
     participant SQS1 as SQS Queue #1<br/>(Fargate용)
-    participant SQS2 as SQS Queue #2<br/>(Codex Headless용)
+    participant SQS2 as SQS Queue #2<br/>(Headless Codex용)
     participant ECS as ECS Fargate<br/>(Strands 에이전트)
-    participant CCH as ECS Fargate<br/>(Codex Headless)
+    participant CCH as ECS Fargate<br/>(Headless Codex)
     participant DDB as DynamoDB<br/>(세션 테이블)
     participant MCP as MCP 서버들<br/>(CW·CT·Knowledge)
     participant BED as Amazon Bedrock<br/>(AI 모델)
@@ -270,14 +270,14 @@ sequenceDiagram
     Note over CW,NOTIFY: ① 알람 발생 및 라우팅
     CW->>SNS: 알람 메시지 발행
     SNS->>SQS1: 복제 (Fargate용)
-    SNS->>SQS2: 복제 (Codex Headless용)
+    SNS->>SQS2: 복제 (Headless Codex용)
 
     Note over ECS,DDB: ② 멱등성 체크 (중복 방지)
     par Fargate
         SQS1->>ECS: Long Polling으로 수신
         ECS->>DDB: 중복 체크 (IDEMP# 키)
         DDB-->>ECS: 신규 → 세션 생성
-    and Codex Headless
+    and Headless Codex
         SQS2->>CCH: Long Polling으로 수신
         CCH->>DDB: 중복 체크 (IDEMP# 키)
         DDB-->>CCH: 신규 → 세션 생성
@@ -291,7 +291,7 @@ sequenceDiagram
         BED-->>ECS: AI 응답
         ECS->>S3: 증거 + 보고서 저장
         ECS->>DDB: 상태 갱신 (COMPLETED)
-    and Codex Headless 분석
+    and Headless Codex 분석
         CCH->>MCP: 메트릭·로그·배포이력 수집
         MCP-->>CCH: 데이터 반환
         CCH->>BED: 프롬프트 주도 분석
@@ -309,7 +309,7 @@ sequenceDiagram
 
 - SNS 팬아웃으로 **하나의 알람이 두 SQS 큐에 동시 전달**됩니다
 - 각 엔진은 **DynamoDB IDEMP# 키**로 같은 알람을 중복 처리하지 않습니다 (자기 엔진 내에서)
-- 두 엔진은 서로 독립적으로 동작하며, `engine` 필드(`strands` vs `codex-headless`)로 구분됩니다
+- 두 엔진은 서로 독립적으로 동작하며, `engine` 필드(`strands` vs `headless-codex`)로 구분됩니다
 - 보고서는 **S3 presigned URL**로 SRE 팀에 전달됩니다
 - **완료 알림은 아무것도 트리거하지 않습니다.** 수신자는 사람과 대시보드뿐이고, payload에는 승인 판단에 필요한 요약만 담깁니다. 실행 절차 본문은 담지 않는데, 실행 주체는 저장된 리포트를 직접 읽어야 하고 알림 payload를 실행 입력으로 쓰면 전달 과정에서 잘린 절차가 실행될 수 있기 때문입니다
 
@@ -329,7 +329,7 @@ graph LR
         F_WRITE["🚫 쓰기 권한 없음"]
     end
 
-    subgraph CcStack["🟧 Codex Headless Stack (ECS Fargate)"]
+    subgraph CcStack["🟧 Headless Codex Stack (ECS Fargate)"]
         direction TB
         L_ENV["ECS Fargate<br/>Node.js 24"]
         L_SDK["Codex CLI<br/>RCA · Report 전문 에이전트"]
@@ -343,7 +343,7 @@ graph LR
     style CcStack fill:#fff3e0,stroke:#ef6c00
 ```
 
-| 항목                    | Fargate (Strands)                                         | Fargate (Codex Headless)              |
+| 항목                    | Fargate (Strands)                                         | Fargate (Headless Codex)              |
 | ----------------------- | --------------------------------------------------------- | ---------------------------------- |
 | **실행 환경**           | ECS Fargate (항시 실행)                                   | ECS Fargate (항시 실행)            |
 | **에이전트 프레임워크** | Strands Agents SDK (Python)                               | Codex CLI (Node.js)          |
@@ -480,7 +480,7 @@ Bedrock에서 실측으로 확인한 제약입니다. 이 파라미터를 다시
 
 ---
 
-## 7. Codex Headless 엔진 — ECS Fargate
+## 7. Headless Codex 엔진 — ECS Fargate
 
 Codex CLI를 ECS Fargate에서 headless 모드로 실행하고, 메인 에이전트는
 오케스트레이터로서 RCA와 Report 두 전문 에이전트만 순차 호출합니다. 이 실행에는
@@ -534,7 +534,7 @@ flowchart TD
 **Fargate와의 차이점**:
 
 - Fargate는 각 단계를 **Python 코드로** 명시적으로 구현
-- Codex Headless는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 산출물
+- Headless Codex는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 산출물
   계약과 완료 조건을 강제
 - claim을 잃거나 DynamoDB 소유권을 확인하지 못한 실행은 외부 쓰기를 시작하지 않음
 - 산출물은 `scoping.json`, `hypotheses.json`, `validation-{N}.json`, `playbook.json`,
@@ -545,7 +545,7 @@ flowchart TD
 ## 8. 플레이북 실행 — 사용자 승인 게이트
 
 실행은 두 분석 엔진과 별개의 워커입니다. **분석 워커와 같은 컨테이너 이미지를 다른
-진입점으로** 실행합니다: `python -m codex_headless.execution_main`.
+진입점으로** 실행합니다: `python -m headless_codex.execution_main`.
 
 ```mermaid
 flowchart TD
@@ -994,7 +994,7 @@ stateDiagram-v2
     OUTDATED --> [*]
 ```
 
-### Codex Headless 세션 상태 전이
+### Headless Codex 세션 상태 전이
 
 ```mermaid
 stateDiagram-v2
@@ -1027,16 +1027,16 @@ stateDiagram-v2
 | 엔진              | 기준     | 환경변수                                                   | 기본값의 근거                                                    |
 | ----------------- | -------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
 | Fargate (Strands) | **30분** | `ALARM_STALENESS_SECONDS` (기본 `1800`)                    | 단계 경계에서 예산을 평가하므로 시간 예산 20분 이상이면 충분하다 |
-| Codex Headless       | **60분** | `ALARM_STALENESS_SECONDS` (미설정 시 `CODEX_TIMEOUT_SECONDS`) | 프로세스 타임아웃과 같은 값으로 고정된다                      |
+| Headless Codex       | **60분** | `ALARM_STALENESS_SECONDS` (미설정 시 `CODEX_TIMEOUT_SECONDS`) | 프로세스 타임아웃과 같은 값으로 고정된다                      |
 
-**두 값이 다른 것은 의도된 결정입니다.** Codex Headless는 한 세션씩 직렬로 처리하므로
+**두 값이 다른 것은 의도된 결정입니다.** Headless Codex는 한 세션씩 직렬로 처리하므로
 한 회차가 예산을 다 쓰면 그만큼의 대기가 다음 알람에 그대로 전가됩니다. 건너뛰기
 기준이 그 엔진의 시간 예산보다 짧으면 예산 초과 **한 번**이 뒤따르는 여러 알람을
 통째로 폐기합니다. 그래서 이 엔진의 기준은 `CODEX_TIMEOUT_SECONDS` 아래로 내려가지
 않도록 코드가 `max()`로 강제합니다 — 환경변수를 30분으로 낮춰도 60분이 적용됩니다.
 
 기록되는 사유의 필드 이름은 엔진마다 다릅니다: Strands는 `error_reason`,
-Codex Headless는 `outdated_reason`에 씁니다.
+Headless Codex는 `outdated_reason`에 씁니다.
 
 ### 실행 상태 전이 (분석 세션과 별도)
 
@@ -1072,7 +1072,7 @@ erDiagram
     RCA_SESSION {
         string PK "RCA#{rca_id}"
         string SK "{engine}#SESSION"
-        string engine "strands | codex-headless"
+        string engine "strands | headless-codex"
         string state "ALARM_RECEIVED → COMPLETED"
         string alarm_name "CloudWatch 알람 이름"
         string alarm_arn "알람 ARN"
@@ -1080,7 +1080,7 @@ erDiagram
         string root_cause "확정된 근본 원인"
         boolean confirmed "근본 원인 확정 여부"
         string error_reason "실패 사유 (Strands는 OUTDATED 사유도 여기)"
-        string outdated_reason "OUTDATED 사유 (Codex Headless)"
+        string outdated_reason "OUTDATED 사유 (Headless Codex)"
         string created_at "ISO 8601"
         string updated_at "ISO 8601"
         number ttl "TTL (90일)"
@@ -1089,7 +1089,7 @@ erDiagram
     SPAN {
         string PK "RCA#{rca_id}"
         string SK "{engine}#SPAN#{span_id}"
-        string engine "strands | codex-headless"
+        string engine "strands | headless-codex"
         string span_type "SCOPING | HYPOTHESIS_GENERATION | VALIDATION_LOOP | REPORT | PLAYBOOK | ..."
         string span_status "RUNNING | COMPLETED | FAILED"
         string parent_span_id "부모 스팬 ID (선택)"
@@ -1107,7 +1107,7 @@ erDiagram
     HYPOTHESIS {
         string PK "RCA#{rca_id}"
         string SK "{engine}#HYPO#{hypothesis_id}"
-        string engine "strands | codex-headless"
+        string engine "strands | headless-codex"
         string tree_id "가설 트리 ID"
         string parent_id "부모 가설 ID (선택)"
         number depth "트리 깊이 (0-based)"
@@ -1150,7 +1150,7 @@ erDiagram
 
 ### 키 구조 및 접근 패턴
 
-동일한 `PK = RCA#{rca_id}` 파티션 안에 세션 1개, 스팬 N개, 가설 N개, 실행 N개가 저장됩니다. `SK` 접두사로 엔티티를 구분하며, 세션·스팬·가설은 `{engine}#` 접두사로 Strands와 Codex Headless의 데이터를 분리합니다.
+동일한 `PK = RCA#{rca_id}` 파티션 안에 세션 1개, 스팬 N개, 가설 N개, 실행 N개가 저장됩니다. `SK` 접두사로 엔티티를 구분하며, 세션·스팬·가설은 `{engine}#` 접두사로 Strands와 Headless Codex의 데이터를 분리합니다.
 
 **실행 아이템만 엔진 접두사를 붙이지 않습니다.** 어느 엔진이 리포트를 만들었든 실행 경로는 하나이기 때문입니다.
 
@@ -1159,16 +1159,16 @@ flowchart TD
     subgraph Partition["PK = RCA#a1b2c3d4-..."]
         direction TB
         S1["SK: strands#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
-        S2["SK: codex-headless#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
+        S2["SK: headless-codex#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
 
         SP1["SK: strands#SPAN#uuid-1<br/>span_type=SCOPING, 3.2s"]
         SP2["SK: strands#SPAN#uuid-2<br/>span_type=HYPOTHESIS_GENERATION, 5.1s"]
         SP3["SK: strands#SPAN#uuid-3<br/>span_type=PLAYBOOK, metadata={...}, 8.4s"]
-        SP4["SK: codex-headless#SPAN#uuid-a<br/>span_type=SCOPING, 4.0s"]
+        SP4["SK: headless-codex#SPAN#uuid-a<br/>span_type=SCOPING, 4.0s"]
 
         H1["SK: strands#HYPO#uuid-h1<br/>depth=0, DB 커넥션 누수, CONFIRMED 0.92"]
         H2["SK: strands#HYPO#uuid-h2<br/>depth=0, 트래픽 급증, REJECTED 0.1"]
-        H3["SK: codex-headless#HYPO#uuid-h3<br/>depth=0, 커넥션 풀 고갈, CONFIRMED 0.88"]
+        H3["SK: headless-codex#HYPO#uuid-h3<br/>depth=0, 커넥션 풀 고갈, CONFIRMED 0.88"]
 
         E1["SK: EXEC#uuid-e1<br/>execution_state=RESOLVED<br/>회고 완료, 갱신 diff 있음"]
         E2["SK: EXEC#uuid-e2<br/>execution_state=UNRESOLVED<br/>증거는 보존"]
@@ -1222,13 +1222,13 @@ flowchart TD
 sequenceDiagram
     participant SA as Strands Agent
     participant DDB as DynamoDB<br/>(싱글테이블)
-    participant CCA as Codex Headless Agent
+    participant CCA as Headless Codex Agent
     participant DASH as Dashboard
     participant EXE as Execution Worker
 
     Note over SA,CCA: 1. 세션 생성 (멱등)
     SA->>DDB: PutItem PK=RCA#id, SK=strands#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
-    CCA->>DDB: PutItem PK=RCA#id, SK=codex-headless#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
+    CCA->>DDB: PutItem PK=RCA#id, SK=headless-codex#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
 
     Note over SA,DDB: 2. 파이프라인 실행 (Strands)
     SA->>DDB: PutItem SK=strands#SPAN#{id} (SCOPING 시작)
@@ -1239,11 +1239,11 @@ sequenceDiagram
     SA->>DDB: PutItem + UpdateItem (PLAYBOOK span + metadata)
     SA->>DDB: UpdateItem SK=strands#SESSION (state=COMPLETED)
 
-    Note over CCA,DDB: 3. 파이프라인 실행 (Codex Headless)
+    Note over CCA,DDB: 3. 파이프라인 실행 (Headless Codex)
     CCA->>CCA: 역할별 저장 도구로 실행별 산출물 저장
     CCA->>DDB: artifact watcher가 SPAN/HYPO 아이템 기록
-    CCA->>DDB: BatchWriteItem SK=codex-headless#HYPO#{id} × N
-    CCA->>DDB: UpdateItem SK=codex-headless#SESSION (state=COMPLETED)
+    CCA->>DDB: BatchWriteItem SK=headless-codex#HYPO#{id} × N
+    CCA->>DDB: UpdateItem SK=headless-codex#SESSION (state=COMPLETED)
 
     Note over DASH,DDB: 4. 대시보드 조회
     DASH->>DDB: Scan (세션 목록 + 실행 상태 컬럼)
@@ -1282,7 +1282,7 @@ flowchart TD
     Q3 -->|"Yes"| Q4{"DynamoDB에<br/>세션이 생성되었는가?"}
     Q4 -->|"No"| A4["Fargate 로그 확인<br/>CloudWatch > Log groups"]
     Q4 -->|"Yes"| Q5{"세션 상태가<br/>FAILED인가?"}
-    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>Codex Headless: 최대 60분)"]
+    Q5 -->|"No"| A5["아직 처리 중 — 대기<br/>(Strands: 최대 20분<br/>Headless Codex: 최대 60분)"]
     Q5 -->|"Yes"| A6["에러 원인 확인<br/>DDB의 error 필드 확인<br/>CloudWatch Logs 검색"]
 ```
 
@@ -1291,7 +1291,7 @@ flowchart TD
 | 서비스              | Log Group                   | 확인 사항                                       |
 | ------------------- | --------------------------- | ----------------------------------------------- |
 | Fargate RCA Agent   | `/ecs/rca-agent-*`          | MCP 연결 실패, Bedrock API 오류                 |
-| Fargate Codex Headless | `/ecs/*/cc-headless`           | Codex CLI 오류 (기존 물리 로그 그룹 이름 유지)    |
+| Fargate Headless Codex | `/ecs/*/cc-headless`           | Codex CLI 오류 (기존 물리 로그 그룹 이름 유지)    |
 | Playbook Execution  | `/ecs/*/playbook-execution` | 실행 요청 수신, 명령 거부, 관측 실패, 회고 오류 |
 | Healthcare App      | `/ecs/healthcare-*`         | 장애 주입 동작, 트래픽 생성기                   |
 | SQS DLQ             | DLQ 메시지 수               | 처리 실패한 알람 메시지, 처리 실패한 실행 요청  |
@@ -1306,15 +1306,15 @@ flowchart TD
 | Bedrock API 오류          | 리전/모델 설정 오류                                                                  | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` 환경변수 확인                                                                                                                                                                |
 | 보고서 S3 업로드 실패     | IAM 권한 부족                                                                        | Task Role의 S3 PutObject 권한 확인                                                                                                                                                                                |
 | 세션이 "분석중"에서 멈춤  | 태스크 크래시/롤링 배포 중 SIGTERM                                                   | SQS Visibility Timeout 만료 후 자동 재처리. 이전 세션은 FAILED 마킹되고 새 세션이 생성됨                                                                                                                          |
-| 재처리가 너무 느림        | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음                              | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, Codex Headless 35분)                                                                                                                               |
+| 재처리가 너무 느림        | SQS Visibility Timeout이 처리 시간의 50% 이상 여유 없음                              | `event-bus-stack.ts`의 visibilityTimeout 설정 확인 (Strands 25분, Headless Codex 35분)                                                                                                                               |
 | 승인 버튼이 503으로 실패  | 대시보드에 `EXECUTION_QUEUE_URL` 미설정                                              | 환경변수 설정. 미설정 시 조용히 성공한 것처럼 보이지 않도록 의도적으로 503으로 실패한다                                                                                                                           |
 | 승인이 409로 거부됨       | 분석이 COMPLETED가 아니거나, 리포트에 실행 절차가 없거나, 이미 진행 중인 실행이 있음 | 대시보드의 실행 이력에서 진행 중 실행 확인. 미확정 원인의 리포트는 실행 절차를 갖지 않는다                                                                                                                        |
 | 실행이 UNRESOLVED로 끝남  | `success_criteria`를 관측하지 못했거나 관측이 기준을 만족하지 못함                   | 실행 증거(S3)에서 절차별 관측 결과 확인. 관측되지 않은 결과를 해결로 기록하지 않는 것이 설계다                                                                                                                    |
 | 절차가 수동 조치로 남음   | 명령이 파괴적으로 판정되었거나 작업 이름을 확정할 수 없었음                          | 증거의 `failure_class`가 `BLOCKED_DESTRUCTIVE`/`BLOCKED_UNDECIDABLE`인지 확인. 사람이 직접 조치한다                                                                                                               |
 | 회고가 실행되지 않음      | 실행이 `RESOLVED`가 아님                                                             | 정상 동작. 해소하지 못한 절차는 올바름이 입증되지 않았으므로 회고에 들어가지 않는다                                                                                                                               |
 | 같은 승인이 두 번 실행됨  | 실행 요청 큐의 visibility timeout이 실행 상한보다 짧음                               | `playbook-execution-stack.ts`의 visibility(4500초) > `EXECUTION_TIMEOUT_SECONDS`(3600초) 확인                                                                                                                     |
-| 분석 없이 OUTDATED로 끝남 | 알람이 기준(Strands 30분 / Codex Headless 60분)보다 오래됨                              | 정상 동작. 사유는 Strands `error_reason`, Codex Headless `outdated_reason`에 있다. 큐가 밀렸는지 확인하고, 필요하면 `ALARM_STALENESS_SECONDS`를 올린다 (Codex Headless는 `CODEX_TIMEOUT_SECONDS` 아래로는 내려가지 않는다) |
-| 한쪽 엔진만 OUTDATED      | 두 엔진의 기준이 다름 (30분 vs 60분)                                                 | 정상 동작. 값 차이는 ADR 0006이 정한 결정이며, 통일하면 Codex Headless에서 예산 초과 한 번이 뒤따르는 알람을 폐기한다                                                                                                |
+| 분석 없이 OUTDATED로 끝남 | 알람이 기준(Strands 30분 / Headless Codex 60분)보다 오래됨                              | 정상 동작. 사유는 Strands `error_reason`, Headless Codex `outdated_reason`에 있다. 큐가 밀렸는지 확인하고, 필요하면 `ALARM_STALENESS_SECONDS`를 올린다 (Headless Codex는 `CODEX_TIMEOUT_SECONDS` 아래로는 내려가지 않는다) |
+| 한쪽 엔진만 OUTDATED      | 두 엔진의 기준이 다름 (30분 vs 60분)                                                 | 정상 동작. 값 차이는 ADR 0006이 정한 결정이며, 통일하면 Headless Codex에서 예산 초과 한 번이 뒤따르는 알람을 폐기한다                                                                                                |
 
 ---
 

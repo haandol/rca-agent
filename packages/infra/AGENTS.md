@@ -44,7 +44,7 @@ RcaAgentDev
 ├── StorageStack                  # S3 Evidence/Report 버킷
 ├── RdsStack                      # PostgreSQL 17.4 (Healthcare 서비스용)
 ├── RcaAgentServiceStack          # ECS Fargate — Strands RCA 에이전트
-├── CodexHeadlessStack            # ECS Fargate — Codex headless RCA 에이전트
+├── HeadlessCodexStack            # ECS Fargate — Headless Codex RCA 에이전트
 ├── HealthcareServiceStack        # ECS Fargate — Healthcare 센서 서비스 + Cloud Map DNS
 └── PlaybookExecutionStack        # ECS Fargate — 승인된 플레이북 실행 워커 (실행 요청 큐 + 유일한 쓰기 권한 역할)
 ```
@@ -60,7 +60,7 @@ StorageStack ─────────┘
 
 EcrStack ─────────────┐
 NetworkStack ─────────┤
-EventBusStack ────────┼── CodexHeadlessStack
+EventBusStack ────────┼── HeadlessCodexStack
 DatabaseStack ────────┤
 StorageStack ─────────┘
 
@@ -96,7 +96,7 @@ SG 인그레스를 여는 순간 Healthcare 스택이 실행 스택을 참조하
 | `alarm` | `notificationEmail` | SNS 알림 이메일 |
 | `agent` | `imageTag` | RCA Agent ECS 이미지 태그 |
 | `healthcare` | `imageTag` | Healthcare ECS 이미지 태그 |
-| `codexHeadless` | `imageTag` | Codex Headless ECS 이미지 태그 |
+| `headlessCodex` | `imageTag` | Headless Codex ECS 이미지 태그 |
 | `storage` | `evidenceBucket`, `vectorBucket` | S3 버킷명 |
 | `table.rcaSession` | `name` | DynamoDB 테이블명 |
 | `tracing` | `enabled` | OpenTelemetry 사이드카 활성화 |
@@ -115,7 +115,7 @@ SG 인그레스를 여는 순간 Healthcare 스택이 실행 스택을 참조하
 - X-Ray: BatchGetTraces, GetTraceSummaries, PutTraceSegments, PutTelemetryRecords
 - SNS: Publish (알림 토픽)
 
-### Codex Headless (Fargate Task Role)
+### Headless Codex (Fargate Task Role)
 
 - `CloudWatchReadOnlyAccess` (매니지드 정책)
 - `AWSCloudTrail_ReadOnlyAccess` (매니지드 정책)

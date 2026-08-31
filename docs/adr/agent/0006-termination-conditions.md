@@ -99,5 +99,5 @@ Accepted (2026-08-01)
 
 - [ADR agent/0002: 가설 트리 라이프사이클](0002-hypothesis-tree-lifecycle.md) — 매 검증 루프 후 중단 조건을 평가
 - [ADR agent/0007: RCA 보고서 생성](0007-rca-report-generation.md) — 미확정 종료 시에도 보고서를 생성
-- [ADR agent/0011: Codex Headless 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — 단일 장시간 실행으로 분석하는 엔진의 구조
+- [ADR agent/0011: Headless Codex 오케스트레이션](0011-cc-headless-prompt-driven-rca.md) — 단일 장시간 실행으로 분석하는 엔진의 구조
 - [ADR infra/0001: 알람 수신 아키텍처](../infra/0001-alarm-ingestion-sns-sqs-fargate.md) — 세션 상태 전이 검증과 조건부 쓰기 가드

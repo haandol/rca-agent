@@ -8,7 +8,7 @@ import { StorageStack } from '../lib/stacks/storage-stack';
 import { RcaAgentServiceStack } from '../lib/stacks/rca-agent-service-stack';
 import { RdsStack } from '../lib/stacks/rds-stack';
 import { HealthcareServiceStack } from '../lib/stacks/healthcare-service-stack';
-import { CodexHeadlessStack } from '../lib/stacks/codex-headless-stack';
+import { HeadlessCodexStack } from '../lib/stacks/headless-codex-stack';
 import { PlaybookExecutionStack } from '../lib/stacks/playbook-execution-stack';
 import { Config } from '../config/loader';
 
@@ -91,7 +91,7 @@ rcaAgentServiceStack.addDependency(databaseStack);
 rcaAgentServiceStack.addDependency(storageStack);
 
 // 분석은 읽기 전용이다. Healthcare 서비스로의 접근 경로를 두지 않는다.
-const codexHeadlessStack = new CodexHeadlessStack(
+const headlessCodexStack = new HeadlessCodexStack(
   app,
   // Keep the deployed stack name while replacing the runtime in place.
   `${Config.app.ns}CcHeadlessStack`,
@@ -104,14 +104,14 @@ const codexHeadlessStack = new CodexHeadlessStack(
     evidenceBucket: storageStack.evidenceBucket,
     vectorBucketName: Config.storage.vectorBucket,
     reportBucket: Config.storage.evidenceBucket,
-    imageTag: Config.codexHeadless.imageTag,
+    imageTag: Config.headlessCodex.imageTag,
   },
 );
-codexHeadlessStack.addDependency(ecrStack);
-codexHeadlessStack.addDependency(networkStack);
-codexHeadlessStack.addDependency(eventBusStack);
-codexHeadlessStack.addDependency(databaseStack);
-codexHeadlessStack.addDependency(storageStack);
+headlessCodexStack.addDependency(ecrStack);
+headlessCodexStack.addDependency(networkStack);
+headlessCodexStack.addDependency(eventBusStack);
+headlessCodexStack.addDependency(databaseStack);
+headlessCodexStack.addDependency(storageStack);
 
 // 실행은 사용자가 승인 요청을 발행할 때만 시작된다. 이벤트 구독을 두지 않으므로
 // 승인 없이 실행이 기동될 경로가 인프라에 존재하지 않는다.

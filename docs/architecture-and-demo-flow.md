@@ -260,17 +260,17 @@ flowchart LR
 | `MAX_BRANCHING_DEPTH`              | 3      | 분기 최대 깊이                |
 | `ALARM_STALENESS_SECONDS`          | 1800   | Stale 알람 판정 (30분)        |
 
-Stale 판정 기준은 엔진별로 다릅니다. 이 엔진은 1800초를 쓰지만, Codex Headless는 한 회차가
+Stale 판정 기준은 엔진별로 다릅니다. 이 엔진은 1800초를 쓰지만, Headless Codex는 한 회차가
 분석 예산을 다 쓰면 그만큼의 대기가 다음 알람에 전가되므로 기준을 분석 예산(3600초)
 이상으로 묶습니다 — 짧으면 예산 초과 한 번이 뒤따르는 알람을 통째로 폐기합니다.
 
 ---
 
-## 2. Fargate Stack (Codex Headless) — 전문 서브 에이전트 오케스트레이션
+## 2. Fargate Stack (Headless Codex) — 전문 서브 에이전트 오케스트레이션
 
 ### 2.1. 전체 플로우
 
-Python 핸들러가 SQS 수신과 claim 기반 세션 소유권을 관리하고, Codex Headless 메인
+Python 핸들러가 SQS 수신과 claim 기반 세션 소유권을 관리하고, Headless Codex 메인
 에이전트가 RCA와 Report 두 전문 서브 에이전트를 순차 호출합니다. 이 실행에는
 서비스나 인프라를 바꾸는 도구가 없고, 산출물은 플레이북을 포함한 리포트 하나입니다.
 Artifact Watcher는 실행 토큰별 격리 디렉터리를 감시하지만 현재 claim과 일치할
@@ -283,7 +283,7 @@ flowchart TD
         PARSE["AlarmPayload 파싱<br/>(SNS envelope unwrap)"]
         DEDUP["세션 claim<br/>(receive count + claim token)"]
         STALE["Stale 알람 체크<br/>(60분 초과 → OUTDATED)"]
-        SESSION["세션 생성<br/>(engine: codex-headless)"]
+        SESSION["세션 생성<br/>(engine: headless-codex)"]
         SQS --> PARSE --> DEDUP --> STALE --> SESSION
     end
 
@@ -350,7 +350,7 @@ flowchart TD
 
 ### 2.2. 상태 전이 다이어그램
 
-Codex Headless는 두 개의 활성 세션 상태를 유지하고 세부 단계는 claim 조건부
+Headless Codex는 두 개의 활성 세션 상태를 유지하고 세부 단계는 claim 조건부
 SPAN/HYPO 레코드로 기록합니다. 완료 세션 중복만 ACK하며 claim 경합이나 소유권
 확인 실패는 SQS 재전달 대상으로 남깁니다.
 
@@ -436,7 +436,7 @@ canonical 산출물은 아래 다섯 가지이며 이 표가 전부입니다.
 ## 3. 플레이북 실행 — 사용자 승인 기반 실행 에이전트
 
 실행은 두 분석 엔진과 별개의 워커입니다. 진입점은
-`python -m codex_headless.execution_main`이며, 분석 워커와 같은 컨테이너 이미지를
+`python -m headless_codex.execution_main`이며, 분석 워커와 같은 컨테이너 이미지를
 다른 진입점으로 실행합니다. 실행 경로는 어느 엔진이 리포트를 만들었든 하나입니다.
 
 ### 3.1. 전체 플로우
@@ -577,7 +577,7 @@ stateDiagram-v2
 
 ## 4. 두 스택 비교
 
-|                   | Fargate Stack (Strands)                                               | Fargate Stack (Codex Headless)                |
+|                   | Fargate Stack (Strands)                                               | Fargate Stack (Headless Codex)                |
 | ----------------- | --------------------------------------------------------------------- | ------------------------------------------ |
 | **실행 환경**     | ECS Fargate (Long Polling)                                            | ECS Fargate (Long Polling)                 |
 | **에이전트 엔진** | Strands Agents SDK (Python)                                           | Codex CLI (headless, Bedrock)        |
@@ -801,7 +801,7 @@ PLAYBOOK
 NOTIFICATION
 ```
 
-### Codex Headless 스팬 구조
+### Headless Codex 스팬 구조
 
 ```
 SCOPING (scoping.json 감지 시)

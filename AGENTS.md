@@ -8,13 +8,13 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 |---------|-------------|------|
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/AGENTS.md) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
-| [`packages/codex-headless`](./packages/codex-headless/AGENTS.md) | Codex on Bedrock Runtime headless — 분석 워커(RCA → Report 전문 서브 에이전트, 읽기 전용)와 실행 워커(사용자 승인 기반 플레이북 실행 + 회고) | Python, Codex CLI, ECS Fargate |
+| [`packages/headless-codex`](./packages/headless-codex/AGENTS.md) | Codex on Bedrock Runtime headless — 분석 워커(RCA → Report 전문 서브 에이전트, 읽기 전용)와 실행 워커(사용자 승인 기반 플레이북 실행 + 회고) | Python, Codex CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/AGENTS.md) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
 | [`packages/dashboard`](./packages/dashboard/AGENTS.md) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
 
 ## Architecture at a Glance
 
-동일한 CloudWatch 알람에 대해 두 가지 실행 엔진(Strands, Codex Headless)이 독립적으로 RCA를 수행하며, SNS/DynamoDB/S3/S3 Vectors를 공유합니다.
+동일한 CloudWatch 알람에 대해 두 가지 실행 엔진(Strands, Headless Codex)이 독립적으로 RCA를 수행하며, SNS/DynamoDB/S3/S3 Vectors를 공유합니다.
 
 > 시스템 다이어그램, 9단계 파이프라인, 모듈 간 데이터 흐름, Hexagonal 구조, Technology Stack 전체 내용은 **[docs/architecture.md](./docs/architecture.md)** 참조.
 

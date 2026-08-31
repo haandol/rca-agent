@@ -198,26 +198,26 @@ test('normalized result competing-cause evidence must be globally cited', async 
   );
 });
 
-test('input digest protects Codex Headless agent definitions', async () => {
+test('input digest protects Headless Codex agent definitions', async () => {
   const { inputFiles } = await computeInputDigest();
 
   // Analysis has no remediation role: recovery moved behind a user approval gate.
   // The digest covers both specialist instructions and their MCP capability files.
   assert.deepEqual(
     inputFiles.filter((file) =>
-      file.startsWith('packages/codex-headless/harness/analysis/agents/'),
+      file.startsWith('packages/headless-codex/harness/analysis/agents/'),
     ),
     [
-      'packages/codex-headless/harness/analysis/agents/rca-specialist-model-eval.toml',
-      'packages/codex-headless/harness/analysis/agents/rca-specialist.md',
-      'packages/codex-headless/harness/analysis/agents/rca-specialist.toml',
-      'packages/codex-headless/harness/analysis/agents/report-specialist-model-eval.toml',
-      'packages/codex-headless/harness/analysis/agents/report-specialist.md',
-      'packages/codex-headless/harness/analysis/agents/report-specialist.toml',
+      'packages/headless-codex/harness/analysis/agents/rca-specialist-model-eval.toml',
+      'packages/headless-codex/harness/analysis/agents/rca-specialist.md',
+      'packages/headless-codex/harness/analysis/agents/rca-specialist.toml',
+      'packages/headless-codex/harness/analysis/agents/report-specialist-model-eval.toml',
+      'packages/headless-codex/harness/analysis/agents/report-specialist.md',
+      'packages/headless-codex/harness/analysis/agents/report-specialist.toml',
     ],
   );
   assert.ok(
-    inputFiles.includes('packages/codex-headless/harness/analysis/AGENTS.md'),
+    inputFiles.includes('packages/headless-codex/harness/analysis/AGENTS.md'),
   );
 });
 
@@ -570,7 +570,7 @@ test('both engines receive the same observation citation instruction', async () 
     readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8');
   const sources = await Promise.all([
     read('packages/agent/src/rca_agent/eval_adapter.py'),
-    read('packages/codex-headless/src/codex_headless/eval_adapter.py'),
+    read('packages/headless-codex/src/headless_codex/eval_adapter.py'),
   ]);
 
   const instructions = sources.map((source) => {
@@ -596,7 +596,7 @@ test('each adapter builds the alarm reason with ids and the citation ask', async
   const sources = await Promise.all(
     [
       'packages/agent/src/rca_agent/eval_adapter.py',
-      'packages/codex-headless/src/codex_headless/eval_adapter.py',
+      'packages/headless-codex/src/headless_codex/eval_adapter.py',
     ].map((relativePath) =>
       readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8'),
     ),
@@ -627,7 +627,7 @@ test('both engines are told to preserve cited observation identifiers', async ()
   const sources = await Promise.all(
     [
       'packages/agent/src/rca_agent/prompts/report.py',
-      'packages/codex-headless/harness/skills/reporting/SKILL.md',
+      'packages/headless-codex/harness/skills/reporting/SKILL.md',
     ].map((relativePath) =>
       readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8'),
     ),
@@ -656,7 +656,7 @@ test('both engines judge remediation safety by the same rule', async () => {
   const sources = await Promise.all(
     [
       'packages/agent/src/rca_agent/eval_adapter.py',
-      'packages/codex-headless/src/codex_headless/eval_adapter.py',
+      'packages/headless-codex/src/headless_codex/eval_adapter.py',
     ].map((relativePath) =>
       readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8'),
     ),

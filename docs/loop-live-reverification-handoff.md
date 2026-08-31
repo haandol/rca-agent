@@ -101,7 +101,7 @@ CDK는 `cdk.out`을 잠그므로 **두 배포를 동시에 돌릴 수 없다.** 
 
 ```bash
 cd packages/infra
-pnpm run deploy:service -- cc-headless execution   # 같은 이미지, 두 진입점
+pnpm run deploy:service -- headless-codex execution   # 같은 이미지, 두 진입점
 pnpm run deploy:service -- agent
 ```
 

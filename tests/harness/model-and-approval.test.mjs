@@ -30,7 +30,7 @@ const fakeEnginePath = path.join(
 test('model evaluation fails with actionable missing command errors', () => {
   assert.throws(
     () => validateModelEnvironment({ AWS_REGION: 'ap-northeast-2' }),
-    /Missing RCA_EVAL_CODEX_HEADLESS_COMMAND/,
+    /Missing RCA_EVAL_HEADLESS_CODEX_COMMAND/,
   );
 });
 
@@ -38,7 +38,7 @@ test('model evaluation requires the deployed Codex model contract', () => {
   const commands = {
     AWS_PROFILE: 'fake-test-profile',
     AWS_REGION: 'us-east-1',
-    RCA_EVAL_CODEX_HEADLESS_COMMAND: '["codex-headless"]',
+    RCA_EVAL_HEADLESS_CODEX_COMMAND: '["headless-codex"]',
     RCA_EVAL_STRANDS_COMMAND: '["strands"]',
   };
 
@@ -286,9 +286,9 @@ test('fake model commands run both engines and write normalized results and repo
     RCA_EVAL_DEPLOYED_CODEX_MODEL: 'global.openai.gpt-5.6-sol',
     RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT: 'high',
     RCA_EVAL_DEPLOYED_CODEX_PROVIDER: 'amazon-bedrock-runtime',
-    RCA_EVAL_CODEX_HEADLESS_COMMAND: JSON.stringify([
+    RCA_EVAL_HEADLESS_CODEX_COMMAND: JSON.stringify([
       ...baseCommand,
-      'codex-headless',
+      'headless-codex',
       '{scenario}',
     ]),
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
@@ -343,7 +343,7 @@ test('an engine selection is validated against the declared engines', () => {
   assert.deepEqual(resolveRequestedEngines(['strands']), ['strands']);
   // Declared order wins over flag order so a resumed run reports like a full one.
   assert.deepEqual(
-    resolveRequestedEngines(['strands', 'codex-headless']),
+    resolveRequestedEngines(['strands', 'headless-codex']),
     EXPECTED_ENGINES,
   );
   assert.throws(
@@ -374,7 +374,7 @@ test('one engine can be evaluated alone and the report says so', async () => {
         fakeEnginePath,
         'strands',
       ]),
-      RCA_EVAL_CODEX_HEADLESS_COMMAND: undefined,
+      RCA_EVAL_HEADLESS_CODEX_COMMAND: undefined,
       CODEX_MODEL: undefined,
       CODEX_REASONING_EFFORT: undefined,
       CODEX_MODEL_PROVIDER: undefined,
@@ -399,7 +399,7 @@ test('one engine can be evaluated alone and the report says so', async () => {
     outcome.report.evaluations.every(({ engine }) => engine === 'strands'),
   );
   await assert.rejects(
-    async () => stat(path.join(resultsDirectory, 'codex-headless')),
+    async () => stat(path.join(resultsDirectory, 'headless-codex')),
     /ENOENT/,
   );
 });
@@ -425,9 +425,9 @@ test('a partial round cannot be approved until the other engine runs into it', a
     RCA_EVAL_DEPLOYED_CODEX_MODEL: 'global.openai.gpt-5.6-sol',
     RCA_EVAL_DEPLOYED_CODEX_REASONING_EFFORT: 'high',
     RCA_EVAL_DEPLOYED_CODEX_PROVIDER: 'amazon-bedrock-runtime',
-    RCA_EVAL_CODEX_HEADLESS_COMMAND: JSON.stringify([
+    RCA_EVAL_HEADLESS_CODEX_COMMAND: JSON.stringify([
       ...baseCommand,
-      'codex-headless',
+      'headless-codex',
       '{scenario}',
     ]),
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
@@ -453,10 +453,10 @@ test('a partial round cannot be approved until the other engine runs into it', a
   // disk, so the round reaches full coverage without repeating the first engine.
   const second = await runModelEvaluation({
     ...common,
-    engines: ['codex-headless'],
+    engines: ['headless-codex'],
   });
   assert.equal(second.report.passed, true, second.report.failures.join('\n'));
-  assert.deepEqual(second.report.enginesRun, ['codex-headless']);
+  assert.deepEqual(second.report.enginesRun, ['headless-codex']);
   assert.deepEqual(second.report.enginesReused, ['strands']);
   assert.equal(second.report.enginesComplete, true);
   assert.deepEqual(second.report.engines, EXPECTED_ENGINES);
