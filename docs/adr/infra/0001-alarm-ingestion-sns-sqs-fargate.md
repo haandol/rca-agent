@@ -1,11 +1,11 @@
 # ADR 0001: 알람 수신 아키텍처 — SNS + SQS + ECS Fargate
 
 Date: 2026-04-21
-Updated: 2026-08-07
+Updated: 2026-08-31
 
 ## Status
 
-Accepted (2026-04-21)
+Accepted (2026-08-31)
 
 ## Context
 
@@ -29,17 +29,25 @@ RCA Agent는 CloudWatch Alarm 발생 시 자동으로 근본 원인 분석을 �
 ```mermaid
 flowchart LR
     CWA["CloudWatch Alarm"] -->|알람 메시지 발행| SNS["SNS Topic"]
-    SNS -->|구독| SQS["SQS Queue"]
-    SQS -->|Long Polling| Fargate["ECS Fargate\n(RCA Agent)"]
+    SNS -->|단일 구독| SQS["공용 SQS Queue"]
+    SQS -->|Competing consumers| Strands["ECS Fargate\n(Strands)"]
+    SQS -->|Competing consumers| Codex["ECS Fargate\n(Headless Codex)"]
     SQS -.->|처리 실패 시| DLQ["SQS DLQ"]
-    Fargate -->|세션 생성 및 상태 기록| DDB["DynamoDB"]
+    Strands -->|조건부 세션 claim| DDB["DynamoDB"]
+    Codex -->|조건부 세션 claim| DDB
 ```
 
 ### 핵심 결정사항
 
-1. **SNS → SQS 버퍼링**: SNS Topic이 알람을 수신하고 SQS Queue로 전달한다. SQS가 버퍼 역할을 하여 에이전트의 처리 속도와 무관하게 메시지를 안정적으로 보존한다.
+1. **SNS → 공용 SQS 단일 전달**: SNS Topic은 알람을 공용 SQS Queue 하나에 한 번만
+   전달한다. Strands와 Headless Codex의 모든 Fargate 인스턴스가 같은 큐를 Long
+   Polling하는 competing consumer다. 알람 이벤트 하나는 두 엔진에 팬아웃되지 않으며,
+   가시성 구간 안에서는 메시지를 받은 소비자 하나만 분석 소유권을 요청한다.
 
-2. **ECS Fargate 상시 실행 + Long Polling**: 에이전트는 Fargate에서 상시 실행되며 SQS를 Long Polling으로 구독한다. 콜드스타트 없이 알람 수신 즉시(목표 60초 이내) RCA를 시작할 수 있고, 장시간 실행에 타임아웃 제약이 없다.
+2. **ECS Fargate 상시 실행 + Long Polling**: 두 엔진은 Fargate에서 상시 실행되며
+   공용 SQS를 Long Polling한다. 콜드스타트 없이 알람 수신 즉시(목표 60초 이내) RCA를
+   시작할 수 있고, 장시간 실행에 타임아웃 제약이 없다. 엔진 선택은 메시지를 먼저
+   수신하고 세션의 조건부 쓰기에 성공한 소비자가 결정한다.
 
 3. **DynamoDB 기반 RCA 세션 상태 관리**: 알람 수신 즉시 DynamoDB에 RCA 세션을 생성하고 상태를 기록한다. 이를 통해 대시보드에서 실시간 진행 상태를 조회할 수 있다.
 
@@ -63,11 +71,26 @@ flowchart LR
    - ALARM_RECEIVED에서 ANALYZING, FAILED, CANCELLED로 전이 가능
    - ANALYZING에서 COMPLETED, FAILED, CANCELLED로 전이 가능
 
-5. **이벤트 멱등성과 장애 생명주기 분리**: 알람 이름과 `StateChangeTime`으로 만든
+5. **엔진 중립 세션의 낙관적 락**: 알람 이름과 `StateChangeTime`으로 만든
    결정적 RCA ID는 같은 이벤트의 재전달만 식별한다. 같은 장애 중에 CloudWatch 상태가
    `OK → ALARM`으로 다시 바뀌면 `StateChangeTime`이 달라지므로, 이 ID만으로는 중복
    분석을 막을 수 없다. 따라서 알람 ARN을 우선하고 ARN이 없으면 리전과 알람 이름을
    조합한 안정 식별자를 사용해 알람별 전역 활성 장애 레코드를 별도로 둔다.
+
+   같은 이벤트의 분석 세션은 엔진과 무관한 단일 아이템이다.
+
+   - 키: `PK = RCA#<deterministic-id>`, `SK = ANALYSIS#SESSION`
+   - 소유자: 분석 엔진, SQS 메시지 식별자, receive count, claim token
+   - 상태: 선택된 엔진의 허용 상태 머신 값
+   - 보존: 세션 보존 기간의 TTL
+
+   첫 소비자는 세션 아이템이 없다는 조건으로 생성해 소유권을 얻는다. 조건 충돌 시
+   기존 세션을 일관 읽기로 확인한다. 완료·만료·취소 상태는 분석을 다시 시작하지 않고
+   중복으로 소비한다. 미완료·실패 상태는 **같은 SQS 메시지 식별자**의 더 큰 receive
+   count만 원자적으로 reclaim할 수 있다. reclaim한 소비자는 엔진이 달라도 새 claim
+   token과 자기 엔진 식별자로 소유권을 교체하며, 이전 claim token의 상태·트레이스·
+   산출물 확정은 조건부 쓰기에서 거부된다. 같은 receive count나 별도 메시지는 소유권을
+   가져갈 수 없다.
 
    활성 장애 레코드는 다음 논리 키와 생명주기 정보를 공유 계약으로 사용한다.
 
@@ -76,10 +99,8 @@ flowchart LR
    - 시각: 장애가 열린 시각, 마지막 `ALARM` 시각, 마지막 `OK` 시각
    - 보존: 세션과 같은 보존 기간의 TTL
 
-   동일 candidate RCA ID는 활성 장애를 새로 열지 않고 통과시킨다. 이 때문에 같은
-   CloudWatch 이벤트를 받은 Strands와 Headless Codex가 같은 `RCA#<candidate>` 파티션의
-   각자 세션 아이템을 독립적으로 만들 수 있다. 그 뒤의 엔진별 세션 claim이 같은 엔진의
-   중복 delivery를 계속 차단한다.
+   동일 candidate RCA ID는 활성 장애를 새로 열지 않고 통과시킨다. 같은 candidate에는
+   엔진 중립 세션 하나만 존재하며, 선택된 엔진은 세션의 `engine` 속성으로 식별한다.
 
 6. **활성 장애 억제와 안정 복구 구간**: 현재 candidate와 다른 `ALARM` 이벤트는 먼저
    이벤트 시각으로 기존 장애와의 순서를 판정한다.
@@ -91,12 +112,12 @@ flowchart LR
    - 새로운 이벤트인데 아직 `OK`가 관측되지 않았으면 전달 순서가 뒤바뀌었을 수 있으므로
      메시지를 확인하지 않고 재전달로 보류한다.
 
-   두 분석 세션이 모두 terminal이고 활성 실행이 없으며 마지막 `OK` 뒤 cooldown이 지난
+   분석 세션이 terminal이고 활성 실행이 없으며 마지막 `OK` 뒤 cooldown이 지난
    경우에만 새 candidate와 다음 generation을 연다. 새 generation 전환은 활성 장애
-   레코드의 기존 candidate, 두 엔진 세션의 terminal 상태, `EXEC_ACTIVE` 부재를 한
+   레코드의 기존 candidate, 분석 세션의 terminal 상태, `EXEC_ACTIVE` 부재를 한
    DynamoDB 트랜잭션의 조건으로 검증한다. 조건 충돌 시 승자의 값을 다시 읽어 같은
-   candidate면 진행하고 다른 candidate면 억제한다. 이 조건부 쓰기가 두 엔진과 중복
-   delivery의 동시 경쟁을 직렬화한다. cooldown은 배포 설정이며 기본값은 300초다.
+   candidate면 진행하고 다른 candidate면 억제한다. cooldown은 배포 설정이며 기본값은
+   300초다.
 
 7. **복구 이벤트 기록 우선**: `OK` 이벤트는 RCA 세션을 만들지 않는다. 각 분석 파이프라인은
    non-ALARM으로 건너뛰기 전에 활성 장애 레코드의 마지막 `OK` 시각을 단조 증가
@@ -105,7 +126,7 @@ flowchart LR
    시각을 비교해 오래된 장애면 억제하고 cooldown 뒤의 새 장애면 첫 generation을 연다.
    오래된 `OK` 재전달은 더 최신 복구 시각을 덮어쓰지 않는다.
 
-8. **stale 판정 선행**: 최초 수신부터 staleness 상한을 넘은 `ALARM`은 엔진별 세션에
+8. **stale 판정 선행**: 최초 수신부터 staleness 상한을 넘은 `ALARM`은 공통 세션 하나에
    `OUTDATED`로 남기되 전역 활성 장애를 열지 않는다. 과거 이벤트가 recovery 없는
    candidate를 만들어 현재 장애를 막지 않아야 한다.
 
@@ -146,6 +167,9 @@ flowchart LR
 | 이벤트 → 워크플로 엔진 → 함수      | 단계 격리와 재시도가 명확하다.                                                 | 에이전트 자체 루프가 이미 탐색을 오케스트레이션하므로 이중 오케스트레이션이 되고, 각 단계가 여전히 함수 실행 상한에 묶인다. |
 | 이벤트 → 알람마다 태스크 실행      | 유휴 비용이 없고 실행이 완전히 격리된다.                                       | 태스크 시작 콜드스타트가 30초~1분이라 60초 목표를 위협하고, 알람 급증 시 동시 태스크가 무제한 늘어난다.                     |
 | 알림 → 큐 → 상시 워커 Long Polling | 콜드스타트 없이 즉시 수신하고 실행 시간 제약이 없으며, 큐가 급증을 버퍼링한다. | 알람이 없는 시간에도 컴퓨팅 비용이 발생하고 구성요소가 3계층으로 늘어난다.                                                  |
+| SNS가 엔진별 큐로 팬아웃            | 두 엔진 결과를 같은 알람에서 항상 비교할 수 있다.                              | 알람 하나가 두 번 분석되어 모델 비용과 결과가 중복되고, replica 수와 무관한 단일 분석 계약을 충족하지 못한다.              |
+| 공용 큐 + 엔진별 세션               | 큐 구성은 단순하고 기존 세션 형태를 유지한다.                                  | 재전달이 다른 엔진에 도착하면 엔진별 세션이 각각 생성되어 SQS 중복 전달을 전역에서 차단하지 못한다.                         |
+| 공용 큐 + 엔진 중립 세션            | 모든 엔진과 replica가 같은 낙관적 락을 경쟁해 한 이벤트의 권위 있는 분석이 하나다. | 어떤 엔진이 분석할지 사전에 고정되지 않고, 긴 실행 시간에 맞춘 visibility 때문에 장애 후 재시작이 늦어질 수 있다.          |
 
 발행 주체 제한 방식의 대안:
 
@@ -182,8 +206,15 @@ flowchart LR
 
 - Fargate Task가 비정상 종료되면 SQS 메시지가 Visibility Timeout 후 재처리되지만, 그 사이 알람 대응이 지연될 수 있다. 헬스체크 및 자동 재시작 정책으로 완화한다.
 - 대량 알람 동시 발생 시 단일 Fargate 인스턴스의 처리량이 병목이 될 수 있다. MVP 이후 오토스케일링 정책을 검토한다.
-- DynamoDB 멱등성 체크와 SQS 처리 사이 레이스 컨디션 가능성이 있다. DynamoDB Conditional Write로 원자적 세션 생성을 보장한다.
-- 두 분석 엔진 중 하나가 새 활성 장애 계약을 구현하지 않으면 그 엔진만 재알람을 중복 분석하거나 `OK`를 기록하지 않을 수 있다. 두 엔진은 동일한 키, terminal 판정, cooldown, 조건 충돌 동작을 구현해야 한다.
+- DynamoDB 멱등성 체크와 SQS 처리 사이 레이스 컨디션 가능성이 있다. 엔진 중립 세션의
+  Conditional Write와 claim token fencing으로 원자적 소유권과 이전 실행의 확정 차단을
+  보장한다.
+- 두 분석 엔진 중 하나가 공통 세션 계약을 구현하지 않으면 중복 분석이나 소유권 없는
+  쓰기가 발생할 수 있다. 두 엔진은 동일한 키, 메시지 식별자, receive count, terminal
+  판정, cooldown, claim token 조건을 구현해야 한다.
+- 공용 큐의 visibility timeout이 가장 긴 엔진의 정상 최대 실행 시간보다 짧으면 정상
+  실행이 재전달되어 소유권이 교체될 수 있다. 큐의 가시성은 가장 긴 분석 예산보다 길게
+  유지한다.
 
 ## Related
 

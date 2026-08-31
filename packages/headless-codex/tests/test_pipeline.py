@@ -282,11 +282,16 @@ def test_redelivered_message_runs_only_after_atomic_session_claim(monkeypatch):
     run_rca = Mock(return_value=True)
     monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
 
-    result = orchestrator.process_message(json.dumps(ALARM_DATA), receive_count=2)
+    result = orchestrator.process_message(
+        json.dumps(ALARM_DATA),
+        receive_count=2,
+        message_id="message-1",
+    )
 
     assert result is True
     claim = container.session_store.claim_session.call_args
     assert claim.kwargs["receive_count"] == 2
+    assert claim.kwargs["message_id"] == "message-1"
     assert claim.kwargs["alarm_data"] == ALARM_DATA
     assert run_rca.call_args.args[3] == CLAIM_TOKEN
 

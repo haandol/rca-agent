@@ -765,16 +765,26 @@ test('dashboard cancellation is scoped to the selected engine', async () => {
 
   // Bare `SESSION` predates the engine prefix and is therefore only ever Strands.
   assert.deepEqual(sessionSkCandidates('strands'), [
+    'ANALYSIS#SESSION',
     'strands#SESSION',
     'SESSION',
   ]);
   assert.deepEqual(sessionSkCandidates('headless-codex'), [
+    'ANALYSIS#SESSION',
     'headless-codex#SESSION',
   ]);
   assert.deepEqual(sessionSkCandidates('codex-headless'), [
+    'ANALYSIS#SESSION',
     'codex-headless#SESSION',
   ]);
-  assert.deepEqual(sessionSkCandidates('cc-headless'), ['cc-headless#SESSION']);
+  assert.deepEqual(sessionSkCandidates('cc-headless'), [
+    'ANALYSIS#SESSION',
+    'cc-headless#SESSION',
+  ]);
+  assert.equal(
+    hypothesisSkPrefix('strands', 'ANALYSIS#SESSION'),
+    'strands#HYPO#',
+  );
 
   // Only hypotheses belonging to the resolved session representation are closed.
   assert.equal(hypothesisSkPrefix('strands', 'SESSION'), 'HYPO#');

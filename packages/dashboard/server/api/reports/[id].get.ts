@@ -40,9 +40,11 @@ export default defineEventHandler(async (event) => {
         new GetCommand({
           TableName: config.dynamodbTableName,
           Key: { PK: rcaPk(id), SK: sessionKey },
-          ProjectionExpression: 'report_s3_key',
+          ProjectionExpression: 'report_s3_key, engine',
         }),
       );
+      if (sessionResult.Item?.engine && sessionResult.Item.engine !== engine)
+        continue;
       reportKey =
         typeof sessionResult.Item?.report_s3_key === 'string'
           ? sessionResult.Item.report_s3_key

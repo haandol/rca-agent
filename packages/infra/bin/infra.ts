@@ -98,7 +98,7 @@ const headlessCodexStack = new HeadlessCodexStack(
   {
     env,
     vpc: networkStack.vpc,
-    alarmTopic: eventBusStack.alarmTopic,
+    alarmQueue: eventBusStack.alarmQueue,
     notificationTopic: eventBusStack.notificationTopic,
     rcaSessionTable: databaseStack.rcaSessionTable,
     evidenceBucket: storageStack.evidenceBucket,

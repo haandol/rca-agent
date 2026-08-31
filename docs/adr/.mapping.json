@@ -62,8 +62,8 @@
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
-          "status": "Accepted (2026-08-30)",
-          "summary": "네 평가 계층을 분리하고 Headless Codex 평가는 배포와 동일한 gpt-5.6-sol·reasoning high·Bedrock Runtime 조합일 때만 품질 증거로 인정한다."
+          "status": "Accepted (2026-08-31)",
+          "summary": "네 평가 계층을 분리하고 model-eval은 두 엔진을 비교하되 deployed-e2e는 공용 큐의 단일 승자 세션과 실제 증거 탐색을 검증한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
@@ -121,8 +121,8 @@
       "adrs": [
         {
           "path": "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
-          "status": "Accepted (2026-04-21)",
-          "summary": "SNS와 SQS로 알람을 각 RCA 엔진에 전달하고, 전역 active incident와 안정화 cooldown으로 같은 장애의 재알람을 억제하며, 발행은 이 배포가 소유한 알람으로 제한한다."
+          "status": "Accepted (2026-08-31)",
+          "summary": "SNS와 공용 SQS로 알람 이벤트를 모든 분석 인스턴스가 경쟁 소비하고, 엔진 중립 세션의 receive count/claim token 낙관적 락으로 이벤트당 권위 있는 분석 하나와 재전달 복구를 보장한다."
         },
         {
           "path": "docs/adr/infra/0002-evidence-storage.md",
@@ -132,7 +132,7 @@
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
           "status": "Accepted (2026-08-31)",
-          "summary": "Headless Codex는 하네스 동봉 읽기 전용 Fargate 워커와 Bedrock Runtime Global Inference Profile을 사용하고, 신규 식별자는 headless-codex이며 codex-headless·cc-headless는 읽기 호환으로만 유지하고 AWS 물리 이름은 cc-headless로 둔다."
+          "summary": "Headless Codex는 공용 알람 SQS를 경쟁 소비하는 읽기 전용 Fargate 워커로 실행하고, 신규 식별자는 headless-codex이며 레거시 기록과 cc-headless 물리 이름은 읽기 호환으로 유지한다."
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
@@ -142,12 +142,12 @@
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
           "status": "Accepted (2026-08-31)",
-          "summary": "신규 Headless Codex 트레이스와 세션은 headless-codex 식별자를 사용하고 기존 codex-headless·cc-headless 기록은 읽기 호환으로 유지하며 분석·실행·회고 trace를 같은 파티션에 기록한다."
+          "summary": "엔진 중립 분석 세션과 엔진별 span·hypothesis, 엔진 중립 실행, 엔진별 회고 개정본을 같은 RCA 파티션에 기록한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",
-          "status": "Accepted (2026-07-31)",
-          "summary": "SQS 재전달·세션 claim·부작용 lease로 중단 세션을 복구하고, 사람의 취소·삭제도 같은 소유권 규칙을 따른다."
+          "status": "Accepted (2026-08-31)",
+          "summary": "공용 SQS 재전달과 엔진 중립 세션의 message ID·receive count·claim token 낙관적 락으로 중단 세션을 엔진과 replica 사이에서 복구하고 늦은 쓰기를 차단한다."
         },
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",

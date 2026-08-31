@@ -141,7 +141,7 @@ def _claimed_item(ddb, table_name: str, alarm: AlarmPayload) -> dict:
         TableName=table_name,
         Key={
             "PK": {"S": f"RCA#{rca_id}"},
-            "SK": {"S": "strands#SESSION"},
+            "SK": {"S": "ANALYSIS#SESSION"},
         },
         ConsistentRead=True,
     )["Item"]
@@ -190,8 +190,8 @@ class TestActiveIncident:
         assert build_active_incident_pk(alarm).startswith("ALARM#")
         assert len(build_active_incident_pk(alarm)) == len("ALARM#") + 64
 
-    def test_same_event_is_allowed_for_each_engine_session(self, claim_store, alarm):
-        store, ddb, table_name = claim_store
+    def test_same_event_uses_one_engine_neutral_session(self, claim_store, alarm):
+        store, _, _ = claim_store
 
         first = store.claim_incident(alarm, cooldown_seconds=300)
         second = store.claim_incident(alarm, cooldown_seconds=300)
@@ -200,15 +200,8 @@ class TestActiveIncident:
         assert second.disposition is IncidentClaimDisposition.PROCEED
         assert first.candidate_rca_id == second.candidate_rca_id
         assert first.generation == second.generation == 1
-        ddb.put_item(
-            TableName=table_name,
-            Item={
-                "PK": {"S": f"RCA#{first.candidate_rca_id}"},
-                "SK": {"S": "headless-codex#SESSION"},
-                "state": {"S": "ALARM_RECEIVED"},
-            },
-        )
         assert _claim(store, alarm, 1).acquired
+        assert _claim(store, alarm, 1).disposition is ClaimDisposition.CONTENDED
 
     def test_newer_alarm_is_deferred_while_analysis_is_active(self, claim_store, alarm):
         store, _, _ = claim_store
@@ -221,7 +214,7 @@ class TestActiveIncident:
 
         assert claim.disposition is IncidentClaimDisposition.SUPPRESSED
         assert claim.candidate_rca_id == opened.candidate_rca_id
-        assert "strands#SESSION" in claim.reason
+        assert "ANALYSIS#SESSION" in claim.reason
         assert claim.retryable
 
     @pytest.mark.parametrize(
@@ -362,7 +355,7 @@ class TestActiveIncident:
         before_ok = store.claim_incident(realarm, cooldown_seconds=300)
         assert before_ok.disposition is IncidentClaimDisposition.SUPPRESSED
         assert before_ok.retryable
-        assert "strands#SESSION" in before_ok.reason
+        assert "ANALYSIS#SESSION" in before_ok.reason
 
         assert store.record_recovery(_alarm_at(alarm, ok_at, state="OK"))
         before_terminal = store.claim_incident(realarm, cooldown_seconds=300)
@@ -523,7 +516,7 @@ class TestActiveIncident:
 def _session_key_for_test(rca_id: str) -> dict:
     return {
         "PK": {"S": f"RCA#{rca_id}"},
-        "SK": {"S": "strands#SESSION"},
+        "SK": {"S": "ANALYSIS#SESSION"},
     }
 
 
@@ -614,6 +607,22 @@ class TestSessionClaim:
         assert _claim(store, alarm, 1).disposition is ClaimDisposition.CONTENDED
         assert _claimed_item(ddb, table_name, alarm)["claim_token"]["S"] == first_token
 
+    def test_redelivery_can_transfer_the_engine_neutral_claim(self, claim_store, alarm, monkeypatch):
+        store, ddb, table_name = claim_store
+        first = _claim(store, alarm, 1)
+        assert first.acquired
+
+        monkeypatch.setattr(dynamodb_session_store, "ENGINE", "headless-codex")
+
+        assert _claim(store, alarm, 1).disposition is ClaimDisposition.CONTENDED
+        reclaimed = _claim(store, alarm, 2)
+
+        assert reclaimed.acquired
+        item = _claimed_item(ddb, table_name, alarm)
+        assert item["engine"]["S"] == "headless-codex"
+        assert item["receive_count"]["N"] == "2"
+        assert item["claim_token"]["S"] == reclaimed.claim_token
+
     def test_different_messages_cannot_alternate_reclaims(self, claim_store, alarm):
         store, ddb, table_name = claim_store
         first = _claim(store, alarm, 1, "message-a")
@@ -672,7 +681,7 @@ class TestSessionClaim:
                     TableName=table_name,
                     Key={
                         "PK": {"S": f"RCA#{rca_id}"},
-                        "SK": {"S": "strands#SESSION"},
+                        "SK": {"S": "ANALYSIS#SESSION"},
                     },
                     UpdateExpression="SET claim_token = :claim, receive_count = :count",
                     ExpressionAttributeValues={
@@ -694,7 +703,7 @@ class TestSessionClaim:
             TableName=table_name,
             Item={
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": "strands#SESSION"},
+                "SK": {"S": "ANALYSIS#SESSION"},
                 "state": {"S": RcaSessionState.SCOPING.value},
             },
         )
@@ -878,12 +887,12 @@ class TestCreateSession:
         call_kwargs = dynamodb_client.put_item.call_args[1]
         assert call_kwargs["TableName"] == "my-table"
 
-    def test_put_item_uses_engine_prefixed_sk(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
+    def test_put_item_uses_engine_neutral_sk(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             create_session(alarm, dynamodb_client=dynamodb_client)
 
         call_kwargs = dynamodb_client.put_item.call_args[1]
-        assert call_kwargs["Item"]["SK"]["S"] == "strands#SESSION"
+        assert call_kwargs["Item"]["SK"]["S"] == "ANALYSIS#SESSION"
 
     def test_put_item_includes_engine_attribute(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
@@ -933,7 +942,7 @@ class TestCheckDuplicate:
         assert result is False
 
     def test_returns_true_when_item_found(self, alarm: AlarmPayload, dynamodb_client: MagicMock):
-        dynamodb_client.get_item.return_value = {"Item": {"PK": {"S": "RCA#abc"}, "SK": {"S": "strands#SESSION"}}}
+        dynamodb_client.get_item.return_value = {"Item": {"PK": {"S": "RCA#abc"}, "SK": {"S": "ANALYSIS#SESSION"}}}
 
         with patch("rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME", "rca-sessions"):
             result = check_duplicate(alarm, dynamodb_client=dynamodb_client)
@@ -966,7 +975,7 @@ class TestCheckDuplicate:
         call_kwargs = dynamodb_client.get_item.call_args[1]
         expected_rca_id = build_rca_id(build_idempotency_key(alarm))
         assert call_kwargs["Key"]["PK"]["S"] == f"RCA#{expected_rca_id}"
-        assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
+        assert call_kwargs["Key"]["SK"]["S"] == "ANALYSIS#SESSION"
 
 
 def _ddb_with_state(state: str) -> MagicMock:
@@ -1006,7 +1015,7 @@ class TestUpdateState:
         ddb.update_item.assert_called_once()
         call_kwargs = ddb.update_item.call_args[1]
         assert call_kwargs["Key"]["PK"]["S"] == "RCA#rca-123"
-        assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
+        assert call_kwargs["Key"]["SK"]["S"] == "ANALYSIS#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "SCOPING"
 
     def test_includes_claim_and_expected_source_state_condition(self):
@@ -1155,7 +1164,7 @@ class TestExpectedStateFencing:
                     TableName=table_name,
                     Key={
                         "PK": {"S": f"RCA#{rca_id}"},
-                        "SK": {"S": "strands#SESSION"},
+                        "SK": {"S": "ANALYSIS#SESSION"},
                     },
                     UpdateExpression="SET #st = :racing_state",
                     ExpressionAttributeNames={"#st": "state"},
@@ -1277,7 +1286,7 @@ class TestMarkCompleted:
 
         assert result is True
         call_kwargs = ddb.update_item.call_args[1]
-        assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
+        assert call_kwargs["Key"]["SK"]["S"] == "ANALYSIS#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "COMPLETED"
         assert call_kwargs["ExpressionAttributeValues"][":rc"]["S"] == "Bad deploy"
         assert call_kwargs["ExpressionAttributeValues"][":cf"]["BOOL"] is True
@@ -1350,7 +1359,7 @@ class TestMarkFailed:
 
         assert result is True
         call_kwargs = ddb.update_item.call_args[1]
-        assert call_kwargs["Key"]["SK"]["S"] == "strands#SESSION"
+        assert call_kwargs["Key"]["SK"]["S"] == "ANALYSIS#SESSION"
         assert call_kwargs["ExpressionAttributeValues"][":state"]["S"] == "FAILED"
         assert call_kwargs["ExpressionAttributeValues"][":err"]["S"] == "Pipeline crash"
 

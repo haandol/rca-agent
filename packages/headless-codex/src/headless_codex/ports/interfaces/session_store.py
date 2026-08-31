@@ -83,6 +83,7 @@ class SessionStorePort(ABC):
         idempotency_key: str,
         *,
         receive_count: int,
+        message_id: str | None = None,
         alarm_data: dict | None = None,
     ) -> SessionClaim: ...
 

@@ -138,3 +138,15 @@ test('failed alarm messages are retained rather than dropped', () => {
     }),
   );
 });
+
+test('the shared queue covers the longest analysis budget', () => {
+  const template = synthesizeEventBus();
+
+  template.hasResourceProperties(
+    'AWS::SQS::Queue',
+    Match.objectLike({
+      QueueName: `${NS}AlarmQueue`,
+      VisibilityTimeout: 65 * 60,
+    }),
+  );
+});

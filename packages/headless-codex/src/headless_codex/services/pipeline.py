@@ -86,7 +86,13 @@ class PipelineOrchestrator:
         self._c = container
         self._shutdown_event = shutdown_event or Event()
 
-    def process_message(self, message_body: str, *, receive_count: int = 1) -> bool:
+    def process_message(
+        self,
+        message_body: str,
+        *,
+        receive_count: int = 1,
+        message_id: str | None = None,
+    ) -> bool:
         from headless_codex.adapters.secondary.session.dynamodb_session_store import (
             build_idempotency_key,
             build_rca_id,
@@ -194,6 +200,7 @@ class PipelineOrchestrator:
             alarm.alarm_name,
             idempotency_key,
             receive_count=effective_receive_count,
+            message_id=message_id,
             alarm_data=alarm_data,
         )
         if claim_token.disposition is ClaimDisposition.TERMINAL_DUPLICATE:

@@ -31,7 +31,9 @@ from rca_agent.ports.interfaces.session_store import (
 logger = logging.getLogger(__name__)
 
 _ACTIVE_INCIDENT_SK = "ACTIVE_INCIDENT"
+_ANALYSIS_SESSION_SK = "ANALYSIS#SESSION"
 _ANALYSIS_SESSION_SKS = (
+    _ANALYSIS_SESSION_SK,
     "strands#SESSION",
     "SESSION",
     "headless-codex#SESSION",
@@ -70,7 +72,7 @@ def _resolve_message_id(alarm: AlarmPayload, message_id: str | None) -> str:
 
 
 def _session_key(rca_id: str) -> dict:
-    return {"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}}
+    return {"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": _ANALYSIS_SESSION_SK}}
 
 
 def _incident_key(alarm: AlarmPayload) -> dict:
@@ -135,6 +137,7 @@ _RECLAIMABLE_STATES = {
     "EVIDENCE_COLLECTION",
     "HYPOTHESIS_VALIDATION",
     "REPORT_GENERATION",
+    "ANALYZING",
     "FAILED",
 }
 _ACTIVE_CLAIM_CONDITION = (

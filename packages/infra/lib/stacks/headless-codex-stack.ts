@@ -6,7 +6,6 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sns from 'aws-cdk-lib/aws-sns';
-import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
@@ -15,7 +14,7 @@ import { grantEcrPull } from '../constructs/ecr-access';
 
 interface IProps extends cdk.StackProps {
   readonly vpc: ec2.IVpc;
-  readonly alarmTopic: sns.ITopic;
+  readonly alarmQueue: sqs.IQueue;
   readonly notificationTopic: sns.ITopic;
   readonly rcaSessionTable: dynamodb.ITable;
   readonly evidenceBucket: s3.IBucket;
@@ -30,51 +29,11 @@ export class HeadlessCodexStack extends cdk.Stack {
 
     const ns = this.node.tryGetContext('ns') as string;
 
-    const deadLetterQueue = this.newDeadLetterQueue(ns);
-    const alarmQueue = this.newAlarmQueue(
-      ns,
-      props.alarmTopic,
-      deadLetterQueue,
-    );
     const cluster = this.newCluster(ns, props.vpc);
-    const taskDefinition = this.newTaskDefinition(ns, props, alarmQueue);
+    const taskDefinition = this.newTaskDefinition(ns, props, props.alarmQueue);
     // Analysis is read-only: no ingress to the target service is opened, so the
     // analysis path has no route to act on what it is investigating.
     this.newService(ns, cluster, taskDefinition);
-  }
-
-  private newDeadLetterQueue(ns: string): sqs.Queue {
-    return new sqs.Queue(this, 'DeadLetterQueue', {
-      queueName: `${ns}CcHeadlessDLQ`,
-      visibilityTimeout: cdk.Duration.minutes(10),
-      retentionPeriod: cdk.Duration.days(14),
-    });
-  }
-
-  private newAlarmQueue(
-    ns: string,
-    alarmTopic: sns.ITopic,
-    deadLetterQueue: sqs.Queue,
-  ): sqs.Queue {
-    const queue = new sqs.Queue(this, 'AlarmQueue', {
-      queueName: `${ns}CcHeadlessQueue`,
-      // 분석 예산(60분)보다 짧으면 아직 돌고 있는 세션의 메시지가 재전달되어 같은
-      // 알람을 두 번 분석한다. 예산에 여유를 더해 둔다.
-      visibilityTimeout: cdk.Duration.minutes(65),
-      retentionPeriod: cdk.Duration.days(4),
-      deadLetterQueue: {
-        queue: deadLetterQueue,
-        maxReceiveCount: 3,
-      },
-    });
-
-    alarmTopic.addSubscription(
-      new snsSubscriptions.SqsSubscription(queue, {
-        rawMessageDelivery: true,
-      }),
-    );
-
-    return queue;
   }
 
   private newCluster(ns: string, vpc: ec2.IVpc): ecs.Cluster {
@@ -88,7 +47,7 @@ export class HeadlessCodexStack extends cdk.Stack {
   private newTaskDefinition(
     ns: string,
     props: IProps,
-    alarmQueue: sqs.Queue,
+    alarmQueue: sqs.IQueue,
   ): ecs.FargateTaskDefinition {
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       family: `${ns}CcHeadless`,
@@ -162,7 +121,7 @@ export class HeadlessCodexStack extends cdk.Stack {
   private grantTaskPermissions(
     taskDef: ecs.FargateTaskDefinition,
     props: IProps,
-    alarmQueue: sqs.Queue,
+    alarmQueue: sqs.IQueue,
   ): void {
     alarmQueue.grantConsumeMessages(taskDef.taskRole);
 

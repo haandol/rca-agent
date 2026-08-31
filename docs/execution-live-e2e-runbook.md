@@ -202,7 +202,7 @@ aws cloudwatch describe-alarms --alarm-name-prefix RcaAgentDev-Healthcare \
 먼저 `db-leak.completedAt` 이후 증상 알람의 정확한 `OK -> ALARM` 전이를 고정한다.
 후보가 없거나 둘 이상이면 이 실행에 귀속할 전이가 모호하므로 실패한다. 그 다음
 같은 시각 이후 생성된 **모든 SESSION 아이템**을 읽고, 고정한 전이의
-`StateChangeTime`과 idempotency key에 정확히 일치하는 두 세션만 선택한다. 증상
+`StateChangeTime`과 idempotency key에 정확히 일치하는 단일 세션만 선택한다. 증상
 알람명으로 query를 미리 좁히지 않는다.
 
 ```bash
@@ -266,7 +266,7 @@ from collections import defaultdict
 source_path, transition_path, output_path = sys.argv[1:]
 symptom_alarm = "RcaAgentDev-Healthcare-VitalIngestFailures"
 causal_alarm = "RcaAgentDev-Healthcare-RdsHighConnections"
-expected_engines = {"strands", "headless-codex"}
+allowed_engines = {"strands", "headless-codex"}
 expected_state_change = json.load(open(transition_path))["stateChangeTime"]
 
 def decode(value):
@@ -315,23 +315,18 @@ assert len(primary_partitions) == 1, (
     + repr(primary_partitions)
 )
 primary_partition = next(iter(primary_partitions))
-assert len(primary) == 2, (
-    f"primary lineage must contain exactly two sessions, got {len(primary)}"
+assert len(primary) == 1, (
+    f"primary lineage must contain exactly one session, got {len(primary)}"
 )
-assert {row.get("engine") for row in primary} == expected_engines
-assert {row.get("SK") for row in primary} == {
-    "strands#SESSION",
-    "headless-codex#SESSION",
-}
+assert primary[0].get("engine") in allowed_engines
+assert primary[0].get("SK") == "ANALYSIS#SESSION"
 expected_key = f"{symptom_alarm}#{expected_state_change}"
 assert all(row.get("idempotency_key") == expected_key for row in primary)
-assert all(row.get("state") == "COMPLETED" for row in primary), (
-    "both primary-lineage sessions must be COMPLETED before evidence inspection: "
-    + repr({row["engine"]: row.get("state") for row in primary})
+assert primary[0].get("state") == "COMPLETED", (
+    "the primary-lineage session must be COMPLETED before evidence inspection: "
+    + repr({primary[0]["engine"]: primary[0].get("state")})
 )
-assert all(row.get("report_s3_key") for row in primary), (
-    "each completed primary-lineage session must record report_s3_key"
-)
+assert primary[0].get("report_s3_key"), "the completed session must record report_s3_key"
 
 additional = [
     row for row in symptom
@@ -368,19 +363,17 @@ for row in other:
         file=sys.stderr,
     )
 
-by_engine = {row["engine"]: row for row in primary}
+session = primary[0]
 lineage = {
     "rcaId": primary_partition.removeprefix("RCA#"),
     "partition": primary_partition,
     "stateChangeTime": expected_state_change,
     "idempotencyKey": expected_key,
-    "sessions": {
-        engine: {
-            "state": row.get("state"),
-            "createdAt": row.get("created_at"),
-            "reportS3Key": row.get("report_s3_key", ""),
-        }
-        for engine, row in sorted(by_engine.items())
+    "session": {
+        "engine": session["engine"],
+        "state": session.get("state"),
+        "createdAt": session.get("created_at"),
+        "reportS3Key": session.get("report_s3_key", ""),
     },
 }
 json.dump(lineage, open(output_path, "w"), indent=2, sort_keys=True)
@@ -392,14 +385,14 @@ RCA_ID=$(python3 -c \
   "$LINEAGE_JSON")
 ```
 
-실측 증거로 인정할 세션은 이 실행에서 새로 생성된 두 행뿐이다. 반드시 다음을 모두
+실측 증거로 인정할 세션은 이 실행에서 새로 생성된 한 행뿐이다. 반드시 다음을 모두
 확인한다.
 
-- `strands#SESSION`, `headless-codex#SESSION` 두 행이 모두 있다.
-- 두 행의 `alarm_name`은 `RcaAgentDev-Healthcare-VitalIngestFailures`다.
-- 두 행의 `created_at`은 `db-leak.completedAt` 이후다.
-- 두 행의 `idempotency_key`와 `alarm_data.StateChangeTime`이 같은 증상 알람 시각을
-  가리키며 같은 `RCA#...` 파티션에 있다.
+- `ANALYSIS#SESSION` 한 행만 있고 `engine`은 `strands` 또는 `headless-codex`다.
+- 행의 `alarm_name`은 `RcaAgentDev-Healthcare-VitalIngestFailures`다.
+- 행의 `created_at`은 `db-leak.completedAt` 이후다.
+- 행의 `idempotency_key`와 `alarm_data.StateChangeTime`이 같은 증상 알람 시각을
+  가리킨다.
 
 원인 지표 알람은 CloudWatch 증거로만 남고 세션을 만들면 안 된다. 과거
 `COMPLETED` 세션은 현재 배포 E2E의 증거로 재사용하지 않는다. 실행 중 증상 알람이
@@ -565,33 +558,33 @@ aws logs filter-log-events --log-group-name /ecs/RcaAgentDev/healthcare \
   > "$E2E_EVIDENCE_DIR/session-not-returned-logs.json"
 ```
 
-각 엔진의 세션이 기록한 정확한 `report_s3_key`를 사용한다. 추정 경로나 최신
+승자 엔진의 세션이 기록한 정확한 `report_s3_key`를 사용한다. 추정 경로나 최신
 리포트 fallback을 쓰지 않는다.
 
 ```bash
 REPORT_BUCKET=rca-agent-dev-evidence
-for ENGINE in strands headless-codex; do
-  REPORT_KEY=$(python3 -c \
-    'import json,sys; print(json.load(open(sys.argv[1]))["sessions"][sys.argv[2]]["reportS3Key"])' \
-    "$LINEAGE_JSON" "$ENGINE")
-  test -n "$REPORT_KEY"
-  aws s3 cp "s3://${REPORT_BUCKET}/${REPORT_KEY}" \
-    "$E2E_EVIDENCE_DIR/${ENGINE}-report.md"
-  aws dynamodb query --table-name RcaAgentDevRcaSession \
-    --key-condition-expression "#pk = :p AND begins_with(#sk, :s)" \
-    --expression-attribute-names '{"#pk":"PK","#sk":"SK"}' \
-    --expression-attribute-values "{\":p\":{\"S\":\"RCA#$RCA_ID\"},\":s\":{\"S\":\"$ENGINE#\"}}" \
-    --consistent-read --output json \
-    > "$E2E_EVIDENCE_DIR/${ENGINE}-analysis-records.json"
-done
+ENGINE=$(python3 -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["session"]["engine"])' \
+  "$LINEAGE_JSON")
+REPORT_KEY=$(python3 -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["session"]["reportS3Key"])' \
+  "$LINEAGE_JSON")
+test -n "$REPORT_KEY"
+aws s3 cp "s3://${REPORT_BUCKET}/${REPORT_KEY}" \
+  "$E2E_EVIDENCE_DIR/${ENGINE}-report.md"
+aws dynamodb query --table-name RcaAgentDevRcaSession \
+  --key-condition-expression "#pk = :p" \
+  --expression-attribute-names '{"#pk":"PK"}' \
+  --expression-attribute-values "{\":p\":{\"S\":\"RCA#$RCA_ID\"}}" \
+  --consistent-read --output json \
+  > "$E2E_EVIDENCE_DIR/${ENGINE}-analysis-records.json"
 
 aws s3 sync "s3://rca-agent-dev-evidence/rca/${RCA_ID}/evidence/" \
-  "$E2E_EVIDENCE_DIR/strands-evidence/"
+  "$E2E_EVIDENCE_DIR/analysis-evidence/"
 rg -n -i \
   'VitalIngestFailures|VitalIngestAttempts|DatabaseConnections|RdsHighConnections|RegisterTaskDefinition|UpdateService|task definition|CloudTrail|DB session not returned|database_adapter|leaky_session|FAULT_DB_LEAK|LOG_LEVEL|red.herring|unrelated|excluded|ruled out|배제|제외|기각' \
-  "$E2E_EVIDENCE_DIR/strands-report.md" \
-  "$E2E_EVIDENCE_DIR/headless-codex-report.md" \
-  "$E2E_EVIDENCE_DIR/strands-evidence" \
+  "$E2E_EVIDENCE_DIR/${ENGINE}-report.md" \
+  "$E2E_EVIDENCE_DIR/analysis-evidence" \
   "$E2E_EVIDENCE_DIR/"*-analysis-records.json
 ```
 

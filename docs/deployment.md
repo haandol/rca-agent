@@ -54,6 +54,14 @@ pnpm --filter infra run deploy:service -- --status execution
 
 분석 워커와 실행 워커는 같은 이미지를 공유하므로 두 서비스를 함께 배포해도 빌드·푸시는 한 번만 수행됩니다. 다만 **스택은 각각 배포해야** 합니다 — 태스크 정의가 불변 태그를 직접 가리켜야 하고, 두 워커의 진입점이 다르기 때문입니다.
 
+#### 엔진별 큐에서 공용 알람 큐로 전환
+
+Headless Codex 배포는 기존 `CcHeadlessQueue`와 구독을 제거하고 두 분석 엔진을
+`AlarmQueue`에 연결합니다. 삭제될 큐에 가시·처리 중·지연 메시지가 하나라도 있으면
+분석 입력이 유실될 수 있으므로 `deploy:service -- headless-codex`는 세 수량의 합이
+0이 아닐 때 배포를 거부합니다. 남은 메시지를 처리하거나 공용 큐로 옮긴 뒤 다시
+배포해야 합니다.
+
 ## Agent — Fargate (Strands)
 
 에이전트는 ECS Fargate 태스크로 배포됩니다. SQS 큐를 Long Polling으로 구독하며, 알람 메시지 수신 시 RCA 워크플로우를 자동 시작합니다.

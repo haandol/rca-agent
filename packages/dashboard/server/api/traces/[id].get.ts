@@ -28,9 +28,10 @@ export default defineEventHandler(async (event) => {
     exclusiveStartKey = result.LastEvaluatedKey;
   } while (exclusiveStartKey);
 
-  function matchesEngine(sk: string): boolean {
+  function matchesEngine(item: Record<string, unknown>): boolean {
     if (!engineFilter) return true;
-    const itemEngine = parseEngine(sk);
+    const sk = (item.SK as string) || '';
+    const itemEngine = (item.engine as string) || parseEngine(sk);
     return itemEngine === engineFilter;
   }
 
@@ -38,7 +39,7 @@ export default defineEventHandler(async (event) => {
     .filter((i) => {
       const sk = (i.SK as string) || '';
       return (
-        (sk.includes('#SPAN#') || sk.startsWith('SPAN#')) && matchesEngine(sk)
+        (sk.includes('#SPAN#') || sk.startsWith('SPAN#')) && matchesEngine(i)
       );
     })
     .map((i) => {
@@ -67,7 +68,7 @@ export default defineEventHandler(async (event) => {
   const session = items.find((i) => {
     const sk = i.SK as string;
     const isSession = isSessionSortKey(sk);
-    return isSession && matchesEngine(sk);
+    return isSession && matchesEngine(i);
   });
   // Executions have their own lifecycle, so they are reported alongside the
   // analysis session rather than merged into it.
@@ -107,7 +108,7 @@ export default defineEventHandler(async (event) => {
     .filter((i) => {
       const sk = (i.SK as string) || '';
       return (
-        (sk.includes('#HYPO#') || sk.startsWith('HYPO#')) && matchesEngine(sk)
+        (sk.includes('#HYPO#') || sk.startsWith('HYPO#')) && matchesEngine(i)
       );
     })
     .map((i) => {

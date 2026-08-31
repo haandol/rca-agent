@@ -29,6 +29,7 @@ _EXEC_SK = "EXEC#{execution_id}"
 _ACTIVE_EXEC_SK = "EXEC_ACTIVE"
 _PLAYBOOK_REVISION_SK = "{engine}#PLAYBOOK_REVISION"
 _PLAYBOOK_REVISION_STAGE_SK = "{engine}#PLAYBOOK_REVISION_STAGE#{execution_id}"
+_ANALYSIS_SESSION_SK = "ANALYSIS#SESSION"
 
 _CLAIM_OWNED = "attribute_exists(SK) AND claim_token = :claim"
 
@@ -284,15 +285,27 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             raise ExecutionTargetUnavailableError(f"{rca_id}: execution store is unavailable")
 
-        response = self._ddb.get_item(
-            TableName=DYNAMODB_TABLE_NAME,
-            Key={
-                "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": f"{engine}#SESSION"},
-            },
-            ConsistentRead=True,
-        )
-        session = response.get("Item")
+        session = None
+        session_keys = [_ANALYSIS_SESSION_SK, f"{engine}#SESSION"]
+        if engine == "strands":
+            session_keys.append("SESSION")
+        for session_key in session_keys:
+            response = self._ddb.get_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key={
+                    "PK": {"S": f"RCA#{rca_id}"},
+                    "SK": {"S": session_key},
+                },
+                ConsistentRead=True,
+            )
+            candidate = response.get("Item")
+            if candidate is None:
+                continue
+            candidate_engine = candidate.get("engine", {}).get("S")
+            if candidate_engine and candidate_engine != engine:
+                continue
+            session = candidate
+            break
         if session is None:
             raise ExecutionTargetUnavailableError(f"{rca_id}: {engine} analysis session is missing")
         session_state = session.get("state", {}).get("S", "")

@@ -67,7 +67,7 @@ def _session_item(ddb, table_name: str) -> dict:
         TableName=table_name,
         Key={
             "PK": {"S": "RCA#rca-1"},
-            "SK": {"S": "headless-codex#SESSION"},
+            "SK": {"S": "ANALYSIS#SESSION"},
         },
         ConsistentRead=True,
     )["Item"]
@@ -109,8 +109,8 @@ class TestActiveIncident:
         assert build_active_incident_pk(alarm).startswith("ALARM#")
         assert len(build_active_incident_pk(alarm)) == len("ALARM#") + 64
 
-    def test_same_event_allows_both_engine_sessions(self, session_store):
-        store, ddb, table_name = session_store
+    def test_same_event_uses_one_engine_neutral_session(self, session_store):
+        store, _, _ = session_store
         alarm = _incident_alarm(datetime(2026, 8, 7, 12, tzinfo=UTC))
 
         first = store.claim_incident(alarm, cooldown_seconds=300)
@@ -120,21 +120,21 @@ class TestActiveIncident:
         assert second.disposition is IncidentClaimDisposition.PROCEED
         assert first.candidate_rca_id == second.candidate_rca_id
         assert first.generation == second.generation == 1
-        ddb.put_item(
-            TableName=table_name,
-            Item={
-                "PK": {"S": f"RCA#{first.candidate_rca_id}"},
-                "SK": {"S": "strands#SESSION"},
-                "state": {"S": "ALARM_RECEIVED"},
-            },
-        )
-        claim = store.claim_session(
+        assert store.claim_session(
             first.candidate_rca_id,
             alarm.alarm_name,
             build_idempotency_key(alarm),
             receive_count=1,
+        ).acquired
+        assert (
+            store.claim_session(
+                first.candidate_rca_id,
+                alarm.alarm_name,
+                build_idempotency_key(alarm),
+                receive_count=1,
+            ).disposition
+            is ClaimDisposition.CONTENDED
         )
-        assert claim.acquired
 
     @pytest.mark.parametrize(
         "session_sk",
@@ -284,7 +284,7 @@ class TestActiveIncident:
             TableName=table_name,
             Item={
                 "PK": {"S": f"RCA#{opened.candidate_rca_id}"},
-                "SK": {"S": "headless-codex#SESSION"},
+                "SK": {"S": "ANALYSIS#SESSION"},
                 "state": {"S": "COMPLETED"},
             },
         )
@@ -437,6 +437,23 @@ def test_same_receive_count_cannot_steal_claim(session_store):
     assert _session_item(ddb, table_name)["claim_token"]["S"] == first_claim
 
 
+def test_redelivery_can_transfer_the_engine_neutral_claim(session_store, monkeypatch):
+    store, ddb, table_name = session_store
+    first = _claim(store, 1)
+    assert first.acquired
+
+    monkeypatch.setattr(dynamodb_session_store, "ENGINE", "strands")
+
+    assert _claim(store, 1).disposition is ClaimDisposition.CONTENDED
+    reclaimed = _claim(store, 2)
+
+    assert reclaimed.acquired
+    item = _session_item(ddb, table_name)
+    assert item["engine"]["S"] == "strands"
+    assert item["receive_count"]["N"] == "2"
+    assert item["claim_token"]["S"] == reclaimed.claim_token
+
+
 def test_lost_owner_is_cancelled_and_cannot_transition(session_store):
     store, _, _ = session_store
     first_claim = _claim_token(store, 1)
@@ -483,7 +500,7 @@ def test_reclaim_uses_compare_and_swap_when_competing_writer_wins(session_store,
                 TableName=table_name,
                 Key={
                     "PK": {"S": "RCA#rca-1"},
-                    "SK": {"S": "headless-codex#SESSION"},
+                    "SK": {"S": "ANALYSIS#SESSION"},
                 },
                 UpdateExpression="SET claim_token = :claim, receive_count = :count",
                 ExpressionAttributeValues={
@@ -498,13 +515,13 @@ def test_reclaim_uses_compare_and_swap_when_competing_writer_wins(session_store,
     assert _claim(store, 2).disposition is ClaimDisposition.CONTENDED
 
 
-def test_legacy_nonterminal_session_without_claim_metadata_can_be_reclaimed(session_store):
+def test_nonterminal_session_without_claim_metadata_can_be_reclaimed(session_store):
     store, ddb, table_name = session_store
     ddb.put_item(
         TableName=table_name,
         Item={
             "PK": {"S": "RCA#rca-1"},
-            "SK": {"S": "headless-codex#SESSION"},
+            "SK": {"S": "ANALYSIS#SESSION"},
             "state": {"S": "ANALYZING"},
         },
     )

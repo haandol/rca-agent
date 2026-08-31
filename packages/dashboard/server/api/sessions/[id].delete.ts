@@ -30,17 +30,25 @@ export default defineEventHandler(async (event) => {
   const result = await ddb.send(
     new QueryCommand({
       TableName: config.dynamodbTableName,
-      KeyConditionExpression: engine
-        ? 'PK = :pk AND begins_with(SK, :skPrefix)'
-        : 'PK = :pk',
-      ExpressionAttributeValues: engine
-        ? { ':pk': rcaPk(id), ':skPrefix': `${engine}#` }
-        : { ':pk': rcaPk(id) },
-      ProjectionExpression: 'PK, SK',
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': rcaPk(id) },
+      ProjectionExpression: 'PK, SK, engine',
     }),
   );
 
-  const items = result.Items ?? [];
+  const items = (result.Items ?? []).filter((item) => {
+    if (!engine) return true;
+    const sortKey = (item.SK as string) || '';
+    if (isSessionSortKey(sortKey)) {
+      return ((item.engine as string) || parseEngine(sortKey)) === engine;
+    }
+    if (sortKey.startsWith('EXEC#') || sortKey === 'EXEC_ACTIVE') return false;
+    if (sortKey.startsWith(`${engine}#`)) return true;
+    return (
+      engine === 'strands' &&
+      (sortKey.startsWith('SPAN#') || sortKey.startsWith('HYPO#'))
+    );
+  });
   if (!items.length) {
     throw createError({
       statusCode: 404,
@@ -60,8 +68,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Fence every session in scope before deleting anything. Deleting without an
-  // engine filter covers both engines, and each one has its own claim.
+  // Fence every session in scope before deleting anything.
   const sessionKeys = items
     .map((item) => item.SK as string)
     .filter((sortKey) => isSessionSortKey(sortKey));
@@ -123,14 +130,17 @@ export default defineEventHandler(async (event) => {
       TableName: config.dynamodbTableName,
       KeyConditionExpression: 'PK = :pk',
       ExpressionAttributeValues: { ':pk': rcaPk(id) },
-      ProjectionExpression: 'SK',
+      ProjectionExpression: 'SK, engine',
     }),
   );
   const survivingEngines = new Set(
     (remaining.Items ?? [])
-      .map((item) => (item.SK as string) || '')
-      .filter((sortKey) => isSessionSortKey(sortKey))
-      .map((sortKey) => parseEngine(sortKey)),
+      .filter((item) => isSessionSortKey((item.SK as string) || ''))
+      .map(
+        (item) =>
+          (item.engine as string) || parseEngine((item.SK as string) || ''),
+      )
+      .filter(Boolean),
   );
 
   const prefixes = engine

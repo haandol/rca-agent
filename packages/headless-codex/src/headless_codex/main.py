@@ -63,10 +63,15 @@ def main() -> None:
 
         for msg in messages:
             try:
+                message_id = msg.get("MessageId")
+                if not message_id:
+                    logger.error("sqs_message_id_missing")
+                    continue
                 receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
                 success = orchestrator.process_message(
                     msg.get("Body", "{}"),
                     receive_count=receive_count,
+                    message_id=message_id,
                 )
             except Exception:
                 logger.exception("message_processing_failed")

@@ -4,6 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sns from 'aws-cdk-lib/aws-sns';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 
 import { HeadlessCodexStack } from '../lib/stacks/headless-codex-stack';
@@ -37,7 +38,7 @@ function synthesize(): SynthesizedTemplates {
   const app = new cdk.App({ context: { ns: 'RcaAgentDev' } });
   const dependencies = new cdk.Stack(app, 'Dependencies');
   const vpc = new ec2.Vpc(dependencies, 'Vpc', { maxAzs: 2 });
-  const alarmTopic = new sns.Topic(dependencies, 'AlarmTopic');
+  const alarmQueue = new sqs.Queue(dependencies, 'AlarmQueue');
   const notificationTopic = new sns.Topic(dependencies, 'NotificationTopic');
   const sessionTable = new dynamodb.Table(dependencies, 'SessionTable', {
     partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
@@ -67,7 +68,7 @@ function synthesize(): SynthesizedTemplates {
 
   const stack = new HeadlessCodexStack(app, 'CcHeadlessTest', {
     vpc,
-    alarmTopic,
+    alarmQueue,
     notificationTopic,
     rcaSessionTable: sessionTable,
     evidenceBucket,
@@ -120,23 +121,14 @@ test('the analysis task is not told how to reach the service it investigates', (
   expect(JSON.stringify(headlessCodex.toJSON())).not.toContain('HEALTHCARE_');
 });
 
-test('Codex queue visibility exceeds the analysis and staleness boundary', () => {
+test('Codex consumes the shared alarm queue instead of creating an engine queue', () => {
   const { headlessCodex } = synthesize();
-  const queues = Object.values(
-    headlessCodex.findResources('AWS::SQS::Queue'),
-  ) as CfnResource[];
-  const alarmQueue = queues.find(
-    (resource) =>
-      resource.Properties?.QueueName === 'RcaAgentDevCcHeadlessQueue',
-  );
-  const visibilityTimeout = alarmQueue?.Properties?.VisibilityTimeout;
-  // 분석 예산과 오래된 알람 기준이 같은 값이므로 경계도 하나다. 가시성이 이 경계보다
-  // 짧으면 아직 돌고 있는 세션의 메시지가 재전달되어 같은 알람을 두 번 분석한다.
-  const analysisAndStalenessBoundarySeconds = 60 * 60;
 
-  expect(visibilityTimeout).toBe(65 * 60);
-  expect(visibilityTimeout as number).toBeGreaterThan(
-    analysisAndStalenessBoundarySeconds,
+  expect(
+    Object.keys(headlessCodex.findResources('AWS::SQS::Queue')),
+  ).toHaveLength(0);
+  expect(JSON.stringify(headlessCodex.toJSON())).not.toContain(
+    'RcaAgentDevCcHeadlessQueue',
   );
 });
 

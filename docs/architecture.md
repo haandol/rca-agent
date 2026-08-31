@@ -10,9 +10,10 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 - **실행**은 별도 에이전트이며, 사람이 대시보드에서 플레이북 절차를 승인하면 승인 시점의 immutable S3 스냅샷과 SHA-256 digest, DynamoDB의 `PENDING_APPROVAL`·`EXEC_ACTIVE` 예약을 만든 뒤 실행 요청을 큐에 발행합니다. 워커는 예약과 메시지가 정확히 일치할 때만 실행하므로 **사람의 승인 없이 실행이 기동될 경로가 존재하지 않습니다**.
 - 분석 완료 알림은 어떤 기계 동작도 트리거하지 않습니다. 수신자는 사람과 대시보드뿐입니다.
 
-## Dual-Stack Overview
+## Competing-Engine Overview
 
-동일한 CloudWatch 알람에 대해 두 가지 실행 엔진이 독립적으로 RCA를 수행합니다.
+동일한 CloudWatch 알람은 공용 SQS에 한 번만 전달됩니다. 두 실행 엔진과 모든 replica가
+메시지를 경쟁 소비하며, 엔진 중립 세션의 조건부 쓰기에 성공한 하나만 RCA를 수행합니다.
 
 |                   | Fargate Stack (Strands)                                          | Fargate Stack (Headless Codex)         |
 | ----------------- | ---------------------------------------------------------------- | ----------------------------------- |
@@ -21,7 +22,7 @@ RCA Agent 시스템의 전체 아키텍처, 실행 파이프라인, 모듈 간 �
 | **RCA 방식**      | 9단계 closed-loop 파이프라인                                     | 전문 서브 에이전트 오케스트레이션   |
 | **모델**          | 단일 Sonnet 5 (Planning/Execution 행동 분리)                     | Global `gpt-5.6-sol`, reasoning `high` |
 | **타임아웃**      | 종료 조건 및 시간 예산 (20분)                                    | Codex 프로세스 60분 제한            |
-| **동시성**        | Fargate 태스크 스케일링                                          | Fargate 태스크 1                    |
+| **동시성**        | 공용 SQS + 엔진 중립 claim을 경쟁하는 Fargate replica            | 공용 SQS + 엔진 중립 claim을 경쟁하는 Fargate replica |
 | **쓰기 권한**     | 없음 (읽기 전용 분석)                                            | 없음 (읽기 전용 분석)               |
 | **산출물**        | 플레이북을 포함한 리포트 1개                                     | 플레이북을 포함한 리포트 1개        |
 | **실행 경로**     | 두 엔진 공통 — 사용자 승인 후 별도 플레이북 실행 에이전트가 수행 |
@@ -37,9 +38,8 @@ graph TB
     end
 
     subgraph Messaging["이벤트 라우팅"]
-        SNS_IN["SNS Topic<br/>(알람 팬아웃)"]
-        SQS_FARGATE["SQS Queue<br/>(Fargate Long Polling)"]
-        SQS_CC["SQS Queue<br/>(Fargate Long Polling)"]
+        SNS_IN["SNS Topic<br/>(알람 입력)"]
+        SQS_ALARM["공용 SQS Queue<br/>(Competing consumers)"]
     end
 
     subgraph Compute["에이전트 실행 (Dual-Stack)"]
@@ -88,8 +88,9 @@ graph TB
     end
 
     CW_ALARM --> SNS_IN
-    SNS_IN --> SQS_FARGATE --> ECS
-    SNS_IN --> SQS_CC --> ECS_CC
+    SNS_IN --> SQS_ALARM
+    SQS_ALARM --> ECS
+    SQS_ALARM --> ECS_CC
     ECS <--> BEDROCK_PLAN
     ECS <--> BEDROCK_EXEC
     ECS_CC <--> BEDROCK_CC
@@ -359,7 +360,8 @@ agent/headless-codex 양쪽 패키지는 Hexagonal Architecture를 적용하여 
   Codex TOML 설정으로 구성
 - **쓰기 도구 없음**: 분석 하네스에 쓰기 도구가 들어가면 사용자 승인 게이트가
   무의미해지므로, 하네스 계약 테스트가 양쪽 도구의 혼입을 모두 막음
-- **reclaim fencing**: claim 조건부 trace와 부작용 lease로 이전 실행의 늦은 쓰기를 차단
+- **reclaim fencing**: 같은 SQS 메시지의 더 큰 receive count만 엔진 중립 세션을
+  reclaim하고, claim 조건부 trace와 부작용 lease로 이전 실행의 늦은 쓰기를 차단
 - **실행 시간 제한**: Lambda 15분 제한은 없지만 Codex 프로세스는 60분 후 종료. 이 엔진은
   예산이 소진되면 산출물이 남지 않으므로 완주 회차 실측(24~29분)의 두 배를 예산으로 둠
 - **멱등성**: 알람별 안정 세션 키와 receive count/claim token으로 재전달을 제어
@@ -396,9 +398,9 @@ agent/headless-codex 양쪽 패키지는 Hexagonal Architecture를 적용하여 
 
 | Component (공유) | Technology                                                                                      |
 | ---------------- | ----------------------------------------------------------------------------------------------- |
-| 이벤트 라우팅    | Amazon SNS → 각 스택별 SQS Queue                                                                |
+| 이벤트 라우팅    | Amazon SNS → 공용 SQS Queue → 모든 분석 엔진·replica의 경쟁 소비                                |
 | 임베딩           | Bedrock Cohere Embed V4 (`cohere.embed-v4:0`, 1536차원) → S3 Vectors (플레이북 + 보고서 인덱스) |
 | 증거/보고서 저장 | Amazon S3                                                                                       |
-| 세션 관리        | Amazon DynamoDB (`engine` 필드로 스택 구분, 실행은 `EXEC#` 접두사)                              |
+| 세션 관리        | Amazon DynamoDB (`ANALYSIS#SESSION` 단일 분석 소유권, `engine`은 승자 기록, 실행은 `EXEC#`)      |
 | 알림             | Amazon SNS                                                                                      |
 | 네트워크 보안    | VPC + PrivateLink                                                                               |

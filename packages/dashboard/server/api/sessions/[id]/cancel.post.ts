@@ -18,10 +18,11 @@ async function findSessionKey(
       new GetCommand({
         TableName: tableName,
         Key: { PK: rcaPk(rcaId), SK: sessionKey },
-        ProjectionExpression: 'PK',
+        ProjectionExpression: 'PK, engine',
       }),
     );
-    if (result.Item) return sessionKey;
+    if (result.Item && (!result.Item.engine || result.Item.engine === engine))
+      return sessionKey;
   }
 
   return null;

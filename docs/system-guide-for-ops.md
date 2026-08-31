@@ -49,7 +49,9 @@ flowchart LR
 
 ## 2. 전체 아키텍처
 
-이 시스템은 **동일한 알람에 대해 두 가지 독립적인 RCA 엔진**이 동시에 분석을 수행하는 **Dual-Stack** 구조이며, 그 뒤에 **사용자 승인 게이트와 별도 실행 스택**이 붙습니다.
+이 시스템은 두 RCA 엔진이 공용 알람 큐를 경쟁 소비하는 구조이며, 알람 하나는 낙관적
+락을 획득한 엔진 하나만 분석합니다. 그 뒤에 **사용자 승인 게이트와 별도 실행 스택**이
+붙습니다.
 
 ```mermaid
 graph TB
@@ -58,9 +60,8 @@ graph TB
     end
 
     subgraph Routing["이벤트 라우팅 (SNS → SQS)"]
-        SNS["SNS Topic<br/>(알람 팬아웃)"]
-        SQS_F["SQS Queue #1<br/>(Fargate용)"]
-        SQS_L["SQS Queue #2<br/>(Headless Codex용)"]
+        SNS["SNS Topic<br/>(알람 입력)"]
+        SQS["공용 SQS Queue<br/>(모든 분석 인스턴스 경쟁 소비)"]
     end
 
     subgraph DualStack["Dual-Stack RCA 엔진"]
@@ -107,8 +108,9 @@ graph TB
     end
 
     CW --> SNS
-    SNS --> SQS_F --> ECS
-    SNS --> SQS_L --> CCFARGATE
+    SNS --> SQS
+    SQS --> ECS
+    SQS --> CCFARGATE
 
     ECS <--> SONNET
     CCFARGATE <--> SONNET
@@ -218,9 +220,8 @@ graph TB
 | 리소스                               | 용도                                                   | 스펙                                                                           |
 | ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | **VPC**                              | 모든 서비스의 네트워크                                 | Public + Private Subnet, NAT Gateway                                           |
-| **SNS (알람 수신)**                  | CloudWatch 알람 팬아웃                                 | 1개 토픽 → 2개 SQS로 분배                                                      |
-| **SQS (Fargate용)**                  | Fargate Long Polling                                   | visibility=25분, retention=4일, DLQ 연결                                       |
-| **SQS (Headless Codex용)**              | Headless Codex Long Polling                               | visibility=35분, retention=4일, DLQ 연결                                       |
+| **SNS (알람 수신)**                  | CloudWatch 알람을 공용 큐에 전달                       | 1개 토픽 → 1개 SQS 구독                                                        |
+| **SQS (분석 공용)**                  | 두 엔진과 모든 replica의 Long Polling                  | visibility=65분, retention=4일, DLQ 연결                                       |
 | **SQS (실행 요청용)**                | 대시보드 승인 발행 → 실행 워커 소비                    | visibility=75분(4500초), retention=4일, DLQ 연결. 이벤트 구독 없음             |
 | **DynamoDB**                         | RCA 세션 상태 + 실행 이력 관리                         | PAY_PER_REQUEST, PITR, TTL, GSI(멱등성)                                        |
 | **S3 (Evidence)**                    | 수집 증거 + 보고서 + 실행 증거 + 갱신 전 플레이북 사본 | 60일 lifecycle, S3 managed encryption                                          |
@@ -256,9 +257,8 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant CW as CloudWatch<br/>Alarm
-    participant SNS as SNS Topic<br/>(알람 팬아웃)
-    participant SQS1 as SQS Queue #1<br/>(Fargate용)
-    participant SQS2 as SQS Queue #2<br/>(Headless Codex용)
+    participant SNS as SNS Topic<br/>(알람 입력)
+    participant SQS as 공용 SQS<br/>(competing consumers)
     participant ECS as ECS Fargate<br/>(Strands 에이전트)
     participant CCH as ECS Fargate<br/>(Headless Codex)
     participant DDB as DynamoDB<br/>(세션 테이블)
@@ -269,29 +269,28 @@ sequenceDiagram
 
     Note over CW,NOTIFY: ① 알람 발생 및 라우팅
     CW->>SNS: 알람 메시지 발행
-    SNS->>SQS1: 복제 (Fargate용)
-    SNS->>SQS2: 복제 (Headless Codex용)
+    SNS->>SQS: 알람 메시지 1건 적재
 
-    Note over ECS,DDB: ② 멱등성 체크 (중복 방지)
-    par Fargate
-        SQS1->>ECS: Long Polling으로 수신
-        ECS->>DDB: 중복 체크 (IDEMP# 키)
-        DDB-->>ECS: 신규 → 세션 생성
-    and Headless Codex
-        SQS2->>CCH: Long Polling으로 수신
-        CCH->>DDB: 중복 체크 (IDEMP# 키)
-        DDB-->>CCH: 신규 → 세션 생성
+    Note over ECS,DDB: ② 낙관적 락 (단일 분석 소유권)
+    alt Strands가 메시지와 claim을 획득
+        SQS->>ECS: Long Polling으로 수신
+        ECS->>DDB: ANALYSIS#SESSION 조건부 생성
+        DDB-->>ECS: claim 성공
+    else Headless Codex가 메시지와 claim을 획득
+        SQS->>CCH: Long Polling으로 수신
+        CCH->>DDB: ANALYSIS#SESSION 조건부 생성
+        DDB-->>CCH: claim 성공
     end
 
-    Note over ECS,BED: ③ RCA 분석 수행 (두 엔진 독립 실행)
-    par Fargate 분석
+    Note over ECS,BED: ③ RCA 분석 수행 (승자 엔진 하나)
+    alt Strands 승자
         ECS->>MCP: 메트릭·로그·배포이력 수집
         MCP-->>ECS: 데이터 반환
         ECS->>BED: 가설 생성·검증·보고서 요청
         BED-->>ECS: AI 응답
         ECS->>S3: 증거 + 보고서 저장
         ECS->>DDB: 상태 갱신 (COMPLETED)
-    and Headless Codex 분석
+    else Headless Codex 승자
         CCH->>MCP: 메트릭·로그·배포이력 수집
         MCP-->>CCH: 데이터 반환
         CCH->>BED: 프롬프트 주도 분석
@@ -300,16 +299,14 @@ sequenceDiagram
         CCH->>DDB: 상태 갱신 (COMPLETED)
     end
 
-    Note over ECS,NOTIFY: ④ 알림 발송 (여기서 분석 종료)
-    ECS->>NOTIFY: RCA 완료 알림 (presigned URL + 플레이북 요약)
-    CCH->>NOTIFY: RCA 완료 알림 (presigned URL + 플레이북 요약)
+    Note over ECS,NOTIFY: ④ 승자 엔진이 알림 발송 (여기서 분석 종료)
 ```
 
 **핵심 포인트**:
 
-- SNS 팬아웃으로 **하나의 알람이 두 SQS 큐에 동시 전달**됩니다
-- 각 엔진은 **DynamoDB IDEMP# 키**로 같은 알람을 중복 처리하지 않습니다 (자기 엔진 내에서)
-- 두 엔진은 서로 독립적으로 동작하며, `engine` 필드(`strands` vs `headless-codex`)로 구분됩니다
+- SNS는 **하나의 알람을 공용 SQS에 한 번만 전달**합니다
+- 두 엔진과 모든 replica 중 엔진 중립 `ANALYSIS#SESSION`의 조건부 쓰기에 성공한 하나만 분석합니다
+- `engine` 필드(`strands` 또는 `headless-codex`)는 해당 알람의 승자 엔진을 기록합니다
 - 보고서는 **S3 presigned URL**로 SRE 팀에 전달됩니다
 - **완료 알림은 아무것도 트리거하지 않습니다.** 수신자는 사람과 대시보드뿐이고, payload에는 승인 판단에 필요한 요약만 담깁니다. 실행 절차 본문은 담지 않는데, 실행 주체는 저장된 리포트를 직접 읽어야 하고 알림 payload를 실행 입력으로 쓰면 전달 과정에서 잘린 절차가 실행될 수 있기 때문입니다
 
@@ -1150,7 +1147,9 @@ erDiagram
 
 ### 키 구조 및 접근 패턴
 
-동일한 `PK = RCA#{rca_id}` 파티션 안에 세션 1개, 스팬 N개, 가설 N개, 실행 N개가 저장됩니다. `SK` 접두사로 엔티티를 구분하며, 세션·스팬·가설은 `{engine}#` 접두사로 Strands와 Headless Codex의 데이터를 분리합니다.
+동일한 `PK = RCA#{rca_id}` 파티션 안에 엔진 중립 세션 1개, 스팬 N개, 가설 N개,
+실행 N개가 저장됩니다. 세션은 `ANALYSIS#SESSION` 하나이고 `engine` 속성이 승자를
+기록합니다. 스팬과 가설은 승자 엔진의 접두사를 사용합니다.
 
 **실행 아이템만 엔진 접두사를 붙이지 않습니다.** 어느 엔진이 리포트를 만들었든 실행 경로는 하나이기 때문입니다.
 
@@ -1158,31 +1157,25 @@ erDiagram
 flowchart TD
     subgraph Partition["PK = RCA#a1b2c3d4-..."]
         direction TB
-        S1["SK: strands#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
-        S2["SK: headless-codex#SESSION<br/>state=COMPLETED, alarm_name=HighDBConn"]
+        S1["SK: ANALYSIS#SESSION<br/>engine=strands 또는 headless-codex<br/>state=COMPLETED"]
 
         SP1["SK: strands#SPAN#uuid-1<br/>span_type=SCOPING, 3.2s"]
         SP2["SK: strands#SPAN#uuid-2<br/>span_type=HYPOTHESIS_GENERATION, 5.1s"]
         SP3["SK: strands#SPAN#uuid-3<br/>span_type=PLAYBOOK, metadata={...}, 8.4s"]
-        SP4["SK: headless-codex#SPAN#uuid-a<br/>span_type=SCOPING, 4.0s"]
 
         H1["SK: strands#HYPO#uuid-h1<br/>depth=0, DB 커넥션 누수, CONFIRMED 0.92"]
         H2["SK: strands#HYPO#uuid-h2<br/>depth=0, 트래픽 급증, REJECTED 0.1"]
-        H3["SK: headless-codex#HYPO#uuid-h3<br/>depth=0, 커넥션 풀 고갈, CONFIRMED 0.88"]
 
         E1["SK: EXEC#uuid-e1<br/>execution_state=RESOLVED<br/>회고 완료, 갱신 diff 있음"]
         E2["SK: EXEC#uuid-e2<br/>execution_state=UNRESOLVED<br/>증거는 보존"]
     end
 
     style S1 fill:#e3f2fd,stroke:#1565c0
-    style S2 fill:#fff3e0,stroke:#ef6c00
     style SP1 fill:#e8f5e9,stroke:#388e3c
     style SP2 fill:#e8f5e9,stroke:#388e3c
     style SP3 fill:#e8f5e9,stroke:#388e3c
-    style SP4 fill:#f3e5f5,stroke:#7b1fa2
     style H1 fill:#fce4ec,stroke:#c62828
     style H2 fill:#fce4ec,stroke:#c62828
-    style H3 fill:#f3e5f5,stroke:#7b1fa2
     style E1 fill:#ffebee,stroke:#c62828
     style E2 fill:#ffebee,stroke:#c62828
 ```
@@ -1191,11 +1184,11 @@ flowchart TD
 
 | 접근 패턴          | 오퍼레이션                 | 키 조건                                                                  | 사용처                                                                 |
 | ------------------ | -------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| 세션 생성 (멱등)   | `PutItem`                  | `PK=RCA#{id}`, `SK={engine}#SESSION`, `attribute_not_exists(SK)`         | 에이전트 시작 시                                                       |
-| 중복 체크          | `GetItem`                  | `PK=RCA#{id}`, `SK={engine}#SESSION`                                     | 알람 수신 시                                                           |
-| 상태 전이          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state <> CANCELLED`               | 파이프라인 각 단계                                                     |
-| 취소 감지          | `GetItem`                  | `PK=RCA#{id}`, `SK={engine}#SESSION`, `ProjectionExpression=state`       | 파이프라인 주기적 폴링                                                 |
-| 완료 마킹          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SESSION`                                     | 파이프라인 종료 시                                                     |
+| 세션 생성 (멱등)   | `PutItem`                  | `PK=RCA#{id}`, `SK=ANALYSIS#SESSION`, `attribute_not_exists(SK)`         | 에이전트 시작 시                                                       |
+| 중복 체크          | `GetItem`                  | `PK=RCA#{id}`, `SK=ANALYSIS#SESSION`                                     | 알람 수신 시                                                           |
+| 상태 전이          | `UpdateItem`               | `PK=RCA#{id}`, `SK=ANALYSIS#SESSION`, claim token 조건                   | 파이프라인 각 단계                                                     |
+| 취소 감지          | `GetItem`                  | `PK=RCA#{id}`, `SK=ANALYSIS#SESSION`                                     | 파이프라인 주기적 폴링                                                 |
+| 완료 마킹          | `UpdateItem`               | `PK=RCA#{id}`, `SK=ANALYSIS#SESSION`, claim token 조건                   | 파이프라인 종료 시                                                     |
 | 스팬 시작          | `PutItem`                  | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}`                              | 각 분석 단계 시작                                                      |
 | 스팬 종료          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SPAN#{span_id}`                              | 각 분석 단계 완료                                                      |
 | 가설 배치 저장     | `BatchWriteItem`           | `PK=RCA#{id}`, `SK={engine}#HYPO#{hypo_id}`                              | 가설 생성/분기 시                                                      |
@@ -1203,7 +1196,7 @@ flowchart TD
 | 전체 트레이스 조회 | `Query`                    | `PK=RCA#{id}`                                                            | 대시보드 트레이스 뷰                                                   |
 | 세션 목록 조회     | `Scan`                     | `FilterExpression: contains(SK, '#SESSION') AND begins_with(PK, 'RCA#')` | 대시보드 세션 목록                                                     |
 | 세션 삭제          | `Query` → `BatchWriteItem` | `PK=RCA#{id}` 전체 아이템 삭제                                           | 대시보드 세션 삭제                                                     |
-| 세션 취소          | `UpdateItem`               | `PK=RCA#{id}`, `SK={engine}#SESSION`, `state → CANCELLED`                | 대시보드 취소 버튼                                                     |
+| 세션 취소          | `UpdateItem`               | `PK=RCA#{id}`, `SK=ANALYSIS#SESSION`, `state → CANCELLED`                | 대시보드 취소 버튼                                                     |
 | 실행 claim         | `PutItem`                  | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, `attribute_not_exists(SK)`      | 실행 워커가 승인 요청을 집을 때 (종료된 실행의 재전달은 중복으로 판정) |
 | 실행 상태 전이     | `UpdateItem`               | `PK=RCA#{id}`, `SK=EXEC#{execution_id}`, claim token 조건                | 실행 → 검증 → 해결/미해결                                              |
 | 실행 이력 조회     | `Query`                    | `PK=RCA#{id}`, `begins_with(SK, 'EXEC#')`                                | 대시보드 실행 이력·회고 화면                                           |
@@ -1216,7 +1209,8 @@ flowchart TD
 
 ### DynamoDB 데이터 흐름
 
-아래 다이어그램은 하나의 알람에 대해 두 엔진이 동시에 DynamoDB를 사용하고, 이후 승인된 실행이 같은 파티션에 기록되는 전체 데이터 흐름입니다.
+아래 다이어그램은 하나의 알람에서 승자 엔진 하나가 DynamoDB 세션을 소유하고, 이후
+승인된 실행이 같은 파티션에 기록되는 전체 데이터 흐름입니다.
 
 ```mermaid
 sequenceDiagram
@@ -1226,9 +1220,11 @@ sequenceDiagram
     participant DASH as Dashboard
     participant EXE as Execution Worker
 
-    Note over SA,CCA: 1. 세션 생성 (멱등)
-    SA->>DDB: PutItem PK=RCA#id, SK=strands#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
-    CCA->>DDB: PutItem PK=RCA#id, SK=headless-codex#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
+    Note over SA,CCA: 1. 공용 큐 수신 후 세션 낙관적 락 경쟁
+    SA->>DDB: PutItem PK=RCA#id, SK=ANALYSIS#SESSION<br/>ConditionExpression: attribute_not_exists(SK)
+    CCA->>DDB: 같은 조건부 PutItem 경쟁
+    DDB-->>SA: 한 엔진만 성공
+    DDB-->>CCA: 패자는 실행하지 않음
 
     Note over SA,DDB: 2. 파이프라인 실행 (Strands)
     SA->>DDB: PutItem SK=strands#SPAN#{id} (SCOPING 시작)
@@ -1237,13 +1233,13 @@ sequenceDiagram
     SA->>DDB: PutItem SK=strands#SPAN#{id} (검증루프 시작)
     SA->>DDB: UpdateItem SK=strands#HYPO#{id} (검증 결과)
     SA->>DDB: PutItem + UpdateItem (PLAYBOOK span + metadata)
-    SA->>DDB: UpdateItem SK=strands#SESSION (state=COMPLETED)
+    SA->>DDB: UpdateItem SK=ANALYSIS#SESSION (state=COMPLETED)
 
     Note over CCA,DDB: 3. 파이프라인 실행 (Headless Codex)
     CCA->>CCA: 역할별 저장 도구로 실행별 산출물 저장
     CCA->>DDB: artifact watcher가 SPAN/HYPO 아이템 기록
     CCA->>DDB: BatchWriteItem SK=headless-codex#HYPO#{id} × N
-    CCA->>DDB: UpdateItem SK=headless-codex#SESSION (state=COMPLETED)
+    CCA->>DDB: UpdateItem SK=ANALYSIS#SESSION (state=COMPLETED)
 
     Note over DASH,DDB: 4. 대시보드 조회
     DASH->>DDB: Scan (세션 목록 + 실행 상태 컬럼)

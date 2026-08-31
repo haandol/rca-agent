@@ -62,7 +62,7 @@ def _session_item(ddb, table_name: str, rca_id: str) -> dict:
         TableName=table_name,
         Key={
             "PK": {"S": f"RCA#{rca_id}"},
-            "SK": {"S": "strands#SESSION"},
+            "SK": {"S": "ANALYSIS#SESSION"},
         },
         ConsistentRead=True,
     )["Item"]

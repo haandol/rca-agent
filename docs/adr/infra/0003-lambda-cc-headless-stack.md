@@ -27,7 +27,10 @@ Headless Codex는 장시간 RCA와 전문 서브 에이전트 호출을 수행�
 
 ## Decision
 
-Headless Codex는 전용 SQS를 Long Polling하는 단일 ECS Fargate 서비스로 운영한다.
+Headless Codex는 Strands와 같은 공용 알람 SQS를 Long Polling하는 ECS Fargate
+서비스로 운영한다. 두 엔진과 모든 replica는 competing consumer이며, 메시지를 받은
+소비자는 엔진 중립 세션의 조건부 쓰기에 성공한 경우에만 분석을 시작한다
+([ADR infra/0001](0001-alarm-ingestion-sns-sqs-fargate.md)).
 알람마다 격리된 Codex 비대화형 실행을 만들고 메인 에이전트가 RCA와 Report 전문
 에이전트를 조정한다.
 
@@ -67,8 +70,8 @@ MCP 서버 버전은 이미지에서 고정한다.
 신규 세션과 산출물의 기능 식별자는 `headless-codex`다. 읽기·승인 호환 식별자는
 `codex-headless`와 `cc-headless`이며, 신규 쓰기에는 사용하지 않는다.
 
-ECR 이미지 저장소, 큐, ECS 서비스의 물리 이름은 `cc-headless`다. 물리 리소스
-재생성과 대기 메시지 마이그레이션은 이 결정의 범위가 아니다.
+ECR 이미지 저장소와 ECS 서비스의 물리 이름은 `cc-headless`다. 알람 큐는 엔진 전용
+리소스가 아니라 공용 수신 경로가 소유한다.
 
 ## 대안 검토
 
@@ -95,6 +98,7 @@ ECR 이미지 저장소, 큐, ECS 서비스의 물리 이름은 `cc-headless`다
 - 대상 서비스로의 네트워크 경로가 없어 프롬프트 우회로 요청을 보낼 여지가 없다.
 - 쓰기 권한이 실행 스택에만 있으므로 권한 경계가 프로세스와 역할 수준에서 성립한다.
 - SQS 재전달과 ECS 자동 재시작을 이용할 수 있다.
+- 엔진별 큐 팬아웃 없이 모든 분석 인스턴스가 같은 메시지와 낙관적 락을 경쟁한다.
 - 이미지 태그가 코드와 하네스를 함께 고정하므로 배포 단위가 재현 가능하다.
 - 외부 패키지 저장소 장애가 진행 중인 RCA 실행을 깨뜨리지 않는다.
 

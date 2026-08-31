@@ -591,6 +591,7 @@ stateDiagram-v2
 | **타임아웃**      | 20분 (RCA_TIME_BUDGET_SECONDS)                                        | 60분 (CODEX_TIMEOUT_SECONDS)               |
 | **취소 감지**     | update_state() 시 ConditionExpression                                 | Cancel Checker 스레드 (15초 간격 DDB 폴링) |
 | **증거 격리**     | 가설별 독립 Agent 인스턴스                                            | Codex 실행별 workspace와 `CODEX_HOME`      |
+| **알람 소유권**   | 공용 SQS와 엔진 중립 세션의 낙관적 락을 경쟁하며 이벤트당 한 엔진만 실행 |
 | **실행 경로**     | 두 엔진 공통 — 사용자 승인 후 3장의 실행 에이전트가 수행              |
 | **공유 리소스**   | SNS (알람/알림), DynamoDB, S3, S3 Vectors                             |
 

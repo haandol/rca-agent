@@ -24,6 +24,7 @@ export const ALLOWED_ENGINES = [
 ] as const;
 
 export type Engine = (typeof ALLOWED_ENGINES)[number];
+export const ANALYSIS_SESSION_SK = 'ANALYSIS#SESSION';
 
 export function isAllowedEngine(engine: string): engine is Engine {
   return (ALLOWED_ENGINES as readonly string[]).includes(engine);
@@ -37,8 +38,8 @@ export function rcaIdFromPk(pk: string): string {
   return pk.replace('RCA#', '');
 }
 
-export function sessionSk(engine: string): string {
-  return `${engine}#SESSION`;
+export function sessionSk(_engine: string): string {
+  return ANALYSIS_SESSION_SK;
 }
 
 export function executionSk(executionId: string): string {
@@ -53,20 +54,21 @@ export const EXECUTION_SK_PREFIX = 'EXEC#';
 export const ACTIVE_EXECUTION_SK = 'EXEC_ACTIVE';
 
 /**
- * The session sort keys to try for an engine, newest layout first.
- *
- * Strands predates the engine prefix, so its session may live under either key
- * and both have to be tried before concluding the session does not exist.
+ * The current engine-neutral key comes first, followed by historical layouts.
  */
 export function sessionSkCandidates(engine: string): string[] {
   return engine === 'strands'
-    ? [sessionSk(engine), 'SESSION']
-    : [sessionSk(engine)];
+    ? [ANALYSIS_SESSION_SK, `${engine}#SESSION`, 'SESSION']
+    : [ANALYSIS_SESSION_SK, `${engine}#SESSION`];
 }
 
 /** Sort keys that hold a session record, across engines and legacy layouts. */
 export function isSessionSortKey(sortKey: string): boolean {
-  return sortKey === 'SESSION' || sortKey.endsWith('#SESSION');
+  return (
+    sortKey === ANALYSIS_SESSION_SK ||
+    sortKey === 'SESSION' ||
+    sortKey.endsWith('#SESSION')
+  );
 }
 
 /**
@@ -76,6 +78,7 @@ export function isSessionSortKey(sortKey: string): boolean {
  * always Strands; newer records prefix the sort key with the engine name.
  */
 export function parseEngine(sk: string): string {
+  if (sk === ANALYSIS_SESSION_SK) return '';
   if (sk === 'SESSION' || sk.startsWith('SPAN#') || sk.startsWith('HYPO#'))
     return 'strands';
   return sk.split('#')[0] ?? 'strands';
@@ -83,5 +86,6 @@ export function parseEngine(sk: string): string {
 
 /** The hypothesis sort-key prefix for a session, honouring the legacy layout. */
 export function hypothesisSkPrefix(engine: string, sessionKey: string): string {
+  if (sessionKey === ANALYSIS_SESSION_SK) return `${engine}#HYPO#`;
   return sessionKey === 'SESSION' ? 'HYPO#' : `${engine}#HYPO#`;
 }

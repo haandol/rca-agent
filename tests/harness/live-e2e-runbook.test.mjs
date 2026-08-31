@@ -44,13 +44,9 @@ test('live E2E runbook binds sessions to the exact post-fault ALARM transition',
   assert.doesNotMatch(runbook, /TEST_STARTED_AT/);
   assert.match(runbook, /expected exactly one symptom ALARM transition/);
   assert.match(runbook, /row\["state_change_time"\] == expected_state_change/);
-  assert.match(runbook, /primary lineage must contain exactly two sessions/);
-  assert.match(runbook, /"strands#SESSION"/);
-  assert.match(runbook, /"headless-codex#SESSION"/);
-  assert.match(
-    runbook,
-    /sessions must be COMPLETED before evidence inspection/,
-  );
+  assert.match(runbook, /primary lineage must contain exactly one session/);
+  assert.match(runbook, /"ANALYSIS#SESSION"/);
+  assert.match(runbook, /session must be COMPLETED before evidence inspection/);
   assert.match(runbook, /must record report_s3_key/);
   assert.match(runbook, /causal alarm created forbidden RCA sessions/);
   assert.match(runbook, /ADDITIONAL_SYMPTOM_ALARM_PARTITION/);

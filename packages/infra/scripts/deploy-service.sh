@@ -142,10 +142,41 @@ build_tag_env() {
   done
 }
 
+assert_legacy_headless_queue_empty() {
+  local queue_name="${PREFIX}CcHeadlessQueue"
+  local queue_url counts visible in_flight delayed total
+  queue_url=$(aws sqs get-queue-url \
+    --queue-name "$queue_name" \
+    --region "$REGION" \
+    --query QueueUrl \
+    --output text 2>/dev/null || true)
+  [[ -z "$queue_url" || "$queue_url" == "None" ]] && return
+
+  counts=$(aws sqs get-queue-attributes \
+    --queue-url "$queue_url" \
+    --region "$REGION" \
+    --attribute-names \
+      ApproximateNumberOfMessages \
+      ApproximateNumberOfMessagesNotVisible \
+      ApproximateNumberOfMessagesDelayed \
+    --query 'Attributes.[ApproximateNumberOfMessages,ApproximateNumberOfMessagesNotVisible,ApproximateNumberOfMessagesDelayed]' \
+    --output text)
+  read -r visible in_flight delayed <<< "$counts"
+  total=$((visible + in_flight + delayed))
+  if (( total > 0 )); then
+    err "레거시 Headless Codex 큐에 메시지 ${total}건이 남아 있어 공용 큐 전환을 중단합니다"
+    err "큐를 비우거나 메시지를 공용 ${PREFIX}AlarmQueue로 옮긴 뒤 다시 배포하세요"
+    exit 1
+  fi
+}
+
 do_ecs_deploy() {
   local svc=$1
   local stack
   stack=$(lookup "$svc" stack)
+  if [[ "$svc" == "headless-codex" ]]; then
+    assert_legacy_headless_queue_empty
+  fi
   local -a tag_env=()
   while IFS= read -r pair; do tag_env+=("$pair"); done < <(build_tag_env "$svc")
   log "스택 배포: $stack ($(lookup "$svc" tagenv)=${IMAGE_TAG})"

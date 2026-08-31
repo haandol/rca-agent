@@ -14,7 +14,9 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 
 ## Architecture at a Glance
 
-동일한 CloudWatch 알람에 대해 두 가지 실행 엔진(Strands, Headless Codex)이 독립적으로 RCA를 수행하며, SNS/DynamoDB/S3/S3 Vectors를 공유합니다.
+CloudWatch 알람은 공용 SQS에 한 번 적재되며 Strands와 Headless Codex의 모든 인스턴스가
+경쟁 소비합니다. 엔진 중립 DynamoDB 세션의 낙관적 락을 획득한 한 엔진만 RCA를
+수행하고, 두 엔진은 S3/S3 Vectors와 실행 경로를 공유합니다.
 
 > 시스템 다이어그램, 9단계 파이프라인, 모듈 간 데이터 흐름, Hexagonal 구조, Technology Stack 전체 내용은 **[docs/architecture.md](./docs/architecture.md)** 참조.
 

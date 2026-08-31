@@ -33,7 +33,7 @@ def _pk(rca_id: str) -> dict:
 
 
 def _session_sk() -> dict:
-    return {"S": f"{ENGINE}#SESSION"}
+    return {"S": "ANALYSIS#SESSION"}
 
 
 def _span_sk(span_id: str) -> dict:

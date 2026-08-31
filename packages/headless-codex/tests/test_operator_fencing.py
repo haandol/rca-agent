@@ -94,7 +94,7 @@ def _apply(ddb, expression: dict) -> None:
     """대시보드 조건식을 저장소에 그대로 적용한다."""
     ddb.update_item(
         TableName=TABLE_NAME,
-        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": "headless-codex#SESSION"}},
+        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": "ANALYSIS#SESSION"}},
         UpdateExpression=expression["UpdateExpression"],
         ConditionExpression=expression["ConditionExpression"],
         ExpressionAttributeNames=expression["ExpressionAttributeNames"],
@@ -130,7 +130,7 @@ def test_cancel_stops_the_running_worker_from_writing(store, fencing):
 
     item = ddb.get_item(
         TableName=TABLE_NAME,
-        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": "headless-codex#SESSION"}},
+        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": "ANALYSIS#SESSION"}},
     )["Item"]
     assert item["state"]["S"] == "CANCELLED"
     assert item["claim_token"]["S"] != claim_token
@@ -174,7 +174,7 @@ def test_delete_is_allowed_once_the_session_is_terminal(store, fencing):
 
     item = ddb.get_item(
         TableName=TABLE_NAME,
-        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": "headless-codex#SESSION"}},
+        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": "ANALYSIS#SESSION"}},
     )["Item"]
     # 삭제 직전 claim 을 회전시켜, 검사와 실제 삭제 사이에 옛 소유자가 레코드를
     # 되살리지 못하게 한다.

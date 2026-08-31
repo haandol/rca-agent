@@ -327,7 +327,7 @@ def test_previous_claim_cannot_overwrite_trace_or_hypothesis():
     )
     session_key = {
         "PK": {"S": "RCA#rca-123"},
-        "SK": {"S": "strands#SESSION"},
+        "SK": {"S": "ANALYSIS#SESSION"},
     }
     ddb.put_item(
         TableName=TABLE_NAME,
@@ -396,7 +396,7 @@ class TestGetTrace:
             "Items": [
                 {
                     "PK": {"S": "RCA#rca-123"},
-                    "SK": {"S": "strands#SESSION"},
+                    "SK": {"S": "ANALYSIS#SESSION"},
                     "state": {"S": "COMPLETED"},
                     "alarm_name": {"S": "HighCPU"},
                     "alarm_arn": {"S": ""},
@@ -676,7 +676,7 @@ def test_claimed_span_end_persists_error_and_metadata_despite_reserved_words():
         TableName=TABLE_NAME,
         Item={
             "PK": {"S": "RCA#rca-123"},
-            "SK": {"S": "strands#SESSION"},
+            "SK": {"S": "ANALYSIS#SESSION"},
             "state": {"S": "SCOPING"},
             "claim_token": {"S": "claim-1"},
         },

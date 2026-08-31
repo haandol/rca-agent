@@ -176,7 +176,7 @@ def test_the_validated_fault_type_overrides_the_generated_one_everywhere_it_is_r
     ):
         assert PipelineOrchestrator(container).process_alarm(_alarm_body()) is True
 
-    session_item = _get_item(ddb, table_name, rca_id, "strands#SESSION")
+    session_item = _get_item(ddb, table_name, rca_id, "ANALYSIS#SESSION")
     selected_hypothesis_id = session_item["selected_hypothesis_id"]["S"]
     hypothesis_item = _get_item(
         ddb,

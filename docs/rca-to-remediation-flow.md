@@ -52,9 +52,10 @@ flowchart TB
 
 ## 2. 분석 — 읽기 전용이고 리포트 하나로 끝난다
 
-같은 CloudWatch 알람을 SNS가 두 개의 SQS 큐로 팬아웃하고, Strands 엔진과 Headless Codex
-엔진이 각자 독립적으로 RCA를 수행한다. 두 엔진을 유지하는 이유는 같은 입력으로 RCA 품질을
-비교하기 위한 것이며, 실행 경로는 두 엔진이 공유한다.
+CloudWatch 알람은 SNS를 거쳐 공용 SQS에 한 번 적재된다. Strands 엔진과 Headless Codex
+엔진의 모든 인스턴스가 메시지를 경쟁 소비하고, 엔진 중립 세션의 조건부 claim에 성공한
+하나만 RCA를 수행한다. 두 엔진의 품질 비교는 운영 알람을 중복 분석하지 않고 별도
+model-eval에서 수행하며, 실행 경로는 두 엔진이 공유한다.
 
 분석은 **어떤 것도 변경하지 않는다.** 분석 태스크 역할에 쓰기 권한이 없고, 분석 하네스에
 쓰기 도구가 없고, 대상 서비스로 가는 네트워크 경로도 없다. 하네스 계약 테스트가 쓰기 도구의
@@ -68,15 +69,15 @@ flowchart TB
 sequenceDiagram
     participant CW as CloudWatch
     participant SNS as SNS
-    participant SQS as SQS (엔진별)
+    participant SQS as 공용 SQS
     participant ENG as RCA 엔진
     participant ST as 세션·리포트 저장소
     participant U as 대시보드 (사람)
 
     CW->>SNS: 알람 상태 전이
-    SNS->>SQS: 팬아웃 (Strands · Headless Codex)
-    SQS-->>ENG: 알람 메시지
-    ENG->>ENG: 세션 claim (조건부 쓰기)
+    SNS->>SQS: 알람 메시지 1건 적재
+    SQS-->>ENG: competing consumer 한 곳에 전달
+    ENG->>ENG: 엔진 중립 세션 claim (조건부 쓰기)
     ENG->>ENG: 스코핑 → 가설 → 증거 → 검증
     ENG->>ST: report.md + playbook.json 저장
     ENG->>U: 분석 완료 알림 (사람만 수신)

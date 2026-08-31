@@ -25,7 +25,9 @@ from headless_codex.ports.interfaces.session_store import (
 logger = structlog.get_logger()
 
 _ACTIVE_INCIDENT_SK = "ACTIVE_INCIDENT"
+_ANALYSIS_SESSION_SK = "ANALYSIS#SESSION"
 _ANALYSIS_SESSION_SKS = (
+    _ANALYSIS_SESSION_SK,
     "strands#SESSION",
     "SESSION",
     "headless-codex#SESSION",
@@ -71,6 +73,10 @@ def _candidate_key(rca_id: str, sk: str) -> dict:
     return {"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": sk}}
 
 
+def _session_key(rca_id: str) -> dict:
+    return {"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": _ANALYSIS_SESSION_SK}}
+
+
 def _event_time(alarm: IncidentAlarm) -> datetime:
     event_time = alarm.state_change_time or datetime.now(UTC)
     if event_time.tzinfo is None:
@@ -93,7 +99,17 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 
 _TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
 _DEDUPE_STATES = {"COMPLETED", "OUTDATED", "CANCELLED"}
-_RECLAIMABLE_STATES = {"ALARM_RECEIVED", "ANALYZING", "FAILED"}
+_RECLAIMABLE_STATES = {
+    "ALARM_RECEIVED",
+    "SCOPING",
+    "HYPOTHESIS_GENERATION",
+    "HYPOTHESIS_PRIORITIZATION",
+    "EVIDENCE_COLLECTION",
+    "HYPOTHESIS_VALIDATION",
+    "REPORT_GENERATION",
+    "ANALYZING",
+    "FAILED",
+}
 
 
 def _now_iso() -> str:
@@ -113,7 +129,7 @@ class DynamoDbSessionStore(SessionStorePort):
             return None
         resp = self._ddb.get_item(
             TableName=DYNAMODB_TABLE_NAME,
-            Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+            Key=_session_key(rca_id),
             ConsistentRead=True,
         )
         return resp.get("Item")
@@ -576,9 +592,11 @@ class DynamoDbSessionStore(SessionStorePort):
         idempotency_key: str,
         *,
         receive_count: int,
+        message_id: str | None = None,
         alarm_data: dict | None = None,
     ) -> SessionClaim:
         receive_count = max(receive_count, 1)
+        message_id = message_id or f"direct:{rca_id}"
         claim_token = uuid.uuid4().hex
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             return SessionClaim(ClaimDisposition.CONTENDED)
@@ -586,7 +604,7 @@ class DynamoDbSessionStore(SessionStorePort):
         ttl = _ttl()
         item = {
             "PK": {"S": f"RCA#{rca_id}"},
-            "SK": {"S": f"{ENGINE}#SESSION"},
+            "SK": {"S": _ANALYSIS_SESSION_SK},
             "rca_id": {"S": rca_id},
             "idempotency_key": {"S": idempotency_key},
             "alarm_name": {"S": alarm_name},
@@ -594,6 +612,7 @@ class DynamoDbSessionStore(SessionStorePort):
             "engine": {"S": ENGINE},
             "claim_token": {"S": claim_token},
             "receive_count": {"N": str(receive_count)},
+            "message_id": {"S": message_id},
             "created_at": {"S": now},
             "updated_at": {"S": now},
             # Keys for the session-list index. They duplicate engine and
@@ -632,6 +651,12 @@ class DynamoDbSessionStore(SessionStorePort):
             return SessionClaim(ClaimDisposition.CONTENDED)
 
         previous_claim = existing.get("claim_token", {}).get("S")
+        previous_message_id_attr = existing.get("message_id")
+        previous_message_id = previous_message_id_attr.get("S") if previous_message_id_attr else None
+        if previous_message_id_attr and not previous_message_id:
+            return SessionClaim(ClaimDisposition.CONTENDED)
+        if previous_message_id is not None and previous_message_id != message_id:
+            return SessionClaim(ClaimDisposition.CONTENDED)
         condition = (
             "#state = :previous_state AND "
             "(attribute_not_exists(side_effect_lease_expires_at) OR side_effect_lease_expires_at < :now_epoch)"
@@ -651,6 +676,11 @@ class DynamoDbSessionStore(SessionStorePort):
             expression_values[":previous_claim"] = {"S": previous_claim}
         else:
             condition += " AND attribute_not_exists(claim_token)"
+        if previous_message_id_attr:
+            condition += " AND message_id = :previous_message_id"
+            expression_values[":previous_message_id"] = {"S": previous_message_id}
+        else:
+            condition += " AND attribute_not_exists(message_id)"
 
         try:
             self._ddb.put_item(
@@ -673,7 +703,7 @@ class DynamoDbSessionStore(SessionStorePort):
         try:
             self._ddb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+                Key=_session_key(rca_id),
                 UpdateExpression="SET #state = :state, updated_at = :now",
                 ConditionExpression=_TERMINAL_COND,
                 ExpressionAttributeNames={"#state": "state"},
@@ -733,7 +763,7 @@ class DynamoDbSessionStore(SessionStorePort):
         try:
             self._ddb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+                Key=_session_key(rca_id),
                 UpdateExpression=update,
                 ConditionExpression=condition,
                 ExpressionAttributeNames={"#state": "state"},
@@ -751,7 +781,7 @@ class DynamoDbSessionStore(SessionStorePort):
         try:
             self._ddb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+                Key=_session_key(rca_id),
                 UpdateExpression="SET #state = :state, error_reason = :err, updated_at = :now",
                 ConditionExpression=_TERMINAL_COND,
                 ExpressionAttributeNames={"#state": "state"},
@@ -778,7 +808,7 @@ class DynamoDbSessionStore(SessionStorePort):
         try:
             self._ddb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+                Key=_session_key(rca_id),
                 UpdateExpression="SET #state = :state, outdated_reason = :reason, updated_at = :now",
                 ConditionExpression=_TERMINAL_COND,
                 ExpressionAttributeNames={"#state": "state"},
@@ -827,7 +857,7 @@ class DynamoDbSessionStore(SessionStorePort):
         try:
             self._ddb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+                Key=_session_key(rca_id),
                 UpdateExpression=(
                     "SET side_effect_lease_token = :lease, side_effect_lease_name = :effect, "
                     "side_effect_lease_expires_at = :expires, updated_at = :now"
@@ -866,7 +896,7 @@ class DynamoDbSessionStore(SessionStorePort):
         try:
             self._ddb.update_item(
                 TableName=DYNAMODB_TABLE_NAME,
-                Key={"PK": {"S": f"RCA#{rca_id}"}, "SK": {"S": f"{ENGINE}#SESSION"}},
+                Key=_session_key(rca_id),
                 UpdateExpression=(
                     "REMOVE side_effect_lease_token, side_effect_lease_name, side_effect_lease_expires_at "
                     "SET updated_at = :now"

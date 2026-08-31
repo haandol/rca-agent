@@ -204,7 +204,7 @@ def _claim_check(rca_id: str, claim_token: str) -> dict:
             "TableName": DYNAMODB_TABLE_NAME,
             "Key": {
                 "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {"S": f"{ENGINE}#SESSION"},
+                "SK": {"S": "ANALYSIS#SESSION"},
             },
             "ConditionExpression": "attribute_exists(SK) AND claim_token = :claim",
             "ExpressionAttributeValues": {":claim": {"S": claim_token}},
