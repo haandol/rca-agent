@@ -10,7 +10,7 @@ command = "fastmcp"
 args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/mcp_server.py:mcp"]
 enabled_tools = ["save_report_artifact"]
 default_tools_approval_mode = "approve"
-env_vars = ["RCA_EXECUTION_TOKEN", "RCA_SESSION_ID", "RCA_CLAIM_TOKEN", "RCA_ATTEMPT"]
+env_vars = ["RCA_EXECUTION_TOKEN", "RCA_SESSION_ID", "RCA_CLAIM_TOKEN", "RCA_ATTEMPT", "DYNAMODB_TABLE_NAME", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"]
 startup_timeout_sec = 30
 tool_timeout_sec = 120
 

@@ -528,7 +528,7 @@ class TraceStore:
             }
             if attr_names:
                 update["ExpressionAttributeNames"] = attr_names
-            self._transact_claimed([{"Update": update}])
+            self._transact_claimed([{"Update": update}], allow_completed=True)
             return
         try:
             request: dict = {
@@ -543,7 +543,20 @@ class TraceStore:
         except ClientError:
             logger.exception("Failed to update span end %s", span.span_id)
 
-    def _claim_check(self) -> dict:
+    def _claim_check(self, *, allow_completed: bool = False) -> dict:
+        terminal_condition = (
+            "AND NOT #state IN (:failed, :outdated, :cancelled)"
+            if allow_completed
+            else "AND NOT #state IN (:completed, :failed, :outdated, :cancelled)"
+        )
+        values = {
+            ":claim": {"S": self._claim_token},
+            ":failed": {"S": "FAILED"},
+            ":outdated": {"S": "OUTDATED"},
+            ":cancelled": {"S": "CANCELLED"},
+        }
+        if not allow_completed:
+            values[":completed"] = {"S": "COMPLETED"}
         return {
             "ConditionCheck": {
                 "TableName": DYNAMODB_TABLE_NAME,
@@ -551,21 +564,20 @@ class TraceStore:
                     "PK": _pk(self._rca_id),
                     "SK": _session_sk(),
                 },
-                "ConditionExpression": "attribute_exists(SK) AND claim_token = :claim",
-                "ExpressionAttributeValues": {
-                    ":claim": {"S": self._claim_token},
-                },
+                "ConditionExpression": (f"attribute_exists(SK) AND claim_token = :claim {terminal_condition}"),
+                "ExpressionAttributeNames": {"#state": "state"},
+                "ExpressionAttributeValues": values,
             },
         }
 
-    def _transact_claimed(self, writes: list[dict]) -> None:
+    def _transact_claimed(self, writes: list[dict], *, allow_completed: bool = False) -> None:
         if not self._enabled or not self._claim_token:
             raise SessionOwnershipCheckError(f"{self._rca_id}: claimed trace store is unavailable")
         try:
             for index in range(0, len(writes), 24):
                 self._dynamodb.transact_write_items(
                     TransactItems=[
-                        self._claim_check(),
+                        self._claim_check(allow_completed=allow_completed),
                         *writes[index : index + 24],
                     ],
                 )

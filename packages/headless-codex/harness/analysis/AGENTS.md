@@ -57,14 +57,13 @@ provider/tool failure를 명시적으로 보고한 뒤에만 동일한 단계 �
 | 파일명                | 작성 주체 |
 | --------------------- | --------- |
 | `scoping.json`        | RCA       |
-| `hypotheses.json`     | RCA       |
+| `hypotheses.json`·`hypotheses-2.json`·`hypotheses-3.json` | RCA |
 | `validation-{N}.json` | RCA       |
 | `report.md`           | Report    |
 | `playbook.json`       | Report    |
 
-`report.md`와 `playbook.json`은 하나의 리포트를 이루는 두 표현이다. `report.md`의
-`## 대응 플레이북` 서술과 `playbook.json`의 `execution_steps`는 같은 `step_id`를 같은
-순서로 담아야 한다.
+`report.md`와 `playbook.json`은 하나의 리포트를 이루는 두 표현이다. 서버가 최종
+근본 원인과 대응 플레이북 섹션을 검증 산출물과 구조화 플레이북에서 렌더링한다.
 
 모든 JSON은 valid object여야 한다. 경로 직접 접근과 임의 파일 생성·수정·삭제는
 금지하며, 산출물 저장은 각 역할에 부여된 저장 도구만 사용한다.

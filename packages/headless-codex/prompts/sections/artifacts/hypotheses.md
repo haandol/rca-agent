@@ -1,5 +1,9 @@
 #### hypotheses.json
 
+첫 생성은 `hypotheses.json`에 저장한다. 서버가 전체 기각 뒤 `REGENERATE`를 반환하면
+두 번째와 세 번째 생성 라운드를 각각 `hypotheses-2.json`, `hypotheses-3.json`에
+저장한다. 이전 파일을 덮어쓰지 않는다.
+
 ```json
 {
   "stage": "HYPOTHESIS_GENERATION",
@@ -25,9 +29,11 @@
 ```
 
 **필드 규칙**:
+- 한 생성 라운드는 루트 가설 3~5개를 포함한다.
 - `title`: 대시보드 카드/그래프 노드에 노출. "Healthcare 앱 커넥션 누수" 같은 **명사구**로 간결히. 물음표·마침표 지양.
 - `description`: 가설을 세운 근거와 기대하는 검증 증거를 서술형으로 기술.
 - `fault_type`: Healthcare reset 허용 목록과 직접 대응하는 구조화 enum. 네 유형에
   해당하지 않으면 반드시 `unsupported`.
 - `validation-{N}.json`의 `new_hypotheses`에도 동일하게 `title`, `description`,
   `fault_type`을 채운다.
+- 생성 라운드 번호와 어느 validation 뒤에 재생성됐는지는 저장 서버가 기록한다.

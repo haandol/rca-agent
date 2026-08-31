@@ -253,13 +253,9 @@ class TestPreReportHypothesisFinalization:
         close_reason = (
             close_reason_map.get(termination.reason, "분석 종료") if termination and termination.reason else "분석 종료"
         )
-        best_hid = termination.best_hypothesis.hypothesis_id if termination and termination.best_hypothesis else None
-
         changes = []
         for h in hypotheses:
             if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
-                if h.hypothesis_id == best_hid:
-                    continue
                 h.status = HypothesisStatus.CLOSED
                 changes.append((h.hypothesis_id, HypothesisStatus.CLOSED.value, close_reason))
         return changes
@@ -319,7 +315,7 @@ class TestPreReportHypothesisFinalization:
         assert pending.status == HypothesisStatus.CLOSED
         assert changes[0][2] == "최대 트리 깊이 초과"
 
-    def test_best_hypothesis_not_closed(self):
+    def test_unconfirmed_best_hypothesis_is_closed_before_report(self):
         best = _make_hypothesis("h-1", HypothesisStatus.NEEDS_INVESTIGATION, 0.7)
         other = _make_hypothesis("h-2", HypothesisStatus.PENDING, 0.3)
         td = TerminationDecision(
@@ -330,7 +326,7 @@ class TestPreReportHypothesisFinalization:
 
         self._finalize([best, other], td)
 
-        assert best.status == HypothesisStatus.NEEDS_INVESTIGATION
+        assert best.status == HypothesisStatus.CLOSED
         assert other.status == HypothesisStatus.CLOSED
 
     def test_rejected_stays_rejected(self):
@@ -397,7 +393,7 @@ class TestPreReportHypothesisFinalization:
 class TestPipelineFinalizeBeforeReport:
     """
     Verifies that PipelineOrchestrator._run_pipeline marks hypotheses as
-    REJECTED (not CLOSED) before transitioning to REPORT_GENERATION.
+    terminal before transitioning to REPORT_GENERATION.
     """
 
     def test_pipeline_closes_pending_on_confirmed_termination(self):
@@ -504,11 +500,8 @@ class TestPipelineFinalizeBeforeReport:
             orchestrator = PipelineOrchestrator(container)
             orchestrator.process_alarm(body)
 
-        rejected_updates = [(hid, st) for hid, st, _ in trace_update_calls if st == "REJECTED"]
-        assert ("h-2", "REJECTED") in rejected_updates, "h-2 should be REJECTED when another hypothesis is CONFIRMED"
-
         closed_updates = [hid for hid, st, _ in trace_update_calls if st == "CLOSED" and hid == "h-2"]
-        assert closed_updates == [], "h-2 should be REJECTED, not CLOSED"
+        assert closed_updates == ["h-2"], "an untested alternative is CLOSED, not falsely marked as disproved"
         assert confirmed_h.fault_type == FaultType.DB_CONNECTION_LEAK
         assert confirmed_h.validated_fault_type == FaultType.HIGH_CPU
         assert confirmed_h.judgment_reasoning == "CPU evidence independently confirms saturation"

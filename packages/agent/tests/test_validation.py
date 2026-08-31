@@ -174,6 +174,32 @@ class TestValidateHypothesis:
         assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
         assert judgment.confidence_score == 0.9
 
+    @pytest.mark.parametrize(
+        ("evidence_text", "evidence_summary"),
+        [
+            ("", ["CPU remained above 95%"]),
+            ("CPUUtilization=98%", []),
+        ],
+    )
+    def test_caps_confirmed_when_required_evidence_is_empty(
+        self,
+        evidence_text,
+        evidence_summary,
+    ):
+        h = _make_hypothesis(required_evidence=["CPU metric"])
+        agent = _make_mock_agent(
+            HypothesisStatus.CONFIRMED,
+            0.9,
+            "Strong claim",
+            evidence_summary=evidence_summary,
+            validated_fault_type=FaultType.HIGH_CPU,
+        )
+
+        judgment = validate_hypothesis(h, evidence_text, agent)
+
+        assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
+        assert judgment.validated_fault_type == FaultType.UNSUPPORTED
+
     def test_allows_confirmed_when_evidence_failed_but_no_required_evidence(self):
         h = _make_hypothesis(required_evidence=[])
         agent = _make_mock_agent(HypothesisStatus.CONFIRMED, 0.9, "Strong evidence")

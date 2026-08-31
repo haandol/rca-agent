@@ -10,6 +10,7 @@ from threading import Event, Thread
 import structlog
 
 from headless_codex.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
+from headless_codex.services.analysis_contract import generation_round_for_filename
 from headless_codex.services.artifact_validation import (
     ArtifactValidationError,
     validate_validation_artifacts,
@@ -108,6 +109,7 @@ def _write_span(
     claim_token: str,
     parent_span_id: str | None = None,
     loop_index: int | None = None,
+    strict: bool = False,
 ) -> str:
     span_id = str(uuid.uuid4())
     if not DYNAMODB_TABLE_NAME or not ddb:
@@ -162,6 +164,8 @@ def _write_span(
             [{"Put": {"TableName": DYNAMODB_TABLE_NAME, "Item": item}}],
         )
     except Exception:
+        if strict:
+            raise
         logger.exception("span_write_failed", span_id=span_id, span_type=span_type)
 
     return span_id
@@ -189,6 +193,9 @@ def _parse_artifact(path: Path) -> dict | None:
 
 
 def _artifact_sort_key(path: Path) -> tuple[int, int, str]:
+    generation_round = generation_round_for_filename(path.name)
+    if generation_round is not None:
+        return 0, generation_round, path.name
     if path.name.startswith(VALIDATION_PATTERN) and path.suffix == ".json":
         try:
             loop_index = int(path.stem.removeprefix(VALIDATION_PATTERN))
@@ -206,8 +213,18 @@ def _claim_check(rca_id: str, claim_token: str) -> dict:
                 "PK": {"S": f"RCA#{rca_id}"},
                 "SK": {"S": "ANALYSIS#SESSION"},
             },
-            "ConditionExpression": "attribute_exists(SK) AND claim_token = :claim",
-            "ExpressionAttributeValues": {":claim": {"S": claim_token}},
+            "ConditionExpression": (
+                "attribute_exists(SK) AND claim_token = :claim "
+                "AND NOT #state IN (:completed, :failed, :outdated, :cancelled)"
+            ),
+            "ExpressionAttributeNames": {"#state": "state"},
+            "ExpressionAttributeValues": {
+                ":claim": {"S": claim_token},
+                ":completed": {"S": "COMPLETED"},
+                ":failed": {"S": "FAILED"},
+                ":outdated": {"S": "OUTDATED"},
+                ":cancelled": {"S": "CANCELLED"},
+            },
         }
     }
 
@@ -224,7 +241,14 @@ def _transact_claimed(ddb, rca_id: str, claim_token: str, writes: list[dict]) ->
         )
 
 
-def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict, *, claim_token: str) -> None:
+def _save_hypotheses_to_ddb(
+    ddb,
+    rca_id: str,
+    artifact: dict,
+    *,
+    claim_token: str,
+    strict: bool = False,
+) -> None:
     if not DYNAMODB_TABLE_NAME or not ddb:
         return
 
@@ -247,6 +271,8 @@ def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict, *, claim_token: st
             "title": {"S": h.get("title", "")[:120]},
             "description": {"S": h.get("description", "")[:500]},
             "category": {"S": h.get("category", "")},
+            "fault_type": {"S": h.get("fault_type", "unsupported")},
+            "validated_fault_type": {"S": "unsupported"},
             "confidence_score": {"N": str(h.get("confidence_score", 0))},
             "status": {"S": h.get("status", "PENDING")},
             "required_evidence": {"L": [{"S": e} for e in h.get("required_evidence", [])]},
@@ -269,10 +295,19 @@ def _save_hypotheses_to_ddb(ddb, rca_id: str, artifact: dict, *, claim_token: st
     try:
         _transact_claimed(ddb, rca_id, claim_token, writes)
     except Exception:
+        if strict:
+            raise
         logger.exception("hypothesis_batch_write_failed", count=len(writes))
 
 
-def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict, *, claim_token: str) -> None:
+def _update_hypotheses_from_validation(
+    ddb,
+    rca_id: str,
+    artifact: dict,
+    *,
+    claim_token: str,
+    strict: bool = False,
+) -> None:
     if not DYNAMODB_TABLE_NAME or not ddb:
         return
 
@@ -289,8 +324,23 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict, *, clai
             hid = h if isinstance(h, str) else h.get("hypothesis_id", "")
             confidence = h.get("confidence", 0) if isinstance(h, dict) else 0
             reasoning = h.get("reasoning", "") if isinstance(h, dict) else ""
+            evidence_summary = "\n".join(h.get("evidence_summary", [])) if isinstance(h, dict) else ""
             if not hid:
                 continue
+            update_expression = (
+                "SET #st = :status, confidence_score = :cs, judgment_reasoning = :jr, "
+                "evidence_summary = :evidence, updated_at = :now"
+            )
+            values = {
+                ":status": {"S": status_map[bucket]},
+                ":cs": {"N": str(confidence)},
+                ":jr": {"S": str(reasoning)[:500]},
+                ":evidence": {"S": evidence_summary[:2000]},
+                ":now": {"S": now},
+            }
+            if bucket == "confirmed":
+                update_expression += ", validated_fault_type = :validated_fault_type"
+                values[":validated_fault_type"] = {"S": str(h.get("fault_type", "unsupported"))}
             writes.append(
                 {
                     "Update": {
@@ -299,17 +349,10 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict, *, clai
                             "PK": {"S": f"RCA#{rca_id}"},
                             "SK": {"S": f"{ENGINE}#HYPO#{hid}"},
                         },
-                        "UpdateExpression": (
-                            "SET #st = :status, confidence_score = :cs, judgment_reasoning = :jr, updated_at = :now"
-                        ),
+                        "UpdateExpression": update_expression,
                         "ConditionExpression": "attribute_exists(SK)",
                         "ExpressionAttributeNames": {"#st": "status"},
-                        "ExpressionAttributeValues": {
-                            ":status": {"S": status_map[bucket]},
-                            ":cs": {"N": str(confidence)},
-                            ":jr": {"S": str(reasoning)[:500]},
-                            ":now": {"S": now},
-                        },
+                        "ExpressionAttributeValues": values,
                     }
                 }
             )
@@ -317,6 +360,8 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict, *, clai
     try:
         _transact_claimed(ddb, rca_id, claim_token, writes)
     except Exception:
+        if strict:
+            raise
         logger.warning("hypothesis_updates_skipped", count=len(writes))
 
     new_hypotheses = artifact.get("new_hypotheses", [])
@@ -326,6 +371,7 @@ def _update_hypotheses_from_validation(ddb, rca_id: str, artifact: dict, *, clai
             rca_id,
             {"hypotheses": new_hypotheses},
             claim_token=claim_token,
+            strict=strict,
         )
 
 
@@ -350,6 +396,8 @@ def _scan_once(
         if artifact is None:
             continue
         span_type = ARTIFACT_SPAN_MAP.get(path.name)
+        if span_type is None and generation_round_for_filename(path.name) is not None:
+            span_type = "HYPOTHESIS_GENERATION"
 
         if span_type:
             _write_span(ddb, rca_id, span_type, artifact, claim_token=claim_token)

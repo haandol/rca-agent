@@ -8,11 +8,9 @@
  * same session. That already happened once, with the graph still describing a
  * conditional-remediation step the analysis engines no longer perform.
  *
- * The state names themselves are the engines' contract, not this module's. Both
- * engines write their own transitions — Strands moves through the nine pipeline
- * stages, the headless engines collapse them into a single ANALYZING — so this module
- * only names what the engines record and must not be treated as the source of
- * which transitions are legal.
+ * The state names themselves are the engines' contract, not this module's. New
+ * Strands and Headless Codex sessions share one analysis lifecycle; ANALYZING is
+ * retained only to render legacy headless sessions.
  */
 
 export const STATE_LABEL: Record<string, string> = {
@@ -84,20 +82,22 @@ export const TERMINAL_STATES = [
  * into a single autonomous run), and flattening them to a common length would
  * claim a precision neither engine reports.
  */
+const ANALYSIS_TRACK = [
+  'ALARM_RECEIVED',
+  'SCOPING',
+  'HYPOTHESIS_GENERATION',
+  'HYPOTHESIS_PRIORITIZATION',
+  'EVIDENCE_COLLECTION',
+  'HYPOTHESIS_VALIDATION',
+  'REPORT_GENERATION',
+  'COMPLETED',
+] as const;
+
 export const ENGINE_TRACK: Record<string, readonly string[]> = {
-  strands: [
-    'ALARM_RECEIVED',
-    'SCOPING',
-    'HYPOTHESIS_GENERATION',
-    'HYPOTHESIS_PRIORITIZATION',
-    'EVIDENCE_COLLECTION',
-    'HYPOTHESIS_VALIDATION',
-    'REPORT_GENERATION',
-    'COMPLETED',
-  ],
-  'headless-codex': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
-  'codex-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
-  'cc-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
+  strands: ANALYSIS_TRACK,
+  'headless-codex': ANALYSIS_TRACK,
+  'codex-headless': ANALYSIS_TRACK,
+  'cc-headless': ANALYSIS_TRACK,
 };
 
 export function engineTrack(engine: string): readonly string[] {

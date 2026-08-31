@@ -56,6 +56,11 @@ Dockerfile            # ECS Fargate container image
 pyproject.toml        # Python project configuration
 ```
 
+분석 산출물은 초기 `hypotheses.json`을 보존하고, 서버가 재생성을 요청한 경우
+`hypotheses-2.json`, `hypotheses-3.json`을 추가합니다. validation은 1부터 연속하며
+최대 3개입니다. 저장 서버가 Strands와 같은 단계 상태, 신뢰도 재분류, 종료 판정을
+강제하고 최종 리포트의 근본 원인·대응 플레이북 섹션을 구조화 산출물에서 렌더링합니다.
+
 ## 하네스 패리티
 
 `harness/`와 `prompts/`는 로컬 실행과 컨테이너 실행이 공유하는 단일 하네스다.

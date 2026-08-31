@@ -1,6 +1,7 @@
 #### validation-{N}.json
 
-**중요: confirmed/rejected/closed/needs_investigation의 `hypothesis_id`는 반드시 `hypotheses.json`에서 생성한 UUID와 정확히 일치해야 한다. 새로운 ID를 만들지 않는다.**
+**중요: 판정의 `hypothesis_id`는 현재까지 저장된 생성 라운드 또는 앞선 validation의
+`new_hypotheses`가 만든 UUID와 정확히 일치해야 한다. 판정에서 새 ID를 만들지 않는다.**
 
 ```json
 {
@@ -8,21 +9,21 @@
   "loop_index": 1,
   "confirmed": [
     {
-      "hypothesis_id": "hypotheses.json의 UUID",
+      "hypothesis_id": "기존 hypothesis UUID",
       "confidence": 0.95,
-      "fault_type": "참조 hypothesis와 동일한 fault_type enum",
-      "reasoning": "확정 근거 (한글, 상세히)"
+      "fault_type": "증거로 독립 판정한 fault_type enum",
+      "reasoning": "확정 근거 (한글, 상세히)",
+      "evidence_summary": ["구체적 수치·시각·메시지를 포함한 증거"],
+      "evidence_collection_failed": false
     }
   ],
   "rejected": [
-    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.1, "reasoning": "기각 근거 (한글, 상세히)"}
+    {"hypothesis_id": "기존 hypothesis UUID", "confidence": 0.1, "reasoning": "기각 근거 (한글, 상세히)", "evidence_summary": ["반증 증거"], "evidence_collection_failed": false}
   ],
   "needs_investigation": [
-    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.5, "reasoning": "추가 조사 필요 사유 (한글, 상세히)"}
+    {"hypothesis_id": "기존 hypothesis UUID", "confidence": 0.5, "reasoning": "추가 조사 필요 사유 (한글, 상세히)", "evidence_summary": ["현재까지의 증거"], "evidence_collection_failed": false}
   ],
-  "closed": [
-    {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.4, "reasoning": "종료 사유 (예: 시간 예산 소진, 확정된 근본원인 발견으로 추가 검증 불필요)"}
-  ],
+  "closed": [],
   "new_hypotheses": [
     {
       "hypothesis_id": "새 UUID (기존과 다른 값)",
@@ -38,30 +39,23 @@
       "depth": 1
     }
   ],
-  "best_hypothesis": {"hypothesis_id": "hypotheses.json의 UUID", "confidence": 0.95},
-  "review_gate": {
-    "early_exit": false,
-    "expansion_blocked": true,
-    "accepted_max_confidence": 0.85,
-    "reason": "expansion_blocked:0.85",
-    "auto_rejected_ids": ["hypotheses.json의 UUID(유사도로 자동 기각된 항목)"]
-  },
   "summary": "검증 루프 1 완료",
-  "output_summary": "채택 1, 기각 2, 조사필요 1, gate=expansion_blocked"
+  "output_summary": "신뢰도 판정과 증거 요약"
 }
 ```
 
-**review_gate 블록 규칙**:
-- `early_exit`: 이 루프에서 Accepted Review Gate가 조기 종료를 요청했는지 여부. `true`이면 메인 에이전트는 다음 루프를 스폰하지 않고 보고서 생성으로 진행한다.
-- `expansion_blocked`: 채택 가설 최고 신뢰도가 0.8-0.9 범위여서 **새 분기·재생성을 금지**했는지 여부.
-- `accepted_max_confidence`: 채택 가설들 중 최고 신뢰도 (채택 없으면 0.0).
-- `reason`: `no_accepted` / `accepted_confidence_met:{score}` / `expansion_blocked:{score}` / `grace_loops_exhausted:{score}` 중 하나.
-- `auto_rejected_ids`: 채택 가설과 동일 카테고리 + description Jaccard ≥ 0.6으로 자동 기각된 가설 ID 목록. 이 항목들은 `rejected` 배열에도 `reasoning="Review gate: 이미 채택된 ... 동일 원인 영역"`으로 포함한다.
+저장 서버는 신뢰도와 증거를 다시 판정하고 정규화된 산출물을 저장한다. 저장 응답의
+`decision.action`은 `CONTINUE`, `REGENERATE`, `REPORT` 중 하나다. 모델이 다음 단계를
+결정하지 않고 이 응답을 따른다. `decision.expansion_blocked=true`이면 새 가설을
+분기하지 않고 기존 채택 가설의 증거만 보강한다.
 
 **주의사항:**
 - `confirmed`/`rejected`/`closed`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
-- `confirmed`의 `fault_type`은 참조하는 hypothesis의 구조화 enum과 정확히
-  일치해야 한다. 자유 텍스트에서 Remediation 단계가 다시 추론하지 않는다.
+- `fault_type`은 초기 hypothesis의 힌트와 독립적으로 증거에서 다시 판정한다.
+- 모든 판정은 `evidence_collection_failed` boolean을 포함한다. 증거 도구 호출이나
+  조회가 실패했으면 `true`이며, 필수 증거가 있는 가설은 이 값이 `true`이거나
+  `evidence_summary`가 비면 높은 신뢰도라도 확정되지 않는다.
 - `new_hypotheses`의 각 항목에는 반드시 `title`, `description`, `fault_type`,
   `category`를 포함한다.
-- 모든 가설은 `hypotheses.json`에서 이미 생성된 `hypothesis_id`를 참조해야 한다.
+- 모든 판정은 현재까지 저장된 가설의 `hypothesis_id`를 참조해야 한다.
+- validation 번호는 1부터 연속하며 최대 3이다.

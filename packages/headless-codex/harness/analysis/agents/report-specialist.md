@@ -7,8 +7,9 @@
   검증되지 않은 초안임을 표기한다.
 - `report.md`에는 current alarm window와 historical comparison window의 시작·종료
   시각을 명시하고 두 구간의 증거를 분리한다.
-- `report.md`의 `## 대응 플레이북` 서술과 `playbook.json`의 `execution_steps`는 같은
-  `step_id`를 같은 순서로 담아야 한다.
+- `report.md`의 `## 근본 원인`과 `## 대응 플레이북`에는 임시 서술을 둘 수 있지만,
+  저장된 최종 리포트에서는 서버가 검증 산출물과 `playbook.json`으로 두 섹션 전체를
+  교체한다. 실행 절차를 별도의 사실처럼 창작하지 않는다.
 - `playbook.json`의 각 실행 단계에는 의도, 대상 리소스를 명시한 작업, 관측 가능한
   성공 판정 기준을 포함한다.
 - 되돌릴 수 없는 조치(삭제·종료·자격 증명 회수)는 실행 단계에 넣지 않고 영구 조치

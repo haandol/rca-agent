@@ -54,7 +54,22 @@ def _minimal_valid_artifact(filename: str) -> str:
                 "tree_id": "tree-1",
                 "summary": "s",
                 "output_summary": "o",
-                "hypotheses": [{"hypothesis_id": "h1"}],
+                "hypotheses": [
+                    {
+                        "hypothesis_id": f"h{index}",
+                        "tree_id": "tree-1",
+                        "title": f"hypothesis {index}",
+                        "description": f"description {index}",
+                        "fault_type": "db-leak" if index == 1 else "unsupported",
+                        "category": "INFRASTRUCTURE",
+                        "confidence_score": 0.6,
+                        "required_evidence": ["metric"],
+                        "status": "PENDING",
+                        "parent_id": None,
+                        "depth": 0,
+                    }
+                    for index in range(1, 4)
+                ],
             }
         )
 
@@ -65,6 +80,29 @@ def _minimal_valid_artifact(filename: str) -> str:
         artifact.update({field: [] for field in artifact_validation._PLAYBOOK_LIST_FIELDS})
         return json.dumps(artifact)
 
+    if filename == "validation-1.json":
+        return json.dumps(
+            {
+                "stage": "VALIDATION",
+                "loop_index": 1,
+                "confirmed": [
+                    {
+                        "hypothesis_id": "h1",
+                        "confidence": 0.95,
+                        "fault_type": "db-leak",
+                        "reasoning": "confirmed",
+                        "evidence_summary": ["metric evidence"],
+                        "evidence_collection_failed": False,
+                    }
+                ],
+                "rejected": [],
+                "needs_investigation": [],
+                "closed": [],
+                "new_hypotheses": [],
+                "summary": "s",
+                "output_summary": "o",
+            }
+        )
     return "{}"
 
 
@@ -99,6 +137,14 @@ def _save_rejected(filename: str, content: str) -> bool:
     return result.get("ok") is False
 
 
+def _save_completed_analysis() -> None:
+    assert json.loads(_save("scoping.json", _minimal_valid_artifact("scoping.json")))["ok"] is True
+    assert json.loads(_save("hypotheses.json", _minimal_valid_artifact("hypotheses.json")))["ok"] is True
+    result = json.loads(_save("validation-1.json", _minimal_valid_artifact("validation-1.json")))
+    assert result["ok"] is True
+    assert result["decision"]["action"] == "REPORT"
+
+
 @pytest.mark.parametrize(
     "filename",
     [
@@ -122,7 +168,7 @@ def test_save_artifact_rejects_path_traversal_and_nested_paths(artifact_home, fi
 
 @pytest.mark.parametrize(
     "filename",
-    ["scoping.json", "hypotheses.json", "validation-1.json", "validation-99.json", "playbook.json", "report.md"],
+    ["scoping.json", "hypotheses.json"],
 )
 def test_save_artifact_accepts_canonical_names(artifact_home, filename):
     content = _minimal_valid_artifact(filename)
@@ -131,7 +177,177 @@ def test_save_artifact_accepts_canonical_names(artifact_home, filename):
 
     assert result["ok"] is True
     assert Path(result["path"]) == artifact_home / filename
-    assert (artifact_home / filename).read_text() == content
+    saved = (artifact_home / filename).read_text()
+    if filename == "scoping.json":
+        assert saved == content
+    else:
+        artifact = json.loads(saved)
+        assert artifact["generation_round"] == 1
+        assert artifact["after_loop_index"] == 0
+
+
+def test_save_artifact_accepts_validation_after_hypotheses(artifact_home):
+    _save_completed_analysis()
+
+    assert (artifact_home / "validation-1.json").is_file()
+
+
+@pytest.mark.parametrize("filename", ["playbook.json", "report.md"])
+def test_save_report_artifact_accepts_canonical_names_after_analysis_completion(artifact_home, filename):
+    _save_completed_analysis()
+
+    result = json.loads(_save(filename, _minimal_valid_artifact(filename)))
+
+    assert result["ok"] is True
+    assert Path(result["path"]) == artifact_home / filename
+
+
+def test_validation_99_is_rejected_by_the_three_loop_server_limit(artifact_home):
+    _save_completed_analysis()
+
+    result = json.loads(_save("validation-99.json", "{}"))
+
+    assert result["ok"] is False
+    assert "maximum of 3" in result["error"]
+
+
+class _StateStore:
+    def __init__(self):
+        self.state = "SCOPING"
+        self.transitions: list[str] = []
+        self.fail_target: str | None = None
+
+    def get_state(self, _rca_id, *, claim_token):
+        assert claim_token == "claim"
+        return self.state
+
+    def update_state(self, _rca_id, state, *, claim_token):
+        assert claim_token == "claim"
+        if state == self.fail_target:
+            raise RuntimeError(f"failed at {state}")
+        self.state = state
+        self.transitions.append(state)
+
+
+def test_artifact_saves_advance_the_shared_analysis_state_machine(artifact_home, monkeypatch):
+    store = _StateStore()
+    monkeypatch.setattr(
+        mcp_server,
+        "_runtime_session",
+        lambda: (store, None, "rca-1", "claim"),
+    )
+    monkeypatch.setattr(mcp_server, "_persist_runtime_trace", lambda *_args: None)
+
+    _save_completed_analysis()
+    assert store.transitions == [
+        "HYPOTHESIS_GENERATION",
+        "HYPOTHESIS_PRIORITIZATION",
+        "EVIDENCE_COLLECTION",
+        "HYPOTHESIS_VALIDATION",
+    ]
+
+    result = json.loads(_save("playbook.json", _minimal_valid_artifact("playbook.json")))
+
+    assert result["ok"] is True
+    assert store.state == "REPORT_GENERATION"
+
+
+def test_failed_state_transition_rolls_back_the_artifact_for_retry(artifact_home, monkeypatch):
+    store = _StateStore()
+    monkeypatch.setattr(
+        mcp_server,
+        "_runtime_session",
+        lambda: (store, None, "rca-1", "claim"),
+    )
+    monkeypatch.setattr(mcp_server, "_persist_runtime_trace", lambda *_args: None)
+    assert json.loads(_save("scoping.json", _minimal_valid_artifact("scoping.json")))["ok"] is True
+    assert json.loads(_save("hypotheses.json", _minimal_valid_artifact("hypotheses.json")))["ok"] is True
+    store.fail_target = "EVIDENCE_COLLECTION"
+
+    failed = json.loads(_save("validation-1.json", _minimal_valid_artifact("validation-1.json")))
+
+    assert failed["ok"] is False
+    assert not (artifact_home / "validation-1.json").exists()
+
+    store.fail_target = None
+    retried = json.loads(_save("validation-1.json", _minimal_valid_artifact("validation-1.json")))
+
+    assert retried["ok"] is True
+
+
+def test_regeneration_decision_can_retry_after_trace_failure(artifact_home, monkeypatch):
+    store = _StateStore()
+    monkeypatch.setattr(
+        mcp_server,
+        "_runtime_session",
+        lambda: (store, None, "rca-1", "claim"),
+    )
+    monkeypatch.setattr(mcp_server, "_persist_runtime_trace", lambda *_args: None)
+    assert json.loads(_save("scoping.json", _minimal_valid_artifact("scoping.json")))["ok"] is True
+    assert json.loads(_save("hypotheses.json", _minimal_valid_artifact("hypotheses.json")))["ok"] is True
+    failures = iter([RuntimeError("trace unavailable"), None])
+
+    def persist_with_one_failure(*_args):
+        failure = next(failures)
+        if failure:
+            raise failure
+
+    monkeypatch.setattr(mcp_server, "_persist_runtime_trace", persist_with_one_failure)
+    validation = json.loads(_minimal_valid_artifact("validation-1.json"))
+    validation["confirmed"] = []
+    validation["rejected"] = [
+        {
+            "hypothesis_id": f"h{index}",
+            "confidence": 0.1,
+            "reasoning": "rejected",
+            "evidence_summary": ["counter evidence"],
+            "evidence_collection_failed": False,
+        }
+        for index in range(1, 4)
+    ]
+
+    failed = json.loads(_save("validation-1.json", json.dumps(validation)))
+
+    assert failed["ok"] is False
+    assert store.state == "HYPOTHESIS_GENERATION"
+    assert not (artifact_home / "validation-1.json").exists()
+
+    retried = json.loads(_save("validation-1.json", json.dumps(validation)))
+
+    assert retried["ok"] is True
+    assert retried["decision"]["action"] == "REGENERATE"
+
+
+def test_regeneration_saves_a_new_round_without_overwriting_the_first(artifact_home):
+    assert json.loads(_save("scoping.json", _minimal_valid_artifact("scoping.json")))["ok"] is True
+    assert json.loads(_save("hypotheses.json", _minimal_valid_artifact("hypotheses.json")))["ok"] is True
+    validation = json.loads(_minimal_valid_artifact("validation-1.json"))
+    validation["confirmed"] = []
+    validation["rejected"] = [
+        {
+            "hypothesis_id": f"h{index}",
+            "confidence": 0.1,
+            "reasoning": "rejected",
+            "evidence_summary": ["counter evidence"],
+            "evidence_collection_failed": False,
+        }
+        for index in range(1, 4)
+    ]
+    decision = json.loads(_save("validation-1.json", json.dumps(validation)))
+    assert decision["decision"]["action"] == "REGENERATE"
+    second_round = json.loads(_minimal_valid_artifact("hypotheses.json"))
+    second_round["tree_id"] = "tree-2"
+    for index, hypothesis in enumerate(second_round["hypotheses"], start=1):
+        hypothesis["hypothesis_id"] = f"round-2-{index}"
+        hypothesis["tree_id"] = "tree-2"
+
+    result = json.loads(_save("hypotheses-2.json", json.dumps(second_round)))
+
+    assert result["ok"] is True
+    assert (artifact_home / "hypotheses.json").is_file()
+    saved_round = json.loads((artifact_home / "hypotheses-2.json").read_text())
+    assert saved_round["generation_round"] == 2
+    assert saved_round["after_loop_index"] == 1
 
 
 @pytest.mark.parametrize(
@@ -199,12 +415,23 @@ def test_save_artifact_rejects_wrong_stage_value(artifact_home):
     assert _save_rejected("playbook.json", json.dumps(artifact)) is True
 
 
-def test_save_artifact_still_accepts_validation_loops_without_shape_rules(artifact_home):
-    # Validation artifacts are checked against hypotheses the save call cannot
-    # see, so their shape stays with the completion gate.
+def test_save_artifact_rejects_validation_without_hypotheses(artifact_home):
     result = json.loads(_save("validation-1.json", "{}"))
 
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert "hypotheses.json is missing" in result["error"]
+
+
+def test_model_cannot_submit_server_owned_validation_fields(artifact_home):
+    assert json.loads(_save("hypotheses.json", _minimal_valid_artifact("hypotheses.json")))["ok"] is True
+    validation = json.loads(_minimal_valid_artifact("validation-1.json"))
+    validation["server_decision"] = {"action": "REPORT"}
+    validation["confirmed"][0]["server_rejected"] = True
+
+    result = json.loads(_save("validation-1.json", json.dumps(validation)))
+
+    assert result["ok"] is False
+    assert "server_decision is server-owned" in result["error"]
 
 
 def test_save_artifact_preserves_existing_file_when_atomic_replace_fails(artifact_home, monkeypatch):

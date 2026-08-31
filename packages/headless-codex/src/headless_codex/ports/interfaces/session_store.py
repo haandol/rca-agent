@@ -91,6 +91,9 @@ class SessionStorePort(ABC):
     def update_state(self, rca_id: str, state: str, *, claim_token: str) -> None: ...
 
     @abstractmethod
+    def get_state(self, rca_id: str, *, claim_token: str) -> str: ...
+
+    @abstractmethod
     def mark_completed(
         self,
         rca_id: str,

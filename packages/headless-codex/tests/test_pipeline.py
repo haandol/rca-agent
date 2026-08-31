@@ -42,11 +42,6 @@ ALARM_DATA = {
 CLAIM_TOKEN = "claim-token"
 
 
-class FinishedThread:
-    def join(self, timeout=None):
-        self.timeout = timeout
-
-
 def _container(runner):
     store = SimpleNamespace(
         claim_incident=Mock(
@@ -91,7 +86,6 @@ def _container(runner):
 def _patch_runtime(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(execution_context, "_ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(pipeline, "build_prompt", Mock(return_value="prompt"))
-    monkeypatch.setattr(pipeline, "start_watcher", lambda *args: (FinishedThread(), Mock()))
 
 
 def _valid_report(root_cause: str = "DB connection leak", *, step_ids: tuple[str, ...] = ()) -> str:
@@ -156,7 +150,7 @@ def _write_required_report_artifacts(
                         "hypothesis_id": "hypothesis-1",
                         "tree_id": "tree-1",
                         "title": "Connection leak",
-                        "description": "Connections are not released",
+                        "description": "DB connection leak",
                         "fault_type": "db-leak",
                         "category": "INFRASTRUCTURE",
                         "confidence_score": 0.7,
@@ -164,34 +158,63 @@ def _write_required_report_artifacts(
                         "status": "PENDING",
                         "parent_id": None,
                         "depth": 0,
-                    }
-                ],
-                "summary": "one hypothesis",
-                "output_summary": "one hypothesis",
-            }
-        )
-    )
-    artifact_dir.joinpath("validation-1.json").write_text(
-        json.dumps(
-            {
-                "stage": "VALIDATION",
-                "loop_index": 1,
-                "confirmed": [],
-                "rejected": [],
-                "needs_investigation": [
+                    },
                     {
-                        "hypothesis_id": "hypothesis-1",
-                        "confidence": 0.7,
-                        "reasoning": "more evidence needed",
-                    }
+                        "hypothesis_id": "hypothesis-2",
+                        "tree_id": "tree-1",
+                        "title": "Traffic spike",
+                        "description": "Traffic exceeded the normal baseline",
+                        "fault_type": "unsupported",
+                        "category": "TRAFFIC",
+                        "confidence_score": 0.2,
+                        "required_evidence": ["request metric"],
+                        "status": "PENDING",
+                        "parent_id": None,
+                        "depth": 0,
+                    },
+                    {
+                        "hypothesis_id": "hypothesis-3",
+                        "tree_id": "tree-1",
+                        "title": "Database resource pressure",
+                        "description": "The database exhausted compute resources",
+                        "fault_type": "unsupported",
+                        "category": "DEPENDENCY",
+                        "confidence_score": 0.2,
+                        "required_evidence": ["database metric"],
+                        "status": "PENDING",
+                        "parent_id": None,
+                        "depth": 0,
+                    },
                 ],
-                "closed": [],
-                "new_hypotheses": [],
-                "summary": "validation complete",
-                "output_summary": "unconfirmed",
+                "summary": "three hypotheses",
+                "output_summary": "three hypotheses",
             }
         )
     )
+    for loop_index in (1, 2, 3):
+        artifact_dir.joinpath(f"validation-{loop_index}.json").write_text(
+            json.dumps(
+                {
+                    "stage": "VALIDATION",
+                    "loop_index": loop_index,
+                    "confirmed": [],
+                    "rejected": [],
+                    "needs_investigation": [
+                        {
+                            "hypothesis_id": "hypothesis-1",
+                            "confidence": 0.7,
+                            "reasoning": "more evidence needed",
+                            "evidence_summary": ["connection metric remains inconclusive"],
+                            "evidence_collection_failed": False,
+                        }
+                    ],
+                    "closed": [],
+                    "new_hypotheses": [],
+                    "summary": "validation complete",
+                    "output_summary": "unconfirmed",
+                }
+            )
+        )
     artifact_dir.joinpath("report.md").write_text(report)
     if include_playbook:
         artifact_dir.joinpath("playbook.json").write_text(
@@ -246,10 +269,14 @@ def _write_confirmed_report_artifacts(
             "confidence": 0.95,
             "fault_type": fault_type,
             "reasoning": "connection leak confirmed",
+            "evidence_summary": ["connections rise while traffic remains flat"],
+            "evidence_collection_failed": False,
         }
     ]
     validation["needs_investigation"] = []
     artifact_dir.joinpath("validation-1.json").write_text(json.dumps(validation))
+    artifact_dir.joinpath("validation-2.json").unlink()
+    artifact_dir.joinpath("validation-3.json").unlink()
 
     hypotheses = json.loads(artifact_dir.joinpath("hypotheses.json").read_text())
     hypotheses["hypotheses"][0]["fault_type"] = fault_type
@@ -514,12 +541,10 @@ def test_report_artifact_is_uploaded_without_using_cli_fallback(monkeypatch, tmp
     )
 
     assert result is True
-    container.report_store.save_report.assert_called_once_with(
-        "rca-1",
-        report,
-        claim_token=CLAIM_TOKEN,
-        attempt=1,
-    )
+    saved_report = container.report_store.save_report.call_args.args[1]
+    assert "- **상태**: 미확정" in saved_report
+    assert "DB connection leak" in saved_report
+    assert "실행 대상이 아니다" in saved_report
     completed = container.session_store.mark_completed.call_args
     assert completed.args == ("rca-1", "DB connection leak", "reports/rca.md")
     assert completed.kwargs["playbook"]["playbook_id"] == "playbook-1"
@@ -753,9 +778,7 @@ class TestPlaybookSearchFirstMerge:
         container.playbook_store.load_detail.assert_not_called()
 
 
-def test_report_omitting_a_structured_step_prevents_completion_and_all_publication(monkeypatch, tmp_path):
-    # The prose is what a person approves. A step present only in the structure
-    # would run without approval, so the session must not complete.
+def test_server_renders_every_structured_step_even_when_the_draft_omits_one(monkeypatch, tmp_path):
     class MismatchedReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             artifact_dir = artifact_dir_for_token(execution_token)
@@ -775,10 +798,11 @@ def test_report_omitting_a_structured_step_prevents_completion_and_all_publicati
         CLAIM_TOKEN,
     )
 
-    assert result is False
-    container.report_store.save_report.assert_not_called()
-    container.report_store.send_notification.assert_not_called()
-    container.session_store.mark_completed.assert_not_called()
+    assert result is True
+    saved_report = container.report_store.save_report.call_args.args[1]
+    assert "step-1" in saved_report
+    assert "step-2" in saved_report
+    assert saved_report.index("step-1") < saved_report.index("step-2")
 
 
 def test_unconfirmed_run_declaring_execution_steps_prevents_completion(monkeypatch, tmp_path):
@@ -1032,25 +1056,20 @@ def test_ownership_read_error_keeps_message_for_redelivery(monkeypatch, tmp_path
     container.session_store.mark_completed.assert_not_called()
 
 
-def test_execution_token_and_watcher_use_the_same_path_but_keep_rca_id(monkeypatch, tmp_path):
+def test_execution_token_uses_an_isolated_path_and_keeps_session_ownership(monkeypatch, tmp_path):
     captured = {}
 
     class ReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             captured["token"] = execution_token
             captured["runner_path"] = artifact_dir_for_token(execution_token)
+            captured["rca_id"] = kwargs["rca_id"]
+            captured["claim_token"] = kwargs["claim_token"]
             _write_required_report_artifacts(captured["runner_path"], _valid_report("isolated"))
             return CodexResult(True, "complete", "{}")
 
-    def _start_watcher(artifact_dir, rca_id, claim_token, ddb):
-        captured["watcher_path"] = artifact_dir
-        captured["watcher_rca_id"] = rca_id
-        captured["watcher_claim_token"] = claim_token
-        return FinishedThread(), Mock()
-
     container = _container(ReportWriter())
     _patch_runtime(monkeypatch, tmp_path)
-    monkeypatch.setattr(pipeline, "start_watcher", _start_watcher)
 
     result = PipelineOrchestrator(container)._run_rca(
         "ddb-rca-id",
@@ -1060,10 +1079,9 @@ def test_execution_token_and_watcher_use_the_same_path_but_keep_rca_id(monkeypat
     )
 
     assert result is True
-    assert captured["watcher_path"] == captured["runner_path"]
-    assert captured["watcher_rca_id"] == "ddb-rca-id"
-    assert captured["watcher_claim_token"] == CLAIM_TOKEN
-    assert not captured["watcher_path"].exists()
+    assert captured["rca_id"] == "ddb-rca-id"
+    assert captured["claim_token"] == CLAIM_TOKEN
+    assert not captured["runner_path"].exists()
 
 
 def test_consecutive_same_rca_id_runs_use_distinct_dirs_without_touching_existing_artifacts(monkeypatch, tmp_path):

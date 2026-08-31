@@ -12,13 +12,30 @@ import re
 import tempfile
 from pathlib import Path
 
+import boto3
 from fastmcp import FastMCP
 
+from headless_codex.adapters.secondary.session.dynamodb_session_store import DynamoDbSessionStore
+from headless_codex.config import settings
+from headless_codex.services.analysis_contract import (
+    AnalysisContractError,
+    generation_round_for_filename,
+    normalize_generation_artifact,
+    normalize_validation_artifact,
+    validate_analysis_completion,
+)
 from headless_codex.services.artifact_validation import (
     ArtifactValidationError,
     validate_artifact_shape,
 )
+from headless_codex.services.artifact_watcher import (
+    _save_hypotheses_to_ddb,
+    _update_hypotheses_from_validation,
+    _write_span,
+)
 from headless_codex.services.execution_context import (
+    CLAIM_TOKEN_ENV,
+    RCA_ID_ENV,
     RUN_TOKEN_ENV,
     artifact_dir_for_token,
 )
@@ -55,7 +72,9 @@ def _is_allowed_filename(filename: str, allowed: set[str], *, allow_validation: 
         return False
     if filename in allowed:
         return True
-    return allow_validation and _VALIDATION_ARTIFACT.fullmatch(filename) is not None
+    if not allow_validation:
+        return False
+    return _VALIDATION_ARTIFACT.fullmatch(filename) is not None or generation_round_for_filename(filename) is not None
 
 
 def _write_artifact(base: Path, filename: str, content: str) -> Path:
@@ -81,7 +100,105 @@ def _write_artifact(base: Path, filename: str, content: str) -> Path:
     return path
 
 
-def _save(filename: str, content: str, allowed: set[str], *, allow_validation: bool) -> str:
+def _runtime_session() -> tuple[DynamoDbSessionStore, object, str, str] | None:
+    if not settings.DYNAMODB_TABLE_NAME:
+        return None
+    rca_id = os.environ.get(RCA_ID_ENV, "")
+    claim_token = os.environ.get(CLAIM_TOKEN_ENV, "")
+    if not rca_id or not claim_token:
+        raise AnalysisContractError("missing RCA session ownership context")
+    client = boto3.client("dynamodb", region_name=settings.AWS_REGION)
+    return DynamoDbSessionStore(client), client, rca_id, claim_token
+
+
+def _advance_state_path(path: tuple[str, ...]) -> None:
+    runtime = _runtime_session()
+    if runtime is None:
+        return
+    store, _, rca_id, claim_token = runtime
+    current = store.get_state(rca_id, claim_token=claim_token)
+    if current not in path:
+        raise AnalysisContractError(
+            f"analysis state {current or 'unknown'} is not valid for this artifact; expected one of {', '.join(path)}"
+        )
+    start = path.index(current)
+    for target in path[start + 1 :]:
+        store.update_state(rca_id, target, claim_token=claim_token)
+
+
+def _persist_runtime_trace(filename: str, content: str) -> None:
+    runtime = _runtime_session()
+    if runtime is None:
+        return
+    _, ddb, rca_id, claim_token = runtime
+    if filename.endswith(".md"):
+        artifact = {"summary": content[:500], "output_summary": content[:500]}
+    else:
+        artifact = json.loads(content)
+
+    round_index = generation_round_for_filename(filename)
+    if filename == "scoping.json":
+        _write_span(ddb, rca_id, "SCOPING", artifact, claim_token=claim_token, strict=True)
+    elif round_index is not None:
+        _write_span(
+            ddb,
+            rca_id,
+            "HYPOTHESIS_GENERATION",
+            artifact,
+            claim_token=claim_token,
+            strict=True,
+        )
+        _save_hypotheses_to_ddb(
+            ddb,
+            rca_id,
+            artifact,
+            claim_token=claim_token,
+            strict=True,
+        )
+    elif _VALIDATION_ARTIFACT.fullmatch(filename):
+        loop_index = artifact["loop_index"]
+        for span_type in ("PRIORITIZATION", "EVIDENCE_COLLECTION", "VALIDATION"):
+            _write_span(
+                ddb,
+                rca_id,
+                span_type,
+                artifact,
+                claim_token=claim_token,
+                loop_index=loop_index,
+                strict=True,
+            )
+        _update_hypotheses_from_validation(
+            ddb,
+            rca_id,
+            artifact,
+            claim_token=claim_token,
+            strict=True,
+        )
+    elif filename == "playbook.json":
+        _write_span(ddb, rca_id, "PLAYBOOK", artifact, claim_token=claim_token, strict=True)
+    elif filename == "report.md":
+        _write_span(ddb, rca_id, "REPORT", artifact, claim_token=claim_token, strict=True)
+
+
+def _prepare_analysis_content(base: Path, filename: str, content: str) -> tuple[str, dict | None]:
+    round_index = generation_round_for_filename(filename)
+    if round_index is not None:
+        return normalize_generation_artifact(base, filename, content), None
+    if _VALIDATION_ARTIFACT.fullmatch(filename) is not None:
+        normalized, decision = normalize_validation_artifact(base, filename, content)
+        return normalized, decision.as_dict()
+    validate_artifact_shape(filename, content)
+    return content, None
+
+
+def _save(
+    filename: str,
+    content: str,
+    allowed: set[str],
+    *,
+    allow_validation: bool,
+    role: str,
+) -> str:
     if not _is_allowed_filename(filename, allowed, allow_validation=allow_validation):
         return json.dumps(
             {
@@ -98,18 +215,63 @@ def _save(filename: str, content: str, allowed: set[str], *, allow_validation: b
     if base is None:
         return json.dumps({"ok": False, "error": "missing or invalid RCA execution context"})
 
-    # Reject a malformed artifact now rather than at the completion gate, where
-    # the run has already ended and the agent can no longer correct it.
     try:
-        validate_artifact_shape(filename, content)
-    except ArtifactValidationError as exc:
+        decision: dict | None = None
+        if role == "analysis":
+            content, decision = _prepare_analysis_content(base, filename, content)
+        else:
+            validate_artifact_shape(filename, content)
+            analysis = validate_analysis_completion(base)
+            if filename == "playbook.json":
+                playbook = json.loads(content)
+                if not analysis.confirmed and playbook["execution_steps"]:
+                    raise AnalysisContractError("unconfirmed RCA must not declare playbook execution steps")
+    except (AnalysisContractError, ArtifactValidationError) as exc:
         return json.dumps(
             {"ok": False, "error": f"artifact rejected: {exc}. Fix the content and save again."},
             ensure_ascii=False,
         )
 
-    path = _write_artifact(base, filename, content)
-    return json.dumps({"ok": True, "path": str(path)})
+    target = base / filename
+    previous = target.read_text() if target.is_file() else None
+    try:
+        path = _write_artifact(base, filename, content)
+        if role == "analysis":
+            if filename == "scoping.json":
+                _advance_state_path(("SCOPING", "HYPOTHESIS_GENERATION"))
+            elif generation_round_for_filename(filename) is not None:
+                _advance_state_path(("HYPOTHESIS_GENERATION", "HYPOTHESIS_PRIORITIZATION"))
+            elif decision is not None:
+                next_state = {
+                    "CONTINUE": "HYPOTHESIS_PRIORITIZATION",
+                    "REGENERATE": "HYPOTHESIS_GENERATION",
+                    "REPORT": "HYPOTHESIS_VALIDATION",
+                }[decision["action"]]
+                path_states = (
+                    "HYPOTHESIS_PRIORITIZATION",
+                    "EVIDENCE_COLLECTION",
+                    "HYPOTHESIS_VALIDATION",
+                )
+                if next_state != "HYPOTHESIS_VALIDATION":
+                    path_states += (next_state,)
+                _advance_state_path(path_states)
+        else:
+            _advance_state_path(("HYPOTHESIS_VALIDATION", "REPORT_GENERATION"))
+        _persist_runtime_trace(filename, content)
+    except Exception as exc:
+        if previous is None:
+            target.unlink(missing_ok=True)
+        else:
+            _write_artifact(base, filename, previous)
+        return json.dumps(
+            {"ok": False, "error": f"artifact persistence or state transition failed: {exc}"},
+            ensure_ascii=False,
+        )
+
+    response = {"ok": True, "path": str(path)}
+    if decision is not None:
+        response["decision"] = decision
+    return json.dumps(response, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -123,7 +285,13 @@ def save_analysis_artifact(filename: str, content: str) -> str:
         filename: scoping.json, hypotheses.json, validation-{N}.json 중 하나.
         content: 파일 내용 (JSON 문자열).
     """
-    return _save(filename, content, _ANALYSIS_ARTIFACTS, allow_validation=True)
+    return _save(
+        filename,
+        content,
+        _ANALYSIS_ARTIFACTS,
+        allow_validation=True,
+        role="analysis",
+    )
 
 
 @mcp.tool()
@@ -137,4 +305,10 @@ def save_report_artifact(filename: str, content: str) -> str:
         filename: report.md 또는 playbook.json.
         content: 파일 내용 (마크다운 또는 JSON 문자열).
     """
-    return _save(filename, content, _REPORT_ARTIFACTS, allow_validation=False)
+    return _save(
+        filename,
+        content,
+        _REPORT_ARTIFACTS,
+        allow_validation=False,
+        role="report",
+    )

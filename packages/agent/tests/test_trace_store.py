@@ -385,6 +385,43 @@ def test_previous_claim_cannot_overwrite_trace_or_hypothesis():
     assert hypothesis_item["confidence_score"]["N"] == "0.7"
 
 
+@mock_aws
+def test_terminal_session_rejects_late_trace_write_with_the_same_claim():
+    ddb = boto3.client("dynamodb", region_name="us-east-1")
+    ddb.create_table(
+        TableName=TABLE_NAME,
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    ddb.put_item(
+        TableName=TABLE_NAME,
+        Item={
+            "PK": {"S": "RCA#rca-123"},
+            "SK": {"S": "ANALYSIS#SESSION"},
+            "state": {"S": "CANCELLED"},
+            "claim_token": {"S": "claim-1"},
+        },
+    )
+
+    with patch(PATCH_TABLE, TABLE_NAME):
+        trace = TraceStore(
+            "rca-123",
+            claim_token="claim-1",
+            attempt=1,
+            dynamodb_client=ddb,
+        )
+
+        with pytest.raises(SessionOwnershipCheckError):
+            trace.start_span(SpanType.REPORT)
+
+
 class TestGetTrace:
     def test_returns_empty_when_disabled(self):
         with patch(PATCH_TABLE, ""):

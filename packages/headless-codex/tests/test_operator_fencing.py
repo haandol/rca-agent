@@ -104,16 +104,27 @@ def _apply(ddb, expression: dict) -> None:
     )
 
 
-def _analyzing_session(store: DynamoDbSessionStore) -> str:
+_ANALYSIS_PATH = [
+    "SCOPING",
+    "HYPOTHESIS_GENERATION",
+    "HYPOTHESIS_PRIORITIZATION",
+    "EVIDENCE_COLLECTION",
+    "HYPOTHESIS_VALIDATION",
+    "REPORT_GENERATION",
+]
+
+
+def _session_at(store: DynamoDbSessionStore, target: str) -> str:
     claim = store.claim_session(RCA_ID, "alarm", "idem", receive_count=1)
-    store.update_state(RCA_ID, "ANALYZING", claim_token=claim.claim_token)
+    for state in _ANALYSIS_PATH[: _ANALYSIS_PATH.index(target) + 1]:
+        store.update_state(RCA_ID, state, claim_token=claim.claim_token)
     return claim.claim_token
 
 
 def test_cancel_stops_the_running_worker_from_writing(store, fencing):
     """취소 이후 진행 중 실행은 어떤 상태도 확정할 수 없다."""
     session_store, ddb = store
-    claim_token = _analyzing_session(session_store)
+    claim_token = _session_at(session_store, "SCOPING")
 
     _apply(ddb, fencing["cancel"])
 
@@ -139,7 +150,7 @@ def test_cancel_stops_the_running_worker_from_writing(store, fencing):
 def test_cancel_waits_for_an_active_side_effect_lease(store, fencing):
     """부작용이 lease 안에 있는 동안에는 취소가 성립하지 않는다."""
     session_store, ddb = store
-    claim_token = _analyzing_session(session_store)
+    claim_token = _session_at(session_store, "REPORT_GENERATION")
     session_store.acquire_side_effect_lease(RCA_ID, claim_token=claim_token, effect_name="report", lease_seconds=600)
 
     # 이미 시작된 외부 쓰기를 중간에서 끊으면 완료 여부를 알 수 없는 상태로 남는다.
@@ -154,7 +165,7 @@ def test_cancel_waits_for_an_active_side_effect_lease(store, fencing):
 def test_delete_is_refused_while_the_session_is_active(store, fencing):
     """활성 세션의 삭제는 fencing 기준 자체를 지우므로 거부된다."""
     session_store, ddb = store
-    claim_token = _analyzing_session(session_store)
+    claim_token = _session_at(session_store, "SCOPING")
 
     with pytest.raises(ClientError) as exc:
         _apply(ddb, fencing["delete"])
@@ -167,7 +178,7 @@ def test_delete_is_refused_while_the_session_is_active(store, fencing):
 def test_delete_is_allowed_once_the_session_is_terminal(store, fencing):
     """최종 상태이고 lease 가 없으면 삭제가 성립한다."""
     session_store, ddb = store
-    claim_token = _analyzing_session(session_store)
+    claim_token = _session_at(session_store, "REPORT_GENERATION")
     session_store.mark_completed(RCA_ID, "root cause", "reports/rca-1.md", claim_token=claim_token)
 
     _apply(ddb, fencing["delete"])
@@ -185,7 +196,7 @@ def test_delete_is_allowed_once_the_session_is_terminal(store, fencing):
 def test_cancel_cannot_walk_back_a_published_report(store, fencing):
     """완료된 분석은 취소로 되돌리지 않는다 — 리포트는 이미 읽을 수 있다."""
     session_store, ddb = store
-    claim_token = _analyzing_session(session_store)
+    claim_token = _session_at(session_store, "REPORT_GENERATION")
     session_store.mark_completed(RCA_ID, "root cause", "reports/rca-1.md", claim_token=claim_token)
 
     with pytest.raises(ClientError) as exc:

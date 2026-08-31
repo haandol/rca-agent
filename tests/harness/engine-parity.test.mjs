@@ -58,6 +58,16 @@ function pythonStringLiterals(source, name) {
   return new Set([...body.matchAll(/"([^"]+)"/g)].map((match) => match[1]));
 }
 
+function pythonTransitionTargets(source, state) {
+  const match = source.match(
+    new RegExp(`"${state}":\\s*\\{([\\s\\S]*?)\\n?\\s*\\},`),
+  );
+  assert.ok(match, `${state} transition entry is missing`);
+  return new Set(
+    [...match[1].matchAll(/"([^"]+)"/g)].map((candidate) => candidate[1]),
+  );
+}
+
 // Execution command classification is deliberately stricter than natural
 // language scoring. Reversible procedures may still use operations that the
 // command boundary conservatively refuses to execute automatically.
@@ -130,6 +140,30 @@ test('both engines share the same active incident identity and lifecycle vocabul
     )?.[1];
   assert.equal(cooldown(agentSettings), cooldown(ccSettings));
   assert.equal(cooldown(agentSettings), '300');
+});
+
+test('both analysis engines enforce the same session state machine', async () => {
+  const [agentStore, headlessStore] = await Promise.all([
+    readRepositoryFile(AGENT_SESSION_STORE),
+    readRepositoryFile(CC_SESSION_STORE),
+  ]);
+  const states = [
+    'ALARM_RECEIVED',
+    'SCOPING',
+    'HYPOTHESIS_GENERATION',
+    'HYPOTHESIS_PRIORITIZATION',
+    'EVIDENCE_COLLECTION',
+    'HYPOTHESIS_VALIDATION',
+    'REPORT_GENERATION',
+  ];
+
+  for (const state of states) {
+    assert.deepEqual(
+      pythonTransitionTargets(headlessStore, state),
+      pythonTransitionTargets(agentStore, state),
+      `${state} transitions diverged between engines`,
+    );
+  }
 });
 
 /**

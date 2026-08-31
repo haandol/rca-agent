@@ -892,6 +892,17 @@ class PipelineOrchestrator:
                 start_time=run.start_time,
                 validation_loop_count=state.loop_count,
             )
+            if (
+                state.termination.reason == TerminationReason.MAX_LOOPS
+                and state.consecutive_blocked_loops >= settings.RCA_EXPANSION_BLOCKED_GRACE_LOOPS
+            ):
+                accepted = [h for h in state.hypotheses if h.status == HypothesisStatus.CONFIRMED]
+                if accepted:
+                    state.termination = TerminationDecision(
+                        should_terminate=True,
+                        reason=TerminationReason.CONFIRMED,
+                        best_hypothesis=max(accepted, key=lambda hypothesis: hypothesis.confidence_score),
+                    )
             s.output_summary = f"종료={state.termination.should_terminate}, 사유={state.termination.reason}"
             s.metadata = {"종료여부": state.termination.should_terminate}
             if state.termination.reason:
@@ -1075,8 +1086,6 @@ class PipelineOrchestrator:
             if termination and termination.reason
             else "분석 종료"
         )
-        best_hid = termination.best_hypothesis.hypothesis_id if termination and termination.best_hypothesis else None
-        terminated_by_confirmed = termination and termination.reason == TerminationReason.CONFIRMED
         judgment_scores = {j.hypothesis_id: j.confidence_score for j in all_judgments}
         for h in hypotheses:
             if h.status not in (
@@ -1084,10 +1093,8 @@ class PipelineOrchestrator:
                 HypothesisStatus.NEEDS_INVESTIGATION,
             ):
                 continue
-            if h.hypothesis_id == best_hid:
-                continue
             score = judgment_scores.get(h.hypothesis_id)
-            should_reject = terminated_by_confirmed or (score is not None and score <= REJECTION_THRESHOLD)
+            should_reject = score is not None and score <= REJECTION_THRESHOLD
             new_status = HypothesisStatus.REJECTED if should_reject else HypothesisStatus.CLOSED
             h.status = new_status
             trace.update_hypothesis_status(

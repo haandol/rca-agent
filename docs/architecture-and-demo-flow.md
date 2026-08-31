@@ -67,7 +67,7 @@ flowchart TD
 
         subgraph TC["Termination Check"]
             T_CHECK["순수 로직 (LLM 미사용)<br/>4가지 종료 조건 OR 평가"]
-            T_CONDS["1. confidence ≥ 0.9 (CONFIRMED)<br/>2. 시간 ≥ 20분 (TIME_BUDGET)<br/>3. tree depth > 5 (MAX_DEPTH)<br/>4. 검증 루프 > 3회 (MAX_LOOPS)"]
+            T_CONDS["1. confidence ≥ 0.9 (CONFIRMED)<br/>2. 시간 ≥ 20분 (TIME_BUDGET)<br/>3. tree depth = 3 (MAX_DEPTH)<br/>4. 검증 루프 = 3회 (MAX_LOOPS)"]
             T_DEC{{"종료?"}}
             T_CHECK --> T_CONDS --> T_DEC
         end
@@ -253,7 +253,7 @@ flowchart LR
 | `RCA_MAX_VALIDATION_LOOPS`         | 3      | 검증 루프 최대 반복           |
 | `RCA_MAX_REGENERATION_ROUNDS`      | 2      | 전체 기각 시 재생성 최대 횟수 |
 | `RCA_TIME_BUDGET_SECONDS`          | 1200   | 시간 예산 (20분)              |
-| `RCA_MAX_TREE_DEPTH`               | 5      | 가설 트리 최대 깊이           |
+| `RCA_MAX_TREE_DEPTH`               | 3      | 가설 트리 최대 깊이           |
 | `TERMINATION_CONFIDENCE_THRESHOLD` | 0.9    | 종료 판단 신뢰도 임계치       |
 | `CONFIRMATION_THRESHOLD`           | 0.8    | CONFIRMED 분류 임계치         |
 | `REJECTION_THRESHOLD`              | 0.3    | REJECTED 분류 임계치          |
@@ -350,9 +350,8 @@ flowchart TD
 
 ### 2.2. 상태 전이 다이어그램
 
-Headless Codex는 두 개의 활성 세션 상태를 유지하고 세부 단계는 claim 조건부
-SPAN/HYPO 레코드로 기록합니다. 완료 세션 중복만 ACK하며 claim 경합이나 소유권
-확인 실패는 SQS 재전달 대상으로 남깁니다.
+Headless Codex는 Strands와 같은 단계 상태를 claim 조건부로 기록합니다. 완료 세션
+중복만 ACK하며 claim 경합이나 소유권 확인 실패는 SQS 재전달 대상으로 남깁니다.
 
 ```mermaid
 stateDiagram-v2
@@ -360,22 +359,26 @@ stateDiagram-v2
 
     ALARM_RECEIVED --> [*]: 완료 세션 중복 → ACK
     ALARM_RECEIVED --> [*]: claim 경합/조회 실패 → 재전달
-    ALARM_RECEIVED --> ANALYZING: 멱등성 체크 통과
+    ALARM_RECEIVED --> SCOPING: 멱등성 체크 통과
     ALARM_RECEIVED --> OUTDATED: Stale 알람 (60분 초과)
 
-    ANALYZING --> COMPLETED: Codex CLI 성공<br/>보고서 S3 저장 + SNS 알림
-    ANALYZING --> FAILED: Codex 오류 / 타임아웃 (60분)
-    ANALYZING --> CANCELLED: 외부 취소 요청 감지<br/>(15초 간격 DDB 폴링)
+    SCOPING --> HYPOTHESIS_GENERATION
+    HYPOTHESIS_GENERATION --> HYPOTHESIS_PRIORITIZATION
+    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION
+    EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION
+    HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 다음 검증 루프
+    HYPOTHESIS_VALIDATION --> HYPOTHESIS_GENERATION: 전체 기각 재생성
+    HYPOTHESIS_VALIDATION --> REPORT_GENERATION: 서버 종료 판정
+    REPORT_GENERATION --> COMPLETED: 보고서 S3 저장 + SNS 알림
 
     OUTDATED --> [*]
 
-    note right of ANALYZING
+    note right of HYPOTHESIS_VALIDATION
         Codex CLI subprocess 실행 중
-        Artifact Watcher가 /tmp 감시
-        산출물 파일 → DDB SPAN/HYPO 기록:
+        산출물 저장 서버가 상태·판정을 강제:
         · scoping.json → SCOPING 스팬
-        · hypotheses.json → HYPO 레코드
-        · validation-N.json → VALIDATION_LOOP 스팬 + 가설 갱신
+        · hypotheses-{round}.json → HYPO 레코드
+        · validation-N.json → 단계 스팬 + 가설 갱신
         · report.md → REPORT 스팬
         · playbook.json → PLAYBOOK 스팬
     end note
@@ -421,13 +424,13 @@ flowchart TD
 
 ### 2.5. Artifact Watcher 파일 → DDB 매핑
 
-canonical 산출물은 아래 다섯 가지이며 이 표가 전부입니다.
+canonical 산출물은 아래와 같습니다.
 
 | 파일                | DDB 스팬 타입           | 추가 동작                                                              |
 | ------------------- | ----------------------- | ---------------------------------------------------------------------- |
 | `scoping.json`      | `SCOPING`               | —                                                                      |
-| `hypotheses.json`   | `HYPOTHESIS_GENERATION` | HYPO# 레코드 batch write (최대 25개)                                   |
-| `validation-N.json` | `VALIDATION_LOOP`       | HYPO# 레코드 상태 갱신 (confirmed/rejected/closed/needs_investigation) |
+| `hypotheses.json`, `hypotheses-2.json`, `hypotheses-3.json` | `HYPOTHESIS_GENERATION` | 생성 라운드별 HYPO# 레코드 저장 |
+| `validation-1..3.json` | `PRIORITIZATION`·`EVIDENCE_COLLECTION`·`VALIDATION` | 서버 신뢰도 재분류와 HYPO# 상태 갱신 |
 | `report.md`         | `REPORT`                | —                                                                      |
 | `playbook.json`     | `PLAYBOOK`              | failure_type, tags 등 메타데이터 저장                                  |
 

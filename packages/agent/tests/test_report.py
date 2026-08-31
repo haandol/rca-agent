@@ -74,7 +74,7 @@ class TestRunReportGeneration:
             severity="high",
             impact_summary="50% of requests returned 5xx for 15 minutes",
             detection_method="CloudWatch CPUUtilization alarm",
-            root_cause="Memory leak in worker process",
+            root_cause="Model-authored conflicting root cause",
             temporary_mitigation="Restart tasks",
             permanent_remediation="Fix memory leak in v2.3.1",
             action_items=["[prevent] Add memory limit alerts", "[process] Update runbook"],
@@ -92,7 +92,10 @@ class TestRunReportGeneration:
         assert report.severity == "high"
         assert report.impact_summary == "50% of requests returned 5xx for 15 minutes"
         assert report.detection_method == "CloudWatch CPUUtilization alarm"
+        assert report.root_cause == _make_hypothesis().description
         assert report.root_cause_confirmed
+        assert report.selected_hypothesis_id == "h-1"
+        assert report.selected_hypothesis_title == _make_hypothesis().description
         assert report.temporary_mitigation == "Restart tasks"
         assert len(report.action_items) == 2
         assert report.lessons_learned == "Detection was fast but escalation was delayed"
@@ -161,6 +164,8 @@ class TestRenderMarkdown:
             root_cause="Memory leak",
             root_cause_confirmed=True,
             confidence_score=0.9,
+            selected_hypothesis_id="h-1",
+            selected_hypothesis_title="Worker memory leak",
             hypothesis_path=["h-1"],
             evidence_list=["high CPU"],
             temporary_mitigation="Restart",
@@ -173,6 +178,8 @@ class TestRenderMarkdown:
         md = _render_markdown(report, _make_playbook())
         assert "# RCA Report: rca-1" in md
         assert "Memory leak" in md
+        assert "`h-1`" in md
+        assert "Worker memory leak" in md
         assert "Confirmed" in md
         assert "Restart" in md
         assert "**Severity**: high" in md

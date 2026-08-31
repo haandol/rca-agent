@@ -21,5 +21,5 @@
 
 최종적으로 현재 실행에 다음 산출물이 있어야 한다.
 
-1. RCA: `scoping.json`, `hypotheses.json`, `validation-{N}.json`
+1. RCA: `scoping.json`, 초기 `hypotheses.json`, 필요 시 `hypotheses-2.json`·`hypotheses-3.json`, `validation-1..3.json`
 2. Report: `report.md`, `playbook.json`

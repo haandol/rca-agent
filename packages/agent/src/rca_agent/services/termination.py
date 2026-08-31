@@ -56,16 +56,16 @@ def check_termination(
         )
 
     current_max_depth = max((h.depth for h in hypotheses), default=0)
-    if current_max_depth > effective_max_depth:
-        logger.warning("Termination: max tree depth exceeded (%d > %d)", current_max_depth, effective_max_depth)
+    if current_max_depth >= effective_max_depth:
+        logger.warning("Termination: max tree depth reached (%d >= %d)", current_max_depth, effective_max_depth)
         return TerminationDecision(
             should_terminate=True,
             reason=TerminationReason.MAX_DEPTH,
             best_hypothesis=_best_hypothesis(judgments, hypotheses),
         )
 
-    if validation_loop_count > max_loops:
-        logger.warning("Termination: max validation loops exceeded (%d > %d)", validation_loop_count, max_loops)
+    if validation_loop_count >= max_loops:
+        logger.warning("Termination: max validation loops reached (%d >= %d)", validation_loop_count, max_loops)
         return TerminationDecision(
             should_terminate=True,
             reason=TerminationReason.MAX_LOOPS,

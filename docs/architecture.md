@@ -157,8 +157,8 @@ stateDiagram-v2
         종료 조건 (OR):
         1. confidence ≥ 0.9 (CONFIRMED)
         2. 시간 ≥ 20분
-        3. tree depth > 5
-        4. 검증 루프 > 3회
+        3. tree depth = 3
+        4. 검증 루프 = 3회
     end note
 
     BRANCHING --> HYPOTHESIS_PRIORITIZATION: 새 하위 가설 추가
@@ -181,14 +181,19 @@ RCA와 Report 두 전문 서브 에이전트만 순서대로 호출합니다. �
 stateDiagram-v2
     [*] --> SQS_RECEIVED: SQS Long Polling
     SQS_RECEIVED --> CLAIM: 세션 claim 요청
-    CLAIM --> ANALYZING: 신규 claim 또는 안전한 reclaim
+    CLAIM --> SCOPING: 신규 claim 또는 안전한 reclaim
     CLAIM --> SKIP: 완료 세션 중복
     CLAIM --> RETRY: 경합 또는 소유권 확인 실패
-    ANALYZING --> RCA: 읽기 전용 RCA specialist
-    RCA --> REPORT: 스코핑·가설·검증 산출물
-    REPORT --> COMPLETION_GATE: 산출물 교차 검증
+    SCOPING --> HYPOTHESIS_GENERATION
+    HYPOTHESIS_GENERATION --> HYPOTHESIS_PRIORITIZATION
+    HYPOTHESIS_PRIORITIZATION --> EVIDENCE_COLLECTION
+    EVIDENCE_COLLECTION --> HYPOTHESIS_VALIDATION
+    HYPOTHESIS_VALIDATION --> HYPOTHESIS_PRIORITIZATION: 다음 루프
+    HYPOTHESIS_VALIDATION --> HYPOTHESIS_GENERATION: 전체 기각 재생성
+    HYPOTHESIS_VALIDATION --> REPORT_GENERATION: 서버 종료 판정
+    REPORT_GENERATION --> COMPLETION_GATE: 산출물 교차 검증
     COMPLETION_GATE --> COMPLETED: 보고서 저장 + 알림
-    ANALYZING --> FAILED: Codex 오류 / 타임아웃
+    SCOPING --> FAILED: Codex 오류 / 타임아웃
     COMPLETED --> [*]
     FAILED --> [*]
     SKIP --> [*]
@@ -197,11 +202,13 @@ stateDiagram-v2
 
 Codex CLI는 비영속 세션과 엄격한 MCP 설정으로 호출됩니다. 세션 claim을 잃은 실행은
 상태와 trace를 기록할 수 없고, S3·SNS 같은 외부 쓰기는 claim에 종속된 부작용
-lease 안에서만 시작합니다. 완료 게이트는 보고서와 플레이북의 상태·원인 참조가
-일치하는지, 그리고 플레이북의 `verification_status`가 `DRAFT`인지 확인합니다.
+lease 안에서만 시작합니다. 완료 게이트는 신뢰도·증거·루프·재생성 계약과 가설
+종결을 서버에서 판정합니다. 근본 원인과 대응 플레이북 섹션은 검증 산출물과
+구조화 플레이북에서 렌더링합니다.
 
-산출물은 `scoping.json`, `hypotheses.json`, `validation-{N}.json`, `playbook.json`,
-`report.md` 다섯 가지입니다.
+산출물은 `scoping.json`, 초기 `hypotheses.json`, 재생성 시
+`hypotheses-2.json`·`hypotheses-3.json`, `validation-1..3.json`,
+`playbook.json`, `report.md`입니다.
 
 ## Playbook Execution — 사용자 승인 기반 실행 에이전트
 

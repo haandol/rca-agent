@@ -93,8 +93,21 @@ class InvalidStateTransitionError(Exception):
 
 
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "ALARM_RECEIVED": {"ANALYZING", "FAILED", "OUTDATED", "CANCELLED"},
-    "ANALYZING": {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"},
+    "ALARM_RECEIVED": {"SCOPING", "FAILED", "OUTDATED", "CANCELLED"},
+    "SCOPING": {"HYPOTHESIS_GENERATION", "FAILED", "OUTDATED", "CANCELLED"},
+    "HYPOTHESIS_GENERATION": {"HYPOTHESIS_PRIORITIZATION", "FAILED", "OUTDATED", "CANCELLED"},
+    "HYPOTHESIS_PRIORITIZATION": {"EVIDENCE_COLLECTION", "FAILED", "OUTDATED", "CANCELLED"},
+    "EVIDENCE_COLLECTION": {"HYPOTHESIS_VALIDATION", "FAILED", "OUTDATED", "CANCELLED"},
+    "HYPOTHESIS_VALIDATION": {
+        "HYPOTHESIS_PRIORITIZATION",
+        "EVIDENCE_COLLECTION",
+        "HYPOTHESIS_GENERATION",
+        "REPORT_GENERATION",
+        "FAILED",
+        "OUTDATED",
+        "CANCELLED",
+    },
+    "REPORT_GENERATION": {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"},
 }
 
 _TERMINAL_STATES = {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"}
@@ -722,6 +735,16 @@ class DynamoDbSessionStore(SessionStorePort):
                 raise SessionCancelledError(rca_id) from e
             raise
 
+    def get_state(self, rca_id: str, *, claim_token: str) -> str:
+        if not DYNAMODB_TABLE_NAME or not self._ddb:
+            return ""
+        item = self._get_session(rca_id)
+        if item is None:
+            raise SessionOwnershipCheckError(f"{rca_id}: session item is missing")
+        if item.get("claim_token", {}).get("S") != claim_token:
+            raise SessionCancelledError(rca_id)
+        return item.get("state", {}).get("S", "")
+
     def mark_completed(
         self,
         rca_id: str,
@@ -863,14 +886,14 @@ class DynamoDbSessionStore(SessionStorePort):
                     "side_effect_lease_expires_at = :expires, updated_at = :now"
                 ),
                 ConditionExpression=(
-                    "attribute_exists(SK) AND claim_token = :claim AND #state = :analyzing AND "
+                    "attribute_exists(SK) AND claim_token = :claim AND #state = :report_generation AND "
                     "(attribute_not_exists(side_effect_lease_expires_at) "
                     "OR side_effect_lease_expires_at < :now_epoch)"
                 ),
                 ExpressionAttributeNames={"#state": "state"},
                 ExpressionAttributeValues={
                     ":claim": {"S": claim_token},
-                    ":analyzing": {"S": "ANALYZING"},
+                    ":report_generation": {"S": "REPORT_GENERATION"},
                     ":lease": {"S": lease_token},
                     ":effect": {"S": effect_name},
                     ":expires": {"N": str(now_epoch + max(lease_seconds, 1))},

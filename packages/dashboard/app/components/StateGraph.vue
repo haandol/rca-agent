@@ -22,7 +22,7 @@ const props = defineProps<{
   engine: string;
 }>();
 
-const STRANDS_TRANSITIONS: Record<string, string[]> = {
+const ANALYSIS_TRANSITIONS: Record<string, string[]> = {
   ALARM_RECEIVED: ['SCOPING'],
   SCOPING: ['HYPOTHESIS_GENERATION'],
   HYPOTHESIS_GENERATION: ['HYPOTHESIS_PRIORITIZATION'],
@@ -37,12 +37,7 @@ const STRANDS_TRANSITIONS: Record<string, string[]> = {
   REPORT_GENERATION: ['COMPLETED'],
 };
 
-const HEADLESS_TRANSITIONS: Record<string, string[]> = {
-  ALARM_RECEIVED: ['ANALYZING'],
-  ANALYZING: ['COMPLETED'],
-};
-
-const STRANDS_HAPPY_PATH = [
+const ANALYSIS_HAPPY_PATH = [
   'ALARM_RECEIVED',
   'SCOPING',
   'HYPOTHESIS_GENERATION',
@@ -53,14 +48,7 @@ const STRANDS_HAPPY_PATH = [
   'COMPLETED',
 ];
 
-const HEADLESS_HAPPY_PATH = ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'];
-
-const isHeadlessEngine = computed(
-  () =>
-    props.engine === 'headless-codex' ||
-    props.engine === 'codex-headless' ||
-    props.engine === 'cc-headless',
-);
+const LEGACY_HEADLESS_HAPPY_PATH = ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'];
 
 // 성공 종료(COMPLETED)는 해피 패스 안에서 이미 그려지므로, 그래프가 따로 배치하는
 // 종료 상태는 중단 경로뿐이다. 노드 생성·레이아웃 제외·배치가 모두 같은 목록을 봐야
@@ -69,10 +57,14 @@ const abortStates = TERMINAL_STATES.filter((s) => s !== 'COMPLETED');
 const abortStateSet = new Set<string>(abortStates);
 
 const happyPath = computed(() =>
-  isHeadlessEngine.value ? HEADLESS_HAPPY_PATH : STRANDS_HAPPY_PATH,
+  props.currentState === 'ANALYZING'
+    ? LEGACY_HEADLESS_HAPPY_PATH
+    : ANALYSIS_HAPPY_PATH,
 );
 const transitions = computed(() =>
-  isHeadlessEngine.value ? HEADLESS_TRANSITIONS : STRANDS_TRANSITIONS,
+  props.currentState === 'ANALYZING'
+    ? { ALARM_RECEIVED: ['ANALYZING'], ANALYZING: ['COMPLETED'] }
+    : ANALYSIS_TRANSITIONS,
 );
 const pipelineStates = computed(() =>
   happyPath.value.filter((s) => !isTerminalState(s)),
@@ -147,13 +139,14 @@ const graph = computed(() => {
     });
   }
 
-  const loopEdges: [string, string, string][] = isHeadlessEngine.value
-    ? []
-    : [
-        ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_GENERATION', '재생성'],
-        ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_PRIORITIZATION', '재우선순위'],
-        ['HYPOTHESIS_VALIDATION', 'EVIDENCE_COLLECTION', '추가 증거'],
-      ];
+  const loopEdges: [string, string, string][] =
+    props.currentState === 'ANALYZING'
+      ? []
+      : [
+          ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_GENERATION', '재생성'],
+          ['HYPOTHESIS_VALIDATION', 'HYPOTHESIS_PRIORITIZATION', '재우선순위'],
+          ['HYPOTHESIS_VALIDATION', 'EVIDENCE_COLLECTION', '추가 증거'],
+        ];
   for (const [from, to, label] of loopEdges) {
     edges.push({
       id: `e-loop-${from}-${to}`,

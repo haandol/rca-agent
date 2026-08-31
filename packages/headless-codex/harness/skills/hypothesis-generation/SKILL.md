@@ -11,7 +11,7 @@ RCA 전문 에이전트는:
 
 1. 스코핑 결과를 입력받아 **3-5개** 근본원인 가설을 생성한다
 2. 각 가설에 UUID를 부여한다
-3. rca-progress MCP의 `save_analysis_artifact`로 `hypotheses.json`을 현재 실행에 저장한다 (Python watcher가 파일을 감지해 DDB에 스팬·HYPO 아이템을 기록한다)
+3. rca-progress MCP의 `save_analysis_artifact`로 첫 라운드는 `hypotheses.json`에 저장한다
 
 ## 가설 구조
 
@@ -56,7 +56,8 @@ RCA 전문 에이전트는:
 1. 기각된 가설 목록을 참고한다
 2. 기각된 방향과 **다른 관점**에서 새 가설을 생성한다
 3. 새 `tree_id`를 발급한다
-4. 동일하게 `save_analysis_artifact("hypotheses.json", ...)` 호출
+4. 두 번째 라운드는 `hypotheses-2.json`, 세 번째 라운드는 `hypotheses-3.json`에 저장한다
+5. 이전 hypotheses 파일과 validation 파일을 덮어쓰지 않는다
 
 ## MCP 호출 예시
 

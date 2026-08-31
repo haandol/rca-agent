@@ -53,23 +53,17 @@ flowchart LR
 
 4. **상태 머신 기반 전이 검증**: 각 엔진은 허용된 상태 전이 집합을 정의하고, 전이 전에 현재 상태에서 목표 상태로의 이동이 허용되는지 검증한다. 허용되지 않은 전이는 거부한다. 저장소의 조건부 쓰기 가드는 동시성 보호를 위해 그대로 유지하고, 상태 머신은 그 위에서 논리적 검증 계층으로 동작한다 — 조건부 쓰기는 "누가 쓰는가"를 지키고 상태 머신은 "무엇으로 갈 수 있는가"를 지키므로 둘 중 하나만으로는 부족하다.
 
-   **Strands 엔진 상태 전이**:
+   **공통 분석 상태 전이**:
 
    ```
    ALARM_RECEIVED → SCOPING → HYPOTHESIS_GENERATION → HYPOTHESIS_PRIORITIZATION
    → EVIDENCE_COLLECTION → HYPOTHESIS_VALIDATION → REPORT_GENERATION → COMPLETED
    ```
+   - Strands와 Headless Codex는 같은 상태 집합과 허용 전이를 사용
    - HYPOTHESIS_VALIDATION에서 전체 기각 시 HYPOTHESIS_GENERATION으로 재진입 가능
+   - HYPOTHESIS_VALIDATION에서 다음 루프 시 HYPOTHESIS_PRIORITIZATION으로 재진입 가능
    - HYPOTHESIS_VALIDATION에서 추가 증거 필요 시 EVIDENCE_COLLECTION으로 재진입 가능
    - 모든 non-terminal 상태에서 FAILED, OUTDATED, CANCELLED로 전이 가능
-
-   **Headless Codex 엔진 상태 전이**:
-
-   ```
-   ALARM_RECEIVED → ANALYZING → COMPLETED
-   ```
-   - ALARM_RECEIVED에서 ANALYZING, FAILED, CANCELLED로 전이 가능
-   - ANALYZING에서 COMPLETED, FAILED, CANCELLED로 전이 가능
 
 5. **엔진 중립 세션의 낙관적 락**: 알람 이름과 `StateChangeTime`으로 만든
    결정적 RCA ID는 같은 이벤트의 재전달만 식별한다. 같은 장애 중에 CloudWatch 상태가

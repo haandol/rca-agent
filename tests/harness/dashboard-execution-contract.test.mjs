@@ -712,25 +712,16 @@ test('the session index stays session-only, and old sessions are backfilled into
   );
 });
 
-test('dashboard state graph selects the engine-specific lifecycle', async () => {
+test('dashboard state graph uses one lifecycle for both analysis engines', async () => {
   const [graphSource, tracePageSource] = await Promise.all([
     readRepositoryFile('packages/dashboard/app/components/StateGraph.vue'),
     readRepositoryFile('packages/dashboard/app/pages/trace/[id].vue'),
   ]);
 
-  assert.match(graphSource, /engine: string/);
-  assert.match(
-    graphSource,
-    /HEADLESS_HAPPY_PATH = \['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'\]/,
-  );
-  assert.match(graphSource, /props\.engine === 'headless-codex'/);
-  assert.match(graphSource, /props\.engine === 'codex-headless'/);
-  assert.match(graphSource, /props\.engine === 'cc-headless'/);
-  assert.match(
-    graphSource,
-    /isHeadlessEngine\.value \? HEADLESS_HAPPY_PATH : STRANDS_HAPPY_PATH/,
-  );
-  assert.match(graphSource, /ANALYZING: \['COMPLETED'\]/);
+  assert.match(graphSource, /ANALYSIS_HAPPY_PATH = \[/);
+  assert.match(graphSource, /HYPOTHESIS_PRIORITIZATION/);
+  assert.match(graphSource, /EVIDENCE_COLLECTION/);
+  assert.match(graphSource, /LEGACY_HEADLESS_HAPPY_PATH/);
   assert.match(tracePageSource, /:engine="trace\.session\.engine"/);
 });
 

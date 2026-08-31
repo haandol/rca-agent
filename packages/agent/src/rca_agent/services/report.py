@@ -115,6 +115,10 @@ def run_report_generation(
             root_cause=best_hypothesis.description if best_hypothesis else "Unknown",
             root_cause_confirmed=confirmed,
             confidence_score=best_hypothesis.confidence_score if best_hypothesis else 0.0,
+            selected_hypothesis_id=best_hypothesis.hypothesis_id if best_hypothesis else "",
+            selected_hypothesis_title=(
+                best_hypothesis.title or best_hypothesis.description.splitlines()[0] if best_hypothesis else ""
+            ),
             hypothesis_path=hypothesis_path,
             evidence_list=evidence_texts,
             rejected_hypotheses=rejected_descriptions,
@@ -128,9 +132,13 @@ def run_report_generation(
         severity=output.severity,
         impact_summary=output.impact_summary,
         detection_method=output.detection_method,
-        root_cause=output.root_cause,
+        root_cause=best_hypothesis.description if best_hypothesis else "Unknown",
         root_cause_confirmed=confirmed,
         confidence_score=best_hypothesis.confidence_score if best_hypothesis else 0.0,
+        selected_hypothesis_id=best_hypothesis.hypothesis_id if best_hypothesis else "",
+        selected_hypothesis_title=(
+            best_hypothesis.title or best_hypothesis.description.splitlines()[0] if best_hypothesis else ""
+        ),
         hypothesis_path=hypothesis_path,
         evidence_list=evidence_texts,
         temporary_mitigation=output.temporary_mitigation,

@@ -63,23 +63,23 @@ class TestCheckTermination:
         assert decision.should_terminate
         assert decision.reason == TerminationReason.TIME_BUDGET
 
-    def test_max_depth_exceeded(self):
+    def test_max_depth_reached(self):
         j = _make_judgment(status=HypothesisStatus.NEEDS_INVESTIGATION, confidence=0.5)
-        h = _make_hypothesis(depth=6)
+        h = _make_hypothesis(depth=3)
 
         decision = check_termination(
-            judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=1, max_depth=5
+            judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=1, max_depth=3
         )
 
         assert decision.should_terminate
         assert decision.reason == TerminationReason.MAX_DEPTH
 
-    def test_max_loops_exceeded(self):
+    def test_third_loop_reaches_the_maximum(self):
         j = _make_judgment(status=HypothesisStatus.NEEDS_INVESTIGATION, confidence=0.5)
         h = _make_hypothesis()
 
         decision = check_termination(
-            judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=4, max_loops=3
+            judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=3, max_loops=3
         )
 
         assert decision.should_terminate

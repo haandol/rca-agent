@@ -290,6 +290,8 @@ class RcaReport(BaseModel):
     root_cause: str
     root_cause_confirmed: bool = True
     confidence_score: float = Field(ge=0.0, le=1.0)
+    selected_hypothesis_id: str = ""
+    selected_hypothesis_title: str = ""
     hypothesis_path: list[str] = Field(default_factory=list)
     five_whys: list[str] = Field(default_factory=list)
     evidence_list: list[str] = Field(default_factory=list)

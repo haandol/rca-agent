@@ -7,6 +7,7 @@ from moto import mock_aws
 
 from headless_codex.adapters.secondary.session import dynamodb_session_store
 from headless_codex.adapters.secondary.session.dynamodb_session_store import (
+    VALID_TRANSITIONS,
     DynamoDbSessionStore,
     SessionCancelledError,
     build_active_incident_pk,
@@ -73,6 +74,22 @@ def _session_item(ddb, table_name: str) -> dict:
     )["Item"]
 
 
+_ANALYSIS_PATH = [
+    "ALARM_RECEIVED",
+    "SCOPING",
+    "HYPOTHESIS_GENERATION",
+    "HYPOTHESIS_PRIORITIZATION",
+    "EVIDENCE_COLLECTION",
+    "HYPOTHESIS_VALIDATION",
+    "REPORT_GENERATION",
+]
+
+
+def _advance_to(store: DynamoDbSessionStore, claim_token: str, target: str) -> None:
+    for state in _ANALYSIS_PATH[1 : _ANALYSIS_PATH.index(target) + 1]:
+        store.update_state("rca-1", state, claim_token=claim_token)
+
+
 def _incident_alarm(
     moment: datetime,
     *,
@@ -97,6 +114,41 @@ def _incident_item(ddb, table_name: str, alarm: IncidentAlarm) -> dict:
         },
         ConsistentRead=True,
     )["Item"]
+
+
+def test_analysis_state_machine_matches_the_shared_pipeline_contract():
+    assert {
+        "ALARM_RECEIVED": {"SCOPING", "FAILED", "OUTDATED", "CANCELLED"},
+        "SCOPING": {"HYPOTHESIS_GENERATION", "FAILED", "OUTDATED", "CANCELLED"},
+        "HYPOTHESIS_GENERATION": {
+            "HYPOTHESIS_PRIORITIZATION",
+            "FAILED",
+            "OUTDATED",
+            "CANCELLED",
+        },
+        "HYPOTHESIS_PRIORITIZATION": {
+            "EVIDENCE_COLLECTION",
+            "FAILED",
+            "OUTDATED",
+            "CANCELLED",
+        },
+        "EVIDENCE_COLLECTION": {
+            "HYPOTHESIS_VALIDATION",
+            "FAILED",
+            "OUTDATED",
+            "CANCELLED",
+        },
+        "HYPOTHESIS_VALIDATION": {
+            "HYPOTHESIS_PRIORITIZATION",
+            "EVIDENCE_COLLECTION",
+            "HYPOTHESIS_GENERATION",
+            "REPORT_GENERATION",
+            "FAILED",
+            "OUTDATED",
+            "CANCELLED",
+        },
+        "REPORT_GENERATION": {"COMPLETED", "FAILED", "OUTDATED", "CANCELLED"},
+    } == VALID_TRANSITIONS
 
 
 class TestActiveIncident:
@@ -407,13 +459,13 @@ class TestActiveIncident:
         assert _claim(store, 2).acquired
 
 
-@pytest.mark.parametrize("state", ["ALARM_RECEIVED", "ANALYZING", "FAILED"])
+@pytest.mark.parametrize("state", ["ALARM_RECEIVED", "SCOPING", "HYPOTHESIS_VALIDATION", "FAILED"])
 def test_redelivery_reclaims_noncompleted_session(session_store, state):
     store, ddb, table_name = session_store
     first_claim = _claim_token(store, 1)
 
-    if state == "ANALYZING":
-        store.update_state("rca-1", "ANALYZING", claim_token=first_claim)
+    if state not in {"ALARM_RECEIVED", "FAILED"}:
+        _advance_to(store, first_claim, state)
     elif state == "FAILED":
         store.mark_failed("rca-1", "first attempt failed", claim_token=first_claim)
 
@@ -457,15 +509,15 @@ def test_redelivery_can_transfer_the_engine_neutral_claim(session_store, monkeyp
 def test_lost_owner_is_cancelled_and_cannot_transition(session_store):
     store, _, _ = session_store
     first_claim = _claim_token(store, 1)
-    store.update_state("rca-1", "ANALYZING", claim_token=first_claim)
+    _advance_to(store, first_claim, "SCOPING")
     second_claim = _claim_token(store, 2)
 
     assert store.is_terminated("rca-1", claim_token=first_claim) is True
     assert store.is_terminated("rca-1", claim_token=second_claim) is False
     with pytest.raises(SessionCancelledError):
-        store.update_state("rca-1", "ANALYZING", claim_token=first_claim)
+        store.update_state("rca-1", "HYPOTHESIS_GENERATION", claim_token=first_claim)
 
-    store.update_state("rca-1", "ANALYZING", claim_token=second_claim)
+    _advance_to(store, second_claim, "SCOPING")
 
 
 @pytest.mark.parametrize("terminal_state", ["COMPLETED", "OUTDATED", "CANCELLED"])
@@ -474,7 +526,7 @@ def test_terminal_session_is_never_reclaimed(session_store, terminal_state):
     claim_token = _claim_token(store, 1)
 
     if terminal_state == "COMPLETED":
-        store.update_state("rca-1", "ANALYZING", claim_token=claim_token)
+        _advance_to(store, claim_token, "REPORT_GENERATION")
         store.mark_completed(
             "rca-1",
             "root cause",
@@ -538,7 +590,7 @@ def test_nonterminal_session_without_claim_metadata_can_be_reclaimed(session_sto
 def test_ownership_read_error_fails_closed(session_store, monkeypatch):
     store, _, _ = session_store
     claim_token = _claim_token(store, 1)
-    store.update_state("rca-1", "ANALYZING", claim_token=claim_token)
+    _advance_to(store, claim_token, "SCOPING")
     monkeypatch.setattr(store, "_get_session", lambda _rca_id: (_ for _ in ()).throw(RuntimeError("DDB down")))
 
     with pytest.raises(SessionOwnershipCheckError):
@@ -548,7 +600,7 @@ def test_ownership_read_error_fails_closed(session_store, monkeypatch):
 def test_active_side_effect_lease_blocks_reclaim_until_release(session_store):
     store, _, _ = session_store
     first_claim = _claim_token(store, 1)
-    store.update_state("rca-1", "ANALYZING", claim_token=first_claim)
+    _advance_to(store, first_claim, "REPORT_GENERATION")
     lease = store.acquire_side_effect_lease(
         "rca-1",
         claim_token=first_claim,
@@ -560,7 +612,7 @@ def test_active_side_effect_lease_blocks_reclaim_until_release(session_store):
 
     store.release_side_effect_lease("rca-1", claim_token=first_claim, lease_token=lease)
     second_claim = _claim_token(store, 2)
-    store.update_state("rca-1", "ANALYZING", claim_token=second_claim)
+    _advance_to(store, second_claim, "SCOPING")
 
     with pytest.raises(SideEffectLeaseUnavailableError):
         store.acquire_side_effect_lease(
@@ -598,7 +650,7 @@ def test_claim_and_side_effect_lease_fail_closed_without_dynamodb(monkeypatch, t
 def test_completion_atomically_persists_authoritative_report_key(session_store):
     store, ddb, table_name = session_store
     claim_token = _claim_token(store, 1)
-    store.update_state("rca-1", "ANALYZING", claim_token=claim_token)
+    _advance_to(store, claim_token, "REPORT_GENERATION")
     lease_token = store.acquire_side_effect_lease(
         "rca-1",
         claim_token=claim_token,

@@ -5,12 +5,15 @@
 - AWS Knowledge, CloudWatch, CloudTrail, GitHub는 읽기 전용으로만 사용한다.
 - `evidence-patterns`, `hypothesis-generation`, `hypothesis-tree`,
   `hypothesis-validation`, `progress-reporting` 스킬을 따른다.
-- `scoping.json`, `hypotheses.json`, `validation-{N}.json`을 단계마다
+- `scoping.json`, 생성 라운드별 hypotheses 파일, `validation-1..3.json`을 단계마다
   `save_analysis_artifact`로 저장한다. 리포트·플레이북을 저장하는 도구는 없다.
+- validation 저장 응답의 서버 `decision`만 다음 단계와 종료 여부의 권위로 사용한다.
+- 서버가 `REGENERATE`를 반환하면 `hypotheses-2.json`, `hypotheses-3.json` 순서로
+  새 라운드를 저장하고 이전 산출물을 덮어쓰지 않는다.
 - 각 hypothesis의 `fault_type`을 `db-leak`, `high-cpu`, `high-memory`,
   `slow-query`, `unsupported` 중 하나로 기록한다.
 - 마지막 validation의 `confirmed`는 증거로 확정된 가설만 포함한다.
-- confirmed 항목의 `fault_type`은 참조하는 hypothesis의 enum 값과 같아야 한다.
+- confirmed 후보의 `fault_type`은 초기 hypothesis 힌트와 독립적으로 증거에서 판정한다.
 - 모든 가설이 미확정이면 `confirmed`를 빈 배열로 유지한다.
 - 증거마다 current alarm window 또는 historical comparison window와 관측 시각을
   표시한다.

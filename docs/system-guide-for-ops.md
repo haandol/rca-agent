@@ -346,7 +346,7 @@ graph LR
 | **에이전트 프레임워크** | Strands Agents SDK (Python)                               | Codex CLI (Node.js)          |
 | **RCA 방식**            | 9단계 파이프라인 (코드로 정의)                            | RCA·Report 전문 에이전트 순차 실행 |
 | **AI 모델**             | Sonnet 5 (Planning은 adaptive thinking)                   | Global `gpt-5.6-sol`, reasoning `high` |
-| **분석 깊이**           | 가설 트리 탐색 (depth 최대 5)                             | 프롬프트 기반 (depth 최대 3)       |
+| **분석 깊이**           | 가설 트리 탐색 (depth 최대 3)                             | 서버 계약 기반 (depth 최대 3)      |
 | **플레이북**            | 생성 + S3 Vectors 인덱싱 (search-first)                   | Report 전문 에이전트가 생성        |
 | **쓰기 권한**           | 없음 (읽기 전용 분석)                                     | 없음 (읽기 전용 분석)              |
 | **조치 실행**           | 두 엔진 공통 — 사용자 승인 후 별도 실행 스택이 수행 (8장) |
@@ -416,7 +416,7 @@ graph LR
     subgraph Conditions["종료 조건 (OR 연산)"]
         C1["✅ 가설 confidence ≥ 0.9<br/>(근본 원인 확정)"]
         C2["⏰ 분석 시간 ≥ 20분 (RCA_TIME_BUDGET_SECONDS)"]
-        C3["🌲 가설 트리 깊이 > 5 (RCA_MAX_TREE_DEPTH)"]
+        C3["🌲 가설 트리 깊이 3 도달"]
         C4["🔄 검증 루프 > 3회 (RCA_MAX_VALIDATION_LOOPS)"]
         C5["❌ 전체 가설 기각<br/>(재생성 최대 2회 후)"]
         C6["🛑 Accepted Review Gate 차단<br/>(연속 grace loops 초과)"]
@@ -534,8 +534,8 @@ flowchart TD
 - Headless Codex는 역할별 전문 에이전트를 프롬프트 계약으로 분리하고 서버가 산출물
   계약과 완료 조건을 강제
 - claim을 잃거나 DynamoDB 소유권을 확인하지 못한 실행은 외부 쓰기를 시작하지 않음
-- 산출물은 `scoping.json`, `hypotheses.json`, `validation-{N}.json`, `playbook.json`,
-  `report.md` 다섯 가지이며 이 목록이 전부
+- 산출물은 `scoping.json`, 초기 `hypotheses.json`, 재생성 라운드 파일,
+  최대 세 개의 validation, `playbook.json`, `report.md`
 
 ---
 
@@ -963,7 +963,7 @@ sequenceDiagram
 
 RCA 세션의 생명주기를 DynamoDB에서 추적합니다. 두 엔진 모두 같은 테이블을 공유하며, 플레이북 실행도 같은 테이블에 별도 생명주기로 기록됩니다.
 
-### Fargate 세션 상태 전이
+### 공통 분석 세션 상태 전이
 
 ```mermaid
 stateDiagram-v2
@@ -991,28 +991,9 @@ stateDiagram-v2
     OUTDATED --> [*]
 ```
 
-### Headless Codex 세션 상태 전이
-
-```mermaid
-stateDiagram-v2
-    [*] --> ALARM_RECEIVED: SQS Event Source
-
-    ALARM_RECEIVED --> ANALYZING: 세션 생성
-    ALARM_RECEIVED --> [*]: 중복 감지 → 스킵
-
-    ANALYZING --> COMPLETED: Codex 성공 → 보고서 + 알림
-    ANALYZING --> FAILED: Codex 오류 / 타임아웃 / SIGTERM
-    ANALYZING --> CANCELLED: 대시보드 취소
-
-    ALARM_RECEIVED --> OUTDATED: 알람 나이 > 60분
-
-    COMPLETED --> [*]
-    FAILED --> [*]
-    CANCELLED --> [*]
-    OUTDATED --> [*]
-```
-
-두 엔진의 세션 상태에 REMEDIATION이나 VERIFICATION은 없습니다. 분석이 복구를 수행하지 않기 때문입니다.
+Headless Codex도 위 단계 상태와 허용 전이를 사용합니다. 엔진별 차이는 시간 예산과
+내부 모델 오케스트레이션이며 상태의 의미는 같습니다. 두 엔진의 분석 세션 상태에
+REMEDIATION이나 VERIFICATION은 없습니다. 분석이 복구를 수행하지 않기 때문입니다.
 
 ### 오래된 알람 건너뛰기 (OUTDATED)
 

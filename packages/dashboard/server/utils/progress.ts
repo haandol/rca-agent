@@ -33,20 +33,22 @@ const SPAN_TYPE_TO_STATE: Record<string, string> = {
  * the server deciding which of several spans is furthest, and it must not start
  * depending on render-side code.
  */
+const ANALYSIS_TRACK = [
+  'ALARM_RECEIVED',
+  'SCOPING',
+  'HYPOTHESIS_GENERATION',
+  'HYPOTHESIS_PRIORITIZATION',
+  'EVIDENCE_COLLECTION',
+  'HYPOTHESIS_VALIDATION',
+  'REPORT_GENERATION',
+  'COMPLETED',
+] as const;
+
 const TRACK: Record<string, readonly string[]> = {
-  strands: [
-    'ALARM_RECEIVED',
-    'SCOPING',
-    'HYPOTHESIS_GENERATION',
-    'HYPOTHESIS_PRIORITIZATION',
-    'EVIDENCE_COLLECTION',
-    'HYPOTHESIS_VALIDATION',
-    'REPORT_GENERATION',
-    'COMPLETED',
-  ],
-  'headless-codex': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
-  'codex-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
-  'cc-headless': ['ALARM_RECEIVED', 'ANALYZING', 'COMPLETED'],
+  strands: ANALYSIS_TRACK,
+  'headless-codex': ANALYSIS_TRACK,
+  'codex-headless': ANALYSIS_TRACK,
+  'cc-headless': ANALYSIS_TRACK,
 };
 
 export function isSpanSortKey(sortKey: string): boolean {
@@ -67,18 +69,6 @@ export function furthestStage(
   let best = -1;
 
   for (const span of spans) {
-    // The headless engines record the same span vocabulary but run the whole analysis
-    // as one stage, so any work it logged means it had reached ANALYZING.
-    if (
-      engine === 'headless-codex' ||
-      engine === 'codex-headless' ||
-      engine === 'cc-headless'
-    ) {
-      if (SPAN_TYPE_TO_STATE[span.spanType]) {
-        best = Math.max(best, track.indexOf('ANALYZING'));
-      }
-      continue;
-    }
     const state = SPAN_TYPE_TO_STATE[span.spanType];
     if (!state) continue;
     best = Math.max(best, track.indexOf(state));

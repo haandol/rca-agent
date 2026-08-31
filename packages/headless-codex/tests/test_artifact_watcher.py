@@ -207,7 +207,10 @@ def test_watcher_write_uses_transactional_current_claim_condition(monkeypatch):
     )
 
     items = ddb.transact_write_items.call_args.kwargs["TransactItems"]
-    assert items[0]["ConditionCheck"]["ExpressionAttributeValues"][":claim"]["S"] == CLAIM_TOKEN
+    condition = items[0]["ConditionCheck"]
+    assert condition["ExpressionAttributeValues"][":claim"]["S"] == CLAIM_TOKEN
+    assert condition["ExpressionAttributeNames"] == {"#state": "state"}
+    assert "NOT #state IN" in condition["ConditionExpression"]
     assert items[1]["Put"]["Item"]["span_type"]["S"] == "REPORT"
 
 

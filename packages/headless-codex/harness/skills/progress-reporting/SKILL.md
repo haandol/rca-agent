@@ -21,7 +21,8 @@ DynamoDB를 직접 수정하지 않는다. Python watcher가 저장된 산출물
 
 - `scoping.json`
 - `hypotheses.json`
-- `validation-{N}.json` (`N`은 1 이상의 정수)
+- `hypotheses-2.json`, `hypotheses-3.json` (서버가 재생성을 요청한 경우)
+- `validation-{N}.json` (`N`은 1~3의 연속 정수)
 
 ### `save_report_artifact(filename, content)` — 보고 역할
 
@@ -39,6 +40,12 @@ section에 정의된 스키마를 따라야 한다. 경로, 하위 디렉터리,
 
 ## 호출 순서
 
-각 단계를 완료한 직후 해당 산출물을 저장한다. 현재 실행에서 같은 파일을 보강해 다시
-저장하면 watcher가 변경을 감지해 최신 내용을 다시 처리한다. 최종 보고서는 반드시
+각 단계를 완료한 직후 해당 산출물을 저장한다. validation 저장 응답의
+`decision.action`을 다음 단계의 유일한 권위로 사용한다.
+
+- `CONTINUE`: 다음 연속 번호 validation을 수행한다. `expansion_blocked=true`이면 분기하지 않는다.
+- `REGENERATE`: 기존 파일을 덮어쓰지 말고 다음 `hypotheses-{round}.json`을 저장한다.
+- `REPORT`: RCA를 끝내고 Report 전문 에이전트로 넘긴다.
+
+저장 서버는 세션 상태를 Strands와 같은 단계 상태로 전이한다. 최종 보고서는 반드시
 `report.md`로 저장해야 세션이 완료될 수 있다.

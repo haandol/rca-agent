@@ -188,10 +188,12 @@ test('a stopped run says which stage it stopped at', () => {
   assert.match(late, /보고서 생성/);
   assert.match(late, /7\/8단계/);
 
-  // Nothing recorded, or a stage off this engine's track, admits to nothing
-  // rather than inventing a position.
+  // Nothing recorded admits to nothing. Both engines share the same track.
   assert.equal(stoppedAtLabel('strands', ''), '');
-  assert.equal(stoppedAtLabel('headless-codex', 'EVIDENCE_COLLECTION'), '');
+  assert.match(
+    stoppedAtLabel('headless-codex', 'EVIDENCE_COLLECTION'),
+    /증거 수집/,
+  );
 });
 
 test('the furthest span decides the stage, whatever order the spans arrive in', () => {
@@ -219,14 +221,12 @@ test('the furthest span decides the stage, whatever order the spans arrive in', 
   );
   assert.equal(furthestStage([], 'strands'), '');
 
-  // Headless Codex runs the analysis as one stage, so any work means ANALYZING —
-  // not a Strands stage name it never enters.
   assert.equal(
     furthestStage(
       [{ spanType: 'REPORT', engine: 'headless-codex' }],
       'headless-codex',
     ),
-    'ANALYZING',
+    'REPORT_GENERATION',
   );
 });
 

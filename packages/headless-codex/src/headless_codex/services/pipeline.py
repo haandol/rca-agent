@@ -24,7 +24,6 @@ from headless_codex.ports.interfaces.session_store import (
     SessionOwnershipCheckError,
 )
 from headless_codex.services.artifact_validation import ArtifactValidationError, validate_completion_artifacts
-from headless_codex.services.artifact_watcher import start_watcher
 from headless_codex.services.execution_context import ExecutionContext
 from headless_codex.services.playbook_merge import (
     PLAYBOOK_DRAFT,
@@ -237,22 +236,13 @@ class PipelineOrchestrator:
         alarm = parse_alarm(alarm_data)
         execution = ExecutionContext.create(rca_id)
         artifact_dir = execution.prepare()
-        watcher_thread = None
-        watcher_stop = None
         side_effect_lease_token = None
         ownership_check_failed = Event()
 
         try:
-            store.update_state(rca_id, "ANALYZING", claim_token=claim_token)
+            store.update_state(rca_id, "SCOPING", claim_token=claim_token)
             prompt = build_prompt(alarm)
             log.info("cc_analysis_started")
-
-            watcher_thread, watcher_stop = start_watcher(
-                artifact_dir,
-                rca_id,
-                claim_token,
-                c.dynamodb_client,
-            )
 
             def _should_cancel() -> bool:
                 if self._shutdown_event.is_set():
@@ -272,11 +262,6 @@ class PipelineOrchestrator:
                 attempt=attempt,
             )
             elapsed_seconds = int(time.time() - start_time)
-
-            watcher_stop.set()
-            watcher_thread.join(timeout=10)
-            watcher_stop = None
-            watcher_thread = None
 
             if ownership_check_failed.is_set():
                 log.error("ownership_check_failed_during_execution")
@@ -317,7 +302,7 @@ class PipelineOrchestrator:
                 )
                 return False
 
-            root_cause_line = extract_root_cause(artifacts.report_markdown)
+            root_cause_line = artifacts.root_cause
             side_effect_lease_token = store.acquire_side_effect_lease(
                 rca_id,
                 claim_token=claim_token,
@@ -387,10 +372,6 @@ class PipelineOrchestrator:
                 log.exception("mark_failed_after_pipeline_error_failed")
             return False
         finally:
-            if watcher_stop is not None:
-                watcher_stop.set()
-            if watcher_thread is not None:
-                watcher_thread.join(timeout=10)
             execution.cleanup()
 
     def _process_playbook(

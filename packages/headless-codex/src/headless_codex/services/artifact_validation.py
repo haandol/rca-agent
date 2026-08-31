@@ -5,9 +5,15 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from headless_codex.services.fault_taxonomy import FaultType, parse_fault_type
+from headless_codex.services.analysis_contract import (
+    AnalysisContractError,
+    AnalysisResult,
+    generation_round_for_filename,
+    replay_analysis,
+    validate_analysis_completion,
+)
+from headless_codex.services.fault_taxonomy import FaultType
 
-_VALIDATION_NAME = re.compile(r"validation-([1-9][0-9]*)\.json")
 _ISO_TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
     re.IGNORECASE,
@@ -65,13 +71,10 @@ class CompletionArtifacts:
     report_markdown: str
     playbook: dict
     confirmed: bool
-
-
-@dataclass(frozen=True)
-class _HypothesisContext:
-    fault_type: FaultType
-    tree_id: str
-    depth: int
+    root_cause: str = ""
+    selected_hypothesis_id: str = ""
+    confidence: float = 0.0
+    root_fault_type: FaultType = FaultType.UNSUPPORTED
 
 
 def _load_object(path: Path, label: str) -> dict:
@@ -140,194 +143,22 @@ def _validate_scoping(base: Path) -> None:
     _validate_scoping_shape(_load_object(base / "scoping.json", "scoping.json"))
 
 
-def _validate_hypotheses(base: Path) -> tuple[dict[str, _HypothesisContext], str]:
-    artifact = _load_object(base / "hypotheses.json", "hypotheses.json")
-    _require_fields(artifact, strings=("stage", "tree_id", "summary", "output_summary"), lists=("hypotheses",))
-    if artifact["stage"] != "HYPOTHESIS_GENERATION" or not artifact["hypotheses"]:
-        raise ArtifactValidationError("hypotheses.json must contain generated hypotheses")
-
-    hypotheses_by_id: dict[str, _HypothesisContext] = {}
-    parent_by_id: dict[str, str | None] = {}
-    for hypothesis in artifact["hypotheses"]:
-        if not isinstance(hypothesis, dict):
-            raise ArtifactValidationError("hypotheses.json entries must be objects")
-        _require_fields(
-            hypothesis,
-            strings=("hypothesis_id", "tree_id", "title", "description", "category", "status", "fault_type"),
-            lists=("required_evidence",),
-        )
-        fault_type = parse_fault_type(hypothesis["fault_type"])
-        if fault_type is None:
-            raise ArtifactValidationError("hypothesis fault_type is invalid")
-        if hypothesis["hypothesis_id"] in hypotheses_by_id:
-            raise ArtifactValidationError("hypotheses.json hypothesis_id values must be unique")
-        confidence = hypothesis.get("confidence_score")
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-            raise ArtifactValidationError("hypothesis confidence_score must be between 0 and 1")
-        depth = hypothesis.get("depth")
-        if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
-            raise ArtifactValidationError("hypothesis depth must be a non-negative integer")
-        if hypothesis["tree_id"] != artifact["tree_id"]:
-            raise ArtifactValidationError("hypothesis tree_id must match hypotheses.json tree_id")
-        if any(not isinstance(item, str) or not item.strip() for item in hypothesis["required_evidence"]):
-            raise ArtifactValidationError("hypothesis required_evidence entries must be non-empty strings")
-        parent_id = hypothesis.get("parent_id")
-        if parent_id is not None and (not isinstance(parent_id, str) or not parent_id.strip()):
-            raise ArtifactValidationError("hypothesis parent_id must be null or a non-empty string")
-        hypotheses_by_id[hypothesis["hypothesis_id"]] = _HypothesisContext(
-            fault_type=fault_type,
-            tree_id=hypothesis["tree_id"],
-            depth=depth,
-        )
-        parent_by_id[hypothesis["hypothesis_id"]] = parent_id
-    if any(parent_id not in hypotheses_by_id for parent_id in parent_by_id.values() if parent_id is not None):
-        raise ArtifactValidationError("hypothesis parent_id references an unknown hypothesis")
-    return hypotheses_by_id, artifact["tree_id"]
-
-
-def _validation_candidates(base: Path, through_loop_index: int | None = None) -> list[tuple[int, Path]]:
-    candidates: list[tuple[int, Path]] = []
-    for path in base.iterdir():
-        match = _VALIDATION_NAME.fullmatch(path.name)
-        if not match:
-            continue
-        loop_index = int(match.group(1))
-        if through_loop_index is None or loop_index <= through_loop_index:
-            candidates.append((loop_index, path))
-    if not candidates:
-        raise ArtifactValidationError("validation-{N}.json is missing")
-    return sorted(candidates)
-
-
-def _validate_validation_loop(
-    path: Path,
-    artifact: dict,
-    hypotheses_by_id: dict[str, _HypothesisContext],
-    tree_id: str,
-) -> tuple[dict[str, _HypothesisContext], dict[str, str]]:
-    _require_fields(
-        artifact,
-        strings=("stage", "summary", "output_summary"),
-        lists=("confirmed", "rejected", "needs_investigation", "closed", "new_hypotheses"),
-    )
-    loop_index = artifact.get("loop_index")
-    expected_loop_index = int(_VALIDATION_NAME.fullmatch(path.name).group(1))
-    if (
-        artifact["stage"] != "VALIDATION"
-        or isinstance(loop_index, bool)
-        or not isinstance(loop_index, int)
-        or loop_index != expected_loop_index
-    ):
-        raise ArtifactValidationError(f"{path.name} has an invalid stage or loop_index")
-
-    referenced_ids: set[str] = set()
-    classifications: dict[str, str] = {}
-    for bucket in ("confirmed", "rejected", "needs_investigation", "closed"):
-        for entry in artifact[bucket]:
-            if not isinstance(entry, dict):
-                raise ArtifactValidationError(f"{path.name} {bucket} entries must be objects")
-            _require_fields(entry, strings=("hypothesis_id", "reasoning"))
-            hypothesis_id = entry["hypothesis_id"]
-            if hypothesis_id not in hypotheses_by_id:
-                raise ArtifactValidationError(f"{path.name} references an unknown hypothesis")
-            if hypothesis_id in referenced_ids:
-                raise ArtifactValidationError(f"{path.name} references a hypothesis in multiple result buckets")
-            referenced_ids.add(hypothesis_id)
-            classifications[hypothesis_id] = bucket
-            confidence = entry.get("confidence")
-            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-                raise ArtifactValidationError(f"{path.name} confidence must be between 0 and 1")
-            if bucket == "confirmed":
-                confirmed_fault = parse_fault_type(entry.get("fault_type"))
-                if confirmed_fault is None:
-                    raise ArtifactValidationError(f"{path.name} confirmed fault_type is invalid")
-                if confirmed_fault is not hypotheses_by_id[hypothesis_id].fault_type:
-                    raise ArtifactValidationError(f"{path.name} confirmed fault_type disagrees with hypothesis")
-    confirmed_fault_types = {parse_fault_type(entry["fault_type"]) for entry in artifact["confirmed"]}
-    if len(confirmed_fault_types) > 1:
-        raise ArtifactValidationError(f"{path.name} confirmed entries disagree on fault_type")
-
-    new_hypotheses: dict[str, _HypothesisContext] = {}
-    for hypothesis in artifact["new_hypotheses"]:
-        if not isinstance(hypothesis, dict):
-            raise ArtifactValidationError(f"{path.name} new_hypotheses entries must be objects")
-        _require_fields(
-            hypothesis,
-            strings=(
-                "hypothesis_id",
-                "tree_id",
-                "title",
-                "description",
-                "category",
-                "status",
-                "fault_type",
-                "parent_id",
-            ),
-            lists=("required_evidence",),
-        )
-        hypothesis_id = hypothesis["hypothesis_id"]
-        if hypothesis_id in hypotheses_by_id or hypothesis_id in new_hypotheses:
-            raise ArtifactValidationError(f"{path.name} new hypothesis IDs must be unique")
-        if hypothesis["tree_id"] != tree_id:
-            raise ArtifactValidationError(f"{path.name} new hypothesis tree_id is invalid")
-        parent = hypotheses_by_id.get(hypothesis["parent_id"])
-        if parent is None:
-            raise ArtifactValidationError(f"{path.name} new hypothesis parent_id is unknown")
-        if parse_fault_type(hypothesis["fault_type"]) is None:
-            raise ArtifactValidationError(f"{path.name} new hypothesis fault_type is invalid")
-        confidence = hypothesis.get("confidence_score")
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-            raise ArtifactValidationError(f"{path.name} new hypothesis confidence_score must be between 0 and 1")
-        depth = hypothesis.get("depth")
-        if isinstance(depth, bool) or not isinstance(depth, int) or depth != parent.depth + 1:
-            raise ArtifactValidationError(f"{path.name} new hypothesis depth must equal parent depth + 1")
-        if any(not isinstance(item, str) or not item.strip() for item in hypothesis["required_evidence"]):
-            raise ArtifactValidationError(
-                f"{path.name} new hypothesis required_evidence entries must be non-empty strings"
-            )
-        new_hypotheses[hypothesis_id] = _HypothesisContext(
-            fault_type=parse_fault_type(hypothesis["fault_type"]),
-            tree_id=hypothesis["tree_id"],
-            depth=depth,
-        )
-    return new_hypotheses, classifications
-
-
-def _validate_validation(
-    base: Path,
-    hypotheses_by_id: dict[str, _HypothesisContext],
-    tree_id: str,
-    *,
-    through_loop_index: int | None = None,
-    classifications_by_id: dict[str, str] | None = None,
-) -> tuple[Path, dict]:
-    latest: tuple[Path, dict] | None = None
-    for _, path in _validation_candidates(base, through_loop_index):
-        artifact = _load_object(path, path.name)
-        new_hypotheses, classifications = _validate_validation_loop(path, artifact, hypotheses_by_id, tree_id)
-        hypotheses_by_id.update(new_hypotheses)
-        if classifications_by_id is not None:
-            for hypothesis_id in new_hypotheses:
-                classifications_by_id[hypothesis_id] = "unclassified"
-            classifications_by_id.update(classifications)
-        latest = path, artifact
-    if latest is None:
-        raise ArtifactValidationError("validation-{N}.json is missing")
-    return latest
-
-
 def validate_validation_artifacts(
     base: Path,
     *,
     through_loop_index: int | None = None,
 ) -> tuple[Path, dict]:
-    hypotheses_by_id, tree_id = _validate_hypotheses(base)
-    return _validate_validation(
-        base,
-        hypotheses_by_id,
-        tree_id,
-        through_loop_index=through_loop_index,
-    )
+    try:
+        result = replay_analysis(
+            base,
+            through_loop_index=through_loop_index,
+        )
+    except AnalysisContractError as exc:
+        raise ArtifactValidationError(str(exc)) from exc
+    loop_index = result.latest_validation.get("loop_index")
+    if not isinstance(loop_index, int):
+        raise ArtifactValidationError("validation-{N}.json is missing")
+    return base / f"validation-{loop_index}.json", result.latest_validation
 
 
 def _validate_playbook_shape(artifact: dict) -> list[str]:
@@ -380,25 +211,75 @@ def _validate_report_sections(markdown: str) -> dict[str, str]:
     return sections
 
 
-def _validate_report(base: Path, playbook_step_ids: list[str]) -> str:
+def _replace_section(markdown: str, title: str, body: str) -> str:
+    pattern = re.compile(
+        rf"^## {re.escape(title)}\s*\n.*?(?=^## |\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    replacement = f"## {title}\n{body.strip()}\n\n"
+    if pattern.search(markdown) is None:
+        raise ArtifactValidationError(f"report.md required section is missing or empty: {title}")
+    return pattern.sub(replacement, markdown, count=1).rstrip() + "\n"
+
+
+def _render_root_cause(analysis: AnalysisResult) -> str:
+    selected = analysis.selected_hypothesis
+    status = "확정" if analysis.confirmed else "미확정 — 가장 유력한 후보"
+    return "\n".join(
+        [
+            f"- **상태**: {status}",
+            f"- **신뢰도**: {analysis.selected_confidence:.2f}",
+            f"- **선택 가설 ID**: `{selected.hypothesis_id}`",
+            f"- **가설 제목**: {selected.title}",
+            "",
+            selected.description,
+        ]
+    )
+
+
+def _render_playbook(playbook: dict, *, confirmed: bool) -> str:
+    steps = playbook["execution_steps"]
+    if not confirmed:
+        return (
+            "확정된 근본 원인이 없어 실행 절차를 만들지 않았다. 이 리포트의 조치 항목은 "
+            "추가 조사와 사람의 판단을 위한 권고이며 실행 대상이 아니다."
+        )
+    if not steps:
+        return (
+            "플레이북 생성 결과에 실행 절차가 없다. 분석 결과는 유효하지만 승인할 절차가 없으므로 실행 대상이 아니다."
+        )
+
+    lines = [
+        "이 플레이북은 **초안(DRAFT)**이며 아직 실행으로 검증되지 않았다.",
+        "",
+    ]
+    for index, step in enumerate(steps, start=1):
+        lines.extend(
+            [
+                f"### {index}. {step['step_id']}",
+                "",
+                f"- **의도**: {step['intent']}",
+                f"- **수행할 작업**: {step['action']}",
+                f"- **성공 판정 기준**: {step['success_criteria']}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip()
+
+
+def _validate_report(base: Path, playbook: dict, analysis: AnalysisResult) -> str:
     try:
         markdown = (base / "report.md").read_text()
     except OSError as exc:
         raise ArtifactValidationError("report.md is missing") from exc
-    sections = _validate_report_sections(markdown)
-
-    # The prose is what a person approves and the structure is what runs, so a
-    # step present in one and absent from the other means the approved procedure
-    # and the executed procedure differ.
-    playbook_section = sections["대응 플레이북"]
-    missing = [step_id for step_id in playbook_step_ids if step_id not in playbook_section]
-    if missing:
-        raise ArtifactValidationError(f"report.md playbook section is missing execution steps: {', '.join(missing)}")
-    # Order matters as much as presence: a person reads the prose top to bottom
-    # and approves that sequence, so the structure must run it in the same order.
-    positions = [playbook_section.index(step_id) for step_id in playbook_step_ids]
-    if positions != sorted(positions):
-        raise ArtifactValidationError("report.md playbook section lists execution steps out of order")
+    _validate_report_sections(markdown)
+    markdown = _replace_section(markdown, "근본 원인", _render_root_cause(analysis))
+    markdown = _replace_section(
+        markdown,
+        "대응 플레이북",
+        _render_playbook(playbook, confirmed=analysis.confirmed),
+    )
+    _validate_report_sections(markdown)
     return markdown
 
 
@@ -428,26 +309,31 @@ def validate_artifact_shape(filename: str, content: str) -> None:
         _validate_scoping_shape(artifact)
         return
 
-    if filename == "hypotheses.json":
+    if generation_round_for_filename(filename) is not None:
         _require_fields(artifact, strings=("stage", "tree_id", "summary", "output_summary"), lists=("hypotheses",))
-        if artifact["stage"] != "HYPOTHESIS_GENERATION" or not artifact["hypotheses"]:
-            raise ArtifactValidationError("hypotheses.json must contain generated hypotheses")
+        if artifact["stage"] != "HYPOTHESIS_GENERATION":
+            raise ArtifactValidationError(f"{filename} stage must be HYPOTHESIS_GENERATION")
         return
 
 
 def validate_completion_artifacts(base: Path) -> CompletionArtifacts:
     _validate_scoping(base)
-    hypotheses_by_id, tree_id = _validate_hypotheses(base)
-    _, validation = _validate_validation(base, hypotheses_by_id, tree_id)
-    confirmed = bool(validation["confirmed"])
+    try:
+        analysis = validate_analysis_completion(base)
+    except AnalysisContractError as exc:
+        raise ArtifactValidationError(str(exc)) from exc
     playbook, playbook_step_ids = _validate_playbook(base)
     # An unconfirmed root cause has no verified procedure to run, so proposing
     # steps for it would put guesswork behind the approval button.
-    if not confirmed and playbook_step_ids:
+    if not analysis.confirmed and playbook_step_ids:
         raise ArtifactValidationError("unconfirmed RCA must not declare playbook execution steps")
-    report_markdown = _validate_report(base, playbook_step_ids)
+    report_markdown = _validate_report(base, playbook, analysis)
     return CompletionArtifacts(
         report_markdown=report_markdown,
         playbook=playbook,
-        confirmed=confirmed,
+        confirmed=analysis.confirmed,
+        root_cause=analysis.selected_hypothesis.description,
+        selected_hypothesis_id=analysis.selected_hypothesis.hypothesis_id,
+        confidence=analysis.selected_confidence,
+        root_fault_type=analysis.selected_fault_type,
     )

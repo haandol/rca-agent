@@ -119,8 +119,10 @@ def test_analysis_agents_have_disjoint_artifact_writers(monkeypatch):
     assert all(server["default_tools_approval_mode"] == "approve" for server in rca.values())
     assert report["rca-progress"]["default_tools_approval_mode"] == "approve"
     context_vars = {"RCA_EXECUTION_TOKEN", "RCA_SESSION_ID", "RCA_CLAIM_TOKEN", "RCA_ATTEMPT"}
-    assert set(rca["rca-progress"]["env_vars"]) == context_vars
-    assert set(report["rca-progress"]["env_vars"]) == context_vars
+    assert context_vars.issubset(rca["rca-progress"]["env_vars"])
+    assert context_vars.issubset(report["rca-progress"]["env_vars"])
+    assert "DYNAMODB_TABLE_NAME" in rca["rca-progress"]["env_vars"]
+    assert "DYNAMODB_TABLE_NAME" in report["rca-progress"]["env_vars"]
     ecs_credentials = {
         "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
         "AWS_CONTAINER_CREDENTIALS_FULL_URI",

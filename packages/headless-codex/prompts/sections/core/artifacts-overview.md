@@ -6,8 +6,8 @@
 | 파일명                | 작성 주체 | 저장 방법                |
 | --------------------- | --------- | ------------------------ |
 | `scoping.json`        | RCA       | `save_analysis_artifact` |
-| `hypotheses.json`     | RCA       | `save_analysis_artifact` |
-| `validation-{N}.json` | RCA       | `save_analysis_artifact` |
+| `hypotheses.json`·`hypotheses-2.json`·`hypotheses-3.json` | RCA | `save_analysis_artifact` |
+| `validation-1..3.json` | RCA       | `save_analysis_artifact` |
 | `report.md`           | Report    | `save_report_artifact`   |
 | `playbook.json`       | Report    | `save_report_artifact`   |
 

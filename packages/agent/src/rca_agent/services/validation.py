@@ -107,15 +107,17 @@ def validate_hypothesis(
         )
 
     status = _classify_status(output.judgment.confidence_score)
-
-    if evidence_failed and hypothesis.required_evidence and status == HypothesisStatus.CONFIRMED:
+    evidence_summary = [summary for summary in output.judgment.evidence_summary if summary.strip()]
+    required_evidence_missing = bool(hypothesis.required_evidence) and (
+        evidence_failed or not evidence_text.strip() or not evidence_summary
+    )
+    if required_evidence_missing and status == HypothesisStatus.CONFIRMED:
         logger.warning(
-            "Capping %s from CONFIRMED to NEEDS_INVESTIGATION — evidence failed",
+            "Capping %s from CONFIRMED to NEEDS_INVESTIGATION — required evidence is unavailable",
             hypothesis.hypothesis_id,
         )
         status = HypothesisStatus.NEEDS_INVESTIGATION
 
-    evidence_summary = [summary for summary in output.judgment.evidence_summary if summary.strip()]
     validated_fault_type = FaultType.UNSUPPORTED
     if (
         status == HypothesisStatus.CONFIRMED

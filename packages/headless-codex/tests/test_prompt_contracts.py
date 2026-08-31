@@ -228,7 +228,7 @@ def test_guidance_states_that_execution_is_a_separate_approved_step():
     assert "복구를 실행하지 않는다" in guidance
 
 
-def test_hypothesis_and_validation_contract_require_matching_fault_enum():
+def test_hypothesis_and_validation_contract_require_independent_fault_enum():
     hypotheses = (PROMPTS_DIR / "sections" / "artifacts" / "hypotheses.md").read_text()
     validation = (PROMPTS_DIR / "sections" / "artifacts" / "validation.md").read_text()
     rca_agent = (AGENTS_DIR / "rca-specialist.md").read_text()
@@ -236,7 +236,7 @@ def test_hypothesis_and_validation_contract_require_matching_fault_enum():
     for fault_type in ("db-leak", "high-cpu", "high-memory", "slow-query", "unsupported"):
         assert fault_type in hypotheses
         assert fault_type in rca_agent
-    assert "참조하는 hypothesis의 구조화 enum과 정확히" in validation
+    assert "초기 hypothesis의 힌트와 독립적으로" in validation
 
 
 def test_cc_completion_event_cannot_enter_strands_external_remediation_queue():

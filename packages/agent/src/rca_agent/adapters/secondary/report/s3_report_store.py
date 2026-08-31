@@ -274,11 +274,13 @@ def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
             "## Root Cause",
             f"**Status**: {confirmed_label}",
             f"**Confidence**: {report.confidence_score:.2f}",
-            "",
-            report.root_cause,
-            "",
         ]
     )
+    if report.selected_hypothesis_id:
+        lines.append(f"**Selected hypothesis ID**: `{report.selected_hypothesis_id}`")
+    if report.selected_hypothesis_title:
+        lines.append(f"**Hypothesis title**: {report.selected_hypothesis_title}")
+    lines.extend(["", report.root_cause, ""])
     if report.five_whys:
         lines.append("## 5 Whys")
         for step in report.five_whys:
