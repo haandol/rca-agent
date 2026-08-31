@@ -37,17 +37,16 @@ useHead({
 
 <template>
   <div>
-    <header class="mb-9">
+    <header class="mb-7">
       <NuxtLink
         :to="reportLink"
-        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="mb-4 inline-flex items-center gap-1.5 text-[11px] text-base-content/52 hover:text-primary"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
 
-      <h1 class="font-serif text-[26px] leading-tight tracking-tight">
-        이 장애 유형에 대한 플레이북
-      </h1>
+      <p class="page-eyebrow">Remediation Playbook</p>
+      <h1 class="page-title">이 장애 유형에 대한 플레이북</h1>
       <div
         class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/70"
       >
@@ -104,7 +103,7 @@ useHead({
       </NuxtLink>
 
       <!-- The procedure leads: it is what the execution agent acts on. -->
-      <section class="mb-14">
+      <section class="ops-panel mb-5 p-5 sm:p-6">
         <div class="flex items-baseline gap-3 mb-1">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
             실행 절차
@@ -154,8 +153,8 @@ useHead({
       </section>
 
       <!-- What this playbook recognises, and what to do about it -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-        <section v-if="playbook.symptom_pattern">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section v-if="playbook.symptom_pattern" class="ops-panel p-5">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
             이런 증상일 때
           </h2>
@@ -168,21 +167,21 @@ useHead({
           </p>
         </section>
 
-        <section v-if="playbook.severity_criteria">
+        <section v-if="playbook.severity_criteria" class="ops-panel p-5">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
             심각도 판단
           </h2>
           <div class="prose-field" v-html="md(playbook.severity_criteria)" />
         </section>
 
-        <section v-if="playbook.temporary_mitigation">
+        <section v-if="playbook.temporary_mitigation" class="ops-panel p-5">
           <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
             우선 멈추려면
           </h2>
           <div class="prose-field" v-html="md(playbook.temporary_mitigation)" />
         </section>
 
-        <section v-if="playbook.permanent_remediation">
+        <section v-if="playbook.permanent_remediation" class="ops-panel p-5">
           <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
             다시 안 나게 하려면
           </h2>
@@ -192,14 +191,17 @@ useHead({
           />
         </section>
 
-        <section v-if="playbook.escalation_criteria">
+        <section v-if="playbook.escalation_criteria" class="ops-panel p-5">
           <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
             사람을 불러야 할 때
           </h2>
           <div class="prose-field" v-html="md(playbook.escalation_criteria)" />
         </section>
 
-        <section v-if="playbook.verification_steps?.length">
+        <section
+          v-if="playbook.verification_steps?.length"
+          class="ops-panel p-5"
+        >
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
             확인 절차
           </h2>
@@ -211,7 +213,10 @@ useHead({
           />
         </section>
 
-        <section v-if="playbook.prevention_measures?.length">
+        <section
+          v-if="playbook.prevention_measures?.length"
+          class="ops-panel p-5"
+        >
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
             재발 방지
           </h2>
@@ -223,7 +228,7 @@ useHead({
           />
         </section>
 
-        <section v-if="playbook.related_metrics?.length">
+        <section v-if="playbook.related_metrics?.length" class="ops-panel p-5">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
             함께 볼 메트릭
           </h2>

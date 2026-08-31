@@ -1,307 +1,180 @@
-# DESIGN.md
+# RCA Dashboard Design System
 
-Machine-readable design tokens for the RCA Agent dashboard. AI agents should read this
-file first for all UI work.
+The dashboard is an incident-operations console. It exists to help an operator answer
+four questions quickly:
 
-For implementation details (data access, page structure, common mistakes), see
-[AGENTS.md](./AGENTS.md).
+1. What still needs attention?
+2. Which engine and run produced the result?
+3. What evidence supports the root cause?
+4. Is it safe to approve the remediation?
 
-## Metadata
+For data contracts and implementation constraints, see [AGENTS.md](./AGENTS.md).
 
-- **App**: RCA Agent dashboard — the reading surface for automated root-cause analysis
-  sessions, their causal chains, and the playbooks a person approves for execution
-- **Stack**: Nuxt 4 (TypeScript) + TailwindCSS 4 + DaisyUI 5 (two custom themes, no stock theme)
-- **Theme**: light only (`workflow`) | **Font**: Crimson Pro (display) + Inter (UI), self-hosted
+## Product register
 
-## The register
+- **Visual model**: operations cockpit, not archive, blog, report cover, or editorial
+  manuscript
+- **Default theme**: dark (`rca-ops`), with an equivalent light theme
+  (`rca-ops-light`)
+- **Type**: Inter for UI and prose, JetBrains Mono for identifiers, timestamps,
+  durations, states, and commands
+- **Density**: compact enough to scan many incidents without hiding the root-cause
+  summary
+- **Hierarchy**: sidebar → page header → metric cards → controls → incident queue
 
-The dashboard reads as an **editorial manuscript**, not a monitoring console. A page of
-sessions is an archive of things that already happened; the pages are read for minutes at
-a time, and most of what is on them did not go wrong. Authority comes from typographic
-restraint and whitespace, never from saturated color or elevation.
+The interface must make states distinguishable at a glance. Color is allowed and
+expected, but visible text remains mandatory so color is never the only carrier.
 
-Two consequences an agent must respect:
+## Color roles
 
-- **A whisper-weight serif headline is the signature.** Crimson Pro at weight 300 is
-  non-negotiable for headings. A bold serif or a sans heading breaks the system outright.
-- **Color is near-zero.** One sage green, used only as functional punctuation. Every
-  surface is white, off-white, or warm gray.
+Use DaisyUI semantic tokens instead of hard-coded page colors.
 
-> **This register replaces the previous "ledger" theme** (paper ground + ember accent for
-> live runs). The structural inventions of the ledger survive intact — the spine, the run
-> bar, the causal chain — because they encode what an incident _is_; only the palette,
-> type, and separation method change. Where the ledger separated surfaces by value alone,
-> this system separates them with hairline borders.
+| Token          | Meaning                                                       |
+| -------------- | ------------------------------------------------------------- |
+| `primary`      | selected navigation, focus, links, primary inspection actions |
+| `info`         | analysis currently running                                    |
+| `warning`      | human approval or investigation required                      |
+| `success`      | incident resolved or procedure verified                       |
+| `error`        | failed, cancelled, or unresolved outcome                      |
+| `base-100`     | panel and row surface                                         |
+| `base-200`     | workspace canvas                                              |
+| `base-300`     | raised control or selected surface                            |
+| `base-content` | foreground text and borders                                   |
 
-## Colors
+State mapping:
 
-Ten tokens. There is no eleventh — introducing blue, red, or purple breaks the system.
+| Outcome     | Tone                                          |
+| ----------- | --------------------------------------------- |
+| 분석 중     | info / blue                                   |
+| 승인 대기   | warning / amber                               |
+| 해결        | success / green                               |
+| 미해결      | error / red                                   |
+| 원인 미확정 | warning / amber, lower emphasis than approval |
+| 분석 중단   | error / red                                   |
+| 건너뜀      | neutral / muted                               |
 
-| Name          | Value     | Role                                                                                                                               |
-| ------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Ink Black     | `#1a1a1a` | Primary text, icon strokes, card and section borders, nav links                                                                    |
-| Paper White   | `#ffffff` | Page canvas, card surfaces, button text on dark fills                                                                              |
-| Graphite      | `#6a6a6a` | Secondary text, helper copy, muted borders                                                                                         |
-| Warm Charcoal | `#4d3f32` | Warm-toned text and borders — the brown-tinted dark used where the system needs a softer, paper-friendly alternative to pure black |
-| Fog           | `#f6f6f6` | Subtle section backgrounds, button hover fills, nav border, badge surfaces                                                         |
-| Linen         | `#ececec` | Card surface tint, secondary background panels                                                                                     |
-| Hairline      | `#e3e3e3` | Dividers and borders where a softer separator is needed                                                                            |
-| Pebble        | `#8d8d8d` | Tertiary icon strokes, decorative borders                                                                                          |
-| Sage          | `#547e69` | Green outline accent — tags, dividers, focused UI edges                                                                            |
-| Mint Wash     | `#f1fcf6` | The only chromatic background; approval/positive status surface                                                                    |
-
-### Sage is functional punctuation, not decoration
-
-Sage marks **active state and approval** — the tab underline, the approve pill, a focused
-edge. Never a fill, never a CTA background, never a decorative shape.
-
-This dashboard has one action a person can actually take: **approving a playbook**. Sage
-belongs there and to the live-run indicator, and nowhere else. Everything else on the page
-is already over, and coloring finished work buries the one row still waiting on a human.
-
-### State without color
-
-The old palette spent four hues on state (ink / ember / rust / moss). This one cannot, so
-state is carried by **form** instead:
-
-| State                | How it reads                                                                              |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| Running              | Sage node, `.run-bar-open` dashed bar, `.animate-pulse-soft`                              |
-| Pending approval     | Sage Status Pill (outline, `9999px`)                                                      |
-| Completed            | Filled Ink Black node, solid run bar, no pill                                             |
-| Failed / unresolved  | Ink Black node with a struck-through or hollow treatment, and the word — never a red chip |
-| Skipped (`OUTDATED`) | Graphite text, hollow node                                                                |
-
-**A failure must never be conveyed by color alone**, because there is no red in this
-palette. Failed and unresolved states carry an explicit label. This is a hard constraint,
-not a preference — an operator scanning for breakage has only the word and the form.
+Every state presentation includes a Korean label. Failed and unresolved states must
+not rely on hue alone.
 
 ## Typography
 
-Three faces. Latin-only — this build carries no Korean glyph coverage in the display or UI
-faces (see the warning below).
+- Page title: Inter 700, 24–30px
+- Section title: Inter 600, 14–18px
+- Body: Inter 400, 13–15px
+- Labels: Inter 600, 11–12px, optional uppercase tracking for English labels
+- Data: JetBrains Mono 400–600, 10–13px, tabular numerals
+- Long report prose stays sans-serif. The dashboard is a tool, not a publication.
 
-### Crimson Pro — headlines and section titles
+Hangul uses the system sans fallback after Inter. Do not use a Latin-only display face
+for Korean headings.
 
-- **Weight**: 300 only. **Sizes**: 26px, 32px. **Line height**: 1.0.
-- **Substitute**: Cormorant Garamond, Libre Caslon Text, or Playfair Display at 300.
-- Weight 300 is the signature move. Most dashboards set headings at 600–700 sans; this
-  one trades volume for editorial elegance.
+## Layout
 
-### Inter — body, UI labels, nav, buttons, captions
+- Desktop: 224px navigation rail and a fluid workspace
+- Workspace maximum width: 1440px
+- Main padding: 24–32px desktop, 16px mobile
+- Primary grid: four metric cards, then a full-width incident queue
+- Detail pages may use a 2:1 content/rail split
+- Mobile: navigation becomes a top strip and incident rows stack vertically
 
-- **Weights**: 400 for everything; **500 reserved** for button labels and active nav emphasis.
-- **Sizes**: 11, 12, 13, 14, 15, 16px. **Line height**: 1.35–1.91.
-  **Letter spacing**: −0.004em to 0.004em.
-
-### Georgia — inline editorial body
-
-- **Weight**: 400. **Size**: 13px. **Line height**: 1.35–1.62.
-- Reserved for **report prose and the causal chain** — the article-preview register. A
-  finding is an argument, and an argument is set in a serif. Never for UI chrome.
-
-### Type scale
-
-| Role       | Size | Line height | Letter spacing |
-| ---------- | ---- | ----------- | -------------- |
-| caption    | 11px | 1.4         | 0.04px         |
-| body-lg    | 16px | 1.5         | —              |
-| heading-sm | 26px | 1           | —              |
-| heading    | 32px | 1           | —              |
-
-### Numerals
-
-Clock readings, RCA ids, durations, and counts are compared down a column, so they take
-`tabular-nums`. This is inherited from the ledger and unchanged: a timestamp column with
-proportional digits cannot be scanned.
-
-> **⚠ Korean coverage is a known gap.** Crimson Pro and Inter carry no Hangul. Reports and
-> causal chains in this system are written in Korean, so on this surface they fall back to
-> whatever the browser supplies — which is not a designed face and will not match the
-> Latin metrics. This was accepted deliberately to follow the reference style exactly. If
-> mixed KO/EN typesetting quality becomes a problem, the fix is a Hangul companion in each
-> stack (a serif beside Crimson Pro, a sans beside Inter), not a switch away from weight 300.
-
-## Spacing & Layout
-
-**Base unit**: 4px. **Density**: comfortable.
-
-- **Page max-width**: 1080px — content centered in a single column, no sidebars, no
-  asymmetric composition
-- **Section gap**: 80px
-- **Card padding**: 24px
-- **Element gap**: 16px
-
-Whitespace carries the layout. Reach for a divider or a background only when spacing has
-already failed.
-
-### Border radius
-
-Four values exist. Do not introduce a fifth, and do not use `0px`.
-
-| Target        | Radius |
-| ------------- | ------ |
-| cards, images | 12px   |
-| buttons       | 8px    |
-| badges        | 4px    |
-| pills         | 9999px |
-
-> This is the sharpest break from the ledger, which lived at 2–4px (`--radius-box: 0.25rem`).
-> The theme block's `--radius-*` tokens must be updated together with this table; a mix of
-> old and new radii on one screen reads as two products.
-
-### Separation
-
-**Hairline borders are the primary method** — `1px` in Hairline (`#e3e3e3`) or Fog
-(`#f6f6f6`). Shadow is reserved for the one floating surface (see Elevation).
-
-> This **inverts the ledger's rule**, which forbade borders on `.sheet` on the grounds that
-> a page of bordered boxes reads as a form. The editorial register accepts that risk in
-> exchange for structure without color: with the hue budget at near-zero, the border is the
-> only tool left to say where one thing ends. Keep borders at `1px` and never stack a
-> border with a shadow on the same resting element — that is what actually produces the
-> boxed-form feel.
-
-## Elevation
-
-Two shadows exist in the entire system. Everything else is flat.
-
-- **Product preview / floating card**: `rgba(0,0,0,0.06) 0px 2px 6px 0px`
-- **Hero panel**: `rgba(0,0,0,0.03) 0px 1px 3px 0px, rgba(0,0,0,0.03) 0px 5px 5px 0px, rgba(0,0,0,0.02) 0px 10px 6px 0px`
-
-Elevation stays under `0.06` alpha. Resting cards get a border, never a shadow.
+The sidebar establishes product identity and keeps the screen from reading like a
+standalone article. Do not add navigation items that have no implemented destination.
 
 ## Surfaces
 
-- **Paper White** (`#ffffff`) — primary canvas; every section opens on this
-- **Fog** (`#f6f6f6`) — quiet section alternation, button hover fills
-- **Linen** (`#ececec`) — card tinting where a card must read as lifted off the page
-- **Mint Wash** (`#f1fcf6`) — approval/positive status only; the sole chromatic background
+- Workspace canvas uses `base-200`
+- Cards and rows use `base-100`
+- Selected or hover surfaces use `base-300`
+- Borders are `1px` with 10–18% foreground opacity
+- Radius is 8px for cards, 6px for controls, and full radius for status chips
+- Use one subtle shadow only for sticky chrome or modal surfaces
+- Avoid large empty white areas and decorative gradients behind body content
 
-## Components
+## Core components
 
-### Primary Text Button (ghost)
+### Metric card
 
-**Role**: main CTA.
+Shows one operational count with a label, large tabular value, and one-line meaning.
+The semantic color appears in a narrow top rule or small icon, not as a full saturated
+background.
 
-No fill, Ink Black text in Inter 500 at 14–16px, `8px` radius, `8px 16px` padding, no
-border. The type weight and the arrow glyph carry the affordance.
+### Status chip
 
-### Outlined Action Button
+Compact rounded label with semantic border, text, and low-opacity fill. It always
+contains the outcome label.
 
-**Role**: secondary action.
+### Incident row
 
-White fill, `1px` Ink Black border, Inter 500 14px, `8px` radius, `12px 20px` padding.
+An incident row exposes, without hover:
 
-### Pill Badge
+- outcome
+- alarm name
+- root-cause or failure summary
+- engine
+- start time
+- duration
+- report action
 
-**Role**: compact metadata — engine name, session count, step ordinal.
+Trace, playbook, cancel, and delete are secondary actions but remain keyboard
+reachable. Destructive actions may be quieter until hover on pointer devices, but they
+must remain visible on touch/mobile layouts.
 
-Fog background, Graphite text at 12–13px Inter 400, `4px` radius, `4px 8px` padding.
+### Duration bar
 
-### Sage Status Pill
+Duration remains encoded as both a number and a relative bar. The bar is supporting
+information, not the primary row structure.
 
-**Role**: approval / active / positive state.
+### Approval surface
 
-White fill, `1px` Sage border, Sage text at 13px Inter 500, `9999px` radius. This is the
-pill for **승인 대기** and a live run — the two things a person acts on.
+Approval is the only high-consequence write action. Use warning emphasis while a
+decision is pending, state exactly how many steps will run, and keep the server-side
+gate explanation beside the control.
 
-### Feature Card
+### Report and evidence panels
 
-**Role**: session summary, report block, retrospective panel.
+Root cause, causal chain, timeline, execution plan, evidence, and execution history are
+separate bordered panels. Long generated Markdown uses a readable 72–80 character
+measure inside the panel.
 
-White surface, `1px` Hairline border, `12px` radius, `24px` padding. Headline in Crimson
-Pro 300 26px Ink Black; body in Inter 400 15px Graphite.
+### Graphs
 
-### Tab Bar
-
-**Role**: view switcher.
-
-No background. Tabs in Inter 400 14px, `16px` horizontal / `8px` vertical padding. Active:
-Ink Black text with a **Sage 2px underline**. Inactive: Graphite, no underline.
-
-### Navigation Bar
-
-White background, `1px` Fog bottom border. Wordmark in Inter 500 16px Ink Black; links in
-Inter 400 14px, `16px` gap. Flat horizontal list, no dropdown chrome.
-
-### Share/Approve Action Row
-
-**Role**: top-right actions on a report or playbook surface.
-
-Inline group: a ghost text button, then an **outlined Sage pill** for approve (`9999px`,
-`6px 12px`). No filled background button — shape and border carry the weight.
-
-> The approve action is gated server-side (analysis complete, confirmed cause, valid
-> procedure, no execution in flight). Never render the pill as available when those
-> conditions do not hold — see AGENTS.md. A pill the server will reject with 409 makes the
-> approval gate meaningless.
-
-## Structural signatures
-
-These are this product's own inventions, carried over from the ledger unchanged in form.
-They encode what an incident is, so they survive a restyle.
-
-### The spine
-
-One continuous vertical rule down the left of the archive, with every session hung off it
-at its own hour. Time is the axis the page is built on, not a column at the far right —
-the whole finding in a report is that a deploy at 05:40:02 preceded a spike at 05:40:00.
-
-- The rule is a `1px` line in Hairline; nodes are `9px` circles
-- A **day label sits across the rule**, never in the time gutter — a date and a clock
-  reading in the same column read as one malformed timestamp
-- Clock readings sit in the gutter in `tabular-nums`
-
-### The run bar
-
-Duration as a **length**, not a number: width computed inline from the real elapsed time,
-so a 42-minute run is visibly four times a 10-minute one. A minute count must be compared
-arithmetically; a bar is compared by eye. The longest run on screen sets the scale. An
-open (still-running) bar is dashed.
-
-### The causal chain
-
-The finding set as a linked descent — each answer becomes the next question. The search
-runs in parallel and most branches are discarded, but **the result is linear**, so the
-report page leads with the chain and leaves the parallel DAG to the trace page.
-
-- Questions and answers in the serif (Georgia / Crimson Pro register), 15–16px
-- A `1px` connecting rule makes it a descent rather than five stacked paragraphs
-- The **last link is the one marked in Sage** — that is where the fix belongs
-- Parsing is defensive: a half-parsed chain is worse than none, so on failure the page
-  falls back to the full report prose
-
-### Report prose
-
-`.prose-report` at `max-w-[68ch]`. The generated H1 restates the RCA id already in the
-header, so it is suppressed. Section headings step down to 13px uppercase with wide
-tracking in Graphite; body at 16px / 1.72.
+Graphs use the same semantic state colors and panel background as the rest of the
+console. Selected nodes receive a visible ring. Graph detail must remain readable
+without interpreting edge color alone.
 
 ## Motion
 
-- Transitions 120–200ms. No bounce, no spring.
-- **A live run is the only thing on the page that moves.** Nothing else animates on a
-  resting surface.
-- `prefers-reduced-motion` collapses all animation and transition to ~0 and keeps meaning
-  in static form.
+- 120–180ms transitions
+- Running state may pulse softly
+- No decorative motion, bounce, or animated backgrounds
+- Respect `prefers-reduced-motion`
+
+## Accessibility and visibility
+
+- Minimum body contrast follows WCAG AA in both themes
+- Focus uses a 2px primary outline with offset
+- State labels are visible text
+- Buttons use a minimum 32px target; primary actions use 36px or larger
+- Information hidden on hover must also appear on focus and always appear on touch
+- Truncated summaries retain the full value in `title` where practical
 
 ## Do / Don't
 
-**Do**: Crimson Pro **300** for every headline · Inter 400 for body and UI, 500 only for
-button labels and active nav · surfaces limited to Paper White, Fog, Linen · Sage only for
-active underlines, approval pills, and functional icon accents · radii at 4 / 8 / 12 /
-9999px · `1px` hairline borders as the separation method · 1080px centered column with
-80px section gaps · `tabular-nums` on every clock reading, id, and count · an explicit
-label on every failure state · both `aria-label` and visible text on any status conveyed
-by shape
+Do:
 
-**Don't**: a filled colored button as primary CTA (CTAs are ghost text or outlined pills) ·
-any hue outside the ten tokens — no blue, red, or purple · bold or semibold headlines
-(Crimson Pro 300 is non-negotiable) · shadows over `0.06` alpha, colored glows, or a
-shadow on a resting card · `0px` or `16px+` radius on cards · color as the only carrier of
-a failed state (there is no red here) · Sage as a fill or CTA background · Georgia for UI
-chrome (report and chain prose only) · hardcoded hex in page styles — read the theme
-tokens, so a palette change lands everywhere at once · a second thing on the page
-animating beside a live run · storage-layer vocabulary in state labels (`OUTDATED` is a
-skipped-analysis verdict, not a TTL expiry)
+- lead with pending decisions and active work
+- use semantic colors consistently
+- keep timestamps and identifiers monospaced
+- use compact panels and clear column alignment
+- show the root-cause summary in the queue
+- keep report, trace, playbook, and retrospective pages inside the same app shell
+
+Don't:
+
+- use serif display headings
+- center the whole product in a narrow article column
+- present incidents as a decorative timeline
+- hide important state distinctions in gray-on-gray text
+- make approval look equal to delete or cancel
+- add unimplemented navigation, fake health, or invented operational data
+- expose storage-layer vocabulary as user-facing state

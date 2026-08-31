@@ -104,17 +104,16 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
 
 <template>
   <div>
-    <header class="mb-10">
+    <header class="mb-7">
       <NuxtLink
         :to="`/report/${rcaId}?engine=${data?.execution?.engine ?? ''}`"
-        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="mb-4 inline-flex items-center gap-1.5 text-[11px] text-base-content/52 hover:text-primary"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
 
-      <h1 class="font-serif text-[26px] leading-tight tracking-tight">
-        실행이 절차를 어떻게 고쳤는지
-      </h1>
+      <p class="page-eyebrow">Execution Retrospective</p>
+      <h1 class="page-title">실행이 절차를 어떻게 고쳤는지</h1>
       <p class="text-[13px] text-base-content/70 mt-2.5 max-w-[62ch]">
         회고는 사람의 승인 없이 플레이북을 고칩니다. 그 수정이 정당했는지는 아래
         네 가지를 순서대로 읽어야 판단할 수 있습니다.
@@ -153,7 +152,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
 
     <template v-else-if="data">
       <!-- 1. The issue -->
-      <section class="mb-11">
+      <section class="ops-panel mb-4 p-5">
         <h2
           class="flex items-baseline gap-2.5 label-sm uppercase tracking-[0.1em] font-semibold mb-4"
         >
@@ -172,7 +171,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
       </section>
 
       <!-- 2. The playbook as it stood before the run -->
-      <section class="mb-11">
+      <section class="ops-panel mb-4 p-5">
         <h2
           class="flex items-baseline gap-2.5 label-sm uppercase tracking-[0.1em] font-semibold mb-4"
         >
@@ -213,7 +212,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
       </section>
 
       <!-- 3. What was attempted and what failed -->
-      <section class="mb-11">
+      <section class="ops-panel mb-4 p-5">
         <h2
           class="flex items-baseline gap-2.5 label-sm uppercase tracking-[0.1em] font-semibold mb-4"
         >
@@ -327,7 +326,7 @@ useHead({ title: () => `회고 ${executionId.slice(0, 8)}` });
       </section>
 
       <!-- 4. How the procedure changed -->
-      <section class="mb-11">
+      <section class="ops-panel mb-4 p-5">
         <h2
           class="flex items-baseline gap-2.5 label-sm uppercase tracking-[0.1em] font-semibold mb-4"
         >

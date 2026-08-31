@@ -1,10 +1,10 @@
 <script setup lang="ts">
-const colorMode = useState('colorMode', () => 'light');
+const colorMode = useState<'dark' | 'light'>('colorMode', () => 'dark');
 
 function applyTheme() {
   document.documentElement.setAttribute(
     'data-theme',
-    colorMode.value === 'dark' ? 'workflow-night' : 'workflow',
+    colorMode.value === 'dark' ? 'rca-ops' : 'rca-ops-light',
   );
 }
 
@@ -17,35 +17,68 @@ onMounted(applyTheme);
 </script>
 
 <template>
-  <div class="min-h-screen bg-base-200">
-    <header class="site-head sticky top-0 z-50">
-      <!-- The bar centres its contents, and the wordmark keeps its own baseline
-           relationship with the tagline. Aligning the whole bar on the baseline
-           instead pins the text to the top edge, because a baseline group ignores
-           the fixed height it sits in. -->
-      <div
-        class="max-w-[1160px] mx-auto px-5 sm:px-8 h-[52px] flex items-center gap-4"
-      >
-        <div class="flex items-baseline gap-3 min-w-0">
-          <NuxtLink
-            to="/"
-            class="font-serif text-[19px] tracking-tight hover:text-primary transition-colors"
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <NuxtLink to="/" class="app-brand">
+        <span class="app-brand-mark" aria-hidden="true" />
+        <span class="min-w-0">
+          <span class="block text-[13px] font-bold tracking-[-0.02em]">
+            RCA Control
+          </span>
+          <span
+            class="app-brand-subtitle block mt-0.5 text-[9px] font-mono uppercase tracking-[0.12em] text-base-content/45"
           >
-            장애 기록
-          </NuxtLink>
-          <span class="label-sm hidden sm:inline">근본원인 분석</span>
+            Incident Operations
+          </span>
+        </span>
+      </NuxtLink>
+
+      <div class="app-nav-label">Workspace</div>
+      <NuxtLink to="/" class="app-nav-link">
+        <svg
+          class="size-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <path d="M4 5h16v5H4zM4 14h7v5H4zM15 14h5v5h-5z" />
+        </svg>
+        <span>Incident Queue</span>
+      </NuxtLink>
+
+      <div class="app-sidebar-foot">
+        <div class="flex items-center gap-2 text-[10px] text-base-content/50">
+          <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
+          <span class="font-mono uppercase tracking-[0.08em]"
+            >Local console</span
+          >
         </div>
-        <div class="flex-1" />
+        <p class="mt-2 text-[10px] leading-relaxed text-base-content/38">
+          분석은 읽기 전용이며 복구는 승인 후 별도 워커가 실행합니다.
+        </p>
+      </div>
+    </aside>
+
+    <div class="app-main-column">
+      <header class="app-topbar">
+        <span
+          class="hidden sm:inline-flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.08em] text-base-content/45"
+        >
+          <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
+          Operator workspace
+        </span>
         <button
-          class="btn btn-ghost btn-xs btn-square"
+          class="btn btn-ghost btn-sm btn-square"
           :aria-label="
-            colorMode === 'dark' ? '주간 화면으로 전환' : '야간 화면으로 전환'
+            colorMode === 'dark' ? '밝은 화면으로 전환' : '어두운 화면으로 전환'
           "
           @click="toggleTheme()"
         >
           <svg
             v-if="colorMode === 'dark'"
-            class="size-[15px]"
+            class="size-4"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -60,7 +93,7 @@ onMounted(applyTheme);
           </svg>
           <svg
             v-else
-            class="size-[15px]"
+            class="size-4"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -74,10 +107,11 @@ onMounted(applyTheme);
             />
           </svg>
         </button>
-      </div>
-    </header>
-    <main class="max-w-[1160px] mx-auto px-5 sm:px-8 py-9">
-      <slot />
-    </main>
+      </header>
+
+      <main class="app-content">
+        <slot />
+      </main>
+    </div>
   </div>
 </template>

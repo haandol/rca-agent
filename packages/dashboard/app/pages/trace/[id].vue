@@ -141,17 +141,16 @@ useHead({
 
 <template>
   <div>
-    <header class="mb-9">
+    <header class="mb-7">
       <NuxtLink
         :to="reportLink"
-        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="mb-4 inline-flex items-center gap-1.5 text-[11px] text-base-content/52 hover:text-primary"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
 
-      <h1 class="font-serif text-[26px] leading-tight tracking-tight">
-        분석이 실제로 시도한 것
-      </h1>
+      <p class="page-eyebrow">Analysis Trace</p>
+      <h1 class="page-title">분석이 실제로 시도한 것</h1>
       <p class="text-[13px] text-base-content/70 mt-2.5 max-w-[62ch]">
         보고서는 살아남은 하나의 사슬만 말합니다. 여기에는 그 사슬에 이르기까지
         함께 세워졌던 가설과, 무엇이 왜 기각됐는지가 남아 있습니다.
@@ -187,10 +186,7 @@ useHead({
     <template v-else-if="trace">
       <!-- Executions have their own lifecycle, so they sit beside the analysis
            rather than folded into it. -->
-      <section
-        v-if="trace.executions?.length"
-        class="mb-11 pb-7 border-b border-base-content/10"
-      >
+      <section v-if="trace.executions?.length" class="ops-panel mb-5 p-5">
         <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-3">
           이 리포트로 수행된 실행
         </h2>
@@ -237,7 +233,7 @@ useHead({
       </section>
 
       <!-- The hypotheses, as a list with the verdict as the organising fact -->
-      <section v-if="hypotheses.length">
+      <section v-if="hypotheses.length" class="ops-panel p-5">
         <div class="flex items-baseline gap-3 mb-5">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
             세워진 가설
@@ -333,7 +329,7 @@ useHead({
       </p>
 
       <!-- The same facts as a shape, for anyone who reads structure faster -->
-      <section class="mt-12 pt-7 border-t border-base-content/10">
+      <section class="ops-panel mt-5 p-5">
         <button
           class="flex items-baseline gap-2 text-[13px] text-base-content/72 hover:text-primary transition-colors"
           :aria-expanded="showGraph"

@@ -53,7 +53,7 @@ pnpm dev   # http://localhost:3100
 packages/dashboard/
 ├── app/
 │   ├── pages/
-│   │   ├── index.vue              # 시간 척추 기록 목록 + 결과별 필터 + 승인 진입
+│   │   ├── index.vue              # 운영 지표 + 결과별 필터 + 인시던트 큐 + 승인 진입
 │   │   ├── report/[id].vue        # 보고서 상세 + 실행 절차 + 승인 게이트
 │   │   ├── playbook/[id].vue      # 플레이북 상세 + 실행 절차 + 초안/검증됨
 │   │   ├── retrospective/[rcaId]/[executionId].vue  # 회고 4단 비교
@@ -72,7 +72,7 @@ packages/dashboard/
 │   │   ├── markdown.ts            # 신뢰할 수 없는 Markdown 렌더 (raw HTML 미생성)
 │   │   ├── causalChain.ts         # 리포트 산문 → 5 Whys 사슬 · 타임라인 (방어적 파싱)
 │   │   └── sessionState.ts        # 상태·결과 어휘 + 엔진별 트랙 + 중단 지점 문구
-│   ├── assets/css/main.css        # 디자인 토큰 (커스텀 DaisyUI 테마 2종 + 척추)
+│   ├── assets/css/main.css        # 운영 콘솔 디자인 토큰 + 커스텀 DaisyUI 테마 2종
 │   └── app.vue                    # 루트 컴포넌트
 ├── server/
 │   ├── api/
@@ -135,30 +135,18 @@ packages/dashboard/
 ## Design System
 
 **시각 디자인 토큰의 단일 출처는 [DESIGN.md](./DESIGN.md)다.** UI 작업 전에 그 문서를
-먼저 읽는다. 색·타입·간격·radius·컴포넌트 패턴과 각 결정의 이유가 거기 있다.
+먼저 읽는다.
 
-방향은 **편집 원고(editorial manuscript)** 다. 권위는 조판의 절제와 여백에서 오고
-채도나 그림자에서 오지 않는다. 요약하면:
+방향은 **인시던트 운영 콘솔(incident operations cockpit)** 이다.
 
-- **테마**: `main.css`의 커스텀 DaisyUI 테마 `workflow` (light 단일). 표면은 흰색·오프화이트·
-  웜그레이뿐이고, sage 하나를 **진행 중과 승인 대기**에만 배정한다 — 나머지는 이미 끝난
-  일이고, 끝난 일에 색을 쓰면 아직 남은 하나가 묻힌다
-- **헤드라인**: Crimson Pro **weight 300**. 이게 시스템의 서명이고 굵은 세리프나 산세리프
-  헤딩은 시스템을 깬다. 인터페이스는 Inter, 리포트·사슬 본문은 세리프, 수치는 `tabular-nums`
-- **실패는 색으로 말할 수 없다**: 팔레트에 빨강이 없으므로 실패·미해결 상태는 반드시
-  라벨과 형태로 표시한다. 이건 취향이 아니라 제약이다
-- **척추**: `.spine`이 왼쪽에 하나의 연속된 세로선을 그리고 세션이 각자의 시각에 매달린다.
-  날짜는 `.spine-day-label`로 그 선 위에 표시한다 — 시각 거터에 날짜를 두면 잘못된
-  타임스탬프 하나로 읽힌다
-- **지속시간**: `.run-bar` 폭을 실제 소요시간에서 인라인으로 계산한다. 숫자는 계산해서
-  비교하고 길이는 눈으로 비교한다. 화면에서 가장 긴 run이 스케일을 정한다
-- **원인의 사슬**: `.chain-link`가 5 Whys를 하나의 하강으로 세운다. 탐색은 병렬이지만
-  **결과는 선형**이므로, 리포트 페이지는 사슬을 먼저 보이고 병렬 DAG는 trace 페이지에 둔다
-- **리포트 본문**: `.prose-report`를 쓴다. 생성된 H1은 헤더에 이미 있는 RCA ID라서 숨긴다
-- **면 구분**: `1px` hairline 테두리가 주된 방법이다. 색 예산이 거의 0이므로 무엇이 어디서
-  끝나는지 말할 도구가 테두리밖에 남지 않는다. 한 요소에 테두리와 그림자를 겹치지 않는다
-- **한글 커버리지는 알려진 갭이다**: Crimson Pro·Inter에 한글 글리프가 없다. 참조 스타일을
-  정확히 따르기 위해 의도적으로 수용한 것이며, 배경은 DESIGN.md에 적혀 있다
+- 기본은 어두운 운영 화면이며 동일한 의미 체계를 가진 밝은 테마를 제공한다
+- UI와 리포트는 산세리프, ID·시각·상태·명령은 고정폭 글꼴을 사용한다
+- 분석 중·승인 대기·해결·실패·미해결은 semantic color와 보이는 라벨을 함께 사용한다
+- 홈 화면은 metric cards → filter controls → incident queue 순서로 읽힌다
+- incident row는 상태·알람·요약·엔진·시각·지속시간·리포트 진입을 hover 없이 보여준다
+- 승인 surface는 유일한 고위험 쓰기 동작으로 별도 강조한다
+- 상세 페이지의 원인 사슬·타임라인·복구 절차·증거·실행 이력은 경계가 분명한 panel로 나눈다
+- 지속시간 막대와 원인 사슬의 선형 구조는 데이터 표현으로 유지하되 장식적 타임라인은 사용하지 않는다
 
 ### Common Mistakes to Avoid
 

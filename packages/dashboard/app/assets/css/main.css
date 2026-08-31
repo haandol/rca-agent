@@ -1,118 +1,43 @@
 @import 'tailwindcss';
-/* Only this page's two themes ship. Left at the default, daisyUI also emits its
-   stock light and dark themes — never applied, since the layout always sets one
-   of ours, but they carry a violet primary and an 8px box radius that contradict
-   the tokens below and would silently win if a data-theme were ever mistyped. */
 @plugin "daisyui" {
   themes: false;
 }
-@import '@fontsource-variable/crimson-pro';
 @import '@fontsource-variable/inter';
 @import '@fontsource-variable/jetbrains-mono';
-@import '@fontsource/noto-serif-kr/400.css';
 @plugin "@tailwindcss/typography";
 
-/**
- * A record of incidents, set as an editorial manuscript rather than a console.
- *
- * Every surface is white, off-white or warm gray, because these pages are read
- * for minutes at a time and most of what is on them did not go wrong. Authority
- * comes from typographic restraint and whitespace, not from saturated colour or
- * elevation.
- *
- * There is one hue: sage. It marks the two things a person acts on — a run still
- * going, and a playbook awaiting approval. Everything else on the page is
- * already over, and colouring finished work buries the one row that isn't.
- *
- * Consequently the semantic tokens carry no hue of their own. A failure cannot
- * be stated in red here, so failure is stated in the label and the form, and the
- * tokens only vary in value. See DESIGN.md — this is a constraint the markup has
- * to honour, not a palette that happens to be quiet.
- */
 @plugin "daisyui/theme" {
-  name: 'workflow';
+  name: 'rca-ops';
   default: true;
-  prefersdark: false;
-  color-scheme: light;
-
-  /* Paper White canvas, Fog and Linen for the quieter planes. */
-  --color-base-100: oklch(100% 0 0);
-  --color-base-200: oklch(97.3% 0 0);
-  --color-base-300: oklch(93.2% 0 0);
-  --color-base-content: oklch(21.8% 0 0);
-
-  /* Sage — a live run, and the one action a person can take. */
-  --color-primary: oklch(50.4% 0.048 158);
-  --color-primary-content: oklch(100% 0 0);
-  /* Warm Charcoal — the paper-friendly dark. */
-  --color-secondary: oklch(37.4% 0.021 62);
-  --color-secondary-content: oklch(100% 0 0);
-  --color-accent: oklch(50.4% 0.048 158);
-  --color-accent-content: oklch(100% 0 0);
-  --color-neutral: oklch(21.8% 0 0);
-  --color-neutral-content: oklch(100% 0 0);
-
-  /* Graphite and Ink — state is carried by label and form, never by hue. */
-  --color-info: oklch(48.6% 0 0);
-  --color-info-content: oklch(100% 0 0);
-  --color-success: oklch(50.4% 0.048 158);
-  --color-success-content: oklch(100% 0 0);
-  --color-warning: oklch(37.4% 0.021 62);
-  --color-warning-content: oklch(100% 0 0);
-  --color-error: oklch(21.8% 0 0);
-  --color-error-content: oklch(100% 0 0);
-
-  /* Four radii exist: badges, buttons, cards, pills. */
-  --radius-selector: 9999px;
-  --radius-field: 0.5rem;
-  --radius-box: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
-}
-
-/**
- * The same manuscript read at night.
- *
- * Not in the reference style, which is light-only — kept because an operator
- * paged at 3am reads this page on a dark screen. Held to the same sage hue and
- * the same hueless semantics so a state means the same thing in both; only value
- * is inverted, and nothing is relearned.
- */
-@plugin "daisyui/theme" {
-  name: 'workflow-night';
-  default: false;
   prefersdark: true;
   color-scheme: dark;
 
-  --color-base-100: oklch(19.6% 0 0);
-  --color-base-200: oklch(16.2% 0 0);
-  --color-base-300: oklch(26.4% 0 0);
-  --color-base-content: oklch(92.4% 0 0);
+  --color-base-100: #0f1b2d;
+  --color-base-200: #08111f;
+  --color-base-300: #18263b;
+  --color-base-content: #e6edf7;
 
-  --color-primary: oklch(72% 0.062 158);
-  --color-primary-content: oklch(16.2% 0.01 158);
-  --color-secondary: oklch(74% 0.018 62);
-  --color-secondary-content: oklch(16.2% 0.01 62);
-  --color-accent: oklch(72% 0.062 158);
-  --color-accent-content: oklch(16.2% 0.01 158);
-  --color-neutral: oklch(34% 0 0);
-  --color-neutral-content: oklch(94% 0 0);
+  --color-primary: #38bdf8;
+  --color-primary-content: #061521;
+  --color-secondary: #a78bfa;
+  --color-secondary-content: #110b22;
+  --color-accent: #2dd4bf;
+  --color-accent-content: #041713;
+  --color-neutral: #26354b;
+  --color-neutral-content: #eef4fc;
 
-  --color-info: oklch(66% 0 0);
-  --color-info-content: oklch(16.2% 0 0);
-  --color-success: oklch(72% 0.062 158);
-  --color-success-content: oklch(16.2% 0.01 158);
-  --color-warning: oklch(74% 0.018 62);
-  --color-warning-content: oklch(16.2% 0.01 62);
-  --color-error: oklch(92.4% 0 0);
-  --color-error-content: oklch(16.2% 0 0);
+  --color-info: #60a5fa;
+  --color-info-content: #071528;
+  --color-success: #34d399;
+  --color-success-content: #051711;
+  --color-warning: #fbbf24;
+  --color-warning-content: #1c1202;
+  --color-error: #fb7185;
+  --color-error-content: #22070c;
 
   --radius-selector: 9999px;
-  --radius-field: 0.5rem;
-  --radius-box: 0.75rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
@@ -120,28 +45,54 @@
   --noise: 0;
 }
 
-@custom-variant dark (&:where([data-theme="workflow-night"], [data-theme="workflow-night"] *));
+@plugin "daisyui/theme" {
+  name: 'rca-ops-light';
+  default: false;
+  prefersdark: false;
+  color-scheme: light;
 
-/**
- * Three roles, chosen for what each has to carry.
- *
- * Crimson Pro at weight 300 is the signature: a headline set in a whisper-weight
- * serif is what makes this read as a printed quarterly rather than a dashboard.
- * Inter runs the interface, where a label has to disappear. JetBrains Mono holds
- * the clock, the ids and the readings — anything compared down a column.
- *
- * Noto Serif KR trails the serif stack for Hangul only: the reports on this
- * surface are written in Korean and Crimson Pro carries no Hangul, so without it
- * the prose falls back to whatever the browser supplies. It never overrides
- * Crimson Pro for Latin, which is what keeps weight 300 intact. Inter has the
- * same gap for Korean UI chrome and takes the system Hangul faces after it.
- */
+  --color-base-100: #ffffff;
+  --color-base-200: #f2f5f9;
+  --color-base-300: #e6ebf2;
+  --color-base-content: #182235;
+
+  --color-primary: #0284c7;
+  --color-primary-content: #ffffff;
+  --color-secondary: #7c3aed;
+  --color-secondary-content: #ffffff;
+  --color-accent: #0f766e;
+  --color-accent-content: #ffffff;
+  --color-neutral: #26354b;
+  --color-neutral-content: #ffffff;
+
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+  --color-success: #059669;
+  --color-success-content: #ffffff;
+  --color-warning: #d97706;
+  --color-warning-content: #ffffff;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 9999px;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@custom-variant dark (&:where([data-theme="rca-ops"], [data-theme="rca-ops"] *));
+
 @theme {
   --font-sans:
     Inter Variable, Inter, -apple-system, BlinkMacSystemFont, system-ui,
-    'Apple SD Gothic Neo', sans-serif;
+    'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   --font-serif:
-    Crimson Pro Variable, Crimson Pro, Noto Serif KR, ui-serif, Georgia, serif;
+    Inter Variable, Inter, -apple-system, BlinkMacSystemFont, system-ui,
+    'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   --font-mono: JetBrains Mono Variable, ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -151,21 +102,25 @@
   }
 
   body {
+    min-height: 100vh;
+    background: var(--color-base-200);
+    color: var(--color-base-content);
     font-family: var(--font-sans);
     font-feature-settings: 'cv05', 'cv11', 'ss03';
+    text-rendering: optimizeLegibility;
   }
 
-  /**
-   * Weight 300 is the signature, so it is set on the face rather than left to
-   * each call site. A heading that reaches for font-semibold beside this is the
-   * one thing that breaks the system, and there were such call sites before.
-   */
+  button,
+  a {
+    -webkit-font-smoothing: antialiased;
+  }
+
   .font-serif {
-    font-weight: 300;
-    letter-spacing: normal;
+    font-family: var(--font-sans);
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
-  /* Clock readings and ids are compared down a column, so digits hold width. */
   .font-mono,
   code,
   kbd,
@@ -179,11 +134,10 @@
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
-    border-radius: 1px;
   }
 
   ::selection {
-    background: color-mix(in oklch, var(--color-primary) 22%, transparent);
+    background: color-mix(in oklch, var(--color-primary) 30%, transparent);
   }
 
   ::-webkit-scrollbar {
@@ -196,177 +150,510 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--color-base-content) 16%, transparent);
-    border-radius: 99px;
+    background: color-mix(in oklch, var(--color-base-content) 24%, transparent);
     border: 3px solid transparent;
-    background-clip: content-box;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--color-base-content) 30%, transparent);
+    border-radius: 99px;
     background-clip: content-box;
   }
 }
 
 @layer components {
-  /* ---- Chrome ---------------------------------------------------------- */
+  /* App chrome */
 
-  .site-head {
-    @apply bg-base-100/90 backdrop-blur-md border-b border-base-content/10;
+  .app-shell {
+    min-height: 100vh;
+    background:
+      radial-gradient(
+        circle at 80% -20%,
+        color-mix(in oklch, var(--color-primary) 8%, transparent),
+        transparent 34rem
+      ),
+      var(--color-base-200);
   }
 
-  /**
-   * Surfaces are separated by a hairline rule.
-   *
-   * This inverts the earlier rule, which forbade borders so the page would not
-   * read as a form. With the hue budget at near-zero the border is the only tool
-   * left to say where one thing ends — so it is used, at 1px, and never stacked
-   * with a shadow on a resting element. That stacking is what actually produces
-   * the boxed-form feel.
-   */
-  .sheet {
-    @apply bg-base-100 rounded-box border border-base-content/[0.11];
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    display: flex;
+    width: 224px;
+    flex-direction: column;
+    border-right: 1px solid
+      color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    background: color-mix(in oklch, var(--color-base-100) 94%, transparent);
+    box-shadow: 12px 0 36px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(18px);
   }
 
+  .app-brand {
+    display: flex;
+    min-height: 72px;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid
+      color-mix(in oklch, var(--color-base-content) 10%, transparent);
+    padding: 0 20px;
+  }
+
+  .app-brand-mark {
+    position: relative;
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklch, var(--color-primary) 48%, transparent);
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+    color: var(--color-primary);
+  }
+
+  .app-brand-mark::before,
+  .app-brand-mark::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 1px;
+    background: currentColor;
+  }
+
+  .app-brand-mark::before {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 0 currentColor;
+  }
+
+  .app-brand-mark::after {
+    width: 1px;
+    height: 16px;
+    opacity: 0.45;
+  }
+
+  .app-nav-label {
+    padding: 22px 20px 8px;
+    color: color-mix(in oklch, var(--color-base-content) 48%, transparent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .app-nav-link {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 10px;
+    margin: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0 10px;
+    color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+    font-size: 13px;
+    font-weight: 550;
+    transition:
+      color 140ms ease,
+      background 140ms ease,
+      border-color 140ms ease;
+  }
+
+  .app-nav-link:hover,
+  .app-nav-link.router-link-active {
+    border-color: color-mix(in oklch, var(--color-primary) 20%, transparent);
+    background: color-mix(in oklch, var(--color-primary) 9%, transparent);
+    color: var(--color-primary);
+  }
+
+  .app-sidebar-foot {
+    margin-top: auto;
+    border-top: 1px solid
+      color-mix(in oklch, var(--color-base-content) 10%, transparent);
+    padding: 16px 20px 20px;
+  }
+
+  .app-main-column {
+    min-height: 100vh;
+    margin-left: 224px;
+  }
+
+  .app-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    border-bottom: 1px solid
+      color-mix(in oklch, var(--color-base-content) 10%, transparent);
+    background: color-mix(in oklch, var(--color-base-200) 86%, transparent);
+    padding: 0 28px;
+    backdrop-filter: blur(16px);
+  }
+
+  .app-content {
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 28px 32px 56px;
+  }
+
+  .page-eyebrow {
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .page-title {
+    margin-top: 5px;
+    font-size: clamp(24px, 2vw, 30px);
+    font-weight: 720;
+    letter-spacing: -0.035em;
+    line-height: 1.18;
+  }
+
+  .page-description {
+    margin-top: 8px;
+    max-width: 72ch;
+    color: color-mix(in oklch, var(--color-base-content) 62%, transparent);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  /* Panels and controls */
+
+  .ops-panel,
+  .sheet,
   .sheet-ruled {
-    @apply bg-base-100 rounded-box border border-base-content/[0.11];
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    border-radius: var(--radius-box);
+    background: color-mix(in oklch, var(--color-base-100) 98%, transparent);
+  }
+
+  .metric-card {
+    position: relative;
+    min-height: 118px;
+    overflow: hidden;
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    border-radius: var(--radius-box);
+    background: color-mix(in oklch, var(--color-base-100) 98%, transparent);
+    padding: 17px 18px 16px;
+    transition:
+      transform 150ms ease,
+      border-color 150ms ease;
+  }
+
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: currentColor;
+    opacity: 0.8;
+  }
+
+  .metric-card:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(
+      in oklch,
+      var(--color-base-content) 22%,
+      transparent
+    );
+  }
+
+  .metric-label {
+    color: color-mix(in oklch, var(--color-base-content) 57%, transparent);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .metric-value {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 28px;
+    font-weight: 650;
+    line-height: 1;
+    color: var(--color-base-content);
+  }
+
+  .metric-help {
+    margin-top: 8px;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+    font-size: 11px;
+  }
+
+  .filter-chip {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 13%, transparent);
+    border-radius: 9999px;
+    background: transparent;
+    padding: 0 11px;
+    color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+    font-size: 11.5px;
+    transition:
+      border-color 140ms ease,
+      background 140ms ease,
+      color 140ms ease,
+      opacity 140ms ease;
+  }
+
+  .filter-chip:hover,
+  .filter-chip[aria-pressed='true'] {
+    border-color: color-mix(
+      in oklch,
+      var(--color-base-content) 26%,
+      transparent
+    );
+    background: color-mix(in oklch, var(--color-base-content) 5%, transparent);
+    color: var(--color-base-content);
+  }
+
+  .filter-chip[aria-pressed='false'] {
+    opacity: 0.42;
+  }
+
+  .status-chip {
+    display: inline-flex;
+    min-height: 23px;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid currentColor;
+    border-radius: 9999px;
+    padding: 0 8px;
+    background: color-mix(in oklch, currentColor 10%, transparent);
+    font-size: 10.5px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .status-chip::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: currentColor;
+  }
+
+  .pill-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid color-mix(in oklch, var(--color-info) 55%, transparent);
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--color-info) 10%, transparent);
+    padding: 2px 9px;
+    color: var(--color-info);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .pill-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 10%, transparent);
+    border-radius: 4px;
+    background: var(--color-base-300);
+    padding: 2px 7px;
+    color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+    font-size: 11px;
   }
 
   .label-sm {
-    @apply text-[11px] text-base-content/68;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
   }
 
-  /* ---- State without colour -------------------------------------------- */
-
-  /**
-   * The pill for the two things a person acts on: a live run, and a playbook
-   * awaiting approval. Sage as an outline, never as a fill.
-   */
-  .pill-live {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-primary/55;
-    @apply bg-base-100 px-2.5 py-0.5 text-[13px] font-medium text-primary;
-  }
-
-  /**
-   * Compact metadata — engine, counts, ordinals. Fog ground, Graphite text, and
-   * the 4px radius that separates a badge from a button.
-   */
-  .pill-meta {
-    @apply inline-flex items-center gap-1 rounded-[4px] bg-base-200;
-    @apply px-2 py-0.5 text-[12px] text-base-content/74;
-  }
-
-  /**
-   * A break, stated without red — because there is no red in this palette.
-   *
-   * The rule under the word is what carries "this one went wrong" at a glance;
-   * the word itself is what carries it to a reader who cannot see the rule. Both
-   * are required. Do not swap this for a coloured chip.
-   */
   .mark-broken {
-    @apply font-medium decoration-current underline decoration-dotted;
-    @apply underline-offset-[3px];
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
   }
 
   .action-btn {
-    @apply btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100 transition-opacity;
+    opacity: 0.62;
+    transition: opacity 140ms ease;
   }
 
-  /* ---- The spine ------------------------------------------------------- */
-
-  /**
-   * The signature: one continuous vertical rule down the left of the archive,
-   * with every session hung off it at its own hour.
-   *
-   * These records are timestamps first — the whole finding in a report is that a
-   * deploy at 05:40:02 preceded a spike at 05:40:00 — so time is the axis the
-   * page is built on rather than a column at the far right.
-   */
-  .spine {
-    @apply relative pl-[86px];
+  .action-btn:hover,
+  .action-btn:focus-visible {
+    opacity: 1;
   }
 
-  .spine::before {
+  .btn {
+    min-height: 2rem;
+    height: 2rem;
+    border-radius: 6px;
+    font-weight: 620;
+    letter-spacing: -0.01em;
+    text-transform: none;
+  }
+
+  .btn-sm {
+    min-height: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .modal-box {
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 15%, transparent);
+    background: var(--color-base-100);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Incident queue */
+
+  .incident-queue {
+    overflow: hidden;
+    border: 1px solid
+      color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    border-radius: var(--radius-box);
+    background: var(--color-base-100);
+  }
+
+  .incident-day + .incident-day {
+    border-top: 1px solid
+      color-mix(in oklch, var(--color-base-content) 14%, transparent);
+  }
+
+  .incident-day-head {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid
+      color-mix(in oklch, var(--color-base-content) 9%, transparent);
+    background: color-mix(in oklch, var(--color-base-300) 62%, transparent);
+    padding: 0 16px;
+  }
+
+  .incident-day-label {
+    color: color-mix(in oklch, var(--color-base-content) 65%, transparent);
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .incident-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(270px, 1.5fr) 128px 104px 164px;
+    min-height: 116px;
+    gap: 18px;
+    border-bottom: 1px solid
+      color-mix(in oklch, var(--color-base-content) 8%, transparent);
+    padding: 17px 16px 16px 20px;
+    transition:
+      background 140ms ease,
+      opacity 140ms ease;
+  }
+
+  .incident-row:last-child {
+    border-bottom: 0;
+  }
+
+  .incident-row::before {
     content: '';
-    @apply absolute top-0 bottom-0 w-px bg-base-content/12;
-    left: 61px;
+    position: absolute;
+    inset: 12px auto 12px 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: currentColor;
+    opacity: 0.85;
   }
 
-  /**
-   * A day breaks the spine, because a gap of hours is information.
-   *
-   * The label sits across the rule rather than in the time gutter — a date and a
-   * clock reading in the same column read as one wrong timestamp.
-   */
-  .spine-day {
-    @apply relative -ml-[86px] pl-[86px] pt-8 pb-1 first:pt-0;
+  .incident-row:hover,
+  .incident-row:focus-within {
+    background: color-mix(
+      in oklch,
+      var(--color-base-content) 3.5%,
+      transparent
+    );
   }
 
-  /* Set on the rule itself, so the date reads as a marker on the clock rather
-     than as another entry. */
-  .spine-day > .spine-day-label {
-    @apply block -ml-[86px] pl-[86px] mb-3 relative;
-    @apply font-mono text-[11px] font-medium text-base-content/72;
+  .incident-title {
+    color: var(--color-base-content);
+    font-size: 14px;
+    font-weight: 680;
+    letter-spacing: -0.015em;
+    line-height: 1.35;
   }
 
-  .spine-day > .spine-day-label::before {
-    content: '';
-    @apply absolute bg-base-100;
-    left: 55px;
-    top: -2px;
-    width: 13px;
-    height: calc(100% + 4px);
+  .incident-title:hover {
+    color: var(--color-primary);
   }
 
-  .spine-day > .spine-day-label::after {
-    content: '';
-    @apply absolute rounded-full bg-base-content/25;
-    left: 58.5px;
-    top: 50%;
-    margin-top: -3px;
-    width: 6px;
-    height: 6px;
+  .incident-summary {
+    display: -webkit-box;
+    max-width: 78ch;
+    margin-top: 8px;
+    overflow: hidden;
+    color: color-mix(in oklch, var(--color-base-content) 58%, transparent);
+    font-size: 12px;
+    line-height: 1.55;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
-  .spine-entry {
-    @apply relative -ml-[86px] pl-[86px] py-3;
-    @apply border-t border-base-content/[0.06] first:border-t-0;
+  .incident-data-label {
+    color: color-mix(in oklch, var(--color-base-content) 42%, transparent);
+    font-size: 9.5px;
+    font-weight: 650;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
   }
 
-  /* The clock reading, set in the gutter against the rule. */
-  .spine-time {
-    @apply absolute left-0 font-mono text-[12px] tabular-nums text-base-content/70;
-    width: 52px;
-    text-align: right;
-    top: 0.8rem;
+  .incident-data-value {
+    margin-top: 7px;
+    color: color-mix(in oklch, var(--color-base-content) 78%, transparent);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
   }
 
-  /* The node where an entry meets the spine. Filled means something ran. */
-  .spine-node {
-    @apply absolute rounded-full bg-base-100;
-    left: 57px;
-    top: 0.95rem;
-    width: 9px;
-    height: 9px;
-    box-shadow: 0 0 0 1.5px currentColor;
+  .incident-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
   }
 
-  .spine-node-filled {
-    @apply bg-current;
+  .incident-secondary-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    font-size: 10.5px;
   }
 
-  /* ---- Duration -------------------------------------------------------- */
+  .incident-secondary-actions a:hover,
+  .incident-secondary-actions button:hover {
+    color: var(--color-primary);
+  }
 
-  /**
-   * How long a run took, as a length rather than a number.
-   *
-   * A minute count has to be compared arithmetically; a bar is compared by eye.
-   * The width is set inline from the real duration, so a 42-minute run is
-   * visibly four times a 10-minute one.
-   */
   .run-bar {
-    @apply relative h-[3px] rounded-full bg-current;
+    position: relative;
+    display: block;
     min-width: 3px;
+    height: 3px;
+    border-radius: 9999px;
+    background: currentColor;
   }
 
   .run-bar-open {
@@ -377,129 +664,330 @@
     );
   }
 
-  /* ---- The causal chain ------------------------------------------------ */
+  /* Compatibility with detail-page structures */
 
-  /**
-   * The finding, set as a linked descent.
-   *
-   * The search runs in parallel and most branches are discarded, but the result
-   * is one chain: each answer becomes the next question. The connecting rule is
-   * what makes it read as a descent rather than a list of five paragraphs.
-   */
+  .spine {
+    position: relative;
+  }
+
+  .spine-day {
+    margin-bottom: 24px;
+  }
+
+  .spine-day-label {
+    display: block;
+    margin-bottom: 8px;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .spine-entry {
+    position: relative;
+  }
+
+  .spine-time {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .spine-node {
+    border-radius: 9999px;
+  }
+
   .chain-link {
-    @apply relative pl-8 pb-7 last:pb-0;
+    position: relative;
+    padding: 0 0 20px 34px;
   }
 
   .chain-link::before {
     content: '';
-    @apply absolute left-[7px] top-[22px] bottom-0 w-px bg-base-content/15;
+    position: absolute;
+    top: 21px;
+    bottom: 0;
+    left: 10px;
+    width: 1px;
+    background: color-mix(in oklch, var(--color-base-content) 16%, transparent);
   }
 
   .chain-link:last-child::before {
-    @apply hidden;
+    display: none;
   }
 
   .chain-dot {
-    @apply absolute left-0 top-[6px] size-[15px] rounded-full;
-    @apply border border-base-content/25 bg-base-100;
-    @apply font-mono text-[9px] leading-[13px] text-center text-base-content/70;
+    position: absolute;
+    top: 1px;
+    left: 0;
+    display: grid;
+    width: 21px;
+    height: 21px;
+    place-items: center;
+    border: 1px solid color-mix(in oklch, var(--color-primary) 45%, transparent);
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 650;
   }
 
-  /* The last link is where the fix belongs, so it is the one marked. */
-  .chain-link:last-child .chain-dot {
-    @apply border-primary/50 text-primary;
-  }
-
-  /* Read as prose, not as a headline, so both take the text weight. */
   .chain-question {
-    @apply font-serif font-normal text-[15px] leading-snug text-base-content/76;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .chain-answer {
-    @apply font-serif font-normal text-[16px] leading-[1.65] mt-1.5;
+    margin-top: 5px;
+    color: color-mix(in oklch, var(--color-base-content) 88%, transparent);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.62;
   }
 
-  /* ---- Steps ----------------------------------------------------------- */
-
   .step-row {
-    @apply relative pl-9 py-3.5;
+    position: relative;
+    padding: 14px 10px 14px 42px;
   }
 
   .step-ord {
-    @apply absolute left-0 top-3.5 font-mono text-[11px] text-base-content/68 tabular-nums;
+    position: absolute;
+    top: 15px;
+    left: 10px;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 650;
   }
 
-  /* ---- Report prose ---------------------------------------------------- */
-
-  /**
-   * A report body, set to be read rather than scanned.
-   *
-   * The generated H1 restates the RCA id already in the header, so it is
-   * suppressed entirely. Everything else steps down from there.
-   */
-  .prose-report {
-    @apply prose max-w-[68ch] font-serif;
-    /* Weight 300 is a display weight. Running prose set that light stops being
-       readable at 16px, so the body takes 400 and only the headline whispers. */
-    @apply font-normal;
-    @apply prose-headings:font-sans prose-headings:tracking-tight;
-    @apply prose-headings:font-medium;
-    @apply prose-h1:hidden;
-    @apply prose-h2:text-[13px] prose-h2:uppercase prose-h2:tracking-[0.1em];
-    @apply prose-h2:text-base-content/68 prose-h2:mt-11 prose-h2:mb-3;
-    @apply prose-h3:text-[15px] prose-h3:mt-7 prose-h3:mb-2;
-    @apply prose-p:text-[16px] prose-p:leading-[1.72];
-    @apply prose-li:text-[16px] prose-li:leading-[1.66];
-    @apply prose-strong:font-semibold;
-    @apply prose-code:font-mono prose-code:text-[0.84em] prose-code:font-normal;
-    @apply prose-code:before:content-none prose-code:after:content-none;
-    @apply prose-code:bg-base-200 prose-code:px-1.5 prose-code:py-0.5;
-    @apply prose-code:rounded-[4px];
-    @apply prose-a:text-primary prose-a:underline prose-a:underline-offset-2;
-    @apply prose-hr:border-base-content/10 prose-hr:my-10;
-    @apply prose-blockquote:border-l-2 prose-blockquote:border-primary/40;
-    @apply prose-blockquote:not-italic prose-blockquote:font-normal;
-    @apply prose-table:text-[14px] prose-table:font-sans;
-    @apply prose-th:text-[11px] prose-th:font-semibold prose-th:text-base-content/70;
-    @apply prose-th:uppercase prose-th:tracking-wider;
-    @apply prose-td:align-top;
-  }
-
-  /* Field-level prose inside panels: same face, tighter measure. */
+  .prose-report,
   .prose-field {
-    @apply prose prose-sm max-w-none;
-    @apply prose-p:leading-relaxed prose-li:leading-relaxed;
-    @apply prose-code:font-mono prose-code:text-[0.85em];
-    @apply prose-code:before:content-none prose-code:after:content-none;
-    @apply prose-code:bg-base-200 prose-code:px-1 prose-code:rounded-[4px];
-    @apply prose-a:text-primary;
+    --tw-prose-body: color-mix(
+      in oklch,
+      var(--color-base-content) 78%,
+      transparent
+    );
+    --tw-prose-headings: var(--color-base-content);
+    --tw-prose-lead: color-mix(
+      in oklch,
+      var(--color-base-content) 70%,
+      transparent
+    );
+    --tw-prose-links: var(--color-primary);
+    --tw-prose-bold: var(--color-base-content);
+    --tw-prose-counters: color-mix(
+      in oklch,
+      var(--color-base-content) 55%,
+      transparent
+    );
+    --tw-prose-bullets: color-mix(
+      in oklch,
+      var(--color-base-content) 35%,
+      transparent
+    );
+    --tw-prose-hr: color-mix(
+      in oklch,
+      var(--color-base-content) 13%,
+      transparent
+    );
+    --tw-prose-quotes: color-mix(
+      in oklch,
+      var(--color-base-content) 82%,
+      transparent
+    );
+    --tw-prose-quote-borders: color-mix(
+      in oklch,
+      var(--color-primary) 50%,
+      transparent
+    );
+    --tw-prose-captions: color-mix(
+      in oklch,
+      var(--color-base-content) 50%,
+      transparent
+    );
+    --tw-prose-code: var(--color-primary);
+    --tw-prose-pre-code: color-mix(
+      in oklch,
+      var(--color-base-content) 82%,
+      transparent
+    );
+    --tw-prose-pre-bg: var(--color-base-200);
+    --tw-prose-th-borders: color-mix(
+      in oklch,
+      var(--color-base-content) 18%,
+      transparent
+    );
+    --tw-prose-td-borders: color-mix(
+      in oklch,
+      var(--color-base-content) 10%,
+      transparent
+    );
+    max-width: 78ch;
+    font-family: var(--font-sans);
+  }
+
+  .prose-report {
+    font-size: 14px;
+    line-height: 1.75;
+  }
+
+  .prose-report h1 {
+    display: none;
+  }
+
+  .prose-report h2 {
+    margin-top: 2.2rem;
+    margin-bottom: 0.75rem;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+
+  .prose-report h3 {
+    font-size: 13px;
+    font-weight: 680;
+  }
+
+  .prose-report code,
+  .prose-field code {
+    border-radius: 4px;
+    background: var(--color-base-300);
+    padding: 2px 5px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+
+  .prose-field {
+    font-size: 12.5px;
+    line-height: 1.65;
+  }
+
+  .site-head {
+    border-bottom: 1px solid
+      color-mix(in oklch, var(--color-base-content) 10%, transparent);
+    background: color-mix(in oklch, var(--color-base-100) 92%, transparent);
+    backdrop-filter: blur(14px);
   }
 }
 
 @layer utilities {
-  /* A live run is the only thing on the page that moves. */
-  @keyframes ember {
+  @keyframes ops-pulse {
     0%,
     100% {
       opacity: 1;
     }
     50% {
-      opacity: 0.35;
+      opacity: 0.42;
     }
   }
 
   .animate-ember {
-    animation: ember 1.9s ease-in-out infinite;
+    animation: ops-pulse 1.8s ease-in-out infinite;
+  }
+
+  @media (max-width: 1023px) {
+    .app-sidebar {
+      position: sticky;
+      top: 0;
+      width: 100%;
+      height: auto;
+      flex-direction: row;
+      align-items: center;
+      border-right: 0;
+      border-bottom: 1px solid
+        color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    }
+
+    .app-brand {
+      min-height: 56px;
+      border-bottom: 0;
+    }
+
+    .app-brand-mark {
+      width: 30px;
+      height: 30px;
+    }
+
+    .app-nav-label,
+    .app-sidebar-foot {
+      display: none;
+    }
+
+    .app-nav-link {
+      margin-left: auto;
+      margin-right: 12px;
+    }
+
+    .app-main-column {
+      margin-left: 0;
+    }
+
+    .app-topbar {
+      display: none;
+    }
+
+    .app-content {
+      padding: 24px 20px 48px;
+    }
+
+    .incident-row {
+      grid-template-columns: minmax(0, 1fr) 110px 150px;
+    }
+
+    .incident-row > :nth-child(3) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .app-brand {
+      padding-left: 14px;
+    }
+
+    .app-brand-subtitle {
+      display: none;
+    }
+
+    .app-content {
+      padding: 20px 14px 40px;
+    }
+
+    .incident-row {
+      display: block;
+      padding: 15px 14px 15px 18px;
+    }
+
+    .incident-row > * + * {
+      margin-top: 13px;
+    }
+
+    .incident-actions {
+      align-items: flex-start;
+    }
+
+    .incident-actions .btn {
+      width: 100%;
+    }
+
+    .incident-secondary-actions {
+      justify-content: flex-start;
+    }
+  }
+
+  @media (hover: none) {
+    .incident-secondary-actions {
+      opacity: 1;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
+      scroll-behavior: auto !important;
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
     }
   }
 }

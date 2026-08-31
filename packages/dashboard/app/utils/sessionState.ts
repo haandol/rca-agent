@@ -194,26 +194,19 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 };
 
 /**
- * Colour is spent only where a state has consequence.
+ * Operational state colours shared by the queue and detail header.
  *
- * A resolved incident and a skipped alarm both need no action, so neither is
- * given emphasis. Sage marks the two that are somebody's move — a run in
- * progress and a report waiting on approval.
- *
- * The rest is set in ink at varying value, because the palette has no red: an
- * unresolved incident cannot be stated as a hue, so it takes full ink plus the
- * dotted rule of `mark-broken` to survive a scan. `OUTCOME_LABEL` is what
- * actually names the outcome and must always be rendered alongside — a reader who
- * cannot resolve the rule still has the word.
+ * Visible labels remain mandatory: colour accelerates scanning but never carries
+ * the meaning alone.
  */
 export const OUTCOME_TONE: Record<Outcome, string> = {
-  RUNNING: 'text-primary',
-  AWAITING: 'text-primary',
-  RESOLVED: 'text-base-content/78',
-  UNRESOLVED: 'text-base-content mark-broken',
-  NO_CAUSE: 'text-base-content/68',
-  BROKEN: 'text-base-content/75 mark-broken',
-  SKIPPED: 'text-base-content/62',
+  RUNNING: 'text-info',
+  AWAITING: 'text-warning',
+  RESOLVED: 'text-success',
+  UNRESOLVED: 'text-error mark-broken',
+  NO_CAUSE: 'text-warning',
+  BROKEN: 'text-error mark-broken',
+  SKIPPED: 'text-base-content/48',
 };
 
 /** Outcomes that put a session on somebody's desk. */

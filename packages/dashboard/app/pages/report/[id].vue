@@ -181,26 +181,24 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
 <template>
   <div>
     <!-- Identity: what broke, when, and what became of it -->
-    <header class="mb-9">
+    <header class="mb-7">
       <NuxtLink
         to="/"
-        class="text-[12px] text-base-content/68 hover:text-primary inline-flex items-center gap-1.5 mb-4"
+        class="mb-4 inline-flex items-center gap-1.5 text-[11px] text-base-content/52 hover:text-primary"
       >
         <span aria-hidden="true">←</span> 기록으로
       </NuxtLink>
 
-      <h1
-        v-if="session"
-        class="font-serif text-[26px] leading-tight tracking-tight"
-      >
+      <p class="page-eyebrow">Root Cause Analysis</p>
+      <h1 v-if="session" class="page-title break-words">
         {{ session.alarmName }}
       </h1>
-      <h1 v-else class="font-serif text-[26px] leading-tight">RCA 보고서</h1>
+      <h1 v-else class="page-title">RCA 보고서</h1>
 
       <div
-        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/70"
+        class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-base-content/58"
       >
-        <span v-if="outcome" :class="OUTCOME_TONE[outcome]" class="font-medium">
+        <span v-if="outcome" :class="OUTCOME_TONE[outcome]" class="status-chip">
           {{ OUTCOME_LABEL[outcome] }}
         </span>
         <time v-if="session?.createdAt" :datetime="session.createdAt">
@@ -243,9 +241,12 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
     </div>
 
     <template v-else-if="report">
-      <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_264px] gap-x-14">
+      <div
+        class="grid grid-cols-1 gap-5"
+        :class="timeline.length ? 'lg:grid-cols-[minmax(0,1fr)_300px]' : ''"
+      >
         <!-- The finding leads: one descent, symptom to fix -->
-        <div class="min-w-0">
+        <div class="ops-panel min-w-0 p-5 sm:p-6">
           <CausalChain v-if="chain.length" :links="chain" />
 
           <!-- No chain parsed: the body is the only account, so open it -->
@@ -256,7 +257,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
           <!-- The full report, folded behind the chain -->
           <div
             v-if="chain.length"
-            class="mt-11 pt-7 border-t border-base-content/10"
+            class="mt-8 border-t border-base-content/10 pt-5"
           >
             <button
               class="flex items-baseline gap-2 text-[13px] text-base-content/72 hover:text-primary transition-colors"
@@ -278,7 +279,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
         </div>
 
         <!-- What happened when, kept beside the argument rather than inside it -->
-        <aside v-if="timeline.length" class="mt-11 lg:mt-0">
+        <aside v-if="timeline.length" class="ops-panel p-5">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-4">
             그날의 시각
           </h2>
@@ -300,13 +301,11 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
       <!-- The approval gate. Set apart, because approving starts writes. -->
       <section
         v-if="playbook"
-        class="mt-14 pt-9 border-t-2"
-        :class="
-          isPendingDecision ? 'border-primary/35' : 'border-base-content/10'
-        "
+        class="ops-panel mt-5 border-l-[3px] p-5 sm:p-6"
+        :class="isPendingDecision ? 'border-warning' : 'border-base-content/15'"
       >
         <div class="flex flex-wrap items-baseline justify-between gap-3 mb-2">
-          <h2 class="font-serif text-[21px] tracking-tight">
+          <h2 class="text-[19px] font-bold tracking-[-0.025em]">
             {{
               isPendingDecision
                 ? '이 절차를 승인하면 실행이 시작됩니다'
@@ -379,7 +378,7 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
                gets the filled button. -->
           <button
             class="btn btn-sm"
-            :class="isPendingDecision ? 'btn-primary' : 'btn-outline'"
+            :class="isPendingDecision ? 'btn-warning' : 'btn-outline'"
             :disabled="!canApprove"
             @click="approvalModal?.showModal()"
           >
@@ -447,18 +446,16 @@ useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기
       </section>
 
       <!-- Where the rest lives -->
-      <nav
-        class="mt-12 pt-6 border-t border-base-content/10 flex flex-wrap gap-x-6 gap-y-2 text-[13px]"
-      >
+      <nav class="ops-panel mt-5 flex flex-wrap gap-2 p-3 text-[12px]">
         <NuxtLink
           :to="engine ? `/trace/${id}?engine=${engine}` : `/trace/${id}`"
-          class="text-base-content/72 hover:text-primary"
+          class="btn btn-ghost btn-sm"
         >
           분석이 실제로 거친 경로
         </NuxtLink>
         <NuxtLink
           :to="engine ? `/playbook/${id}?engine=${engine}` : `/playbook/${id}`"
-          class="text-base-content/72 hover:text-primary"
+          class="btn btn-ghost btn-sm"
         >
           플레이북 전체
         </NuxtLink>

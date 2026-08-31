@@ -5,7 +5,6 @@ import {
   OUTCOME_TONE,
   READINESS_DESC,
   READINESS_LABEL,
-  needsAttention,
   outcomeOf,
   stoppedAtLabel,
   type Outcome,
@@ -340,14 +339,15 @@ const filters = computed(() =>
   ),
 );
 
-/** What the top line says. The open items are the reason to be on this page. */
-const openCount = computed(() =>
-  [...counts.value.entries()]
-    .filter(([outcome]) => needsAttention(outcome))
-    .reduce((sum, [, count]) => sum + count, 0),
-);
 const awaitingCount = computed(() => counts.value.get('AWAITING') ?? 0);
 const runningCount = computed(() => counts.value.get('RUNNING') ?? 0);
+const investigationCount = computed(
+  () =>
+    (counts.value.get('UNRESOLVED') ?? 0) +
+    (counts.value.get('NO_CAUSE') ?? 0) +
+    (counts.value.get('BROKEN') ?? 0),
+);
+const resolvedCount = computed(() => counts.value.get('RESOLVED') ?? 0);
 
 const readinessModal = ref<HTMLDialogElement | null>(null);
 
@@ -495,73 +495,95 @@ useHead({ title: '장애 기록' });
 
 <template>
   <div>
-    <!-- The opening line is the state of the desk, not a count of rows. -->
-    <div class="flex flex-wrap items-end justify-between gap-5 mb-8">
+    <header class="flex flex-wrap items-start justify-between gap-5">
       <div>
-        <h1 class="font-serif text-[27px] leading-tight tracking-tight">
-          <template v-if="awaitingCount">
-            승인을 기다리는 리포트가
-            <span class="text-primary font-semibold whitespace-nowrap"
-              >{{ awaitingCount }}건</span
-            >
-            있습니다
-          </template>
-          <template v-else-if="runningCount">
-            분석이
-            <span class="text-primary font-semibold">{{ runningCount }}건</span>
-            진행 중입니다
-          </template>
-          <template v-else>기다리는 일이 없습니다</template>
-        </h1>
-        <p class="text-[13px] text-base-content/68 mt-2">
-          기록 {{ totalCount }}건
-          <template v-if="!openCount"> · 모두 처리되었습니다</template>
+        <p class="page-eyebrow">Incident Operations</p>
+        <h1 class="page-title">RCA Operations</h1>
+        <p class="page-description">
+          자동 분석 결과를 한곳에서 비교하고, 근거와 복구 절차를 검토한 뒤
+          실행을 승인합니다.
         </p>
       </div>
-      <button class="btn btn-ghost btn-sm font-normal gap-2" @click="refresh()">
+      <button class="btn btn-outline btn-sm gap-2" @click="refresh()">
         <span
           v-if="status === 'pending'"
           class="loading loading-spinner loading-xs"
         />
-        다시 읽기
+        데이터 새로고침
       </button>
-    </div>
+    </header>
 
-    <!-- Filters name outcomes, not pipeline states: the reader is choosing what
-         kind of ending to look at. -->
-    <div
-      v-if="filters.length"
-      class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-7 pb-5 border-b border-base-content/10"
+    <section
+      class="grid grid-cols-2 xl:grid-cols-4 gap-3 mt-7"
+      aria-label="운영 현황"
     >
-      <button
-        v-for="filter in filters"
-        :key="filter.outcome"
-        class="group flex items-baseline gap-1.5 text-[13px] transition-opacity"
-        :class="hidden.has(filter.outcome) ? 'opacity-30' : ''"
-        :aria-pressed="!hidden.has(filter.outcome)"
-        @click="toggleFilter(filter.outcome)"
+      <div class="metric-card text-warning">
+        <div class="metric-label">Awaiting approval</div>
+        <div class="metric-value">{{ awaitingCount }}</div>
+        <div class="metric-help">사람의 검토와 승인이 필요합니다</div>
+      </div>
+      <div class="metric-card text-info">
+        <div class="metric-label">Analysis running</div>
+        <div class="metric-value">{{ runningCount }}</div>
+        <div class="metric-help">두 분석 엔진에서 진행 중입니다</div>
+      </div>
+      <div class="metric-card text-error">
+        <div class="metric-label">Needs investigation</div>
+        <div class="metric-value">{{ investigationCount }}</div>
+        <div class="metric-help">미해결·원인 미확정·중단 합계</div>
+      </div>
+      <div class="metric-card text-success">
+        <div class="metric-label">Resolved</div>
+        <div class="metric-value">{{ resolvedCount }}</div>
+        <div class="metric-help">전체 기록 {{ totalCount }}건</div>
+      </div>
+    </section>
+
+    <section class="ops-panel mt-5">
+      <div
+        class="flex flex-wrap items-center gap-2 border-b border-base-content/10 px-4 py-3"
       >
         <span
-          class="size-[7px] rounded-full shrink-0 self-center"
-          :class="[
-            OUTCOME_TONE[filter.outcome],
-            hidden.has(filter.outcome) ? 'bg-current opacity-40' : 'bg-current',
-          ]"
-        />
-        <span class="group-hover:underline underline-offset-2">{{
-          filter.label
-        }}</span>
-        <span class="font-mono text-[11px] text-base-content/65">{{
-          filter.count
-        }}</span>
-      </button>
-      <button
-        class="text-[12px] text-base-content/65 hover:text-primary ml-auto"
-        @click="readinessModal?.showModal()"
+          class="mr-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-base-content/42"
+        >
+          Outcome filter
+        </span>
+        <button
+          v-for="filter in filters"
+          :key="filter.outcome"
+          class="filter-chip"
+          :class="OUTCOME_TONE[filter.outcome]"
+          :aria-pressed="!hidden.has(filter.outcome)"
+          @click="toggleFilter(filter.outcome)"
+        >
+          <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+          <span>{{ filter.label }}</span>
+          <span class="font-mono text-[10px] opacity-70">
+            {{ filter.count }}
+          </span>
+        </button>
+        <button
+          class="ml-auto text-[11px] text-base-content/52 hover:text-primary"
+          @click="readinessModal?.showModal()"
+        >
+          상태 기준 보기
+        </button>
+      </div>
+      <div
+        class="flex items-center justify-between gap-4 px-4 py-2.5 text-[11px] text-base-content/48"
       >
-        상태 설명
-      </button>
-    </div>
+        <span>
+          표시 중
+          <strong class="font-mono font-medium text-base-content/72">
+            {{ visibleRows.length }}
+          </strong>
+          건
+        </span>
+        <span class="hidden sm:inline">
+          최신 순 · Asia/Seoul · 엔진별 독립 분석
+        </span>
+      </div>
+    </section>
 
     <!-- Loading -->
     <div
@@ -590,154 +612,168 @@ useHead({ title: '장애 기록' });
       </button>
     </div>
 
-    <!-- The archive, hung off one clock -->
-    <div v-else class="spine">
-      <section v-for="day in days" :key="day.key" class="spine-day">
-        <span class="spine-day-label">{{ day.label }}</span>
+    <!-- Dense queue: every operational fact needed for triage is visible. -->
+    <div v-else class="incident-queue mt-4">
+      <section v-for="day in days" :key="day.key" class="incident-day">
+        <div class="incident-day-head">
+          <span class="incident-day-label">{{ day.label }}</span>
+          <span class="font-mono text-[10px] text-base-content/42">
+            {{ day.rows.length }} incidents
+          </span>
+        </div>
 
         <article
           v-for="row in day.rows"
           :key="`${row.rcaId}-${row.engine}`"
-          class="spine-entry group transition-opacity"
-          :class="
+          class="incident-row group"
+          :class="[
+            OUTCOME_TONE[row.outcome],
             busyRowKey === rowKeyOf(row.rcaId, row.engine)
               ? 'opacity-40 pointer-events-none'
-              : ''
-          "
+              : '',
+          ]"
           :aria-busy="busyRowKey === rowKeyOf(row.rcaId, row.engine)"
         >
-          <time class="spine-time" :datetime="row.createdAt">
-            {{ clockOf(row.createdAt) }}
-          </time>
-          <span
-            class="spine-node"
-            :class="[
-              OUTCOME_TONE[row.outcome],
-              row.outcome === 'SKIPPED' ? '' : 'spine-node-filled',
-              row.outcome === 'RUNNING' ? 'animate-ember' : '',
-            ]"
-            aria-hidden="true"
-          />
+          <div class="min-w-0 text-base-content">
+            <div class="flex flex-wrap items-center gap-2">
+              <span
+                class="status-chip"
+                :class="[
+                  OUTCOME_TONE[row.outcome],
+                  row.outcome === 'RUNNING' ? 'animate-ember' : '',
+                ]"
+              >
+                {{ OUTCOME_LABEL[row.outcome] }}
+              </span>
+              <span class="pill-meta font-mono">{{ row.engine }}</span>
+              <span
+                v-if="row.retrospectiveStatus === 'UPDATED'"
+                class="pill-meta text-accent"
+              >
+                회고 반영
+              </span>
+            </div>
 
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <NuxtLink
               :to="`/report/${row.rcaId}?engine=${row.engine}`"
-              class="font-serif text-[17px] leading-tight hover:text-primary transition-colors"
+              class="incident-title mt-2.5 inline-block"
               :title="row.alarmName"
             >
               {{ shortAlarm(row.alarmName) }}
             </NuxtLink>
-            <span
-              class="text-[12px] font-medium"
-              :class="OUTCOME_TONE[row.outcome]"
+
+            <p
+              v-if="row.rootCause"
+              class="incident-summary"
+              :title="stripInlineMarkup(row.rootCause)"
             >
-              {{ OUTCOME_LABEL[row.outcome] }}
-            </span>
-            <span class="font-mono text-[11px] text-base-content/62">
-              {{ row.engine }}
-            </span>
+              {{ stripInlineMarkup(row.rootCause) }}
+            </p>
+            <p
+              v-else-if="row.errorReason"
+              class="incident-summary"
+              :title="row.errorReason"
+            >
+              {{ row.errorReason }}
+            </p>
+            <p v-else class="incident-summary italic">
+              분석 결과 요약이 아직 기록되지 않았습니다.
+            </p>
+
+            <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span
+                v-if="
+                  row.outcome === 'BROKEN' &&
+                  stoppedAtLabel(row.engine, row.stoppedAt)
+                "
+                class="text-[10.5px] text-error"
+              >
+                {{ stoppedAtLabel(row.engine, row.stoppedAt) }}
+              </span>
+              <span
+                v-if="row.executionBlockedCount"
+                class="text-[10.5px] text-warning"
+                title="되돌릴 수 없는 조치라 차단되어 수동 조치로 남은 절차"
+              >
+                수동 조치 {{ row.executionBlockedCount }}건
+              </span>
+              <span
+                v-if="row.executionAttempts > 1"
+                class="text-[10.5px] text-base-content/48"
+              >
+                실행 {{ row.executionAttempts }}회
+              </span>
+            </div>
           </div>
 
-          <!-- How long it ran, as a length. Dashes mean it never closed. -->
-          <div
-            v-if="row.durationMs || row.outcome === 'RUNNING'"
-            class="flex items-center gap-2.5 mt-2"
-          >
-            <span
-              class="run-bar"
-              :class="[
-                OUTCOME_TONE[row.outcome],
-                row.outcome === 'RUNNING' ? 'run-bar-open' : '',
-              ]"
-              :style="{ width: barWidth(row.durationMs) }"
-            />
-            <span class="font-mono text-[11px] text-base-content/65">
+          <div class="text-base-content">
+            <div class="incident-data-label">Started</div>
+            <time class="incident-data-value block" :datetime="row.createdAt">
+              {{ clockOf(row.createdAt) }} KST
+            </time>
+            <div class="mt-3 font-mono text-[9.5px] text-base-content/38">
+              {{ row.rcaId.slice(0, 8) }}
+            </div>
+          </div>
+
+          <div class="text-base-content">
+            <div class="incident-data-label">Duration</div>
+            <div class="incident-data-value">
               {{ formatRun(row.durationMs) || '진행 중' }}
-            </span>
+            </div>
+            <div
+              v-if="row.durationMs || row.outcome === 'RUNNING'"
+              class="mt-3 flex h-4 items-center"
+            >
+              <span
+                class="run-bar"
+                :class="[
+                  OUTCOME_TONE[row.outcome],
+                  row.outcome === 'RUNNING' ? 'run-bar-open' : '',
+                ]"
+                :style="{ width: barWidth(row.durationMs) }"
+              />
+            </div>
           </div>
 
-          <!-- One line of finding, in the report's own words. -->
-          <p
-            v-if="row.rootCause"
-            class="font-serif text-[14px] text-base-content/76 leading-snug mt-2 max-w-[64ch] line-clamp-2"
-          >
-            {{ stripInlineMarkup(row.rootCause) }}
-          </p>
-          <p
-            v-else-if="row.errorReason"
-            class="text-[13px] text-base-content/68 mt-2 max-w-[64ch] truncate"
-            :title="row.errorReason"
-          >
-            {{ row.errorReason }}
-          </p>
-
-          <!-- A broken run says where it broke: 'FAILED' alone cannot tell a
-               near-complete analysis from one that never started. -->
-          <p
-            v-if="
-              row.outcome === 'BROKEN' &&
-              stoppedAtLabel(row.engine, row.stoppedAt)
-            "
-            class="text-[12px] text-base-content/65 mt-1.5"
-          >
-            {{ stoppedAtLabel(row.engine, row.stoppedAt) }}
-          </p>
-
-          <!-- The move this row is waiting on, stated as the move. -->
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
+          <div class="incident-actions text-base-content">
             <NuxtLink
-              v-if="row.outcome === 'AWAITING'"
               :to="`/report/${row.rcaId}?engine=${row.engine}`"
-              class="btn btn-primary btn-xs font-normal"
+              class="btn btn-sm w-full"
+              :class="
+                row.outcome === 'AWAITING'
+                  ? 'btn-warning'
+                  : 'btn-outline border-base-content/18'
+              "
             >
-              절차 {{ row.executionStepCount }}개 검토하고 승인
+              {{
+                row.outcome === 'AWAITING'
+                  ? `절차 ${row.executionStepCount}개 검토`
+                  : '보고서 열기'
+              }}
             </NuxtLink>
-            <NuxtLink
-              v-if="row.retrospectiveStatus === 'UPDATED'"
-              :to="`/retrospective/${row.rcaId}/${row.executionId}`"
-              class="text-[12px] text-primary hover:underline underline-offset-2"
-            >
-              실행 뒤 절차가 교정됨
-            </NuxtLink>
-            <span
-              v-if="row.executionBlockedCount"
-              class="text-[12px] text-base-content/78"
-              title="되돌릴 수 없는 조치라 차단되어 수동 조치로 남은 절차"
-            >
-              수동 조치 {{ row.executionBlockedCount }}건
-            </span>
-            <span
-              v-if="row.executionAttempts > 1"
-              class="text-[12px] text-base-content/65"
-            >
-              실행 {{ row.executionAttempts }}회
-            </span>
-
-            <!-- Secondary routes stay quiet until the row is hovered. -->
-            <div
-              class="flex items-center gap-3 ml-auto text-[12px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
-            >
+            <div class="incident-secondary-actions">
               <NuxtLink
                 :to="`/trace/${row.rcaId}?engine=${row.engine}`"
-                class="text-base-content/68 hover:text-primary"
+                title="분석 과정"
               >
-                과정
+                Trace
               </NuxtLink>
               <NuxtLink
                 :to="`/playbook/${row.rcaId}?engine=${row.engine}`"
-                class="text-base-content/68 hover:text-primary"
+                title="플레이북"
               >
-                플레이북
+                Playbook
               </NuxtLink>
               <button
                 v-if="row.outcome === 'RUNNING'"
-                class="text-base-content/68 hover:text-secondary"
+                class="hover:!text-warning"
                 @click="openCancelModal(row.rcaId, row.engine)"
               >
                 중단
               </button>
               <button
-                class="text-base-content/68 hover:text-base-content"
+                class="hover:!text-error"
                 @click="openDeleteModal(row.rcaId, row.engine)"
               >
                 삭제
@@ -747,21 +783,23 @@ useHead({ title: '장애 기록' });
         </article>
       </section>
 
-      <!-- The spine continues below, so this reads as more of the same clock
-           rather than as a page boundary. The observer watches the sentinel and
-           the button covers the keyboard path to the same action. -->
-      <div v-if="hasMore" ref="sentinel" class="-ml-[86px] pl-[86px] pt-7">
+      <div
+        v-if="hasMore"
+        ref="sentinel"
+        class="border-t border-base-content/10 p-4 text-center"
+      >
         <button
-          class="text-[13px] text-base-content/72 hover:text-primary transition-colors"
+          class="btn btn-ghost btn-sm"
+          :disabled="loadingMore"
           @click="showMore()"
         >
           <span v-if="loadingMore" class="loading loading-spinner loading-xs" />
-          {{ loadingMore ? '읽는 중' : '이전 기록 더 보기' }}
+          {{ loadingMore ? '불러오는 중' : '이전 기록 더 보기' }}
         </button>
       </div>
       <p
         v-else-if="matchingRows.length"
-        class="-ml-[86px] pl-[86px] pt-7 text-[12px] text-base-content/62"
+        class="border-t border-base-content/10 px-4 py-3 text-center text-[10.5px] text-base-content/38"
       >
         기록의 처음까지 보았습니다
       </p>
