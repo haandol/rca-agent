@@ -29,6 +29,7 @@ from rca_agent.ports.dto.models import (
     AlarmTrigger,
     FaultType,
     NotificationMessage,
+    Playbook,
     RcaSessionState,
 )
 from rca_agent.ports.interfaces.session_store import (
@@ -1293,6 +1294,11 @@ class TestMarkCompleted:
 
     def test_completion_persists_selected_hypothesis_and_pending_notification(self):
         ddb = _ddb_with_state("REPORT_GENERATION")
+        playbook = Playbook(
+            playbook_id="playbook-1",
+            failure_type="DB connection leak",
+            symptom_pattern="DatabaseConnections rises",
+        )
         notification = NotificationMessage(
             rca_id="rca-123",
             root_cause_summary="database connection leak",
@@ -1311,6 +1317,8 @@ class TestMarkCompleted:
                 report_s3_key="reports/strands/rca-123/attempt-1/report.md",
                 playbook_span_id="span-playbook-1",
                 playbook_id="playbook-1",
+                playbook=playbook,
+                playbook_metric_name="DatabaseConnections",
                 claim_token=CLAIM_TOKEN,
                 dynamodb_client=ddb,
             )
@@ -1324,6 +1332,25 @@ class TestMarkCompleted:
         assert values[":report_s3_key"]["S"] == "reports/strands/rca-123/attempt-1/report.md"
         assert values[":playbook_span_id"]["S"] == "span-playbook-1"
         assert values[":playbook_id"]["S"] == "playbook-1"
+        assert values[":playbook_index_pending"]["S"] == "PENDING"
+        assert Playbook.model_validate_json(values[":completion_playbook"]["S"]) == playbook
+        assert values[":completion_playbook_metric_name"]["S"] == "DatabaseConnections"
+
+    def test_playbook_index_publication_is_claim_fenced(self):
+        ddb = MagicMock()
+        store = DynamoDbSessionStore(ddb)
+
+        with patch(
+            "rca_agent.adapters.secondary.session.dynamodb_session_store.DYNAMODB_TABLE_NAME",
+            "rca-sessions",
+        ):
+            assert store.mark_playbook_indexed("rca-123", claim_token=CLAIM_TOKEN)
+
+        call = ddb.update_item.call_args.kwargs
+        assert call["ConditionExpression"] == (
+            "#state = :completed AND claim_token = :claim AND playbook_index_status = :pending"
+        )
+        assert call["ExpressionAttributeValues"][":published"]["S"] == "PUBLISHED"
 
     def test_storage_error_fails_closed(self):
         ddb = _ddb_with_state("REPORT_GENERATION")

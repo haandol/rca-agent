@@ -161,14 +161,15 @@ def validate_validation_artifacts(
     return base / f"validation-{loop_index}.json", result.latest_validation
 
 
-def _validate_playbook_shape(artifact: dict) -> list[str]:
+def _validate_playbook_shape(artifact: dict, *, allow_verified: bool = False) -> list[str]:
     """Check what the playbook owns and return its execution step IDs in order."""
     _require_fields(artifact, strings=_PLAYBOOK_STRING_FIELDS, lists=_PLAYBOOK_LIST_FIELDS)
     if artifact["stage"] != "PLAYBOOK":
         raise ArtifactValidationError("playbook.json stage must be PLAYBOOK")
     # A playbook is only a draft until an execution and its retrospective have
     # exercised the procedure, so analysis may not claim any other status.
-    if artifact["verification_status"] != _PLAYBOOK_DRAFT_STATUS:
+    allowed_statuses = {_PLAYBOOK_DRAFT_STATUS, "VERIFIED"} if allow_verified else {_PLAYBOOK_DRAFT_STATUS}
+    if artifact["verification_status"] not in allowed_statuses:
         raise ArtifactValidationError(f"playbook.json verification_status must be {_PLAYBOOK_DRAFT_STATUS}")
 
     step_ids: list[str] = []
@@ -281,6 +282,23 @@ def _validate_report(base: Path, playbook: dict, analysis: AnalysisResult) -> st
     )
     _validate_report_sections(markdown)
     return markdown
+
+
+def render_completion_report(base: Path, playbook: dict) -> str:
+    """Render the report again from the final search-first playbook.
+
+    The report specialist writes the candidate playbook. Search-first enrichment
+    may replace it with the accumulated playbook, and the report, completed
+    session, notification, and search index must all use that same final value.
+    """
+    _validate_playbook_shape(playbook, allow_verified=True)
+    try:
+        analysis = validate_analysis_completion(base)
+    except AnalysisContractError as exc:
+        raise ArtifactValidationError(str(exc)) from exc
+    if not analysis.confirmed and playbook["execution_steps"]:
+        raise ArtifactValidationError("unconfirmed RCA must not declare playbook execution steps")
+    return _validate_report(base, playbook, analysis)
 
 
 def validate_artifact_shape(filename: str, content: str) -> None:

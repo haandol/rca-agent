@@ -24,9 +24,11 @@ async function importRepositoryModule(relativePath) {
 // the session record.
 
 test('the dashboard cannot publish an approval that the worker would reject', async () => {
-  const source = await readRepositoryFile(
-    'packages/dashboard/server/api/executions.post.ts',
-  );
+  const [source, playbookSource, reportSource] = await Promise.all([
+    readRepositoryFile('packages/dashboard/server/api/executions.post.ts'),
+    readRepositoryFile('packages/dashboard/server/api/playbooks/[id].get.ts'),
+    readRepositoryFile('packages/dashboard/server/api/reports/[id].get.ts'),
+  ]);
 
   // Publishing here is the approval. Every precondition the worker enforces has
   // to be checked before the message exists, or the gate would let through a
@@ -39,6 +41,8 @@ test('the dashboard cannot publish an approval that the worker would reject', as
   assert.match(source, /!reportS3Key/);
   assert.match(source, /HeadObjectCommand/);
   assert.match(source, /validateExecutablePlaybook/);
+  assert.match(playbookSource, /session\.state !== 'COMPLETED'/);
+  assert.match(reportSource, /sessionResult\.Item\?\.state !== 'COMPLETED'/);
 
   // No queue URL must fail loudly: a dashboard that silently skipped publishing
   // would look like it approved something.
@@ -77,6 +81,7 @@ test('a retrospective revision becomes the procedure the next execution runs', a
     await importRepositoryModule(PLAYBOOK_MODULE);
   const session = {
     SK: 'strands#SESSION',
+    state: 'COMPLETED',
     playbook_id: 'current',
     playbook_span_id: 'selected-span',
   };
@@ -147,6 +152,7 @@ test('playbook selection is exact for CC sessions and conservative for legacy St
       [arbitrarySpan],
       {
         SK: `${engine}#SESSION`,
+        state: 'COMPLETED',
         playbook_id: 'cc-current',
         playbook: JSON.stringify(ccPlaybook),
       },
@@ -156,7 +162,11 @@ test('playbook selection is exact for CC sessions and conservative for legacy St
     assert.equal(cc?.source, 'session');
   }
 
-  const legacySession = { SK: 'SESSION', playbook_id: 'legacy' };
+  const legacySession = {
+    SK: 'SESSION',
+    state: 'COMPLETED',
+    playbook_id: 'legacy',
+  };
   const legacySpan = (id) => ({
     SK: `SPAN#${id}`,
     span_type: 'PLAYBOOK',
@@ -175,6 +185,15 @@ test('playbook selection is exact for CC sessions and conservative for legacy St
     resolveCurrentPlaybook([legacySpan('only')], legacySession, 'strands')
       ?.source,
     'legacy-span',
+  );
+  assert.equal(
+    resolveCurrentPlaybook(
+      [legacySpan('only')],
+      { ...legacySession, state: 'REPORT_GENERATION' },
+      'strands',
+    ),
+    null,
+    'an intermediate PLAYBOOK span is not a completed report artifact',
   );
 });
 

@@ -23,4 +23,10 @@ class PlaybookStorePort(ABC):
         """
 
     @abstractmethod
-    def save(self, playbook: Playbook, *, scoping_result: ScopingResult | None = None) -> bool: ...
+    def save(
+        self,
+        playbook: Playbook,
+        *,
+        scoping_result: ScopingResult | None = None,
+        metric_name: str = "",
+    ) -> bool: ...

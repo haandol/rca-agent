@@ -20,6 +20,7 @@ from headless_codex.config.settings import (
 from headless_codex.ports.dto.models import CodexResult
 from headless_codex.ports.interfaces.session_store import (
     ClaimDisposition,
+    CompletionHandoff,
     IncidentAlarm,
     IncidentClaim,
     IncidentClaimDisposition,
@@ -58,6 +59,9 @@ def _container(runner):
         mark_failed=Mock(),
         mark_outdated=Mock(),
         mark_completed=Mock(),
+        get_completion_handoff=Mock(),
+        mark_playbook_indexed=Mock(return_value=True),
+        mark_completion_notified=Mock(return_value=True),
         acquire_side_effect_lease=Mock(return_value="lease-token"),
         release_side_effect_lease=Mock(),
     )
@@ -382,7 +386,15 @@ def test_competing_delivery_is_acknowledged_without_duplicate_execution(monkeypa
 
 def test_terminal_duplicate_is_acknowledged_without_execution(monkeypatch):
     container = _container(SimpleNamespace())
-    container.session_store.claim_session.return_value = SessionClaim(ClaimDisposition.TERMINAL_DUPLICATE)
+    container.session_store.claim_session.return_value = SessionClaim(
+        ClaimDisposition.TERMINAL_DUPLICATE,
+        CLAIM_TOKEN,
+        1,
+    )
+    container.session_store.get_completion_handoff.return_value = CompletionHandoff(
+        rca_id="rca-1",
+        state="COMPLETED",
+    )
     orchestrator = PipelineOrchestrator(container)
     run_rca = Mock(return_value=True)
     monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
@@ -435,8 +447,12 @@ def test_suppressed_incident_is_retried_until_delayed_recovery_is_recorded(monke
     ]
     container.session_store.claim_session.side_effect = [
         SessionClaim(ClaimDisposition.CLAIMED, CLAIM_TOKEN, 2),
-        SessionClaim(ClaimDisposition.TERMINAL_DUPLICATE),
+        SessionClaim(ClaimDisposition.TERMINAL_DUPLICATE, CLAIM_TOKEN, 2),
     ]
+    container.session_store.get_completion_handoff.return_value = CompletionHandoff(
+        rca_id=candidate,
+        state="COMPLETED",
+    )
     orchestrator = PipelineOrchestrator(container)
     run_rca = Mock(return_value=True)
     monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
@@ -662,9 +678,9 @@ class TestPlaybookSearchFirstMerge:
 
         assert self._run(container, monkeypatch, tmp_path) is True
         assert self._saved(container)["playbook_id"] == "pb-existing"
-        # The session owns the exact validated artifact for this analysis. The
-        # search-index merge is future knowledge and must not replace it.
-        assert container.session_store.mark_completed.call_args.kwargs["playbook"]["playbook_id"] == "playbook-1"
+        # The report, completed session, notification, and search index all own
+        # the same final search-first playbook.
+        assert container.session_store.mark_completed.call_args.kwargs["playbook"]["playbook_id"] == "pb-existing"
 
     def test_merge_never_drops_accumulated_steps(self, monkeypatch, tmp_path):
         container = _container(None)
@@ -900,7 +916,7 @@ def test_sigterm_failure_keeps_message_for_sqs_redelivery(monkeypatch, tmp_path)
     container.session_store.mark_completed.assert_not_called()
 
 
-def test_notification_failure_does_not_finalize_completed_session(monkeypatch, tmp_path):
+def test_notification_failure_leaves_a_completed_session_for_handoff_retry(monkeypatch, tmp_path):
     class ReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             _write_required_report_artifacts(
@@ -922,8 +938,10 @@ def test_notification_failure_does_not_finalize_completed_session(monkeypatch, t
 
     assert result is False
     container.report_store.send_notification.assert_called_once()
-    container.session_store.mark_failed.assert_called_once()
-    container.session_store.mark_completed.assert_not_called()
+    container.session_store.mark_completed.assert_called_once()
+    container.session_store.mark_failed.assert_not_called()
+    container.session_store.mark_playbook_indexed.assert_called_once()
+    container.session_store.mark_completion_notified.assert_not_called()
 
 
 def test_missing_report_key_does_not_finalize_completed_session(monkeypatch, tmp_path):
@@ -952,7 +970,7 @@ def test_missing_report_key_does_not_finalize_completed_session(monkeypatch, tmp
     container.session_store.mark_completed.assert_not_called()
 
 
-def test_playbook_save_false_releases_lease_and_keeps_message_for_redelivery(monkeypatch, tmp_path):
+def test_playbook_save_false_leaves_completed_index_pending_for_redelivery(monkeypatch, tmp_path):
     class ReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             _write_required_report_artifacts(
@@ -969,24 +987,16 @@ def test_playbook_save_false_releases_lease_and_keeps_message_for_redelivery(mon
         result = PipelineOrchestrator(container).process_message(json.dumps(ALARM_DATA))
 
     assert result is False
-    failed_rca_id = container.session_store.mark_failed.call_args.args[0]
-    container.session_store.release_side_effect_lease.assert_called_once_with(
-        failed_rca_id,
-        claim_token=CLAIM_TOKEN,
-        lease_token="lease-token",
-    )
-    container.session_store.mark_failed.assert_called_once_with(
-        failed_rca_id,
-        "Unhandled pipeline exception",
-        claim_token=CLAIM_TOKEN,
-    )
-    container.report_store.save_report.assert_not_called()
+    container.session_store.mark_completed.assert_called_once()
+    container.session_store.mark_failed.assert_not_called()
+    container.session_store.release_side_effect_lease.assert_not_called()
+    container.report_store.save_report.assert_called_once()
     container.report_store.send_notification.assert_not_called()
-    container.session_store.mark_completed.assert_not_called()
+    container.session_store.mark_playbook_indexed.assert_not_called()
     assert all(entry["event"] != "playbook_saved" for entry in logs)
 
 
-def test_playbook_save_exception_releases_lease_and_keeps_message_for_redelivery(monkeypatch, tmp_path):
+def test_playbook_save_exception_leaves_completed_index_pending_for_redelivery(monkeypatch, tmp_path):
     class ReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             _write_required_report_artifacts(
@@ -1003,20 +1013,12 @@ def test_playbook_save_exception_releases_lease_and_keeps_message_for_redelivery
         result = PipelineOrchestrator(container).process_message(json.dumps(ALARM_DATA))
 
     assert result is False
-    failed_rca_id = container.session_store.mark_failed.call_args.args[0]
-    container.session_store.release_side_effect_lease.assert_called_once_with(
-        failed_rca_id,
-        claim_token=CLAIM_TOKEN,
-        lease_token="lease-token",
-    )
-    container.session_store.mark_failed.assert_called_once_with(
-        failed_rca_id,
-        "Unhandled pipeline exception",
-        claim_token=CLAIM_TOKEN,
-    )
-    container.report_store.save_report.assert_not_called()
+    container.session_store.mark_completed.assert_called_once()
+    container.session_store.mark_failed.assert_not_called()
+    container.session_store.release_side_effect_lease.assert_not_called()
+    container.report_store.save_report.assert_called_once()
     container.report_store.send_notification.assert_not_called()
-    container.session_store.mark_completed.assert_not_called()
+    container.session_store.mark_playbook_indexed.assert_not_called()
     assert all(entry["event"] != "playbook_saved" for entry in logs)
 
 

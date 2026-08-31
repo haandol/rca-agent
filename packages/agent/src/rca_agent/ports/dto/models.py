@@ -383,6 +383,10 @@ class NotificationMessage(BaseModel):
 class CompletionHandoff(BaseModel):
     rca_id: str
     state: RcaSessionState
+    claim_token: str = ""
+    playbook_index_status: str = ""
+    playbook: Playbook | None = None
+    playbook_metric_name: str = ""
     notification_status: str = ""
     notification: NotificationMessage | None = None
 

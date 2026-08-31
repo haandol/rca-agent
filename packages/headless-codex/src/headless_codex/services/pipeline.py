@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import asdict
 from datetime import UTC, datetime
 from threading import Event
 
@@ -18,12 +19,17 @@ from headless_codex.di.container import Container
 from headless_codex.ports.dto.models import AlarmContext, parse_alarm
 from headless_codex.ports.interfaces.session_store import (
     ClaimDisposition,
+    CompletionHandoff,
     IncidentAlarm,
     IncidentClaimDisposition,
     SessionCancelledError,
     SessionOwnershipCheckError,
 )
-from headless_codex.services.artifact_validation import ArtifactValidationError, validate_completion_artifacts
+from headless_codex.services.artifact_validation import (
+    ArtifactValidationError,
+    render_completion_report,
+    validate_completion_artifacts,
+)
 from headless_codex.services.execution_context import ExecutionContext
 from headless_codex.services.playbook_merge import (
     PLAYBOOK_DRAFT,
@@ -157,8 +163,12 @@ class PipelineOrchestrator:
                     alarm_data=alarm_data,
                 )
                 if claim_token.disposition is ClaimDisposition.TERMINAL_DUPLICATE:
-                    log.info("terminal_duplicate_acknowledged", receive_count=receive_count)
-                    return True
+                    log.info("terminal_duplicate_handoff", receive_count=receive_count)
+                    return self._flush_completion_handoff(
+                        rca_id,
+                        claim_token=claim_token.claim_token,
+                        log=log,
+                    )
                 if not claim_token.acquired:
                     log.info("session_claim_contended", receive_count=receive_count)
                     return False
@@ -203,8 +213,12 @@ class PipelineOrchestrator:
             alarm_data=alarm_data,
         )
         if claim_token.disposition is ClaimDisposition.TERMINAL_DUPLICATE:
-            log.info("terminal_duplicate_acknowledged", receive_count=receive_count)
-            return True
+            log.info("terminal_duplicate_handoff", receive_count=receive_count)
+            return self._flush_completion_handoff(
+                rca_id,
+                claim_token=claim_token.claim_token,
+                log=log,
+            )
         if not claim_token.acquired:
             log.info("session_claim_contended", receive_count=receive_count)
             return False
@@ -303,41 +317,65 @@ class PipelineOrchestrator:
                 return False
 
             root_cause_line = artifacts.root_cause
+            final_playbook = self._merge_into_existing(
+                artifacts.playbook,
+                alarm.metric_name or "",
+                log,
+            )
+            final_report = render_completion_report(artifact_dir, final_playbook)
+            completion_notification = {
+                "rca_id": rca_id,
+                "alarm_name": alarm.alarm_name,
+                "root_cause": root_cause_line,
+                "elapsed_seconds": elapsed_seconds,
+                "playbook": final_playbook,
+                "confirmed": artifacts.confirmed,
+                "alarm_context": asdict(alarm),
+            }
             side_effect_lease_token = store.acquire_side_effect_lease(
                 rca_id,
                 claim_token=claim_token,
                 effect_name="final-publication",
                 lease_seconds=SIDE_EFFECT_LEASE_SECONDS,
             )
-            self._process_playbook(artifacts.playbook, rca_id, alarm, log)
             report_key = c.report_store.save_report(
                 rca_id,
-                artifacts.report_markdown,
+                final_report,
                 claim_token=claim_token,
                 attempt=attempt,
             )
             if not isinstance(report_key, str) or not report_key.strip():
                 raise RuntimeError("Report persistence returned no S3 key")
-            c.report_store.send_notification(
-                rca_id,
-                alarm.alarm_name,
-                root_cause_line,
-                report_key,
-                elapsed_seconds,
-                playbook=artifacts.playbook,
-                confirmed=artifacts.confirmed,
-                alarm_context=alarm,
-            )
+            completion_notification["report_s3_key"] = report_key
             store.mark_completed(
                 rca_id,
                 root_cause_line,
                 report_key,
-                playbook=artifacts.playbook,
+                playbook=final_playbook,
+                playbook_metric_name=alarm.metric_name or "",
+                completion_notification=completion_notification,
                 confirmed=artifacts.confirmed,
                 claim_token=claim_token,
                 side_effect_lease_token=side_effect_lease_token,
             )
             side_effect_lease_token = None
+
+            if not self._flush_completion_handoff(
+                rca_id,
+                claim_token=claim_token,
+                handoff=CompletionHandoff(
+                    rca_id=rca_id,
+                    state="COMPLETED",
+                    playbook_index_status="PENDING",
+                    playbook=final_playbook,
+                    playbook_metric_name=alarm.metric_name or "",
+                    notification_status="PENDING",
+                    notification=completion_notification,
+                ),
+                log=log,
+            ):
+                log.warning("completion_handoff_pending")
+                return False
 
             log.info("rca_complete", elapsed_seconds=elapsed_seconds, root_cause=root_cause_line[:200])
             return True
@@ -374,19 +412,80 @@ class PipelineOrchestrator:
         finally:
             execution.cleanup()
 
-    def _process_playbook(
+    def _flush_completion_handoff(
         self,
-        playbook: dict,
         rca_id: str,
-        alarm: AlarmContext,
+        *,
+        claim_token: str | None,
         log: structlog.stdlib.BoundLogger,
-    ) -> None:
-        metric_name = alarm.metric_name or ""
-        recorded = self._merge_into_existing(playbook, metric_name, log)
-        saved = self._c.playbook_store.save_to_s3_vectors(recorded, rca_id, metric_name=metric_name)
-        if not saved:
-            raise RuntimeError("Playbook persistence failed")
-        log.info("playbook_saved", playbook_id=recorded.get("playbook_id"))
+        handoff: CompletionHandoff | None = None,
+    ) -> bool:
+        if handoff is None:
+            handoff = self._c.session_store.get_completion_handoff(rca_id)
+        if handoff is None:
+            log.error("completion_handoff_unavailable")
+            return False
+        if handoff.state != "COMPLETED":
+            return handoff.state in {"OUTDATED", "CANCELLED"}
+        needs_write = handoff.playbook_index_status == "PENDING" or handoff.notification_status == "PENDING"
+        if needs_write and not claim_token:
+            log.error("completion_handoff_claim_unavailable")
+            return False
+
+        if handoff.playbook_index_status == "PENDING":
+            if not handoff.playbook:
+                log.error("completion_playbook_missing")
+                return False
+            try:
+                saved = self._c.playbook_store.save_to_s3_vectors(
+                    handoff.playbook,
+                    rca_id,
+                    metric_name=handoff.playbook_metric_name,
+                )
+            except Exception:
+                log.exception("playbook_index_retry_failed")
+                return False
+            if not saved:
+                log.error("playbook_index_retry_did_not_persist")
+                return False
+            if not self._c.session_store.mark_playbook_indexed(
+                rca_id,
+                claim_token=claim_token,
+            ):
+                log.error("playbook_index_status_commit_failed")
+                return False
+        elif handoff.playbook_index_status not in {"", "PUBLISHED"}:
+            log.error("invalid_playbook_index_status", status=handoff.playbook_index_status)
+            return False
+
+        if handoff.notification_status in {"", "SENT"}:
+            return True
+        if handoff.notification_status != "PENDING" or handoff.notification is None:
+            log.error("invalid_completion_notification_handoff")
+            return False
+
+        notification = handoff.notification
+        try:
+            self._c.report_store.send_notification(
+                str(notification.get("rca_id", rca_id)),
+                str(notification.get("alarm_name", "")),
+                str(notification.get("root_cause", "")),
+                str(notification.get("report_s3_key", "")),
+                int(notification.get("elapsed_seconds", 0)),
+                playbook=notification.get("playbook"),
+                confirmed=bool(notification.get("confirmed", False)),
+                alarm_context=AlarmContext(**(notification.get("alarm_context") or {})),
+            )
+        except Exception:
+            log.exception("completion_notification_retry_failed")
+            return False
+        if not self._c.session_store.mark_completion_notified(
+            rca_id,
+            claim_token=claim_token,
+        ):
+            log.error("completion_notification_status_commit_failed")
+            return False
+        return True
 
     def _merge_into_existing(
         self,
@@ -432,6 +531,7 @@ class PipelineOrchestrator:
 
             merged, diff = merge_playbook_update(existing, playbook)
             merged["playbook_id"] = hit.playbook_id
+            merged["stage"] = playbook.get("stage", "PLAYBOOK")
             procedures_unchanged = merged.get("execution_steps") == existing.get("execution_steps")
             merged[VERIFICATION_STATUS_FIELD] = (
                 normalize_verification_status(existing.get(VERIFICATION_STATUS_FIELD))

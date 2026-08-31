@@ -163,11 +163,24 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             return None
 
         items = result.get("Items", [])
+        session = _analysis_session(items)
+        if session is None or session.get("state", {}).get("S") != "COMPLETED":
+            return None
+        session_playbook_id = session.get("playbook_id", {}).get("S", "")
+        if session_playbook_id and session_playbook_id != match.playbook_id:
+            return None
+        index_status = session.get("playbook_index_status", {}).get("S", "")
+        if index_status and index_status != "PUBLISHED":
+            return None
 
         revision = _revision_playbook(items, match.playbook_id, match.publication_id)
         if revision is not None:
             logger.info("playbook_detail_from_revision", playbook_id=match.playbook_id)
             return revision
+
+        persisted = _session_playbook(session, match.playbook_id)
+        if persisted is not None:
+            return persisted
 
         recorded = _span_playbook(items, match.playbook_id)
         if recorded is None:
@@ -274,6 +287,28 @@ def _revision_playbook(
             continue
         if isinstance(parsed, dict):
             return parsed
+    return None
+
+
+def _analysis_session(items: list[dict]) -> dict | None:
+    for item in items:
+        sk = item.get("SK", {}).get("S", "")
+        if sk == "ANALYSIS#SESSION" or sk == "SESSION" or sk.endswith("#SESSION"):
+            return item
+    return None
+
+
+def _session_playbook(session: dict, playbook_id: str) -> dict | None:
+    raw = session.get("playbook", {}).get("S")
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("session_playbook_unreadable", playbook_id=playbook_id)
+        return None
+    if isinstance(parsed, dict) and parsed.get("playbook_id") == playbook_id:
+        return parsed
     return None
 
 

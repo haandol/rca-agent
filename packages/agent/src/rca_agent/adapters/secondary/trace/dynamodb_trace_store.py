@@ -44,6 +44,11 @@ def _hypo_sk(hypothesis_id: str) -> dict:
     return {"S": f"{ENGINE}#HYPO#{hypothesis_id}"}
 
 
+def _is_session_item(item: dict) -> bool:
+    sk = item.get("SK", {}).get("S", "")
+    return sk == "SESSION" or sk.endswith("#SESSION")
+
+
 class SpanType(StrEnum):
     SCOPING = "SCOPING"
     HYPOTHESIS_GENERATION = "HYPOTHESIS_GENERATION"
@@ -398,7 +403,7 @@ class TraceStore:
 
         for item in result.get("Items", []):
             sk = item["SK"]["S"]
-            if sk.endswith("#SESSION") or sk == "SESSION":
+            if _is_session_item(item):
                 session = _deserialize_session(item)
             elif "#SPAN#" in sk or sk.startswith("SPAN#"):
                 spans.append(_deserialize_span(item))
@@ -436,6 +441,18 @@ class TraceStore:
             return None
 
         items = result.get("Items", [])
+        session = next(
+            (item for item in items if _is_session_item(item)),
+            None,
+        )
+        if session is None or session.get("state", {}).get("S") != "COMPLETED":
+            return None
+        session_playbook_id = session.get("playbook_id", {}).get("S", "")
+        if session_playbook_id and session_playbook_id != playbook_id:
+            return None
+        index_status = session.get("playbook_index_status", {}).get("S", "")
+        if index_status and index_status != "PUBLISHED":
+            return None
 
         revision = _playbook_revision(items, playbook_id)
         if revision is not None:

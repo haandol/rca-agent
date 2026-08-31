@@ -517,6 +517,22 @@ class TestPlaybookStoreSave:
 _TRACE_MODULE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store"
 
 
+def _completed_session_item(
+    playbook_id: str = "p-1",
+    *,
+    state: str = "COMPLETED",
+    index_status: str = "PUBLISHED",
+) -> dict:
+    item = {
+        "SK": {"S": "ANALYSIS#SESSION"},
+        "state": {"S": state},
+        "playbook_id": {"S": playbook_id},
+    }
+    if index_status:
+        item["playbook_index_status"] = {"S": index_status}
+    return item
+
+
 class TestPlaybookStoreLoadDetail:
     def _store(self, dynamodb_client) -> S3VectorsPlaybookStore:
         return S3VectorsPlaybookStore(dynamodb_client=dynamodb_client)
@@ -526,6 +542,7 @@ class TestPlaybookStoreLoadDetail:
         ddb = MagicMock()
         ddb.query.return_value = {
             "Items": [
+                _completed_session_item(),
                 {
                     "SK": {"S": "strands#SPAN#s-1"},
                     "span_type": {"S": "PLAYBOOK"},
@@ -538,7 +555,7 @@ class TestPlaybookStoreLoadDetail:
                             "tags": {"L": [{"S": "memory"}]},
                         }
                     },
-                }
+                },
             ]
         }
 
@@ -563,11 +580,12 @@ class TestPlaybookStoreLoadDetail:
         ddb = MagicMock()
         ddb.query.return_value = {
             "Items": [
+                _completed_session_item(),
                 {
                     "SK": {"S": "strands#SPAN#s-1"},
                     "span_type": {"S": "PLAYBOOK"},
                     "metadata": {"M": {"playbook_id": {"S": "other"}}},
-                }
+                },
             ]
         }
 
@@ -582,6 +600,22 @@ class TestPlaybookStoreLoadDetail:
 
         assert self._store(ddb).load_detail(_make_hit(rca_id="")) is None
         ddb.query.assert_not_called()
+
+    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_rejects_detail_from_an_incomplete_session(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                _completed_session_item(state="REPORT_GENERATION", index_status=""),
+                {
+                    "SK": {"S": "strands#SPAN#s-1"},
+                    "span_type": {"S": "PLAYBOOK"},
+                    "metadata": {"M": {"playbook_id": {"S": "p-1"}}},
+                },
+            ]
+        }
+
+        assert self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7")) is None
 
 
 class TestLoadDetailPrefersTheRetrospectiveRevision:
@@ -652,7 +686,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_revision_wins_over_the_analysis_span(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [self._span_item(), self._revision_item()]}
+        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), self._revision_item()]}
 
         detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
 
@@ -665,7 +699,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_promotion_survives_the_reload(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [self._span_item(), self._revision_item()]}
+        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), self._revision_item()]}
 
         detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
 
@@ -675,7 +709,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_falls_back_to_the_span_without_a_revision(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [self._span_item()]}
+        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item()]}
 
         detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
 
@@ -687,7 +721,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
         ddb = MagicMock()
         broken = self._revision_item()
         broken["playbook"] = {"S": "{not json"}
-        ddb.query.return_value = {"Items": [self._span_item(), broken]}
+        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), broken]}
 
         detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
 
@@ -701,7 +735,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
         ddb = MagicMock()
         other = self._revision_item()
         other["playbook_id"] = {"S": "p-other"}
-        ddb.query.return_value = {"Items": [self._span_item(), other]}
+        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), other]}
 
         detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
 
@@ -839,6 +873,7 @@ class TestExecutionStepContract:
         ddb = MagicMock()
         ddb.query.return_value = {
             "Items": [
+                _completed_session_item(),
                 {
                     "SK": {"S": "strands#SPAN#s-1"},
                     "span_type": {"S": "PLAYBOOK"},
@@ -848,7 +883,7 @@ class TestExecutionStepContract:
                             "execution_steps": {"L": [{"M": {k: {"S": v} for k, v in self._step().items()}}]},
                         }
                     },
-                }
+                },
             ]
         }
 
@@ -924,6 +959,7 @@ class TestExecutionStepContract:
         ddb = MagicMock()
         ddb.query.return_value = {
             "Items": [
+                _completed_session_item(),
                 {
                     "SK": {"S": "strands#SPAN#s-1"},
                     "span_type": {"S": "PLAYBOOK"},
@@ -933,7 +969,7 @@ class TestExecutionStepContract:
                             "verification_status": {"S": "VERIFIED"},
                         }
                     },
-                }
+                },
             ]
         }
 
@@ -951,6 +987,7 @@ class TestExecutionStepContract:
             ddb = MagicMock()
             ddb.query.return_value = {
                 "Items": [
+                    _completed_session_item(),
                     {
                         "SK": {"S": "strands#SPAN#s-1"},
                         "span_type": {"S": "PLAYBOOK"},
@@ -960,7 +997,7 @@ class TestExecutionStepContract:
                                 "verification_status": recorded,
                             }
                         },
-                    }
+                    },
                 ]
             }
 
@@ -976,6 +1013,7 @@ class TestExecutionStepContract:
         ddb = MagicMock()
         ddb.query.return_value = {
             "Items": [
+                _completed_session_item(),
                 {
                     "SK": {"S": "strands#SPAN#s-1"},
                     "span_type": {"S": "PLAYBOOK"},
@@ -985,7 +1023,7 @@ class TestExecutionStepContract:
                             "execution_steps": {"L": [{"M": {"action": {"S": "무언가"}}}]},
                         }
                     },
-                }
+                },
             ]
         }
 

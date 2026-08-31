@@ -55,6 +55,20 @@ def _span_item() -> dict:
     }
 
 
+def _session_item(
+    playbook_id: str = "pb-1",
+    *,
+    state: str = "COMPLETED",
+    index_status: str = "PUBLISHED",
+) -> dict:
+    return {
+        "SK": {"S": "ANALYSIS#SESSION"},
+        "state": {"S": state},
+        "playbook_id": {"S": playbook_id},
+        "playbook_index_status": {"S": index_status},
+    }
+
+
 def _revision_item(playbook_id: str = "pb-1") -> dict:
     revised = {
         "playbook_id": playbook_id,
@@ -97,7 +111,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_revision_wins_over_the_analysis_span(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_span_item(), _revision_item()]}
+        ddb.query.return_value = {"Items": [_session_item(), _span_item(), _revision_item()]}
 
         detail = self._store(ddb).load_detail(_match())
 
@@ -109,7 +123,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_promotion_survives_the_reload(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_span_item(), _revision_item()]}
+        ddb.query.return_value = {"Items": [_session_item(), _span_item(), _revision_item()]}
 
         detail = self._store(ddb).load_detail(_match())
 
@@ -119,7 +133,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_pending_revision_is_not_loaded_after_a_failed_commit(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_span_item(), _staged_revision_item()]}
+        ddb.query.return_value = {"Items": [_session_item(), _span_item(), _staged_revision_item()]}
 
         detail = self._store(ddb).load_detail(_match())
 
@@ -130,7 +144,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_falls_back_to_the_span_without_a_revision(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_span_item()]}
+        ddb.query.return_value = {"Items": [_session_item(), _span_item()]}
 
         detail = self._store(ddb).load_detail(_match())
 
@@ -142,7 +156,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
         ddb = MagicMock()
         broken = _revision_item()
         broken["playbook"] = {"S": "{not json"}
-        ddb.query.return_value = {"Items": [_span_item(), broken]}
+        ddb.query.return_value = {"Items": [_session_item(), _span_item(), broken]}
 
         detail = self._store(ddb).load_detail(_match())
 
@@ -152,7 +166,7 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
     @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
     def test_ignores_a_revision_of_a_different_playbook(self):
         ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_span_item(), _revision_item("pb-other")]}
+        ddb.query.return_value = {"Items": [_session_item(), _span_item(), _revision_item("pb-other")]}
 
         detail = self._store(ddb).load_detail(_match())
 
@@ -183,6 +197,18 @@ class TestLoadDetailPrefersTheRetrospectiveRevision:
 
         assert self._store(ddb).load_detail(_match(rca_id="")) is None
         ddb.query.assert_not_called()
+
+    @patch(f"{_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
+    def test_rejects_an_incomplete_analysis_playbook(self):
+        ddb = MagicMock()
+        ddb.query.return_value = {
+            "Items": [
+                _session_item(state="REPORT_GENERATION", index_status=""),
+                _span_item(),
+            ]
+        }
+
+        assert self._store(ddb).load_detail(_match()) is None
 
 
 class TestSearchSimilar:

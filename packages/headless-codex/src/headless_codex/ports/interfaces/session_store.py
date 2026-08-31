@@ -51,6 +51,17 @@ class SessionClaim:
         return self.disposition is ClaimDisposition.CLAIMED and self.claim_token is not None
 
 
+@dataclass(frozen=True)
+class CompletionHandoff:
+    rca_id: str
+    state: str
+    playbook_index_status: str = ""
+    playbook: dict | None = None
+    playbook_metric_name: str = ""
+    notification_status: str = ""
+    notification: dict | None = None
+
+
 class SessionCancelledError(RuntimeError):
     pass
 
@@ -101,6 +112,8 @@ class SessionStorePort(ABC):
         report_s3_key: str,
         *,
         playbook: dict | None = None,
+        playbook_metric_name: str = "",
+        completion_notification: dict | None = None,
         confirmed: bool = False,
         claim_token: str,
         side_effect_lease_token: str | None = None,
@@ -133,3 +146,12 @@ class SessionStorePort(ABC):
         claim_token: str,
         lease_token: str,
     ) -> None: ...
+
+    @abstractmethod
+    def get_completion_handoff(self, rca_id: str) -> CompletionHandoff | None: ...
+
+    @abstractmethod
+    def mark_playbook_indexed(self, rca_id: str, *, claim_token: str) -> bool: ...
+
+    @abstractmethod
+    def mark_completion_notified(self, rca_id: str, *, claim_token: str) -> bool: ...

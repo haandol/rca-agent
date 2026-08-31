@@ -15,6 +15,7 @@ from rca_agent.ports.dto.models import (
     CompletionHandoff,
     FaultType,
     NotificationMessage,
+    Playbook,
     RcaSession,
     RcaSessionState,
 )
@@ -998,6 +999,8 @@ class DynamoDbSessionStore(SessionStorePort):
         report_s3_key: str = "",
         playbook_span_id: str = "",
         playbook_id: str = "",
+        playbook: Playbook | None = None,
+        playbook_metric_name: str = "",
         claim_token: str | None = None,
     ) -> bool:
         extra_sets = {
@@ -1011,6 +1014,20 @@ class DynamoDbSessionStore(SessionStorePort):
             extra_sets["playbook_span_id"] = (":playbook_span_id", {"S": playbook_span_id})
         if playbook_id:
             extra_sets["playbook_id"] = (":playbook_id", {"S": playbook_id})
+        if playbook is not None:
+            extra_sets.update(
+                {
+                    "playbook_index_status": (":playbook_index_pending", {"S": "PENDING"}),
+                    "completion_playbook": (
+                        ":completion_playbook",
+                        {"S": playbook.model_dump_json()},
+                    ),
+                    "completion_playbook_metric_name": (
+                        ":completion_playbook_metric_name",
+                        {"S": playbook_metric_name},
+                    ),
+                }
+            )
         if completion_notification is not None:
             extra_sets.update(
                 {
@@ -1073,7 +1090,10 @@ class DynamoDbSessionStore(SessionStorePort):
             TableName=DYNAMODB_TABLE_NAME,
             Key=_session_key(rca_id),
             ConsistentRead=True,
-            ProjectionExpression="#state, completion_notification_status, completion_notification",
+            ProjectionExpression=(
+                "#state, claim_token, playbook_index_status, completion_playbook, "
+                "completion_playbook_metric_name, completion_notification_status, completion_notification"
+            ),
             ExpressionAttributeNames={"#state": "state"},
         )
         item = response.get("Item")
@@ -1087,12 +1107,49 @@ class DynamoDbSessionStore(SessionStorePort):
                 notification = NotificationMessage.model_validate_json(raw_notification)
             except Exception:
                 logger.exception("Invalid completion notification persisted for %s", rca_id)
+        playbook = None
+        raw_playbook = item.get("completion_playbook", {}).get("S", "")
+        if raw_playbook:
+            try:
+                playbook = Playbook.model_validate_json(raw_playbook)
+            except Exception:
+                logger.exception("Invalid completion playbook persisted for %s", rca_id)
         return CompletionHandoff(
             rca_id=rca_id,
             state=item.get("state", {}).get("S", RcaSessionState.FAILED.value),
+            claim_token=item.get("claim_token", {}).get("S", ""),
+            playbook_index_status=item.get("playbook_index_status", {}).get("S", ""),
+            playbook=playbook,
+            playbook_metric_name=item.get("completion_playbook_metric_name", {}).get("S", ""),
             notification_status=item.get("completion_notification_status", {}).get("S", ""),
             notification=notification,
         )
+
+    def mark_playbook_indexed(self, rca_id: str, *, claim_token: str | None = None) -> bool:
+        if not self._enabled or not claim_token:
+            return False
+        try:
+            self._dynamodb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression="SET playbook_index_status = :published, playbook_indexed_at = :now",
+                ConditionExpression=(
+                    "#state = :completed AND claim_token = :claim AND playbook_index_status = :pending"
+                ),
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":completed": {"S": RcaSessionState.COMPLETED.value},
+                    ":pending": {"S": "PENDING"},
+                    ":claim": {"S": claim_token},
+                    ":published": {"S": "PUBLISHED"},
+                    ":now": {"S": datetime.now(UTC).isoformat()},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
 
     def mark_completion_notified(self, rca_id: str, *, claim_token: str | None = None) -> bool:
         if not self._enabled or not claim_token:
@@ -1191,6 +1248,8 @@ def mark_completed(
     report_s3_key: str = "",
     playbook_span_id: str = "",
     playbook_id: str = "",
+    playbook: Playbook | None = None,
+    playbook_metric_name: str = "",
     claim_token: str | None = None,
     dynamodb_client=None,
 ) -> bool:
@@ -1204,6 +1263,8 @@ def mark_completed(
         report_s3_key=report_s3_key,
         playbook_span_id=playbook_span_id,
         playbook_id=playbook_id,
+        playbook=playbook,
+        playbook_metric_name=playbook_metric_name,
         claim_token=claim_token,
     )
 

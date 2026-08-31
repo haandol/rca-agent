@@ -76,7 +76,7 @@ test('cancelling refuses while a side effect still holds its lease', () => {
   assert.equal(update.ExpressionAttributeValues[':nowEpoch'], NOW_EPOCH);
 });
 
-test('deleting is allowed only from a terminal state with no active lease', () => {
+test('deleting is allowed only after the terminal session has no active publication', () => {
   const update = buildDeleteClaimUpdate('deleted:abc', NOW, NOW_EPOCH);
 
   // Deleting an active session removes the record the fencing is based on: the
@@ -88,6 +88,15 @@ test('deleting is allowed only from a terminal state with no active lease', () =
     update.ConditionExpression,
     /attribute_not_exists\(side_effect_lease_expires_at\) OR side_effect_lease_expires_at < :nowEpoch/,
   );
+  assert.match(
+    update.ConditionExpression,
+    /attribute_not_exists\(playbook_index_status\) OR playbook_index_status <> :pending/,
+  );
+  assert.match(
+    update.ConditionExpression,
+    /attribute_not_exists\(completion_notification_status\) OR completion_notification_status <> :pending/,
+  );
+  assert.equal(update.ExpressionAttributeValues[':pending'], 'PENDING');
 });
 
 test('the delete claim fences the record before the deletes that follow', () => {

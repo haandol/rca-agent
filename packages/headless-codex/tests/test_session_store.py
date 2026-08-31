@@ -667,6 +667,12 @@ def test_completion_atomically_persists_authoritative_report_key(session_store):
             "verification_status": "DRAFT",
             "execution_steps": [{"step_id": "step-1"}],
         },
+        playbook_metric_name="DatabaseConnections",
+        completion_notification={
+            "rca_id": "rca-1",
+            "alarm_name": "HighCPU",
+            "report_s3_key": "reports/headless-codex/rca-1/attempt-1/report.md",
+        },
         confirmed=True,
         claim_token=claim_token,
         side_effect_lease_token=lease_token,
@@ -678,5 +684,20 @@ def test_completion_atomically_persists_authoritative_report_key(session_store):
     assert item["report_s3_key"]["S"] == "reports/headless-codex/rca-1/attempt-1/report.md"
     assert item["playbook_id"]["S"] == "playbook-1"
     assert json.loads(item["playbook"]["S"])["execution_steps"] == [{"step_id": "step-1"}]
+    assert item["playbook_index_status"]["S"] == "PENDING"
+    assert item["completion_playbook_metric_name"]["S"] == "DatabaseConnections"
+    assert item["completion_notification_status"]["S"] == "PENDING"
     assert item["confirmed"]["BOOL"] is True
     assert "side_effect_lease_token" not in item
+
+    handoff = store.get_completion_handoff("rca-1")
+    assert handoff is not None
+    assert handoff.playbook_index_status == "PENDING"
+    assert handoff.playbook is not None
+    assert handoff.notification_status == "PENDING"
+
+    assert store.mark_playbook_indexed("rca-1", claim_token=claim_token)
+    assert store.mark_completion_notified("rca-1", claim_token=claim_token)
+    published = _session_item(ddb, table_name)
+    assert published["playbook_index_status"]["S"] == "PUBLISHED"
+    assert published["completion_notification_status"]["S"] == "SENT"

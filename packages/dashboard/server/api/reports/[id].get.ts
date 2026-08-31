@@ -33,24 +33,31 @@ export default defineEventHandler(async (event) => {
     : ['headless-codex', 'codex-headless', 'cc-headless', 'strands'];
 
   const attempts: string[] = [];
+  let completedSessionFound = false;
   for (const engine of engines) {
     let reportKey = '';
+    let completed = false;
     for (const sessionKey of sessionSkCandidates(engine)) {
       const sessionResult = await ddb.send(
         new GetCommand({
           TableName: config.dynamodbTableName,
           Key: { PK: rcaPk(id), SK: sessionKey },
-          ProjectionExpression: 'report_s3_key, engine',
+          ProjectionExpression: 'report_s3_key, engine, #st',
+          ExpressionAttributeNames: { '#st': 'state' },
         }),
       );
       if (sessionResult.Item?.engine && sessionResult.Item.engine !== engine)
         continue;
+      if (sessionResult.Item?.state !== 'COMPLETED') continue;
+      completed = true;
+      completedSessionFound = true;
       reportKey =
         typeof sessionResult.Item?.report_s3_key === 'string'
           ? sessionResult.Item.report_s3_key
           : '';
       if (reportKey) break;
     }
+    if (!completed) continue;
 
     const keys = [reportKey, `reports/${engine}/${id}.md`].filter(
       (key, index, all): key is string =>
@@ -70,7 +77,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Legacy fallback (pre engine-split uploads).
-  if (!engineFilter) {
+  if (!engineFilter && completedSessionFound) {
     const legacyKey = `reports/${id}.md`;
     attempts.push(legacyKey);
     try {

@@ -75,6 +75,7 @@ export function resolveCurrentPlaybook(
   session: DataRecord,
   engine: string,
 ): ResolvedPlaybook | null {
+  if (text(session.state) !== 'COMPLETED') return null;
   const playbookId = text(session.playbook_id);
 
   if (playbookId) {

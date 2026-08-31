@@ -127,6 +127,7 @@ test('a retrospective revision decides how many steps are approvable', () => {
   });
   const session = {
     SK: 'strands#SESSION',
+    state: 'COMPLETED',
     confirmed: true,
     playbook_id: 'current',
     playbook_span_id: 'abc',

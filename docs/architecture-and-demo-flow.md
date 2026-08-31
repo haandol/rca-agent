@@ -242,7 +242,7 @@ flowchart LR
 | Termination        | judgments + hypotheses + start_time   | TerminationDecision (should_terminate, reason)                                | 순수 로직 | -                            |
 | F6: Branching      | NEEDS_INVESTIGATION 가설 + evidence   | Child Hypothesis[] (depth+1)                                                  | Planning  | -                            |
 | F7: Report         | best_hypothesis + evidence + timeline | RcaReport (Markdown) → S3 저장 + S3 Vectors 인덱싱                            | Planning  | -                            |
-| F8: Playbook       | RcaReport                             | Playbook (`execution_steps`, `verification_status=DRAFT`) → S3 Vectors 인덱싱 | Planning  | -                            |
+| F8: Playbook       | RcaReport                             | Search-first 최종 Playbook (`execution_steps`, 신규·변경 절차는 `DRAFT`)      | Planning  | -                            |
 | F9: Notification   | RcaReport + Playbook                  | SNS 메시지 (presigned URL + 플레이북 요약)                                    | 순수 로직 | -                            |
 
 ### 1.5. 주요 설정값
@@ -328,11 +328,11 @@ flowchart TD
         REPORT_PARSE["report.md 읽기<br/>+ 근본원인 추출 (regex)"]
         CONTRACT["산출물 계약 교차 검증<br/>(playbook verification_status=DRAFT 확인)"]
         S3_REPORT["시도 격리 S3 보고서 저장"]
-        PB_PARSE["playbook.json 파싱<br/>→ S3 Vectors 인덱싱"]
-        SNS_NOTIFY["SNS 알림 발행<br/>(presigned URL + 플레이북 요약)"]
         DDB_COMPLETE["DDB 세션 갱신<br/>(state → COMPLETED,<br/>root_cause 저장)"]
+        PB_PARSE["완료 playbook 게시<br/>→ S3 Vectors 인덱싱<br/>(실패 시 handoff 재시도)"]
+        SNS_NOTIFY["SNS 알림 발행<br/>(presigned URL + 플레이북 요약)"]
         DEL_MSG["SQS 메시지 삭제"]
-        REPORT_PARSE --> CONTRACT --> S3_REPORT --> PB_PARSE --> SNS_NOTIFY --> DDB_COMPLETE --> DEL_MSG
+        REPORT_PARSE --> CONTRACT --> S3_REPORT --> DDB_COMPLETE --> PB_PARSE --> SNS_NOTIFY --> DEL_MSG
     end
 
     SESSION --> Prepare
@@ -738,12 +738,14 @@ sequenceDiagram
     S3V-->>Agent: (해당 없음 → 신규 생성)
     Agent->>Bedrock: 플레이북 생성 요청 (Sonnet 5)
     Bedrock-->>Agent: DB 커넥션 누수 플레이북
-    Agent->>S3V: 플레이북 임베딩 인덱싱
+
+    Agent->>DDB: state = COMPLETED (root_cause, confirmed=true, index=PENDING)
+    Agent->>S3V: 완료 플레이북 임베딩 인덱싱
+    Agent->>DDB: playbook index = PUBLISHED
 
     Note over Agent,SNS: F9 알림
     Agent->>S3: presigned URL 생성
     Agent->>SNS: RCA 완료 알림 발행 (플레이북 포함)
-    Agent->>DDB: state = COMPLETED (root_cause, confirmed=true)
 ```
 
 ### 각 Phase별 산출물

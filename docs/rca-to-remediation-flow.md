@@ -19,7 +19,7 @@
 flowchart TB
     CW["CloudWatch 알람"]
     ENG["RCA 분석 엔진<br/>Strands · Headless Codex<br/>읽기 전용"]
-    REP["리포트 1개<br/>report.md + playbook.json<br/>verification_status = DRAFT"]
+    REP["리포트 1개<br/>report.md + playbook.json<br/>신규·변경 절차는 DRAFT"]
     APV["사람이 대시보드에서 절차 열람 후 승인<br/>POST /api/executions"]
     SNP["승인 시점 플레이북 고정<br/>immutable S3 snapshot + SHA-256"]
     RSV["실행 사전 예약<br/>PENDING_APPROVAL + EXEC_ACTIVE"]
@@ -111,9 +111,10 @@ sequenceDiagram
 리소스에서 재현될 때 다시 쓰인다. 절차에 특정 리소스 식별자를 박아 두면 그 플레이북은 한 번만
 쓸 수 있다.
 
-`verification_status`는 항상 `DRAFT`다. 분석은 이 값을 다른 값으로 쓸 수 없다 — 실행으로
-검증되지 않은 절차를 검증된 절차로 표기하면 사람이 승인 판단을 잘못한다. 이 값이 바뀌는 경로는
-실행과 회고를 거치는 것뿐이다.
+신규 생성되거나 실행 절차가 바뀐 플레이북의 `verification_status`는 `DRAFT`다. 분석은
+새 절차를 `VERIFIED`로 승격할 수 없다 — 실행으로 검증되지 않은 절차를 검증된 절차로
+표기하면 사람이 승인 판단을 잘못한다. 기존 검증 플레이북을 실행 절차 변경 없이
+보강한 경우에만 기존 상태를 보존한다.
 
 확정된 근본원인이 없으면 실행 절차를 만들지 않고, 무엇을 더 조사해야 하는지를 쓴다. 추측
 절차가 승인 버튼 뒤에 놓이면 사람이 검증된 절차로 오인한다.

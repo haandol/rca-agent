@@ -135,8 +135,9 @@ graph TB
 에이전트는 증거 수집-가설 검증 루프를 반복하며, 4가지 종료 조건(OR) 중 하나라도 만족하면 종료합니다. 전체 기각 시 가설 재생성(최대 2회)을 시도합니다. 분석 완료 후 보고서와 플레이북을 생성하고, 플레이북 요약을 포함한 SNS 알림을 발행하며 파이프라인은 여기서 끝납니다.
 
 파이프라인은 읽기 전용입니다. 복구를 수행하는 워커가 없고, 알림은 아무것도
-트리거하지 않습니다. 플레이북의 `verification_status`는 항상 `DRAFT`이며 분석은
-이 값을 바꾸지 못합니다 — 실행으로 수행되지 않은 절차는 검증되지 않았기 때문입니다.
+트리거하지 않습니다. 신규 플레이북은 `DRAFT`이며, 기존 검증 절차와 실행 단계가
+동일한 병합만 기존 `VERIFIED`를 보존합니다. 분석은 새 절차를 검증됨으로 승격할 수
+없습니다.
 
 ```mermaid
 stateDiagram-v2
@@ -163,10 +164,17 @@ stateDiagram-v2
 
     BRANCHING --> HYPOTHESIS_PRIORITIZATION: 새 하위 가설 추가
     REPORT_GENERATION --> PLAYBOOK_GENERATION: RcaReport
-    PLAYBOOK_GENERATION --> NOTIFICATION: Playbook
-    NOTIFICATION --> COMPLETED: SNS 발행
-    COMPLETED --> [*]
+    PLAYBOOK_GENERATION --> REPORT_PERSISTENCE: 최종 Playbook
+    REPORT_PERSISTENCE --> COMPLETED: report key + playbook 확정
+    COMPLETED --> PLAYBOOK_INDEX_PUBLICATION: pending handoff
+    PLAYBOOK_INDEX_PUBLICATION --> NOTIFICATION: 게시 완료
+    NOTIFICATION --> [*]: SNS 발행
 ```
+
+`COMPLETED`는 리포트와 최종 플레이북이 확정된 세션 상태입니다. S3 Vectors 게시와
+완료 알림은 그 뒤의 재시도 가능한 handoff이며, 실패해도 완료 상태를 되돌리지
+않습니다. 진행 중·실패 세션의 PLAYBOOK 스팬은 트레이스일 뿐 조회·검색 대상이
+아닙니다.
 
 단계별 timeout/재시도, 증거 소스, 플레이북 검색 우선(≥0.80) 등 세부 동작은 `packages/agent/` 소스와 관련 ADR을 참조하세요.
 
@@ -357,7 +365,8 @@ agent/headless-codex 양쪽 패키지는 Hexagonal Architecture를 적용하여 
 - **유사 보고서 검색**: 스코핑 단계에서 S3 Vectors 보고서 인덱스를 검색하여 과거 RCA의 "증상 → 근본 원인" 추론 경로를 가설 생성에 활용
 - **플레이북 검색 우선**: 기존 플레이북 업데이트를 우선하고, 없으면 신규 생성
 - **읽기 전용**: 복구 워커가 없고, 파이프라인은 리포트 하나로 끝남. 플레이북은
-  `verification_status=DRAFT` 초안으로만 저장
+  신규·변경 절차는 `DRAFT`로 저장하고, 실행 절차가 동일한 기존 플레이북 병합만
+  기존 `VERIFIED`를 보존
 
 ### Fargate Stack (Headless Codex)
 

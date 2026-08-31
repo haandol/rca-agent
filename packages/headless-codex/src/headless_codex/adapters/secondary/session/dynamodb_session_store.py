@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError
 from headless_codex.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
 from headless_codex.ports.interfaces.session_store import (
     ClaimDisposition,
+    CompletionHandoff,
     IncidentAlarm,
     IncidentClaim,
     IncidentClaimDisposition,
@@ -654,7 +655,13 @@ class DynamoDbSessionStore(SessionStorePort):
             return SessionClaim(ClaimDisposition.CONTENDED)
         state = existing.get("state", {}).get("S", "")
         if state in _DEDUPE_STATES:
-            return SessionClaim(ClaimDisposition.TERMINAL_DUPLICATE)
+            previous_claim = existing.get("claim_token", {}).get("S")
+            previous_receive_count = int(existing.get("receive_count", {}).get("N", "0"))
+            return SessionClaim(
+                ClaimDisposition.TERMINAL_DUPLICATE,
+                previous_claim or None,
+                previous_receive_count or None,
+            )
         if state not in _RECLAIMABLE_STATES:
             return SessionClaim(ClaimDisposition.CONTENDED)
 
@@ -752,6 +759,8 @@ class DynamoDbSessionStore(SessionStorePort):
         report_s3_key: str,
         *,
         playbook: dict | None = None,
+        playbook_metric_name: str = "",
+        completion_notification: dict | None = None,
         confirmed: bool = False,
         claim_token: str,
         side_effect_lease_token: str | None = None,
@@ -761,12 +770,17 @@ class DynamoDbSessionStore(SessionStorePort):
         self._validate_transition(rca_id, "COMPLETED", claim_token)
         condition = _TERMINAL_COND
         current_playbook = playbook or {}
+        current_notification = completion_notification or {}
         values = {
             ":state": {"S": "COMPLETED"},
             ":rc": {"S": root_cause},
             ":report_s3_key": {"S": report_s3_key},
             ":playbook": {"S": json.dumps(current_playbook, ensure_ascii=False)},
             ":playbook_id": {"S": str(current_playbook.get("playbook_id", ""))[:200]},
+            ":playbook_index_status": {"S": "PENDING" if current_playbook else ""},
+            ":playbook_metric_name": {"S": playbook_metric_name},
+            ":completion_notification": {"S": json.dumps(current_notification, ensure_ascii=False)},
+            ":completion_notification_status": {"S": "PENDING" if current_notification else ""},
             ":confirmed": {"BOOL": confirmed},
             ":now": {"S": _now_iso()},
             ":completed": {"S": "COMPLETED"},
@@ -777,7 +791,12 @@ class DynamoDbSessionStore(SessionStorePort):
         }
         update = (
             "SET #state = :state, root_cause = :rc, report_s3_key = :report_s3_key, "
-            "playbook = :playbook, playbook_id = :playbook_id, confirmed = :confirmed, updated_at = :now "
+            "playbook = :playbook, playbook_id = :playbook_id, "
+            "playbook_index_status = :playbook_index_status, "
+            "completion_playbook_metric_name = :playbook_metric_name, "
+            "completion_notification = :completion_notification, "
+            "completion_notification_status = :completion_notification_status, "
+            "confirmed = :confirmed, updated_at = :now "
             "REMOVE side_effect_lease_token, side_effect_lease_name, side_effect_lease_expires_at"
         )
         if side_effect_lease_token:
@@ -795,6 +814,93 @@ class DynamoDbSessionStore(SessionStorePort):
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 raise SessionCancelledError(rca_id) from e
+            raise
+
+    def get_completion_handoff(self, rca_id: str) -> CompletionHandoff | None:
+        if not DYNAMODB_TABLE_NAME or not self._ddb:
+            return None
+        item = self._get_session(rca_id)
+        if item is None:
+            return None
+
+        playbook = None
+        raw_playbook = item.get("playbook", {}).get("S", "")
+        if raw_playbook:
+            try:
+                parsed = json.loads(raw_playbook)
+                playbook = parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                logger.exception("completion_playbook_unreadable", rca_id=rca_id)
+
+        notification = None
+        raw_notification = item.get("completion_notification", {}).get("S", "")
+        if raw_notification:
+            try:
+                parsed = json.loads(raw_notification)
+                notification = parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                logger.exception("completion_notification_unreadable", rca_id=rca_id)
+
+        return CompletionHandoff(
+            rca_id=rca_id,
+            state=item.get("state", {}).get("S", ""),
+            playbook_index_status=item.get("playbook_index_status", {}).get("S", ""),
+            playbook=playbook,
+            playbook_metric_name=item.get("completion_playbook_metric_name", {}).get("S", ""),
+            notification_status=item.get("completion_notification_status", {}).get("S", ""),
+            notification=notification,
+        )
+
+    def mark_playbook_indexed(self, rca_id: str, *, claim_token: str) -> bool:
+        if not DYNAMODB_TABLE_NAME or not self._ddb or not claim_token:
+            return False
+        try:
+            self._ddb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression="SET playbook_index_status = :published, playbook_indexed_at = :now",
+                ConditionExpression=(
+                    "#state = :completed AND claim_token = :claim AND playbook_index_status = :pending"
+                ),
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":completed": {"S": "COMPLETED"},
+                    ":claim": {"S": claim_token},
+                    ":pending": {"S": "PENDING"},
+                    ":published": {"S": "PUBLISHED"},
+                    ":now": {"S": _now_iso()},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    def mark_completion_notified(self, rca_id: str, *, claim_token: str) -> bool:
+        if not DYNAMODB_TABLE_NAME or not self._ddb or not claim_token:
+            return False
+        try:
+            self._ddb.update_item(
+                TableName=DYNAMODB_TABLE_NAME,
+                Key=_session_key(rca_id),
+                UpdateExpression=("SET completion_notification_status = :sent, completion_notified_at = :now"),
+                ConditionExpression=(
+                    "#state = :completed AND claim_token = :claim AND completion_notification_status = :pending"
+                ),
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":completed": {"S": "COMPLETED"},
+                    ":claim": {"S": claim_token},
+                    ":pending": {"S": "PENDING"},
+                    ":sent": {"S": "SENT"},
+                    ":now": {"S": _now_iso()},
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
             raise
 
     def mark_failed(self, rca_id: str, error_reason: str, *, claim_token: str) -> None:

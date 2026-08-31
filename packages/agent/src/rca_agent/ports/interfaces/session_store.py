@@ -9,6 +9,7 @@ from rca_agent.ports.dto.models import (
     CompletionHandoff,
     FaultType,
     NotificationMessage,
+    Playbook,
     RcaSession,
     RcaSessionState,
 )
@@ -126,6 +127,8 @@ class SessionStorePort(ABC):
         report_s3_key: str = "",
         playbook_span_id: str = "",
         playbook_id: str = "",
+        playbook: Playbook | None = None,
+        playbook_metric_name: str = "",
         claim_token: str | None = None,
     ) -> bool: ...
 
@@ -149,6 +152,9 @@ class SessionStorePort(ABC):
 
     @abstractmethod
     def get_completion_handoff(self, rca_id: str) -> CompletionHandoff | None: ...
+
+    @abstractmethod
+    def mark_playbook_indexed(self, rca_id: str, *, claim_token: str | None = None) -> bool: ...
 
     @abstractmethod
     def mark_completion_notified(self, rca_id: str, *, claim_token: str | None = None) -> bool: ...

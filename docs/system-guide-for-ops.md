@@ -362,8 +362,9 @@ graph LR
 
 Strands SDK 기반 Fargate 엔진은 RCA를 9개 서비스 단계로 수행합니다. 파이프라인은
 읽기 전용이며 F9 알림에서 끝납니다. 복구를 수행하는 워커가 없고, 생성된 플레이북은
-`verification_status=DRAFT` 초안입니다 — 실행과 회고를 거치지 않은 절차는 검증되지
-않았기 때문입니다.
+신규·변경 절차일 때 `verification_status=DRAFT` 초안입니다. 기존 검증 플레이북과
+실행 절차가 동일한 병합은 기존 `VERIFIED`를 보존하지만, 분석이 새 절차를 검증됨으로
+승격할 수는 없습니다.
 
 ```mermaid
 flowchart TD
@@ -394,9 +395,11 @@ flowchart TD
 
     subgraph Output["④ 결과 생성"]
         F7["F7: 보고서 작성<br/>🧠 Planning<br/>→ S3 저장"]
-        F8["F8: 플레이북 생성<br/>🧠 Planning<br/>→ S3 Vectors 인덱싱 (search-first)<br/>verification_status = DRAFT"]
+        F8["F8: 플레이북 생성·보강<br/>🧠 Planning<br/>search-first<br/>신규 절차는 DRAFT"]
+        DONE["세션 COMPLETED<br/>리포트 + 최종 플레이북 확정"]
+        INDEX["완료 플레이북 인덱싱<br/>S3 Vectors<br/>실패 시 handoff 재시도"]
         F9["F9: SNS 알림<br/>(presigned URL + 플레이북 요약)<br/>사람·대시보드 전용"]
-        F7 --> F8 --> F9
+        F7 --> F8 --> DONE --> INDEX --> F9
     end
 
     DEDUP --> F1

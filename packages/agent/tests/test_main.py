@@ -93,6 +93,8 @@ def _make_container():
         "claim-1",
         1,
     )
+    container.session_store.mark_playbook_indexed.return_value = True
+    container.session_store.mark_completion_notified.return_value = True
     container.report_store = MagicMock()
     container.notification = MagicMock()
     container.playbook_store = MagicMock()
@@ -390,6 +392,14 @@ class TestProcessAlarmFullPipeline:
         assert saved["attempt"] == 1
         # 리포트는 플레이북을 포함한 하나의 산출물이므로 절차 없이 저장되지 않는다.
         assert saved["playbook"] is not None
+        container.playbook_store.save.assert_called_once_with(
+            completed.kwargs["playbook"],
+            metric_name="",
+        )
+        container.session_store.mark_playbook_indexed.assert_called_once_with(
+            completed.args[0],
+            claim_token="claim-1",
+        )
         container.session_store.mark_completion_notified.assert_not_called()
 
     def test_claim_receives_complete_raw_alarm_context(self):
@@ -405,6 +415,7 @@ class TestProcessAlarmFullPipeline:
         container = mocks["_container"]
         assert mocks["_result"] is False
         container.session_store.mark_completed.assert_not_called()
+        container.playbook_store.save.assert_not_called()
         container.notification.send.assert_not_called()
         container.report_store.save_vectors.assert_not_called()
 
@@ -923,18 +934,36 @@ class TestProcessAlarmFullPipeline:
             root_cause_summary="complete",
             severity="high",
         )
+        playbook = Playbook(
+            playbook_id="pb-1",
+            failure_type="cpu-spike",
+            symptom_pattern="CPU > 90%",
+        )
         container.session_store.get_completion_handoff.return_value = CompletionHandoff(
             rca_id="rca-1",
             state=RcaSessionState.COMPLETED,
+            playbook_index_status="PENDING",
+            playbook=playbook,
+            playbook_metric_name="CPUUtilization",
             notification_status="PENDING",
             notification=notification,
         )
+        container.playbook_store.save.return_value = True
         container.notification.send.return_value = True
+        container.session_store.mark_playbook_indexed.return_value = True
         container.session_store.mark_completion_notified.return_value = True
 
         result = PipelineOrchestrator(container).process_alarm(_make_body())
 
         assert result is True
+        container.playbook_store.save.assert_called_once_with(
+            playbook,
+            metric_name="CPUUtilization",
+        )
+        container.session_store.mark_playbook_indexed.assert_called_once_with(
+            container.session_store.get_completion_handoff.call_args.args[0],
+            claim_token="claim-complete",
+        )
         container.notification.send.assert_called_once_with(notification)
         container.session_store.mark_completion_notified.assert_called_once_with(
             container.session_store.get_completion_handoff.call_args.args[0],
@@ -977,7 +1006,7 @@ class TestProcessAlarmFullPipeline:
             "message-a",
         ]
 
-    def test_playbook_store_is_not_called_when_claim_is_lost_before_save(self):
+    def test_playbook_generation_does_not_publish_before_completion(self):
         container = _make_container()
         container.session_store.acquire_side_effect_lease.side_effect = SideEffectLeaseUnavailableError("claim lost")
         orchestrator = PipelineOrchestrator(container)
@@ -993,16 +1022,16 @@ class TestProcessAlarmFullPipeline:
             symptom_pattern="CPU > 90%",
         )
 
-        with (
-            patch(f"{_P}.run_playbook_generation", return_value=playbook),
-            pytest.raises(SideEffectLeaseUnavailableError),
-        ):
-            orchestrator._run_playbook(
+        with patch(f"{_P}.run_playbook_generation", return_value=playbook):
+            generated, span_id = orchestrator._run_playbook(
                 report,
                 _scoping(),
                 _run_context(claim_token="claim-1"),
             )
 
+        assert generated == playbook
+        assert span_id is not None
+        container.session_store.acquire_side_effect_lease.assert_not_called()
         container.playbook_store.save.assert_not_called()
 
     def test_lease_release_failure_is_not_treated_as_success(self):

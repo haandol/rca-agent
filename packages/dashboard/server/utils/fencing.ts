@@ -40,6 +40,17 @@ const TERMINAL_STATE_LIST = TERMINAL_SESSION_STATES.map(
 const NO_ACTIVE_LEASE =
   '(attribute_not_exists(side_effect_lease_expires_at) OR side_effect_lease_expires_at < :nowEpoch)';
 
+/**
+ * A completed analysis may still be publishing its derived index and alert.
+ *
+ * Those writes run from the persisted completion handoff. Deleting its authority
+ * record while either write is pending would leave an orphan vector or a retry
+ * with no session to fence it, so deletion waits until both handoffs are done.
+ */
+const NO_PENDING_COMPLETION_HANDOFF =
+  '(attribute_not_exists(playbook_index_status) OR playbook_index_status <> :pending) AND ' +
+  '(attribute_not_exists(completion_notification_status) OR completion_notification_status <> :pending)';
+
 export interface FencedUpdate {
   UpdateExpression: string;
   ConditionExpression: string;
@@ -94,8 +105,8 @@ export function buildCancelUpdate(
  * Deleting an active session removes the very record the fencing is based on:
  * the running execution never learns its claim is gone and keeps going, while a
  * redelivered message sees no session and starts over — the two run at once.
- * So deletion is allowed only from a terminal state with no active lease, and an
- * operator has to cancel first otherwise.
+ * So deletion is allowed only from a terminal state with no active lease or
+ * pending completion handoff, and an operator has to cancel first otherwise.
  *
  * This is an update rather than a plain precondition read because the check and
  * the removal have to be one step. Rotating the claim here means that if the
@@ -114,6 +125,7 @@ export function buildDeleteClaimUpdate(
       'attribute_exists(PK)',
       `#st IN (${TERMINAL_STATE_LIST})`,
       NO_ACTIVE_LEASE,
+      NO_PENDING_COMPLETION_HANDOFF,
     ].join(' AND '),
     ExpressionAttributeNames: { '#st': 'state' },
     ExpressionAttributeValues: {
@@ -121,6 +133,7 @@ export function buildDeleteClaimUpdate(
       ':fenced': fencedClaimToken,
       ':now': now,
       ':nowEpoch': nowEpochSeconds,
+      ':pending': 'PENDING',
     },
   };
 }

@@ -394,8 +394,34 @@ class PipelineOrchestrator:
                 handoff.state,
             )
             return handoff.state in (RcaSessionState.OUTDATED, RcaSessionState.CANCELLED)
+        effective_claim_token = claim_token or handoff.claim_token
+        if handoff.playbook_index_status == "PENDING":
+            if not effective_claim_token:
+                return False
+            if handoff.playbook is None:
+                logger.error("RCA %s has a pending playbook index without a playbook", rca_id)
+                return False
+            if not self._container.playbook_store.save(
+                handoff.playbook,
+                metric_name=handoff.playbook_metric_name,
+            ):
+                return False
+            if not self._container.session_store.mark_playbook_indexed(
+                rca_id,
+                claim_token=effective_claim_token,
+            ):
+                return False
+        elif handoff.playbook_index_status not in ("", "PUBLISHED"):
+            logger.error(
+                "RCA %s has an invalid playbook index status: %s",
+                rca_id,
+                handoff.playbook_index_status,
+            )
+            return False
         if handoff.notification_status in ("", "SENT"):
             return True
+        if not effective_claim_token:
+            return False
         if handoff.notification_status != "PENDING" or handoff.notification is None:
             logger.error("RCA %s has an invalid pending completion handoff", rca_id)
             return False
@@ -403,7 +429,7 @@ class PipelineOrchestrator:
             return False
         return self._container.session_store.mark_completion_notified(
             rca_id,
-            claim_token=claim_token,
+            claim_token=effective_claim_token,
         )
 
     def _skip_if_stale(
@@ -1186,6 +1212,11 @@ class PipelineOrchestrator:
             )
             return False
 
+        playbook_metric_name = (
+            scoping_result.raw_alarm.trigger.metric_name
+            if scoping_result.raw_alarm and scoping_result.raw_alarm.trigger
+            else ""
+        )
         with trace.span(
             SpanType.NOTIFICATION,
             input_summary=f"rca_id={rca_report.rca_id}",
@@ -1212,20 +1243,28 @@ class PipelineOrchestrator:
                 report_s3_key=report_s3_key,
                 playbook_span_id=playbook_span_id or "",
                 playbook_id=playbook.playbook_id if playbook else "",
+                playbook=playbook,
+                playbook_metric_name=playbook_metric_name,
                 claim_token=run.claim_token,
             )
             if not completed:
                 s.output_summary = "완료 상태 및 알림 저장 실패"
                 return False
             c.report_store.save_vectors(rca_report, scoping_result=scoping_result)
-            if not c.notification.send(notification):
-                s.output_summary = "완료 알림 전송 대기"
-                return False
-            if not store.mark_completion_notified(
+            if not self._flush_completion_handoff(
                 rca_report.rca_id,
                 claim_token=run.claim_token,
+                handoff=CompletionHandoff(
+                    rca_id=rca_report.rca_id,
+                    state=RcaSessionState.COMPLETED,
+                    playbook_index_status="PENDING" if playbook else "",
+                    playbook=playbook,
+                    playbook_metric_name=playbook_metric_name,
+                    notification_status="PENDING",
+                    notification=notification,
+                ),
             ):
-                s.output_summary = "완료 알림 전송 상태 저장 실패"
+                s.output_summary = "완료 후 게시 대기"
                 return False
             s.output_summary = f"소요시간={elapsed}초"
 
@@ -1255,12 +1294,6 @@ class PipelineOrchestrator:
                 playbook_store=c.playbook_store,
                 scoping_result=scoping_result,
             )
-            with self._side_effect_lease(
-                rca_report.rca_id,
-                run.claim_token,
-                "playbook",
-            ):
-                c.playbook_store.save(playbook, scoping_result=scoping_result)
             trace.end_span(
                 playbook_span,
                 output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),

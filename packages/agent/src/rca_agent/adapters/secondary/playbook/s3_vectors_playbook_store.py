@@ -188,13 +188,18 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             verification_status=_as_verification_status(recorded.get("verification_status")),
         )
 
-    def save(self, playbook: Playbook, *, scoping_result: ScopingResult | None = None) -> bool:
+    def save(
+        self,
+        playbook: Playbook,
+        *,
+        scoping_result: ScopingResult | None = None,
+        metric_name: str = "",
+    ) -> bool:
         if not self._enabled or self._embedding is None:
             logger.info("S3 Vectors not configured, skipping playbook indexing")
             return False
 
-        metric_name = ""
-        if scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
+        if not metric_name and scoping_result and scoping_result.raw_alarm and scoping_result.raw_alarm.trigger:
             metric_name = scoping_result.raw_alarm.trigger.metric_name
 
         embed_text = build_embed_key(

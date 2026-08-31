@@ -40,6 +40,12 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Session not found',
     });
   }
+  if (session.state !== 'COMPLETED') {
+    throw createError({
+      statusCode: 409,
+      statusMessage: '분석이 완료되지 않아 플레이북을 조회할 수 없습니다.',
+    });
+  }
 
   const resolved = resolveCurrentPlaybook(items, session, engine);
   if (!resolved) {

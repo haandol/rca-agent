@@ -660,12 +660,20 @@ useHead({ title: '장애 기록' });
             </div>
 
             <NuxtLink
+              v-if="row.state === 'COMPLETED'"
               :to="`/report/${row.rcaId}?engine=${row.engine}`"
               class="incident-title mt-2.5 inline-block"
               :title="row.alarmName"
             >
               {{ shortAlarm(row.alarmName) }}
             </NuxtLink>
+            <span
+              v-else
+              class="incident-title mt-2.5 inline-block"
+              :title="row.alarmName"
+            >
+              {{ shortAlarm(row.alarmName) }}
+            </span>
 
             <p
               v-if="row.rootCause"
@@ -743,6 +751,7 @@ useHead({ title: '장애 기록' });
 
           <div class="incident-actions text-base-content">
             <NuxtLink
+              v-if="row.state === 'COMPLETED'"
               :to="`/report/${row.rcaId}?engine=${row.engine}`"
               class="btn btn-sm w-full"
               :class="
@@ -757,6 +766,13 @@ useHead({ title: '장애 기록' });
                   : '보고서 열기'
               }}
             </NuxtLink>
+            <NuxtLink
+              v-else
+              :to="`/trace/${row.rcaId}?engine=${row.engine}`"
+              class="btn btn-sm w-full btn-outline border-base-content/18"
+            >
+              분석 과정
+            </NuxtLink>
             <div class="incident-secondary-actions">
               <NuxtLink
                 :to="`/trace/${row.rcaId}?engine=${row.engine}`"
@@ -765,6 +781,7 @@ useHead({ title: '장애 기록' });
                 Trace
               </NuxtLink>
               <NuxtLink
+                v-if="row.state === 'COMPLETED'"
                 :to="`/playbook/${row.rcaId}?engine=${row.engine}`"
                 title="플레이북"
               >
