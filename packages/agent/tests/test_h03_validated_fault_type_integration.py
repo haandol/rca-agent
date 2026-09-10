@@ -25,6 +25,7 @@ from rca_agent.services.pipeline import PipelineOrchestrator
 class _StructuredAgent:
     def __init__(self, payload: dict):
         self._payload = payload
+        self.messages: list[dict] = []
 
     def __call__(self, _prompt, *, structured_output_model):
         return SimpleNamespace(

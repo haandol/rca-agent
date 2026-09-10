@@ -97,7 +97,15 @@ _KOREAN_REVERSIBLE_ACTION = re.compile(
     r"(?:닫(?:기|는다|고)|해제(?:하기|한다|하고)?|종료(?:하기|한다|하고)?)"
 )
 _KOREAN_IRREVERSIBLE_STEM = r"(?:영구\s*제거|삭제|제거|지우|파기|폐기|종료|말소|드롭)"
+# Bare action nouns joined by a middle dot share this immediate negation.
+# Do not span line breaks, clause separators, or intervening predicates.
+_KOREAN_COORDINATED_ACTION_STEM = r"(?:삭제|제거|파기|폐기|종료|말소|드롭)"
+_KOREAN_NEGATED_COORDINATED_ACTION = re.compile(
+    rf"{_KOREAN_COORDINATED_ACTION_STEM}(?:[ \t]*·[ \t]*{_KOREAN_COORDINATED_ACTION_STEM})+"
+    r"[ \t]*하지[ \t]*않(?:는다|습니다|고)(?=$|[ \t.,;!?。！？])"
+)
 _KOREAN_NEGATED_IRREVERSIBLE_ACTIONS = (
+    _KOREAN_NEGATED_COORDINATED_ACTION,
     re.compile(
         rf"{_KOREAN_IRREVERSIBLE_STEM}(?:을|를)?\s*(?:하|되)?지\s*"
         r"(?:않(?:고|는|는다|도록|은|을|아야)?|말(?:고|아야|도록|라)?|마(?:라|세요))"

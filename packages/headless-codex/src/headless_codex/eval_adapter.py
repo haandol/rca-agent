@@ -266,14 +266,65 @@ def _load_scenario(argv: list[str]) -> dict[str, Any]:
 
 
 def _alarm_for(scenario: dict[str, Any]) -> AlarmContext:
+    """Translate supplied alarm context without inventing missing source values.
+
+    Preserve optional metadata in AlarmContext and in the reason so fields the
+    shared prompt does not render remain visible. Omitted/null fields keep the
+    existing DTO defaults, while the source metadata records only provided values.
+    Append scenario observations only for explicit model-eval inputs; other modes
+    must not receive the evaluation's precollected evidence.
+    """
     alarm = scenario.get("alarm") or {}
     state_reason = alarm.get("stateReason", "")
+    # The shared prompt does not render every AlarmContext field. Keep the
+    # provided metadata visible without inventing absent evaluation conditions.
+    metadata_fields = (
+        "stateChangeTime",
+        "region",
+        "namespace",
+        "dimensions",
+        "statistic",
+        "period",
+        "threshold",
+        "comparisonOperator",
+        "evaluationPeriods",
+        "datapointsToAlarm",
+        "treatMissingData",
+        "arn",
+    )
+    metadata = {key: alarm[key] for key in metadata_fields if key in alarm and alarm[key] is not None}
+    if metadata:
+        state_reason += "\n\nSource alarm metadata (provided values):\n" + json.dumps(metadata, ensure_ascii=False)
     if _supports_model_eval(scenario):
         state_reason = build_state_reason(state_reason, scenario.get("observations") or [])
+    optional_metadata = {
+        target: alarm[source]
+        for source, target in (
+            ("stateChangeTime", "state_change_time"),
+            ("region", "region"),
+            ("namespace", "namespace"),
+            ("dimensions", "dimensions"),
+            ("statistic", "statistic"),
+            ("period", "period"),
+            ("threshold", "threshold"),
+            ("comparisonOperator", "comparison_operator"),
+            ("evaluationPeriods", "evaluation_periods"),
+            ("datapointsToAlarm", "datapoints_to_alarm"),
+            ("treatMissingData", "treat_missing_data"),
+        )
+        if source in alarm and alarm[source] is not None
+    }
+    eval_source_metadata = None
+    if _supports_model_eval(scenario):
+        eval_source_metadata = {**metadata, "metric": alarm.get("metric")}
+        supplied_region = alarm.get("region")
+        optional_metadata["region"] = supplied_region if supplied_region and supplied_region.strip() else "not provided"
     return AlarmContext(
         alarm_name=alarm.get("name", "EvalScenarioAlarm"),
         state_reason=state_reason,
         metric_name=alarm.get("metric"),
+        eval_source_metadata=eval_source_metadata,
+        **optional_metadata,
     )
 
 
@@ -365,14 +416,23 @@ def _root_fault_type(artifact_dir: Path) -> str:
     return "unsupported"
 
 
+def _validation_entry_text(entry: dict[str, Any]) -> str:
+    """Read citations only from the reasoning and evidence of this judgment."""
+    evidence = entry.get("evidence_summary")
+    parts = [entry.get("reasoning"), *(evidence if isinstance(evidence, list) else [])]
+    return "\n".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+
+
 def _root_cause_evidence_ids(artifact_dir: Path, scenario: dict[str, Any]) -> list[str]:
-    reasoning = "\n".join(
-        entry["reasoning"]
+    validation_text = "\n".join(
+        _validation_entry_text(entry)
         for entry in _latest_validation(artifact_dir).get("confirmed") or []
-        if isinstance(entry, dict) and isinstance(entry.get("reasoning"), str)
+        if isinstance(entry, dict)
     )
     return [
-        identifier for identifier in _observation_ids(scenario) if _contains_exact_identifier(reasoning, identifier)
+        identifier
+        for identifier in _observation_ids(scenario)
+        if _contains_exact_identifier(validation_text, identifier)
     ]
 
 
@@ -403,16 +463,16 @@ def _competing_cause_judgments(
                 index
                 for index, entry in enumerate(rejected_entries)
                 if required_evidence_ids
-                and isinstance(entry.get("reasoning"), str)
                 and all(
-                    _contains_exact_identifier(entry["reasoning"], identifier) for identifier in required_evidence_ids
+                    _contains_exact_identifier(_validation_entry_text(entry), identifier)
+                    for identifier in required_evidence_ids
                 )
             ),
             None,
         )
         if supported_index is not None:
             supported = rejected_entries.pop(supported_index)
-            rationale = supported["reasoning"].strip()
+            rationale = _validation_entry_text(supported)
             judgments.append(
                 {
                     "causeId": cause_id,
@@ -523,7 +583,8 @@ def main(argv: list[str] | None = None) -> None:
     try:
         with _stdout_reserved_for_the_result() as result_stream:
             result = CodexSubprocessRunner().run(
-                build_prompt(_alarm_for(scenario)),
+                build_prompt(_alarm_for(scenario), role="rca"),
+                report_prompt=build_prompt(_alarm_for(scenario), role="report"),
                 execution_token=context.token,
                 profile=MODEL_EVAL_PROFILE,
             )

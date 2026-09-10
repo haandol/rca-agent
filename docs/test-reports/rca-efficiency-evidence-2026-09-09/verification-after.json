@@ -1,0 +1,27 @@
+{
+  "unit_tests": {
+    "strands": 678,
+    "headless_codex": 740,
+    "infra": 42,
+    "healthcare_sensor_app": 42,
+    "total_passed": 1502,
+    "healthcare_skipped": 1,
+    "healthcare_xfailed": 1
+  },
+  "root_contract_tests": {
+    "passed": 120,
+    "failed": 1,
+    "failure": "approved evaluation input digest and file set changed"
+  },
+  "fixture_structural_results": {
+    "passed": 8,
+    "total": 8
+  },
+  "format": "passed",
+  "lint": "passed",
+  "typecheck": "passed",
+  "pnpm_verify": "failed: baseline approval gate only",
+  "live_model_evaluation": "not run",
+  "baseline": "unchanged",
+  "deployment": "not run"
+}

@@ -72,8 +72,15 @@ def _build_user_prompt(
 
 
 def _invoke_agent(agent: Agent, prompt: str) -> ValidationOutput:
-    result = agent(prompt, structured_output_model=ValidationOutput)
-    return result.structured_output
+    # Each validation receives its evidence explicitly. Keep the model, connections,
+    # and SDK retry configuration, but never carry another invocation's conversation.
+    agent.messages.clear()
+    try:
+        result = agent(prompt, structured_output_model=ValidationOutput)
+        return result.structured_output
+    finally:
+        # Also discard partial conversations after a failure or hard timeout.
+        agent.messages.clear()
 
 
 def validate_hypothesis(

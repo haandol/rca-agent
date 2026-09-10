@@ -1,9 +1,11 @@
+from threading import Event
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from rca_agent import main as agent_main
 from rca_agent.adapters.secondary.queue.sqs_consumer import SqsConsumer
+from rca_agent.ports.interfaces.queue_consumer import QueueReceiveError
 
 
 class _SingleIterationEvent:
@@ -87,3 +89,56 @@ def test_sqs_consumer_does_not_yield_message_without_message_id():
         consumer = SqsConsumer("https://sqs.example.test/rca", poll_wait_seconds=0)
 
         assert list(consumer.poll()) == []
+
+
+def test_receive_failure_is_distinct_from_an_empty_queue():
+    sqs = MagicMock()
+    failure = RuntimeError("receive unavailable")
+    sqs.receive_message.side_effect = [failure, {}]
+    with patch("rca_agent.adapters.secondary.queue.sqs_consumer.boto3.client", return_value=sqs):
+        consumer = SqsConsumer("https://sqs.example.test/rca")
+        with pytest.raises(QueueReceiveError) as caught:
+            list(consumer.poll())
+        assert caught.value.__cause__ is failure
+        assert list(consumer.poll()) == []
+
+
+def _run_polling_loop(consumer, shutdown_event):
+    orchestrator = MagicMock()
+    with (
+        patch.dict(agent_main.os.environ, {"SQS_QUEUE_URL": "offline"}),
+        patch("rca_agent.adapters.primary.health.health_server.start_health_server"),
+        patch("rca_agent.di.app_container.AppContainer", return_value=MagicMock(queue_consumer=consumer)),
+        patch("rca_agent.services.pipeline.PipelineOrchestrator", return_value=orchestrator),
+        patch.object(agent_main, "Event", return_value=shutdown_event),
+        patch.object(agent_main.signal, "signal"),
+    ):
+        agent_main.main()
+    return orchestrator
+
+
+def test_receive_retry_wait_grows_is_bounded_and_resets_after_success():
+    consumer = MagicMock()
+    consumer.poll.side_effect = [QueueReceiveError("unavailable")] * 7 + [
+        [],
+        QueueReceiveError("unavailable again"),
+    ]
+    shutdown_event = MagicMock()
+    shutdown_event.is_set.side_effect = [False] * 9 + [True]
+
+    orchestrator = _run_polling_loop(consumer, shutdown_event)
+
+    assert [call.args[0] for call in shutdown_event.wait.call_args_list] == [1, 2, 4, 8, 16, 30, 30, 1]
+    assert consumer.poll.call_count == 9
+    orchestrator.process_alarm.assert_not_called()
+    consumer.ack.assert_not_called()
+
+
+def test_shutdown_during_receive_retry_wait_prevents_another_poll():
+    consumer = MagicMock()
+    consumer.poll.side_effect = QueueReceiveError("unavailable")
+    shutdown_event = Event()
+    with patch.object(shutdown_event, "wait", side_effect=lambda _: shutdown_event.set()) as wait:
+        _run_polling_loop(consumer, shutdown_event)
+    wait.assert_called_once_with(1)
+    consumer.poll.assert_called_once()

@@ -5,7 +5,12 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS
+from rca_agent.config.settings import (
+    LLM_DEFAULT_TIMEOUT_SECONDS,
+    RCA_BEAM_WIDTH,
+    RCA_MAX_VALIDATION_LOOPS,
+    TERMINATION_CONFIDENCE_THRESHOLD,
+)
 from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
@@ -49,7 +54,10 @@ PrioritizationOutput.model_rebuild()
 def _build_hypotheses_text(hypotheses: list[Hypothesis]) -> str:
     lines = []
     for h in hypotheses:
-        lines.append(f"- [{h.hypothesis_id}] ({h.category}) {h.description} (confidence={h.confidence_score:.2f})")
+        lines.append(
+            f"- [{h.hypothesis_id}] ({h.category}) {h.description} "
+            f"(status={h.status.value}, confidence={h.confidence_score:.2f})"
+        )
     return "\n".join(lines)
 
 
@@ -57,6 +65,9 @@ def _build_user_prompt(scoping: ScopingResult, hypotheses: list[Hypothesis]) -> 
     return PRIORITIZATION_USER_PROMPT_TEMPLATE.format(
         scoping_summary=scoping.alarm_summary,
         hypotheses_text=_build_hypotheses_text(hypotheses),
+        beam_width=RCA_BEAM_WIDTH,
+        max_validation_loops=RCA_MAX_VALIDATION_LOOPS,
+        termination_confidence=TERMINATION_CONFIDENCE_THRESHOLD,
     )
 
 

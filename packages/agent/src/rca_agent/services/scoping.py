@@ -105,8 +105,9 @@ def _to_observation(item: MetricObservationOutput) -> MetricObservation:
 
 
 def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
+    """Render source metadata for evals while retaining production alarm defaults."""
     trigger = alarm.trigger
-    return SCOPING_USER_PROMPT_TEMPLATE.format(
+    values = dict(
         alarm_name=alarm.alarm_name,
         state_reason=alarm.new_state_reason,
         state_change_time=alarm.state_change_time or "N/A",
@@ -115,11 +116,32 @@ def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
         metric_name=trigger.metric_name if trigger else "N/A",
         dimensions=json.dumps(trigger.dimensions, ensure_ascii=False) if trigger else "{}",
         statistic=trigger.statistic if trigger else "N/A",
-        period=trigger.period if trigger else 300,
+        period=f"{trigger.period if trigger else 300}s",
         threshold=trigger.threshold if trigger else "N/A",
         comparison_operator=trigger.comparison_operator if trigger else "N/A",
         report_context=build_report_context(reports),
     )
+    if alarm.eval_source_metadata is not None:
+        metadata = alarm.eval_source_metadata
+        for target, source in (
+            ("state_change_time", "stateChangeTime"),
+            ("region", "region"),
+            ("namespace", "namespace"),
+            ("metric_name", "metric"),
+            ("dimensions", "dimensions"),
+            ("statistic", "statistic"),
+            ("period", "period"),
+            ("threshold", "threshold"),
+            ("comparison_operator", "comparisonOperator"),
+        ):
+            value = metadata.get(source)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                values[target] = "not provided"
+            elif source == "dimensions":
+                values[target] = json.dumps(value, ensure_ascii=False)
+            else:
+                values[target] = f"{value}s" if source == "period" else str(value)
+    return SCOPING_USER_PROMPT_TEMPLATE.format(**values)
 
 
 def build_report_query(alarm: AlarmPayload) -> str:

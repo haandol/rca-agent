@@ -62,8 +62,8 @@ class AlarmTrigger(BaseModel):
     metric_name: str
     namespace: str
     dimensions: dict[str, str] = Field(default_factory=dict)
-    statistic: str = "Average"
-    period: int = 300
+    statistic: str | None = "Average"
+    period: int | None = 300
     threshold: float | None = None
     comparison_operator: str | None = None
 
@@ -76,6 +76,8 @@ class AlarmPayload(BaseModel):
     state_change_time: datetime | None = None
     trigger: AlarmTrigger | None = None
     region: str = "us-east-1"
+    # None retains production rendering; even an empty dict opts into source-only eval rendering.
+    eval_source_metadata: dict | None = None
 
     @property
     def resource_id(self) -> str:
@@ -91,8 +93,23 @@ class AlarmPayload(BaseModel):
 
     @classmethod
     def from_cloudwatch_sns(cls, raw: dict) -> AlarmPayload:
-        """Parse a CloudWatch alarm SNS notification into AlarmPayload."""
+        """Parse production alarms, preserving the eval adapter's explicit source view.
+
+        Production ARN/default behavior remains unchanged. Evaluation regions
+        come only from supplied metadata, never from the runtime's AWS region.
+        """
+        eval_source_metadata = raw.get("EvalSourceMetadata")
         trigger_raw = raw.get("Trigger") or {}
+        if eval_source_metadata is not None:
+            trigger_raw = dict(trigger_raw)
+            for source, target in (
+                ("statistic", "Statistic"),
+                ("period", "Period"),
+                ("threshold", "Threshold"),
+                ("comparisonOperator", "ComparisonOperator"),
+            ):
+                value = eval_source_metadata.get(source)
+                trigger_raw[target] = None if value is None or (isinstance(value, str) and not value.strip()) else value
         dimensions = {d["name"]: d["value"] for d in trigger_raw.get("Dimensions", [])}
 
         trigger = None
@@ -114,6 +131,12 @@ class AlarmPayload(BaseModel):
             if len(arn_parts) >= 4:
                 region = arn_parts[3]
 
+        if eval_source_metadata is not None:
+            if alarm_arn is not None and not alarm_arn.strip():
+                alarm_arn = None
+            supplied_region = eval_source_metadata.get("region")
+            region = supplied_region if supplied_region and supplied_region.strip() else "not provided"
+
         return cls(
             alarm_name=raw.get("AlarmName") or "UnknownAlarm",
             alarm_arn=alarm_arn,
@@ -122,6 +145,7 @@ class AlarmPayload(BaseModel):
             state_change_time=raw.get("StateChangeTime"),
             trigger=trigger,
             region=region,
+            eval_source_metadata=eval_source_metadata,
         )
 
 
@@ -350,8 +374,8 @@ class AlarmContext(BaseModel):
     namespace: str = ""
     metric_name: str = ""
     dimensions: dict[str, str] = Field(default_factory=dict)
-    statistic: str = "Average"
-    period: int = 300
+    statistic: str | None = "Average"
+    period: int | None = 300
     threshold: float | None = None
     comparison_operator: str | None = None
 

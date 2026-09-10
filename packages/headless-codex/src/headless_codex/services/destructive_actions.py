@@ -193,6 +193,13 @@ _IRREVERSIBLE_ACTION_KOREAN_NEGATION_STEMS = (
     "말소",
     "드롭",
 )
+# Bare action nouns joined by a middle dot share this immediate negation.
+# Do not span line breaks, clause separators, or intervening predicates.
+_KOREAN_COORDINATED_ACTION_STEM = r"(?:삭제|제거|파기|폐기|종료|말소|드롭)"
+_KOREAN_NEGATED_COORDINATED_ACTION = re.compile(
+    rf"{_KOREAN_COORDINATED_ACTION_STEM}(?:[ \t]*·[ \t]*{_KOREAN_COORDINATED_ACTION_STEM})+"
+    r"[ \t]*하지[ \t]*않(?:는다|습니다|고)(?=$|[ \t.,;!?。！？])"
+)
 _NEGATED_IRREVERSIBLE_ACTION_KOREAN = re.compile(
     rf"(?:{'|'.join(re.escape(term) for term in _IRREVERSIBLE_ACTION_KOREAN_NEGATION_STEMS)})"
     r"(?:을|를|은|는)?\s*"
@@ -303,6 +310,7 @@ def describes_destructive_action(action: object) -> bool:
     without_reversible_sessions = _REVERSIBLE_SESSION_ACTION_ENGLISH.sub("", action)
     without_reversible_sessions = _REVERSIBLE_SESSION_ACTION_KOREAN.sub("", without_reversible_sessions)
     without_negated_actions = _NEGATED_IRREVERSIBLE_ACTION_ENGLISH.sub("", without_reversible_sessions)
+    without_negated_actions = _KOREAN_NEGATED_COORDINATED_ACTION.sub(" ", without_negated_actions)
     without_negated_actions = _NEGATED_IRREVERSIBLE_ACTION_KOREAN.sub("", without_negated_actions)
     if _IRREVERSIBLE_ACTION_ENGLISH_PATTERN.search(without_negated_actions):
         return True

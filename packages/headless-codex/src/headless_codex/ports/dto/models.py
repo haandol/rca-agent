@@ -20,6 +20,8 @@ class AlarmContext:
     evaluation_periods: int | None = None
     datapoints_to_alarm: int | None = None
     treat_missing_data: str | None = None
+    # None preserves production defaults; a dict renders only supplied eval metadata.
+    eval_source_metadata: dict | None = None
 
 
 def parse_alarm(data: dict) -> AlarmContext:

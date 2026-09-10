@@ -29,6 +29,10 @@ rather than blaming an individual.
 - **Do NOT assume a single root cause.** Real incidents are usually multi-causal. Cover distinct \
 contributing factors across categories — a `description` like "deploy + capacity headroom + \
 dependency latency together caused X" is preferred over collapsing everything into one factor.
+- Distinguish alternative causal explanations from compatible contributing factors. Different categories \
+alone do not make two claims alternatives. When hypotheses share a mechanism, \
+state whether they compete or could hold together; \
+keep multi-causal hypotheses when appropriate and identify evidence that would distinguish their causal claims.
 - **Stay fact-anchored.** Each hypothesis must be falsifiable by observable evidence \
 (metrics, logs, CloudTrail events, code diffs). Vague psychological causes are not allowed.
 - **Blameless tone.** Use system-level language ("config rollout enabled X", "pool sizing did not \

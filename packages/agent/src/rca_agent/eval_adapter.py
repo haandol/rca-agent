@@ -116,11 +116,36 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict
     """model-eval 시나리오를 CloudWatch 알람 모양의 payload 로 변환한다.
 
     제공된 관측은 ``model-eval`` 이 명시된 시나리오에만 이어붙인다. 다른 모드의
-    시나리오로 직접 호출되면 원래 알람 사유를 보존한다.
+    시나리오로 직접 호출되면 관측을 넣지 않는다. 선택 메타데이터는 제공된 값만
+    전달하고, 공용 파서가 표현하지 않는 필드도 원본 메타데이터로 사유에 보존한다.
+    생략/null 값을 보충하지 않는다. ``state_change_time`` 은 새 평가 세션의
+    식별용 시각이며, 시나리오의 원본 알람 시각·관측 구간을 대체하지 않는다.
     """
     alarm = scenario.get("alarm") or {}
     observations = scenario.get("observations") or [] if _supports_model_eval(scenario) else []
-    state_reason = build_state_reason(alarm.get("stateReason", ""), observations)
+    state_reason = alarm.get("stateReason", "")
+    # Preserve the source window separately: StateChangeTime below identifies a
+    # fresh evaluation session, not the time of the supplied observations.
+    # Some optional CloudWatch fields are not represented by AlarmPayload, so
+    # retain their provided values in the model-visible reason as well.
+    metadata_fields = (
+        "stateChangeTime",
+        "region",
+        "namespace",
+        "dimensions",
+        "statistic",
+        "period",
+        "threshold",
+        "comparisonOperator",
+        "evaluationPeriods",
+        "datapointsToAlarm",
+        "treatMissingData",
+        "arn",
+    )
+    metadata = {key: alarm[key] for key in metadata_fields if key in alarm and alarm[key] is not None}
+    if metadata:
+        state_reason += "\n\nSource alarm metadata (provided values):\n" + json.dumps(metadata, ensure_ascii=False)
+    state_reason = build_state_reason(state_reason, observations)
 
     envelope: dict[str, Any] = {
         "AlarmName": alarm.get("name", "EvalScenarioAlarm"),
@@ -128,9 +153,32 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict
         "NewStateReason": state_reason,
         "StateChangeTime": state_change_time,
     }
-    metric = alarm.get("metric")
-    if metric:
-        envelope["Trigger"] = {"MetricName": metric, "Namespace": "", "Dimensions": []}
+    for source, target in (("region", "Region"), ("arn", "AlarmArn")):
+        if source in alarm and alarm[source] is not None:
+            envelope[target] = alarm[source]
+    trigger = {
+        target: alarm[source]
+        for source, target in (
+            ("metric", "MetricName"),
+            ("namespace", "Namespace"),
+            ("statistic", "Statistic"),
+            ("period", "Period"),
+            ("threshold", "Threshold"),
+            ("comparisonOperator", "ComparisonOperator"),
+            ("evaluationPeriods", "EvaluationPeriods"),
+            ("datapointsToAlarm", "DatapointsToAlarm"),
+            ("treatMissingData", "TreatMissingData"),
+        )
+        if source in alarm and alarm[source] is not None
+    }
+    if alarm.get("dimensions") is not None:
+        trigger["Dimensions"] = [{"name": name, "value": value} for name, value in alarm["dimensions"].items()]
+    if trigger:
+        envelope["Trigger"] = trigger
+    if _supports_model_eval(scenario):
+        # An explicit source view prevents production defaults and the fresh
+        # session timestamp from being presented as incident observations.
+        envelope["EvalSourceMetadata"] = {**metadata, "metric": alarm.get("metric")}
     return envelope
 
 

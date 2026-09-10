@@ -73,6 +73,46 @@ def test_reversible_natural_language_procedures_are_not_destructive(action):
 @pytest.mark.parametrize(
     "action",
     [
+        "데이터베이스 리소스나 데이터를 삭제·종료하지 않는다.",
+        "데이터베이스 리소스나 데이터를 삭제 · 종료하지 않는다.",
+        "데이터를 삭제·제거·파기하지 않습니다.",
+        "리소스를 삭제·종료하지 않고 상태만 확인한다.",
+    ],
+)
+def test_tightly_coordinated_actions_share_their_explicit_negation(action):
+    assert describes_destructive_action(action) is False
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        "데이터베이스 리소스나 데이터를 삭제·종료한다.",
+        "데이터를 삭제·제거·파기한다.",
+        "리소스를 삭제·종료하지 않고 스냅샷을 파기한다.",
+        "리소스를 삭제·종료하지 않는다. 스냅샷을 파기한다.",
+        "리소스를 삭제·종료하지 않는다.\n스냅샷을 파기한다.",
+        "스냅샷을 파기하고 리소스를 삭제·종료하지 않는다.",
+        "데이터를 삭제·파기한다. 리소스는 종료하지 않는다.",
+        "데이터를 삭제·파기하고 리소스는 종료하지 않는다.",
+        "데이터를 삭제, 리소스는 종료하지 않는다.",
+        "데이터를 삭제; 리소스는 종료하지 않는다.",
+        "데이터를 삭제·폐기\n하지 않는다.",
+        "데이터를 삭제·\n폐기하지 않는다.",
+        "데이터를 삭제/폐기하지 않는다.",
+        "데이터를 삭제, 폐기하지 않는다.",
+        "데이터를 삭제 및 폐기하지 않는다.",
+        "데이터를 삭제한다·리소스는 종료하지 않는다.",
+        "데이터를 삭제·폐기하지 않고서는 복구할 수 없다.",
+        "데이터를 삭제·폐기하지 않는 것은 아니다.",
+    ],
+)
+def test_coordinated_negation_does_not_hide_positive_or_separate_actions(action):
+    assert describes_destructive_action(action) is True
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
         "Delete the RDS instance.",
         "Terminate the EC2 instance.",
         "Destroy the production cluster.",

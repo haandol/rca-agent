@@ -5,6 +5,7 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
 import structlog
 from structlog.testing import capture_logs
 
@@ -59,7 +60,7 @@ def _container(runner):
         mark_failed=Mock(),
         mark_outdated=Mock(),
         mark_completed=Mock(),
-        get_completion_handoff=Mock(),
+        get_completion_handoff=Mock(return_value=None),
         mark_playbook_indexed=Mock(return_value=True),
         mark_completion_notified=Mock(return_value=True),
         acquire_side_effect_lease=Mock(return_value="lease-token"),
@@ -353,12 +354,64 @@ def test_initial_stale_alarm_is_still_rejected(monkeypatch):
     monkeypatch.setattr(orchestrator, "_run_rca", run_rca)
     stale_alarm = {**ALARM_DATA, "StateChangeTime": _past_staleness_boundary()}
 
-    result = orchestrator.process_message(json.dumps(stale_alarm), receive_count=1)
+    result = orchestrator.process_message(json.dumps(stale_alarm), receive_count=1, message_id="stale-message")
 
     assert result is True
     run_rca.assert_not_called()
     container.session_store.claim_incident.assert_not_called()
     container.session_store.mark_outdated.assert_called_once()
+    assert container.session_store.claim_session.call_args.kwargs["message_id"] == "stale-message"
+
+
+@pytest.mark.parametrize("state", ["OUTDATED", "CANCELLED"])
+def test_stale_terminal_redelivery_checks_handoff_before_incident_claim(state):
+    container = _container(SimpleNamespace())
+    container.session_store.get_completion_handoff.return_value = CompletionHandoff(rca_id="rca-1", state=state)
+    stale_alarm = {**ALARM_DATA, "StateChangeTime": _past_staleness_boundary()}
+
+    assert PipelineOrchestrator(container).process_message(json.dumps(stale_alarm), receive_count=2)
+    container.session_store.claim_incident.assert_not_called()
+    container.session_store.claim_session.assert_not_called()
+
+
+def test_stale_redelivery_handoff_read_failure_is_not_acknowledged():
+    container = _container(SimpleNamespace())
+    container.session_store.get_completion_handoff.side_effect = RuntimeError("DynamoDB unavailable")
+    stale_alarm = {**ALARM_DATA, "StateChangeTime": _past_staleness_boundary()}
+
+    assert not PipelineOrchestrator(container).process_message(json.dumps(stale_alarm), receive_count=2)
+    container.session_store.claim_incident.assert_not_called()
+    container.session_store.claim_session.assert_not_called()
+
+
+@pytest.mark.parametrize("notification_fails", [False, True])
+def test_completed_stale_redelivery_retries_handoff_without_incident_pollution(notification_fails):
+    container = _container(SimpleNamespace())
+    container.session_store.get_completion_handoff.return_value = CompletionHandoff(
+        rca_id="rca-1",
+        state="COMPLETED",
+        notification_status="PENDING",
+        notification={"alarm_name": "HighCPU"},
+    )
+    container.session_store.claim_session.return_value = SessionClaim(
+        ClaimDisposition.TERMINAL_DUPLICATE, CLAIM_TOKEN, 1
+    )
+    if notification_fails:
+        container.report_store.send_notification.side_effect = RuntimeError("SNS unavailable")
+    stale_alarm = {**ALARM_DATA, "StateChangeTime": _past_staleness_boundary()}
+
+    acknowledged = PipelineOrchestrator(container).process_message(
+        json.dumps(stale_alarm), receive_count=2, message_id="completed-message"
+    )
+
+    assert acknowledged is not notification_fails
+    container.session_store.claim_incident.assert_not_called()
+    container.report_store.send_notification.assert_called_once()
+    assert container.session_store.claim_session.call_args.kwargs["message_id"] == "completed-message"
+    if notification_fails:
+        container.session_store.mark_completion_notified.assert_not_called()
+    else:
+        assert container.session_store.mark_completion_notified.call_args.kwargs["claim_token"] == CLAIM_TOKEN
 
 
 def test_staleness_boundary_is_not_shorter_than_the_analysis_budget():
@@ -369,6 +422,29 @@ def test_staleness_boundary_is_not_shorter_than_the_analysis_budget():
     여러 알람을 통째로 버린다 — 라이브에서 4건이 그렇게 사라졌다.
     """
     assert ALARM_STALENESS_SECONDS >= CODEX_TIMEOUT_SECONDS
+
+
+def test_production_passes_role_prompts_and_completes_from_saved_artifacts(monkeypatch, tmp_path):
+    invocation = {}
+
+    class ReceiptWriter:
+        def run(self, prompt, *, report_prompt, execution_token, **kwargs):
+            invocation.update(rca=prompt, report=report_prompt)
+            _write_confirmed_report_artifacts(artifact_dir_for_token(execution_token))
+            return CodexResult(True, "report.md, playbook.json 저장 완료", "")
+
+    monkeypatch.setattr(execution_context, "_ARTIFACT_ROOT", tmp_path / "runs")
+    container = _container(ReceiptWriter())
+    assert PipelineOrchestrator(container)._run_rca("rca-1", ALARM_DATA, structlog.get_logger(), CLAIM_TOKEN)
+
+    assert "RCA 전문 프로세스" in invocation["rca"]
+    assert "Report 전문 프로세스" in invocation["report"]
+    assert "spawn_agent" not in invocation["rca"] + invocation["report"]
+    assert invocation["rca"] != invocation["report"]
+    assert "HighCPU" in invocation["rca"] and "HighCPU" in invocation["report"]
+    assert "## 근본 원인" in container.report_store.save_report.call_args.args[1]
+    assert "저장 완료" not in container.report_store.save_report.call_args.args[1]
+    container.session_store.mark_completed.assert_called_once()
 
 
 def test_competing_delivery_is_acknowledged_without_duplicate_execution(monkeypatch):
@@ -538,13 +614,14 @@ def test_successful_run_requires_report_artifact(monkeypatch, tmp_path):
     container.report_store.save_report.assert_not_called()
 
 
-def test_report_artifact_is_uploaded_without_using_cli_fallback(monkeypatch, tmp_path):
+@pytest.mark.parametrize("cli_output", ["different cli output", "report.md, playbook.json 저장 완료"])
+def test_report_artifact_is_uploaded_without_using_cli_fallback(monkeypatch, tmp_path, cli_output):
     report = _valid_report("DB connection leak")
 
     class ReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
             _write_required_report_artifacts(artifact_dir_for_token(execution_token), report)
-            return CodexResult(True, "different cli output", "{}")
+            return CodexResult(True, cli_output, "{}")
 
     container = _container(ReportWriter())
     _patch_runtime(monkeypatch, tmp_path)

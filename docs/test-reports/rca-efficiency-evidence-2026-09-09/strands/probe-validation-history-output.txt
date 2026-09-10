@@ -1,0 +1,15 @@
+{
+  "judgments": 3,
+  "model_invocations": 3,
+  "input_message_counts": [
+    1,
+    4,
+    7
+  ],
+  "third_input_contains_first_evidence": true,
+  "input_json_chars": [
+    510,
+    1471,
+    2432
+  ]
+}

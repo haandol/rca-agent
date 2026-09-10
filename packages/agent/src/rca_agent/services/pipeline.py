@@ -45,7 +45,11 @@ from rca_agent.ports.interfaces.session_store import (
 )
 from rca_agent.services.branching import run_branching
 from rca_agent.services.evidence import run_evidence_collection
-from rca_agent.services.hypothesis import run_hypothesis_generation
+from rca_agent.services.hypothesis import (
+    MAX_REJECTION_FEEDBACK_ITEMS,
+    build_rejection_feedback,
+    run_hypothesis_generation,
+)
 from rca_agent.services.notification import build_notification
 from rca_agent.services.playbook_gen import run_playbook_generation
 from rca_agent.services.prioritization import run_prioritization
@@ -140,6 +144,7 @@ class ValidationLoopState:
     hypotheses: list[Hypothesis]
     all_judgments: list[ValidationJudgment] = field(default_factory=list)
     rejected_descriptions: list[str] = field(default_factory=list)
+    rejection_feedback: dict[str, str] = field(default_factory=dict)
     evidence_map: dict[str, str] = field(default_factory=dict)
     evidence_failed_ids: set[str] = field(default_factory=set)
     timeline: list[str] = field(default_factory=list)
@@ -899,6 +904,31 @@ class PipelineOrchestrator:
                         pid,
                         status=HypothesisStatus.REJECTED.value,
                     )
+        self._capture_rejection_feedback(state)
+
+    def _capture_rejection_feedback(self, state: ValidationLoopState) -> None:
+        """Keep the latest bounded rejection context before the next loop replaces judgments."""
+        current_rejected_ids = {
+            judgment.hypothesis_id for judgment in state.all_judgments if judgment.status == HypothesisStatus.REJECTED
+        }
+        historical_feedback: dict[str, str] = {}
+        current_feedback: dict[str, str] = {}
+        for hypothesis in state.hypotheses:
+            if hypothesis.status != HypothesisStatus.REJECTED:
+                continue
+            hypothesis_id = hypothesis.hypothesis_id
+            if hypothesis_id in state.rejection_feedback and hypothesis_id not in current_rejected_ids:
+                continue
+            feedback = build_rejection_feedback([hypothesis], state.all_judgments, state.evidence_map)
+            target = current_feedback if hypothesis_id in current_rejected_ids else historical_feedback
+            target[hypothesis_id] = feedback[0]
+        # Historical fallbacks cannot displace cached evidence. Updated IDs move
+        # to the newest position, without accumulating duplicate entries.
+        retained = {**historical_feedback, **state.rejection_feedback}
+        for hypothesis_id, feedback_text in current_feedback.items():
+            retained.pop(hypothesis_id, None)
+            retained[hypothesis_id] = feedback_text
+        state.rejection_feedback = dict(list(retained.items())[-MAX_REJECTION_FEEDBACK_ITEMS:])
 
     def _loop_termination_check(
         self,
@@ -959,6 +989,11 @@ class PipelineOrchestrator:
             )
             return _LoopAction.CONTINUE
 
+        # all_rejected describes only the selected beam. Unselected or otherwise
+        # unresolved hypotheses must survive until the whole search is rejected.
+        if not state.hypotheses or any(h.status != HypothesisStatus.REJECTED for h in state.hypotheses):
+            return _LoopAction.PROCEED
+
         state.regeneration_count += 1
         if state.regeneration_count > RCA_MAX_REGENERATION_ROUNDS:
             logger.warning("Max regeneration rounds exceeded")
@@ -974,14 +1009,7 @@ class PipelineOrchestrator:
             "All rejected, regenerating hypotheses (round %d)",
             state.regeneration_count,
         )
-        for h in state.hypotheses:
-            if h.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION):
-                h.status = HypothesisStatus.REJECTED
-                trace.update_hypothesis_status(
-                    h.hypothesis_id,
-                    status=HypothesisStatus.REJECTED.value,
-                    judgment_reasoning=("전체 기각으로 가설 재생성 — 이전 라운드 자동 기각"),
-                )
+        self._capture_rejection_feedback(state)
 
         c = self._container
         c.session_store.update_state(
@@ -997,6 +1025,7 @@ class PipelineOrchestrator:
             hypothesis_result = run_hypothesis_generation(
                 scoping_result,
                 c.hypothesis_agent,
+                rejection_feedback=list(state.rejection_feedback.values()),
             )
             new_hypotheses = list(hypothesis_result.hypotheses)
             s.output_summary = f"가설 {len(new_hypotheses)}개 재생성"
@@ -1055,6 +1084,7 @@ class PipelineOrchestrator:
             return True
 
         new_children: list[Hypothesis] = []
+        attempted_parent_ids: set[str] = set()
         with trace.span(
             SpanType.BRANCHING,
             parent_span_id=loop_span.span_id,
@@ -1069,25 +1099,36 @@ class PipelineOrchestrator:
                 )
                 if parent is None:
                     continue
+                attempted_parent_ids.add(parent.hypothesis_id)
                 evidence_text = state.evidence_map.get(parent.hypothesis_id, "")
                 branching_result = run_branching(
                     parent,
                     evidence_text,
                     state.rejected_descriptions,
                     c.branching_agent,
+                    existing_children=[
+                        child
+                        for child in [*state.hypotheses, *new_children]
+                        if child.parent_id == parent.hypothesis_id and child.tree_id == parent.tree_id
+                    ],
                 )
                 new_children.extend(branching_result.children)
             s.output_summary = f"신규_하위가설={len(new_children)}개"
             s.metadata = {"신규_하위가설_수": len(new_children)}
 
         if not new_children:
-            logger.info("No new child hypotheses, terminating")
+            pending_work = any(
+                hypothesis.status in (HypothesisStatus.PENDING, HypothesisStatus.NEEDS_INVESTIGATION)
+                and hypothesis.hypothesis_id not in attempted_parent_ids
+                for hypothesis in state.hypotheses
+            )
+            logger.info("No new child hypotheses, pending work=%s", pending_work)
             state.timeline.append("No new child hypotheses")
             trace.end_span(
                 loop_span,
-                output_summary="신규 하위가설 없음, 종료",
+                output_summary="신규 하위가설 없음, 탐색 계속" if pending_work else "신규 하위가설 없음, 종료",
             )
-            return False
+            return pending_work
 
         trace.put_hypotheses(new_children)
         state.hypotheses.extend(new_children)

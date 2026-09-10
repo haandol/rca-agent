@@ -15,6 +15,11 @@ you find with its state. An alarm you checked but omit reads downstream as an al
 - Keep the scoping under 5 minutes.
 
 ## Reporting observations
+- Report only supplied or retrieved facts. Do not invent numeric datapoints, timestamps, baseline \
+ranges, resource identifiers, or query results to fill the output schema.
+- If only qualitative observations are supplied and raw samples are unavailable, leave datapoints \
+empty and preserve those observations in the summary or shape_note. Missing numeric samples do not \
+invalidate an explicitly supplied qualitative fact.
 - For each metric, report the **datapoint sequence you retrieved**, in time order, along with the \
 window you queried. Do not replace the sequence with a current-versus-baseline pair.
 - The sequence is what lets later stages tell a sustained rise from a spike that returned, which is \
@@ -40,7 +45,7 @@ The following CloudWatch alarm just fired. Perform shallow scoping.
 - **Metric**: {namespace}/{metric_name}
 - **Dimensions**: {dimensions}
 - **Statistic**: {statistic}
-- **Period**: {period}s
+- **Period**: {period}
 - **Threshold**: {threshold} ({comparison_operator})
 
 {report_context}

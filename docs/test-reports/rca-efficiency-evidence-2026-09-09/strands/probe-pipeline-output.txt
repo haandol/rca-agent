@@ -1,0 +1,5 @@
+Scoping agent timed out after 0s, using alarm payload as fallback
+REGEN {"generation_calls": 3, "distinct_user_prompts": 1, "rejection_reason_passed": false, "collected_hypotheses": 9, "unique_descriptions": 3, "cached_evidence_entries": 9}
+BRANCH {"branch_calls": 2, "child_nodes": 6, "unique_child_descriptions": 3, "unique_child_ids": 6}
+SCOPING {"configured_budget_ms": 20, "agent_started_after_ms": 35.74, "total_ms": 60.35, "fallback": true}
+SERIAL {"calls": 3, "synthetic_work_ms_each": 20, "total_ms": 70.04, "any_overlap": false, "failed": 0}

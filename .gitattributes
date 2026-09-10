@@ -1,0 +1,2 @@
+# Verbatim validation logs retain their original terminal-output whitespace.
+docs/test-reports/**/*.log -whitespace

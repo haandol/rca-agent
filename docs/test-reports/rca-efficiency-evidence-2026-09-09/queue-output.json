@@ -1,0 +1,20 @@
+[
+  {
+    "case": "outdated_redelivery",
+    "stored_message_id_form": "direct:<rca-id>",
+    "old_state": "OUTDATED",
+    "redelivery_ack": true,
+    "active_incident_created_by_redelivery": true,
+    "new_alarm_ack": false,
+    "analysis_calls": 0
+  },
+  {
+    "case": "outdated_write_interrupted",
+    "stored_message_id_form": "direct:<rca-id>",
+    "old_state": "ALARM_RECEIVED",
+    "redelivery_ack": false,
+    "active_incident_created_by_redelivery": true,
+    "new_alarm_ack": false,
+    "analysis_calls": 0
+  }
+]

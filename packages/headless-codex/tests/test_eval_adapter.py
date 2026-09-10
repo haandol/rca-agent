@@ -637,7 +637,7 @@ def test_validation_failure_preserves_partial_artifacts_and_successful_cli_resul
 
     monkeypatch.setenv(eval_adapter._FAILURE_DIR_ENV, str(failure_root))
     monkeypatch.setattr(eval_adapter, "CodexSubprocessRunner", _Runner)
-    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
+    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm, **_kwargs: "prompt")
     monkeypatch.setattr(
         eval_adapter,
         "validate_completion_artifacts",
@@ -693,7 +693,7 @@ def test_failed_cli_run_preserves_diagnostics_without_validating_partial_artifac
 
     monkeypatch.setenv(eval_adapter._FAILURE_DIR_ENV, str(failure_root))
     monkeypatch.setattr(eval_adapter, "CodexSubprocessRunner", _Runner)
-    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
+    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm, **_kwargs: "prompt")
     monkeypatch.setattr(eval_adapter, "validate_completion_artifacts", _unexpected_validation)
     monkeypatch.setattr(ExecutionContext, "prepare", _prepare)
     monkeypatch.setattr(ExecutionContext, "cleanup", lambda _context: shutil.rmtree(artifact_dir))
@@ -727,7 +727,7 @@ def test_diagnostic_persistence_failure_does_not_mask_the_harness_failure(
 
     monkeypatch.setenv(eval_adapter._FAILURE_DIR_ENV, str(tmp_path / "failures"))
     monkeypatch.setattr(eval_adapter, "CodexSubprocessRunner", _Runner)
-    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
+    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm, **_kwargs: "prompt")
     monkeypatch.setattr(
         eval_adapter,
         "_persist_failure_diagnostics",
@@ -766,9 +766,10 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
     invocation = {}
 
     class _Runner:
-        def run(self, prompt, *, execution_token, profile):
+        def run(self, prompt, *, report_prompt, execution_token, profile):
             invocation.update(
                 prompt=prompt,
+                report_prompt=report_prompt,
                 execution_token=execution_token,
                 profile=profile,
             )
@@ -778,7 +779,6 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
 
     monkeypatch.setattr(eval_adapter, "CodexSubprocessRunner", _Runner)
     monkeypatch.setattr(eval_adapter, "validate_completion_artifacts", lambda _dir: _artifacts(confirmed=confirmed))
-    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
     monkeypatch.setattr(ExecutionContext, "prepare", lambda self: tmp_path)
     monkeypatch.setattr(ExecutionContext, "cleanup", lambda self: None)
     monkeypatch.setenv(eval_adapter._FAILURE_DIR_ENV, str(tmp_path / "failure-diagnostics"))
@@ -806,6 +806,13 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
         assert {judgment["judgment"] for judgment in payload["competingCauseJudgments"]} == {"inconclusive"}
     assert "harness progress line" in captured.err
     assert invocation["profile"] == eval_adapter.MODEL_EVAL_PROFILE
+    assert "RCA 전문 프로세스" in invocation["prompt"]
+    assert "Report 전문 프로세스" in invocation["report_prompt"]
+    assert invocation["prompt"] != invocation["report_prompt"]
+    assert "spawn_agent" not in invocation["prompt"] + invocation["report_prompt"]
+    for observation in scenario["observations"]:
+        assert observation["id"] in invocation["prompt"]
+        assert observation["id"] in invocation["report_prompt"]
     assert not tmp_path.joinpath("failure-diagnostics").exists()
 
 
@@ -821,7 +828,7 @@ def test_stdout_is_restored_even_when_the_harness_fails(monkeypatch, tmp_path):
             return _Result()
 
     monkeypatch.setattr(eval_adapter, "CodexSubprocessRunner", _Runner)
-    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm: "prompt")
+    monkeypatch.setattr(eval_adapter, "build_prompt", lambda _alarm, **_kwargs: "prompt")
     monkeypatch.setattr(ExecutionContext, "prepare", lambda self: tmp_path)
     monkeypatch.setattr(ExecutionContext, "cleanup", lambda self: None)
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(SCENARIO)))

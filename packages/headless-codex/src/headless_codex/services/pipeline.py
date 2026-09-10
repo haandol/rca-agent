@@ -152,37 +152,65 @@ class PipelineOrchestrator:
         log.info("alarm_received")
 
         effective_receive_count = max(receive_count, 1)
-        if ts_raw and effective_receive_count == 1:
-            age_seconds = (datetime.now(UTC) - dt).total_seconds()
-            if age_seconds > ALARM_STALENESS_SECONDS:
-                claim_token = store.claim_session(
-                    rca_id,
-                    alarm.alarm_name,
-                    idempotency_key,
-                    receive_count=effective_receive_count,
-                    alarm_data=alarm_data,
-                )
-                if claim_token.disposition is ClaimDisposition.TERMINAL_DUPLICATE:
-                    log.info("terminal_duplicate_handoff", receive_count=receive_count)
+        age_seconds = (datetime.now(UTC) - dt).total_seconds() if dt else 0
+        if effective_receive_count > 1 and age_seconds > ALARM_STALENESS_SECONDS:
+            try:
+                handoff = store.get_completion_handoff(rca_id)
+                if handoff and handoff.state in {"OUTDATED", "CANCELLED"}:
+                    log.info("terminal_stale_redelivery", state=handoff.state)
+                    return True
+                if handoff and handoff.state == "COMPLETED":
+                    # Obtain the terminal claim for pending publication without opening
+                    # an active incident for an already finished alarm.
+                    terminal_claim = store.claim_session(
+                        rca_id,
+                        alarm.alarm_name,
+                        idempotency_key,
+                        receive_count=effective_receive_count,
+                        message_id=message_id,
+                        alarm_data=alarm_data,
+                    )
+                    if terminal_claim.disposition is not ClaimDisposition.TERMINAL_DUPLICATE:
+                        return False
                     return self._flush_completion_handoff(
                         rca_id,
-                        claim_token=claim_token.claim_token,
+                        claim_token=terminal_claim.claim_token,
+                        handoff=handoff,
                         log=log,
                     )
-                if not claim_token.acquired:
-                    log.info("session_claim_contended", receive_count=receive_count)
-                    return False
-                log.info(
-                    "stale_alarm_skipped",
-                    age_seconds=int(age_seconds),
-                    threshold=ALARM_STALENESS_SECONDS,
-                )
-                store.mark_outdated(
+            except Exception:
+                log.exception("stale_redelivery_handoff_failed")
+                return False
+        if ts_raw and effective_receive_count == 1 and age_seconds > ALARM_STALENESS_SECONDS:
+            claim_token = store.claim_session(
+                rca_id,
+                alarm.alarm_name,
+                idempotency_key,
+                receive_count=effective_receive_count,
+                message_id=message_id,
+                alarm_data=alarm_data,
+            )
+            if claim_token.disposition is ClaimDisposition.TERMINAL_DUPLICATE:
+                log.info("terminal_duplicate_handoff", receive_count=receive_count)
+                return self._flush_completion_handoff(
                     rca_id,
-                    f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold",
                     claim_token=claim_token.claim_token,
+                    log=log,
                 )
-                return True
+            if not claim_token.acquired:
+                log.info("session_claim_contended", receive_count=receive_count)
+                return False
+            log.info(
+                "stale_alarm_skipped",
+                age_seconds=int(age_seconds),
+                threshold=ALARM_STALENESS_SECONDS,
+            )
+            store.mark_outdated(
+                rca_id,
+                f"Alarm age {int(age_seconds)}s exceeds {ALARM_STALENESS_SECONDS}s threshold",
+                claim_token=claim_token.claim_token,
+            )
+            return True
 
         try:
             incident_claim = store.claim_incident(
@@ -255,7 +283,7 @@ class PipelineOrchestrator:
 
         try:
             store.update_state(rca_id, "SCOPING", claim_token=claim_token)
-            prompt = build_prompt(alarm)
+            prompt = build_prompt(alarm, role="rca")
             log.info("cc_analysis_started")
 
             def _should_cancel() -> bool:
@@ -269,6 +297,7 @@ class PipelineOrchestrator:
 
             codex_result = c.codex_runner.run(
                 prompt,
+                report_prompt=build_prompt(alarm, role="report"),
                 execution_token=execution.token,
                 cancel_checker=_should_cancel,
                 rca_id=rca_id,

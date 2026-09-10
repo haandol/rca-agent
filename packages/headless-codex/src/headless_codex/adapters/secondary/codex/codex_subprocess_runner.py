@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -76,6 +77,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
         *,
         execution_token: str,
         profile: str = ANALYSIS_PROFILE,
+        report_prompt: str | None = None,
         cancel_checker: Callable[[], bool] | None = None,
         rca_id: str | None = None,
         claim_token: str | None = None,
@@ -92,6 +94,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
                 attempt=attempt,
             )
 
+        deadline = time.monotonic() + CODEX_TIMEOUT_SECONDS
         rca_profile = ANALYSIS_RCA_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_RCA_PROFILE
         report_profile = ANALYSIS_REPORT_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_REPORT_PROFILE
         rca_result = self._run_single(
@@ -103,12 +106,14 @@ class CodexSubprocessRunner(CodexRunnerPort):
             rca_id=rca_id,
             claim_token=claim_token,
             attempt=attempt,
+            deadline=deadline,
         )
         if not rca_result.success or rca_result.cancelled:
             return rca_result
 
         report_result = self._run_single(
-            prompt + "\n\n런타임 역할: Report 전문 프로세스다. 다른 에이전트를 위임하지 말고 "
+            (report_prompt if report_prompt is not None else prompt)
+            + "\n\n런타임 역할: Report 전문 프로세스다. 다른 에이전트를 위임하지 말고 "
             "아래 RCA 전문 프로세스의 결과를 근거로 report.md와 playbook.json만 저장한다."
             + "\n\n[RCA 전문 프로세스 결과]\n"
             + rca_result.result,
@@ -118,6 +123,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
             rca_id=rca_id,
             claim_token=claim_token,
             attempt=attempt,
+            deadline=deadline,
         )
         return CodexResult(
             success=report_result.success,
@@ -136,7 +142,17 @@ class CodexSubprocessRunner(CodexRunnerPort):
         rca_id: str | None = None,
         claim_token: str | None = None,
         attempt: int | None = None,
+        deadline: float | None = None,
     ) -> CodexResult:
+        def timed_out() -> CodexResult:
+            return CodexResult(
+                success=False,
+                result=f"Codex timed out after {CODEX_TIMEOUT_SECONDS}s",
+                raw_output="",
+            )
+
+        if deadline is not None and time.monotonic() >= deadline:
+            return timed_out()
         artifact_dir_for_token(execution_token)
 
         with (
@@ -157,6 +173,9 @@ class CodexSubprocessRunner(CodexRunnerPort):
             last_message = home_path / "last-message.txt"
             args = codex_exec_args(workspace_path, last_message)
 
+            # Preparing the second workspace also consumes the shared analysis budget.
+            if deadline is not None and time.monotonic() >= deadline:
+                return timed_out()
             logger.info("codex_cli_started", profile=profile, config=str(config_path))
 
             try:
@@ -181,16 +200,13 @@ class CodexSubprocessRunner(CodexRunnerPort):
                 Thread(target=_watch_cancel, args=(proc, stop_event, cancel_checker), daemon=True).start()
 
             try:
-                stdout, stderr = proc.communicate(input=prompt, timeout=CODEX_TIMEOUT_SECONDS)
+                timeout = CODEX_TIMEOUT_SECONDS if deadline is None else max(0, deadline - time.monotonic())
+                stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
                 stop_event.set()
-                return CodexResult(
-                    success=False,
-                    result=f"Codex timed out after {CODEX_TIMEOUT_SECONDS}s",
-                    raw_output="",
-                )
+                return timed_out()
             finally:
                 stop_event.set()
 

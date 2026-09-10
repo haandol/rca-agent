@@ -2,6 +2,7 @@ import os
 import subprocess
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,7 +71,9 @@ def _capture_processes(monkeypatch, processes: list[dict] | None = None) -> list
             "guidance": (Path(kwargs["cwd"]) / "AGENTS.md").read_text(),
         }
         calls.append(call)
-        return FakeProcess(args, **(queued.pop(0) if queued else {}))
+        process = FakeProcess(args, **(queued.pop(0) if queued else {}))
+        call["process"] = process
+        return process
 
     monkeypatch.setattr(codex_subprocess_runner.subprocess, "Popen", _popen)
     return calls
@@ -254,3 +257,119 @@ def test_jsonl_fallback_returns_the_last_agent_message():
     )
 
     assert _last_agent_message(stdout) == "final"
+
+
+@pytest.mark.parametrize("profile", ["analysis", "model-eval"])
+@pytest.mark.parametrize("rca_seconds,expected_processes", [(70, 2), (100, 1), (101, 1)])
+def test_roles_share_one_monotonic_deadline(monkeypatch, profile, rca_seconds, expected_processes):
+    clock = SimpleNamespace(now=1000.0)
+    monkeypatch.setattr(codex_subprocess_runner, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(codex_subprocess_runner, "CODEX_TIMEOUT_SECONDS", 100)
+    original_communicate = FakeProcess.communicate
+    durations = iter([rca_seconds, 1])
+
+    def communicate(self, input, timeout):
+        output = original_communicate(self, input, timeout)
+        clock.now += next(durations)
+        return output
+
+    monkeypatch.setattr(FakeProcess, "communicate", communicate)
+    calls = _capture_processes(monkeypatch, [{"result": "RCA evidence", "stdout": "rca trace"}])
+    result = CodexSubprocessRunner().run(
+        "rca-only input",
+        report_prompt="report-only input",
+        execution_token=EXECUTION_TOKEN,
+        profile=profile,
+    )
+
+    assert len(calls) == expected_processes
+    assert calls[0]["process"].timeout == 100
+    if expected_processes == 2:
+        assert calls[1]["process"].timeout == 30
+        assert "report-only input" in calls[1]["process"].input
+        assert "rca-only input" not in calls[1]["process"].input
+        assert "RCA evidence" in calls[1]["process"].input
+        assert result.success
+    else:
+        assert not result.success
+        assert "timed out" in result.result
+        assert "rca trace" in result.raw_output
+
+
+@pytest.mark.parametrize("expire_during_setup", [False, True])
+def test_shared_budget_includes_workspace_and_process_startup(monkeypatch, expire_during_setup):
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(codex_subprocess_runner, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(codex_subprocess_runner, "CODEX_TIMEOUT_SECONDS", 100)
+    prepare = codex_subprocess_runner.prepare_workspace
+
+    def slow_setup(workspace, profile):
+        prepare(workspace, profile)
+        clock.now += 50 if expire_during_setup else 10
+
+    monkeypatch.setattr(codex_subprocess_runner, "prepare_workspace", slow_setup)
+    calls = _capture_processes(monkeypatch)
+    popen = codex_subprocess_runner.subprocess.Popen
+
+    def slow_start(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        clock.now += 5
+        return process
+
+    monkeypatch.setattr(codex_subprocess_runner.subprocess, "Popen", slow_start)
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN)
+
+    if expire_during_setup:
+        assert not result.success
+        assert len(calls) == 1
+        assert calls[0]["process"].timeout == 45
+    else:
+        assert result.success
+        assert [call["process"].timeout for call in calls] == [85, 70]
+
+
+def test_report_is_killed_at_remaining_deadline(monkeypatch):
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(codex_subprocess_runner, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(codex_subprocess_runner, "CODEX_TIMEOUT_SECONDS", 100)
+    communicate = FakeProcess.communicate
+
+    def consume_budget(self, input, timeout):
+        if clock.now == 0:
+            clock.now = 99
+            return communicate(self, input, timeout)
+        assert timeout == 1
+        raise subprocess.TimeoutExpired("codex", timeout)
+
+    monkeypatch.setattr(FakeProcess, "communicate", consume_budget)
+    calls = _capture_processes(monkeypatch, [{"stdout": "RCA diagnostics"}])
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN)
+
+    assert len(calls) == 2
+    assert calls[1]["process"].killed
+    assert not result.success
+    assert "timed out" in result.result
+    assert "RCA diagnostics" in result.raw_output
+
+
+@pytest.mark.parametrize("profile", ["analysis-rca", "analysis-report", "model-eval-rca", "model-eval-report"])
+def test_direct_specialist_profiles_keep_their_full_process_timeout(monkeypatch, profile):
+    def unexpected_clock():
+        raise AssertionError("a direct single-process call does not use the shared deadline")
+
+    monkeypatch.setattr(codex_subprocess_runner, "time", SimpleNamespace(monotonic=unexpected_clock))
+    calls = _capture_processes(monkeypatch)
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN, profile=profile)
+
+    assert result.success
+    assert len(calls) == 1
+    assert calls[0]["process"].timeout == codex_subprocess_runner.CODEX_TIMEOUT_SECONDS
+
+
+def test_cancelled_rca_does_not_start_report(monkeypatch):
+    calls = _capture_processes(monkeypatch, [{"returncode": -15}])
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN)
+
+    assert result.cancelled
+    assert not result.success
+    assert len(calls) == 1

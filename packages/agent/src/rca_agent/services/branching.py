@@ -82,6 +82,7 @@ def run_branching(
     *,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
     max_depth: int = MAX_BRANCHING_DEPTH,
+    existing_children: list[Hypothesis] | None = None,
 ) -> BranchingResult:
     if parent.depth >= max_depth:
         logger.warning(
@@ -89,6 +90,12 @@ def run_branching(
             max_depth,
             parent.hypothesis_id,
         )
+        return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=[])
+
+    siblings = existing_children or []
+    remaining_capacity = MAX_CHILDREN_PER_BRANCH - len(siblings)
+    if remaining_capacity <= 0:
+        logger.info("Child capacity exhausted for hypothesis %s", parent.hypothesis_id)
         return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=[])
 
     user_prompt = _build_user_prompt(parent, evidence_text, rejected_descriptions)
@@ -107,8 +114,9 @@ def run_branching(
         return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=[])
 
     children = []
+    duplicate_descriptions = [*rejected_descriptions, *(child.description for child in siblings)]
     for item in output.children:
-        if _is_duplicate(item.description, parent, rejected_descriptions):
+        if _is_duplicate(item.description, parent, duplicate_descriptions):
             logger.info("Skipping duplicate child hypothesis: %s", item.description[:60])
             continue
         children.append(
@@ -126,9 +134,9 @@ def run_branching(
                 depth=parent.depth + 1,
             )
         )
+        duplicate_descriptions.append(item.description)
+        if len(children) >= remaining_capacity:
+            break
 
-    if len(children) > MAX_CHILDREN_PER_BRANCH:
-        logger.warning("Truncating children from %d to %d", len(children), MAX_CHILDREN_PER_BRANCH)
-        children = children[:MAX_CHILDREN_PER_BRANCH]
     logger.info("Generated %d child hypotheses for %s", len(children), parent.hypothesis_id)
     return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=children)

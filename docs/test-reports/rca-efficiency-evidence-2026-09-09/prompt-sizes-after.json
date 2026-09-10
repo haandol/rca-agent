@@ -1,0 +1,9 @@
+{
+  "measurement": "same synthetic alarm; base prompts only, excludes appended RCA result and harness",
+  "original_per_role_chars": 10154,
+  "original_two_roles_chars": 20308,
+  "new_rca_chars": 6687,
+  "new_report_chars": 8776,
+  "new_two_roles_chars": 15463,
+  "reduction_percent": 23.9
+}

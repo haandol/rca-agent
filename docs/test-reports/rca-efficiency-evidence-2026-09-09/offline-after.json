@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "passed": false,
+  "inputDigest": "sha256:d593670fe86724e003827c9ba16685718f890ff1ae3beb8cdc12dc2e11a85aec",
+  "baselineInputDigest": "sha256:a8fd8357506019d0d7af6bd2de268466205e7595bc201ac25c2aeb69f07cb5dd",
+  "digestMatches": false,
+  "engines": [
+    "headless-codex",
+    "strands"
+  ],
+  "enginesComplete": true,
+  "failures": [
+    "evaluation input digest drifted (sha256:d593670fe86724e003827c9ba16685718f890ff1ae3beb8cdc12dc2e11a85aec != sha256:a8fd8357506019d0d7af6bd2de268466205e7595bc201ac25c2aeb69f07cb5dd); run eval:approve only after review",
+    "evaluation input file set drifted; run eval:approve only after review"
+  ],
+  "evaluations": [
+    {
+      "engine": "headless-codex",
+      "scenarioId": "deployed-connection-leak-vital-ingest",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "headless-codex",
+      "scenarioId": "deployment-query-regression",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "headless-codex",
+      "scenarioId": "iam-policy-access-denied",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "headless-codex",
+      "scenarioId": "rds-connection-pool-exhaustion",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "strands",
+      "scenarioId": "deployed-connection-leak-vital-ingest",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "strands",
+      "scenarioId": "deployment-query-regression",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "strands",
+      "scenarioId": "iam-policy-access-denied",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    },
+    {
+      "engine": "strands",
+      "scenarioId": "rds-connection-pool-exhaustion",
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": true
+      },
+      "passed": true
+    }
+  ]
+}

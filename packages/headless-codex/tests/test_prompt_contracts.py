@@ -261,6 +261,44 @@ def test_report_guidance_marks_the_playbook_as_an_unverified_draft():
     assert "복구를 실행하지 않았으므로" in guidance
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "harness/analysis/agents/report-specialist.md",
+        "harness/skills/reporting/SKILL.md",
+        "prompts/sections/roles/report.md",
+    ],
+)
+def test_report_role_instructions_require_receipt_only_after_successful_storage(relative_path):
+    guidance = (PACKAGE_ROOT / relative_path).read_text()
+    normalized = " ".join(guidance.split())
+    assert "`ok: true`" in guidance
+    assert "짧은 완료 응답" in normalized
+    assert "Markdown 전문을 최종 응답에 반복하지 않는다" in normalized
+    assert "해결할 수 없으면 실패를 명시한다" in normalized
+    assert "Markdown을 최종 응답으로 반환한다" not in normalized
+
+
+def test_report_runtime_guidance_covers_every_gate_requirement():
+    from headless_codex.services import artifact_validation as gate
+
+    # Check the actual report view plus its installed skill, not the union of all roles.
+    guidance = build_prompt(AlarmContext(alarm_name="ReportContract"), role="report")
+    guidance += (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
+    for requirement in (
+        *gate._PLAYBOOK_STRING_FIELDS,
+        *gate._PLAYBOOK_LIST_FIELDS,
+        *gate._EXECUTION_STEP_FIELDS,
+        *gate._REPORT_SECTIONS,
+        gate._PLAYBOOK_DRAFT_STATUS,
+    ):
+        assert requirement in guidance
+    for label in ("current alarm window", "historical comparison window"):
+        assert any(
+            label in line and len(gate._ISO_TIMESTAMP.findall(line)) >= 2 for line in guidance.lower().splitlines()
+        )
+
+
 def test_report_contract_separates_current_and_historical_evidence_windows():
     guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
     agent = (AGENTS_DIR / "report-specialist.md").read_text()

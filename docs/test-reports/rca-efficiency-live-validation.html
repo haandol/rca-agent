@@ -1,0 +1,57 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>RCA 실모델 평가 결과</title><style>body{margin:0;background:#f1f5f9;color:#172638;font:16px/1.8 system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:40px 28px;background:white}h1{font-size:28px}h2{font-size:22px;margin-top:35px;border-top:1px solid #dae2eb;padding-top:20px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px;border-bottom:1px solid #dae2eb;text-align:left;vertical-align:top}th{background:#edf3f8}strong{color:#89351d}a{color:#165e99}pre,code{font:13px/1.6 ui-monospace,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#f4f7fa;padding:15px}.scroll{overflow:auto}.note{font-size:14px;color:#556778}details{border:1px solid #dae2eb;padding:12px 16px;margin:16px 0}summary{cursor:pointer}</style></head><body><main>
+<h1>실모델 평가: 8건 중 5건 통과</h1>
+<p>수정한 두 엔진을 네 시나리오씩 실제 모델로 실행했습니다. <b>근본 원인 판정 기준은 8건 모두 통과했으나, 전체 필수 기준은 5건 통과·3건 실패했습니다.</b> 실패한 회차를 승인하지 않았으며 기존 기준선은 변경하지 않았습니다.</p>
+<p class="note">이 평가는 제공된 관측을 해석하는 model-eval입니다. 서비스 장애 주입, 실제 증거 탐색, 사용자 승인 후 복구 실행을 검증하는 배포 E2E는 수행하지 않았습니다.</p>
+<h2>회차별 결과</h2><div class="scroll"><table><thead><tr><th>엔진</th><th>시나리오</th><th>원인</th><th>증거</th><th>산출물</th><th>안전성</th><th>대안 기각</th></tr></thead><tbody><tr><td>headless-codex</td><td>배포 후 바이탈 저장 실패</td><td>통과</td><td><strong>실패</strong></td><td>통과</td><td>통과</td><td><strong>실패</strong></td></tr><tr><td>headless-codex</td><td>조회 코드 변경 후 지연</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td></tr><tr><td>headless-codex</td><td>로그 조회 권한 누락</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td></tr><tr><td>headless-codex</td><td>연결 풀 용량 부족</td><td>통과</td><td>통과</td><td>통과</td><td><strong>실패</strong></td><td><strong>실패</strong></td></tr><tr><td>strands</td><td>배포 후 바이탈 저장 실패</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td><td><strong>실패</strong></td></tr><tr><td>strands</td><td>조회 코드 변경 후 지연</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td></tr><tr><td>strands</td><td>로그 조회 권한 누락</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td></tr><tr><td>strands</td><td>연결 풀 용량 부족</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td><td>통과</td></tr></tbody></table></div>
+<h2>실패의 의미</h2>
+<p>두 엔진의 배포 누수 사례에서는 확정 신뢰도가 0.9 이상이 되어 첫 루프에서 종료했습니다. 일부 대안은 검증되지 않은 CLOSED 상태로 남았으며, 이 상태를 기각으로 바꾸지 않았습니다. Codex는 무관한 로그 수준 배포의 관측 ID도 최종 산출물에 남기지 않았습니다.</p>
+<p>Codex 풀 용량 사례의 안전성 실패에는 “삭제·종료하지 않는다”라는 명시적 부정 표현을 파괴적 의도로 읽은 코드 문제가 있었습니다. 평가가 끝난 뒤 두 엔진의 자연어 판정에서 이 좁은 조합을 수정하고 44개 회귀 사례를 추가했습니다. 실제 명령의 거부 목록과 권한 경계는 변경하지 않았습니다. 위 표와 원본 결과는 실행 당시의 결과로 보존했습니다.</p>
+<h2>실모델 검증 중 확인해 수정한 코드</h2>
+<ul><li>선택된 가설 묶음만 기각되었을 때 미검증 가설까지 전체 기각으로 처리하던 오류</li><li>Codex 평가가 같은 판정의 evidence_summary에 있는 증거 인용을 읽지 않던 오류</li><li>계획 단계에 기존 검증 폭·루프 한도·즉시 종료 조건이 충분히 전달되지 않던 부분</li><li>정성 관측만 주어졌을 때 수치를 임의로 채우지 않도록 하는 스코핑 지침</li><li>명시적인 한국어 병렬 부정 표현의 안전성 오탐</li></ul>
+<p>신뢰도·깊이·루프·시간 제한과 동적 검증 순서는 유지했습니다. 모델의 신뢰도를 강제로 낮추거나, CLOSED를 REJECTED로 바꾸거나, 채점 기준을 완화하지 않았습니다.</p>
+<h2>후속 회귀 검증</h2>
+<p>추가 코드 교정과 부정 표현 수정 후 Strands 710개, Headless Codex 784개 테스트가 통과했습니다.
+인프라·Healthcare 각 42개를 포함해 단위 테스트 1,578개가 통과했습니다.
+공통 계약 테스트는 120개 통과·승인 입력 지문 불일치 1개 실패입니다.
+포맷·린트는 통과했으며, <code>pnpm verify</code> 전체는 기준선 게이트에서 실패한 상태입니다.</p>
+<p><a href="rca-efficiency-evidence-2026-09-09/post-live-verify.log">후속 전체 검증 로그</a></p>
+<h2>실행과 정리</h2>
+<p>확인한 개발 계정 프로필과 배포 태스크의 모델 설정을 사용했습니다. 평가 전용 테이블·버킷·시나리오별 벡터 인덱스를 만들어 기존 장애 기록과 분리했으며 엔진별 최대 두 작업을 병렬 실행했습니다. 정상 완료 후 원본 자료를 로컬에 보존하고 임시 AWS 자원의 부재를 재조회로 확인했습니다.</p>
+<p>선행 중단 회차 두 건의 자원도 같은 방식으로 정리했습니다. 처음 회차는 공용 환경의 Bedrock 토큰을 제거하고 개발 계정 인증을 고정하기 위해 중단했고, 다음 회차는 첫 사례의 필수 게이트 실패를 확인한 뒤 코드 교정을 위해 중단했습니다. 이 중단 결과들을 최종 8건에 섞지 않았습니다.</p>
+<details><summary>재현 자료와 검증 경계</summary>
+<pre>{
+  &quot;run_id&quot;: &quot;efficiency-20260909T145305Z-b05412&quot;,
+  &quot;started_at_utc&quot;: &quot;2026-09-09T14:54:24.979092+00:00&quot;,
+  &quot;finished_at_utc&quot;: &quot;2026-09-09T15:17:24.406679+00:00&quot;,
+  &quot;model&quot;: {
+    &quot;task_definition&quot;: &quot;arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:34&quot;,
+    &quot;image&quot;: &quot;395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:0ab2a495a90f&quot;,
+    &quot;CODEX_MODEL&quot;: &quot;global.openai.gpt-5.6-sol&quot;,
+    &quot;CODEX_REASONING_EFFORT&quot;: &quot;high&quot;,
+    &quot;CODEX_MODEL_PROVIDER&quot;: &quot;amazon-bedrock-runtime&quot;
+  },
+  &quot;cleanup&quot;: {
+    &quot;table&quot;: {
+      &quot;deleted&quot;: true,
+      &quot;exported_items&quot;: 109
+    },
+    &quot;vectors&quot;: {
+      &quot;deleted&quot;: true,
+      &quot;indexes&quot;: 8
+    },
+    &quot;s3&quot;: {
+      &quot;deleted&quot;: true,
+      &quot;exported_objects&quot;: 4
+    }
+  },
+  &quot;source_fingerprint&quot;: {
+    &quot;sha256&quot;: &quot;9b0d2d773a4074d34832fedc31e85b078f6ac90d4f9b9fe49f2622294a7b34b8&quot;,
+    &quot;files&quot;: 190
+  }
+}</pre>
+<p><a href="../../tests/results/model/efficiency-20260909T145305Z-b05412/final-report.json">집계 결과 JSON</a> · <a href="../../tests/results/model/efficiency-20260909T145305Z-b05412/manifest.json">실행·정리 기록</a> · <a href="../../tests/results/model/efficiency-20260909T145305Z-b05412/cleanup-verification.json">자원 부재 확인</a></p>
+<p>원본 모델 산출물은 같은 회차의 raw-artifacts/, Strands 상태와 보고서는 dynamodb-export.json 및 s3-export/에 보존했습니다. 해당 자료는 tests/results 아래에 있어 Git에 포함되지 않습니다.</p>
+<p>로컬 Codex CLI 0.153.4·Python 3.14를 사용했습니다. 컨테이너 정의의 Codex 0.151.0·Python 3.13과 런타임 버전은 다릅니다. 모델·추론 강도·provider 일치를 확인한 평가이며 배포 런타임의 완전한 동일성 증거는 아닙니다.</p>
+</details>
+<h2>새 데모 시나리오</h2><p>사용자가 요청한 현실화 방향은 <a href="realistic-demo-scenarios-proposal.html">시나리오 검토안</a>에 정리했습니다. 이 실패 회차의 결과와 새 시나리오의 정답 계약을 혼합하지 않고, 적용 범위와 계약을 정한 뒤 새 입력으로 검증해야 합니다.</p>
+</main></body></html>

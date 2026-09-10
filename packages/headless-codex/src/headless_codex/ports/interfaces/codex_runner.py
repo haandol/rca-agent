@@ -14,6 +14,7 @@ class CodexRunnerPort(ABC):
         *,
         execution_token: str,
         profile: str = "analysis",
+        report_prompt: str | None = None,
         cancel_checker: Callable[[], bool] | None = None,
         rca_id: str | None = None,
         claim_token: str | None = None,

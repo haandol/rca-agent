@@ -1,0 +1,7 @@
+# Historical reviews and operational evidence intentionally cite the decisions
+# they checked. They are not application code or a second decision registry.
+docs/test-reports/
+docs/loop-live-reverification-handoff.md
+docs/rca-remediation-loop-audit-2026-08-01.md
+# The invariant recognizer necessarily contains its own matching expression.
+scripts/adr-invariants.sh

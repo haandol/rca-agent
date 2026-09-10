@@ -88,4 +88,7 @@ window보다 이전에 생성된 수동 장애 주입·수동 테스트 로그�
 
 `verification_status`는 항상 `DRAFT`다.
 
-Report 전문 에이전트는 `report.md`와 `playbook.json`을 모두 저장한다.
+Report 전문 에이전트는 `report.md`와 `playbook.json`을 모두 저장한다. 두 저장 응답의
+`ok: true`를 확인한 뒤 파일명과 저장 성공만 담은 짧은 완료 응답을 반환한다.
+보고서 Markdown 전문을 최종 응답에 반복하지 않는다. 저장 실패는 교정하고,
+해결할 수 없으면 실패를 명시한다.

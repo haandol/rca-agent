@@ -92,7 +92,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
         ),
         (
             PRIORITIZATION_USER_PROMPT_TEMPLATE,
-            {"scoping_summary", "hypotheses_text"},
+            {"scoping_summary", "hypotheses_text", "beam_width", "max_validation_loops", "termination_confidence"},
         ),
         (
             EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE,

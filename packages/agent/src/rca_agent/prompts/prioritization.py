@@ -20,6 +20,15 @@ Determine the validation order for the following hypotheses.
 ## Scoping Context
 {scoping_summary}
 
+## Existing Runtime Constraints
+- At most {beam_width} highest-ranked PENDING/NEEDS_INVESTIGATION hypotheses enter each validation beam.
+- At most {max_validation_loops} validation loops are allowed in total.
+- The selected beam completes validation. If a CONFIRMED hypothesis has confidence >= {termination_confidence}, \
+search ends before another validation loop or branching step.
+- Unselected hypotheses are not rejected merely because another cause is confirmed.
+Consider how the selected beam can distinguish competing explanations within these limits. \
+Choose ranks dynamically from the incident evidence; these constraints impose no fixed hypothesis order.
+
 ## Hypotheses
 {hypotheses_text}
 

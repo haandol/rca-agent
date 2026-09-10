@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Literal
 
 from headless_codex.ports.dto.models import AlarmContext
 
@@ -36,8 +37,14 @@ def _resolve_includes(text: str, base_dir: Path, depth: int = 0) -> str:
     return _INCLUDE_PATTERN.sub(_replace, text)
 
 
-def build_prompt(alarm: AlarmContext) -> str:
-    system_raw = (_PROMPTS_DIR / "rca-system.md").read_text()
+def build_prompt(alarm: AlarmContext, *, role: Literal["orchestrator", "rca", "report"] = "orchestrator") -> str:
+    """Compile roles with source-only eval metadata and compatible production defaults."""
+    templates = {
+        "orchestrator": "rca-system.md",
+        "rca": "rca-specialist.md",
+        "report": "report-specialist.md",
+    }
+    system_raw = (_PROMPTS_DIR / templates[role]).read_text()
     system_prompt = _resolve_includes(system_raw, _PROMPTS_DIR)
     user_template = (_PROMPTS_DIR / "rca-user.md").read_text()
 
@@ -52,10 +59,32 @@ def build_prompt(alarm: AlarmContext) -> str:
         "{metric_name}": alarm.metric_name or "N/A",
         "{dimensions}": dimensions_str,
         "{statistic}": alarm.statistic or "Average",
-        "{period}": str(alarm.period or 300),
+        "{period}": f"{alarm.period or 300}초",
         "{threshold}": str(alarm.threshold) if alarm.threshold is not None else "N/A",
         "{comparison_operator}": alarm.comparison_operator or "N/A",
     }
+
+    if alarm.eval_source_metadata is not None:
+        metadata = alarm.eval_source_metadata
+        for target, source in (
+            ("state_change_time", "stateChangeTime"),
+            ("region", "region"),
+            ("namespace", "namespace"),
+            ("metric_name", "metric"),
+            ("dimensions", "dimensions"),
+            ("statistic", "statistic"),
+            ("period", "period"),
+            ("threshold", "threshold"),
+            ("comparison_operator", "comparisonOperator"),
+        ):
+            value = metadata.get(source)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                rendered = "not provided"
+            elif source == "dimensions":
+                rendered = ", ".join(f"{k}={v}" for k, v in value.items()) if value else "{}"
+            else:
+                rendered = f"{value}초" if source == "period" else str(value)
+            replacements["{" + target + "}"] = rendered
 
     user_prompt = user_template
     for placeholder, value in replacements.items():

@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 import boto3
 
-from rca_agent.ports.interfaces.queue_consumer import QueueConsumerPort
+from rca_agent.ports.interfaces.queue_consumer import QueueConsumerPort, QueueReceiveError
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,8 @@ class SqsConsumer(QueueConsumerPort):
                 WaitTimeSeconds=self._poll_wait,
                 AttributeNames=["ApproximateReceiveCount"],
             )
-        except Exception:
-            logger.exception("Failed to receive SQS message")
-            return
+        except Exception as exc:
+            raise QueueReceiveError("Failed to receive SQS message") from exc
 
         for msg in resp.get("Messages", []):
             message_id = msg.get("MessageId")
