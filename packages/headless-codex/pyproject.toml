@@ -10,6 +10,7 @@ dependencies = [
     "aws-bedrock-token-generator>=1.1.0",
     "boto3>=1.35",
     "fastmcp>=2.0",
+    "pydantic>=2,<3",
     "structlog>=25.1",
 ]
 

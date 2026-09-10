@@ -288,6 +288,7 @@ dependencies = [
     { name = "aws-bedrock-token-generator" },
     { name = "boto3" },
     { name = "fastmcp" },
+    { name = "pydantic" },
     { name = "structlog" },
 ]
 
@@ -305,6 +306,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.35" },
     { name = "fastmcp", specifier = ">=2.0" },
     { name = "moto", extras = ["s3", "dynamodb", "sqs", "sns"], marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "pydantic", specifier = ">=2,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11" },
