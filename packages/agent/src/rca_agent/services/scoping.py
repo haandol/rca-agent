@@ -18,6 +18,7 @@ from rca_agent.ports.dto.models import (
 )
 from rca_agent.ports.interfaces.report_store import ReportStorePort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
+from rca_agent.services.observation_context import render_alarm_description
 from rca_agent.services.report_context import build_report_context
 from rca_agent.utils.embed_key import build_embed_key
 from rca_agent.utils.timeout import call_with_timeout
@@ -109,6 +110,7 @@ def _build_user_prompt(alarm: AlarmPayload, reports: list[ReportMatch]) -> str:
     trigger = alarm.trigger
     values = dict(
         alarm_name=alarm.alarm_name,
+        alarm_description=render_alarm_description(alarm),
         state_reason=alarm.new_state_reason,
         state_change_time=alarm.state_change_time or "N/A",
         region=alarm.region,

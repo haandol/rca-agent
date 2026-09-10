@@ -153,6 +153,8 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict
         "NewStateReason": state_reason,
         "StateChangeTime": state_change_time,
     }
+    if isinstance(alarm.get("description"), str):
+        envelope["AlarmDescription"] = alarm["description"]
     for source, target in (("region", "Region"), ("arn", "AlarmArn")):
         if source in alarm and alarm[source] is not None:
             envelope[target] = alarm[source]
@@ -222,6 +224,10 @@ def _validation_hypotheses(container, notification) -> list[dict[str, Any]]:
 
 
 def _persisted_validation_text(hypothesis: dict[str, Any]) -> str:
+    """Read complete new judgments, or the surviving legacy fields without backfill."""
+    if "validation_record" in hypothesis:
+        record = hypothesis["validation_record"]
+        return "\n".join([record.get("reasoning", ""), *record.get("evidence_summary", [])])
     return "\n".join(
         part.strip()
         for part in (
@@ -232,18 +238,27 @@ def _persisted_validation_text(hypothesis: dict[str, Any]) -> str:
     )
 
 
-def _confirmed_hypothesis(validation_hypotheses: list[dict[str, Any]]) -> dict[str, Any] | None:
-    return next(
-        (hypothesis for hypothesis in validation_hypotheses if hypothesis.get("status") == "CONFIRMED"),
-        None,
-    )
+def _confirmed_hypothesis(
+    validation_hypotheses: list[dict[str, Any]], selected_hypothesis_id: str
+) -> dict[str, Any] | None:
+    """Resolve only the completed session's unique, still-confirmed selection."""
+    if not selected_hypothesis_id:
+        return None
+    matches = [h for h in validation_hypotheses if h.get("hypothesis_id") == selected_hypothesis_id]
+    if len(matches) != 1 or matches[0].get("status") != "CONFIRMED":
+        return None
+    selected = matches[0]
+    if "validation_record" in selected and selected["validation_record"].get("status") != "CONFIRMED":
+        return None
+    return selected
 
 
-def _root_fault_type(validation_hypotheses: list[dict[str, Any]]) -> str:
-    confirmed = _confirmed_hypothesis(validation_hypotheses)
+def _root_fault_type(validation_hypotheses: list[dict[str, Any]], selected_hypothesis_id: str) -> str:
+    """Translate the selected validation type without selecting a different cause."""
+    confirmed = _confirmed_hypothesis(validation_hypotheses, selected_hypothesis_id)
     if confirmed is None:
         return "unsupported"
-    validated_fault_type = confirmed.get("validated_fault_type")
+    validated_fault_type = confirmed.get("validation_record", confirmed).get("validated_fault_type")
     if not isinstance(validated_fault_type, str):
         return "unsupported"
     return _FAULT_TYPE_NORMALIZATION.get(validated_fault_type, "unsupported")
@@ -252,8 +267,10 @@ def _root_fault_type(validation_hypotheses: list[dict[str, Any]]) -> str:
 def _root_cause_evidence_ids(
     scenario: dict[str, Any],
     validation_hypotheses: list[dict[str, Any]],
+    selected_hypothesis_id: str,
 ) -> list[str]:
-    confirmed = _confirmed_hypothesis(validation_hypotheses)
+    """Keep root citations attached to the same selection used for the root type."""
+    confirmed = _confirmed_hypothesis(validation_hypotheses, selected_hypothesis_id)
     return _evidence_ids(_persisted_validation_text(confirmed or {}), scenario)
 
 
@@ -270,6 +287,8 @@ def _competing_cause_judgments(
         _persisted_validation_text(hypothesis)
         for hypothesis in validation_hypotheses
         if hypothesis.get("status") == "REJECTED"
+        and not hypothesis.get("rejection_inherited_from")
+        and hypothesis.get("validation_record", {"status": "REJECTED"}).get("status") == "REJECTED"
     ]
     judgments: list[dict[str, Any]] = []
     for cause in causes:
@@ -462,6 +481,7 @@ def _stdout_reserved_for_the_result():
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the shared pipeline and normalize its persisted, explicitly selected judgment."""
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     argv = list(sys.argv if argv is None else argv)
     scenario = _load_scenario(argv)
@@ -522,8 +542,10 @@ def main(argv: list[str] | None = None) -> None:
             "engine": ENGINE,
             "rootCause": _root_cause(notification),
             "rootCauseConfirmed": notification.confirmed,
-            "rootFaultType": _root_fault_type(validation_hypotheses),
-            "rootCauseEvidenceIds": _root_cause_evidence_ids(scenario, validation_hypotheses),
+            "rootFaultType": _root_fault_type(validation_hypotheses, notification.selected_hypothesis_id),
+            "rootCauseEvidenceIds": _root_cause_evidence_ids(
+                scenario, validation_hypotheses, notification.selected_hypothesis_id
+            ),
             "evidenceIds": _evidence_ids(corpus, scenario),
             "competingCauseJudgments": _competing_cause_judgments(scenario, validation_hypotheses) or [],
             "artifacts": _stages_reached(notification),

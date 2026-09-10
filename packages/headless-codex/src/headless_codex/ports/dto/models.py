@@ -22,9 +22,11 @@ class AlarmContext:
     treat_missing_data: str | None = None
     # None preserves production defaults; a dict renders only supplied eval metadata.
     eval_source_metadata: dict | None = None
+    alarm_description: str | None = None
 
 
 def parse_alarm(data: dict) -> AlarmContext:
+    """Preserve provided alarm metadata, keeping the optional description as uninterpreted data."""
     trigger = data.get("Trigger", {}) or {}
     dims_raw = trigger.get("Dimensions") or []
     dimensions = {d["name"]: d["value"] for d in dims_raw if "name" in d and "value" in d}
@@ -45,6 +47,7 @@ def parse_alarm(data: dict) -> AlarmContext:
         evaluation_periods=evaluation_periods,
         datapoints_to_alarm=trigger.get("DatapointsToAlarm", evaluation_periods),
         treat_missing_data=trigger.get("TreatMissingData"),
+        alarm_description=data.get("AlarmDescription") if isinstance(data.get("AlarmDescription"), str) else None,
     )
 
 

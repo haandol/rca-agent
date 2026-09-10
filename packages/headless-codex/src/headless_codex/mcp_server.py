@@ -22,6 +22,7 @@ from headless_codex.services.analysis_contract import (
     generation_round_for_filename,
     normalize_generation_artifact,
     normalize_validation_artifact,
+    replay_analysis,
     validate_analysis_completion,
 )
 from headless_codex.services.artifact_validation import (
@@ -199,6 +200,7 @@ def _save(
     allow_validation: bool,
     role: str,
 ) -> str:
+    """Persist a role-owned artifact and return verified effective state for validation saves."""
     if not _is_allowed_filename(filename, allowed, allow_validation=allow_validation):
         return json.dumps(
             {
@@ -236,6 +238,7 @@ def _save(
     previous = target.read_text() if target.is_file() else None
     try:
         path = _write_artifact(base, filename, content)
+        effective_state = replay_analysis(base, allow_incomplete=True).effective_state_view() if decision else None
         if role == "analysis":
             if filename == "scoping.json":
                 _advance_state_path(("SCOPING", "HYPOTHESIS_GENERATION"))
@@ -271,6 +274,7 @@ def _save(
     response = {"ok": True, "path": str(path)}
     if decision is not None:
         response["decision"] = decision
+        response["effective_state"] = effective_state
     return json.dumps(response, ensure_ascii=False)
 
 

@@ -376,3 +376,38 @@ def test_report_guidance_example_passes_the_completion_gate_rule():
         assert any(len(_ISO_TIMESTAMP.findall(line)) >= 2 for line in matching), (
             f"guidance example fails the gate for {label}"
         )
+
+
+def test_atomic_mechanisms_and_sql_work_vs_blocking_are_in_rca_guidance():
+    """The model receives mechanism boundaries without a new taxonomy or expected-ID injection."""
+    generation = (SKILLS_DIR / "hypothesis-generation" / "SKILL.md").read_text()
+    prompt = build_prompt(AlarmContext(), role="rca")
+    for guidance in (generation, prompt):
+        assert "독립적으로 반증할 수 있는 한 메커니즘" in guidance
+        assert "slow-query" in guidance and "unsupported" in guidance
+        assert "외부 트랜잭션 잠금" in guidance
+        assert "실행 허용 목록이 아니다" in guidance
+
+
+def test_validation_keeps_native_beam_order_and_forbids_extra_sweeps():
+    """Counterjudgment guidance must not silently expand the allowed selection policy."""
+    validation = (SKILLS_DIR / "hypothesis-validation" / "SKILL.md").read_text()
+    role = (PROMPTS_DIR / "sections/roles/rca.md").read_text()
+    assert "높은 신뢰도 우선" in validation
+    assert "DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION" in validation
+    assert "상위 **3개**" in validation
+    assert "선택된 가설만 이 루프에서 검증한다" in validation
+    assert "선택 정책을 우회하지 않는다" in validation
+    assert "전체 관측 ID를 모든 판정에 복사" in validation
+    assert "신뢰도를 낮추거나 종료를 지연하지 않는다" in role
+    assert "최고 신뢰도가 0.9 이상이면 즉시 `REPORT`" in role
+
+
+def test_owner_discovery_distinguishes_causal_history_from_current_ownership():
+    """Historical lifecycle evidence needs a current blocker join, not a new tool or permission."""
+    evidence = (SKILLS_DIR / "evidence-patterns" / "SKILL.md").read_text()
+    for fact in ("@logStream", "blocking_pids", "application_name", "causal history", "CloudTrail", "실행 ID"):
+        assert fact in evidence
+    assert "과거 획득 이벤트만으로 현재도 차단 중이라고 주장하지 않는다" in evidence
+    assert "새로운 권한이나" in evidence
+    assert "제공 관측 전용 지시가 있으면 실제 조회를 하지 않는다" in evidence

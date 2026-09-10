@@ -192,6 +192,22 @@ def test_save_artifact_accepts_validation_after_hypotheses(artifact_home):
     assert (artifact_home / "validation-1.json").is_file()
 
 
+def test_validation_response_contains_verified_effective_state_without_new_tool(artifact_home):
+    """Additive save feedback preserves actual CLOSED hypotheses and selected-root evidence."""
+    _save("scoping.json", _minimal_valid_artifact("scoping.json"))
+    _save("hypotheses.json", _minimal_valid_artifact("hypotheses.json"))
+    response = json.loads(_save("validation-1.json", _minimal_valid_artifact("validation-1.json")))
+    assert response["ok"]
+    state = response["effective_state"]
+    assert state["decision"] == response["decision"]
+    assert state["selected_hypothesis_id"] == "h1"
+    assert [h["status"] for h in state["hypotheses"]] == ["confirmed", "closed", "closed"]
+    assert state["hypotheses"][0]["reasoning"] == "confirmed"
+    assert state["hypotheses"][0]["evidence_summary"] == ["metric evidence"]
+    assert state["hypotheses"][1]["evidence_summary"] == []
+    assert "effective_state" not in json.loads((artifact_home / "validation-1.json").read_text())
+
+
 @pytest.mark.parametrize("filename", ["playbook.json", "report.md"])
 def test_save_report_artifact_accepts_canonical_names_after_analysis_completion(artifact_home, filename):
     _save_completed_analysis()

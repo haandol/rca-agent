@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from threading import Event
 
 import structlog
@@ -100,6 +101,7 @@ class ExecutionOrchestrator:
         claim_token: str,
         log: structlog.stdlib.BoundLogger,
     ) -> bool:
+        """Run the approved execution and capture actual runner boundaries for durable evidence."""
         store = self._c.execution_store
         workspace = ExecutionWorkspace.create(execution_id)
         workspace.prepare()
@@ -176,6 +178,7 @@ class ExecutionOrchestrator:
                 state = store.load_state(execution_id, rca_id=request.rca_id)
                 return state is ExecutionState.CANCELLED
 
+            execution_started_at = datetime.now(UTC).isoformat()
             codex_result = self._c.execution_runner.run_execution(
                 prompt,
                 execution_token=workspace.token,
@@ -184,6 +187,7 @@ class ExecutionOrchestrator:
                 approved_success_criteria=approved_success_criteria,
                 cancel_checker=_should_cancel,
             )
+            execution_ended_at = datetime.now(UTC).isoformat()
             # 에이전트가 실패를 보고하지 않고 아무것도 하지 않은 채 성공 종료할 수 있다.
             # 그 경우 기록된 관측이 없으므로 판정은 미해결로 떨어지지만, 왜 수행하지
             # 않았는지는 이 응답에만 남아 있다 — 남기지 않으면 사후에 읽을 방법이 없다.
@@ -200,6 +204,8 @@ class ExecutionOrchestrator:
                 rca_id=request.rca_id,
                 engine=request.engine,
                 playbook=target.playbook,
+                started_at=execution_started_at,
+                ended_at=execution_ended_at,
             )
 
             if codex_result.cancelled:

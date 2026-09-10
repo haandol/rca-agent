@@ -13,6 +13,7 @@ from rca_agent.ports.dto.models import (
     ScopingResult,
 )
 from rca_agent.prompts.report import REPORT_USER_PROMPT_TEMPLATE
+from rca_agent.services.observation_context import render_alarm_description
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ def _build_user_prompt(
     rejected_descriptions: list[str],
     timeline: list[str],
 ) -> str:
+    """Keep discovery metadata distinct from findings in the report model's context."""
     root_cause_desc = best_hypothesis.description if best_hypothesis else "Unknown"
     confidence = best_hypothesis.confidence_score if best_hypothesis else 0.0
 
@@ -56,6 +58,7 @@ def _build_user_prompt(
 
     return REPORT_USER_PROMPT_TEMPLATE.format(
         incident_summary=scoping.alarm_summary,
+        alarm_description=render_alarm_description(scoping.raw_alarm),
         alarm_name=alarm_name or "N/A",
         metric_name=metric_name or "N/A",
         confirmed="Yes" if confirmed else "No (most likely candidate)",
@@ -85,6 +88,7 @@ def run_report_generation(
     *,
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> RcaReport:
+    """Preserve the supplied discovery description even when report generation falls back."""
     rca_id = str(uuid.uuid4())
     user_prompt = _build_user_prompt(
         scoping_result,
@@ -111,6 +115,7 @@ def run_report_generation(
         return RcaReport(
             rca_id=rca_id,
             incident_summary=scoping_result.alarm_summary,
+            alarm_description=scoping_result.raw_alarm.alarm_description if scoping_result.raw_alarm else None,
             severity=scoping_result.initial_severity,
             root_cause=best_hypothesis.description if best_hypothesis else "Unknown",
             root_cause_confirmed=confirmed,
@@ -129,6 +134,7 @@ def run_report_generation(
     return RcaReport(
         rca_id=rca_id,
         incident_summary=output.incident_summary,
+        alarm_description=scoping_result.raw_alarm.alarm_description if scoping_result.raw_alarm else None,
         severity=output.severity,
         impact_summary=output.impact_summary,
         detection_method=output.detection_method,

@@ -36,6 +36,9 @@ PENDING/NEEDS_INVESTIGATION 상태의 가설을 우선순위로 정렬한다:
 - 동률 시 카테고리 순서: DEPLOYMENT > INFRASTRUCTURE > TRAFFIC > DEPENDENCY > CONFIGURATION
 - 상위 **3개**를 빔으로 선택한다 (beam width)
 
+선택된 가설만 이 루프에서 검증한다. 순위 밖 가설을 위한 추가 sweep이나 별도 검증을
+수행하지 않는다. 반증 관측이 이미 있어도 선택 정책을 우회하지 않는다.
+
 ### 2. 증거 수집
 
 빔에 포함된 각 가설에 대해:
@@ -58,6 +61,10 @@ PENDING/NEEDS_INVESTIGATION 상태의 가설을 우선순위로 정렬한다:
 각 가설의 상태 후보, 신뢰도, 판단 근거, 증거 요약을 validation JSON에 포함한다.
 서버가 신뢰도로 상태를 다시 분류한다. CONFIRMED 후보의 `fault_type`은 초기 힌트를
 복사하지 말고 실제 증거를 근거로 독립 판정한다.
+SQL 작업 자체의 비효율·호출 증폭은 `slow-query`, 외부 트랜잭션 차단으로 인한 대기는
+`unsupported`로 구별한다. 판정별 reasoning과 evidence_summary에는 실제로 그 판정을
+뒷받침한 관측 식별자만 인용한다. 원인 확정과 대안 기각은 서로의 인용을 대신하지 않으며,
+전체 관측 ID를 모든 판정에 복사하거나 복합 가설을 가상의 여러 기각으로 나누지 않는다.
 
 ### 4. 가설 분기
 
@@ -139,6 +146,9 @@ NEEDS_INVESTIGATION 가설에 대해:
 
 검증 루프를 마치면 연속 번호로 저장한다. 저장 응답이 `ok: false`이면 내용을 고쳐
 같은 번호로 다시 저장한다. 성공 응답의 `decision.action`을 반드시 따른다.
+응답의 `effective_state`는 저장 서버가 재생한 기존 가설의 유효 상태다. 실제 판정·reasoning·
+evidence_summary와 selected_hypothesis_id를 전달하며 `closed`를 `rejected`로 바꾸지 않는다.
+이 응답은 검증 순서, 빔, 상한이나 종료 정책을 변경할 권한이 아니다.
 
 ## 종료 조건
 

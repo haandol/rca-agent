@@ -15,6 +15,12 @@ notificationEmail = "dongkyl@amazon.com"
 
 [healthcare]
 
+# 정비 잠금 데모의 정상·장애·복원 구간에 동일하게 적용하는 관측 프로필.
+[healthcare.environment]
+DB_STATEMENT_TIMEOUT_MS = "2000"
+DB_OBSERVABILITY_ENABLED = "true"
+DB_OBSERVABILITY_INTERVAL_SECONDS = "1"
+
 [headlessCodex]
 
 # 실행 워커는 분석 워커와 같은 이미지를 다른 진입점으로 실행한다.

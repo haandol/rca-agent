@@ -52,6 +52,10 @@
 **주의사항:**
 - `confirmed`/`rejected`/`closed`/`needs_investigation`의 각 항목에는 반드시 `reasoning` 필드를 포함한다.
 - `fault_type`은 초기 hypothesis의 힌트와 독립적으로 증거에서 다시 판정한다.
+- SQL 작업 자체의 비효율·호출 증폭은 `slow-query`, 외부 잠금 소유자로 인한 SQL 대기는
+  `unsupported`다. 선택된 가설만 검증하고 기존 빔·우선순위·종료 정책을 따른다.
+- 판정별 reasoning/evidence_summary에 실제 사용한 관측 ID를 인용한다. 전체 ID 복사,
+  다른 가설의 인용으로 대체, 증거 없는 기각은 금지한다.
 - 모든 판정은 `evidence_collection_failed` boolean을 포함한다. 증거 도구 호출이나
   조회가 실패했으면 `true`이며, 필수 증거가 있는 가설은 이 값이 `true`이거나
   `evidence_summary`가 비면 높은 신뢰도라도 확정되지 않는다.
@@ -59,3 +63,5 @@
   `category`를 포함한다.
 - 모든 판정은 현재까지 저장된 가설의 `hypothesis_id`를 참조해야 한다.
 - validation 번호는 1부터 연속하며 최대 3이다.
+- 저장 응답의 `effective_state`는 서버가 기존 산출물을 재생한 유효 판정이다. 모델이 만드는
+  필드가 아니며, 그 안의 `closed`는 기각이 아니다. `decision.action=REPORT` 뒤 추가 검증은 없다.

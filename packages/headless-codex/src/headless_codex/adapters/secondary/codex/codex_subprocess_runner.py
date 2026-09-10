@@ -26,6 +26,7 @@ from headless_codex.adapters.secondary.codex.codex_harness import (
 from headless_codex.config.settings import CODEX_TIMEOUT_SECONDS
 from headless_codex.ports.dto.models import CodexResult
 from headless_codex.ports.interfaces.codex_runner import CodexRunnerPort
+from headless_codex.services.analysis_contract import AnalysisContractError, validate_analysis_completion
 from headless_codex.services.execution_context import (
     ATTEMPT_ENV,
     CLAIM_TOKEN_ENV,
@@ -83,6 +84,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
         claim_token: str | None = None,
         attempt: int | None = None,
     ) -> CodexResult:
+        """Run sequential specialists under one deadline and hand off replay-verified judgments."""
         if profile not in {ANALYSIS_PROFILE, MODEL_EVAL_PROFILE}:
             return self._run_single(
                 prompt,
@@ -111,12 +113,26 @@ class CodexSubprocessRunner(CodexRunnerPort):
         if not rca_result.success or rca_result.cancelled:
             return rca_result
 
+        try:
+            analysis = validate_analysis_completion(artifact_dir_for_token(execution_token))
+            effective_state = json.dumps(analysis.effective_state_view(), ensure_ascii=False)
+        except (AnalysisContractError, ValueError) as exc:
+            return CodexResult(
+                success=False,
+                result=f"RCA effective state could not be verified: {exc}",
+                raw_output=rca_result.raw_output,
+            )
+
         report_result = self._run_single(
             (report_prompt if report_prompt is not None else prompt)
             + "\n\n런타임 역할: Report 전문 프로세스다. 다른 에이전트를 위임하지 말고 "
             "아래 RCA 전문 프로세스의 결과를 근거로 report.md와 playbook.json만 저장한다."
             + "\n\n[RCA 전문 프로세스 결과]\n"
-            + rca_result.result,
+            + rca_result.result
+            + "\n\n[서버 검증 유효 상태 — 판정의 권위]\n"
+            + effective_state
+            + "\n이 상태의 selected_hypothesis_id, 판정, 실제 reasoning/evidence를 따른다. "
+            "위 요약이 충돌하면 이 상태가 우선한다. closed는 rejected가 아니다.",
             execution_token=execution_token,
             profile=report_profile,
             cancel_checker=cancel_checker,

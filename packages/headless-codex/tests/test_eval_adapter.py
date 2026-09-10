@@ -252,93 +252,32 @@ def _write_validation(
     )
 
 
-def test_root_fault_type_comes_only_from_the_latest_validation_confirmed_entries(tmp_path):
-    _write_validation(
-        tmp_path,
-        2,
-        confirmed=[
-            {
-                "hypothesis_id": "latest",
-                "fault_type": "slow-query",
-                "reasoning": "[pool-saturation] latest evidence",
-            }
-        ],
-    )
-    _write_validation(
-        tmp_path,
-        10,
-        confirmed=[
-            {
-                "hypothesis_id": "final",
-                "fault_type": "high-cpu",
-                "reasoning": "[connection-growth] final evidence",
-            }
-        ],
-    )
-    tmp_path.joinpath("playbook.json").write_text(json.dumps({"failure_type": "db-leak"}))
-    tmp_path.joinpath("report.md").write_text("root cause prose says high-memory")
-
-    assert eval_adapter._root_fault_type(tmp_path) == "high-cpu"
+def test_root_fault_type_comes_from_verified_judgment(analysis_artifacts, save_validation, judgment):
+    """Report prose and initial hints cannot replace the verified selected type."""
+    save_validation(1, confirmed=[judgment("root", 0.95, fault_type="high-cpu")])
+    (analysis_artifacts / "report.md").write_text("root cause prose says high-memory")
+    assert eval_adapter._root_fault_type(analysis_artifacts) == "high-cpu"
 
 
-def test_root_cause_evidence_uses_only_latest_confirmed_reasoning_in_scenario_order(tmp_path):
-    _write_validation(
-        tmp_path,
+def test_root_cause_evidence_uses_selected_reasoning_in_scenario_order(analysis_artifacts, save_validation, judgment):
+    """Only the selected effective judgment contributes root citations."""
+    save_validation(
         1,
-        confirmed=[
-            {
-                "hypothesis_id": "old",
-                "fault_type": "db-leak",
-                "reasoning": "[unreleased-session] old evidence",
-            }
-        ],
+        confirmed=[judgment("root", 0.95, reasoning="[pool-saturation] then [connection-growth]")],
+        rejected=[judgment("other", 0.1, reasoning="[unreleased-session] counterevidence")],
     )
-    _write_validation(
-        tmp_path,
-        2,
-        confirmed=[
-            {
-                "hypothesis_id": "latest",
-                "fault_type": "db-leak",
-                "reasoning": "[pool-saturation] then [connection-growth]",
-            }
-        ],
-        rejected=[
-            {
-                "hypothesis_id": "alternative",
-                "reasoning": "[unreleased-session] appears only in rejected reasoning",
-            }
-        ],
-    )
-    tmp_path.joinpath("report.md").write_text("[unreleased-session] appears in report prose")
-
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == [
+    (analysis_artifacts / "report.md").write_text("[unreleased-session] in report only")
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO) == [
         "connection-growth",
         "pool-saturation",
     ]
 
 
-def test_root_cause_evidence_requires_exact_observation_ids(tmp_path):
-    scenario = {
-        **SCENARIO,
-        "observations": [
-            {"id": "pool"},
-            {"id": "pool-extra"},
-        ],
-    }
-    _write_validation(
-        tmp_path,
-        1,
-        confirmed=[
-            {
-                "hypothesis_id": "root",
-                "fault_type": "db-leak",
-                "reasoning": "[pool-extra] confirms the root cause",
-            }
-        ],
-    )
-
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, scenario) == ["pool-extra"]
+def test_root_cause_evidence_requires_exact_observation_ids(analysis_artifacts, save_validation, judgment):
+    """Identifier prefixes must not count as citations."""
+    scenario = {**SCENARIO, "observations": [{"id": "pool"}, {"id": "pool-extra"}]}
+    save_validation(1, confirmed=[judgment("root", 0.95, reasoning="[pool-extra] confirms root")])
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, scenario) == ["pool-extra"]
 
 
 def _write_validation_rejection(
@@ -753,7 +692,16 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
     capsys,
     confirmed,
     scenario,
+    analysis_artifacts,
+    save_validation,
+    judgment,
 ):
+    """Normalize actual server state while keeping the mocked harness stdout isolated."""
+    if confirmed:
+        save_validation(1, confirmed=[judgment("root", 0.95)])
+    else:
+        for loop in range(1, 4):
+            save_validation(loop, needs_investigation=[judgment("root", 0.5)])
     # The shared harness may log to stdout; model-eval reserves it for one result.
     import logging
 
@@ -779,7 +727,7 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
 
     monkeypatch.setattr(eval_adapter, "CodexSubprocessRunner", _Runner)
     monkeypatch.setattr(eval_adapter, "validate_completion_artifacts", lambda _dir: _artifacts(confirmed=confirmed))
-    monkeypatch.setattr(ExecutionContext, "prepare", lambda self: tmp_path)
+    monkeypatch.setattr(ExecutionContext, "prepare", lambda self: analysis_artifacts)
     monkeypatch.setattr(ExecutionContext, "cleanup", lambda self: None)
     monkeypatch.setenv(eval_adapter._FAILURE_DIR_ENV, str(tmp_path / "failure-diagnostics"))
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(scenario)))

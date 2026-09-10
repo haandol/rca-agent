@@ -23,7 +23,6 @@ from rca_agent.config.settings import (
     ALARM_STALENESS_SECONDS,
     RCA_BEAM_WIDTH,
     RCA_MAX_REGENERATION_ROUNDS,
-    REJECTION_THRESHOLD,
 )
 from rca_agent.ports.dto.models import (
     AlarmPayload,
@@ -56,7 +55,7 @@ from rca_agent.services.prioritization import run_prioritization
 from rca_agent.services.report import run_report_generation
 from rca_agent.services.review_gate import ReviewGateResult, run_review_gate
 from rca_agent.services.scoping import run_scoping
-from rca_agent.services.termination import check_termination
+from rca_agent.services.termination import check_termination, effective_judgments
 from rca_agent.services.validation import run_validation
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,7 @@ class _LoopAction(Enum):
 
 
 _CLOSE_REASON_MAP: dict[TerminationReason, str] = {
-    TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 기각",
+    TerminationReason.CONFIRMED: "확정된 근본원인 발견으로 분석 종료",
     TerminationReason.TIME_BUDGET: "시간 예산 소진",
     TerminationReason.TOKEN_BUDGET: "토큰 예산 소진",
     TerminationReason.MAX_DEPTH: "최대 트리 깊이 초과",
@@ -108,15 +107,19 @@ def select_beam(hypotheses, prioritization_result, beam_width):
 
 
 def prune_subtree(rejected_id: str, hypotheses: list) -> list[str]:
+    """Invalidate all descendants, including paths through previously rejected nodes."""
     pruned: list[str] = []
     queue = [rejected_id]
+    visited = {rejected_id}
     while queue:
         parent_id = queue.pop()
         for h in hypotheses:
-            if h.parent_id == parent_id and h.status != HypothesisStatus.REJECTED:
-                h.status = HypothesisStatus.REJECTED
-                pruned.append(h.hypothesis_id)
+            if h.parent_id == parent_id and h.hypothesis_id not in visited:
+                visited.add(h.hypothesis_id)
                 queue.append(h.hypothesis_id)
+                if h.status != HypothesisStatus.REJECTED:
+                    h.status = HypothesisStatus.REJECTED
+                    pruned.append(h.hypothesis_id)
     return pruned
 
 
@@ -668,6 +671,7 @@ class PipelineOrchestrator:
         run: RunContext,
         loop_span,
     ) -> ReviewGateResult:
+        """Apply the accepted gate while keeping automatic closure distinct from proof."""
         trace = run.trace
         gate = run_review_gate(
             state.hypotheses,
@@ -679,7 +683,7 @@ class PipelineOrchestrator:
                 trace.update_hypothesis_status(
                     hid,
                     status=HypothesisStatus.REJECTED.value,
-                    judgment_reasoning=("Review gate: 이미 채택된 가설과 동일 원인 영역으로 자동 기각"),
+                    closure_reason=("Review gate: 이미 채택된 가설과 동일 원인 영역으로 자동 기각"),
                 )
         if gate.early_exit:
             accepted = next(
@@ -864,14 +868,16 @@ class PipelineOrchestrator:
         return validation_result
 
     def _apply_judgments(self, state: ValidationLoopState, trace) -> None:
+        """Persist complete direct judgments before recording inherited state changes."""
         for j in state.all_judgments:
             trace.update_hypothesis_status(
                 j.hypothesis_id,
                 status=j.status.value,
                 confidence=j.confidence_score,
-                judgment_reasoning=j.reasoning[:500],
+                judgment_reasoning=j.reasoning,
                 validated_fault_type=j.validated_fault_type.value,
                 validation_evidence_summary="\n".join(j.evidence_summary),
+                validation_record=j,
             )
             h = next(
                 (h for h in state.hypotheses if h.hypothesis_id == j.hypothesis_id),
@@ -903,6 +909,8 @@ class PipelineOrchestrator:
                     trace.update_hypothesis_status(
                         pid,
                         status=HypothesisStatus.REJECTED.value,
+                        closure_reason=f"Inherited rejection from hypothesis {j.hypothesis_id}",
+                        rejection_inherited_from=j.hypothesis_id,
                     )
         self._capture_rejection_feedback(state)
 
@@ -973,8 +981,12 @@ class PipelineOrchestrator:
         run: RunContext,
         loop_span,
     ) -> _LoopAction:
+        """Regenerate an exhausted effective tree without treating inherited status as direct proof."""
         trace = run.trace
-        if not validation_result.all_rejected:
+        effectively_exhausted = bool(state.hypotheses) and all(
+            h.status == HypothesisStatus.REJECTED for h in state.hypotheses
+        )
+        if not validation_result.all_rejected and not effectively_exhausted:
             return _LoopAction.PROCEED
 
         if gate.expansion_blocked:
@@ -991,7 +1003,7 @@ class PipelineOrchestrator:
 
         # all_rejected describes only the selected beam. Unselected or otherwise
         # unresolved hypotheses must survive until the whole search is rejected.
-        if not state.hypotheses or any(h.status != HypothesisStatus.REJECTED for h in state.hypotheses):
+        if not effectively_exhausted:
             return _LoopAction.PROCEED
 
         state.regeneration_count += 1
@@ -1148,33 +1160,42 @@ class PipelineOrchestrator:
         return True
 
     def _finalize_hypotheses(self, hypotheses, termination, all_judgments, *, trace):
+        """Close unresolved nodes without overwriting judgments or reviving pruned causes."""
+        all_judgments = effective_judgments(all_judgments, hypotheses)
         close_reason = (
             _CLOSE_REASON_MAP.get(termination.reason, "분석 종료")
             if termination and termination.reason
             else "분석 종료"
         )
-        judgment_scores = {j.hypothesis_id: j.confidence_score for j in all_judgments}
         for h in hypotheses:
             if h.status not in (
                 HypothesisStatus.PENDING,
                 HypothesisStatus.NEEDS_INVESTIGATION,
             ):
                 continue
-            score = judgment_scores.get(h.hypothesis_id)
-            should_reject = score is not None and score <= REJECTION_THRESHOLD
-            new_status = HypothesisStatus.REJECTED if should_reject else HypothesisStatus.CLOSED
-            h.status = new_status
+            # Direct rejections were already applied. A failed validation can
+            # retain a low prior score without having disproved its hypothesis.
+            h.status = HypothesisStatus.CLOSED
             trace.update_hypothesis_status(
                 h.hypothesis_id,
-                status=new_status.value,
-                judgment_reasoning=close_reason,
+                status=HypothesisStatus.CLOSED.value,
+                closure_reason=close_reason,
             )
 
         best_hypothesis = None
         confirmed = False
         if termination and termination.should_terminate and termination.best_hypothesis:
-            best_hypothesis = termination.best_hypothesis
-            confirmed = termination.reason and termination.reason.value == "CONFIRMED"
+            best_hypothesis = next(
+                (h for h in hypotheses if h.hypothesis_id == termination.best_hypothesis.hypothesis_id),
+                None,
+            )
+            confirmed = (
+                termination.reason == TerminationReason.CONFIRMED
+                and best_hypothesis is not None
+                and best_hypothesis.status == HypothesisStatus.CONFIRMED
+            )
+            if termination.reason == TerminationReason.CONFIRMED and not confirmed:
+                best_hypothesis = None
         elif all_judgments:
             best_j = max(
                 all_judgments,

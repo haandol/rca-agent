@@ -22,6 +22,7 @@ from rca_agent.ports.dto.models import (
 from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE
 from rca_agent.services.observation_context import (
     render_concurrent_alarms,
+    render_incident_context,
     render_observations,
 )
 from rca_agent.services.report_context import build_report_context
@@ -100,8 +101,10 @@ HypothesisOutput.model_rebuild()
 
 
 def _build_user_prompt(scoping: ScopingResult, rejection_feedback: list[str] | None = None) -> str:
+    """Carry source observations and scoped interpretations into candidate generation."""
     prompt = HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE.format(
         alarm_summary=scoping.alarm_summary,
+        incident_context=render_incident_context(scoping),
         anomaly_start_time=scoping.anomaly_start_time or "N/A",
         blast_radius=scoping.blast_radius,
         initial_severity=scoping.initial_severity,

@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -14,6 +15,7 @@ from headless_codex.ports.interfaces.execution_store import (
     ExecutionTargetUnavailableError,
 )
 from headless_codex.services import execution_workspace
+from headless_codex.services.execution_evidence import capture_command_output
 from headless_codex.services.execution_pipeline import ExecutionOrchestrator
 from headless_codex.services.execution_state import ExecutionState
 
@@ -192,6 +194,40 @@ def test_an_approved_execution_runs_the_playbook_steps_and_resolves():
     assert "VitalIngestFailure" in runner.execution_prompts[0]
     assert runner.approved_step_ids == ("step-1",)
     assert runner.approved_success_criteria == {"step-1": "DatabaseConnections 20 이하"}
+
+
+def test_persisted_evidence_keeps_command_output_and_source_times_with_actual_runner_boundaries():
+    """The existing S3 save port receives full retained streams and actual times, without AWS calls."""
+    records = _resolved_records()
+    output = json.dumps({"padding": "x" * 8000, "taskArn": "task/customer-approved-stop", "lastStatus": "STOPPED"})
+    records[0].update(
+        capture_command_output(output, "warning on success")
+        | {
+            "started_at": "2026-09-09T23:59:58+00:00",
+            "ended_at": "2026-09-09T23:59:59+00:00",
+            "recorded_at": "2026-09-10T00:00:00+00:00",
+        }
+    )
+    records[1]["recorded_at"] = "2026-09-10T00:00:01+00:00"
+    records[2]["recorded_at"] = "2026-09-10T00:00:02+00:00"
+    runner = RecordingRunner(records=records)
+    container = _container(runner)
+    before = datetime.now(UTC)
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    after = datetime.now(UTC)
+
+    persisted = container.evidence_store.save_execution_evidence.call_args.kwargs["evidence"]
+    assert before <= datetime.fromisoformat(persisted["started_at"])
+    assert persisted["started_at"] <= persisted["ended_at"]
+    assert datetime.fromisoformat(persisted["ended_at"]) <= after
+    attempt = persisted["steps"][0]["attempts"][0]
+    assert attempt["stdout"] == output
+    assert attempt["stderr"] == "warning on success"
+    for field in ("started_at", "ended_at", "recorded_at"):
+        assert attempt[field] == records[0][field]
+    assert persisted["steps"][0]["outcomes"][0]["recorded_at"] == records[1]["recorded_at"]
+    assert persisted["resolution_records"][0]["recorded_at"] == records[2]["recorded_at"]
+    assert _states(container) == [ExecutionState.VERIFYING, ExecutionState.RESOLVED]
 
 
 def test_a_redelivered_approval_does_not_run_a_second_time():

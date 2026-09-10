@@ -24,6 +24,7 @@ from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
+from rca_agent.services.observation_context import render_alarm_description
 from rca_agent.utils.embed_key import build_embed_key
 from rca_agent.utils.timeout import call_with_timeout
 
@@ -128,11 +129,13 @@ def _build_embed_key(playbook: Playbook, scoping_result: ScopingResult | None) -
 
 
 def _build_user_prompt(report: RcaReport) -> str:
+    """Keep all distinct source evidence separate from the report's proposed actions."""
     return PLAYBOOK_USER_PROMPT_TEMPLATE.format(
         failure_type="Inferred from root cause",
+        alarm_description=render_alarm_description(report),
         root_cause=report.root_cause,
         severity=report.severity,
-        evidence_highlights="\n".join(f"- {e}" for e in report.evidence_list[:5]) or "N/A",
+        evidence_highlights="\n".join(f"- {e}" for e in dict.fromkeys(report.evidence_list)) or "N/A",
         detection_method=report.detection_method or "N/A",
         mitigation_text=report.temporary_mitigation or "N/A",
         remediation_text=report.permanent_remediation or "N/A",
@@ -151,8 +154,10 @@ def _render_existing_execution_steps(steps: list[ExecutionStep]) -> str:
 
 
 def _build_update_prompt(existing: Playbook, report: RcaReport) -> str:
+    """Carry evidence provenance into merging without dropping late control evidence."""
     return PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE.format(
         existing_failure_type=existing.failure_type or "N/A",
+        alarm_description=render_alarm_description(report),
         existing_symptom_pattern=existing.symptom_pattern or "N/A",
         existing_severity_criteria=existing.severity_criteria or "N/A",
         existing_verification_steps="\n".join(f"  - {s}" for s in existing.verification_steps) or "N/A",
@@ -164,7 +169,7 @@ def _build_update_prompt(existing: Playbook, report: RcaReport) -> str:
         existing_related_metrics="\n".join(f"  - {m}" for m in existing.related_metrics) or "N/A",
         root_cause=report.root_cause,
         severity=report.severity,
-        evidence_highlights="\n".join(f"  - {e}" for e in report.evidence_list[:5]) or "N/A",
+        evidence_highlights="\n".join(f"  - {e}" for e in dict.fromkeys(report.evidence_list)) or "N/A",
         detection_method=report.detection_method or "N/A",
         mitigation_text=report.temporary_mitigation or "N/A",
         remediation_text=report.permanent_remediation or "N/A",

@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tomllib
@@ -19,6 +20,13 @@ EXECUTION_TOKEN = "a" * 32
 @pytest.fixture(autouse=True)
 def isolated_codex_runtime_home(monkeypatch, tmp_path):
     monkeypatch.setenv("CODEX_RUNTIME_HOME_ROOT", str(tmp_path / "codex-runs"))
+
+
+@pytest.fixture(autouse=True)
+def verified_analysis_for_fake_process(monkeypatch, analysis_artifacts, save_validation, judgment):
+    """Give fake successful RCA processes real terminal artifacts for the report handoff."""
+    save_validation(1, confirmed=[judgment("root", 0.95, reasoning="[owned-blocker] measured lock")])
+    monkeypatch.setattr(codex_subprocess_runner, "artifact_dir_for_token", lambda _token: analysis_artifacts)
 
 
 class FakeProcess:
@@ -373,3 +381,35 @@ def test_cancelled_rca_does_not_start_report(monkeypatch):
     assert result.cancelled
     assert not result.success
     assert len(calls) == 1
+
+
+def test_report_receives_server_state_even_if_model_summary_conflicts(monkeypatch):
+    """The handoff includes the actual selected root and CLOSED statuses with explicit authority."""
+    calls = _capture_processes(monkeypatch, [{"result": "all alternatives rejected; root is high-cpu"}])
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN)
+    assert result.success
+    report_input = calls[1]["process"].input
+    state = json.JSONDecoder().raw_decode(report_input.split("[서버 검증 유효 상태 — 판정의 권위]\n")[1])[0]
+    assert state["selected_hypothesis_id"] == "root"
+    assert state["hypotheses"][0]["fault_type"] == "unsupported"
+    assert state["hypotheses"][0]["reasoning"] == "[owned-blocker] measured lock"
+    assert [h["status"] for h in state["hypotheses"]] == ["confirmed", "closed", "closed"]
+    assert "위 요약이 충돌하면 이 상태가 우선" in report_input
+
+
+@pytest.mark.parametrize("corruption", ["missing", "decision"])
+def test_unverifiable_analysis_stops_before_report(monkeypatch, analysis_artifacts, corruption):
+    """A successful CLI message cannot substitute for missing or tampered server state."""
+    artifact = analysis_artifacts / "validation-1.json"
+    if corruption == "missing":
+        artifact.unlink()
+    else:
+        value = json.loads(artifact.read_text())
+        value["server_decision"]["selected_hypothesis_id"] = "third"
+        artifact.write_text(json.dumps(value))
+    calls = _capture_processes(monkeypatch, [{"stdout": "raw RCA trace"}])
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN)
+    assert not result.success
+    assert len(calls) == 1
+    assert "effective state could not be verified" in result.result
+    assert result.raw_output == "raw RCA trace"

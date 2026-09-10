@@ -20,12 +20,25 @@ from rca_agent.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_D
 from rca_agent.ports.interfaces.session_store import SessionOwnershipCheckError
 
 if TYPE_CHECKING:
-    from rca_agent.ports.dto.models import Hypothesis
+    from rca_agent.ports.dto.models import Hypothesis, ValidationJudgment
 
 logger = logging.getLogger(__name__)
 
 _SUMMARY_MAX_LEN = 500
 _BATCH_WRITE_CHUNK = 25
+# A base node and a later judgment update each fit this budget, leaving room
+# for summaries/closure metadata. Oversize model output is rejected, never cut.
+_HYPOTHESIS_WRITE_MAX_BYTES = 128 * 1024
+
+
+def _guard_hypothesis_payload(payload: dict) -> None:
+    """Bound UTF-8 persistence payloads and fail explicitly before losing evidence."""
+    size = len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    if size > _HYPOTHESIS_WRITE_MAX_BYTES:
+        raise ValueError(
+            f"Hypothesis persistence payload is {size} bytes; limit={_HYPOTHESIS_WRITE_MAX_BYTES}. "
+            "Refusing to truncate validation evidence."
+        )
 
 
 def _pk(rca_id: str) -> dict:
@@ -230,6 +243,7 @@ class TraceStore:
     # ── Hypothesis persistence ──────────────────────────────────────
 
     def put_hypotheses(self, hypotheses: list[Hypothesis]) -> None:
+        """Store bounded node metadata before any complete validation is attached."""
         if not self._enabled or not hypotheses:
             return
 
@@ -272,6 +286,7 @@ class TraceStore:
                 item["PutRequest"]["Item"]["parent_id"] = {"NULL": True}
             if h.referenced_playbook_id:
                 item["PutRequest"]["Item"]["referenced_playbook_id"] = {"S": h.referenced_playbook_id}
+            _guard_hypothesis_payload(item["PutRequest"]["Item"])
             items.append(item)
 
         if self._claim_token:
@@ -296,7 +311,10 @@ class TraceStore:
         attr_values: dict,
         attr_names: dict | None = None,
         error_log: str,
+        required: bool = False,
     ) -> None:
+        """Write a bounded update; authoritative judgment write failures propagate."""
+        _guard_hypothesis_payload(attr_values)
         if not self._enabled:
             return
         self.check_cancelled()
@@ -324,6 +342,8 @@ class TraceStore:
             self._dynamodb.update_item(**kwargs)
         except ClientError:
             logger.exception(error_log, hypothesis_id)
+            if required:
+                raise
 
     def update_hypothesis_status(
         self,
@@ -331,17 +351,39 @@ class TraceStore:
         *,
         status: str,
         confidence: float | None = None,
-        judgment_reasoning: str = "",
+        judgment_reasoning: str | None = None,
         validated_fault_type: str | None = None,
         validation_evidence_summary: str | None = None,
+        validation_record: ValidationJudgment | None = None,
+        closure_reason: str | None = None,
+        rejection_inherited_from: str | None = None,
     ) -> None:
+        """Preserve a complete direct judgment separately from UI and closure text."""
         now = datetime.now(UTC).isoformat()
-        set_parts = ["#st = :status", "updated_at = :now", "judgment_reasoning = :jr"]
+        set_parts = ["#st = :status", "updated_at = :now"]
         attr_values: dict = {
             ":status": {"S": status},
             ":now": {"S": now},
-            ":jr": {"S": judgment_reasoning[:_SUMMARY_MAX_LEN]},
         }
+        if validation_record is not None:
+            if validation_record.hypothesis_id != hypothesis_id:
+                raise ValueError("Validation record belongs to a different hypothesis")
+            set_parts.append("validation_record = :vr")
+            attr_values[":vr"] = {"S": validation_record.model_dump_json()}
+            judgment_reasoning = validation_record.reasoning
+            validation_evidence_summary = "\n".join(validation_record.evidence_summary)
+            rejection_inherited_from = ""
+        if judgment_reasoning is not None:
+            set_parts.append("judgment_reasoning = :jr")
+            attr_values[":jr"] = {"S": judgment_reasoning[:_SUMMARY_MAX_LEN]}
+        if closure_reason is not None:
+            if len(closure_reason.encode("utf-8")) > 4096:
+                raise ValueError("Hypothesis closure reason exceeds 4096 UTF-8 bytes")
+            set_parts.append("closure_reason = :cr")
+            attr_values[":cr"] = {"S": closure_reason}
+        if rejection_inherited_from is not None:
+            set_parts.append("rejection_inherited_from = :ri")
+            attr_values[":ri"] = {"S": rejection_inherited_from}
         if confidence is not None:
             set_parts.append("judgment_confidence = :jc")
             set_parts.append("confidence_score = :jc")
@@ -361,6 +403,7 @@ class TraceStore:
             attr_values=attr_values,
             attr_names={"#st": "status"},
             error_log="Failed to update hypothesis status for %s",
+            required=validation_record is not None,
         )
 
     def update_hypothesis_evidence(
@@ -384,15 +427,25 @@ class TraceStore:
 
     @staticmethod
     def get_trace(rca_id: str, *, dynamodb_client=None) -> dict:
+        """Read every page so complete judgment records cannot hide a later selection."""
         if not DYNAMODB_TABLE_NAME or dynamodb_client is None:
             return {"session": None, "spans": [], "hypotheses": []}
 
         try:
-            result = dynamodb_client.query(
-                TableName=DYNAMODB_TABLE_NAME,
-                KeyConditionExpression="PK = :pk",
-                ExpressionAttributeValues={":pk": _pk(rca_id)},
-            )
+            query = {
+                "TableName": DYNAMODB_TABLE_NAME,
+                "KeyConditionExpression": "PK = :pk",
+                "ExpressionAttributeValues": {":pk": _pk(rca_id)},
+                "ConsistentRead": True,
+            }
+            items = []
+            while True:
+                result = dynamodb_client.query(**query)
+                items.extend(result.get("Items", []))
+                last_key = result.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                query["ExclusiveStartKey"] = last_key
         except ClientError:
             logger.exception("Failed to query trace for %s", rca_id)
             return {"session": None, "spans": [], "hypotheses": []}
@@ -401,7 +454,7 @@ class TraceStore:
         spans = []
         hypotheses = []
 
-        for item in result.get("Items", []):
+        for item in items:
             sk = item["SK"]["S"]
             if _is_session_item(item):
                 session = _deserialize_session(item)
@@ -659,6 +712,7 @@ def _deserialize_span(item: dict) -> dict:
 
 
 def _deserialize_hypothesis(item: dict) -> dict:
+    """Expose complete new judgments without inventing records for legacy nodes."""
     required = []
     for e in item.get("required_evidence", {}).get("L", []):
         if "S" in e:
@@ -666,6 +720,7 @@ def _deserialize_hypothesis(item: dict) -> dict:
     sk = item["SK"]["S"]
     hypo_id = sk.split("#HYPO#")[1] if "#HYPO#" in sk else sk.replace("HYPO#", "")
     return {
+        **({"validation_record": json.loads(item["validation_record"]["S"])} if "validation_record" in item else {}),
         "hypothesis_id": hypo_id,
         "tree_id": item.get("tree_id", {}).get("S", ""),
         "parent_id": item.get("parent_id", {}).get("S"),
@@ -682,6 +737,8 @@ def _deserialize_hypothesis(item: dict) -> dict:
         "evidence_summary": item.get("evidence_summary", {}).get("S", ""),
         "validation_evidence_summary": item.get("validation_evidence_summary", {}).get("S", ""),
         "judgment_reasoning": item.get("judgment_reasoning", {}).get("S", ""),
+        "closure_reason": item.get("closure_reason", {}).get("S", ""),
+        "rejection_inherited_from": item.get("rejection_inherited_from", {}).get("S", ""),
         "judgment_confidence": float(item["judgment_confidence"]["N"]) if "judgment_confidence" in item else None,
         "created_at": item.get("created_at", {}).get("S", ""),
         "updated_at": item.get("updated_at", {}).get("S", ""),

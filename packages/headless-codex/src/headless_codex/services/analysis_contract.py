@@ -113,6 +113,33 @@ class AnalysisResult:
     def confirmed(self) -> bool:
         return bool(self.snapshot.latest_decision and self.snapshot.latest_decision.root_cause_confirmed)
 
+    def effective_state_view(self) -> dict:
+        """Project replay-owned judgments without inventing evidence or treating closure as rejection."""
+        snapshot = self.snapshot
+        return {
+            "decision": snapshot.latest_decision.as_dict() if snapshot.latest_decision else None,
+            "root_cause_confirmed": self.confirmed,
+            "selected_hypothesis_id": self.selected_hypothesis.hypothesis_id,
+            "hypotheses": [
+                {
+                    "hypothesis_id": identifier,
+                    "title": context.title,
+                    "description": context.description,
+                    "status": snapshot.statuses[identifier],
+                    "confidence": snapshot.confidences[identifier],
+                    "fault_type": (
+                        snapshot.validated_fault_types[identifier].value
+                        if snapshot.statuses[identifier] == "confirmed"
+                        else None
+                    ),
+                    "reasoning": snapshot.reasoning[identifier],
+                    "evidence_summary": list(snapshot.evidence_summaries[identifier]),
+                    "evidence_collection_failed": snapshot.evidence_failures[identifier],
+                }
+                for identifier, context in snapshot.hypotheses.items()
+            ],
+        }
+
 
 def _load_object(path: Path, label: str) -> dict:
     try:
@@ -581,6 +608,7 @@ def _apply_validation_loop(
     loop_index: int,
     accept_server_metadata: bool = False,
 ) -> dict:
+    """Apply one loop and replay saved closure metadata without changing the decision policy."""
     label = f"validation-{loop_index}.json"
     if artifact.get("stage") != "VALIDATION" or artifact.get("loop_index") != loop_index:
         raise AnalysisContractError(f"{label} has an invalid stage or loop_index")
@@ -660,6 +688,21 @@ def _apply_validation_loop(
         snapshot.evidence_summaries[context.hypothesis_id] = []
         snapshot.evidence_failures[context.hypothesis_id] = False
         snapshot.validated_fault_types[context.hypothesis_id] = FaultType.UNSUPPORTED
+
+    # Saved closures replace the submitted pending/investigation entries. Restore
+    # their real confidence and evidence before replaying the same termination;
+    # otherwise replay silently falls back to generation-time values.
+    for entry in artifact["closed"]:
+        hypothesis_id = _required_string(entry, "hypothesis_id", label)
+        if hypothesis_id in seen_ids or snapshot.statuses.get(hypothesis_id) not in {"PENDING", "needs_investigation"}:
+            raise AnalysisContractError(f"{label} closed entry must reference a distinct open hypothesis")
+        seen_ids.add(hypothesis_id)
+        if not isinstance(entry.get("evidence_collection_failed"), bool):
+            raise AnalysisContractError(f"{label} evidence_collection_failed must be a boolean")
+        snapshot.confidences[hypothesis_id] = _confidence(entry.get("confidence"), label)
+        snapshot.reasoning[hypothesis_id] = _required_string(entry, "reasoning", label)
+        snapshot.evidence_summaries[hypothesis_id] = _entry_evidence(entry, label)
+        snapshot.evidence_failures[hypothesis_id] = entry["evidence_collection_failed"]
 
     _auto_reject_similar(snapshot, normalized)
     decision = _decision_for(

@@ -20,6 +20,11 @@ from rca_agent.ports.dto.models import (
     ValidationPlan,
 )
 from rca_agent.prompts.prioritization import PRIORITIZATION_USER_PROMPT_TEMPLATE
+from rca_agent.services.observation_context import (
+    render_concurrent_alarms,
+    render_incident_context,
+    render_observations,
+)
 from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
@@ -62,8 +67,12 @@ def _build_hypotheses_text(hypotheses: list[Hypothesis]) -> str:
 
 
 def _build_user_prompt(scoping: ScopingResult, hypotheses: list[Hypothesis]) -> str:
+    """Provide observed discriminators without changing the model's ranking authority."""
     return PRIORITIZATION_USER_PROMPT_TEMPLATE.format(
         scoping_summary=scoping.alarm_summary,
+        incident_context=render_incident_context(scoping),
+        metric_observations=render_observations(scoping.metric_observations),
+        concurrent_alarms=render_concurrent_alarms(scoping.concurrent_alarms),
         hypotheses_text=_build_hypotheses_text(hypotheses),
         beam_width=RCA_BEAM_WIDTH,
         max_validation_loops=RCA_MAX_VALIDATION_LOOPS,

@@ -34,8 +34,10 @@ SCENARIO = {
 
 
 def _notification() -> NotificationMessage:
+    """Provide the selected hypothesis identity emitted by the real completion path."""
     return NotificationMessage(
         rca_id="rca-1",
+        selected_hypothesis_id="selected",
         root_cause_summary="커넥션 누수",
         root_cause="세션이 반환되지 않는다",
         severity="high",
@@ -118,6 +120,7 @@ class _Container:
 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the adapter fixture with a persisted, explicitly selected cause."""
     _RecordingOrchestrator.calls = []
     _RecordingOrchestrator.precollected_evidence_values = []
     _RecordingOrchestrator.result = True
@@ -127,6 +130,7 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
         "_validation_hypotheses",
         lambda _container, _notification: [
             {
+                "hypothesis_id": "selected",
                 "status": "CONFIRMED",
                 "validated_fault_type": "DB_CONNECTION_LEAK",
                 "judgment_reasoning": "[connection-growth] confirms the connection leak.",

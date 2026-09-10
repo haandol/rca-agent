@@ -73,6 +73,40 @@ test('the RCA entry alarm watches a domain symptom metric', () => {
   });
 });
 
+test('symptom descriptions expose only neutral coordinates without changing metric dimensions', () => {
+  const alarms = Object.values(
+    synthesize().findResources('AWS::CloudWatch::Alarm'),
+  ) as CfnResource[];
+  const symptoms = alarms.filter((alarm) =>
+    ['VitalIngestFailures', 'PatientVitalsQueryDuration'].includes(
+      alarm.Properties?.MetricName as string,
+    ),
+  );
+  expect(symptoms).toHaveLength(2);
+  for (const alarm of symptoms) {
+    expect(alarm.Properties?.Dimensions).toEqual([
+      { Name: 'ServiceName', Value: 'healthcare-sensor-app' },
+    ]);
+    expect(alarm.Properties?.AlarmDescription).toContain(
+      'Resources: LogGroup=/ecs/RcaAgentDev/healthcare; ' +
+        'ECSCluster=RcaAgentDevHealthcare; ECSService=RcaAgentDevHealthcare; ' +
+        'RDSInstance=rcaagentdev-postgres.',
+    );
+    expect(alarm.Properties?.AlarmDescription).not.toMatch(
+      /maintenance|demo|blocker|lock|run.?id|stop.?task|root.?cause/i,
+    );
+  }
+  synthesize().hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'VitalIngestFailures',
+    Statistic: 'Sum',
+    Period: 60,
+    EvaluationPeriods: 2,
+    Threshold: 1,
+    ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+    TreatMissingData: 'notBreaching',
+  });
+});
+
 test('healthy workload controls are explicit and cannot select a fault', () => {
   synthesize(500, {
     TRAFFIC_ENABLED: 'true',

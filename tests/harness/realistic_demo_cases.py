@@ -8,6 +8,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -57,6 +59,7 @@ class Cloud:
     def __init__(self):
         """Create a healthy private service and three correctly bound alarms."""
         self.calls = []
+        self.maintenance_task_arn = "arn:task/owned"
         self.target = {
             "account": "123456789012",
             "region": "us-east-1",
@@ -332,7 +335,7 @@ class Cloud:
             result = {"service": self.service}
         elif operation == "run-task":
             task = {
-                "taskArn": "arn:task/owned",
+                "taskArn": self.maintenance_task_arn,
                 "taskDefinitionArn": payload["taskDefinition"],
                 "startedBy": payload["startedBy"],
                 "lastStatus": "RUNNING",
@@ -346,6 +349,8 @@ class Cloud:
             if self.fail_stop:
                 raise RuntimeError("stop failed")
             self.jobs[payload["task"]]["lastStatus"] = "STOPPED"
+            self.jobs[payload["task"]]["tags"] = []
+            self.jobs[payload["task"]]["stopCode"] = "UserInitiated"
             result = {"task": self.jobs[payload["task"]]}
         else:
             raise AssertionError(f"Unexpected API: {service} {operation}")
@@ -535,7 +540,12 @@ class DemoTests(unittest.TestCase):
                         self.cloud, demo.Journal(self.journal.path), self.cloud.target
                     )
                     if scenario == "maintenance-lock":
+                        # Recreate a still-live owned launch for the new controller.
                         self.cloud.jobs["arn:task/owned"]["lastStatus"] = "RUNNING"
+                        self.cloud.jobs["arn:task/owned"]["tags"] = [
+                            {"key": k, "value": v}
+                            for k, v in resumed.owner_tags().items()
+                        ]
                     result = resumed.restore()
                 self.assertEqual(
                     self.cloud.service["taskDefinition"], self.cloud.original
@@ -773,7 +783,10 @@ class DemoTests(unittest.TestCase):
         journal = demo.Journal(Path(self.temp.name) / "legacy-mutable")
         journal.append("snapshot", snapshot)
         for event in self.journal.events[1:]:
-            journal.append(event["kind"], event["data"])
+            # Legacy journals predate ownership receipts; do not transplant proof
+            # bound to the modern snapshot into this different legacy snapshot.
+            if event["kind"] != "task_ownership_verified":
+                journal.append(event["kind"], event["data"])
         runner = demo.Demo(self.cloud, journal, self.cloud.target)
         tags = [{"key": k, "value": v} for k, v in runner.owner_tags().items()]
         self.cloud.service["tags"] = tags
@@ -1116,6 +1129,13 @@ class DemoTests(unittest.TestCase):
             self.runner.apply()
         self.assertEqual(self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED")
         self.assertEqual(sum(op == "run-task" for _, op, _ in self.cloud.calls), 1)
+        self.assertEqual(self.cloud.jobs["arn:task/owned"]["tags"], [])
+        self.assertTrue(self.journal.find("task_ownership_verified"))
+        self.advance()
+        resumed = demo.Demo(
+            self.cloud, demo.Journal(self.journal.path), self.cloud.target
+        )
+        self.assertTrue(resumed.restore()["recoveryVerified"])
 
     def test_foreign_deployment_refused_but_owned_maintenance_still_cleaned(self):
         """One failed cleanup path must not skip an independent owned task."""
@@ -1153,6 +1173,334 @@ class DemoTests(unittest.TestCase):
         self.assertTrue(self.journal.find("stop_intent"))
         self.assertFalse(self.journal.find("released"))
 
+    def apply_full_arn_maintenance(self):
+        """Use a complete task ARN to exercise exact receipt identity comparisons."""
+        self.cloud.maintenance_task_arn = (
+            "arn:aws:ecs:us-east-1:123456789012:task/demo-cluster/"
+            "1234567890abcdef1234567890abcdef"
+        )
+        self.plan("maintenance-lock")
+        self.runner.apply()
+        return self.cloud.jobs[self.cloud.maintenance_task_arn]
+
+    def replay_journal(self, transform):
+        """Rebuild valid hash links while deliberately changing selected proof events."""
+        journal = demo.Journal(Path(self.temp.name) / "replayed")
+        for event in self.journal.events:
+            event = transform(copy.deepcopy(event))
+            if event is not None:
+                journal.append(event["kind"], event["data"])
+        self.assertEqual(journal.events[0]["hash"], self.journal.events[0]["hash"])
+        return demo.Demo(self.cloud, journal, self.cloud.target)
+
+    def test_stopped_tag_loss_uses_durable_receipt_saved_before_control(self):
+        """AWS tag deletion does not invalidate a previously verified owned task."""
+        task = self.apply_full_arn_maintenance()
+        expected = {
+            "snapshotHash": self.journal.events[0]["hash"],
+            "runId": "run-1",
+            "taskArn": task["taskArn"],
+            "taskDefinitionArn": task["taskDefinitionArn"],
+            "startedBy": task["startedBy"],
+        }
+
+        def checked_aws(service, operation, **payload):
+            if operation == "stop-task":
+                receipts = demo.Journal(self.journal.path).find(
+                    "task_ownership_verified"
+                )
+                self.assertEqual([e["data"] for e in receipts], [expected])
+                self.assertEqual(
+                    {t["key"]: t["value"] for t in task["tags"]},
+                    self.runner.owner_tags(),
+                )
+            return self.cloud(service, operation, **payload)
+
+        self.runner.aws = checked_aws
+        self.runner.restore()
+        self.assertEqual(task["tags"], [])
+        self.advance()
+        result = self.runner.restore()
+        self.assertTrue(result["recoveryVerified"])
+        self.assertTrue(result["checks"]["ownedMaintenanceStopped"])
+        evidence = result["maintenanceRestoration"]
+        self.assertEqual(evidence["stoppedBeforeRestore"], [])
+        self.assertEqual(evidence["stopRequestedTasks"], [task["taskArn"]])
+        self.assertEqual(evidence["exitEvidence"][0]["stopCode"], "UserInitiated")
+        self.assertFalse(evidence["approvedRestorationCausedRecovery"])
+        self.assertEqual(sum(op == "stop-task" for _, op, _ in self.cloud.calls), 1)
+
+    def test_cli_new_process_restores_stopped_task_from_durable_journal(self):
+        """An actual new Python process loads proof; no controller cache survives."""
+        common = self.connect_cli()
+        task = self.apply_full_arn_maintenance()
+        self.runner.restore()
+        self.assertEqual(task["tags"], [])
+        cloud_file = Path(self.temp.name) / "cloud.json"
+        cloud_file.write_text(json.dumps(self.cloud.__dict__))
+        child = """
+import json, runpy, sys
+from datetime import timedelta
+fixture = runpy.run_path(sys.argv[1])
+demo = fixture["demo"]
+cloud = fixture["Cloud"]()
+cloud.__dict__.update(json.loads(open(sys.argv[2]).read()))
+demo.Aws = lambda *args: cloud
+demo.datetime = fixture["Clock"]
+demo.datetime.current += timedelta(minutes=4)
+code = demo.main(["restore", *sys.argv[3:]])
+open(sys.argv[2], "w").write(json.dumps(cloud.__dict__))
+sys.exit(code)
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", child, __file__, str(cloud_file), *common],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = json.loads(result.stdout)
+        self.assertTrue(output["recoveryVerified"])
+        self.assertEqual(output["maintenanceTasks"][0]["taskArn"], task["taskArn"])
+        self.assertEqual(output["maintenanceTasks"][0]["tags"], [])
+        self.assertTrue(demo.Journal(self.journal.path).find("released"))
+        calls = json.loads(cloud_file.read_text())["calls"]
+        self.assertEqual(sum(op == "stop-task" for _, op, _ in calls), 1)
+
+    def test_receipt_alone_rediscovers_expired_task_with_omitted_tags(self):
+        """The receipt retains a full ARN even without launch/observation responses."""
+        task = self.apply_full_arn_maintenance()
+        task["lastStatus"] = "STOPPED"
+        del task["tags"]
+        runner = self.replay_journal(
+            lambda event: (
+                None
+                if event["kind"] in ("maintenance_tasks", "owned_tasks", "status")
+                else event
+            )
+        )
+        self.assertEqual(runner.discovered_task_arns, set())
+        runner.restore()
+        self.advance()
+        result = runner.restore()
+        self.assertTrue(result["recoveryVerified"])
+        self.assertEqual(
+            result["maintenanceRestoration"]["stoppedBeforeRestore"],
+            [task["taskArn"]],
+        )
+        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
+
+    def test_stopped_without_receipt_fails_closed_despite_historical_tags(self):
+        """A launch response, old observation or stop intent is not a verified receipt."""
+        task = self.apply_full_arn_maintenance()
+        self.journal.append("stop_intent", {"taskArn": task["taskArn"]})
+        task.update(lastStatus="STOPPED", tags=[])
+        runner = self.replay_journal(
+            lambda event: None if event["kind"] == "task_ownership_verified" else event
+        )
+        result = runner.restore()
+        self.assertFalse(result["recoveryVerified"])
+        self.assertTrue(result["errors"])
+        self.assertFalse(runner.journal.find("task_ownership_verified"))
+        self.assertFalse(runner.journal.find("released"))
+        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
+
+    def test_stopped_receipt_requires_every_binding_to_match(self):
+        """Proof from another snapshot/run/task/definition/start marker never transfers."""
+        for field in (
+            "snapshotHash",
+            "runId",
+            "taskArn",
+            "taskDefinitionArn",
+            "startedBy",
+        ):
+            with self.subTest(field=field):
+                self.setUp()
+                task = self.apply_full_arn_maintenance()
+                task.update(lastStatus="STOPPED", tags=[])
+
+                def change_receipt(event, field=field, task=task):
+                    if event["kind"] == "task_ownership_verified":
+                        event["data"][field] += "-foreign"
+                        if field == "taskArn":
+                            # Same task ID suffix, different AWS account.
+                            event["data"][field] = task["taskArn"].replace(
+                                ":123456789012:", ":999999999999:"
+                            )
+                            self.cloud.jobs[event["data"][field]] = dict(
+                                task, taskArn=event["data"][field]
+                            )
+                    return event
+
+                runner = self.replay_journal(change_receipt)
+                result = runner.restore()
+                self.assertFalse(result["recoveryVerified"])
+                self.assertTrue(result["errors"])
+                self.assertFalse(runner.journal.find("released"))
+                self.assertFalse(
+                    any(op == "stop-task" for _, op, _ in self.cloud.calls)
+                )
+
+    def test_receipt_never_authorizes_missing_live_tags(self):
+        """Only the terminal STOPPED state admits tag loss, including during shutdown."""
+        for state in ("RUNNING", "PENDING", "STOPPING", "DEACTIVATING", "UNKNOWN"):
+            with self.subTest(state=state):
+                self.setUp()
+                task = self.apply_full_arn_maintenance()
+                task.update(lastStatus=state, tags=[])
+                result = self.runner.restore()
+                self.assertFalse(result["recoveryVerified"])
+                self.assertTrue(result["errors"])
+                self.assertFalse(
+                    any(op == "stop-task" for _, op, _ in self.cloud.calls)
+                )
+
+    def test_receipt_rejects_changed_task_identity_and_conflicting_tags(self):
+        """Even a known ARN cannot mask changed identity or partial/conflicting tags."""
+        for state in ("RUNNING", "STOPPED"):
+            for change in (
+                "startedBy",
+                "definition",
+                "owner",
+                "proof",
+                "partial",
+                "duplicate",
+            ):
+                with self.subTest(state=state, change=change):
+                    self.setUp()
+                    task = self.apply_full_arn_maintenance()
+                    task["lastStatus"] = state
+                    if change == "startedBy":
+                        task["startedBy"] = "foreign"
+                    elif change == "definition":
+                        task["taskDefinitionArn"] += "-other-owned-revision"
+                        self.journal.append(
+                            "maintenance_revision", {"arn": task["taskDefinitionArn"]}
+                        )
+                    elif change == "partial":
+                        task["tags"] = task["tags"][:1]
+                    elif change == "duplicate":
+                        task["tags"].insert(0, {"key": demo.OWNER, "value": "foreign"})
+                    else:
+                        key = demo.OWNER if change == "owner" else demo.PROOF
+                        next(t for t in task["tags"] if t["key"] == key)["value"] = (
+                            "foreign"
+                        )
+                    result = self.runner.restore()
+                    self.assertFalse(result["recoveryVerified"])
+                    self.assertTrue(result["errors"])
+                    self.assertFalse(
+                        any(op == "stop-task" for _, op, _ in self.cloud.calls)
+                    )
+
+    def test_tags_are_rechecked_immediately_before_stop(self):
+        """A tag removed after discovery still prevents StopTask."""
+        task = self.apply_full_arn_maintenance()
+        append = self.journal.append
+
+        def change_after_discovery(kind, data):
+            event = append(kind, data)
+            if kind == "maintenance_before_restore":
+                task["tags"] = []
+            return event
+
+        with patch.object(self.journal, "append", change_after_discovery):
+            result = self.runner.restore()
+        self.assertFalse(result["recoveryVerified"])
+        self.assertEqual(task["lastStatus"], "RUNNING")
+        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
+
+    def test_expiry_between_discovery_and_stop_never_records_a_stop_request(self):
+        """A naturally ended task at the final check needs no control operation."""
+        task = self.apply_full_arn_maintenance()
+        append = self.journal.append
+
+        def expire_after_discovery(kind, data):
+            event = append(kind, data)
+            if kind == "maintenance_before_restore":
+                task.update(
+                    lastStatus="STOPPED",
+                    tags=[],
+                    stopCode="EssentialContainerExited",
+                )
+            return event
+
+        with patch.object(self.journal, "append", expire_after_discovery):
+            self.runner.restore()
+        self.advance()
+        result = self.runner.restore()
+        self.assertTrue(result["recoveryVerified"])
+        evidence = result["maintenanceRestoration"]
+        self.assertEqual(evidence["stopRequestedTasks"], [])
+        self.assertEqual(
+            evidence["exitEvidence"][0]["stopCode"], "EssentialContainerExited"
+        )
+        self.assertFalse(evidence["approvedRestorationCausedRecovery"])
+        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
+
+    def test_retained_task_description_cannot_disappear_or_substitute_an_arn(self):
+        """Missing descriptions and same-ID ARNs from another cluster fail closed."""
+        for replacement in (None, "other-cluster"):
+            with self.subTest(replacement=replacement):
+                self.setUp()
+                task = self.apply_full_arn_maintenance()
+                task.update(lastStatus="STOPPED", tags=[])
+
+                def changed_description(
+                    service, operation, task=task, replacement=replacement, **payload
+                ):
+                    if operation == "describe-tasks" and payload["tasks"] == [
+                        task["taskArn"]
+                    ]:
+                        tasks = (
+                            []
+                            if replacement is None
+                            else [
+                                dict(
+                                    task,
+                                    taskArn=task["taskArn"].replace(
+                                        "demo-cluster/", "other-cluster/"
+                                    ),
+                                )
+                            ]
+                        )
+                        return {"tasks": tasks}
+                    return self.cloud(service, operation, **payload)
+
+                self.runner.aws = changed_description
+                result = self.runner.restore()
+                self.assertFalse(result["recoveryVerified"])
+                self.assertTrue(result["errors"])
+                self.assertFalse(self.journal.find("released"))
+                self.assertFalse(
+                    any(op == "stop-task" for _, op, _ in self.cloud.calls)
+                )
+
+    def test_receipt_write_loss_cleans_live_task_but_cannot_verify_tagless_exit(self):
+        """Best-effort cleanup survives disk/stderr failure without inventing proof."""
+        self.plan("maintenance-lock")
+        with (
+            self.failing_journal("task_ownership_verified", persistent=True),
+            patch.object(
+                demo, "print", create=True, side_effect=OSError("stderr full")
+            ),
+            self.assertRaisesRegex(OSError, "storage failure"),
+        ):
+            self.runner.apply()
+        task = self.cloud.jobs["arn:task/owned"]
+        self.assertEqual(task["lastStatus"], "STOPPED")
+        self.assertEqual(task["tags"], [])
+        self.assertFalse(self.runner.cleanup_result["recoveryVerified"])
+        journal = demo.Journal(self.journal.path)
+        self.assertFalse(journal.find("task_ownership_verified"))
+        resumed = demo.Demo(self.cloud, journal, self.cloud.target)
+        self.advance()
+        result = resumed.restore()
+        self.assertFalse(result["recoveryVerified"])
+        self.assertTrue(result["errors"])
+        self.assertFalse(journal.find("released"))
+
     def test_expired_hold_is_recovery_state_not_approved_restore_causality(self):
         """Keep natural exit evidence and never attribute it to an approved stop."""
         self.plan("maintenance-lock")
@@ -1160,6 +1508,7 @@ class DemoTests(unittest.TestCase):
         task = self.cloud.jobs["arn:task/owned"]
         task.update(
             lastStatus="STOPPED",
+            tags=[],
             stopCode="EssentialContainerExited",
             stoppedReason="Essential container in task exited",
             stoppedAt=Clock.current.isoformat(),

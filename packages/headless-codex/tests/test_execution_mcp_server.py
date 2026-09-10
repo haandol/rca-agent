@@ -1,12 +1,14 @@
 import json
 import subprocess
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
 
 from headless_codex import execution_mcp_server, retrospective_mcp_server
 from headless_codex.services import execution_workspace
+from headless_codex.services.execution_outcome import assemble_evidence
 from headless_codex.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
     APPROVED_SUCCESS_CRITERIA_ENV,
@@ -100,6 +102,35 @@ def test_an_allowed_command_runs_as_argv_not_as_a_shell_string(workspace, spawne
         "api",
         "--force-new-deployment",
     ]
+
+
+def test_waiter_uses_existing_command_timeout_and_cannot_alone_resolve(workspace, spawned, monkeypatch):
+    """A successful waiter remains one attempt and cannot replace fresh outcome observations."""
+    monkeypatch.setattr(execution_mcp_server, "_COMMAND_TIMEOUT_SECONDS", 17)
+    command = "aws cloudwatch wait alarm-exists --alarm-names observed --state-value OK --region us-east-1"
+    result = json.loads(execution_mcp_server.run_playbook_command("step-1", command))
+    assert result["ok"]
+    assert spawned.call_count == 1
+    assert spawned.call_args.args[0] == command.split()
+    assert spawned.call_args.kwargs["timeout"] == 17
+    resolution = json.loads(execution_mcp_server.record_resolution("waiter returned OK", resolved=True))
+    assert not resolution["ok"]
+    assert [record["type"] for record in workspace.read_records()] == ["attempt"]
+
+
+def test_waiter_timeout_keeps_existing_timeout_evidence(workspace, spawned, monkeypatch):
+    """A read-only wait does not extend the command budget or turn timeout into recovery."""
+    monkeypatch.setattr(execution_mcp_server, "_COMMAND_TIMEOUT_SECONDS", 17)
+    spawned.side_effect = subprocess.TimeoutExpired(cmd="aws cloudwatch wait", timeout=17)
+    result = json.loads(
+        execution_mcp_server.run_playbook_command(
+            "step-1", "aws cloudwatch wait alarm-exists --alarm-names observed --state-value OK"
+        )
+    )
+    assert not result["ok"]
+    assert spawned.call_count == 1
+    assert workspace.read_records()[0]["failure_class"] == "TIMEOUT"
+    assert workspace.read_records()[0]["succeeded"] is False
 
 
 def test_a_command_without_a_step_id_is_rejected(workspace, spawned):
@@ -356,3 +387,134 @@ def test_the_retrospective_tool_cannot_execute_anything(workspace):
     tool_names = {name for name in dir(retrospective_mcp_server) if not name.startswith("_")}
 
     assert "run_playbook_command" not in tool_names
+
+
+def test_command_output_tail_and_actual_server_boundaries_survive_assembly(workspace, spawned):
+    """A large task JSON keeps tail identity and server times rather than assembly-time substitutes."""
+    stdout = json.dumps(
+        {"padding": "x" * 9000, "tasks": [{"taskArn": "task/customer-approved-stop", "lastStatus": "STOPPED"}]}
+    )
+    inside_run = []
+
+    def complete(*args, **kwargs):
+        """Observe actual runner boundaries without AWS, sleep, or model execution."""
+        inside_run.append(datetime.now(UTC))
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="nonfatal warning")
+
+    spawned.side_effect = complete
+    before = datetime.now(UTC)
+    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-tasks --tasks target"))
+    after = datetime.now(UTC)
+    record = workspace.read_records()[0]
+    assert before <= datetime.fromisoformat(record["started_at"]) <= inside_run[0]
+    assert inside_run[0] <= datetime.fromisoformat(record["ended_at"])
+    assert datetime.fromisoformat(record["ended_at"]) <= datetime.fromisoformat(record["recorded_at"]) <= after
+    assert result["stdout"] == record["stdout"] == stdout
+    assert record["stdout_truncated"] is False
+    assert record["stdout_chars"] == record["stdout_retained_chars"] == len(stdout)
+    assert record["stdout_omitted_chars"] == 0
+    assert record["observation_truncated"] is True
+    assert len(record["observation"]) == 2000
+
+    evidence = assemble_evidence(
+        workspace.read_records(),
+        execution_id="exec-1",
+        rca_id="rca-1",
+        engine="headless-codex",
+        playbook={"execution_steps": [{"step_id": "step-1"}]},
+    )
+    attempt = evidence.to_dict()["steps"][0]["attempts"][0]
+    assert json.loads(attempt["stdout"])["tasks"][0]["taskArn"] == "task/customer-approved-stop"
+    assert attempt["stderr"] == "nonfatal warning"
+    for name in ("started_at", "ended_at", "recorded_at"):
+        assert attempt[name] == record[name]
+
+
+def test_output_cap_and_omission_counts_survive_assembly(workspace, spawned):
+    """Streams over 20k explicitly report discarded redacted characters to both consumers."""
+    spawned.return_value = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="x" * 21_000,
+        stderr="y" * 22_000,
+    )
+    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-tasks"))
+    evidence = assemble_evidence(
+        workspace.read_records(),
+        execution_id="exec-1",
+        rca_id="rca-1",
+        engine="headless-codex",
+        playbook={"execution_steps": [{"step_id": "step-1"}]},
+    )
+    attempt = evidence.to_dict()["steps"][0]["attempts"][0]
+    for name, count in (("stdout", 21_000), ("stderr", 22_000)):
+        assert result[name] == attempt[name]
+        assert len(attempt[name]) == 20_000
+        assert attempt[f"{name}_chars"] == count
+        assert attempt[f"{name}_retained_chars"] == 20_000
+        assert attempt[f"{name}_omitted_chars"] == count - 20_000
+        assert attempt[f"{name}_truncated"] is True
+    assert attempt["observation_truncated"] is True
+    assert attempt["observation_omitted_chars"] == 19_000
+    assert attempt["error_output_truncated"] is True
+
+
+def test_server_retention_redacts_large_structured_output_and_intent(workspace, spawned):
+    """Additional persisted stdout cannot expose synthetic credentials past the old 2k preview."""
+    stdout = json.dumps(
+        {
+            "padding": "x" * 5000,
+            "environment": [{"name": "PASSWORD", "value": "CANARY-secret-env"}],
+            "authorization": "Bearer CANARY-auth",
+            "url": "https://CANARY-user:CANARY-password@example.test/path",
+            "nextToken": "safe-page",
+            "taskArn": "task/customer-approved-stop",
+        }
+    )
+    spawned.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=stdout, stderr="Authorization: Bearer CANARY-stderr"
+    )
+    result = execution_mcp_server.run_playbook_command(
+        "step-1", "aws ecs describe-tasks", intent="inspect password=CANARY-intent"
+    )
+    assert "CANARY" not in result
+    assert "CANARY" not in json.dumps(workspace.read_records())
+    captured = json.loads(workspace.read_records()[0]["stdout"])
+    assert captured["nextToken"] == "safe-page"
+    assert captured["taskArn"] == "task/customer-approved-stop"
+
+
+@pytest.mark.parametrize("failure", ["timeout", "spawn_failed"])
+def test_failed_command_attempts_have_server_times_and_redacted_partial_output(workspace, spawned, failure):
+    """Failed subprocess attempts retain their real boundaries; timeout output is explicitly incomplete."""
+    if failure == "timeout":
+        spawned.side_effect = subprocess.TimeoutExpired(
+            cmd="aws ecs describe-tasks",
+            timeout=17,
+            output=b'{"password": "CANARY-timeout"}',
+            stderr=b"Bearer CANARY-stderr",
+        )
+    else:
+        spawned.side_effect = OSError("failed with password=CANARY-spawn")
+    before = datetime.now(UTC)
+    result = execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-tasks")
+    after = datetime.now(UTC)
+    record = workspace.read_records()[0]
+    assert record["exit_status"] == failure
+    assert before <= datetime.fromisoformat(record["started_at"])
+    assert record["started_at"] <= record["ended_at"] <= record["recorded_at"]
+    assert datetime.fromisoformat(record["recorded_at"]) <= after
+    assert "CANARY" not in result + json.dumps(record)
+    if failure == "timeout":
+        assert record["output_incomplete"] is True
+        assert record["output_incomplete_reason"] == "timeout"
+
+
+def test_blocked_commands_have_record_time_but_no_fabricated_subprocess_times(workspace, spawned):
+    """A gate refusal is recorded without pretending that a subprocess ran."""
+    execution_mcp_server.run_playbook_command("step-1", "aws ecs delete-service --service api")
+    record = workspace.read_records()[0]
+    assert datetime.fromisoformat(record["recorded_at"]).tzinfo is not None
+    assert "started_at" not in record
+    assert "ended_at" not in record
+    spawned.assert_not_called()

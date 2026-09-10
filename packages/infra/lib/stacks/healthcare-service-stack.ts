@@ -278,6 +278,10 @@ export class HealthcareServiceStack extends cdk.Stack {
     service: ecs.FargateService,
   ): void {
     const alarmAction = new cw_actions.SnsAction(props.alarmTopic);
+    const resourceCoordinates =
+      `Resources: LogGroup=/ecs/${ns}/healthcare; ` +
+      `ECSCluster=${this.clusterName}; ECSService=${this.serviceName}; ` +
+      `RDSInstance=${ns.toLowerCase()}-postgres.`;
 
     // RCA entry point. The app emits this via EMF, so the alarm reports a
     // domain symptom without naming which subsystem caused it. The cause-level
@@ -288,7 +292,8 @@ export class HealthcareServiceStack extends cdk.Stack {
       {
         alarmName: `${ns}-Healthcare-VitalIngestFailures`,
         alarmDescription:
-          'Patient vital readings are failing to be recorded. Impact: vitals are missing from the record and abnormal-value alerts are not raised.',
+          'Patient vital readings are failing to be recorded. Impact: vitals are missing from the record and abnormal-value alerts are not raised. ' +
+          resourceCoordinates,
         metric: new cloudwatch.Metric({
           namespace: 'Healthcare/Sensor',
           metricName: 'VitalIngestFailures',
@@ -312,7 +317,8 @@ export class HealthcareServiceStack extends cdk.Stack {
       {
         alarmName: `${ns}-Healthcare-PatientVitalsQueryLatency`,
         alarmDescription:
-          'Patient vital record queries are slow. Initial threshold requires calibration against healthy and restored traffic.',
+          'Patient vital record queries are slow. Initial threshold requires calibration against healthy and restored traffic. ' +
+          resourceCoordinates,
         metric: new cloudwatch.Metric({
           namespace: 'Healthcare/Sensor',
           metricName: 'PatientVitalsQueryDuration',

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastmcp import FastMCP
@@ -19,6 +20,7 @@ from fastmcp import FastMCP
 from headless_codex.services.command_gate import evaluate_command
 from headless_codex.services.execution_evidence import (
     FailureClass,
+    capture_command_output,
     parse_failure_class,
     redact,
     redact_arguments,
@@ -33,7 +35,11 @@ from headless_codex.services.execution_workspace import (
 mcp = FastMCP("playbook-execution")
 
 _COMMAND_TIMEOUT_SECONDS = int(os.environ.get("EXECUTION_COMMAND_TIMEOUT_SECONDS", "300"))
-_MAX_OUTPUT_CHARS = 20_000
+
+
+def _now_iso() -> str:
+    """Read the server UTC clock at an execution or persistence boundary."""
+    return datetime.now(UTC).isoformat()
 
 
 def _evidence_file() -> Path | None:
@@ -46,10 +52,11 @@ def _evidence_file() -> Path | None:
 
 
 def _append_record(record: dict) -> bool:
-    """증거를 append 한다. 서버가 기록의 권위를 가진다."""
+    """Append server evidence with its actual recording time, never a later assembly time."""
     path = _evidence_file()
     if path is None:
         return False
+    record = {**record, "recorded_at": _now_iso()}
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         handle.flush()
@@ -157,17 +164,21 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
 
     verdict = evaluate_command(command)
     safe_command = redact(command)
+    attempt_metadata = {
+        "type": "attempt",
+        "step_id": step_id.strip(),
+        "intent": redact(intent),
+        "command": safe_command,
+        "arguments": redact_arguments({"service": verdict.service, "operation": verdict.operation}),
+    }
 
     if not verdict.allowed:
         failure_class = FailureClass.BLOCKED_UNDECIDABLE if verdict.undecidable else FailureClass.BLOCKED_DESTRUCTIVE
         _append_record(
             {
-                "type": "attempt",
-                "step_id": step_id.strip(),
-                "intent": intent,
-                "command": safe_command,
+                **attempt_metadata,
                 "blocked": True,
-                "block_reason": verdict.reason,
+                "block_reason": redact(verdict.reason),
                 "failure_class": str(failure_class),
                 "succeeded": False,
                 "exit_status": "blocked",
@@ -178,7 +189,7 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
             {
                 "ok": False,
                 "blocked": True,
-                "reason": verdict.reason,
+                "reason": redact(verdict.reason),
                 "guidance": (
                     "This step stays a manual action. Do not retry it or work around the refusal. "
                     "Continue with the remaining steps."
@@ -187,6 +198,7 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
             ensure_ascii=False,
         )
 
+    started_at = _now_iso()
     try:
         completed = subprocess.run(  # noqa: S603 - argv comes from the gate, never a shell string
             list(verdict.argv),
@@ -195,13 +207,17 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
             timeout=_COMMAND_TIMEOUT_SECONDS,
             check=False,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        ended_at = _now_iso()
+        captured = capture_command_output(exc.stdout, exc.stderr)
         _append_record(
             {
-                "type": "attempt",
-                "step_id": step_id.strip(),
-                "intent": intent,
-                "command": safe_command,
+                **attempt_metadata,
+                **captured,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "output_incomplete": True,
+                "output_incomplete_reason": "timeout",
                 "succeeded": False,
                 "exit_status": "timeout",
                 "failure_class": str(FailureClass.TIMEOUT),
@@ -213,37 +229,42 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
             ensure_ascii=False,
         )
     except OSError as exc:
+        ended_at = _now_iso()
         _append_record(
             {
-                "type": "attempt",
-                "step_id": step_id.strip(),
-                "intent": intent,
-                "command": safe_command,
+                **attempt_metadata,
+                "started_at": started_at,
+                "ended_at": ended_at,
                 "succeeded": False,
                 "exit_status": "spawn_failed",
                 "failure_class": str(FailureClass.UNKNOWN),
                 "error_output": redact(str(exc)),
             }
         )
-        return json.dumps({"ok": False, "error": f"command could not start: {exc}"}, ensure_ascii=False)
+        return json.dumps({"ok": False, "error": f"command could not start: {redact(exc)}"}, ensure_ascii=False)
 
-    stdout = redact(completed.stdout or "")[:_MAX_OUTPUT_CHARS]
-    stderr = redact(completed.stderr or "")[:_MAX_OUTPUT_CHARS]
+    ended_at = _now_iso()
+    captured = capture_command_output(completed.stdout, completed.stderr)
+    stdout = captured["stdout"]
+    stderr = captured["stderr"]
     succeeded = completed.returncode == 0
     failure_class = _classify_exit(stderr, completed.returncode)
 
     _append_record(
         {
-            "type": "attempt",
-            "step_id": step_id.strip(),
-            "intent": intent,
-            "command": safe_command,
-            "arguments": redact_arguments({"service": verdict.service, "operation": verdict.operation}),
+            **attempt_metadata,
+            **captured,
+            "started_at": started_at,
+            "ended_at": ended_at,
             "succeeded": succeeded,
             "exit_status": str(completed.returncode),
             "failure_class": str(failure_class) if not succeeded else None,
             "error_output": stderr if not succeeded else "",
             "observation": stdout[:2000],
+            "observation_truncated": len(stdout) > 2000 or captured["stdout_truncated"],
+            "observation_chars": captured["stdout_chars"],
+            "observation_retained_chars": len(stdout[:2000]),
+            "observation_omitted_chars": captured["stdout_chars"] - len(stdout[:2000]),
         }
     )
 
@@ -251,8 +272,7 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
         {
             "ok": succeeded,
             "exit_status": completed.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
+            **captured,
             "failure_class": str(failure_class) if not succeeded else None,
         },
         ensure_ascii=False,

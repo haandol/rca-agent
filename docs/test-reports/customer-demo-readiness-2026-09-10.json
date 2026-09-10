@@ -1,0 +1,45 @@
+{
+  "createdAt": "2026-09-10T04:03:06.515009+00:00",
+  "scope": "read-only recommendation; no scenario removals, policy changes or AWS deployment",
+  "timeBudgetAssumptionMinutes": 15,
+  "modelRun": "tests/results/model/realistic-final-20260910T025818Z-a57123",
+  "observedModelEvaluationSeconds": {
+    "headless-codex/maintenance-transaction-lock": 162,
+    "strands/maintenance-transaction-lock": 391,
+    "headless-codex/pool-config-regression": 194,
+    "strands/pool-config-regression": 435,
+    "headless-codex/query-amplification": 190,
+    "strands/query-amplification": 399,
+    "headless-codex/exception-session-cleanup": 210,
+    "strands/exception-session-cleanup": 455
+  },
+  "tagDeletionProbe": {
+    "scope": "offline provider-contract simulation; no AWS calls",
+    "taskState": "STOPPED",
+    "taskTags": [],
+    "recoveryVerified": false,
+    "errors": [
+      {
+        "step": "verification",
+        "error": "maintenance task ownership mismatch; refusing stop"
+      }
+    ],
+    "ownershipError": null
+  },
+  "pushGate": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": "`pnpm run verify` failed, so this push was blocked. Fix the failures below, then push again.\n\n--- last lines of output ---\n✔ illustrative drafts remain labeled and the unsuccessful first DB run is preserved (3.8125ms)\n✔ every realistic case rejects wrong type, missing confirmation and root evidence (4.741834ms)\n✔ realistic alternatives cannot borrow another rejection or global citations (4.164ms)\n✔ realistic catalog still requires all artifacts and safe executable draft remediation (2.287042ms)\n✔ historical results cannot earn credit for any replacement scenario (5.520083ms)\n✔ archived inputs and normalized snapshots match their recorded original bytes (11.27975ms)\n(node:1937) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ headless deployment refuses to delete a non-empty legacy alarm queue (3.13825ms)\nℹ tests 137\nℹ suites 0\nℹ pass 136\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 6678.805417\n\n✖ failing tests:\n\ntest at tests/harness/evaluator.test.mjs:531:1\n✖ fixtures and approved baseline pass structural and digest gates (39.135417ms)\n  AssertionError [ERR_ASSERTION]: evaluation input digest drifted (sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc != sha256:a8fd8357506019d0d7af6bd2de268466205e7595bc201ac25c2aeb69f07cb5dd); run eval:approve only after review\n  evaluation input file set drifted; run eval:approve only after review\n  \n  false !== true\n  \n      at TestContext.<anonymous> (file:///Users/dongkyl/git/rca-agent/tests/harness/evaluator.test.mjs:568:10)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n[ELIFECYCLE] Command failed with exit code 1.\n[ELIFECYCLE] Test failed. See above for more details.\n[ELIFECYCLE] Command failed with exit code 1."
+    }
+  },
+  "localMain": "e1d71b6",
+  "remotePushPerformed": false,
+  "awsDeploymentPerformed": false,
+  "externalResearchMethod": "DuckDuckGo MCP fallback; primary AWS documentation only",
+  "externalSources": [
+    "https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_StopTask.html",
+    "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-evaluation.html",
+    "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarms-and-missing-data.html"
+  ]
+}

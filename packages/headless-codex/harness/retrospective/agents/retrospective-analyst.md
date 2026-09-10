@@ -34,6 +34,9 @@
 - `verification_status`를 갱신안에 담지 않는다. 절차가 검증되었는지는 서버가 판정하며,
   담아도 무시된다.
 
-`save_playbook_update`로 갱신안과 근거를 저장한 뒤 무엇을 왜 바꿨는지 요약해 최종
-응답으로 반환한다. 교정할 결함이 없으면 그 사실을 응답으로 남기고 갱신안을 저장하지
-않는다.
+`save_playbook_update`로 갱신안과 근거를 반드시 저장하고 `ok: true`를 확인한 뒤 무엇을
+왜 바꿨는지 요약한다. 교정할 결함이 없어도
+`save_playbook_update(update_json="{}", rationale="실행 증거에 근거한 교정 불필요 사유")`로
+빈 갱신과 비어 있지 않은 근거를 저장한다. 서버가 기존 NO_CHANGE 상태를 판정하므로
+모델이 status나 verification_status를 갱신안에 넣지 않는다. 저장 실패는 교정하고,
+저장되지 않은 회고를 완료했다고 서술하지 않는다.

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from test_service.adapters.secondary.sensor_repository.models import Base
 from test_service.di.app_container import AppContainer
 from test_service.di.container import Container
 from test_service.middleware import FaultFlagMiddleware, LoggingMiddleware
+from test_service.services.runtime_identity import runtime_identity
 from test_service.services.traffic_generator import run_traffic_generator
 from test_service.telemetry import setup_logging, setup_telemetry
 
@@ -31,6 +33,7 @@ async def lifespan(_: FastAPI):
     workers: list[asyncio.Task] = []
     flush_task: asyncio.Task | None = None
     try:
+        logging.getLogger(__name__).info("ecs_runtime_identity", extra=await runtime_identity())
         db = container.database
         if isinstance(db, SqlAlchemyDatabaseAdapter):
             async with db.engine.begin() as conn:

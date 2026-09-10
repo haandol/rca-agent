@@ -16,6 +16,7 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import Hypothesis, HypothesisStatus, ScopingResult
 from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE
 from rca_agent.services.observation_context import (
+    render_alarm_description,
     render_concurrent_alarms,
     render_observations,
 )
@@ -90,11 +91,13 @@ def _build_user_prompt(
     hypotheses_by_id: dict[str, Hypothesis] | None = None,
     evidence_map: dict[str, str] | None = None,
 ) -> str:
+    """Carry supplied discovery coordinates as untrusted data alongside the evidence request."""
     alarm = scoping_result.raw_alarm
     parent_context = _build_parent_context(hypothesis, hypotheses_by_id, evidence_map)
 
     return EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE.format(
         alarm_name=alarm.alarm_name if alarm else "N/A",
+        alarm_description=render_alarm_description(alarm),
         alarm_region=alarm.region if alarm else "us-east-1",
         service_name=alarm.service_name if alarm else "N/A",
         resource_id=alarm.resource_id if alarm else "N/A",

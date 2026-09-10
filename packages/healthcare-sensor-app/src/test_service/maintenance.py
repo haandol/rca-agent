@@ -18,6 +18,8 @@ import asyncpg
 from sqlalchemy.engine import make_url
 
 from test_service.config import get_settings
+from test_service.revision.manifest import source_manifest
+from test_service.services.runtime_identity import runtime_identity
 
 MAX_HOLD_SECONDS = 7200
 
@@ -132,6 +134,8 @@ async def _main(args) -> None:
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, request_stop, signum)
     try:
+        print(json.dumps({"event": "source_manifest", **source_manifest()}), flush=True)
+        print(json.dumps(await runtime_identity()), flush=True)
         await hold_lock(
             get_settings().database_url,
             run_id=args.run_id,

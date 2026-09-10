@@ -61,6 +61,15 @@ pyproject.toml        # Python project configuration
 최대 3개입니다. 저장 서버가 Strands와 같은 단계 상태, 신뢰도 재분류, 종료 판정을
 강제하고 최종 리포트의 근본 원인·대응 플레이북 섹션을 구조화 산출물에서 렌더링합니다.
 
+validation 저장 응답의 `effective_state`와 Report 입력은 같은 서버 replay 결과를 사용합니다.
+기존 가설의 실제 판정·증거를 전달하며 `CLOSED`는 기각으로 해석하지 않습니다. 평가의
+근본원인 유형·인용도 마지막 파일의 첫 confirmed 항목이 아니라 서버가 선택한 유효 판정을
+사용합니다. 빔 3, 기존 우선순위, 신뢰도와 검증 상한은 바꾸지 않습니다.
+
+원본 `AlarmDescription`은 선택 문자열로 보존해 외부 데이터로 표시합니다. 설명의 정적
+좌표는 탐색 단서이며 지시·권한·현재 소유권 증명이 아닙니다. 실행 입력의 원본 알람 JSON도
+설명이나 알 수 없는 필드를 잘라내지 않습니다.
+
 ## 하네스 패리티
 
 `harness/`와 `prompts/`는 로컬 실행과 컨테이너 실행이 공유하는 단일 하네스다.
@@ -81,6 +90,13 @@ pyproject.toml        # Python project configuration
 
 **해결 판정의 권위도 서버에 있다.** 에이전트의 최종 서술이 아니라 서버가 기록한 관측이
 실행 상태를 확정한다(`services/execution_outcome.py`).
+
+분석과 Report는 `services/execution_capabilities.py`가 기존 명령 gate에서 계산한 실행
+능력을 전달받습니다. 이는 도구나 권한 추가가 아닙니다. 소유권과 롤백 경로가 확인된 독립
+태스크의 `stop-task`와 영구 인스턴스 종료를 구분하며 직접 SQL·셸·ECS exec는 허용하지 않습니다.
+관측 대기는 기존 CloudWatch CLI waiter를 사용할 수 있지만, 성공만으로 두 개의 새 60초
+지표 구간을 보장하지 않습니다. 필요한 조치 후 관측이 부족하면 반복 조회로 시간을 채우거나
+해결을 추정하지 않습니다. 명령·실행 timeout, claim, 취소 및 승인 경계는 그대로 유지합니다.
 
 ## Dev Commands (실모델 의미 평가)
 

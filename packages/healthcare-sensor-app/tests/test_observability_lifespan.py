@@ -5,6 +5,7 @@ import importlib
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import APIRouter
@@ -98,6 +99,7 @@ def lifecycle_module(monkeypatch):
     monkeypatch.setattr(telemetry, "setup_logging", lambda settings: None)
     monkeypatch.setattr(telemetry, "setup_telemetry", lambda app, settings: None)
     monkeypatch.setattr(AppContainer, "create_router", lambda self: APIRouter())
+    monkeypatch.delenv("ECS_CONTAINER_METADATA_URI_V4", raising=False)
     return importlib.import_module("test_service.main")
 
 
@@ -245,3 +247,26 @@ async def test_container_metric_flush_failure_cannot_skip_database_disposal():
     with pytest.raises(OSError, match="metrics sink unavailable"):
         await container.cleanup()
     assert database.disposed
+
+
+@pytest.mark.parametrize("status", ["available", "unavailable"])
+async def test_runtime_identity_is_logged_once_at_startup(lifecycle_module, monkeypatch, caplog, status):
+    """Metadata absence does not block service startup or cause fetches while serving."""
+    container = LifecycleContainer(ObservedDatabase(), traffic_enabled=False, db_observability_enabled=False)
+    install_container(monkeypatch, lifecycle_module, container)
+    observed = {"event": "ecs_runtime_identity", "status": status}
+    if status == "available":
+        observed["TaskARN"] = "arn:aws:ecs:us-east-1:123456789012:task/Healthcare/" + "a" * 32
+    else:
+        observed.update(reason="metadata_unavailable", error_type="TimeoutError")
+    fetch = AsyncMock(return_value=observed)
+    monkeypatch.setattr(lifecycle_module, "runtime_identity", fetch)
+    with caplog.at_level("INFO"):
+        async with lifecycle_module.lifespan(None):
+            await wait_until(lambda: bool(container.symptom_metrics.emitted))
+            fetch.assert_awaited_once()
+    fetch.assert_awaited_once()
+    records = [record for record in caplog.records if getattr(record, "event", "") == "ecs_runtime_identity"]
+    assert len(records) == 1
+    assert records[0].status == status
+    assert container.cleaned

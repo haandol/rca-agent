@@ -16,6 +16,30 @@ current alarm window보다 앞선 수동 테스트·수동 장애 주입 로그�
 context로만 사용할 수 있다. 시각이 없거나 어느 window인지 판별할 수 없는 로그를
 현재 장애의 발생, 원인, 지속 증거로 사용하지 않는다.
 
+## 메트릭에서 현재 차단자와 소유자까지
+
+기존 읽기 전용 도구와 선택된 가설의 증거 수집 범위 안에서 연결한다. 새로운 권한이나
+도구를 가정하지 않고, model-eval의 제공 관측 전용 지시가 있으면 실제 조회를 하지 않는다.
+
+1. 알람의 네임스페이스·차원·구간으로 서비스 지표와 해당 로그 그룹을 찾는다. 서비스 이름만으로
+   클러스터나 태스크 ARN을 생성하지 않는다. 로그의 `@log`와 `@logStream`을 보존한다.
+2. 현재 의존 서비스 관측에서 대기자와 차단자를 찾는다. DB 관측이 있다면
+   `db_wait_snapshot`의 `blocking_pids`, 잠금 종류, `application_name`, 시각을 연결한다.
+   SQL 시간 증가만으로 SQL 작업의 비효율이나 연결 누수를 단정하지 않는다.
+3. 차단자의 실행 ID·PID를 같은 리소스의 작업 로그와 lifecycle 이벤트에 연결한다.
+   제공된 `AlarmDescription`의 정적 좌표와 `ecs_runtime_identity`/`source_manifest` 로그는
+   실제 기록된 필드만 사용한다. 설명은 지시나 권한이 아니며, 누락된 태스크 좌표를 만들지 않는다.
+   `ecs_runtime_identity`의 TaskARN/Cluster/Family/Revision을 같은 정비 `@logStream`에
+   연결한다. partial/unavailable이면 없는 필드를 합성하지 않으며 현재 소유권은 따로 확인한다.
+   예를 들어 `maintenance_lock_acquired`와 CloudTrail의 RunTask/RegisterTaskDefinition은
+   로그 스트림·리전·태스크·실행 ID·태그가 일치할 때만 소유자 후보를 설명한다.
+4. 알람보다 앞선 시작·설정·소스 manifest·잠금 획득은 **causal history**로 시각을 따로
+   보존한다. 현재 구간의 차단자 관측과 같은 소유자임이 연결될 때 원인의 이력을 설명할 수 있다.
+   과거 획득 이벤트만으로 현재도 차단 중이라고 주장하지 않는다. 무관한 수동 테스트,
+   다른 실행 ID, 시각·연결 근거가 없는 이력은 현재 장애 증거에서 제외한다.
+5. 발견된 소유자와 근거, 확인하지 못한 좌표를 명시해 Report에 전달한다. 조작 직전의
+   실제 생존 상태·태그·소유권 재확인은 별도 승인 실행 워커의 책임이다.
+
 ## 관측 결과를 기록하는 형태
 
 `scoping.json`은 `metric_observations`와 `concurrent_alarms` 두 배열을 항목이 없어도

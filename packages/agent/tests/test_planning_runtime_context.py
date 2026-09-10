@@ -87,7 +87,11 @@ def test_model_can_rank_candidate_first_or_last_without_server_reordering(model_
 
 
 def test_generator_clarifies_causal_relationships_without_banning_multiple_factors():
+    """Require distinct testable claims while allowing separately validated cofactors."""
     assert "alternative causal explanations from compatible contributing factors" in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
     assert "state whether they compete or could hold together" in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
-    assert "keep multi-causal hypotheses when appropriate" in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
+    assert "retain separately testable cofactors" in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
+    assert "one falsifiable causal claim" in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
+    assert "a final explanation may combine separately validated facts" in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
+    assert "is preferred over collapsing everything into one factor" not in HYPOTHESIS_GENERATION_SYSTEM_PROMPT
     assert "Generate exactly 3 to 5 hypotheses, ordered by likelihood." in HYPOTHESIS_GENERATION_SYSTEM_PROMPT

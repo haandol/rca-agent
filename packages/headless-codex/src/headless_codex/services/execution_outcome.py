@@ -14,6 +14,7 @@ from headless_codex.services.execution_evidence import (
     CommandAttempt,
     ExecutionEvidence,
     FailureClass,
+    capture_command_output,
     parse_failure_class,
     redact,
     redact_arguments,
@@ -33,6 +34,80 @@ def _as_str(value: object, *, limit: int = 4000) -> str:
     return (value if isinstance(value, str) else str(value))[:limit]
 
 
+def _recorded_time(record: dict, name: str) -> str | None:
+    """Carry a timestamp only when the server record supplies it; never infer historical moments."""
+    value = record.get(name)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _captured_output(record: dict) -> dict:
+    """Carry bounded redacted streams and original loss counts; legacy previews stay unidentified.
+
+    Reapplying the cap cannot reset an earlier truncation flag or imply that a timeout captured
+    complete output. Records without streams acquire neither streams nor completeness claims.
+    """
+    captured = capture_command_output(record.get("stdout"), record.get("stderr"))
+    result: dict = {}
+    for name in ("stdout", "stderr"):
+        if name not in record:
+            continue
+        for key, value in captured.items():
+            if key == name or key.startswith(name + "_"):
+                result[key] = value
+        original_count = record.get(f"{name}_chars")
+        if isinstance(original_count, int) and not isinstance(original_count, bool):
+            result[f"{name}_chars"] = max(original_count, result[f"{name}_chars"])
+            result[f"{name}_omitted_chars"] = result[f"{name}_chars"] - result[f"{name}_retained_chars"]
+        result[f"{name}_truncated"] = bool(record.get(f"{name}_truncated")) or result[f"{name}_omitted_chars"] > 0
+    for name, limit in (("observation", 2000), ("error_output", 4000)):
+        if name not in record:
+            continue
+        safe = redact(record[name])
+        original_count = record.get(f"{name}_chars")
+        known_count = (
+            max(original_count, len(safe))
+            if isinstance(original_count, int) and not isinstance(original_count, bool)
+            else len(safe)
+        )
+        # Legacy observations may already be shortened. Only describe a new loss or carry
+        # the server's explicit counts; do not retrospectively claim old previews were complete.
+        if len(safe) > limit or f"{name}_chars" in record:
+            result.update(
+                {
+                    f"{name}_chars": known_count,
+                    f"{name}_retained_chars": min(len(safe), limit),
+                    f"{name}_omitted_chars": known_count - min(len(safe), limit),
+                    f"{name}_truncated": bool(record.get(f"{name}_truncated")) or known_count > limit,
+                }
+            )
+    for name in ("output_incomplete", "output_incomplete_reason"):
+        if name in record:
+            result[name] = redact(record[name]) if isinstance(record[name], str) else record[name]
+    return result
+
+
+def _outcome_record(record: dict) -> dict:
+    """Retain outcome fields and server recording time, redacting text without inventing observations."""
+    names = (
+        "step_id",
+        "success_criteria",
+        "observation",
+        "criteria_met",
+        "failure_class",
+        "manual_action_required",
+        "resolved",
+        "unobservable_reason",
+    )
+    result = {
+        name: redact(record[name]) if isinstance(record[name], str) else record[name]
+        for name in names
+        if name in record
+    }
+    if (moment := _recorded_time(record, "recorded_at")) is not None:
+        result["recorded_at"] = moment
+    return result
+
+
 def assemble_evidence(
     records: list[dict],
     *,
@@ -40,18 +115,23 @@ def assemble_evidence(
     rca_id: str,
     engine: str,
     playbook: dict,
+    started_at: str | None = None,
+    ended_at: str | None = None,
 ) -> ExecutionEvidence:
     """서버 기록을 플레이북 절차에 맞춰 실행 증거로 조립한다.
 
     절차 목록은 플레이북이 보유하므로, 에이전트가 언급하지 않은 절차도 증거에
     나타난다. 시도되지 않은 절차가 조용히 사라지면 실행이 절차를 건너뛴 사실을
-    사람이 알 수 없다.
+    사람이 알 수 없다. 시각은 서버 원본 또는 호출자가 실제 실행 경계에서 포착한
+    시각만 전달하며 조립 시각을 과거 명령의 시각으로 사용하지 않는다.
     """
     evidence = ExecutionEvidence(
         execution_id=execution_id,
         rca_id=rca_id,
         playbook_id=_as_str(playbook.get("playbook_id"), limit=200),
         engine=engine,
+        started_at=started_at,
+        ended_at=ended_at,
     )
 
     declared_steps = playbook.get("execution_steps")
@@ -91,8 +171,13 @@ def assemble_evidence(
                     error_output=redact(record.get("error_output"))[:4000],
                     failure_class=failure_class,
                     blocked=blocked,
-                    block_reason=_as_str(record.get("block_reason")),
+                    block_reason=redact(record.get("block_reason"))[:4000],
                     observation=redact(record.get("observation"))[:2000],
+                    intent=redact(record.get("intent")),
+                    recorded_at=_recorded_time(record, "recorded_at"),
+                    started_at=_recorded_time(record, "started_at"),
+                    ended_at=_recorded_time(record, "ended_at"),
+                    captured_output=_captured_output(record),
                 )
             )
             if blocked:
@@ -100,19 +185,21 @@ def assemble_evidence(
 
         elif record_type == "step_outcome" and step_id:
             step = evidence.step(step_id)
+            step.outcomes.append(_outcome_record(record))
             criteria = record.get("success_criteria")
             if not isinstance(criteria, str) or criteria != step.success_criteria:
                 criteria_mismatches.add(step_id)
                 continue
-            step.observation = _as_str(record.get("observation"))
+            step.observation = redact(record.get("observation"))[:4000]
             step.resolved = bool(record.get("criteria_met"))
             if record.get("manual_action_required"):
                 step.manual_action_required = True
 
         elif record_type == "resolution":
-            evidence.resolution_observation = _as_str(record.get("observation"))
+            evidence.resolution_records.append(_outcome_record(record))
+            evidence.resolution_observation = redact(record.get("observation"))[:4000]
             # 관측으로 확정하지 못한 경우도 사람이 읽을 수 있게 사유를 남긴다.
-            unobservable = _as_str(record.get("unobservable_reason"))
+            unobservable = redact(record.get("unobservable_reason"))[:4000]
             if unobservable:
                 evidence.resolution_observation = (
                     f"{evidence.resolution_observation}\n[unobservable] {unobservable}".strip()

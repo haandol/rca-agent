@@ -304,6 +304,7 @@ def test_evidence_ids_require_an_exact_identifier() -> None:
 
 
 def test_root_fault_type_comes_only_from_the_confirmed_structural_field() -> None:
+    """Use only the selected hypothesis's structural validation type."""
     hypotheses = [
         {
             "status": "REJECTED",
@@ -311,13 +312,14 @@ def test_root_fault_type_comes_only_from_the_confirmed_structural_field() -> Non
             "judgment_reasoning": "DB_CONNECTION_LEAK was mentioned in prose.",
         },
         {
+            "hypothesis_id": "selected",
             "status": "CONFIRMED",
             "validated_fault_type": "HIGH_MEMORY",
             "judgment_reasoning": "The prose says SLOW_QUERY but is not authoritative.",
         },
     ]
 
-    assert eval_adapter._root_fault_type(hypotheses) == "high-memory"
+    assert eval_adapter._root_fault_type(hypotheses, "selected") == "high-memory"
 
 
 @pytest.mark.parametrize(
@@ -331,19 +333,30 @@ def test_root_fault_type_comes_only_from_the_confirmed_structural_field() -> Non
     ],
 )
 def test_root_fault_type_normalizes_the_complete_canonical_enum(persisted, normalized) -> None:
-    hypotheses = [{"status": "CONFIRMED", "validated_fault_type": persisted}]
+    """Preserve the existing enum vocabulary for the explicit selection."""
+    hypotheses = [{"hypothesis_id": "selected", "status": "CONFIRMED", "validated_fault_type": persisted}]
 
-    assert eval_adapter._root_fault_type(hypotheses) == normalized
+    assert eval_adapter._root_fault_type(hypotheses, "selected") == normalized
 
 
 def test_root_fault_type_is_unsupported_without_a_confirmed_allowed_value() -> None:
-    assert eval_adapter._root_fault_type([{"status": "REJECTED", "validated_fault_type": "HIGH_CPU"}]) == (
-        "unsupported"
+    """Neither a rejected selection nor an unknown enum authorizes another cause."""
+    assert (
+        eval_adapter._root_fault_type(
+            [{"hypothesis_id": "selected", "status": "REJECTED", "validated_fault_type": "HIGH_CPU"}], "selected"
+        )
+        == "unsupported"
     )
-    assert eval_adapter._root_fault_type([{"status": "CONFIRMED", "validated_fault_type": "OTHER"}]) == "unsupported"
+    assert (
+        eval_adapter._root_fault_type(
+            [{"hypothesis_id": "selected", "status": "CONFIRMED", "validated_fault_type": "OTHER"}], "selected"
+        )
+        == "unsupported"
+    )
 
 
 def test_root_cause_evidence_uses_only_confirmed_validation_fields_in_scenario_order() -> None:
+    """Select validation citations without borrowing title or rejected evidence."""
     hypotheses = [
         {
             "status": "REJECTED",
@@ -351,6 +364,7 @@ def test_root_cause_evidence_uses_only_confirmed_validation_fields_in_scenario_o
             "validation_evidence_summary": "",
         },
         {
+            "hypothesis_id": "selected",
             "status": "CONFIRMED",
             "title": "[connection-growth] is only in non-authoritative prose.",
             "judgment_reasoning": "[unreleased-session] confirms the leak.",
@@ -358,22 +372,24 @@ def test_root_cause_evidence_uses_only_confirmed_validation_fields_in_scenario_o
         },
     ]
 
-    assert eval_adapter._root_cause_evidence_ids(SCENARIO, hypotheses) == [
+    assert eval_adapter._root_cause_evidence_ids(SCENARIO, hypotheses, "selected") == [
         "pool-saturation",
         "unreleased-session",
     ]
 
 
 def test_root_cause_evidence_requires_exact_observation_ids() -> None:
+    """A selected hypothesis still needs exact, explicitly cited observation IDs."""
     hypotheses = [
         {
+            "hypothesis_id": "selected",
             "status": "CONFIRMED",
             "judgment_reasoning": "[connection-growth-extra] is a different identifier.",
             "validation_evidence_summary": "",
         }
     ]
 
-    assert eval_adapter._root_cause_evidence_ids(SCENARIO, hypotheses) == []
+    assert eval_adapter._root_cause_evidence_ids(SCENARIO, hypotheses, "selected") == []
 
 
 def test_competing_cause_is_rejected_from_explicit_validation_evidence() -> None:

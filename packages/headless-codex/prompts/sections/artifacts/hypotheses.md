@@ -32,8 +32,11 @@
 - 한 생성 라운드는 루트 가설 3~5개를 포함한다.
 - `title`: 대시보드 카드/그래프 노드에 노출. "Healthcare 앱 커넥션 누수" 같은 **명사구**로 간결히. 물음표·마침표 지양.
 - `description`: 가설을 세운 근거와 기대하는 검증 증거를 서술형으로 기술.
-- `fault_type`: Healthcare reset 허용 목록과 직접 대응하는 구조화 enum. 네 유형에
-  해당하지 않으면 반드시 `unsupported`.
+- 한 가설은 독립적으로 반증할 수 있는 한 메커니즘이다. 반증 조건이 다른 설정 회귀와
+  누수를 "회귀 또는 누수" 한 가설로 묶지 않는다. 루트 가설 수는 3~5개를 유지한다.
+- `fault_type`: 원인 분류이며 실행 허용 목록이 아니다. `slow-query`는 비효율 SQL 작업이나
+  호출 증폭이며 외부 트랜잭션 잠금에 의한 SQL 대기는 `unsupported`다. 풀 설정 축소를
+  반환 누락 증거 없이 `db-leak`로 분류하지 않는다. 기존 다섯 유형 이외의 enum을 만들지 않는다.
 - `validation-{N}.json`의 `new_hypotheses`에도 동일하게 `title`, `description`,
   `fault_type`을 채운다.
 - 생성 라운드 번호와 어느 validation 뒤에 재생성됐는지는 저장 서버가 기록한다.

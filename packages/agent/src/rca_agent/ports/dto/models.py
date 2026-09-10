@@ -70,6 +70,7 @@ class AlarmTrigger(BaseModel):
 
 class AlarmPayload(BaseModel):
     alarm_name: str
+    alarm_description: str | None = None
     alarm_arn: str | None = None
     new_state: str = "ALARM"
     new_state_reason: str = ""
@@ -139,6 +140,7 @@ class AlarmPayload(BaseModel):
 
         return cls(
             alarm_name=raw.get("AlarmName") or "UnknownAlarm",
+            alarm_description=raw.get("AlarmDescription") if isinstance(raw.get("AlarmDescription"), str) else None,
             alarm_arn=alarm_arn,
             new_state=raw.get("NewStateValue", "ALARM"),
             new_state_reason=raw.get("NewStateReason", ""),
@@ -308,6 +310,7 @@ class TerminationDecision(BaseModel):
 class RcaReport(BaseModel):
     rca_id: str
     incident_summary: str
+    alarm_description: str | None = None
     severity: str = "medium"
     impact_summary: str = ""
     detection_method: str = ""

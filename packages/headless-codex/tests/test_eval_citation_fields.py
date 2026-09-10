@@ -5,6 +5,7 @@ import json
 import pytest
 
 from headless_codex import eval_adapter
+from headless_codex.services.analysis_contract import AnalysisContractError
 
 SCENARIO = {
     "observations": [{"id": name} for name in ("root-a", "root-b", "flat", "healthy", "flat-extra")],
@@ -33,24 +34,30 @@ def judgment(tmp_path, scenario=SCENARIO):
     return eval_adapter._competing_cause_judgments(tmp_path, scenario)[0]
 
 
-def test_root_credits_same_entry_summary_and_reasoning_in_scenario_order(tmp_path):
-    write_validation(
-        tmp_path,
+def test_root_credits_same_entry_summary_and_reasoning_in_scenario_order(analysis_artifacts, save_validation, request):
+    """Use a real selected judgment while retaining citation ordering."""
+    make_judgment = request.getfixturevalue("judgment")
+    save_validation(
+        1,
         confirmed=[
-            entry(reasoning="[root-b] establishes the cause.", evidence_summary=["[root-a]", "[root-b]"]),
+            make_judgment("root", 0.95, reasoning="[root-b] establishes cause.", evidence=["[root-a]", "[root-b]"])
         ],
     )
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == ["root-a", "root-b"]
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO) == ["root-a", "root-b"]
 
 
-def test_root_credits_summary_when_reasoning_has_no_identifier(tmp_path):
-    write_validation(tmp_path, confirmed=[entry(evidence_summary=["[root-a]"])])
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == ["root-a"]
+def test_root_credits_summary_when_reasoning_has_no_identifier(analysis_artifacts, save_validation, request):
+    """Effective evidence summaries retain their citations."""
+    make_judgment = request.getfixturevalue("judgment")
+    save_validation(1, confirmed=[make_judgment("root", 0.95, evidence=["[root-a]"])])
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO) == ["root-a"]
 
 
-def test_root_summary_matching_keeps_exact_identifier_boundaries(tmp_path):
-    write_validation(tmp_path, confirmed=[entry(evidence_summary=["[flat-extra]"])])
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == ["flat-extra"]
+def test_root_summary_matching_keeps_exact_identifier_boundaries(analysis_artifacts, save_validation, request):
+    """A longer identifier cannot credit its prefix."""
+    make_judgment = request.getfixturevalue("judgment")
+    save_validation(1, confirmed=[make_judgment("root", 0.95, evidence=["[flat-extra]"])])
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO) == ["flat-extra"]
 
 
 @pytest.mark.parametrize(
@@ -102,23 +109,26 @@ def test_rejection_stays_effective_when_only_a_different_id_is_updated(tmp_path)
     assert judgment(tmp_path)["judgment"] == "rejected"
 
 
-def test_root_selection_stays_on_latest_validation_confirmed_entries(tmp_path):
-    write_validation(tmp_path, confirmed=[entry(evidence_summary=["[root-a]"])])
-    write_validation(
-        tmp_path,
-        2,
-        confirmed=[entry("h2")],
-        rejected=[entry("h3", evidence_summary=["[root-b]"])],
+def test_root_selection_follows_reducer_when_a_new_root_is_confirmed(analysis_artifacts, save_validation, request):
+    """An earlier confirmed root must not lend citations to a different selected root."""
+    make_judgment = request.getfixturevalue("judgment")
+    save_validation(1, confirmed=[make_judgment("root", 0.85, evidence=["[root-a]"])])
+    save_validation(
+        2, confirmed=[make_judgment("other", 0.95)], rejected=[make_judgment("third", 0.1, evidence=["[root-b]"])]
     )
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == []
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO) == []
 
 
-def test_global_artifact_citations_do_not_supply_judgment_evidence(tmp_path):
-    write_validation(tmp_path, confirmed=[entry("root")], rejected=[entry("other")])
+def test_global_artifact_citations_do_not_supply_judgment_evidence(analysis_artifacts, save_validation, request):
+    """Citations in other artifact fields cannot become judgment evidence."""
+    make_judgment = request.getfixturevalue("judgment")
+    save_validation(1, confirmed=[make_judgment("root", 0.95)], rejected=[make_judgment("other", 0.1)])
     for filename in ("report.md", "playbook.json", "scoping.json", "hypotheses.json"):
-        (tmp_path / filename).write_text(json.dumps({"text": "[root-a] [flat] [healthy]"}))
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == []
-    assert judgment(tmp_path)["judgment"] == "inconclusive"
+        path = analysis_artifacts / filename
+        value = json.loads(path.read_text()) if path.exists() else {}
+        path.write_text(json.dumps({**value, "text": "[root-a] [flat] [healthy]"}))
+    assert eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO) == []
+    assert judgment(analysis_artifacts)["judgment"] == "inconclusive"
 
 
 def test_one_rejected_summary_cannot_credit_two_causes(tmp_path):
@@ -137,13 +147,19 @@ def test_one_rejected_summary_cannot_credit_two_causes(tmp_path):
 
 
 @pytest.mark.parametrize("summary", ["[root-a] [flat] [healthy]", {"text": "[root-a] [flat] [healthy]"}, [None, 123]])
-def test_non_schema_summary_values_are_not_stringified_into_evidence(tmp_path, summary):
-    write_validation(
-        tmp_path,
-        confirmed=[entry("root", evidence_summary=summary)],
-        rejected=[entry("other", evidence_summary=summary)],
-    )
-    assert eval_adapter._root_cause_evidence_ids(tmp_path, SCENARIO) == []
+def test_non_schema_summary_values_are_not_stringified_into_evidence(
+    tmp_path, summary, analysis_artifacts, save_validation, request
+):
+    """Invalid root artifacts fail verification; malformed counterevidence still cannot be credited."""
+    make_judgment = request.getfixturevalue("judgment")
+    save_validation(1, confirmed=[make_judgment("root", 0.95)])
+    path = analysis_artifacts / "validation-1.json"
+    value = json.loads(path.read_text())
+    value["confirmed"][0]["evidence_summary"] = summary
+    path.write_text(json.dumps(value))
+    with pytest.raises(AnalysisContractError, match="evidence_summary"):
+        eval_adapter._root_cause_evidence_ids(analysis_artifacts, SCENARIO)
+    write_validation(tmp_path, rejected=[entry("other", evidence_summary=summary)])
     assert judgment(tmp_path)["judgment"] == "inconclusive"
 
 

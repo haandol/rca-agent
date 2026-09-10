@@ -20,6 +20,12 @@ from rca_agent.ports.dto.models import (
 logger = logging.getLogger(__name__)
 
 
+def effective_judgments(judgments: list[ValidationJudgment], hypotheses: list[Hypothesis]) -> list[ValidationJudgment]:
+    """Exclude raw judgments invalidated by subsequent state changes or pruning."""
+    states = {h.hypothesis_id: h.status for h in hypotheses}
+    return [j for j in judgments if states.get(j.hypothesis_id) == j.status]
+
+
 def check_termination(
     *,
     judgments: list[ValidationJudgment],
@@ -32,11 +38,13 @@ def check_termination(
     max_depth: int = RCA_MAX_TREE_DEPTH,
     confidence_threshold: float = TERMINATION_CONFIDENCE_THRESHOLD,
 ) -> TerminationDecision:
+    """Apply existing limits only to judgments consistent with the current tree."""
+    judgments = effective_judgments(judgments, hypotheses)
     effective_max_depth = max_tree_depth if max_tree_depth is not None else max_depth
 
     confirmed = [j for j in judgments if j.status == HypothesisStatus.CONFIRMED]
     if confirmed:
-        best = max(confirmed, key=lambda j: j.confidence_score)
+        best = max(confirmed, key=lambda j: (j.confidence_score, j.hypothesis_id))
         if best.confidence_score >= confidence_threshold:
             hyp = _find_hypothesis(best.hypothesis_id, hypotheses)
             logger.info("Termination: CONFIRMED with confidence %.2f", best.confidence_score)
@@ -83,7 +91,9 @@ def _find_hypothesis(hypothesis_id: str, hypotheses: list[Hypothesis]) -> Hypoth
 
 
 def _best_hypothesis(judgments: list[ValidationJudgment], hypotheses: list[Hypothesis]) -> Hypothesis | None:
+    """Return the strongest still-valid candidate at a forced termination boundary."""
+    judgments = effective_judgments(judgments, hypotheses)
     if not judgments:
         return None
-    best_j = max(judgments, key=lambda j: j.confidence_score)
+    best_j = max(judgments, key=lambda j: (j.confidence_score, j.hypothesis_id))
     return _find_hypothesis(best_j.hypothesis_id, hypotheses)

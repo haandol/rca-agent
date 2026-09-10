@@ -10,7 +10,8 @@ from rca_agent.ports.dto.models import (
 from rca_agent.services.termination import check_termination
 
 
-def _make_hypothesis(hid="h-1", depth=0) -> Hypothesis:
+def _make_hypothesis(hid="h-1", depth=0, status=HypothesisStatus.NEEDS_INVESTIGATION) -> Hypothesis:
+    """Represent a tree node after the pipeline has applied its validation judgment."""
     return Hypothesis(
         hypothesis_id=hid,
         description="Test",
@@ -18,6 +19,7 @@ def _make_hypothesis(hid="h-1", depth=0) -> Hypothesis:
         confidence_score=0.5,
         tree_id="tree-1",
         depth=depth,
+        status=status,
     )
 
 
@@ -27,8 +29,9 @@ def _make_judgment(hid="h-1", status=HypothesisStatus.PENDING, confidence=0.5) -
 
 class TestCheckTermination:
     def test_confirmed_high_confidence(self):
+        """A valid current confirmation still terminates immediately above 0.9."""
         j = _make_judgment(status=HypothesisStatus.CONFIRMED, confidence=0.95)
-        h = _make_hypothesis()
+        h = _make_hypothesis(status=j.status)
 
         decision = check_termination(
             judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=1
@@ -39,8 +42,9 @@ class TestCheckTermination:
         assert decision.best_hypothesis is not None
 
     def test_confirmed_below_threshold_continues(self):
+        """A current 0.85 confirmation does not satisfy the 0.9 exit threshold."""
         j = _make_judgment(status=HypothesisStatus.CONFIRMED, confidence=0.85)
-        h = _make_hypothesis()
+        h = _make_hypothesis(status=j.status)
 
         decision = check_termination(
             judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=1
@@ -86,8 +90,9 @@ class TestCheckTermination:
         assert decision.reason == TerminationReason.MAX_LOOPS
 
     def test_all_rejected_does_not_terminate(self):
+        """A directly rejected current node still permits the regeneration path."""
         j = _make_judgment(status=HypothesisStatus.REJECTED, confidence=0.1)
-        h = _make_hypothesis()
+        h = _make_hypothesis(status=j.status)
 
         decision = check_termination(
             judgments=[j], hypotheses=[h], start_time=time.monotonic(), validation_loop_count=1

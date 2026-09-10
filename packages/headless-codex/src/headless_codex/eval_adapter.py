@@ -22,6 +22,7 @@ from headless_codex.adapters.secondary.codex.codex_harness import MODEL_EVAL_PRO
 from headless_codex.adapters.secondary.codex.codex_subprocess_runner import CodexSubprocessRunner
 from headless_codex.config.settings import ENGINE
 from headless_codex.ports.dto.models import AlarmContext, CodexResult
+from headless_codex.services.analysis_contract import validate_analysis_completion
 from headless_codex.services.artifact_validation import (
     ArtifactValidationError,
     CompletionArtifacts,
@@ -64,13 +65,6 @@ _VALIDATION_CLASSIFICATIONS = (
     "rejected",
     "needs_investigation",
     "closed",
-)
-_CANONICAL_FAULT_TYPES = (
-    "db-leak",
-    "high-cpu",
-    "high-memory",
-    "slow-query",
-    "unsupported",
 )
 
 
@@ -324,6 +318,7 @@ def _alarm_for(scenario: dict[str, Any]) -> AlarmContext:
         state_reason=state_reason,
         metric_name=alarm.get("metric"),
         eval_source_metadata=eval_source_metadata,
+        alarm_description=alarm.get("description") if isinstance(alarm.get("description"), str) else None,
         **optional_metadata,
     )
 
@@ -384,11 +379,6 @@ def _validation_artifacts(artifact_dir: Path) -> list[dict[str, Any]]:
     return [artifact for _, path in sorted(candidates) if (artifact := _read_json_object(path)) is not None]
 
 
-def _latest_validation(artifact_dir: Path) -> dict[str, Any]:
-    validations = _validation_artifacts(artifact_dir)
-    return validations[-1] if validations else {}
-
-
 def _latest_effective_entries(artifact_dir: Path, classification: str) -> list[dict[str, Any]]:
     effective: dict[str, tuple[int, str, dict[str, Any]]] = {}
     sequence = 0
@@ -410,10 +400,9 @@ def _latest_effective_entries(artifact_dir: Path, classification: str) -> list[d
 
 
 def _root_fault_type(artifact_dir: Path) -> str:
-    for entry in _latest_validation(artifact_dir).get("confirmed") or []:
-        if isinstance(entry, dict) and entry.get("fault_type") in _CANONICAL_FAULT_TYPES:
-            return entry["fault_type"]
-    return "unsupported"
+    """Use the reducer-selected root, including confirmations retained across delta loops."""
+    result = validate_analysis_completion(artifact_dir)
+    return result.selected_fault_type.value if result.confirmed else "unsupported"
 
 
 def _validation_entry_text(entry: dict[str, Any]) -> str:
@@ -424,10 +413,16 @@ def _validation_entry_text(entry: dict[str, Any]) -> str:
 
 
 def _root_cause_evidence_ids(artifact_dir: Path, scenario: dict[str, Any]) -> list[str]:
-    validation_text = "\n".join(
-        _validation_entry_text(entry)
-        for entry in _latest_validation(artifact_dir).get("confirmed") or []
-        if isinstance(entry, dict)
+    """Cite only the selected confirmed judgment's effective reasoning and evidence."""
+    result = validate_analysis_completion(artifact_dir)
+    if not result.confirmed:
+        return []
+    identifier = result.selected_hypothesis.hypothesis_id
+    validation_text = _validation_entry_text(
+        {
+            "reasoning": result.snapshot.reasoning[identifier],
+            "evidence_summary": result.snapshot.evidence_summaries[identifier],
+        }
     )
     return [
         identifier

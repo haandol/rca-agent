@@ -303,3 +303,63 @@ def test_terminal_states_are_exactly_the_states_that_end_an_execution():
         ExecutionState.FAILED,
         ExecutionState.CANCELLED,
     }
+
+
+def test_legacy_records_do_not_acquire_assembly_times_or_full_output_claims():
+    """Legacy records keep missing clocks and unknown original output fidelity after assembly."""
+    rendered = _assemble(_resolved_records()).to_dict()
+    assert "started_at" not in rendered
+    assert "ended_at" not in rendered
+    for step in rendered["steps"]:
+        for attempt in step["attempts"]:
+            assert all(name not in attempt for name in ("started_at", "ended_at", "recorded_at"))
+            assert "stdout" not in attempt
+            assert "stdout_truncated" not in attempt
+        assert all("recorded_at" not in outcome for outcome in step["outcomes"])
+    assert all("recorded_at" not in outcome for outcome in rendered["resolution_records"])
+
+
+def test_assembly_preserves_original_outcomes_resolution_history_and_server_clocks():
+    """Multiple observations retain source times and text while the original last-outcome gate applies."""
+    records = _resolved_records()
+    for index, record in enumerate(records):
+        record["recorded_at"] = f"2026-09-10T01:00:0{index}+00:00"
+    records.insert(
+        1,
+        {
+            "type": "step_outcome",
+            "step_id": "step-1",
+            "success_criteria": PLAYBOOK["execution_steps"][0]["success_criteria"],
+            "observation": "still unhealthy before stop",
+            "criteria_met": False,
+            "recorded_at": "2026-09-10T01:00:00.500000+00:00",
+        },
+    )
+    records.insert(
+        0,
+        {
+            "type": "resolution",
+            "resolved": False,
+            "observation": "not yet verified",
+            "recorded_at": "2026-09-10T00:59:59+00:00",
+        },
+    )
+    evidence = _assemble(records)
+    rendered = evidence.to_dict()
+    assert len(rendered["steps"][0]["outcomes"]) == 2
+    assert rendered["steps"][0]["outcomes"][0]["criteria_met"] is False
+    assert rendered["steps"][0]["outcomes"][0]["recorded_at"] == "2026-09-10T01:00:00.500000+00:00"
+    assert rendered["steps"][0]["outcomes"][1]["recorded_at"] == "2026-09-10T01:00:01+00:00"
+    assert rendered["resolution_records"][0]["resolved"] is False
+    assert rendered["resolution_records"][1]["recorded_at"] == "2026-09-10T01:00:04+00:00"
+    assert judge_resolution(evidence, agent_succeeded=True).state is ExecutionState.RESOLVED
+
+
+def test_durable_history_does_not_silently_shorten_large_outcome_observations():
+    """Stored outcome and resolution records keep causal tail text beyond their UI summaries."""
+    records = _resolved_records()
+    records[1]["observation"] = "x" * 6000 + " target task/customer stopped"
+    records[-1]["observation"] = "y" * 6000 + " two fresh windows; recovery confirmed"
+    rendered = _assemble(records).to_dict()
+    assert rendered["steps"][0]["outcomes"][0]["observation"] == records[1]["observation"]
+    assert rendered["resolution_records"][0]["observation"] == records[-1]["observation"]

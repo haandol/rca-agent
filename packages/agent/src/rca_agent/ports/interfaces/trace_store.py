@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from rca_agent.ports.dto.models import Hypothesis
+    from rca_agent.ports.dto.models import Hypothesis, ValidationJudgment
 
 
 class TraceStorePort(ABC):
@@ -30,10 +30,14 @@ class TraceStorePort(ABC):
         *,
         status: str,
         confidence: float | None = None,
-        judgment_reasoning: str = "",
+        judgment_reasoning: str | None = None,
         validated_fault_type: str | None = None,
         validation_evidence_summary: str | None = None,
-    ) -> None: ...
+        validation_record: ValidationJudgment | None = None,
+        closure_reason: str | None = None,
+        rejection_inherited_from: str | None = None,
+    ) -> None:
+        """Update effective state without erasing the complete direct judgment."""
 
     @abstractmethod
     def update_hypothesis_evidence(self, hypothesis_id: str, *, evidence_summary: str) -> None: ...

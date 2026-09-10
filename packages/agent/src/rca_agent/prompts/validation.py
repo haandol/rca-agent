@@ -17,6 +17,11 @@ is a shape inferred from the endpoints while ignoring the points between them.
 - Set status to CONFIRMED (>=0.8), REJECTED (<=0.3), or NEEDS_INVESTIGATION (0.3-0.8).
 - Provide clear reasoning for your judgment.
 - Summarize the key evidence that informed your decision.
+- Judge the candidate's particular causal claim, not merely whether it is compatible with the \
+leading explanation. Distinguish a mechanism causing the incident from an unchanged setting \
+amplifying its impact. Missing evidence of a safeguard is not evidence that the safeguard is absent.
+- Link supporting and contradicting observations to this judgment explicitly. Do not treat \
+confirming this candidate as a recorded rejection of other candidates, or claim to have validated them.
 - Independently classify `validated_fault_type` from the hypothesis description and collected evidence only.
 - Allowed values are DB_CONNECTION_LEAK, HIGH_CPU, HIGH_MEMORY, SLOW_QUERY, and UNSUPPORTED.
 - Do not inherit or assume any fault type proposed during hypothesis generation or branching.

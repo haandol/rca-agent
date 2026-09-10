@@ -65,6 +65,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
             SCOPING_USER_PROMPT_TEMPLATE,
             {
                 "alarm_name",
+                "alarm_description",
                 "state_reason",
                 "state_change_time",
                 "region",
@@ -82,6 +83,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
             HYPOTHESIS_GENERATION_USER_PROMPT_TEMPLATE,
             {
                 "alarm_summary",
+                "incident_context",
                 "anomaly_start_time",
                 "blast_radius",
                 "initial_severity",
@@ -92,12 +94,22 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
         ),
         (
             PRIORITIZATION_USER_PROMPT_TEMPLATE,
-            {"scoping_summary", "hypotheses_text", "beam_width", "max_validation_loops", "termination_confidence"},
+            {
+                "scoping_summary",
+                "incident_context",
+                "metric_observations",
+                "concurrent_alarms",
+                "hypotheses_text",
+                "beam_width",
+                "max_validation_loops",
+                "termination_confidence",
+            },
         ),
         (
             EVIDENCE_COLLECTION_USER_PROMPT_TEMPLATE,
             {
                 "alarm_name",
+                "alarm_description",
                 "alarm_region",
                 "service_name",
                 "resource_id",
@@ -132,6 +144,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
             REPORT_USER_PROMPT_TEMPLATE,
             {
                 "incident_summary",
+                "alarm_description",
                 "alarm_name",
                 "metric_name",
                 "confirmed",
@@ -147,6 +160,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
             PLAYBOOK_USER_PROMPT_TEMPLATE,
             {
                 "failure_type",
+                "alarm_description",
                 "root_cause",
                 "severity",
                 "evidence_highlights",
@@ -161,6 +175,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
             PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
             {
                 "existing_failure_type",
+                "alarm_description",
                 "existing_symptom_pattern",
                 "existing_severity_criteria",
                 "existing_verification_steps",
@@ -182,6 +197,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
     ],
 )
 def test_user_prompt_placeholder_contracts(template, expected):
+    """Keep all required incident-context placeholders wired to prompt builders."""
     assert _fields(template) == expected
     template.format(**dict.fromkeys(expected, "contract-value"))
 
@@ -227,9 +243,15 @@ def test_report_prompt_requires_engine_neutral_rca_dimensions():
 
 
 def test_evidence_prompt_forbids_judgment_and_requires_bounded_tool_use():
+    """Keep tool budgets and read-only discovery without inventing a deployment log group."""
     assert "Do NOT make judgments" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
     assert "at most 3-4 tool calls per evidence type" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
-    assert "/ecs/RcaAgentDev/<service>" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
+    assert "Never invent a default path" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
+    assert "`ecs_runtime_identity`" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
+    for field in ("TaskARN", "Cluster", "Family", "Revision"):
+        assert f"`{field}`" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
+    assert "source_manifest" in EVIDENCE_COLLECTION_SYSTEM_PROMPT
+    assert "/ecs/RcaAgentDev/" not in EVIDENCE_COLLECTION_SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize("prompt", [PLAYBOOK_SYSTEM_PROMPT, PLAYBOOK_UPDATE_SYSTEM_PROMPT])

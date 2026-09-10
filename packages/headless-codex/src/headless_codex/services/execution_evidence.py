@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from enum import StrEnum
 
 _REDACTED = "***REDACTED***"
+MAX_OUTPUT_CHARS = 20_000
 
 # 자격 증명으로 보이는 인자 이름. 값이 무엇이든 이름이 이 어휘에 걸리면 가린다 —
 # 증거는 사람이 읽는 자료이고 자격 증명이 남으면 열람 자체가 노출이 된다.
@@ -29,12 +30,42 @@ _SECRET_NAME_PARTS: tuple[tuple[str, ...], ...] = (
     ("auth",),
 )
 _SECRET_NAME_TOKENS = tuple("".join(parts) for parts in _SECRET_NAME_PARTS)
-_SECRET_ALTERNATION = "|".join(r"[-_.]?".join(parts) for parts in _SECRET_NAME_PARTS)
-
-# `--password=...`, `SECRET=...` 형태로 명령 문자열에 직접 실린 값.
-_INLINE_SECRET = re.compile(r"(?i)((?:--)?[\w.-]*(?:" + _SECRET_ALTERNATION + r")[\w.-]*\s*[=:]\s*)(\S+)")
-# `--password value` 형태. 공백으로 분리된 다음 토큰이 값이다.
-_SPACED_SECRET = re.compile(r"(?i)(--[\w.-]*(?:" + _SECRET_ALTERNATION + r")[\w.-]*\s+)(?!-)(\S+)")
+_PUBLIC_NAMES = frozenset(
+    {
+        "nexttoken",
+        "startingtoken",
+        "continuationtoken",
+        "paginationtoken",
+        "clienttoken",
+        "requestid",
+        "taskid",
+        "taskarn",
+        "secretarn",
+        "secretid",
+        "credentialid",
+        "author",
+        "authorid",
+        "authorizerid",
+        "authorizerarn",
+        "tokenid",
+        "tokencount",
+    }
+)
+_QUOTED_VALUE = r"""(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"""
+_VALUE = rf"""(?:{_QUOTED_VALUE}|[^\s,;}}\]"']+)"""
+_INLINE_SECRET = re.compile(rf"""(?<![\w.-])(?P<prefix>(?P<name>[\w.-]+)["']?\s*[=:]\s*)(?P<value>{_VALUE})""")
+_SPACED_SECRET = re.compile(rf"(?P<prefix>--(?P<name>[\w.-]+)\s+)(?P<value>{_VALUE})")
+_BEARER = re.compile(r"""(?i)(\bBearer\s+)[^\s"'\\,;}\]]+""")
+_URL_USERINFO = re.compile(r"""(?i)(\b[a-z][a-z0-9+.-]*://)[^/\s"'<>@]+@""")
+# ECS environment entries can occur inside mixed diagnostic text, in either key order.
+_ENV_PAIR = re.compile(
+    rf"""(?i)(["']?(?:name|key)["']?\s*[:=]\s*["']?(?P<name>[\w.-]+)["']?\s*,\s*"""
+    rf"""["']?value["']?\s*[:=]\s*)(?P<value>{_VALUE})"""
+)
+_ENV_PAIR_REVERSED = re.compile(
+    rf"""(?i)(["']?value["']?\s*[:=]\s*)(?P<value>{_VALUE})"""
+    r"""(?P<suffix>\s*,\s*["']?(?:name|key)["']?\s*[:=]\s*["']?(?P<name>[\w.-]+)["']?)"""
+)
 
 
 class FailureClass(StrEnum):
@@ -79,13 +110,64 @@ def parse_failure_class(value: object) -> FailureClass:
         return FailureClass.UNKNOWN
 
 
+def _secret_name(name: str) -> bool:
+    """Recognize credential field names while retaining known pagination tokens and resource IDs."""
+    normalized = re.sub(r"[-_.]", "", name).lower()
+    return normalized not in _PUBLIC_NAMES and any(token in normalized for token in _SECRET_NAME_TOKENS)
+
+
+def _redacted_value(value: str) -> str:
+    """Replace a matched secret value, preserving surrounding JSON or shell quotes."""
+    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+        return value[0] + _REDACTED + value[-1]
+    return _REDACTED
+
+
+def _redact_match(match: re.Match) -> str:
+    """Redact a named assignment only when its field denotes a credential."""
+    if not _secret_name(match.group("name")):
+        return match.group(0)
+    return match.group(1) + _redacted_value(match.group("value")) + (match.groupdict().get("suffix") or "")
+
+
+def _redact_json(value: object) -> object:
+    """Redact structured JSON recursively, including name/value environment entries in any key order."""
+    if isinstance(value, dict):
+        env_name = value.get("name", value.get("key"))
+        secret_env = isinstance(env_name, str) and _secret_name(env_name)
+        return {
+            key: _REDACTED if _secret_name(key) or (key == "value" and secret_env) else _redact_json(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_json(item) for item in value]
+    if isinstance(value, str):
+        return redact(value)
+    return value
+
+
 def redact(text: object) -> str:
-    """자격 증명으로 보이는 값을 가린 문자열."""
+    """Redact credential values before retention; preserve benign IDs and valid structured JSON."""
     if text is None:
         return ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
     rendered = text if isinstance(text, str) else str(text)
-    rendered = _INLINE_SECRET.sub(lambda m: f"{m.group(1)}{_REDACTED}", rendered)
-    return _SPACED_SECRET.sub(lambda m: f"{m.group(1)}{_REDACTED}", rendered)
+    if rendered.lstrip().startswith(("{", "[")):
+        try:
+            parsed = json.loads(rendered)
+        except (ValueError, RecursionError):
+            pass
+        else:
+            cleaned = _redact_json(parsed)
+            if cleaned != parsed:
+                rendered = json.dumps(cleaned, ensure_ascii=False)
+    rendered = _BEARER.sub(lambda m: m.group(1) + _REDACTED, rendered)
+    rendered = _ENV_PAIR.sub(_redact_match, rendered)
+    rendered = _ENV_PAIR_REVERSED.sub(_redact_match, rendered)
+    rendered = _INLINE_SECRET.sub(_redact_match, rendered)
+    rendered = _SPACED_SECRET.sub(_redact_match, rendered)
+    return _URL_USERINFO.sub(lambda m: m.group(1) + _REDACTED + "@", rendered)
 
 
 def redact_arguments(arguments: object) -> dict[str, str]:
@@ -96,16 +178,33 @@ def redact_arguments(arguments: object) -> dict[str, str]:
     for raw_name, raw_value in arguments.items():
         name = str(raw_name)
         # 구분자를 지운 뒤 대조한다. `--api-key` 와 `apiKey` 는 같은 것을 가리킨다.
-        lowered = re.sub(r"[-_.]", "", name).lower()
-        if any(token in lowered for token in _SECRET_NAME_TOKENS):
+        if _secret_name(name):
             redacted[name] = _REDACTED
         else:
             redacted[name] = redact(raw_value)
     return redacted
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+def capture_command_output(stdout: object, stderr: object) -> dict:
+    """Capture redacted stream prefixes at the existing cap, with counts in redacted characters.
+
+    Counts describe the text after redaction, not bytes received or secret lengths. A truncated
+    stream is a preview and must not be interpreted as complete JSON or complete command output.
+    """
+    captured: dict = {}
+    for name, value in (("stdout", stdout), ("stderr", stderr)):
+        safe = redact(value)
+        retained = safe[:MAX_OUTPUT_CHARS]
+        captured.update(
+            {
+                name: retained,
+                f"{name}_chars": len(safe),
+                f"{name}_retained_chars": len(retained),
+                f"{name}_omitted_chars": len(safe) - len(retained),
+                f"{name}_truncated": len(safe) > len(retained),
+            }
+        )
+    return captured
 
 
 @dataclass(frozen=True)
@@ -123,9 +222,14 @@ class CommandAttempt:
     blocked: bool = False
     block_reason: str = ""
     observation: str = ""
-    recorded_at: str = field(default_factory=_now_iso)
+    recorded_at: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    intent: str = ""
+    captured_output: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Serialize retained command evidence; never manufacture missing historical timestamps."""
         payload: dict = {
             "step_id": self.step_id,
             "attempt_index": self.attempt_index,
@@ -133,8 +237,12 @@ class CommandAttempt:
             "arguments": self.arguments,
             "exit_status": self.exit_status,
             "succeeded": self.succeeded,
-            "recorded_at": self.recorded_at,
+            "intent": self.intent,
         }
+        for name in ("started_at", "ended_at", "recorded_at"):
+            if (moment := getattr(self, name)) is not None:
+                payload[name] = moment
+        payload.update(self.captured_output)
         if self.error_output:
             payload["error_output"] = self.error_output
         if self.failure_class is not None:
@@ -158,6 +266,7 @@ class StepEvidence:
     observation: str = ""
     resolved: bool | None = None
     manual_action_required: bool = False
+    outcomes: list[dict] = field(default_factory=list)
 
     @property
     def succeeded(self) -> bool:
@@ -177,6 +286,7 @@ class StepEvidence:
         return [attempt for attempt in self.attempts if attempt.failure_class in PROCEDURE_DEFECT_CLASSES]
 
     def to_dict(self) -> dict:
+        """Serialize step identity, attempts and all accepted outcome records without changing verdicts."""
         return {
             "step_id": self.step_id,
             "intent": self.intent,
@@ -186,6 +296,8 @@ class StepEvidence:
             "succeeded": self.succeeded,
             "blocked": self.blocked,
             "manual_action_required": self.manual_action_required,
+            "resolved": self.resolved,
+            "outcomes": self.outcomes,
         }
 
 
@@ -197,12 +309,14 @@ class ExecutionEvidence:
     rca_id: str
     playbook_id: str
     engine: str = ""
-    started_at: str = field(default_factory=_now_iso)
+    started_at: str | None = None
+    ended_at: str | None = None
     steps: list[StepEvidence] = field(default_factory=list)
     resolution_observation: str = ""
     resolution_confirmed: bool | None = None
     final_state: str = ""
     error_reason: str = ""
+    resolution_records: list[dict] = field(default_factory=list)
 
     def step(self, step_id: str) -> StepEvidence:
         for existing in self.steps:
@@ -228,18 +342,23 @@ class ExecutionEvidence:
         return len([step for step in self.steps if step.attempts and not step.succeeded])
 
     def to_dict(self) -> dict:
-        return {
+        """Serialize durable evidence with observed execution times only; legacy times remain absent."""
+        payload = {
             "execution_id": self.execution_id,
             "rca_id": self.rca_id,
             "playbook_id": self.playbook_id,
             "engine": self.engine,
-            "started_at": self.started_at,
             "steps": [step.to_dict() for step in self.steps],
             "resolution_observation": self.resolution_observation,
             "resolution_confirmed": self.resolution_confirmed,
             "final_state": self.final_state,
             "error_reason": self.error_reason,
+            "resolution_records": self.resolution_records,
         }
+        for name in ("started_at", "ended_at"):
+            if (moment := getattr(self, name)) is not None:
+                payload[name] = moment
+        return payload
 
     def summary(self) -> dict:
         """상태 저장소에 둘 요약. 목록 화면이 오브젝트를 읽지 않아도 되게 한다."""
@@ -249,3 +368,61 @@ class ExecutionEvidence:
             "failed_step_count": self.failed_step_count,
             "resolution_confirmed": self.resolution_confirmed,
         }
+
+
+def retrospective_evidence_json(evidence: ExecutionEvidence, *, max_chars: int = 60_000) -> str:
+    """Return valid bounded JSON without mutating durable evidence or omitting steps and verdicts.
+
+    Only per-attempt output/observation/error previews shrink. Identity, command metadata,
+    outcome records, resolution and timestamps remain intact. Explicit per-field omissions
+    distinguish this projection from persisted evidence. If metadata alone cannot fit, raise
+    ValueError so the existing retrospective failure path applies instead of supplying bad JSON.
+    """
+    payload = evidence.to_dict()
+    # Round-trip makes nested outcome records independent of the durable evidence object.
+    payload = json.loads(json.dumps(payload, ensure_ascii=False))
+    previews = [
+        (attempt, name, attempt[name])
+        for step in payload["steps"]
+        for attempt in step["attempts"]
+        for name in ("stdout", "stderr", "observation", "error_output")
+        if isinstance(attempt.get(name), str) and attempt[name]
+    ]
+    payload["projection"] = {
+        "output_previews_omitted": False,
+        "omitted_chars": 0,
+        "persisted_evidence_unchanged": True,
+    }
+
+    def render(limit: int) -> str:
+        """Serialize a uniform output preview budget, counting JSON escaping in the final size."""
+        omitted = 0
+        for attempt, name, original in previews:
+            attempt[name] = original[:limit]
+            count = len(original) - len(attempt[name])
+            attempt.setdefault("projection_omissions", {})[name] = {
+                "omitted": bool(count),
+                "omitted_chars": count,
+            }
+            omitted += count
+        payload["projection"]["output_previews_omitted"] = bool(omitted)
+        payload["projection"]["omitted_chars"] = omitted
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+    upper = max((len(original) for _, _, original in previews), default=0)
+    full = render(upper)
+    if len(full) <= max_chars:
+        return full
+    minimum = render(0)
+    if len(minimum) > max_chars:
+        raise ValueError("retrospective evidence metadata exceeds JSON budget; durable evidence remains available")
+    lower = 0
+    best = minimum
+    while lower < upper:
+        middle = (lower + upper + 1) // 2
+        candidate = render(middle)
+        if len(candidate) <= max_chars:
+            lower, best = middle, candidate
+        else:
+            upper = middle - 1
+    return best

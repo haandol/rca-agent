@@ -13,6 +13,11 @@
 4. `record_step_outcome`으로 관측 결과를 기록한다. 관측하지 못했으면
    `criteria_met=false`로 둔다.
 
+관측 대기는 런타임 프롬프트의 검증된 CloudWatch waiter 지침을 따른다. waiter 성공은
+복구 판정이 아니다. 조치 이후 완결된 지표 구간과 실제 성공 요청, 동일 소유자의 해제 기록을
+따로 확인한다. 조기 OK 뒤 새 지표가 부족하면 busy-poll이나 셸 sleep으로 우회하지 않고
+관측 부족을 기록한다. 새로운 타이머 도구나 존재하지 않는 CLI 옵션을 가정하지 않는다.
+
 **verification-only 절차도 attempt가 필요하다.** 변경 작업이 없는 검증 절차라면
 대상 상태나 성공 기준을 확인하는 안전한 읽기 전용 AWS CLI 명령을 최소 한 번
 `run_playbook_command`로 실행한다. CloudWatch MCP 직접 조회는 성공 기준 관측에는

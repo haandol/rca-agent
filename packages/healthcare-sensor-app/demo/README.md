@@ -4,6 +4,9 @@
 검증한다. 로컬 성공은 AWS 알람 전달, 모델 평가, 승인 실행의 성공을 뜻하지 않는다.
 브라우저 설명: [mechanisms.html](mechanisms.html).
 
+실제 ECS 태스크 식별 로그와 적용 전 보정이 필요한 3개 설정은
+[런타임 식별·정비 프로필](runtime-identity-and-maintenance-profile.md)을 참조한다.
+
 ## 이미지와 소스 계약
 
 패키지 루트에서 실행한다.

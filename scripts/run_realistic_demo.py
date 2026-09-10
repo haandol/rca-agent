@@ -922,6 +922,47 @@ class Demo:
         """Derive a deterministic ECS idempotency/start marker for task discovery."""
         return "demo-" + self.journal.events[0]["hash"][:32]
 
+    def verify_task_ownership(self, task, *, recovery=False):
+        """Persist live proof; a receipt can explain tag loss only after termination."""
+        receipt = {
+            "snapshotHash": self.journal.events[0]["hash"],
+            "runId": self.journal.snapshot["options"]["run_id"],
+            "taskArn": task["taskArn"],
+            "taskDefinitionArn": task["taskDefinitionArn"],
+            "startedBy": task.get("startedBy"),
+        }
+        prior = [
+            event["data"]
+            for event in self.journal.find("task_ownership_verified")
+            if event["data"].get("taskArn") == task["taskArn"]
+        ]
+        revisions = {
+            event["data"]["arn"] for event in self.journal.find("maintenance_revision")
+        }
+        raw_tags = task.get("tags", [])
+        tags = {tag["key"]: tag["value"] for tag in raw_tags}
+        live_proof = all(
+            tags.get(key) == value and sum(tag["key"] == key for tag in raw_tags) == 1
+            for key, value in self.owner_tags().items()
+        )
+        # ECS deletes associated tags on StopTask. Never use their absence as
+        # authority to control a live task, or accept conflicting retained tags.
+        stopped_receipt = (
+            task.get("lastStatus") == "STOPPED" and not raw_tags and receipt in prior
+        )
+        if (
+            task.get("startedBy") != self.token()
+            or task["taskDefinitionArn"] not in revisions
+            or any(saved != receipt for saved in prior)
+            or not (live_proof or stopped_receipt)
+        ):
+            raise RuntimeError("maintenance task ownership mismatch; refusing stop")
+        if live_proof and task.get("lastStatus") != "STOPPED" and not prior:
+            # Normal control has a durable receipt first. During storage failure
+            # cleanup still uses current live proof, but cannot later explain
+            # missing tags or verify recovery without a published receipt.
+            self.record("task_ownership_verified", receipt, recovery=recovery)
+
     def owned_tasks(self, *, recovery=False):
         """Validate rediscovered jobs; recovery logging cannot hide proven owned tasks."""
         if not self.journal.find("run_task_intent"):
@@ -937,18 +978,18 @@ class Demo:
             for event in self.journal.find("owned_tasks")
             for task in event["data"]
         )
+        known.update(
+            event["data"]["taskArn"]
+            for event in self.journal.find("task_ownership_verified")
+        )
         known.update(self.discovered_task_arns)
         known.difference_update(task["taskArn"] for task in discovered)
-        discovered.extend(self.describe_tasks(sorted(known)))
-        arns = {e["data"]["arn"] for e in self.journal.find("maintenance_revision")}
+        retained = self.describe_tasks(sorted(known))
+        if {task["taskArn"] for task in retained} != known:
+            raise RuntimeError("known maintenance task missing or identity changed")
+        discovered.extend(retained)
         for task in discovered:
-            tags = {t["key"]: t["value"] for t in task.get("tags", [])}
-            if (
-                task.get("startedBy") != self.token()
-                or task["taskDefinitionArn"] not in arns
-                or any(tags.get(k) != v for k, v in self.owner_tags().items())
-            ):
-                raise RuntimeError("maintenance task ownership mismatch; refusing stop")
+            self.verify_task_ownership(task, recovery=recovery)
         self.discovered_task_arns.update(task["taskArn"] for task in discovered)
         self.record("owned_tasks", discovered, recovery=recovery)
         return discovered
@@ -1321,6 +1362,16 @@ class Demo:
             for task in jobs:
                 if task["lastStatus"] != "STOPPED":
                     try:
+                        current = self.describe_tasks([task["taskArn"]])
+                        if (
+                            len(current) != 1
+                            or current[0]["taskArn"] != task["taskArn"]
+                        ):
+                            raise RuntimeError("maintenance task identity changed")
+                        task = current[0]
+                        self.verify_task_ownership(task, recovery=True)
+                        if task["lastStatus"] == "STOPPED":
+                            continue
                         self.record(
                             "stop_intent", {"taskArn": task["taskArn"]}, recovery=True
                         )
