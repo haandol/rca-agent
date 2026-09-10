@@ -1,0 +1,46 @@
+{
+  "runId": "custlock-20260910T063725Z-0ea4",
+  "candidateCommit": "1db699a4cc7f",
+  "engine": "headless-codex",
+  "rcaId": "305b7696-970c-5b3a-9bd6-30a5e139a745",
+  "result": "FAILED",
+  "customerReady": false,
+  "fault": {
+    "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/ca14a8288c8b46b8a7460c3800a7932b",
+    "backendPid": 5489,
+    "acquiredAt": "2026-09-10T06:38:44.522005+00:00"
+  },
+  "alarmAt": "2026-09-10T06:41:40.992000+00:00",
+  "analysisStartedAt": "2026-09-10T06:41:41.284716+00:00",
+  "analysisStoppedAt": "2026-09-10T06:43:40.429904+00:00",
+  "observedFailure": "Live analysis reported unavailable runtime evidence tools; report completion failed because playbook.json was missing. Exact tool startup cause remains under investigation.",
+  "approvalIssued": false,
+  "executionId": null,
+  "cleanup": {
+    "actor": "rehearsal supervisor",
+    "reason": "Abort failed demo",
+    "taskStopReason": "Restore owned demo custlock-20260910T063725Z-0ea4",
+    "releaseReason": "sigterm",
+    "rollbackComplete": true,
+    "releasedAt": "2026-09-10T06:44:03.675441+00:00",
+    "healthRecoveryVerified": true,
+    "completedAt": "2026-09-10T06:47:28.906674+00:00",
+    "freshPeriods": [
+      {
+        "start": "2026-09-10T06:45:00Z",
+        "attempts": 17,
+        "failures": 0,
+        "queryAverageMs": 9.827385333323946,
+        "querySamples": 6
+      },
+      {
+        "start": "2026-09-10T06:46:00Z",
+        "attempts": 27,
+        "failures": 0,
+        "queryAverageMs": 10.640912799999569,
+        "querySamples": 5
+      }
+    ]
+  },
+  "approvedRecoveryDemonstrated": false
+}

@@ -4,8 +4,10 @@ model_reasoning_effort = "{{CODEX_REASONING_EFFORT}}"
 approval_policy = "never"
 sandbox_mode = "read-only"
 web_search = "disabled"
+mcp_optional_startup_grace_ms = 0
 
 [mcp_servers.rca-progress]
+required = true
 command = "fastmcp"
 args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/mcp_server.py:mcp"]
 enabled_tools = ["save_analysis_artifact"]
