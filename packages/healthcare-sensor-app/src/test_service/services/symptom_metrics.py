@@ -24,6 +24,7 @@ METRIC_TRAFFIC_CANCELLED = "TrafficCancelled"
 
 _FLUSH_INTERVAL_SECONDS = 30.0
 _MAX_SAMPLES = 100
+_MINUTE_MS = 60_000
 
 
 class SymptomMetrics:
@@ -59,32 +60,42 @@ class SymptomMetrics:
         )
         self._delays: list[float] = []
         self._query_durations: list[float] = []
+        self._timestamp_ms = int(time.time() * 1000)
         self._last_flush = time.monotonic()
 
     def record_ingest(self, *, attempted: int, failed: int) -> None:
         """Preserve the legacy completed-reading counters, excluding unfinished work."""
         with self._lock:
+            previous = self._rotate_minute_locked()
             self._attempts += attempted
             self._failures += failed
             self._dirty = True
+        if previous is not None:
+            self._emit(previous)
         self._flush_if_due()
 
     def record_ingest_started(self, readings: int) -> None:
         """Expose started readings and their live gauge before any repository wait."""
         with self._lock:
+            previous = self._rotate_minute_locked()
             self._started += readings
             self._in_flight += readings
             self._dirty = True
+        if previous is not None:
+            self._emit(previous)
         self._flush_if_due()
 
     def record_ingest_finished(self, readings: int, *, failed: bool = False, cancelled: bool = False) -> None:
         """Release in-flight readings on every exit; cancellation is not a legacy completion."""
         with self._lock:
+            previous = self._rotate_minute_locked()
             self._in_flight -= readings
             if not cancelled:
                 self._attempts += readings
                 self._failures += readings if failed else 0
             self._dirty = True
+        if previous is not None:
+            self._emit(previous)
         self._flush_if_due()
 
     def record_traffic(
@@ -99,6 +110,7 @@ class SymptomMetrics:
     ) -> None:
         """Count request slots and terminal outcomes without storing per-request data."""
         with self._lock:
+            previous = self._rotate_minute_locked()
             for name, value in (
                 (METRIC_TRAFFIC_OFFERED, offered),
                 (METRIC_TRAFFIC_STARTED, started),
@@ -109,6 +121,8 @@ class SymptomMetrics:
             ):
                 self._traffic[name] += value
             self._dirty = True
+        if previous is not None:
+            self._emit(previous)
         self._flush_if_due()
 
     def record_alert_delay(self, seconds: float) -> None:
@@ -124,29 +138,38 @@ class SymptomMetrics:
         if not math.isfinite(value) or value < 0:
             raise ValueError("metric samples must be finite and nonnegative")
         with self._lock:
+            previous = self._rotate_minute_locked()
             samples.append(value)
             self._dirty = True
             payload = self._drain_locked() if len(samples) == _MAX_SAMPLES else None
+        if previous is not None:
+            self._emit(previous)
         if payload is not None:
             self._emit(payload)
         self._flush_if_due()
 
     def _flush_if_due(self) -> None:
         """Keep immediate/manual recording compatibility alongside the periodic publisher."""
-        now = time.monotonic()
         with self._lock:
+            now = time.monotonic()
             if now - self._last_flush < self._flush_interval:
                 return
+            previous = self._rotate_minute_locked()
             payload = self._drain_locked()
             self._last_flush = now
+        if previous is not None:
+            self._emit(previous)
         if payload is not None:
             self._emit(payload)
 
     def flush(self, *, heartbeat: bool = False) -> None:
         """Drain counters and samples, preserving live gauges across periodic heartbeats."""
         with self._lock:
+            previous = self._rotate_minute_locked()
             payload = self._drain_locked(heartbeat=heartbeat)
             self._last_flush = time.monotonic()
+        if previous is not None:
+            self._emit(previous)
         if payload is not None:
             self._emit(payload)
 
@@ -164,6 +187,21 @@ class SymptomMetrics:
                     self.flush(heartbeat=True)
         finally:
             self.flush(heartbeat=True)
+
+    def _rotate_minute_locked(self) -> dict | None:
+        """Separate source minutes before any counter, sample or live-gauge update.
+
+        Keep only one bounded bucket. Its timestamp is the first record's time,
+        not the later publishing time. Boundary/capacity drains do not move the
+        monotonic flush deadline. A clean heartbeat observes the current time.
+        """
+        now_ms = int(time.time() * 1000)
+        previous = None
+        if self._dirty and now_ms // _MINUTE_MS != self._timestamp_ms // _MINUTE_MS:
+            previous = self._drain_locked()
+        if not self._dirty:
+            self._timestamp_ms = now_ms
+        return previous
 
     def _drain_locked(self, *, heartbeat: bool = False) -> dict | None:
         """Build one EMF document and reset interval totals without resetting in-flight work."""
@@ -201,7 +239,7 @@ class SymptomMetrics:
 
         return {
             "_aws": {
-                "Timestamp": int(time.time() * 1000),
+                "Timestamp": self._timestamp_ms,
                 "CloudWatchMetrics": [
                     {
                         "Namespace": NAMESPACE,
