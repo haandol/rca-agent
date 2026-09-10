@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "logStreamName": "healthcare/healthcare/05cac795ea4b42a3acee36303991808a",
+      "timestamp": 1789022383209,
+      "message": "{\"timestamp\": \"2026-09-10 06:39:43,209\", \"level\": \"INFO\", \"name\": \"test_service.adapters.secondary.database_adapter\", \"message\": \"db_wait_snapshot\", \"service\": \"healthcare-sensor-app\", \"event\": \"db_wait_snapshot\", \"sql_hash_algorithm\": \"md5\", \"activity\": [{\"pid\": 5212, \"application_name\": \"healthcare-service\", \"state\": \"active\", \"wait_event_type\": \"Lock\", \"wait_event\": \"relation\", \"xact_start\": \"2026-09-10 06:39:41.663241+00\", \"query_start\": \"2026-09-10 06:39:41.664377+00\", \"blocking_pids\": [5489], \"sql_hash\": \"440d9d24927afdda33a147e252ba3fd5\"}, {\"pid\": 5489, \"application_name\": \"healthcare-maint-custlock-20260910T063725Z-0ea4\", \"state\": \"idle in transaction\", \"wait_event_type\": \"Client\", \"wait_event\": \"ClientRead\", \"xact_start\": \"2026-09-10 06:38:44.517895+00\", \"query_start\": \"2026-09-10 06:38:44.533599+00\", \"blocking_pids\": [], \"sql_hash\": \"6a13686ed6e51ac0773bb537ebd88557\"}, {\"pid\": 5535, \"application_name\": \"healthcare-service\", \"state\": \"idle\", \"wait_event_type\": \"Client\", \"wait_event\": \"ClientRead\", \"xact_start\": null, \"query_start\": \"2026-09-10 06:39:42.15048+00\", \"blocking_pids\": [], \"sql_hash\": \"f55491f57410557264aac04492c0232c\"}], \"locks\": [{\"pid\": 5212, \"locktype\": \"relation\", \"mode\": \"RowExclusiveLock\", \"granted\": false, \"relation\": \"sensor_readings\"}, {\"pid\": 5489, \"locktype\": \"relation\", \"mode\": \"ShareLock\", \"granted\": true, \"relation\": \"sensor_readings\"}, {\"pid\": 5489, \"locktype\": \"relation\", \"mode\": \"AccessShareLock\", \"granted\": true, \"relation\": \"pg_locks\"}], \"pool_checked_out\": 1, \"pool_size\": 5, \"server_max_connections\": 79, \"database_connections\": 4}",
+      "ingestionTime": 1789022386831,
+      "eventId": "39896532322411919259800872575639982597923751307052580871"
+    },
+    {
+      "logStreamName": "healthcare/healthcare/05cac795ea4b42a3acee36303991808a",
+      "timestamp": 1789022384217,
+      "message": "{\"timestamp\": \"2026-09-10 06:39:44,217\", \"level\": \"INFO\", \"name\": \"test_service.adapters.secondary.database_adapter\", \"message\": \"db_wait_snapshot\", \"service\": \"healthcare-sensor-app\", \"event\": \"db_wait_snapshot\", \"sql_hash_algorithm\": \"md5\", \"activity\": [{\"pid\": 5212, \"application_name\": \"healthcare-service\", \"state\": \"idle\", \"wait_event_type\": \"Client\", \"wait_event\": \"ClientRead\", \"xact_start\": null, \"query_start\": \"2026-09-10 06:39:43.666408+00\", \"blocking_pids\": [], \"sql_hash\": \"dc6541776ef671a77e4dfd76dbcfd4cc\"}, {\"pid\": 5489, \"application_name\": \"healthcare-maint-custlock-20260910T063725Z-0ea4\", \"state\": \"idle in transaction\", \"wait_event_type\": \"Client\", \"wait_event\": \"ClientRead\", \"xact_start\": \"2026-09-10 06:38:44.517895+00\", \"query_start\": \"2026-09-10 06:38:44.533599+00\", \"blocking_pids\": [], \"sql_hash\": \"6a13686ed6e51ac0773bb537ebd88557\"}, {\"pid\": 5535, \"application_name\": \"healthcare-service\", \"state\": \"idle\", \"wait_event_type\": \"Client\", \"wait_event\": \"ClientRead\", \"xact_start\": null, \"query_start\": \"2026-09-10 06:39:42.15048+00\", \"blocking_pids\": [], \"sql_hash\": \"f55491f57410557264aac04492c0232c\"}], \"locks\": [{\"pid\": 5489, \"locktype\": \"relation\", \"mode\": \"ShareLock\", \"granted\": true, \"relation\": \"sensor_readings\"}, {\"pid\": 5489, \"locktype\": \"relation\", \"mode\": \"AccessShareLock\", \"granted\": true, \"relation\": \"pg_locks\"}], \"pool_checked_out\": 0, \"pool_size\": 5, \"server_max_connections\": 79, \"database_connections\": 4}",
+      "ingestionTime": 1789022386831,
+      "eventId": "39896532344891070419919740702307986616753299705080840205"
+    }
+  ],
+  "searchedLogStreams": [],
+  "nextToken": "Bxkq6kVGFtq2y_MoigeqscPOdhXVbhiVtLoAmXb5jCqi4NHKraR9B30ED1M4fKt-RF2EBdiOG_x-C9dyr75BjXTRGlEHMI7z4w02c4cHVLrIVH4nibJzWEAfiBP73MOC7knF04qn6jDA0iZMVN49-0kZcLmDvzN5UCbNqvOJtvocIqXpOkEUv609S84ZBbPnWGvb53sV5Y5K-hfSjijYaxHEAJfZdkBfhFSQKz7joQvZUJn3Tm01zrIzQUsnE_PYTV7Hgbna5mdTYEGc7qjYz9dLBhqFpsi3wZISgWHg3Q3M1Q7JuHy_70H5nuqrTSn7edDpbqQpMW6G4EiiKPN_HxCHIU2pEtI1BgfObMgjXOI",
+  "ResponseMetadata": {
+    "RequestId": "cca39a21-c680-488d-b673-d08235ea2123",
+    "HTTPStatusCode": 200,
+    "HTTPHeaders": {
+      "x-amzn-requestid": "cca39a21-c680-488d-b673-d08235ea2123",
+      "content-type": "application/x-amz-json-1.1",
+      "content-length": "4320",
+      "date": "Thu, 10 Sep 2026 06:41:44 GMT"
+    },
+    "RetryAttempts": 0
+  }
+}

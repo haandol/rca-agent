@@ -1,0 +1,37 @@
+{
+  "scenarios": {
+    "maintenance-transaction-lock": {
+      "captures": {
+        "capture-2001": [
+          "baseline#/data/metrics",
+          "statusIncident#/data/metrics",
+          "alarmStatus#/data/alarms"
+        ],
+        "capture-2002": [
+          "maintenanceLogs#/events",
+          "blockers#/events/0",
+          "statusBefore#/data/maintenanceTasks"
+        ],
+        "capture-2003": [
+          "baseline#/data/sourceManifests",
+          "baseline#/data/tasks",
+          "statusIncident#/data/maintenanceTasks",
+          "definition#/data/response/taskDefinition",
+          "maintenanceLogs#/events/0",
+          "maintenanceSource#"
+        ],
+        "capture-2004": ["blockers#/events/0", "blockers#/events/1"],
+        "capture-2005": [
+          "blockers#/events/0",
+          "blockers#/events/1",
+          "sessionSource#"
+        ],
+        "capture-2006": [
+          "baseline#/data/environment",
+          "statusIncident#/data/service/taskDefinition",
+          "blockers#/events"
+        ]
+      }
+    }
+  }
+}

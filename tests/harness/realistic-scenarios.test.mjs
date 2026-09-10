@@ -25,6 +25,18 @@ const expectedTypes = {
   'pool-config-regression': 'unsupported',
   'query-amplification': 'slow-query',
 };
+const awsCaptureDirectory = path.join(
+  REPOSITORY_ROOT,
+  'tests/fixtures/observations/aws-maintenance-20260910T063725Z',
+);
+const isAwsCapture = (scenario) => scenario.provenance.kind === 'aws-incident';
+const localPredecessor = async () =>
+  JSON.parse(
+    await readFile(
+      path.join(awsCaptureDirectory, 'localPredecessor.json.txt'),
+      'utf8',
+    ),
+  );
 
 // In-memory evaluator probes ONLY. Never serialize these as model fixtures.
 // This isolates each rejection rule with otherwise valid structure.
@@ -71,7 +83,7 @@ function structuralProbe(scenario) {
   };
 }
 
-test('active catalog distinguishes measured local inputs from illustrative alarm envelopes', async () => {
+test('active catalog distinguishes measured AWS maintenance from local illustrative alarm inputs', async () => {
   const scenarios = await loadScenarios();
   assert.deepEqual(
     scenarios.map(({ id }) => id),
@@ -80,15 +92,23 @@ test('active catalog distinguishes measured local inputs from illustrative alarm
   for (const scenario of scenarios) {
     validateScenario(scenario);
     assert.deepEqual(scenario.executionModes, ['model-eval']);
-    assert.equal(scenario.provenance.kind, 'local-postgresql');
-    assert.equal(scenario.provenance.awsMeasured, false);
+    const aws = scenario.id === 'maintenance-transaction-lock';
+    assert.equal(
+      scenario.provenance.kind,
+      aws ? 'aws-incident' : 'local-postgresql',
+    );
+    assert.equal(scenario.provenance.awsMeasured, aws);
     assert.equal(
       scenario.provenance.calibration,
-      'local-mechanism-measured-alarm-pending',
+      aws
+        ? 'observed-alarm-transition-not-a-recovery-verdict'
+        : 'local-mechanism-measured-alarm-pending',
     );
     assert.equal(
       scenario.provenance.alarmEnvelope,
-      'synthetic-illustrative-not-an-observed-aws-alarm',
+      aws
+        ? 'observed-aws-alarm-transition'
+        : 'synthetic-illustrative-not-an-observed-aws-alarm',
     );
     assert.equal(scenario.alarm.namespace, 'Healthcare/Sensor');
     assert.deepEqual(scenario.alarm.dimensions, {
@@ -96,8 +116,8 @@ test('active catalog distinguishes measured local inputs from illustrative alarm
     });
     assert.equal(scenario.alarm.period, 60);
     assert.equal(scenario.alarm.evaluationPeriods, 2);
-    assert.equal(Object.hasOwn(scenario.alarm, 'threshold'), false);
-    assert.equal(Object.hasOwn(scenario.alarm, 'stateChangeTime'), false);
+    assert.equal(Object.hasOwn(scenario.alarm, 'threshold'), aws);
+    assert.equal(Object.hasOwn(scenario.alarm, 'stateChangeTime'), aws);
     assert.deepEqual(scenario.expectation.acceptedRootFaultTypes, [
       expectedTypes[scenario.id],
     ]);
@@ -116,15 +136,26 @@ test('active catalog distinguishes measured local inputs from illustrative alarm
       assert.match(observation.id, /^obs-\d{2}$/);
       const raw = JSON.parse(observation.summary);
       assert.ok(
-        ['local-postgresql-measurement', 'repository-source-snapshot'].includes(
-          raw.provenance,
-        ),
+        (aws
+          ? ['aws-incident-measurement']
+          : ['local-postgresql-measurement', 'repository-source-snapshot']
+        ).includes(raw.provenance),
       );
       assert.ok(Date.parse(raw.window.start) < Date.parse(raw.window.end));
-      assert.deepEqual(
-        raw.records.map((record) => record.context),
-        ['baseline', 'incident'],
-      );
+      if (aws) {
+        assert.ok(
+          raw.records.every((record) =>
+            ['baseline', 'incident'].includes(record.context),
+          ),
+        );
+        assert.equal(raw.resource.region, 'us-east-1');
+        assert.ok(raw.resource.cluster);
+      } else {
+        assert.deepEqual(
+          raw.records.map((record) => record.context),
+          ['baseline', 'incident'],
+        );
+      }
       assert.equal(raw.window.end, scenario.provenance.incidentCutoff);
       assert.ok(raw.resource.runId);
       assert.ok(raw.resource.schema);
@@ -151,6 +182,18 @@ async function measuredInputs(scenario) {
   const directory = path.dirname(
     path.join(REPOSITORY_ROOT, scenario.provenance.source),
   );
+  if (isAwsCapture(scenario)) {
+    const proof = JSON.parse(bytes);
+    const snippets = Object.fromEntries(
+      await Promise.all(
+        Object.entries(proof.files).map(async ([key, descriptor]) => [
+          key,
+          await readFile(path.join(directory, descriptor.file)),
+        ]),
+      ),
+    );
+    return { proof, snippets };
+  }
   const snippets = JSON.parse(
     await readFile(path.join(directory, 'source-snippets.json'), 'utf8'),
   );
@@ -158,16 +201,23 @@ async function measuredInputs(scenario) {
 }
 
 test('catalog captures reproduce the reviewed UTC proof projection and neutral operator mapping', async () => {
-  for (const scenario of await loadScenarios()) {
+  for (const scenario of [
+    ...(await loadScenarios()),
+    await localPredecessor(),
+  ]) {
     const { proof, snippets } = await measuredInputs(scenario);
-    assert.equal(proof.checks.utc_phase_windows, true);
-    assert.equal(proof.checks.utc_operation_windows, true);
-    assert.equal(proof.checks.identical_query_inputs, true);
-    assert.equal(proof.checks.all_four_mechanisms, true);
-    assert.equal(proof.schema_removed, true);
-    assert.deepEqual(proof.cleanup_errors, []);
+    if (!isAwsCapture(scenario)) {
+      assert.equal(proof.checks.utc_phase_windows, true);
+      assert.equal(proof.checks.utc_operation_windows, true);
+      assert.equal(proof.checks.identical_query_inputs, true);
+      assert.equal(proof.checks.all_four_mechanisms, true);
+      assert.equal(proof.schema_removed, true);
+      assert.deepEqual(proof.cleanup_errors, []);
+    }
     const projected = projectIncidentCaptures(scenario.id, proof, snippets);
     assert.deepEqual(scenario.observations, projected.observations);
+    if (isAwsCapture(scenario))
+      assert.deepEqual(scenario.alarm, projected.alarm);
     const manifest = JSON.parse(
       await readFile(
         path.join(REPOSITORY_ROOT, scenario.provenance.operatorMapping),
@@ -181,6 +231,23 @@ test('catalog captures reproduce the reviewed UTC proof projection and neutral o
     for (const pointers of Object.values(projected.operatorMapping)) {
       assert.ok(pointers.length > 0);
       for (const pointer of pointers) {
+        if (isAwsCapture(scenario)) {
+          const [key, fragment] = pointer.split('#');
+          assert.ok(Object.hasOwn(proof.files, key));
+          const source = key.endsWith('Source')
+            ? snippets[key].toString()
+            : JSON.parse(snippets[key]);
+          assert.notEqual(
+            fragment
+              ? fragment
+                  .slice(1)
+                  .split('/')
+                  .reduce((value, part) => value?.[part], source)
+              : source,
+            undefined,
+          );
+          continue;
+        }
         assert.match(pointer, /^\/phases\/\d+\//);
         assert.notEqual(
           pointer
@@ -195,7 +262,10 @@ test('catalog captures reproduce the reviewed UTC proof projection and neutral o
 });
 
 test('restoration, shutdown results, operator labels and later events cannot change model captures', async () => {
-  for (const scenario of await loadScenarios()) {
+  const local = (await loadScenarios()).filter(
+    (scenario) => !isAwsCapture(scenario),
+  );
+  for (const scenario of [...local, await localPredecessor()]) {
     const { proof, snippets } = await measuredInputs(scenario);
     const expected = projectIncidentCaptures(
       scenario.id,
@@ -248,10 +318,8 @@ test('restoration, shutdown results, operator labels and later events cannot cha
   }
 });
 
-test('lock incident cutoff precedes release and excludes that incident post-recovery request', async () => {
-  const scenario = (await loadScenarios()).find(
-    ({ id }) => id === 'maintenance-transaction-lock',
-  );
+test('archived local lock cutoff still excludes its post-recovery request', async () => {
+  const scenario = await localPredecessor();
   const { proof } = await measuredInputs(scenario);
   const incident = proof.phases.find(
     (phase) => phase.case === 'lock' && phase.phase === 'fault',
@@ -268,6 +336,276 @@ test('lock incident cutoff precedes release and excludes that incident post-reco
   assert.ok(text.includes(incident.blocked_write.operation.request_id));
   assert.ok(!text.includes(incident.restored_write.operation.request_id));
   assert.ok(!text.includes(incident.release_events[0].released_at));
+});
+
+async function awsInputs() {
+  const scenario = (await loadScenarios()).find(
+    ({ id }) => id === 'maintenance-transaction-lock',
+  );
+  return { scenario, ...(await measuredInputs(scenario)) };
+}
+
+// Rehash deliberately modified fixture copies so selector tests reach past integrity validation.
+function replaceCapture(proof, snippets, key, change) {
+  const value = JSON.parse(snippets[key].toString());
+  change(value);
+  snippets[key] = Buffer.from(JSON.stringify(value));
+  proof.files[key].sha256 = createHash('sha256')
+    .update(snippets[key])
+    .digest('hex');
+}
+
+test('AWS maintenance binds real PID, task ownership and installed rollback source without changing gates', async () => {
+  const { scenario, proof, snippets } = await awsInputs();
+  assert.deepEqual(
+    scenario.expectation,
+    (await localPredecessor()).expectation,
+  );
+  assert.deepEqual(scenario.executionModes, ['model-eval']);
+  const projected = projectIncidentCaptures(scenario.id, proof, snippets);
+  const observations = projected.observations.map(({ summary }) =>
+    JSON.parse(summary),
+  );
+  const incident = observations[1].records[0];
+  assert.equal(incident.maintenance.backend_pid, 5489);
+  assert.equal(incident.maintenance.run_id, proof.runId);
+  assert.equal(incident.identity.TaskARN, incident.ownedTask.taskArn);
+  assert.equal(incident.ownedTask.lastStatus, 'RUNNING');
+  assert.match(
+    incident.ownedTask.taskArn,
+    /\/ca14a8288c8b46b8a7460c3800a7932b$/,
+  );
+  const owner = incident.snapshot.record.activity.find(
+    ({ pid }) => pid === 5489,
+  );
+  assert.equal(owner.application_name, `healthcare-maint-${proof.runId}`);
+  const blocked = incident.snapshot.record.activity.find(
+    ({ pid }) => pid === 5212,
+  );
+  assert.deepEqual(blocked.blocking_pids, [5489]);
+  assert.equal(blocked.wait_event, 'relation');
+  const lifetime = observations[4].records[0].observations;
+  assert.deepEqual(
+    lifetime.map(({ record }) => record.pool_checked_out),
+    [1, 0],
+  );
+  assert.ok(
+    lifetime[1].record.locks.some(
+      ({ pid, granted }) => pid === 5489 && granted,
+    ),
+  );
+  const source = observations[2].records[1].sourceExcerpt;
+  assert.equal(source.sha256, proof.files.maintenanceSource.sha256);
+  const text = source.lines.map(({ text: line }) => line).join('\n');
+  assert.match(
+    text,
+    /loop\.add_signal_handler\(signum, request_stop, signum\)/,
+  );
+  assert.match(text, /stop\.set\(\)/);
+  assert.match(text, /await transaction\.rollback\(\)/);
+  assert.match(text, /await conn\.close\(timeout=5\)/);
+  assert.ok(!JSON.stringify(observations).includes('local_c1cf824ddbfd4bdb'));
+  assert.ok(!JSON.stringify(observations).includes('rollback_complete'));
+});
+
+test('AWS captures retain event time even when fetched later and exclude incomplete metric periods', async () => {
+  const { scenario, proof, snippets } = await awsInputs();
+  const blockers = JSON.parse(snippets.blockers);
+  assert.ok(
+    Date.parse(blockers.ResponseMetadata.HTTPHeaders.date) >
+      Date.parse(proof.incidentCutoff),
+  );
+  assert.ok(
+    blockers.events.every(
+      ({ timestamp }) => timestamp < Date.parse(proof.incidentCutoff),
+    ),
+  );
+  const { observations, alarm } = projectIncidentCaptures(
+    scenario.id,
+    proof,
+    snippets,
+  );
+  assert.equal(alarm.stateChangeTime, '2026-09-10T15:41:40.992000+09:00');
+  assert.ok(
+    Date.parse(alarm.stateChangeTime) < Date.parse(proof.incidentCutoff),
+  );
+  assert.equal(Object.hasOwn(alarm, 'datapointsToAlarm'), false);
+  const metrics = JSON.parse(observations[0].summary).records;
+  for (const record of metrics) {
+    for (const series of Object.values(record.metrics)) {
+      for (const point of series.Datapoints) {
+        assert.ok(
+          Date.parse(point.Timestamp) + series.periodSeconds * 1000 <=
+            Date.parse(proof.incidentCutoff),
+        );
+      }
+    }
+  }
+  const before = JSON.stringify(observations);
+  replaceCapture(proof, snippets, 'statusIncident', (document) => {
+    for (const series of Object.values(document.data.metrics.values)) {
+      series.Datapoints.push({
+        Timestamp: '2026-09-10T06:41:00Z',
+        Sum: 'INCOMPLETE_PERIOD_SENTINEL',
+        Unit: 'Count',
+      });
+    }
+  });
+  assert.equal(
+    JSON.stringify(
+      projectIncidentCaptures(scenario.id, proof, snippets).observations,
+    ),
+    before,
+  );
+});
+
+test('AWS projection ignores operator cleanup, later task state, recovery metrics and retrospective labels', async () => {
+  const { scenario, proof, snippets } = await awsInputs();
+  const original = projectIncidentCaptures(scenario.id, proof, snippets);
+  for (const key of ['baseline', 'statusBefore', 'statusIncident']) {
+    replaceCapture(proof, snippets, key, (document) => {
+      for (const field of [
+        'checks',
+        'recoveryVerified',
+        'scenarioSuccess',
+        'maintenanceRestoration',
+        'revisionObservation',
+      ]) {
+        document.data[field] = 'OPERATOR_ONLY_SENTINEL';
+      }
+      document.data.groundTruth = 'OPERATOR_ONLY_SENTINEL';
+    });
+  }
+  replaceCapture(proof, snippets, 'alarmStatus', (document) => {
+    for (const field of Object.keys(document.data).filter(
+      (key) => key !== 'alarms',
+    )) {
+      document.data[field] = 'OPERATOR_ONLY_SENTINEL';
+    }
+  });
+  for (const key of ['maintenanceLogs', 'blockers']) {
+    replaceCapture(proof, snippets, key, (document) => {
+      document.events.push({
+        timestamp: Date.parse(proof.incidentCutoff) + 60_000,
+        message: JSON.stringify({
+          event: 'maintenance_released',
+          rollback_complete: true,
+          verdict: 'OPERATOR_ONLY_SENTINEL',
+        }),
+      });
+      document.retrospective = 'OPERATOR_ONLY_SENTINEL';
+      document.cleanup = 'OPERATOR_ONLY_SENTINEL';
+    });
+  }
+  const projected = projectIncidentCaptures(scenario.id, proof, snippets);
+  assert.deepEqual(projected, original);
+  assert.doesNotMatch(
+    JSON.stringify(projected.observations),
+    /OPERATOR_ONLY_SENTINEL/,
+  );
+});
+
+test('AWS projection rejects missing or conflicting incident ownership, source and cutoff evidence', async () => {
+  const cases = [
+    [
+      'statusBefore',
+      (value) => {
+        value.data.maintenanceTasks[0].tags = [];
+      },
+    ],
+    [
+      'statusIncident',
+      (value) => {
+        value.data.maintenanceTasks[0].startedBy = 'foreign';
+      },
+    ],
+    [
+      'statusIncident',
+      (value) => {
+        value.data.maintenanceTasks[0].taskDefinitionArn += '-foreign';
+      },
+    ],
+    [
+      'statusIncident',
+      (value) => {
+        value.data.maintenanceTasks[0].lastStatus = 'STOPPED';
+      },
+    ],
+    [
+      'statusBefore',
+      (value) => {
+        value.at = '2026-09-10T06:42:00Z';
+      },
+    ],
+    [
+      'definition',
+      (value) => {
+        value.data.response.taskDefinition.containerDefinitions[0].command = [
+          'unobserved',
+        ];
+      },
+    ],
+    [
+      'maintenanceLogs',
+      (value) => {
+        const event = value.events.find(
+          ({ message }) => JSON.parse(message).event === 'ecs_runtime_identity',
+        );
+        const record = JSON.parse(event.message);
+        record.TaskARN += '-foreign';
+        event.message = JSON.stringify(record);
+      },
+    ],
+    [
+      'maintenanceLogs',
+      (value) => {
+        const event = value.events.find(
+          ({ message }) => JSON.parse(message).event === 'source_manifest',
+        );
+        const record = JSON.parse(event.message);
+        record.files['maintenance.py'] = '0'.repeat(64);
+        event.message = JSON.stringify(record);
+      },
+    ],
+    [
+      'blockers',
+      (value) => {
+        const record = JSON.parse(value.events[0].message);
+        record.activity.find(({ pid }) => pid === 5489).application_name =
+          'foreign';
+        value.events[0].message = JSON.stringify(record);
+      },
+    ],
+    [
+      'blockers',
+      (value) => {
+        value.events[0].timestamp = Date.parse('2026-09-10T06:42:00Z');
+      },
+    ],
+    [
+      'alarmStatus',
+      (value) => {
+        value.data.alarms.find(
+          ({ MetricName }) => MetricName === 'VitalIngestFailures',
+        ).StateTransitionedTimestamp = '2026-09-10T06:42:00Z';
+      },
+    ],
+  ];
+  for (const [key, change] of cases) {
+    const { scenario, proof, snippets } = await awsInputs();
+    replaceCapture(proof, snippets, key, change);
+    assert.throws(
+      () => projectIncidentCaptures(scenario.id, proof, snippets),
+      undefined,
+      key,
+    );
+  }
+  const { scenario, proof, snippets } = await awsInputs();
+  snippets.blockers = Buffer.concat([snippets.blockers, Buffer.from(' ')]);
+  assert.throws(
+    () => projectIncidentCaptures(scenario.id, proof, snippets),
+    /capture hash mismatch: blockers/,
+  );
 });
 
 test('capture construction refuses missing UTC evidence rather than inventing dates', async () => {

@@ -1,0 +1,210 @@
+{
+  "at": "2026-09-10T06:38:11.920955+00:00",
+  "data": {
+    "arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare-demo-maint-412d6d4a2979:1",
+    "response": {
+      "tags": [
+        {
+          "key": "stage",
+          "value": "Dev"
+        },
+        {
+          "key": "namespace",
+          "value": "RcaAgentDev"
+        },
+        {
+          "key": "RealisticDemoRunId",
+          "value": "custlock-20260910T063725Z-0ea4"
+        },
+        {
+          "key": "RealisticDemoJournal",
+          "value": "412d6d4a297935b8d904fd7958c80b37c904ae3ff8a1bdfb7fc74d6077f8f194"
+        }
+      ],
+      "taskDefinition": {
+        "compatibilities": [
+          "EC2",
+          "MANAGED_INSTANCES",
+          "FARGATE"
+        ],
+        "containerDefinitions": [
+          {
+            "command": [
+              "-m",
+              "test_service.maintenance",
+              "--run-id",
+              "custlock-20260910T063725Z-0ea4",
+              "--hold-seconds",
+              "7200.0",
+              "--schema",
+              "public"
+            ],
+            "cpu": 0,
+            "credentialSpecs": [],
+            "dnsSearchDomains": [],
+            "dnsServers": [],
+            "dockerLabels": {},
+            "dockerSecurityOptions": [],
+            "entryPoint": [
+              "python"
+            ],
+            "environment": [
+              {
+                "name": "DB_OBSERVABILITY_INTERVAL_SECONDS",
+                "value": "1"
+              },
+              {
+                "name": "AWS_REGION",
+                "value": "us-east-1"
+              },
+              {
+                "name": "DEPLOYED_REVISION",
+                "value": "1db699a4cc7f"
+              },
+              {
+                "name": "DB_PORT",
+                "value": "5432"
+              },
+              {
+                "name": "DB_POOL_SIZE",
+                "value": "5"
+              },
+              {
+                "name": "FAULT_ERROR_RATE",
+                "value": "0.0"
+              },
+              {
+                "name": "DB_NAME",
+                "value": "healthcare"
+              },
+              {
+                "name": "DB_HOST",
+                "value": "rcaagentdev-postgres.cj7kqks81ysn.us-east-1.rds.amazonaws.com"
+              },
+              {
+                "name": "DB_MAX_OVERFLOW",
+                "value": "10"
+              },
+              {
+                "name": "OTEL_SERVICE_NAME",
+                "value": "healthcare-sensor-app"
+              },
+              {
+                "name": "RCA_TEST_RUN_ID",
+                "value": "custlock-20260910T063725Z-0ea4"
+              },
+              {
+                "name": "TRAFFIC_ENABLED",
+                "value": "false"
+              },
+              {
+                "name": "FAULT_DB_LEAK",
+                "value": "false"
+              },
+              {
+                "name": "DB_STATEMENT_TIMEOUT_MS",
+                "value": "2000"
+              },
+              {
+                "name": "FAULT_SLOW_QUERY_MS",
+                "value": "0"
+              },
+              {
+                "name": "DB_OBSERVABILITY_ENABLED",
+                "value": "false"
+              }
+            ],
+            "environmentFiles": [],
+            "essential": true,
+            "extraHosts": [],
+            "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:b26e531e0f0a53af28b14f144d45491700336050217cbfd0125fb4ae1f2b7755",
+            "links": [],
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/ecs/RcaAgentDev/healthcare",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "healthcare"
+              },
+              "secretOptions": []
+            },
+            "mountPoints": [],
+            "name": "healthcare",
+            "portMappings": [],
+            "secrets": [
+              {
+                "name": "DB_USERNAME",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:395271362395:secret:RcaAgentDev/rds/postgres-cw9L1F:username::"
+              },
+              {
+                "name": "DB_PASSWORD",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:395271362395:secret:RcaAgentDev/rds/postgres-cw9L1F:password::"
+              }
+            ],
+            "systemControls": [],
+            "ulimits": [],
+            "volumesFrom": []
+          }
+        ],
+        "cpu": "512",
+        "executionRoleArn": "arn:aws:iam::395271362395:role/RcaAgentDevHealthcareExecutionRole",
+        "family": "RcaAgentDevHealthcare-demo-maint-412d6d4a2979",
+        "memory": "1024",
+        "networkMode": "awsvpc",
+        "placementConstraints": [],
+        "registeredAt": "2026-09-10T15:38:11.738000+09:00",
+        "registeredBy": "arn:aws:iam::395271362395:user/dongkyl",
+        "requiresAttributes": [
+          {
+            "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+          },
+          {
+            "name": "ecs.capability.execution-role-awslogs"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+          },
+          {
+            "name": "ecs.capability.secrets.asm.environment-variables"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.17"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.21"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.task-iam-role"
+          },
+          {
+            "name": "ecs.capability.execution-role-ecr-pull"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+          },
+          {
+            "name": "ecs.capability.task-eni"
+          }
+        ],
+        "requiresCompatibilities": [
+          "FARGATE"
+        ],
+        "revision": 1,
+        "runtimePlatform": {
+          "cpuArchitecture": "ARM64",
+          "operatingSystemFamily": "LINUX"
+        },
+        "status": "ACTIVE",
+        "taskDefinitionArn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare-demo-maint-412d6d4a2979:1",
+        "taskRoleArn": "arn:aws:iam::395271362395:role/RcaAgentDevHealthcareTaskRole",
+        "volumes": []
+      }
+    }
+  },
+  "hash": "073dd68fac5b2f05472763878f82599371c71da8fc52914769574529170e5057",
+  "kind": "maintenance_revision",
+  "previous": "6891d8b7d764903fd502d39ac3a93eb0ae9c3fda4086c78cf95b8a7902b6654f"
+}

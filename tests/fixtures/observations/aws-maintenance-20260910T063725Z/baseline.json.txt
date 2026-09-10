@@ -1,0 +1,1304 @@
+{
+  "at": "2026-09-10T06:37:48.049514+00:00",
+  "data": {
+    "alarms": [
+      {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+        ],
+        "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-PatientVitalsQueryLatency",
+        "AlarmConfigurationUpdatedTimestamp": "2026-09-10T15:31:51.956000+09:00",
+        "AlarmDescription": "Patient vital record queries are slow. Initial threshold requires calibration against healthy and restored traffic. Resources: LogGroup=/ecs/RcaAgentDev/healthcare; ECSCluster=RcaAgentDevHealthcare; ECSService=RcaAgentDevHealthcare; RDSInstance=rcaagentdev-postgres.",
+        "AlarmName": "RcaAgentDev-Healthcare-PatientVitalsQueryLatency",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "ServiceName",
+            "Value": "healthcare-sensor-app"
+          }
+        ],
+        "EvaluationPeriods": 2,
+        "InsufficientDataActions": [],
+        "MetricName": "PatientVitalsQueryDuration",
+        "Namespace": "Healthcare/Sensor",
+        "OKActions": [
+          "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+        ],
+        "Period": 60,
+        "StateReason": "Threshold Crossed: 1 datapoint [10.796336399999973 (10/09/26 06:33:00)] was not greater than or equal to the threshold (500.0).",
+        "StateReasonData": "{\"version\":\"1.0\",\"queryDate\":\"2026-09-10T06:34:43.300+0000\",\"startDate\":\"2026-09-10T06:33:00.000+0000\",\"unit\":\"Milliseconds\",\"statistic\":\"Average\",\"period\":60,\"recentDatapoints\":[10.796336399999973],\"threshold\":500.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-10T06:33:00.000+0000\",\"sampleCount\":5.0,\"value\":10.796336399999973}]}",
+        "StateTransitionedTimestamp": "2026-09-10T15:34:43.301000+09:00",
+        "StateUpdatedTimestamp": "2026-09-10T15:34:43.301000+09:00",
+        "StateValue": "OK",
+        "Statistic": "Average",
+        "Threshold": 500.0,
+        "TreatMissingData": "missing",
+        "Unit": "Milliseconds"
+      },
+      {
+        "ActionsEnabled": true,
+        "AlarmActions": [],
+        "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-RdsHighConnections",
+        "AlarmConfigurationUpdatedTimestamp": "2026-08-07T14:07:41.982000+09:00",
+        "AlarmName": "RcaAgentDev-Healthcare-RdsHighConnections",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": "rcaagentdev-postgres"
+          }
+        ],
+        "EvaluationPeriods": 2,
+        "InsufficientDataActions": [],
+        "MetricName": "DatabaseConnections",
+        "Namespace": "AWS/RDS",
+        "OKActions": [],
+        "Period": 60,
+        "StateReason": "Threshold Crossed: 1 datapoint [2.0 (31/08/26 06:39:00)] was not greater than or equal to the threshold (12.0).",
+        "StateReasonData": "{\"version\":\"1.0\",\"queryDate\":\"2026-08-31T06:40:29.330+0000\",\"startDate\":\"2026-08-31T06:38:00.000+0000\",\"statistic\":\"Maximum\",\"period\":60,\"recentDatapoints\":[17.0,2.0],\"threshold\":12.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-31T06:39:00.000+0000\",\"sampleCount\":1.0,\"value\":2.0}]}",
+        "StateTransitionedTimestamp": "2026-08-31T15:40:29.331000+09:00",
+        "StateUpdatedTimestamp": "2026-08-31T15:40:29.331000+09:00",
+        "StateValue": "OK",
+        "Statistic": "Maximum",
+        "Threshold": 12.0,
+        "TreatMissingData": "notBreaching"
+      },
+      {
+        "ActionsEnabled": true,
+        "AlarmActions": [
+          "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+        ],
+        "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures",
+        "AlarmConfigurationUpdatedTimestamp": "2026-09-10T15:31:51.034000+09:00",
+        "AlarmDescription": "Patient vital readings are failing to be recorded. Impact: vitals are missing from the record and abnormal-value alerts are not raised. Resources: LogGroup=/ecs/RcaAgentDev/healthcare; ECSCluster=RcaAgentDevHealthcare; ECSService=RcaAgentDevHealthcare; RDSInstance=rcaagentdev-postgres.",
+        "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "ServiceName",
+            "Value": "healthcare-sensor-app"
+          }
+        ],
+        "EvaluationPeriods": 2,
+        "InsufficientDataActions": [],
+        "MetricName": "VitalIngestFailures",
+        "Namespace": "Healthcare/Sensor",
+        "OKActions": [
+          "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+        ],
+        "Period": 60,
+        "StateReason": "Threshold Crossed: 1 datapoint [0.0 (31/08/26 06:39:00)] was not greater than or equal to the threshold (1.0).",
+        "StateReasonData": "{\"version\":\"1.0\",\"queryDate\":\"2026-08-31T06:40:22.136+0000\",\"startDate\":\"2026-08-31T06:38:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[6.0,0.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-31T06:39:00.000+0000\",\"sampleCount\":2.0,\"value\":0.0}]}",
+        "StateTransitionedTimestamp": "2026-08-31T15:40:22.139000+09:00",
+        "StateUpdatedTimestamp": "2026-08-31T15:40:22.139000+09:00",
+        "StateValue": "OK",
+        "Statistic": "Sum",
+        "Threshold": 1.0,
+        "TreatMissingData": "notBreaching"
+      }
+    ],
+    "environment": {
+      "DB_MAX_OVERFLOW": {
+        "present": true,
+        "value": "10"
+      },
+      "DB_OBSERVABILITY_ENABLED": {
+        "present": true,
+        "value": "true"
+      },
+      "DB_OBSERVABILITY_INTERVAL_SECONDS": {
+        "present": true,
+        "value": "1"
+      },
+      "DB_POOL_SIZE": {
+        "present": true,
+        "value": "5"
+      },
+      "DB_POOL_TIMEOUT_SECONDS": {
+        "present": false,
+        "value": null
+      },
+      "DB_STATEMENT_TIMEOUT_MS": {
+        "present": true,
+        "value": "2000"
+      },
+      "DEPLOYED_REVISION": {
+        "present": true,
+        "value": "1db699a4cc7f"
+      },
+      "RCA_TEST_PHASE": {
+        "present": false,
+        "value": null
+      },
+      "RCA_TEST_RUN_ID": {
+        "present": false,
+        "value": null
+      },
+      "TRAFFIC_ENABLED": {
+        "present": false,
+        "value": null
+      },
+      "TRAFFIC_INTERVAL_SECONDS": {
+        "present": false,
+        "value": null
+      },
+      "TRAFFIC_MAX_CONCURRENCY": {
+        "present": false,
+        "value": null
+      },
+      "TRAFFIC_PATIENT_ID": {
+        "present": false,
+        "value": null
+      },
+      "TRAFFIC_QUERY_LIMIT": {
+        "present": false,
+        "value": null
+      },
+      "TRAFFIC_SEED": {
+        "present": false,
+        "value": null
+      }
+    },
+    "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:b26e531e0f0a53af28b14f144d45491700336050217cbfd0125fb4ae1f2b7755",
+    "metrics": {
+      "end": "2026-09-10T06:37:00+00:00",
+      "ready": true,
+      "start": "2026-09-10T06:35:00+00:00",
+      "values": {
+        "PatientVitalsQueryDuration": {
+          "Datapoints": [
+            {
+              "Average": 9.188764800023819,
+              "SampleCount": 5.0,
+              "Sum": 45.94382400011909,
+              "Timestamp": "2026-09-10T15:35:00+09:00",
+              "Unit": "Milliseconds"
+            },
+            {
+              "Average": 9.532352666676994,
+              "SampleCount": 6.0,
+              "Sum": 57.19411600006197,
+              "Timestamp": "2026-09-10T15:36:00+09:00",
+              "Unit": "Milliseconds"
+            }
+          ],
+          "Label": "PatientVitalsQueryDuration"
+        },
+        "VitalIngestAttempts": {
+          "Datapoints": [
+            {
+              "Average": 11.0,
+              "SampleCount": 2.0,
+              "Sum": 22.0,
+              "Timestamp": "2026-09-10T15:36:00+09:00",
+              "Unit": "Count"
+            },
+            {
+              "Average": 14.0,
+              "SampleCount": 2.0,
+              "Sum": 28.0,
+              "Timestamp": "2026-09-10T15:35:00+09:00",
+              "Unit": "Count"
+            }
+          ],
+          "Label": "VitalIngestAttempts"
+        },
+        "VitalIngestFailures": {
+          "Datapoints": [
+            {
+              "Average": 0.0,
+              "SampleCount": 2.0,
+              "Sum": 0.0,
+              "Timestamp": "2026-09-10T15:36:00+09:00",
+              "Unit": "Count"
+            },
+            {
+              "Average": 0.0,
+              "SampleCount": 2.0,
+              "Sum": 0.0,
+              "Timestamp": "2026-09-10T15:35:00+09:00",
+              "Unit": "Count"
+            }
+          ],
+          "Label": "VitalIngestFailures"
+        }
+      }
+    },
+    "options": {
+      "alarms": [
+        "RcaAgentDev-Healthcare-VitalIngestFailures",
+        "RcaAgentDev-Healthcare-PatientVitalsQueryLatency",
+        "RcaAgentDev-Healthcare-RdsHighConnections"
+      ],
+      "container": "healthcare",
+      "expect_settings": {
+        "DB_OBSERVABILITY_ENABLED": "true",
+        "DB_OBSERVABILITY_INTERVAL_SECONDS": "1",
+        "DB_STATEMENT_TIMEOUT_MS": "2000"
+      },
+      "hold_seconds": 7200.0,
+      "image": null,
+      "maintenance_schema": "public",
+      "max_overflow": 0,
+      "pool_size": 1,
+      "pool_timeout": 1.0,
+      "revision": null,
+      "run_id": "custlock-20260910T063725Z-0ea4",
+      "scenario": "maintenance-lock"
+    },
+    "service": {
+      "availabilityZoneRebalancing": "ENABLED",
+      "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+      "createdAt": "2026-04-22T23:19:54.924000+09:00",
+      "createdBy": "arn:aws:iam::395271362395:role/cdk-hnb659fds-cfn-exec-role-395271362395-us-east-1",
+      "currentServiceRevisions": [
+        {
+          "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/3532324356058581915",
+          "pendingTaskCount": 0,
+          "requestedTaskCount": 1,
+          "runningTaskCount": 1
+        }
+      ],
+      "deploymentConfiguration": {
+        "alarms": {
+          "alarmNames": [],
+          "enable": false,
+          "rollback": false
+        },
+        "bakeTimeInMinutes": 0,
+        "deploymentCircuitBreaker": {
+          "enable": true,
+          "rollback": true
+        },
+        "maximumPercent": 200,
+        "minimumHealthyPercent": 100,
+        "strategy": "ROLLING"
+      },
+      "deploymentController": {
+        "type": "ECS"
+      },
+      "deployments": [
+        {
+          "createdAt": "2026-09-10T15:31:57.245000+09:00",
+          "desiredCount": 1,
+          "failedTasks": 0,
+          "id": "ecs-svc/3532324356058581915",
+          "launchType": "FARGATE",
+          "networkConfiguration": {
+            "awsvpcConfiguration": {
+              "assignPublicIp": "DISABLED",
+              "securityGroups": [
+                "sg-02dc4ddbc1c21173b"
+              ],
+              "subnets": [
+                "subnet-05cb9c24770eb5d9b",
+                "subnet-0e6663aa043fc4a19"
+              ]
+            }
+          },
+          "pendingCount": 0,
+          "platformFamily": "Linux",
+          "platformVersion": "1.4.0",
+          "rolloutState": "COMPLETED",
+          "rolloutStateReason": "ECS deployment ecs-svc/3532324356058581915 completed.",
+          "runningCount": 1,
+          "status": "PRIMARY",
+          "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:74",
+          "updatedAt": "2026-09-10T15:35:11.497000+09:00"
+        }
+      ],
+      "desiredCount": 1,
+      "enableECSManagedTags": false,
+      "enableExecuteCommand": true,
+      "events": [
+        {
+          "createdAt": "2026-09-10T15:35:11.504000+09:00",
+          "id": "2eb62e16-6c13-4d35-9d1c-a399e8640419",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-10T15:35:11.503000+09:00",
+          "id": "5b91118b-0470-4341-bfe8-be643677a219",
+          "message": "(service RcaAgentDevHealthcare) (deployment ecs-svc/3532324356058581915) deployment completed."
+        },
+        {
+          "createdAt": "2026-09-10T15:33:30.272000+09:00",
+          "id": "d89ba242-e7d0-4f2f-b56a-784af09dfea9",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task df8277df5c1c4019adb41423b24677c0)."
+        },
+        {
+          "createdAt": "2026-09-10T15:32:17.567000+09:00",
+          "id": "d86b9711-a030-4410-9fa8-95fa48d2c320",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 05cac795ea4b42a3acee36303991808a)."
+        },
+        {
+          "createdAt": "2026-09-10T09:51:24.121000+09:00",
+          "id": "1befc776-b0fc-4454-8c9d-4d11432c02f6",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-10T03:51:13.842000+09:00",
+          "id": "855673b5-9abc-46bb-9032-33c32df75bea",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-09T21:50:45.649000+09:00",
+          "id": "383c70f6-59c3-4f9b-b6a1-f565dedf5e5b",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-09T15:50:29.391000+09:00",
+          "id": "c2c0d4a0-2d07-429f-a3c4-f59f28de436e",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-09T09:50:07.645000+09:00",
+          "id": "0376a756-1e71-49c4-b2fe-65652a8bd371",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-09T03:49:42.600000+09:00",
+          "id": "9fc10ceb-9031-42a8-935e-ffc9f78ca991",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-08T21:49:19.176000+09:00",
+          "id": "6818df53-50c1-4ae5-8874-262de6e07fde",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-08T15:48:50.938000+09:00",
+          "id": "0769c5d4-400e-45ab-8ea5-b1b46a61cbc0",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-08T09:48:25.850000+09:00",
+          "id": "59f9a2eb-b518-4e03-ad0d-fe6ddfee30f2",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-08T03:48:07.795000+09:00",
+          "id": "712b8e6f-3028-4bab-b408-1fc11746e04d",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-07T21:47:44.535000+09:00",
+          "id": "c3c580af-d522-4fac-b1ea-72881e18d528",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-07T15:47:31.583000+09:00",
+          "id": "0785b507-f4c1-4521-adaf-714212ec149f",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-07T09:47:06.635000+09:00",
+          "id": "f99aba25-b55e-4a07-b8f1-b331a8407740",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-07T03:47:04.398000+09:00",
+          "id": "9f32cf3f-f0d3-4320-9f9e-d71faaeecc5d",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-06T21:46:37.902000+09:00",
+          "id": "7c7e3f4f-7985-46d9-82c6-3cccb9767952",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-06T15:46:32.103000+09:00",
+          "id": "0471c85b-4dc7-453f-bb2b-4dfe14d23482",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-06T09:46:28.308000+09:00",
+          "id": "8d06bc2c-1d7f-48d5-9c10-755bb9581349",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-06T03:46:05.261000+09:00",
+          "id": "fddca0b7-6a44-459f-8a98-862534e2a5a4",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-05T21:45:44.254000+09:00",
+          "id": "19845e81-29d6-443d-a68b-3539f242fc66",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-05T15:45:29.827000+09:00",
+          "id": "84d998ff-0330-4423-8662-ab588ffbb104",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-05T09:45:06.762000+09:00",
+          "id": "4b4fa914-6546-459d-bd98-0fd9c276e487",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-05T03:44:40.694000+09:00",
+          "id": "fe13332c-dcdc-4bd6-adfe-c6fecfde3893",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-04T21:44:17.459000+09:00",
+          "id": "5c7d2335-d0d4-4b2a-b318-6d022d873169",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-04T15:44:12.831000+09:00",
+          "id": "7dc7348b-6440-4f60-9610-b6f5b62060fc",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-04T09:43:44.959000+09:00",
+          "id": "9e133ab6-27b3-4515-a520-a7a59062fc31",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-04T03:43:19.308000+09:00",
+          "id": "20484d22-28a6-458c-87f3-27b1803009fc",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-03T21:43:00.854000+09:00",
+          "id": "40f26b3b-3f56-437b-acb7-c25a36745328",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-03T15:42:31.649000+09:00",
+          "id": "aa14252f-1a9b-4f01-8e20-80773ba0578c",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-03T09:42:06.223000+09:00",
+          "id": "b650e21b-5bc7-4cdc-8861-4c8e42dece28",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-03T03:42:02.979000+09:00",
+          "id": "ed03caa3-6487-40a9-aeb8-33340bfba79f",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-02T21:41:55.719000+09:00",
+          "id": "bd77cf2d-7359-4643-9d05-2d460ac352c9",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-02T15:41:53.976000+09:00",
+          "id": "770347a9-f029-4f67-a674-740f56d36282",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-02T09:41:38.096000+09:00",
+          "id": "805f1ab7-4fd8-42f5-a739-b8273b2c7572",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-02T03:41:19.386000+09:00",
+          "id": "3cda537c-440a-4af3-ac6b-2a939500b0e6",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-01T21:41:04.812000+09:00",
+          "id": "b5f683af-ee06-4165-8fe0-e3794bbcbd0c",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-01T15:41:04.317000+09:00",
+          "id": "5744bb6c-f7df-4948-9a7c-4970a3669275",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-01T09:40:43.886000+09:00",
+          "id": "8961c7b7-acba-4346-aef7-2915b366b165",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-09-01T03:40:34.796000+09:00",
+          "id": "118ce716-d628-4d10-8394-9220a2e9e037",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T21:40:29.096000+09:00",
+          "id": "23ae1421-2753-4ae4-b898-581c08425fc6",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:40:02.456000+09:00",
+          "id": "e13c7e25-f672-4383-b01d-ff73426210aa",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:40:02.454000+09:00",
+          "id": "56b8ef7d-bd2f-455f-9e92-59750a27d72b",
+          "message": "(service RcaAgentDevHealthcare) (deployment ecs-svc/0412205331195946467) deployment completed."
+        },
+        {
+          "createdAt": "2026-08-31T15:37:58.827000+09:00",
+          "id": "04e6d212-94ce-4646-a2d5-e785cabd3d1c",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task d77509a8c43b46238f04d2dfd50d1288)."
+        },
+        {
+          "createdAt": "2026-08-31T15:37:58.822000+09:00",
+          "id": "43ef99b0-ce75-4c05-98a2-3b7cbb83f43d",
+          "message": "(service RcaAgentDevHealthcare) (task d77509a8c43b46238f04d2dfd50d1288) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:37:07.183000+09:00",
+          "id": "4e86fbfc-19cf-49a7-92b0-9ed582c58af1",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task df8277df5c1c4019adb41423b24677c0)."
+        },
+        {
+          "createdAt": "2026-08-31T15:35:44.483000+09:00",
+          "id": "d77a1a87-bb49-4e92-a370-723d91082f80",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 740c7c1c84034d58a7c3338f612eeb0d)."
+        },
+        {
+          "createdAt": "2026-08-31T15:35:44.476000+09:00",
+          "id": "2bb23357-3d1e-410c-8b62-b40ef7452d99",
+          "message": "(service RcaAgentDevHealthcare) (task 740c7c1c84034d58a7c3338f612eeb0d) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:34:35.264000+09:00",
+          "id": "981316fa-ea67-4445-aa0a-5b300cc3c954",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task d77509a8c43b46238f04d2dfd50d1288). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:32:34.595000+09:00",
+          "id": "1bea597c-2a0a-4f41-b3de-cd4442189b8d",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:31:54.479000+09:00",
+          "id": "c88816c9-c51b-4835-ad61-108dec88e6cf",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 62b97c3af3d14de392530e47f1fd1751)."
+        },
+        {
+          "createdAt": "2026-08-31T15:31:54.478000+09:00",
+          "id": "b9eb0a49-6d9e-477f-bdda-b951b01554ad",
+          "message": "(service RcaAgentDevHealthcare) (task 62b97c3af3d14de392530e47f1fd1751) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:30:48.102000+09:00",
+          "id": "ea97a97e-eb35-4846-9854-7d3e1c582998",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 740c7c1c84034d58a7c3338f612eeb0d). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:28:45.445000+09:00",
+          "id": "aadcd095-fe49-418f-b5f0-7cd998dd8419",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:28:03.866000+09:00",
+          "id": "e189d51c-f126-4b49-9727-ce97102c8dbf",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 940901f6c9c94e84b9814eba98da98be)."
+        },
+        {
+          "createdAt": "2026-08-31T15:28:03.865000+09:00",
+          "id": "961ab0c7-e741-4068-9c28-977ccddad619",
+          "message": "(service RcaAgentDevHealthcare) (task 940901f6c9c94e84b9814eba98da98be) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:26:59.131000+09:00",
+          "id": "33b82db2-580a-4a40-bcc8-4f57502ff55b",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 62b97c3af3d14de392530e47f1fd1751). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:24:57.892000+09:00",
+          "id": "a043605d-47ac-4a46-b697-576824da0cfc",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:24:15.872000+09:00",
+          "id": "afab4bff-f294-4ea8-a1fb-ee33a13ffa3d",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 80bfeddbd37b4cb0b750b028de8a6bce)."
+        },
+        {
+          "createdAt": "2026-08-31T15:24:15.871000+09:00",
+          "id": "38db2aa8-8298-4899-87be-e26ff0675d86",
+          "message": "(service RcaAgentDevHealthcare) (task 80bfeddbd37b4cb0b750b028de8a6bce) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:23:06.247000+09:00",
+          "id": "4ebd6730-cc33-4505-9617-4d37ec1a7e7e",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 940901f6c9c94e84b9814eba98da98be). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:20:34.198000+09:00",
+          "id": "d42f25a3-df1d-4288-8257-d66d6bc74555",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:20:24.753000+09:00",
+          "id": "1fac0c4b-4f4d-4da2-9a87-04dec3fd063f",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 8af24226cefb420b93c8d933f18d686f)."
+        },
+        {
+          "createdAt": "2026-08-31T15:20:24.752000+09:00",
+          "id": "4b500349-febe-48bf-a8fc-6ab8697911a8",
+          "message": "(service RcaAgentDevHealthcare) (task 8af24226cefb420b93c8d933f18d686f) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:19:15.992000+09:00",
+          "id": "262bd53e-5ba1-4a53-9355-856920850d73",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 80bfeddbd37b4cb0b750b028de8a6bce). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:17:14.801000+09:00",
+          "id": "34e2f913-fefb-4304-a8ce-3fb9091249cf",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:16:33.802000+09:00",
+          "id": "5b14fc40-af2b-44b0-ba51-192f496cbb59",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 4cadd6f7eb014579852378a4228b7226)."
+        },
+        {
+          "createdAt": "2026-08-31T15:16:33.801000+09:00",
+          "id": "d88b4360-4797-4f86-87bf-fe0236df3e21",
+          "message": "(service RcaAgentDevHealthcare) (task 4cadd6f7eb014579852378a4228b7226) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:15:27.350000+09:00",
+          "id": "96485d5d-3b4a-4f1c-a8ed-aaa32823bdf3",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 8af24226cefb420b93c8d933f18d686f). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:13:22.902000+09:00",
+          "id": "ece4d7bb-90d8-4c68-8087-08955083aa0b",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:12:43.156000+09:00",
+          "id": "f5102de7-e107-4c3b-a7d3-03be335ba8ce",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task e2ba278cfd674c43b554d7fe5bced8cb)."
+        },
+        {
+          "createdAt": "2026-08-31T15:12:43.155000+09:00",
+          "id": "d4d720fe-546e-48fe-9e10-9b6d568a21a7",
+          "message": "(service RcaAgentDevHealthcare) (task e2ba278cfd674c43b554d7fe5bced8cb) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:11:32.989000+09:00",
+          "id": "c9adc610-6561-4e35-8f7b-d68f10544879",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 4cadd6f7eb014579852378a4228b7226). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:09:28.980000+09:00",
+          "id": "cb4ae12a-f738-4370-bc02-b6fb2f39af55",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:08:49.321000+09:00",
+          "id": "944f0c5b-8e85-4c22-98ef-c70c3cb5e95e",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 2ec425063b56414ab0d41ae5f193cc1b)."
+        },
+        {
+          "createdAt": "2026-08-31T15:08:49.320000+09:00",
+          "id": "919770b0-47ca-4b2d-8eb7-d27b41d53390",
+          "message": "(service RcaAgentDevHealthcare) (task 2ec425063b56414ab0d41ae5f193cc1b) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T15:07:41.445000+09:00",
+          "id": "92221eb0-0785-4309-84a3-902d5eab5818",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task e2ba278cfd674c43b554d7fe5bced8cb). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T15:07:09.405000+09:00",
+          "id": "e1e78ab7-5a98-4ec3-a9f4-8e0e3c212a02",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:07:09.404000+09:00",
+          "id": "a6394bb0-ad94-41ec-a5a0-1c9755888567",
+          "message": "(service RcaAgentDevHealthcare) (deployment ecs-svc/5783499701780621849) deployment completed."
+        },
+        {
+          "createdAt": "2026-08-31T15:05:14.173000+09:00",
+          "id": "7f43db43-e4c1-420f-a3bf-555519d946ca",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 1c629da6aa9c48b1a02e1ee964f1b0e8)."
+        },
+        {
+          "createdAt": "2026-08-31T15:04:02.638000+09:00",
+          "id": "28aacc7c-3fd7-4d8c-abe5-61019b294187",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 2ec425063b56414ab0d41ae5f193cc1b)."
+        },
+        {
+          "createdAt": "2026-08-31T15:01:02.125000+09:00",
+          "id": "82561cf5-778b-4bdd-aafa-7c0dc1b497c8",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T15:01:02.124000+09:00",
+          "id": "7f9f1384-6354-4896-862f-2adc7e68f4c9",
+          "message": "(service RcaAgentDevHealthcare) (deployment ecs-svc/1277620491552864430) deployment completed."
+        },
+        {
+          "createdAt": "2026-08-31T14:59:10.143000+09:00",
+          "id": "19feaa34-ae27-4c37-847c-c4b50ffbb274",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 0026e7f69c6844e88e4553c4cdce874f)."
+        },
+        {
+          "createdAt": "2026-08-31T14:57:58.713000+09:00",
+          "id": "70bdf2c1-b8b5-46b0-a510-faf7a6d43a72",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 1c629da6aa9c48b1a02e1ee964f1b0e8)."
+        },
+        {
+          "createdAt": "2026-08-31T14:55:33.528000+09:00",
+          "id": "4d7b5f92-678e-40d8-9311-4ca31f2fd3b1",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T14:55:33.527000+09:00",
+          "id": "6c16a625-9f85-40eb-af02-a31903b9f468",
+          "message": "(service RcaAgentDevHealthcare) (deployment ecs-svc/9442009766314688101) deployment completed."
+        },
+        {
+          "createdAt": "2026-08-31T14:53:59.239000+09:00",
+          "id": "4bf29d86-6624-4529-b3cf-9608f179029f",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task eb4e7d66c46a457e9764da4a46608b00)."
+        },
+        {
+          "createdAt": "2026-08-31T14:53:59.230000+09:00",
+          "id": "5363abb3-1ead-4c86-b153-8f6075abfcc5",
+          "message": "(service RcaAgentDevHealthcare) (task eb4e7d66c46a457e9764da4a46608b00) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T14:53:08.027000+09:00",
+          "id": "8105911f-8428-4474-97c8-9d53c3721256",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 0026e7f69c6844e88e4553c4cdce874f)."
+        },
+        {
+          "createdAt": "2026-08-31T14:51:55.756000+09:00",
+          "id": "67b7ebff-0cbb-4e77-bbec-ce0cef7851fe",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 6dc2ea9f9b564d9ea9403669b4e31efe)."
+        },
+        {
+          "createdAt": "2026-08-31T14:51:55.749000+09:00",
+          "id": "5ea17ef5-ab20-42d5-90f4-ef0d09a820df",
+          "message": "(service RcaAgentDevHealthcare) (task 6dc2ea9f9b564d9ea9403669b4e31efe) failed container health checks."
+        },
+        {
+          "createdAt": "2026-08-31T14:50:52.529000+09:00",
+          "id": "02c0851d-caec-4b2f-868c-ee92e80dc717",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task eb4e7d66c46a457e9764da4a46608b00). Amazon ECS replaced 1 tasks due to an unhealthy status."
+        },
+        {
+          "createdAt": "2026-08-31T14:48:47.875000+09:00",
+          "id": "1c796df8-85c5-4e52-9eb3-1c32a8a8f2a5",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 951e40e907d64eeca19efcbbe155c44f)."
+        },
+        {
+          "createdAt": "2026-08-31T14:47:25.005000+09:00",
+          "id": "16982b20-da2a-4b9c-a93c-3b6ede49352f",
+          "message": "(service RcaAgentDevHealthcare) has started 1 tasks: (task 6dc2ea9f9b564d9ea9403669b4e31efe)."
+        },
+        {
+          "createdAt": "2026-08-31T14:44:28.036000+09:00",
+          "id": "5ac13859-90ac-4fbc-97b9-96ae7d0125ba",
+          "message": "(service RcaAgentDevHealthcare) has reached a steady state."
+        },
+        {
+          "createdAt": "2026-08-31T14:44:28.035000+09:00",
+          "id": "851cee74-09cd-43cd-a011-9c6d32f7c463",
+          "message": "(service RcaAgentDevHealthcare) (deployment ecs-svc/4674293944493127912) deployment completed."
+        },
+        {
+          "createdAt": "2026-08-31T14:42:33.283000+09:00",
+          "id": "779db27f-58e4-4816-ad2d-060affce8414",
+          "message": "(service RcaAgentDevHealthcare) has stopped 1 running tasks: (task 49aafb3376a44e769c629757643e35b1)."
+        }
+      ],
+      "healthCheckGracePeriodSeconds": 0,
+      "launchType": "FARGATE",
+      "loadBalancers": [],
+      "networkConfiguration": {
+        "awsvpcConfiguration": {
+          "assignPublicIp": "DISABLED",
+          "securityGroups": [
+            "sg-02dc4ddbc1c21173b"
+          ],
+          "subnets": [
+            "subnet-05cb9c24770eb5d9b",
+            "subnet-0e6663aa043fc4a19"
+          ]
+        }
+      },
+      "pendingCount": 0,
+      "placementConstraints": [],
+      "placementStrategy": [],
+      "platformFamily": "Linux",
+      "platformVersion": "1.4.0",
+      "propagateTags": "NONE",
+      "resourceManagementType": "CUSTOMER",
+      "roleArn": "arn:aws:iam::395271362395:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+      "runningCount": 1,
+      "schedulingStrategy": "REPLICA",
+      "serviceArn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+      "serviceName": "RcaAgentDevHealthcare",
+      "serviceRegistries": [
+        {
+          "registryArn": "arn:aws:servicediscovery:us-east-1:395271362395:service/srv-uhr7vkcym6wel6i4"
+        }
+      ],
+      "status": "ACTIVE",
+      "tags": [
+        {
+          "key": "stage",
+          "value": "Dev"
+        },
+        {
+          "key": "namespace",
+          "value": "RcaAgentDev"
+        }
+      ],
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:74"
+    },
+    "sourceManifests": [
+      {
+        "events": [
+          {
+            "eventId": "39896523023692494573685471364928882076885297818959216641",
+            "ingestionTime": 1789021966868,
+            "logStreamName": "healthcare/healthcare/05cac795ea4b42a3acee36303991808a",
+            "message": "{\"timestamp\": \"2026-09-10 06:32:46,239\", \"level\": \"INFO\", \"name\": \"test_service.adapters.secondary.database_adapter\", \"message\": \"source_manifest\", \"service\": \"healthcare-sensor-app\", \"event\": \"source_manifest\", \"base_fingerprint\": \"4bf465eeba2d2ae9704013210e8981ed3b634203f5eef264c19a7de080acea1c\", \"files\": {\"__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/alerts/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/alerts/alert_controller.py\": \"bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591\", \"adapters/primary/fault/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/fault/fault_controller.py\": \"cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654\", \"adapters/primary/health/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/health/health_controller.py\": \"c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3\", \"adapters/primary/patients/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/patients/patient_controller.py\": \"6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3\", \"adapters/primary/schemas.py\": \"1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe\", \"adapters/primary/sensors/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/primary/sensors/sensor_controller.py\": \"1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9\", \"adapters/secondary/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/secondary/alert_repository/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/secondary/database_adapter.py\": \"5d7e5603d821d251be847e12348716bc1d4da24109cff79ae6c52401f463f8f7\", \"adapters/secondary/sensor_repository/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"adapters/secondary/sensor_repository/models.py\": \"122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e\", \"adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py\": \"8c8bd0f75dccfe304070989279f0582d2f8f9eff96c3832d3a8b4cc1a3b8befa\", \"config/__init__.py\": \"44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa\", \"config/settings.py\": \"0154b7426ae8961aabc3f8de6befbd7146233d5939344eb28e52497bff6ac627\", \"di/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"di/app_container.py\": \"1cc0df7fd7fb5cf985b38e7e6a4d9263952a35c42a4b833b962e451f61320b7c\", \"di/container.py\": \"ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5\", \"main.py\": \"e48a7d973a3066ecfa9f812723f5b9f0539c5641ed878bc7a461c86a99bd9b8f\", \"maintenance.py\": \"653738e61f36d9ded2d005e8ce1a2287589d0aa6a9f047a4777c51937e7f715f\", \"middleware/__init__.py\": \"9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9\", \"middleware/fault_flag.py\": \"b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599\", \"middleware/logging.py\": \"dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2\", \"ports/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"ports/dto/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"ports/dto/sensor.py\": \"0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a\", \"ports/interfaces/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"ports/interfaces/database.py\": \"162b0332735a6248a017f28359782ab5039903a868ddebaa6520c281fdd712c9\", \"ports/interfaces/sensor_reading_repository.py\": \"7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d\", \"revision/__init__.py\": \"405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920\", \"revision/manifest.py\": \"37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585\", \"revision/query.py\": \"dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9\", \"revision/session.py\": \"07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6\", \"services/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"services/db_observability.py\": \"9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f\", \"services/fault.py\": \"4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb\", \"services/fault_state.py\": \"db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1\", \"services/health.py\": \"a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e\", \"services/runtime_identity.py\": \"ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be\", \"services/sensor.py\": \"c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b\", \"services/symptom_metrics.py\": \"0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17\", \"services/traffic_generator.py\": \"46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db\", \"telemetry.py\": \"9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e\", \"utils/__init__.py\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}, \"fingerprint\": \"4bf465eeba2d2ae9704013210e8981ed3b634203f5eef264c19a7de080acea1c\", \"revision\": \"r1\", \"verified\": true}",
+            "timestamp": 1789021966240
+          }
+        ],
+        "imageDigest": "sha256:b26e531e0f0a53af28b14f144d45491700336050217cbfd0125fb4ae1f2b7755",
+        "logGroupName": "/ecs/RcaAgentDev/healthcare",
+        "logStreamName": "healthcare/healthcare/05cac795ea4b42a3acee36303991808a",
+        "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a"
+      }
+    ],
+    "target": {
+      "account": "395271362395",
+      "cluster": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+      "region": "us-east-1",
+      "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare"
+    },
+    "taskDefinition": {
+      "tags": [
+        {
+          "key": "stage",
+          "value": "Dev"
+        },
+        {
+          "key": "namespace",
+          "value": "RcaAgentDev"
+        }
+      ],
+      "taskDefinition": {
+        "compatibilities": [
+          "EC2",
+          "FARGATE",
+          "MANAGED_INSTANCES"
+        ],
+        "containerDefinitions": [
+          {
+            "command": [],
+            "cpu": 0,
+            "credentialSpecs": [],
+            "dnsSearchDomains": [],
+            "dnsServers": [],
+            "dockerLabels": {},
+            "dockerSecurityOptions": [],
+            "entryPoint": [],
+            "environment": [
+              {
+                "name": "DB_OBSERVABILITY_INTERVAL_SECONDS",
+                "value": "1"
+              },
+              {
+                "name": "AWS_REGION",
+                "value": "us-east-1"
+              },
+              {
+                "name": "DEPLOYED_REVISION",
+                "value": "1db699a4cc7f"
+              },
+              {
+                "name": "DB_PORT",
+                "value": "5432"
+              },
+              {
+                "name": "DB_POOL_SIZE",
+                "value": "5"
+              },
+              {
+                "name": "FAULT_ERROR_RATE",
+                "value": "0.0"
+              },
+              {
+                "name": "DB_NAME",
+                "value": "healthcare"
+              },
+              {
+                "name": "DB_HOST",
+                "value": "rcaagentdev-postgres.cj7kqks81ysn.us-east-1.rds.amazonaws.com"
+              },
+              {
+                "name": "DB_MAX_OVERFLOW",
+                "value": "10"
+              },
+              {
+                "name": "OTEL_SERVICE_NAME",
+                "value": "healthcare-sensor-app"
+              },
+              {
+                "name": "FAULT_DB_LEAK",
+                "value": "false"
+              },
+              {
+                "name": "DB_STATEMENT_TIMEOUT_MS",
+                "value": "2000"
+              },
+              {
+                "name": "FAULT_SLOW_QUERY_MS",
+                "value": "0"
+              },
+              {
+                "name": "DB_OBSERVABILITY_ENABLED",
+                "value": "true"
+              }
+            ],
+            "environmentFiles": [],
+            "essential": true,
+            "extraHosts": [],
+            "healthCheck": {
+              "command": [
+                "CMD-SHELL",
+                "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"
+              ],
+              "interval": 30,
+              "retries": 3,
+              "startPeriod": 30,
+              "timeout": 5
+            },
+            "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:b26e531e0f0a53af28b14f144d45491700336050217cbfd0125fb4ae1f2b7755",
+            "links": [],
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/ecs/RcaAgentDev/healthcare",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "healthcare"
+              },
+              "secretOptions": []
+            },
+            "mountPoints": [],
+            "name": "healthcare",
+            "portMappings": [
+              {
+                "containerPort": 8000,
+                "hostPort": 8000,
+                "protocol": "tcp"
+              }
+            ],
+            "secrets": [
+              {
+                "name": "DB_USERNAME",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:395271362395:secret:RcaAgentDev/rds/postgres-cw9L1F:username::"
+              },
+              {
+                "name": "DB_PASSWORD",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:395271362395:secret:RcaAgentDev/rds/postgres-cw9L1F:password::"
+              }
+            ],
+            "systemControls": [],
+            "ulimits": [],
+            "volumesFrom": []
+          },
+          {
+            "command": [],
+            "cpu": 0,
+            "credentialSpecs": [],
+            "dnsSearchDomains": [],
+            "dnsServers": [],
+            "dockerLabels": {},
+            "dockerSecurityOptions": [],
+            "entryPoint": [],
+            "environment": [],
+            "environmentFiles": [],
+            "essential": false,
+            "extraHosts": [],
+            "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+            "links": [],
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/ecs/RcaAgentDev/healthcare",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "otel-collector"
+              },
+              "secretOptions": []
+            },
+            "mountPoints": [],
+            "name": "otel-collector",
+            "portMappings": [
+              {
+                "containerPort": 4317,
+                "hostPort": 4317,
+                "protocol": "tcp"
+              },
+              {
+                "containerPort": 4318,
+                "hostPort": 4318,
+                "protocol": "tcp"
+              }
+            ],
+            "secrets": [],
+            "systemControls": [],
+            "ulimits": [],
+            "volumesFrom": []
+          }
+        ],
+        "cpu": "512",
+        "executionRoleArn": "arn:aws:iam::395271362395:role/RcaAgentDevHealthcareExecutionRole",
+        "family": "RcaAgentDevHealthcare",
+        "memory": "1024",
+        "networkMode": "awsvpc",
+        "placementConstraints": [],
+        "registeredAt": "2026-09-10T15:31:52.678000+09:00",
+        "registeredBy": "arn:aws:sts::395271362395:assumed-role/cdk-hnb659fds-cfn-exec-role-395271362395-us-east-1/AWSCloudFormation",
+        "requiresAttributes": [
+          {
+            "name": "ecs.capability.execution-role-awslogs"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.17"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.21"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.task-iam-role"
+          },
+          {
+            "name": "ecs.capability.container-health-check"
+          },
+          {
+            "name": "ecs.capability.execution-role-ecr-pull"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+          },
+          {
+            "name": "ecs.capability.task-eni"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.29"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+          },
+          {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+          },
+          {
+            "name": "ecs.capability.secrets.asm.environment-variables"
+          }
+        ],
+        "requiresCompatibilities": [
+          "FARGATE"
+        ],
+        "revision": 74,
+        "runtimePlatform": {
+          "cpuArchitecture": "ARM64",
+          "operatingSystemFamily": "LINUX"
+        },
+        "status": "ACTIVE",
+        "taskDefinitionArn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:74",
+        "taskRoleArn": "arn:aws:iam::395271362395:role/RcaAgentDevHealthcareTaskRole",
+        "volumes": []
+      }
+    },
+    "tasks": [
+      {
+        "attachments": [
+          {
+            "details": [
+              {
+                "name": "subnetId",
+                "value": "subnet-0e6663aa043fc4a19"
+              },
+              {
+                "name": "networkInterfaceId",
+                "value": "eni-0ec52ef087a4ab0a6"
+              },
+              {
+                "name": "macAddress",
+                "value": "0e:1a:43:e1:57:53"
+              },
+              {
+                "name": "privateDnsName",
+                "value": "ip-10-0-3-193.ec2.internal"
+              },
+              {
+                "name": "privateIPv4Address",
+                "value": "10.0.3.193"
+              }
+            ],
+            "id": "75cbeb7f-a9a2-4b41-845e-79b20273aee9",
+            "status": "ATTACHED",
+            "type": "ElasticNetworkInterface"
+          }
+        ],
+        "attributes": [
+          {
+            "name": "ecs.cpu-architecture",
+            "value": "arm64"
+          }
+        ],
+        "availabilityZone": "us-east-1b",
+        "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+        "connectivity": "CONNECTED",
+        "connectivityAt": "2026-09-10T15:32:23.009000+09:00",
+        "containers": [
+          {
+            "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a/7446d432-ff4e-4608-8802-30aa8a94558a",
+            "cpu": "0",
+            "healthStatus": "UNKNOWN",
+            "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+            "imageDigest": "sha256:7968fb60db6a2390a47ba6a2df029745638486e285c9b2487da1b722d0855a3e",
+            "lastStatus": "RUNNING",
+            "managedAgents": [
+              {
+                "lastStartedAt": "2026-09-10T15:32:53.613000+09:00",
+                "lastStatus": "RUNNING",
+                "name": "ExecuteCommandAgent"
+              }
+            ],
+            "name": "otel-collector",
+            "networkBindings": [],
+            "networkInterfaces": [
+              {
+                "attachmentId": "75cbeb7f-a9a2-4b41-845e-79b20273aee9",
+                "privateIpv4Address": "10.0.3.193"
+              }
+            ],
+            "runtimeId": "05cac795ea4b42a3acee36303991808a-3642950909",
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a"
+          },
+          {
+            "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a/dd1c218a-1bf5-40c5-b6db-6eaa5c59a7a0",
+            "healthStatus": "UNKNOWN",
+            "imageDigest": "sha256:195078e48505cb05b06e61df255fc85a6d7917b28678956c75b11e69855bdff3",
+            "lastStatus": "RUNNING",
+            "name": "aws-guardduty-agent-u6YzPT",
+            "networkBindings": [],
+            "networkInterfaces": [
+              {
+                "attachmentId": "75cbeb7f-a9a2-4b41-845e-79b20273aee9",
+                "privateIpv4Address": "10.0.3.193"
+              }
+            ],
+            "runtimeId": "05cac795ea4b42a3acee36303991808a-2307554965",
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a"
+          },
+          {
+            "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a/f924da1b-ee63-47e3-afce-b08c9aeb54e1",
+            "cpu": "0",
+            "healthStatus": "HEALTHY",
+            "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:b26e531e0f0a53af28b14f144d45491700336050217cbfd0125fb4ae1f2b7755",
+            "imageDigest": "sha256:b26e531e0f0a53af28b14f144d45491700336050217cbfd0125fb4ae1f2b7755",
+            "lastStatus": "RUNNING",
+            "managedAgents": [
+              {
+                "lastStartedAt": "2026-09-10T15:32:53.613000+09:00",
+                "lastStatus": "RUNNING",
+                "name": "ExecuteCommandAgent"
+              }
+            ],
+            "name": "healthcare",
+            "networkBindings": [],
+            "networkInterfaces": [
+              {
+                "attachmentId": "75cbeb7f-a9a2-4b41-845e-79b20273aee9",
+                "privateIpv4Address": "10.0.3.193"
+              }
+            ],
+            "runtimeId": "05cac795ea4b42a3acee36303991808a-4019433046",
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a"
+          }
+        ],
+        "cpu": "512",
+        "createdAt": "2026-09-10T15:32:17.477000+09:00",
+        "desiredStatus": "RUNNING",
+        "enableExecuteCommand": true,
+        "ephemeralStorage": {
+          "sizeInGiB": 20
+        },
+        "fargateEphemeralStorage": {
+          "sizeInGiB": 20
+        },
+        "group": "service:RcaAgentDevHealthcare",
+        "healthStatus": "HEALTHY",
+        "lastStatus": "RUNNING",
+        "launchType": "FARGATE",
+        "memory": "1024",
+        "overrides": {
+          "containerOverrides": [
+            {
+              "environment": [
+                {
+                  "name": "CLUSTER_NAME",
+                  "value": "RcaAgentDevHealthcare"
+                },
+                {
+                  "name": "REGION",
+                  "value": "us-east-1"
+                },
+                {
+                  "name": "HOST_PROC",
+                  "value": "/host_proc"
+                },
+                {
+                  "name": "AGENT_RUNTIME_ENVIRONMENT",
+                  "value": "ecsfargate"
+                },
+                {
+                  "name": "STAGE",
+                  "value": "prod"
+                },
+                {
+                  "name": "MALLOC_ARENA_MAX",
+                  "value": "2"
+                }
+              ],
+              "memory": 128,
+              "name": "aws-guardduty-agent-u6YzPT"
+            },
+            {
+              "name": "otel-collector"
+            },
+            {
+              "name": "healthcare"
+            }
+          ],
+          "inferenceAcceleratorOverrides": []
+        },
+        "platformFamily": "Linux",
+        "platformVersion": "1.4.0",
+        "pullStartedAt": "2026-09-10T15:32:30.740000+09:00",
+        "pullStoppedAt": "2026-09-10T15:32:36.212000+09:00",
+        "startedAt": "2026-09-10T15:32:53.258000+09:00",
+        "startedBy": "ecs-svc/3532324356058581915",
+        "tags": [],
+        "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/05cac795ea4b42a3acee36303991808a",
+        "taskDefinitionArn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:74",
+        "version": 5
+      }
+    ]
+  },
+  "hash": "412d6d4a297935b8d904fd7958c80b37c904ae3ff8a1bdfb7fc74d6077f8f194",
+  "kind": "snapshot",
+  "previous": null
+}

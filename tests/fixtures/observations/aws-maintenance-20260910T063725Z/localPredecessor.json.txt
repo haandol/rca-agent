@@ -1,0 +1,96 @@
+{
+  "id": "maintenance-transaction-lock",
+  "category": "database",
+  "executionModes": ["model-eval"],
+  "provenance": {
+    "kind": "local-postgresql",
+    "status": "incident-input-ready-alarm-calibration-pending",
+    "awsMeasured": false,
+    "calibration": "local-mechanism-measured-alarm-pending",
+    "source": "tests/fixtures/observations/realistic-local-20260910/proof-review-fixed-01.json.txt",
+    "sourceSha256": "83aac573c02bd6eb9596ced5e0797460018704b62b955905b68b15707d1b4f2b",
+    "evidenceHandoff": "docs/demo/scenario-evidence-handoff.md",
+    "missingMetadata": [
+      "observed AWS alarm transition and threshold calibration"
+    ],
+    "alarmEnvelope": "synthetic-illustrative-not-an-observed-aws-alarm",
+    "inputBoundary": "baseline-and-incident-only",
+    "operatorMapping": "tests/fixtures/observations/realistic-local-20260910/operator-capture-map.json",
+    "incidentCutoff": "2026-09-10T02:53:47.131083+00:00"
+  },
+  "alarm": {
+    "name": "Illustrative-Healthcare-VitalIngestFailures",
+    "metric": "VitalIngestFailures",
+    "stateReason": "Illustrative alarm envelope. Attached local PostgreSQL observations cover baseline and incident windows in UTC. No AWS alarm transition or calibrated threshold is provided.",
+    "namespace": "Healthcare/Sensor",
+    "dimensions": {
+      "ServiceName": "healthcare-sensor-app"
+    },
+    "statistic": "Sum",
+    "period": 60,
+    "evaluationPeriods": 2
+  },
+  "observations": [
+    {
+      "id": "obs-01",
+      "source": "local-postgresql-capture",
+      "summary": "{\"provenance\":\"local-postgresql-measurement\",\"source\":{\"captureId\":\"capture-2001\"},\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"resource\":{\"runId\":\"local_c1cf824ddbfd4bdb\",\"schema\":\"proof_local_c1cf824ddbfd4bdb\"},\"units\":{\"started_at\":\"UTC timestamp\",\"completed_at\":\"UTC timestamp\",\"timestamp\":\"UTC timestamp\",\"elapsed_ms\":\"Milliseconds\",\"acquire_time_ms\":\"Milliseconds\",\"sql_time_ms\":\"Milliseconds\",\"time_ms\":\"Milliseconds\",\"sql_count\":\"Count\",\"count\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checked_out_after_request\":\"Count\",\"row_count\":\"Count\",\"saved_rows\":\"Count\",\"concurrency\":\"Count\",\"batch_rows\":\"Count\",\"pool_size\":\"Count\",\"max_overflow\":\"Count\",\"pool_timeout_seconds\":\"Seconds\",\"statement_timeout_ms\":\"Milliseconds\",\"server_max_connections\":\"Count\",\"database_connections\":\"Count\",\"pool_checked_out\":\"Count\"},\"records\":[{\"context\":\"baseline\",\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:45.751121+00:00\"},\"requests\":[{\"started_at\":\"2026-09-10T02:53:45.735666+00:00\",\"completed_at\":\"2026-09-10T02:53:45.751103+00:00\",\"outcome\":\"ok\",\"error_type\":null,\"elapsed_ms\":15.437041874974966,\"request_id\":\"9f114b129b29475ea41f69c082202877\"}]},{\"context\":\"incident\",\"window\":{\"start\":\"2026-09-10T02:53:46.236982+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"requests\":[{\"started_at\":\"2026-09-10T02:53:46.303551+00:00\",\"completed_at\":\"2026-09-10T02:53:46.321519+00:00\",\"outcome\":\"ok\",\"error_type\":null,\"elapsed_ms\":17.969584092497826,\"request_id\":\"fdc238f994254bbc810dc3721ca03d58\"},{\"started_at\":\"2026-09-10T02:53:46.611296+00:00\",\"completed_at\":\"2026-09-10T02:53:47.131083+00:00\",\"outcome\":\"error\",\"error_type\":\"DBAPIError\",\"elapsed_ms\":519.7783750481904,\"request_id\":\"ff25cba9e1a24c09bc7e44f559948b3c\"}]}]}"
+    },
+    {
+      "id": "obs-02",
+      "source": "local-postgresql-capture",
+      "summary": "{\"provenance\":\"local-postgresql-measurement\",\"source\":{\"captureId\":\"capture-2002\"},\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"resource\":{\"runId\":\"local_c1cf824ddbfd4bdb\",\"schema\":\"proof_local_c1cf824ddbfd4bdb\"},\"units\":{\"started_at\":\"UTC timestamp\",\"completed_at\":\"UTC timestamp\",\"timestamp\":\"UTC timestamp\",\"elapsed_ms\":\"Milliseconds\",\"acquire_time_ms\":\"Milliseconds\",\"sql_time_ms\":\"Milliseconds\",\"time_ms\":\"Milliseconds\",\"sql_count\":\"Count\",\"count\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checked_out_after_request\":\"Count\",\"row_count\":\"Count\",\"saved_rows\":\"Count\",\"concurrency\":\"Count\",\"batch_rows\":\"Count\",\"pool_size\":\"Count\",\"max_overflow\":\"Count\",\"pool_timeout_seconds\":\"Seconds\",\"statement_timeout_ms\":\"Milliseconds\",\"server_max_connections\":\"Count\",\"database_connections\":\"Count\",\"pool_checked_out\":\"Count\"},\"records\":[{\"context\":\"baseline\",\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:45.751121+00:00\"},\"requests\":[{\"started_at\":\"2026-09-10T02:53:45.735666+00:00\",\"completed_at\":\"2026-09-10T02:53:45.751103+00:00\",\"outcome\":\"ok\",\"error_type\":null,\"elapsed_ms\":15.437041874974966,\"request_id\":\"9f114b129b29475ea41f69c082202877\"}]},{\"context\":\"incident\",\"window\":{\"start\":\"2026-09-10T02:53:46.236982+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"maintenance\":{\"event\":\"maintenance_lock_acquired\",\"run_id\":\"local_c1cf824ddbfd4bdb\",\"backend_pid\":1077,\"hold_seconds\":30,\"max_hold_seconds\":7200,\"acquired_at\":\"2026-09-10T02:53:46.602389+00:00\",\"expires_at\":\"2026-09-10T02:54:16.602389+00:00\",\"transaction_start\":\"2026-09-10 02:53:46.601069+00:00\",\"locks\":[{\"pid\":1077,\"mode\":\"AccessShareLock\",\"granted\":true,\"relation\":\"pg_locks\"},{\"pid\":1077,\"mode\":\"ShareLock\",\"granted\":true,\"relation\":\"proof_local_c1cf824ddbfd4bdb.sensor_readings\"}]},\"snapshot\":{\"event\":\"db_wait_snapshot\",\"sql_hash_algorithm\":\"md5\",\"pool_checked_out\":1,\"pool_size\":3,\"server_max_connections\":100,\"database_connections\":5,\"activity\":[{\"pid\":1074,\"application_name\":\"healthcare-service\",\"state\":\"idle\",\"wait_event_type\":\"Client\",\"wait_event\":\"ClientRead\",\"xact_start\":null,\"query_start\":\"2026-09-10 02:53:46.302778+00\",\"blocking_pids\":[],\"sql_hash\":\"dc6541776ef671a77e4dfd76dbcfd4cc\"},{\"pid\":1075,\"application_name\":\"healthcare-service\",\"state\":\"idle\",\"wait_event_type\":\"Client\",\"wait_event\":\"ClientRead\",\"xact_start\":null,\"query_start\":\"2026-09-10 02:53:46.314845+00\",\"blocking_pids\":[],\"sql_hash\":\"f55491f57410557264aac04492c0232c\"},{\"pid\":1076,\"application_name\":\"healthcare-service\",\"state\":\"active\",\"wait_event_type\":\"Lock\",\"wait_event\":\"relation\",\"xact_start\":\"2026-09-10 02:53:46.615542+00\",\"query_start\":\"2026-09-10 02:53:46.627154+00\",\"blocking_pids\":[1077],\"sql_hash\":\"440d9d24927afdda33a147e252ba3fd5\"},{\"pid\":1077,\"application_name\":\"healthcare-maint-local_c1cf824ddbfd4bdb\",\"state\":\"idle in transaction\",\"wait_event_type\":\"Client\",\"wait_event\":\"ClientRead\",\"xact_start\":\"2026-09-10 02:53:46.601069+00\",\"query_start\":\"2026-09-10 02:53:46.608979+00\",\"blocking_pids\":[],\"sql_hash\":\"6a13686ed6e51ac0773bb537ebd88557\"}],\"locks\":[{\"pid\":1076,\"locktype\":\"relation\",\"mode\":\"RowExclusiveLock\",\"granted\":false,\"relation\":\"sensor_readings\"},{\"pid\":1077,\"locktype\":\"relation\",\"mode\":\"ShareLock\",\"granted\":true,\"relation\":\"sensor_readings\"},{\"pid\":1077,\"locktype\":\"relation\",\"mode\":\"AccessShareLock\",\"granted\":true,\"relation\":\"pg_locks\"}]}}]}"
+    },
+    {
+      "id": "obs-03",
+      "source": "local-postgresql-capture",
+      "summary": "{\"provenance\":\"local-postgresql-measurement\",\"source\":{\"captureId\":\"capture-2003\"},\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"resource\":{\"runId\":\"local_c1cf824ddbfd4bdb\",\"schema\":\"proof_local_c1cf824ddbfd4bdb\"},\"units\":{\"started_at\":\"UTC timestamp\",\"completed_at\":\"UTC timestamp\",\"timestamp\":\"UTC timestamp\",\"elapsed_ms\":\"Milliseconds\",\"acquire_time_ms\":\"Milliseconds\",\"sql_time_ms\":\"Milliseconds\",\"time_ms\":\"Milliseconds\",\"sql_count\":\"Count\",\"count\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checked_out_after_request\":\"Count\",\"row_count\":\"Count\",\"saved_rows\":\"Count\",\"concurrency\":\"Count\",\"batch_rows\":\"Count\",\"pool_size\":\"Count\",\"max_overflow\":\"Count\",\"pool_timeout_seconds\":\"Seconds\",\"statement_timeout_ms\":\"Milliseconds\",\"server_max_connections\":\"Count\",\"database_connections\":\"Count\",\"pool_checked_out\":\"Count\"},\"records\":[{\"context\":\"baseline\",\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:45.751121+00:00\"},\"source\":{\"revision\":\"r1\",\"fingerprint\":\"05a84c86958fb4281d43a0a1b308427e0fe6a04e9f8ad452082a859f858488f7\",\"files\":{\"revision/query.py\":\"dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9\",\"revision/session.py\":\"07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6\"}}},{\"context\":\"incident\",\"window\":{\"start\":\"2026-09-10T02:53:46.236982+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"source\":{\"revision\":\"r1\",\"fingerprint\":\"05a84c86958fb4281d43a0a1b308427e0fe6a04e9f8ad452082a859f858488f7\",\"files\":{\"revision/query.py\":\"dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9\",\"revision/session.py\":\"07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6\"}}}]}"
+    },
+    {
+      "id": "obs-04",
+      "source": "local-postgresql-capture",
+      "summary": "{\"provenance\":\"local-postgresql-measurement\",\"source\":{\"captureId\":\"capture-2004\"},\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"resource\":{\"runId\":\"local_c1cf824ddbfd4bdb\",\"schema\":\"proof_local_c1cf824ddbfd4bdb\"},\"units\":{\"started_at\":\"UTC timestamp\",\"completed_at\":\"UTC timestamp\",\"timestamp\":\"UTC timestamp\",\"elapsed_ms\":\"Milliseconds\",\"acquire_time_ms\":\"Milliseconds\",\"sql_time_ms\":\"Milliseconds\",\"time_ms\":\"Milliseconds\",\"sql_count\":\"Count\",\"count\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checked_out_after_request\":\"Count\",\"row_count\":\"Count\",\"saved_rows\":\"Count\",\"concurrency\":\"Count\",\"batch_rows\":\"Count\",\"pool_size\":\"Count\",\"max_overflow\":\"Count\",\"pool_timeout_seconds\":\"Seconds\",\"statement_timeout_ms\":\"Milliseconds\",\"server_max_connections\":\"Count\",\"database_connections\":\"Count\",\"pool_checked_out\":\"Count\"},\"records\":[{\"context\":\"baseline\",\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:45.751121+00:00\"},\"operations\":[{\"started_at\":\"2026-09-10T02:53:45.735666+00:00\",\"completed_at\":\"2026-09-10T02:53:45.751103+00:00\",\"request_id\":\"9f114b129b29475ea41f69c082202877\",\"sql_count\":1,\"sql_time_ms\":4.25349990837276,\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":2.994542010128498,\"patterns\":{\"b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395\":{\"sql_hash\":\"b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395\",\"count\":1,\"time_ms\":4.25349990837276}}}]},{\"context\":\"incident\",\"window\":{\"start\":\"2026-09-10T02:53:46.236982+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"operations\":[{\"started_at\":\"2026-09-10T02:53:46.303551+00:00\",\"completed_at\":\"2026-09-10T02:53:46.321519+00:00\",\"request_id\":\"fdc238f994254bbc810dc3721ca03d58\",\"sql_count\":1,\"sql_time_ms\":3.9245840162038803,\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":2.964249812066555,\"patterns\":{\"b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395\":{\"sql_hash\":\"b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395\",\"count\":1,\"time_ms\":3.9245840162038803}}},{\"started_at\":\"2026-09-10T02:53:46.611296+00:00\",\"completed_at\":\"2026-09-10T02:53:47.131083+00:00\",\"request_id\":\"ff25cba9e1a24c09bc7e44f559948b3c\",\"sql_count\":1,\"sql_time_ms\":514.8037080653012,\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":3.4288750030100346,\"patterns\":{\"b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395\":{\"sql_hash\":\"b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395\",\"count\":1,\"time_ms\":514.8037080653012}}}]}]}"
+    },
+    {
+      "id": "obs-05",
+      "source": "local-postgresql-capture",
+      "summary": "{\"provenance\":\"local-postgresql-measurement\",\"source\":{\"captureId\":\"capture-2005\"},\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"resource\":{\"runId\":\"local_c1cf824ddbfd4bdb\",\"schema\":\"proof_local_c1cf824ddbfd4bdb\"},\"units\":{\"started_at\":\"UTC timestamp\",\"completed_at\":\"UTC timestamp\",\"timestamp\":\"UTC timestamp\",\"elapsed_ms\":\"Milliseconds\",\"acquire_time_ms\":\"Milliseconds\",\"sql_time_ms\":\"Milliseconds\",\"time_ms\":\"Milliseconds\",\"sql_count\":\"Count\",\"count\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checked_out_after_request\":\"Count\",\"row_count\":\"Count\",\"saved_rows\":\"Count\",\"concurrency\":\"Count\",\"batch_rows\":\"Count\",\"pool_size\":\"Count\",\"max_overflow\":\"Count\",\"pool_timeout_seconds\":\"Seconds\",\"statement_timeout_ms\":\"Milliseconds\",\"server_max_connections\":\"Count\",\"database_connections\":\"Count\",\"pool_checked_out\":\"Count\"},\"records\":[{\"context\":\"baseline\",\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:45.751121+00:00\"},\"requests\":[{\"started_at\":\"2026-09-10T02:53:45.735666+00:00\",\"completed_at\":\"2026-09-10T02:53:45.751103+00:00\",\"request_id\":\"9f114b129b29475ea41f69c082202877\",\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":2.994542010128498}]},{\"context\":\"incident\",\"window\":{\"start\":\"2026-09-10T02:53:46.236982+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"requests\":[{\"started_at\":\"2026-09-10T02:53:46.303551+00:00\",\"completed_at\":\"2026-09-10T02:53:46.321519+00:00\",\"request_id\":\"fdc238f994254bbc810dc3721ca03d58\",\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":2.964249812066555},{\"started_at\":\"2026-09-10T02:53:46.611296+00:00\",\"completed_at\":\"2026-09-10T02:53:47.131083+00:00\",\"request_id\":\"ff25cba9e1a24c09bc7e44f559948b3c\",\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":3.4288750030100346}]}]}"
+    },
+    {
+      "id": "obs-06",
+      "source": "local-postgresql-capture",
+      "summary": "{\"provenance\":\"local-postgresql-measurement\",\"source\":{\"captureId\":\"capture-2006\"},\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"resource\":{\"runId\":\"local_c1cf824ddbfd4bdb\",\"schema\":\"proof_local_c1cf824ddbfd4bdb\"},\"units\":{\"started_at\":\"UTC timestamp\",\"completed_at\":\"UTC timestamp\",\"timestamp\":\"UTC timestamp\",\"elapsed_ms\":\"Milliseconds\",\"acquire_time_ms\":\"Milliseconds\",\"sql_time_ms\":\"Milliseconds\",\"time_ms\":\"Milliseconds\",\"sql_count\":\"Count\",\"count\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checked_out_after_request\":\"Count\",\"row_count\":\"Count\",\"saved_rows\":\"Count\",\"concurrency\":\"Count\",\"batch_rows\":\"Count\",\"pool_size\":\"Count\",\"max_overflow\":\"Count\",\"pool_timeout_seconds\":\"Seconds\",\"statement_timeout_ms\":\"Milliseconds\",\"server_max_connections\":\"Count\",\"database_connections\":\"Count\",\"pool_checked_out\":\"Count\"},\"records\":[{\"context\":\"baseline\",\"window\":{\"start\":\"2026-09-10T02:53:45.671795+00:00\",\"end\":\"2026-09-10T02:53:45.751121+00:00\"},\"config\":{\"timestamp\":\"2026-09-10T02:53:45.671795+00:00\",\"event\":\"db_pool_config\",\"pool_size\":3,\"max_overflow\":0,\"pool_timeout_seconds\":0.2,\"statement_timeout_ms\":500},\"requests\":[{\"started_at\":\"2026-09-10T02:53:45.735666+00:00\",\"completed_at\":\"2026-09-10T02:53:45.751103+00:00\",\"request_id\":\"9f114b129b29475ea41f69c082202877\",\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":2.994542010128498}]},{\"context\":\"incident\",\"window\":{\"start\":\"2026-09-10T02:53:46.236982+00:00\",\"end\":\"2026-09-10T02:53:47.131083+00:00\"},\"config\":{\"timestamp\":\"2026-09-10T02:53:46.236982+00:00\",\"event\":\"db_pool_config\",\"pool_size\":3,\"max_overflow\":0,\"pool_timeout_seconds\":0.2,\"statement_timeout_ms\":500},\"requests\":[{\"started_at\":\"2026-09-10T02:53:46.303551+00:00\",\"completed_at\":\"2026-09-10T02:53:46.321519+00:00\",\"request_id\":\"fdc238f994254bbc810dc3721ca03d58\",\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":2.964249812066555},{\"started_at\":\"2026-09-10T02:53:46.611296+00:00\",\"completed_at\":\"2026-09-10T02:53:47.131083+00:00\",\"request_id\":\"ff25cba9e1a24c09bc7e44f559948b3c\",\"checkouts\":1,\"checkins\":1,\"acquire_time_ms\":3.4288750030100346}]}]}"
+    }
+  ],
+  "expectation": {
+    "requireConfirmedRootCause": true,
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["unsupported"],
+    "requiredRootCauseEvidenceIds": ["obs-01", "obs-02", "obs-03", "obs-04"],
+    "requiredEvidenceIds": [
+      "obs-01",
+      "obs-02",
+      "obs-03",
+      "obs-04",
+      "obs-05",
+      "obs-06"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "competingCauses": [
+      {
+        "id": "connection-leak",
+        "requiredEvidenceIds": ["obs-05"]
+      },
+      {
+        "id": "pool-config-regression",
+        "requiredEvidenceIds": ["obs-06"]
+      }
+    ]
+  }
+}

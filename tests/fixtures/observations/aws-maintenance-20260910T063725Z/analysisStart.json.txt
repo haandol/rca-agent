@@ -1,0 +1,24 @@
+[
+  {
+    "rcaId": "305b7696-970c-5b3a-9bd6-30a5e139a745",
+    "state": "SCOPING",
+    "readiness": "NOT_COMPLETED",
+    "readinessLabel": "미완료",
+    "executionStepCount": 0,
+    "alarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+    "alarmArn": "",
+    "rootCause": "",
+    "confirmed": false,
+    "stoppedAt": "",
+    "errorReason": "",
+    "createdAt": "2026-09-10T06:41:41.260905+00:00",
+    "updatedAt": "2026-09-10T06:41:41.275390+00:00",
+    "engine": "headless-codex",
+    "executionState": "",
+    "executionStateLabel": "",
+    "executionId": "",
+    "executionAttempts": 0,
+    "executionBlockedCount": 0,
+    "retrospectiveStatus": ""
+  }
+]

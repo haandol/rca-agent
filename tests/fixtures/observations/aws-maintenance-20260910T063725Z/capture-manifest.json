@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "kind": "aws-maintenance-capture",
+  "runId": "custlock-20260910T063725Z-0ea4",
+  "incidentCutoff": "2026-09-10T06:41:41.260905+00:00",
+  "cutoffSource": {
+    "file": "analysisStart",
+    "pointer": "/0/createdAt"
+  },
+  "inputBoundary": "baseline-and-incident-only",
+  "files": {
+    "baseline": {
+      "file": "baseline.json.txt",
+      "sha256": "5698ab569f336a5619811c558ac12b537483c76c7f0a2be0f98f116f5d3fb640",
+      "originalPath": "/private/tmp/rca-customer-focus/journals/ace2c5e0205abf18017444602dc9b6d0722628bc04215d9f1ed4117dd920d86a/custlock-20260910T063725Z-0ea4/000000.json"
+    },
+    "definition": {
+      "file": "definition.json.txt",
+      "sha256": "6025114be4552a7611cd493f7fb2e7a93cbb549ae29a6a89d20b6bf8f575e2dd",
+      "originalPath": "/private/tmp/rca-customer-focus/journals/ace2c5e0205abf18017444602dc9b6d0722628bc04215d9f1ed4117dd920d86a/custlock-20260910T063725Z-0ea4/000005.json"
+    },
+    "statusBefore": {
+      "file": "statusBefore.json.txt",
+      "sha256": "f88b90e4cb18c95d48ffd910aae8cf54a112e096e32702ad50226ecb915516ac",
+      "originalPath": "/private/tmp/rca-customer-focus/journals/ace2c5e0205abf18017444602dc9b6d0722628bc04215d9f1ed4117dd920d86a/custlock-20260910T063725Z-0ea4/000016.json"
+    },
+    "statusIncident": {
+      "file": "statusIncident.json.txt",
+      "sha256": "064fd0ab1d23afe23395ce7a3e5b2b733a3c83b021e59fcb8045cc9774c85b13",
+      "originalPath": "/private/tmp/rca-customer-focus/journals/ace2c5e0205abf18017444602dc9b6d0722628bc04215d9f1ed4117dd920d86a/custlock-20260910T063725Z-0ea4/000018.json"
+    },
+    "alarmStatus": {
+      "file": "alarmStatus.json.txt",
+      "sha256": "bdb98260178fd93fc535cb80b70658872bce1257e305c4b340f684ab23cd85c6",
+      "originalPath": "/private/tmp/rca-customer-focus/journals/ace2c5e0205abf18017444602dc9b6d0722628bc04215d9f1ed4117dd920d86a/custlock-20260910T063725Z-0ea4/000024.json"
+    },
+    "maintenanceLogs": {
+      "file": "maintenanceLogs.json.txt",
+      "sha256": "3faf1d1de267844af1b62d91791e7c6765989879e6efcaa39bbf20c7d98eaa0d",
+      "originalPath": "/private/tmp/rca-customer-focus/rehearsals/custlock-20260910T063725Z-0ea4/maintenance-logs.json"
+    },
+    "blockers": {
+      "file": "blockers.json.txt",
+      "sha256": "81bb16665936e7ac514a78054fa267bbe81c4a4961e77c9fd065e868ec0fe8da",
+      "originalPath": "/private/tmp/rca-customer-focus/rehearsals/custlock-20260910T063725Z-0ea4/blocker-sample.json"
+    },
+    "analysisStart": {
+      "file": "analysisStart.json.txt",
+      "sha256": "27f433afa03e0852828301ba1363fecbfb912382035f77af91c8c3a435074c69",
+      "originalPath": "/private/tmp/rca-customer-focus/rehearsals/custlock-20260910T063725Z-0ea4/new-sessions.json"
+    },
+    "maintenanceSource": {
+      "file": "maintenanceSource.py.txt",
+      "sha256": "653738e61f36d9ded2d005e8ce1a2287589d0aa6a9f047a4777c51937e7f715f",
+      "originalPath": "packages/healthcare-sensor-app/src/test_service/maintenance.py"
+    },
+    "sessionSource": {
+      "file": "sessionSource.py.txt",
+      "sha256": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+      "originalPath": "packages/healthcare-sensor-app/src/test_service/revision/session.py"
+    },
+    "localPredecessor": {
+      "file": "localPredecessor.json.txt",
+      "sha256": "6237ee51da6dffb1909ac0bd6e7e7cded3b7ad87501095b1554d5aff277a67cb",
+      "originalPath": "tests/scenarios/maintenance-transaction-lock.json"
+    }
+  },
+  "sourceExcerpts": {
+    "maintenanceSource": {
+      "path": "maintenance.py",
+      "ranges": [
+        [49, 69],
+        [83, 108],
+        [124, 145]
+      ]
+    },
+    "sessionSource": {
+      "path": "revision/session.py",
+      "ranges": [
+        [10, 17],
+        [20, 31]
+      ]
+    }
+  }
+}
