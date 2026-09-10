@@ -64,7 +64,7 @@ def _render(tmp_path, profile):
                 "cloudtrail": ["lookup_events"],
                 "github": ["get_file_contents", "get_commit", "list_commits", "search_code", "pull_request_read"],
                 "aws-knowledge": ["aws___search_documentation", "aws___read_documentation"],
-                "rca-progress": ["save_analysis_artifact"],
+                "rca-progress": ["save_analysis_artifact", "inspect_ecs_task_control"],
             },
         ),
         (

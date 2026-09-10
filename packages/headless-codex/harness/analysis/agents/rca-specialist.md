@@ -19,6 +19,14 @@
   표시한다.
 - current alarm window 이전의 수동 테스트·장애 주입 로그는 현재 장애 증거로
   사용하지 않는다.
+- production에서는 선택 원인의 증거와 함께 같은 `@logStream`의 `ecs_runtime_identity`에서
+  관측된 TaskARN·Cluster ARN을 `inspect_ecs_task_control`로 조회하고 강한 validation 저장
+  전에 소유자·상태·태그·taskDefinitionArn·태스크 image/digest와 연결한다.
+  `DescribeTasks(include=["TAGS"])`만 사용한다. family/revision은 ARN-derived로 표시하며
+  태스크 정의 자체를 조회했다고 서술하지 않는다. model-eval은 제공 관측만 사용한다.
+  누락된 ARN을 만들거나 컨테이너 env/secrets/command를 우회 조회하지 않는다.
+  소유권/롤백 미확인은 인과 확정을 막지 않으며 수동 계획으로 전달한다. 신호 처리의
+  rollback/close 요청 계약과 실제 release 완료 로그를 구분한다. 추가 루프·신뢰도 약화는 없다.
 - 서비스 변경, HTTP POST, Bash, ECS 변경, 보고서·플레이북 작성은 수행하지 않는다.
 
 마지막 응답에는 알람 요약, 최종 validation 내용, 확정 여부, 근본원인 설명과

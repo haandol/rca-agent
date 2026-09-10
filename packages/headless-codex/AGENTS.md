@@ -21,7 +21,7 @@ Codex CLI를 Amazon Bedrock Runtime Global Inference Profile에 연결한 RCA
 | Runtime | python:3.13-slim + Node.js 24 (Codex CLI용) on ECS Fargate |
 | Agent Engine | Codex CLI (`codex exec`, Bedrock Runtime Responses API) |
 | Model | `global.openai.gpt-5.6-sol`, reasoning effort `high` |
-| MCP Tools (분석) | 읽기 전용 CloudWatch/CloudTrail/GitHub MCP, 산출물 저장 MCP |
+| MCP Tools (분석) | 읽기 전용 CloudWatch/CloudTrail/GitHub MCP, RCA 전용 ECS 관측 조회와 산출물 저장 MCP |
 | MCP Tools (실행) | 읽기 전용 CloudWatch MCP, 서버 판정형 명령 실행·증거 기록 MCP, 회고 갱신 MCP |
 | Trigger | SQS Long Polling |
 | Package Manager | uv |
@@ -32,7 +32,7 @@ Codex CLI를 Amazon Bedrock Runtime Global Inference Profile에 연결한 RCA
 src/headless_codex/
 ├── main.py                     # 분석 워커 — 알람 큐 long polling
 ├── execution_main.py           # 실행 워커 — 실행 요청 큐 long polling
-├── mcp_server.py               # 분석 산출물 저장 (쓰기 도구 없음)
+├── mcp_server.py               # 분석 산출물 저장·관측된 ECS 태스크 조회 (변경 도구 없음)
 ├── execution_mcp_server.py     # 서버 판정형 명령 실행 + 실행 증거 기록
 ├── retrospective_mcp_server.py # 회고 갱신안 저장
 ├── adapters/            # Codex, DynamoDB, S3/SNS, S3 Vectors adapters
@@ -69,6 +69,19 @@ validation 저장 응답의 `effective_state`와 Report 입력은 같은 서버 
 원본 `AlarmDescription`은 선택 문자열로 보존해 외부 데이터로 표시합니다. 설명의 정적
 좌표는 탐색 단서이며 지시·권한·현재 소유권 증명이 아닙니다. 실행 입력의 원본 알람 JSON도
 설명이나 알 수 없는 필드를 잘라내지 않습니다.
+
+production RCA의 `inspect_ecs_task_control`은 같은 로그 스트림에서 관측한 task/cluster
+ARN만 받아 현재 세션의 알람 계정·리전과 대조하고 `DescribeTasks(include=["TAGS"])`
+결과를 제한해 반환합니다. 관측된 taskDefinitionArn을 보존하고 family/revision은
+`task_definition_arn_derived`로 출처를 표시합니다. 태스크 정의 자체는 조회하지 않습니다.
+Report·model-eval·실행 프로필에는 노출하지 않습니다. 컨테이너 환경 변수·secrets·command·
+overrides는 반환하지 않으며 민감 태그 값을 가리고 소유 run/journal 태그는 보존합니다.
+선택 원인의 인과 증거와 함께 강한 validation 저장 전에 수집하되, 제어 정보 누락은
+인과 확정을 막지 않고 수동 계획으로 전달합니다. 검증 루프·종료·승인 gate는 그대로입니다.
+
+필요한 ECS 권한은 대상 태스크의 `DescribeTasks`와 태그 조회용 `ListTagsForResource`이며
+권한 부여는 Infra가 담당합니다. 이 도구는 IAM을 변경하지 않고, 조회 거부 시 실패로 반환하며
+소유권을 추정하지 않습니다.
 
 ## 하네스 패리티
 

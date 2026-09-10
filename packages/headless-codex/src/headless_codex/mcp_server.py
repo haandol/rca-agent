@@ -1,4 +1,4 @@
-"""격리 산출물 저장 MCP server.
+"""격리 산출물 저장·관측된 ECS 태스크 읽기 전용 조회 MCP server.
 
 이 서버는 분석 실행에만 제공되며 쓰기 도구를 노출하지 않는다. 복구는 사용자 승인
 뒤 별도 실행 에이전트가 수행한다.
@@ -10,11 +10,19 @@ import json
 import os
 import re
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
+from botocore.config import Config
 from fastmcp import FastMCP
 
+from headless_codex.adapters.secondary.evidence.ecs_control import (
+    EcsControlError,
+    alarm_scope,
+    inspect_task,
+    validate_target,
+)
 from headless_codex.adapters.secondary.session.dynamodb_session_store import DynamoDbSessionStore
 from headless_codex.config import settings
 from headless_codex.services.analysis_contract import (
@@ -57,6 +65,54 @@ _REPORT_ARTIFACTS = {
     "playbook.json",
     "report.md",
 }
+
+
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
+def inspect_ecs_task_control(task_arn: str, cluster_arn: str) -> str:
+    """Inspect ECS control metadata for exact ARNs already observed in this RCA's evidence.
+
+    Discover TaskARN and Cluster in ecs_runtime_identity in the DB owner's same
+    log stream; never construct IDs from names. Only DescribeTasks(include=TAGS)
+    is used; family/revision are ARN-derived and the task definition is not queried.
+    Output is read-time metadata, not proof of
+    DB ownership, rollback completion, or authorization to stop a task.
+    """
+    observed_at = datetime.now(UTC).isoformat()
+    if os.environ.get("RCA_ECS_CONTROL_DISCOVERY") != "1" or _artifact_dir() is None:
+        return json.dumps(
+            {"ok": False, "observed_at": observed_at, "error": "missing production RCA execution context"}
+        )
+    try:
+        runtime = _runtime_session()
+        if runtime is None:
+            raise AnalysisContractError("missing active RCA session")
+        store, _, rca_id, claim_token = runtime
+        alarm = store.get_control_alarm(rca_id, claim_token=claim_token)
+        scope = alarm_scope(alarm)
+        validate_target(task_arn, cluster_arn, scope)
+        ecs = boto3.client(
+            "ecs",
+            region_name=scope[1],
+            config=Config(connect_timeout=5, read_timeout=10, retries={"mode": "standard", "total_max_attempts": 2}),
+        )
+        projection = inspect_task(ecs, task_arn, cluster_arn, scope)
+        # A cancelled/reclaimed session must not receive results of an in-flight read.
+        if store.get_control_alarm(rca_id, claim_token=claim_token) != alarm:
+            raise AnalysisContractError("session alarm context changed")
+    except Exception as exc:
+        # AWS errors can echo credentials, tag values, or full request parameters.
+        return json.dumps(
+            {
+                "ok": False,
+                "observed_at": observed_at,
+                "error": (
+                    str(exc)
+                    if isinstance(exc, EcsControlError)
+                    else "ECS discovery unavailable or session check failed; ownership remains unverified"
+                ),
+            }
+        )
+    return json.dumps({"ok": True, **projection})
 
 
 def _artifact_dir() -> Path | None:

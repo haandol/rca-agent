@@ -34,8 +34,8 @@ type SynthesizedTemplates = {
   healthcare: Template;
 };
 
-function synthesize(): SynthesizedTemplates {
-  const app = new cdk.App({ context: { ns: 'RcaAgentDev' } });
+function synthesize(ns = 'RcaAgentDev'): SynthesizedTemplates {
+  const app = new cdk.App({ context: { ns } });
   const dependencies = new cdk.Stack(app, 'Dependencies');
   const vpc = new ec2.Vpc(dependencies, 'Vpc', { maxAzs: 2 });
   const alarmQueue = new sqs.Queue(dependencies, 'AlarmQueue');
@@ -181,20 +181,44 @@ test('Healthcare opens no ingress for the analysis engine', () => {
   expect(ingressRules).toEqual([]);
 });
 
-test('Codex task role has no ECS service write permissions', () => {
-  const { headlessCodex } = synthesize();
-  const statements = taskRoleStatements(headlessCodex);
-  const ecsActions = statements
-    .flatMap((statement) =>
-      Array.isArray(statement.Action) ? statement.Action : [statement.Action],
-    )
-    .filter(
-      (action): action is string =>
-        typeof action === 'string' && action.startsWith('ecs:'),
-    );
+test.each(['RcaAgentDev', 'RcaAgentProd'])(
+  'Codex task role allows only task inspection within %sHealthcare',
+  (ns) => {
+    const { headlessCodex } = synthesize(ns);
+    const statements = taskRoleStatements(headlessCodex);
+    const ecsStatements = statements.filter((statement) => {
+      const actions = Array.isArray(statement.Action)
+        ? statement.Action
+        : [statement.Action];
+      return actions.some(
+        (action) => action === '*' || action?.toLowerCase().startsWith('ecs:'),
+      );
+    });
 
-  expect(ecsActions).toEqual([]);
-});
+    // Exact equality rejects wildcard resources, other clusters, task-definition
+    // reads, and any ECS write grant in addition to the two required reads.
+    expect(ecsStatements).toEqual([
+      {
+        Effect: 'Allow',
+        Action: ['ecs:DescribeTasks', 'ecs:ListTagsForResource'],
+        Resource: {
+          'Fn::Join': [
+            '',
+            [
+              'arn:',
+              { Ref: 'AWS::Partition' },
+              ':ecs:',
+              { Ref: 'AWS::Region' },
+              ':',
+              { Ref: 'AWS::AccountId' },
+              `:task/${ns}Healthcare/*`,
+            ],
+          ],
+        },
+      },
+    ]);
+  },
+);
 
 test('Codex can read but cannot alter an approved snapshot', () => {
   const { headlessCodex } = synthesize();

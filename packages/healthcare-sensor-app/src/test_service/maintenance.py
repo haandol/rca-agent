@@ -39,7 +39,12 @@ async def hold_lock(
     emit: Callable[[dict], None] = lambda record: print(json.dumps(record), flush=True),
     stop_reason: Callable[[], str] = lambda: "stop_requested",
 ) -> None:
-    """Own exactly one backend/transaction and release it on every exit."""
+    """Own one lock-only transaction so its runtime log describes the code contract.
+
+    Operation metadata declares behavior, not a completed rollback or RCA verdict.
+    Schema/table names come from PostgreSQL's lock catalog; cleanup success is
+    reported only by the existing release event after rollback and connection close.
+    """
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,48}", run_id):
         raise ValueError("run-id must contain 1..48 letters, digits, underscores or hyphens")
     if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", schema):
@@ -64,8 +69,12 @@ async def hold_lock(
         acquired_at = datetime.now(UTC)
         deadline = asyncio.get_running_loop().time() + hold_seconds
         locks = await conn.fetch("""
-            SELECT pid, mode, granted, relation::regclass::text AS relation
-            FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'relation'
+            SELECT l.pid, l.mode, l.granted, l.relation::regclass::text AS relation,
+                   n.nspname AS schema, c.relname AS table
+            FROM pg_locks AS l
+            LEFT JOIN pg_class AS c ON c.oid = l.relation
+            LEFT JOIN pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE l.pid = pg_backend_pid() AND l.locktype = 'relation'
         """)
         emit(
             {
@@ -78,6 +87,12 @@ async def hold_lock(
                 "expires_at": (acquired_at + timedelta(seconds=hold_seconds)).isoformat(),
                 "transaction_start": str(await conn.fetchval("SELECT transaction_timestamp()")),
                 "locks": [dict(row) for row in locks],
+                "operation_contract": {
+                    "kind": "lock_only",
+                    "row_changing_dml": False,
+                    "cleanup_order": ["transaction_rollback", "connection_close"],
+                    "close_on_rollback_error": True,
+                },
             }
         )
         release_reason = "hold_expired"
@@ -120,7 +135,11 @@ async def hold_lock(
 
 
 async def _main(args) -> None:
-    """Own signal handlers for one maintenance run and preserve its actual stop reason."""
+    """Own signal handlers and describe them only for this CLI's acquired event.
+
+    Registered SIGTERM/SIGINT handlers request graceful stop; they do not prove
+    cleanup succeeded. Direct hold_lock callers do not inherit these handlers.
+    """
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     reason = "stop_requested"
@@ -130,6 +149,19 @@ async def _main(args) -> None:
         nonlocal reason
         reason = "sigterm" if signum == signal.SIGTERM else "sigint"
         stop.set()
+
+    def emit(record: dict) -> None:
+        """Describe this CLI's installed handlers without claiming a signal occurred."""
+        if record["event"] == "maintenance_lock_acquired":
+            record = {
+                **record,
+                "signal_stop_contract": {
+                    "SIGTERM": "sigterm",
+                    "SIGINT": "sigint",
+                    "action": "set_stop_event",
+                },
+            }
+        print(json.dumps(record), flush=True)
 
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, request_stop, signum)
@@ -142,6 +174,7 @@ async def _main(args) -> None:
             hold_seconds=args.hold_seconds,
             stop_event=stop,
             schema=args.schema,
+            emit=emit,
             stop_reason=lambda: reason,
         )
     finally:

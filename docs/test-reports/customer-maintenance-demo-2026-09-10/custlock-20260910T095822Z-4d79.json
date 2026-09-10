@@ -1,0 +1,109 @@
+{
+  "runId": "custlock-20260910T095822Z-4d79",
+  "candidateCommit": "d8238ccab351",
+  "engine": "headless-codex",
+  "rcaId": "742cde7c-cc1e-5630-80c0-7a3cdfab5ec2",
+  "result": "FAILED",
+  "customerReady": false,
+  "analysisConfirmed": true,
+  "analysisConfidence": 0.99,
+  "analysisRejectedAlternatives": [
+    "connection return leak",
+    "SQL call amplification"
+  ],
+  "fault": {
+    "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/3c743bb8dbd04f5090180df225dc7f3b",
+    "acquiredAt": "2026-09-10T09:59:57.721509+00:00",
+    "backendPid": 14839
+  },
+  "observedFailure": "Cause confirmed, but report did not discover infrastructure ownership/rollback evidence. Generated only a read-only ownership verification step, with no remediation. No approval issued.",
+  "playbookId": "691ba128-8b87-4fd4-973f-47fcc385cd21",
+  "generatedExecutionSteps": [
+    {
+      "step_id": "step-owner-evidence-1",
+      "intent": "잠금 소유 DB 세션을 안전하게 조작할 수 있는 실제 인프라 소유자와 롤백 경로에 연결한다.",
+      "action": "us-east-1의 CloudWatch 로그 그룹 /ecs/RcaAgentDev/healthcare에서 PID 14839와 application_name healthcare-maint-custlock-20260910T095822Z-4d79의 최신 소유 기록을 읽기 전용으로 확인하고, 발견된 리소스 식별자를 기준으로 ECS 클러스터 RcaAgentDevHealthcare의 태스크 설명·태스크 정의·태그를 조회해 독립 실행 태스크 여부, 작업 수명, 소유자, 정상 중지 시 롤백 경로를 검증한다. 특정 태스크를 추측하거나 서비스 태스크를 중지하지 않는다.",
+      "success_criteria": "PID와 application_name이 특정 ECS 태스크 ARN 또는 다른 명시적 인프라 리소스에 시각 증거로 연결되고, 해당 리소스의 독립 실행 여부·작업 수명·소유 태그·정상 중지 후 롤백 경로가 모두 관측되면 성공이다. 하나라도 확인되지 않으면 성공으로 판정하지 않고 조작 없이 수동 에스컬레이션한다."
+    }
+  ],
+  "approvalIssued": false,
+  "approvedRecoveryDemonstrated": false,
+  "cleanup": {
+    "actor": "rehearsal supervisor",
+    "healthRecoveryVerified": true,
+    "completedAt": "2026-09-10T10:20:10.770649+00:00",
+    "release": {
+      "event": "maintenance_released",
+      "run_id": "custlock-20260910T095822Z-4d79",
+      "backend_pid": 14839,
+      "release_reason": "sigterm",
+      "released_at": "2026-09-10T10:16:31.461596+00:00",
+      "rollback_complete": true,
+      "lock_acquired": true
+    },
+    "freshMetrics": {
+      "ready": true,
+      "start": "2026-09-10T10:18:00+00:00",
+      "end": "2026-09-10T10:20:00+00:00",
+      "values": {
+        "VitalIngestAttempts": {
+          "Label": "VitalIngestAttempts",
+          "Datapoints": [
+            {
+              "Timestamp": "2026-09-10T19:18:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 12.0,
+              "Sum": 24.0,
+              "Unit": "Count"
+            },
+            {
+              "Timestamp": "2026-09-10T19:19:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 12.5,
+              "Sum": 25.0,
+              "Unit": "Count"
+            }
+          ]
+        },
+        "VitalIngestFailures": {
+          "Label": "VitalIngestFailures",
+          "Datapoints": [
+            {
+              "Timestamp": "2026-09-10T19:18:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 0.0,
+              "Sum": 0.0,
+              "Unit": "Count"
+            },
+            {
+              "Timestamp": "2026-09-10T19:19:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 0.0,
+              "Sum": 0.0,
+              "Unit": "Count"
+            }
+          ]
+        },
+        "PatientVitalsQueryDuration": {
+          "Label": "PatientVitalsQueryDuration",
+          "Datapoints": [
+            {
+              "Timestamp": "2026-09-10T19:19:00+09:00",
+              "SampleCount": 6.0,
+              "Average": 9.315417333103445,
+              "Sum": 55.89250399862067,
+              "Unit": "Milliseconds"
+            },
+            {
+              "Timestamp": "2026-09-10T19:18:00+09:00",
+              "SampleCount": 5.0,
+              "Average": 9.160711600270588,
+              "Sum": 45.80355800135294,
+              "Unit": "Milliseconds"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

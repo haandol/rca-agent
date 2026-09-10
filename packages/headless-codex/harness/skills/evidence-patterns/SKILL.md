@@ -37,8 +37,22 @@ context로만 사용할 수 있다. 시각이 없거나 어느 window인지 판�
    보존한다. 현재 구간의 차단자 관측과 같은 소유자임이 연결될 때 원인의 이력을 설명할 수 있다.
    과거 획득 이벤트만으로 현재도 차단 중이라고 주장하지 않는다. 무관한 수동 테스트,
    다른 실행 ID, 시각·연결 근거가 없는 이력은 현재 장애 증거에서 제외한다.
-5. 발견된 소유자와 근거, 확인하지 못한 좌표를 명시해 Report에 전달한다. 조작 직전의
-   실제 생존 상태·태그·소유권 재확인은 별도 승인 실행 워커의 책임이다.
+5. production RCA에서 같은 `@log`/`@logStream`의 `ecs_runtime_identity`에 실제 기록된
+   TaskARN과 Cluster ARN을 `inspect_ecs_task_control(task_arn, cluster_arn)`으로 조회한다.
+   Cluster 이름만 있으면 ARN을 만들지 않는다. 선택 원인의 인과 증거 수집과 함께,
+   **강한 validation 저장 전** 조회 시각·group·독립 태스크/서비스/unknown·상태·startedBy·
+   생명주기·소유 run/journal 태그·태스크 image/digest를 수집한다.
+   `DescribeTasks(include=["TAGS"])`만 사용하며 관측된 taskDefinitionArn을 보존한다.
+   family/revision은 `task_definition_arn_derived`(ARN-derived)이고 정의 자체는 조회하지
+   않는다. 정의 상태·등록 시각·컨테이너 정의의 조회 결과로 서술하지 않는다.
+   결과는 조회 시점 상태다.
+   추가 가설/validation 루프, 신뢰도 약화, 종료 지연 없이 조회 한계를 기록한다.
+6. 같은 작업의 maintenance 로그에 lock-only·row-DML 없음·SIGTERM/SIGINT의 rollback/close
+   요청 계약이 있으면 소유자와 연결한다. 완료는 release 로그로만 확인한다. 환경 변수,
+   secrets, 컨테이너 command/args를 가져오거나 셸·임의 API·MCP resource로 우회하지 않는다.
+   소유권/롤백 누락은 원인 확정을 막지 않으며 수동 계획으로 인계한다.
+   조회 결과·연결 근거·한계를 validation의 `evidence_summary`와 최종 RCA 응답에 보존한다.
+   조작 직전 실제 생존 상태·태그·소유권 재확인은 별도 승인 실행 워커의 책임이다.
 
 ## 관측 결과를 기록하는 형태
 

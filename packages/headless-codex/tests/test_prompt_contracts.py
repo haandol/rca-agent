@@ -68,7 +68,7 @@ def test_role_agents_enforce_distinct_tool_boundaries():
 
     assert set(rca_servers) == {"aws-knowledge", "cloudwatch", "cloudtrail", "github", "rca-progress"}
     assert set(report_servers) == {"rca-progress"}
-    assert rca_servers["rca-progress"]["enabled_tools"] == ["save_analysis_artifact"]
+    assert rca_servers["rca-progress"]["enabled_tools"] == ["save_analysis_artifact", "inspect_ecs_task_control"]
     assert report_servers["rca-progress"]["enabled_tools"] == ["save_report_artifact"]
 
 
@@ -216,7 +216,10 @@ def test_orchestrator_waits_for_terminal_notification_before_retry():
 
 def test_the_analysis_harness_exposes_no_write_capability():
     assert "mcp_servers" not in ANALYSIS_CONFIG
-    assert RCA_AGENT_CONFIG["mcp_servers"]["rca-progress"]["enabled_tools"] == ["save_analysis_artifact"]
+    assert RCA_AGENT_CONFIG["mcp_servers"]["rca-progress"]["enabled_tools"] == [
+        "save_analysis_artifact",
+        "inspect_ecs_task_control",
+    ]
     assert REPORT_AGENT_CONFIG["mcp_servers"]["rca-progress"]["enabled_tools"] == ["save_report_artifact"]
 
 

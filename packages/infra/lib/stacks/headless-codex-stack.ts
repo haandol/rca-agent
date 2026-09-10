@@ -112,13 +112,14 @@ export class HeadlessCodexStack extends cdk.Stack {
       portMappings: [{ containerPort: 8080 }],
     });
 
-    this.grantTaskPermissions(taskDef, props, alarmQueue);
+    this.grantTaskPermissions(ns, taskDef, props, alarmQueue);
     grantEcrPull(taskDef);
 
     return taskDef;
   }
 
   private grantTaskPermissions(
+    ns: string,
     taskDef: ecs.FargateTaskDefinition,
     props: IProps,
     alarmQueue: sqs.IQueue,
@@ -168,6 +169,20 @@ export class HeadlessCodexStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName(
         'AWSCloudTrail_ReadOnlyAccess',
       ),
+    );
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ecs:DescribeTasks', 'ecs:ListTagsForResource'],
+        resources: [
+          this.formatArn({
+            service: 'ecs',
+            resource: 'task',
+            resourceName: `${ns}Healthcare/*`,
+            arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+          }),
+        ],
+      }),
     );
 
     taskDef.taskRole.addToPrincipalPolicy(

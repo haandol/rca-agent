@@ -1,0 +1,25 @@
+{
+  "verifiedAt": "2026-09-10T10:43:59.061044+00:00",
+  "customerReady": false,
+  "tests": {
+    "headless": 1256,
+    "healthcareUnit": 167,
+    "healthcareExistingSkips": 7,
+    "healthcareExistingXfail": 1,
+    "healthcareFocusedRealPostgresAndSignals": 56,
+    "infra": 84,
+    "scenarioProjection": 15
+  },
+  "changes": [
+    "Production RCA can inspect observed ECS task ARNs within the active session and alarm scope using DescribeTasks(include=TAGS) only.",
+    "Control identity/tags and runtime rollback contract are collected before strong validation; causal thresholds and loop limits remain unchanged.",
+    "Maintenance acquisition logs describe actual lock-only/no-row-DML and signal cleanup behavior; completion remains release-event evidence.",
+    "Analysis IAM adds DescribeTasks/ListTagsForResource only for this namespace Healthcare task ARN pattern. No task-definition-wide or write permission added."
+  ],
+  "permissionBefore": "Deployed analysis role IAM simulation denied the required ECS reads.",
+  "sourceReference": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html",
+  "limitations": [
+    "Successful full customer rehearsal remains to be established.",
+    "Metadata declares requested cleanup behavior, not proof of rollback/recovery."
+  ]
+}

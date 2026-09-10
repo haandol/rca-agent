@@ -752,6 +752,26 @@ class DynamoDbSessionStore(SessionStorePort):
             raise SessionCancelledError(rca_id)
         return item.get("state", {}).get("S", "")
 
+    def get_control_alarm(self, rca_id: str, *, claim_token: str) -> dict:
+        """Read alarm scope and active analysis ownership from the same snapshot."""
+        item = self._get_session(rca_id)
+        if item is None:
+            raise SessionOwnershipCheckError(f"{rca_id}: session item is missing")
+        if not claim_token or item.get("claim_token", {}).get("S") != claim_token:
+            raise SessionCancelledError(rca_id)
+        if item.get("state", {}).get("S") not in {
+            "SCOPING",
+            "HYPOTHESIS_GENERATION",
+            "HYPOTHESIS_PRIORITIZATION",
+            "EVIDENCE_COLLECTION",
+            "HYPOTHESIS_VALIDATION",
+        }:
+            raise SessionCancelledError(rca_id)
+        alarm = json.loads(item.get("alarm_data", {}).get("S", "{}"))
+        if not isinstance(alarm, dict) or not alarm:
+            raise SessionOwnershipCheckError(f"{rca_id}: missing alarm scope")
+        return alarm
+
     def mark_completed(
         self,
         rca_id: str,

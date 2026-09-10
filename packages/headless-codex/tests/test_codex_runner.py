@@ -129,7 +129,7 @@ def test_analysis_agents_have_disjoint_artifact_writers(monkeypatch):
     assert len(calls) == 2
     rca = calls[0]["config"]["mcp_servers"]
     report = calls[1]["config"]["mcp_servers"]
-    assert rca["rca-progress"]["enabled_tools"] == ["save_analysis_artifact"]
+    assert rca["rca-progress"]["enabled_tools"] == ["save_analysis_artifact", "inspect_ecs_task_control"]
     assert report["rca-progress"]["enabled_tools"] == ["save_report_artifact"]
     assert all(server["default_tools_approval_mode"] == "approve" for server in rca.values())
     assert report["rca-progress"]["default_tools_approval_mode"] == "approve"

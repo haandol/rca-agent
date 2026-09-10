@@ -18,6 +18,37 @@ max(0, 3-N)이다. 이 값은 추가 회차의 보장이 아니며 서버의 다
 기존 우선순위로 선택한 상위 3개 가설만 검증한다. 선택 밖 추가 sweep을 하지 않고,
 기각을 더 기록하려고 신뢰도를 낮추거나 종료를 지연하지 않는다.
 
+선택 원인의 증거 수집과 함께 제어 메타데이터를 수집한다. production RCA에서 DB
+차단 PID·application_name·runId를 발견하면 같은 `@log`/`@logStream`의
+`ecs_runtime_identity`를 찾아 실제 관측된 TaskARN과 Cluster ARN에 연결한다.
+서비스 이름, DB PID 또는 runId로 ARN을 만들지 않는다. Cluster가 이름뿐이거나
+identity가 partial/unavailable이면 누락으로 기록하고 다른 태스크를 추측하지 않는다.
+관측된 두 ARN으로 `inspect_ecs_task_control(task_arn, cluster_arn)`을 호출한다.
+이는 기존 선택 가설의 읽기 전용 증거 수집이며 추가 가설이나 추가 validation 루프가 아니다.
+model-eval에서는 제공 관측만 사용하고 이 도구를 호출하지 않는다.
+
+**강한 validation을 저장하기 전에** 위 조회를 선택 원인의 인과 증거와 함께 마친다.
+confidence ≥ 0.9의 validation 저장은 즉시 Report 인계가 될 수 있으므로, Report 단계에서
+새 조회를 시도하거나 제어 정보 수집을 위해 신뢰도를 낮추거나 종료를 늦추지 않는다.
+조회 시각(`observed_at`), 태스크·클러스터·정의 ARN, group/독립 태스크·서비스·unknown 구분,
+현재 상태, startedBy, 생명주기 시각, 소유 run/journal 태그, 태스크 image/digest를
+DB 소유자·같은 로그 스트림의 runtime identity와 대조한다.
+조회는 `DescribeTasks(include=["TAGS"])`만 사용한다. 관측된 taskDefinitionArn에서 파싱한
+family/revision은 `task_definition_arn_derived`(ARN-derived)이며, 태스크 정의를 조회한
+결과로 서술하지 않는다. 정의 상태·등록 시각·컨테이너 정의를 추가 조회하지 않는다.
+이 결과는 **조회 시점** 관측이며
+알람 구간 상태나 DB 소유권을 단독 증명하지 않는다. unknown group을 독립 태스크로 단정하지 않는다.
+환경 변수·secrets·컨테이너 command/args를 조회하려고 셸·임의 API·MCP resource 우회를 하지 않는다.
+
+같은 작업의 maintenance 행동 로그가 제공하면 lock-only, row-DML 없음, SIGTERM/SIGINT 시
+rollback/close **요청** 계약을 제어 메타데이터와 연결한다. 이는 안전한 중지 경로를 평가할
+근거이며, 실제 rollback 완료는 해당 release 로그가 있어야 한다. STOPPED나 신호 처리
+계약만으로 잠금 해제·복구를 주장하지 않는다. 조회 실패·누락·불일치는 제어 정보의 한계로
+기록한다. **소유권/롤백 정보가 없어도 인과 증거가 충분하면 원인 확정을 허용하고 수동 계획으로
+인계한다.** 제어 정보를 얻기 위해 원인 확정을 강제하거나 기존 판단 신뢰도를 변경하지 않는다.
+조회 결과와 연결 근거·한계를 validation의 해당 가설 `evidence_summary`와 최종 RCA 응답에
+보존해 Report에 전달한다. 승인·조작 직전 재확인과 실행 후 검증은 기존 실행 워커의 책임이다.
+
 마지막 응답에는 알람 요약, 최종 validation 내용과 서버 `decision`, 확정 여부,
 근본원인 설명과 신뢰도, 주요 증거와 시간 구간, 기각·종료 가설을 구조화해 반환한다.
 Report 전문 프로세스가 이 응답을 근거로 보고서를 작성할 수 있어야 한다.

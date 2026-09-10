@@ -43,9 +43,10 @@ GITHUB_TOOLSETS = "repos,pull_requests"
 [mcp_servers.rca-progress]
 command = "fastmcp"
 args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/mcp_server.py:mcp"]
-enabled_tools = ["save_analysis_artifact"]
+enabled_tools = ["save_analysis_artifact", "inspect_ecs_task_control"]
 startup_timeout_sec = 30
 tool_timeout_sec = 120
 
 [mcp_servers.rca-progress.env]
 FASTMCP_LOG_LEVEL = "ERROR"
+RCA_ECS_CONTROL_DISCOVERY = "1"
