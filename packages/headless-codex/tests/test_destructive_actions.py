@@ -1,11 +1,57 @@
 import pytest
 
 from headless_codex.services.destructive_actions import (
+    DESTRUCTIVE_OPERATION_VERBS,
     IRREVERSIBLE_ACTION_ENGLISH,
     IRREVERSIBLE_ACTION_KOREAN,
+    UndecidableCommandError,
+    classify_command,
     describes_destructive_action,
     is_destructive_operation,
+    refusal_reason,
 )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        (
+            """aws logs filter-log-events --filter-pattern """
+            """'{ $.event = "db_operation" && $.operation = "ingest" && $.outcome = "ok" }'"""
+        ),
+        """'aws' "logs" 'filter-log-events' --filter-pattern "literal && data" """,
+    ],
+)
+def test_classifier_reads_the_leading_shlex_operation_with_literal_argument_data(command):
+    assert classify_command(command) == ("logs", "filter-log-events")
+    assert refusal_reason(command) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        """echo 'aws ecs describe-services'""",
+        """'aws ecs describe-services' aws ecs delete-service""",
+        """sh -c 'aws ecs describe-services'""",
+        """aws --region us-east-1 ecs describe-services""",
+        """aws --profile describe-services ecs delete-service""",
+        """aws ecs --region us-east-1 describe-services""",
+        """aws ecs describe-services --query 'unterminated""",
+        "aws ecs describe-services\n",
+    ],
+)
+def test_classifier_rejects_quoted_prefixes_global_options_and_invalid_syntax(command):
+    with pytest.raises(UndecidableCommandError):
+        classify_command(command)
+    assert refusal_reason(command) is not None
+
+
+@pytest.mark.parametrize("verb", sorted(DESTRUCTIVE_OPERATION_VERBS))
+def test_literal_arguments_cannot_hide_any_destructive_operation_verb(verb):
+    command = f"""aws example '{verb}-resource' --value 'aws logs filter-log-events && literal'"""
+
+    assert classify_command(command) == ("example", f"{verb}-resource")
+    assert "irreversible operation" in refusal_reason(command)
 
 
 def test_natural_language_contract_uses_the_shared_irreversible_members():

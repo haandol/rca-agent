@@ -3,6 +3,142 @@ import pytest
 from headless_codex.services.command_gate import evaluate_command
 
 
+def test_literal_cloudwatch_json_filter_preserves_exact_argument_bytes():
+    pattern = '{ $.event = "db_operation" && $.operation = "ingest" && $.outcome = "ok" }'
+    command = (
+        "aws logs filter-log-events --log-group-name /ecs/RcaAgentDev/healthcare "
+        f"--filter-pattern '{pattern}' --region us-east-1"
+    )
+
+    verdict = evaluate_command(command)
+
+    assert verdict.allowed, verdict.reason
+    assert (verdict.service, verdict.operation) == ("logs", "filter-log-events")
+    assert verdict.argv == (
+        "aws",
+        "logs",
+        "filter-log-events",
+        "--log-group-name",
+        "/ecs/RcaAgentDev/healthcare",
+        "--filter-pattern",
+        pattern,
+        "--region",
+        "us-east-1",
+    )
+    assert verdict.argv[6].encode() == pattern.encode()
+
+
+@pytest.mark.parametrize(
+    ("argument", "expected"),
+    [
+        (
+            "'literal && data || more; pipes | redirects < > (group)'",
+            "literal && data || more; pipes | redirects < > (group)",
+        ),
+        (
+            r""" "{ $.event = \"db_operation\" && $.outcome = \"ok\" }" """,
+            '{ $.event = "db_operation" && $.outcome = "ok" }',
+        ),
+        (r"""'C:\logs\file && "ok"' """, r'C:\logs\file && "ok"'),
+        (r'''"C:\\logs\\file && \"ok\""''', r'C:\logs\file && "ok"'),
+        ("""'prefix'" && "'suffix'""", "prefix && suffix"),
+        (r"literal\&\&data\;tail\|part\<left\>right", "literal&&data;tail|part<left>right"),
+        (r'''"literal \" && aws ec2 terminate-instances"''', 'literal " && aws ec2 terminate-instances'),
+    ],
+)
+def test_quote_and_escape_handling_preserves_literal_argv(argument, expected):
+    verdict = evaluate_command(f"aws logs filter-log-events --filter-pattern {argument}")
+
+    assert verdict.allowed, verdict.reason
+    assert verdict.argv == ("aws", "logs", "filter-log-events", "--filter-pattern", expected)
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "&& aws ec2 terminate-instances --instance-ids i-1",
+        "|| aws ecs delete-service",
+        ";aws ecs delete-service",
+        "|aws ecs delete-service",
+        "&aws ecs delete-service",
+        ">out.json",
+        ">>out.json",
+        "<input.json",
+        "2>out.json",
+        "2>&1",
+        "&>out.json",
+        "<<EOF",
+        "<<<data",
+        "(aws ecs delete-service)",
+    ],
+)
+def test_quoted_argument_prefix_cannot_hide_unquoted_operators(suffix):
+    verdict = evaluate_command(f"""aws logs filter-log-events --filter-pattern 'literal && data'{suffix}""")
+
+    assert not verdict.allowed
+    assert verdict.undecidable
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        r""""literal \\" && aws ec2 terminate-instances""",
+        r"""'literal \\'&&aws ecs delete-service""",
+        r"""literal\"&&aws ecs delete-service""",
+        "'unterminated && data",
+        '"unterminated && data',
+        "trailing\\",
+        r""""escaped closing quote\"""",
+    ],
+)
+def test_escaped_quotes_and_backslashes_do_not_hide_composition_or_invalid_quotes(argument):
+    verdict = evaluate_command(f"aws logs filter-log-events --filter-pattern {argument}")
+
+    assert not verdict.allowed
+    assert verdict.undecidable
+
+
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+@pytest.mark.parametrize(
+    "substitution",
+    [
+        "$(aws ecs delete-service)",
+        "$(echo $(aws ecs delete-service))",
+        "${value:-$(aws ecs delete-service)}",
+        "$((1+$(aws ecs delete-service)))",
+        "`aws ecs delete-service`",
+        "<(aws ecs delete-service)",
+        ">(aws ecs delete-service)",
+        r"\$(aws ecs delete-service)",
+        r"\`aws ecs delete-service\`",
+    ],
+)
+def test_substitution_syntax_remains_conservatively_refused_even_in_quoted_data(quote, substitution):
+    verdict = evaluate_command(f"aws logs filter-log-events --filter-pattern {quote}{substitution}{quote}")
+
+    assert not verdict.allowed
+    assert verdict.undecidable
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r", "\r\n"])
+@pytest.mark.parametrize("position", ["prefix", "suffix", "argument", "escaped"])
+def test_newlines_are_refused_including_inside_literals_and_at_command_edges(newline, position):
+    command = "aws logs filter-log-events"
+    if position == "prefix":
+        command = newline + command
+    elif position == "suffix":
+        command += newline
+    elif position == "escaped":
+        command += "\\" + newline + "--filter-pattern data"
+    else:
+        command += f" --filter-pattern 'first{newline}second'"
+
+    verdict = evaluate_command(command)
+
+    assert not verdict.allowed
+    assert verdict.undecidable
+
+
 @pytest.mark.parametrize(
     "command",
     [

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 
 # 되돌릴 수 없는 제어 평면 작업의 동사. AWS API 이름은 동사+명사 형태이므로 동사만
 # 보면 서비스가 늘어나도 같은 판정이 적용된다.
@@ -104,11 +105,11 @@ _DYNAMODB_READ_OPERATIONS = frozenset(
     }
 )
 
-# 셸 합성과 중첩 호출은 작업 이름을 신뢰할 수 없게 만든다. 판정 불가는 거부로 처리한다.
-_SHELL_COMPOSITION = re.compile(r"[;&|`]|\$\(|\|\||&&|>\s|>>")
+# Keep substitution syntax forbidden even in quoted data; the execution contract
+# accepts literal argv only and does not interpret nested calls.
+_SHELL_SUBSTITUTION = re.compile(r"`|\$\(|[<>]\(")
 
-# awscli 형태: `aws <service> <kebab-operation> ...`
-_AWSCLI_CALL = re.compile(r"\baws\s+([a-z0-9-]+)\s+([a-z0-9-]+)")
+_AWSCLI_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 IRREVERSIBLE_ACTION_ENGLISH: frozenset[str] = frozenset(
     {
@@ -265,6 +266,30 @@ def is_self_control_operation(service: str, operation: str) -> bool:
     return normalized[0] == "dynamodb" and normalized[1] not in _DYNAMODB_READ_OPERATIONS
 
 
+def _reject_shell_composition(command: str) -> None:
+    """Scan quote/escape state in linear time without rewriting argument data.
+
+    shlex validates balanced quotes and escapes afterwards. Operators inside
+    literal arguments are data; outside quotes they must not compose commands.
+    """
+    if "\n" in command or "\r" in command or _SHELL_SUBSTITUTION.search(command):
+        raise UndecidableCommandError("command composes multiple shell operations")
+    quote = ""
+    escaped = False
+    for character in command:
+        if escaped:
+            escaped = False
+        elif character == "\\" and quote != "'":
+            escaped = True
+        elif quote:
+            if character == quote:
+                quote = ""
+        elif character in ("'", '"'):
+            quote = character
+        elif character in ";&|<>()":
+            raise UndecidableCommandError("command composes multiple shell operations")
+
+
 def classify_command(command: str) -> tuple[str, str]:
     """명령에서 (service, operation) 을 추출한다.
 
@@ -273,16 +298,21 @@ def classify_command(command: str) -> tuple[str, str]:
             판정 불가를 허용으로 해석하면 거부 목록이 무력화되므로 호출자는 이를
             거부로 처리해야 한다.
     """
-    text = command.strip()
-    if not text:
+    if not command.strip():
         raise UndecidableCommandError("command is empty")
-    if _SHELL_COMPOSITION.search(text):
-        raise UndecidableCommandError("command composes multiple shell operations")
-
-    match = _AWSCLI_CALL.search(text)
-    if match is None:
+    _reject_shell_composition(command)
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise UndecidableCommandError(f"command could not be parsed: {exc}") from exc
+    if (
+        len(argv) < 3
+        or argv[0] != "aws"
+        or _AWSCLI_NAME.fullmatch(argv[1]) is None
+        or _AWSCLI_NAME.fullmatch(argv[2]) is None
+    ):
         raise UndecidableCommandError("command does not name an AWS service and operation")
-    return match.group(1), match.group(2)
+    return argv[1], argv[2]
 
 
 def refusal_reason(command: str) -> str | None:
