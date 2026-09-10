@@ -103,10 +103,14 @@ class ExecutionOrchestrator:
     ) -> bool:
         """Run the approved execution and capture actual runner boundaries for durable evidence."""
         store = self._c.execution_store
-        workspace = ExecutionWorkspace.create(execution_id)
-        workspace.prepare()
+        workspace: ExecutionWorkspace | None = None
+        playbook: dict | None = None
+        execution_started_at: str | None = None
+        execution_ended_at: str | None = None
 
         try:
+            workspace = ExecutionWorkspace.create(execution_id)
+            workspace.prepare()
             try:
                 playbook = self._c.evidence_store.load_approved_playbook(
                     request.approved_playbook_s3_key,
@@ -118,14 +122,19 @@ class ExecutionOrchestrator:
                     report_s3_key=request.report_s3_key,
                     playbook=playbook,
                 )
+            except ExecutionClaimLostError:
+                raise
             except Exception as exc:
-                log.error("execution_target_unavailable", detail=str(exc))
+                reason = redact(str(exc))[:1000]
+                log.error("execution_target_unavailable", detail=reason)
+                if not store.is_execution_current(execution_id, rca_id=request.rca_id, claim_token=claim_token):
+                    return False
                 store.update_state(
                     execution_id,
                     rca_id=request.rca_id,
                     state=ExecutionState.FAILED,
                     claim_token=claim_token,
-                    error_reason=str(exc),
+                    error_reason=reason,
                 )
                 return True
 
@@ -274,21 +283,62 @@ class ExecutionOrchestrator:
             # 다른 워커가 같은 실행을 이어받았다. 이 워커의 쓰기는 더 이상 유효하지 않다.
             log.info("execution_claim_lost")
             return False
-        except Exception:
-            log.exception("execution_pipeline_failed")
+        except Exception as exc:
+            # This is an observed runner failure boundary, not a fabricated command
+            # completion time. Before the runner starts, both boundaries stay absent.
+            if execution_started_at is not None and execution_ended_at is None:
+                execution_ended_at = datetime.now(UTC).isoformat()
+            reason = f"Unhandled execution exception: {redact(type(exc).__name__)}: {redact(str(exc))}"[:1000]
+            log.error("execution_pipeline_failed", detail=reason)
+            failed_evidence = None
             try:
-                store.update_state(
-                    execution_id,
-                    rca_id=request.rca_id,
-                    state=ExecutionState.FAILED,
-                    claim_token=claim_token,
-                    error_reason="Unhandled execution exception",
+                if workspace is not None and playbook is not None:
+                    failed_evidence = assemble_evidence(
+                        workspace.read_records(),
+                        execution_id=execution_id,
+                        rca_id=request.rca_id,
+                        engine=request.engine,
+                        playbook=playbook,
+                        started_at=execution_started_at,
+                        ended_at=execution_ended_at,
+                    )
+            except Exception as evidence_exc:
+                # Preserve the original failure reason even if journal recovery fails.
+                log.error("execution_failure_evidence_unavailable", detail=redact(str(evidence_exc))[:1000])
+            try:
+                # S3 is not conditionally fenced like update_state. Check ownership
+                # immediately before saving; an unavailable check also forbids writes.
+                if not store.is_execution_current(execution_id, rca_id=request.rca_id, claim_token=claim_token):
+                    log.info("execution_claim_lost")
+                    return False
+                if failed_evidence is not None:
+                    self._finish(
+                        execution_id, request, failed_evidence, claim_token, ExecutionState.FAILED, reason, log
+                    )
+                else:
+                    # Workspace/snapshot setup can fail before there is a journal.
+                    store.update_state(
+                        execution_id,
+                        rca_id=request.rca_id,
+                        state=ExecutionState.FAILED,
+                        claim_token=claim_token,
+                        error_reason=reason,
+                    )
+            except ExecutionClaimLostError:
+                log.info("execution_claim_lost")
+            except Exception as failure_exc:
+                log.error(
+                    "execution_mark_failed_failed",
+                    detail=redact(str(failure_exc))[:1000],
+                    original_error=reason,
                 )
-            except Exception:
-                log.exception("execution_mark_failed_failed")
             return False
         finally:
-            workspace.cleanup()
+            if workspace is not None:
+                try:
+                    workspace.cleanup()
+                except Exception as cleanup_exc:
+                    log.error("execution_workspace_cleanup_failed", detail=redact(str(cleanup_exc))[:1000])
 
     def _finish(
         self,
