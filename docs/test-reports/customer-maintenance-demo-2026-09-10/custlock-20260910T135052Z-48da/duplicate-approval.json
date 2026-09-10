@@ -1,0 +1,21 @@
+{
+  "status": 409,
+  "body": {
+    "error": true,
+    "url": "http://127.0.0.1:3100/api/executions",
+    "statusCode": 409,
+    "statusMessage": "다른 실행이 이미 활성 상태이거나 같은 승인 식별자의 내용이 일치하지 않습니다.",
+    "message": "다른 실행이 이미 활성 상태이거나 같은 승인 식별자의 내용이 일치하지 않습니다.",
+    "stack": [
+      "다른 실행이 이미 활성 상태이거나 같은 승인 식별자의 내용이 일치하지 않습니다.",
+      "at createError (/Users/dongkyl/git/rca-agent/node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs:71:15)",
+      "at reserveExecution (/Users/dongkyl/git/rca-agent/packages/dashboard/server/api/executions.post.ts:370:0)",
+      "at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+      "at async Object.handler (/Users/dongkyl/git/rca-agent/packages/dashboard/server/api/executions.post.ts:128:0)",
+      "at async file:///Users/dongkyl/git/rca-agent/node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs:2017:19)",
+      "at async Object.callAsync (/Users/dongkyl/git/rca-agent/node_modules/.pnpm/unctx@2.5.0/node_modules/unctx/dist/index.mjs:72:16)",
+      "at async Server.toNodeHandle (/Users/dongkyl/git/rca-agent/node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs:2316:7)"
+    ]
+  },
+  "at": "2026-09-10T14:05:14.246952+00:00"
+}

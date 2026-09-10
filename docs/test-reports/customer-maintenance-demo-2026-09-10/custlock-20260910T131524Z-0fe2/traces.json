@@ -1,0 +1,296 @@
+{
+  "rcaId": "f9b3a399-4218-5c8a-918b-a9fa08e6104f",
+  "session": {
+    "state": "COMPLETED",
+    "alarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+    "alarmArn": "",
+    "rootCause": "외부 유지보수 트랜잭션 잠금: [CWLI bf8f838a-753e-438d-a18f-3c52d077c147] current alarm window의 소유자 스트림 healthcare/healthcare/ba00ccb71afc4aacaa90d67e7d646d62에서 13:16:56.081Z maintenance_lock_acquired가 backend_pid=23992, transaction_start=13:16:56.066293Z, run_id=custlock-20260910T131524Z-0fe2로 sensor_readings의 granted ShareLock을 기록했다. [CWLI 5665a131-2103-44a5-ba59-6919ea426320] 13:17:06.215Z부터 서비스 관측자 스트림은 healthcare-service PID 20982의 sensor_readings RowExclusiveLock이 granted=false이고 blocking_pids=[23992]임을 반복 기록했으며, 차단 세션의 PID·xact_start·application_name healthcare-maint-custlock-20260910T131524Z-0fe2가 소유자 이벤트와 일치한다. 이 시점은 VitalIngestFailures가 0에서 17로 상승한 13:17Z와 일치하므로 외부 잠금 소유자가 바이탈 쓰기를 직접 차단한 인과가 확정된다. SQL 작업 자체의 비효율이 아니라 외부 트랜잭션 잠금 대기이므로 fault_type은 증거에서 독립 판정해 unsupported다. [ECSControl observed_at=2026-09-10T13:21:54.336336Z] 소유자 이벤트와 같은 스트림의 ecs_runtime_identity에 나온 정확한 TaskARN/Cluster ARN으로 조회했으며, task identity와 RealisticDemoRunId 태그가 소유자 실행과 일치한다. RealisticDemoJournal은 태스크에 존재하지만 lifecycle 이벤트에 비교값이 없어 journal 교차검증은 불가하다. 이는 조회 시점 메타데이터이며 알람 시점 상태·DB 소유권·rollback 완료를 단독 증명하지 않는다.",
+    "confirmed": true,
+    "errorReason": "",
+    "stoppedAt": "REPORT_GENERATION",
+    "createdAt": "2026-09-10T13:19:28.962289+00:00",
+    "updatedAt": "2026-09-10T13:26:17.403707+00:00",
+    "engine": "headless-codex"
+  },
+  "spans": [
+    {
+      "spanId": "5c136cf1-8be5-49ad-bee8-c71e628d9ee3",
+      "spanType": "SCOPING",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": null,
+      "startTime": "2026-09-10T13:21:24.711523+00:00",
+      "endTime": "2026-09-10T13:21:24.711523+00:00",
+      "durationMs": null,
+      "inputSummary": "2026-09-10T13:19:28.679Z에 OK→ALARM으로 전환되었고 13:17Z·13:18Z 실패가 각각 17·21건이었다. current alarm window에서 서비스 요청량은 유지되지만 기록 실패가 급증해 환자 바이탈 누락과 이상값 알림 미발생 영향이 서비스 전체에 존재한다. ECS CPU·메모리와 RDS 연결 수는 낮고 안정적이며, 활성 동시 알람은 관측되지 않았다. ��전 1시간 동일 길이 비교 구간은 12:20Z 별도 ALARM 사건과 겹쳐 건강한 baseline이 아니다.",
+      "outputSummary": "영향범위: service, 심각도: high; 13:17Z부터 VitalIngestFailures 급증, 자원 포화·트래픽 급증 신호 없음",
+      "error": null,
+      "metadata": null,
+      "engine": "headless-codex"
+    },
+    {
+      "spanId": "60f06e16-3c47-46fc-9028-616760874709",
+      "spanType": "HYPOTHESIS_GENERATION",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": null,
+      "startTime": "2026-09-10T13:21:40.986752+00:00",
+      "endTime": "2026-09-10T13:21:40.986752+00:00",
+      "durationMs": null,
+      "inputSummary": "독립 루트 가설 5개 생성",
+      "outputSummary": "가설 5개 생성: 외부 유지보수 트랜잭션 잠금, 바이탈 적재 SQL 호출 증폭, DB 커넥션 반환 누락, ECS CPU 포화, ECS 메모리 압박",
+      "error": null,
+      "metadata": null,
+      "engine": "headless-codex"
+    },
+    {
+      "spanId": "114849bf-5ce3-4f83-ac74-e12c5e4d31a9",
+      "spanType": "PRIORITIZATION",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": 1,
+      "startTime": "2026-09-10T13:22:23.105302+00:00",
+      "endTime": "2026-09-10T13:22:23.105302+00:00",
+      "durationMs": null,
+      "inputSummary": "검증 루프 1 완료: 외부 유지보수 트랜잭션 잠금을 확정하고 SQL 호출 증폭·DB 커넥션 반환 누락을 기각함",
+      "outputSummary": "확정: 외부 유지보수 태스크의 sensor_readings ShareLock이 ingest RowExclusiveLock을 차단(신뢰도 0.97, unsupported). 제어 메타데이터 연결 완료; release/rollback 완료는 미관측.",
+      "error": null,
+      "metadata": null,
+      "engine": "headless-codex"
+    },
+    {
+      "spanId": "8ff351e2-1c49-4d88-a1b9-bd9ba3b0c28b",
+      "spanType": "EVIDENCE_COLLECTION",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": 1,
+      "startTime": "2026-09-10T13:22:23.178084+00:00",
+      "endTime": "2026-09-10T13:22:23.178084+00:00",
+      "durationMs": null,
+      "inputSummary": "검증 루프 1 완료: 외부 유지보수 트랜잭션 잠금을 확정하고 SQL 호출 증폭·DB 커넥션 반환 누락을 기각함",
+      "outputSummary": "확정: 외부 유지보수 태스크의 sensor_readings ShareLock이 ingest RowExclusiveLock을 차단(신뢰도 0.97, unsupported). 제어 메타데이터 연결 완료; release/rollback 완료는 미관측.",
+      "error": null,
+      "metadata": null,
+      "engine": "headless-codex"
+    },
+    {
+      "spanId": "34ff106d-c725-4531-80b0-a74fd9f66bcc",
+      "spanType": "VALIDATION",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": 1,
+      "startTime": "2026-09-10T13:22:23.200563+00:00",
+      "endTime": "2026-09-10T13:22:23.200563+00:00",
+      "durationMs": null,
+      "inputSummary": "검증 루프 1 완료: 외부 유지보수 트랜잭션 잠금을 확정하고 SQL 호출 증폭·DB 커넥션 반환 누락을 기각함",
+      "outputSummary": "확정: 외부 유지보수 태스크의 sensor_readings ShareLock이 ingest RowExclusiveLock을 차단(신뢰도 0.97, unsupported). 제어 메타데이터 연결 완료; release/rollback 완료는 미관측.",
+      "error": null,
+      "metadata": null,
+      "engine": "headless-codex"
+    },
+    {
+      "spanId": "66c8a45e-d9e3-405e-9bf6-7eea37f423a5",
+      "spanType": "PLAYBOOK",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": null,
+      "startTime": "2026-09-10T13:23:42.213258+00:00",
+      "endTime": "2026-09-10T13:23:42.213258+00:00",
+      "durationMs": null,
+      "inputSummary": "외부 유지보수 트랜잭션 잠금의 확인된 standalone 소유자를 재검증한 뒤 승인된 정상 중지와 정확한 완료 이벤트 및 두 개의 고정된 사후 지표 구간으로 검증하는 초안 플레이북을 생성했다.",
+      "outputSummary": "외부 트랜잭션 잠금 장애: 소유자 재확인 → 승인된 standalone 태스크 중지 → maintenance_released와 조치 후 두 구간의 attempts>0, failures=0, 알람 OK 검증",
+      "error": null,
+      "metadata": {
+        "execution_steps": [
+          {
+            "action": "us-east-1에서 정확한 소유자 태스크 ARN을 읽기 전용으로 다시 조회해 클러스터, standalone 상태, 현재 수명, 태그, 태스크 정의 ARN과 컨테이너 digest를 확인하고 RealisticDemoRunId가 custlock-20260910T131524Z-0fe2와 일치하는지 검증한다. 같은 단계에서 실제 CloudWatch metric과 알람 메타데이터를 조회해 healthcare-sensor-app의 VitalIngestAttempts, VitalIngestFailures 및 RcaAgentDev-Healthcare-VitalIngestFailures 좌표를 확정한다.",
+            "step_id": "step-owner-revalidation-v1",
+            "intent": "조작 대상을 현재 차단 트랜잭션의 확인된 standalone 소유자로 한정하고 사후 관측 좌표를 확정한다.",
+            "success_criteria": "소유자 태스크가 lifecycle 이벤트의 정확한 TaskARN과 일치하고 standalone 소유권, 현재 상태, RealisticDemoRunId, rollback 후 connection close 계약이 모두 재확인되며, attempts와 failures의 namespace·metric name·ServiceName 차원·60초 Sum 및 실패 알람 이름과 임계치가 실제 조회 결과로 확인되면 성공이다. 하나라도 불일치하거나 누락되면 조작 단계로 진행하지 않는다."
+          },
+          {
+            "action": "사용자 승인 후 소유권과 rollback 경로가 직전에 재확인된 standalone 유지보수 태스크 arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/ba00ccb71afc4aacaa90d67e7d646d62만 ECS 제어면에서 중지한다. 임의 서비스 태스크를 중지하거나 직접 SQL, 셸, ECS exec, 새 태스크 실행을 사용하지 않는다.",
+            "step_id": "step-stop-lock-owner-v1",
+            "intent": "확정된 외부 유지보수 트랜잭션 소유자에게 정상 중지 신호를 보내 계약된 rollback과 connection close를 유도한다.",
+            "success_criteria": "중지 조작이 정확한 태스크에 수락되고, 이후 동일 소유자의 maintenance_released 이벤트에서 run_id=custlock-20260910T131524Z-0fe2와 backend_pid=23992가 일치하며 rollback_complete의 실제 값이 기대값 true이고 release_reason 필드가 확인되며 계약상 connection close 이후 이벤트가 발행된 경우에만 이 단계의 성공으로 판정한다. 태스크 STOPPED 상태만으로는 성공이 아니다."
+          },
+          {
+            "action": "승인된 태스크 중지의 서버 기록 ended_at 이후 다음 분 경계부터 첫 두 개의 완결된 60초 구간을 대상으로, 직전에 확인한 healthcare-sensor-app의 attempts와 failures 지표 및 정확한 실패 알람을 읽기 전용으로 관측한다.",
+            "step_id": "step-post-action-health-v1",
+            "intent": "잠금 소유자 중지 이후 실제 바이탈 쓰기 트래픽에서 실패가 해소됐는지 고정된 관측 구간으로 판정한다.",
+            "success_criteria": "고정된 두 구간 각각에서 VitalIngestAttempts Sum이 0보다 크고 VitalIngestFailures Sum이 0이며 RcaAgentDev-Healthcare-VitalIngestFailures가 OK이고, step-stop-lock-owner-v1의 동일 소유자 완료 이벤트 조건도 충족될 때 성공이다. 데이터 누락, 부분 구간, 시간 초과, failures가 0 초과, attempts가 0, 알람 비-OK 중 하나라도 있으면 성공으로 판정하지 않는다."
+          }
+        ],
+        "related_metrics": [
+          "Healthcare/Sensor/VitalIngestFailures, dimensions ServiceName=healthcare-sensor-app, statistic Sum, period 60초: 정상 검증 범위는 조치 후 고정된 두 완결 구간 각각 0, 장애 관측은 current alarm window에서 0,0,0,17,21,26,12",
+          "Healthcare/Sensor/VitalIngestAttempts, dimensions ServiceName=healthcare-sensor-app, statistic Sum, period 60초: 조치 후 고정된 두 완결 구간 각각 0 초과가 필요하며 current alarm window 관측은 24,27,23,34,21,26,23",
+          "AWS/RDS DatabaseConnections, 대상 rcaagentdev-postgres: current alarm window 관측 2,2,2,3,3,3,3이며 정상 상한은 현재 증거만으로 확정하지 않음",
+          "AWS/ECS CPUUtilization, 대상 RcaAgentDevHealthcare 서비스: current alarm window 약 3.3%로 포화 증거 없음",
+          "AWS/ECS MemoryUtilization, 대상 RcaAgentDevHealthcare 서비스: current alarm window 17.29%로 압박 증거 없음"
+        ],
+        "failure_type": "외부 유지보수 트랜잭션 잠금에 의한 바이탈 적재 실패",
+        "severity_criteria": "high: 60초 SUM 기준 VitalIngestFailures가 1 이상인 데이터포인트 2개로 ALARM이 발생하고 환자 바이탈 기록 누락 및 이상값 알림 미발생 영향이 확인되는 경우. critical: 현재 증거에는 별도 정량 기준이 없어 자동 상향하지 않고 환자 안전 영향과 다중 서비스 확산 여부를 운영자가 평가한다.",
+        "temporary_mitigation": "사용자 승인 후, 현재 잠금 소유권과 정상 중지 시 rollback 경로가 재확인된 standalone 유지보수 태스크만 중지해 증상을 완화한다. 이 조치는 임의 서비스 태스크에 적용하지 않으며 maintenance_released 완료 이벤트와 조치 후 두 완결 구간의 실제 쓰기 건강 지표가 확인되기 전에는 복구로 간주하지 않는다.",
+        "verification_status": "DRAFT",
+        "escalation_criteria": "소유자 ARN·standalone 상태·RealisticDemoRunId·rollback 경로를 재확인할 수 없거나, maintenance_released가 없거나 identity가 불일치하거나 rollback_complete가 true가 아니거나 release_reason 필드가 없으면 DB 및 유지보수 작업 소유자에게 즉시 에스컬레이션한다. 조치 후 고정된 두 완결 구간 중 하나라도 attempts Sum=0, failures Sum>0, 실패 알람 비-OK, 데이터 누락·부분 데이터·관측 시간 초과이면 resolved로 기록하지 않고 애플리케이션 및 DB 담당자에게 에스컬레이션한다.",
+        "tags": [
+          "healthcare",
+          "vital-ingest",
+          "postgres-lock",
+          "ecs-standalone-task",
+          "transaction-rollback",
+          "us-east-1"
+        ],
+        "symptom_pattern": "Healthcare/Sensor/VitalIngestFailures가 60초 SUM 기준 임계치 1 이상으로 2개 데이터포인트에서 경보를 발생시켰고, current alarm window에서 13:17Z 17건, 13:18Z 21건, 13:19Z 26건으로 증가하는 동안 VitalIngestAttempts는 분당 21~34건, ECS CPU는 약 3.3%, 메모리는 17.29%, DB 연결은 최대 3이었다.",
+        "prevention_measures": [
+          "유지보수 트랜잭션에 최대 실행 시간과 잠금 보유 시간 제한 적용",
+          "모든 정상·예외·중지 경로에서 rollback 후 connection close 보장",
+          "maintenance_released의 run_id, backend_pid, rollback_complete, release_reason 필드를 중앙 로그와 감사 증거에 연결",
+          "idle in transaction, 장기 relation lock, VitalIngestFailures의 상관 경보 구성",
+          "독립 유지보수 태스크에 소유자, 실행 목적, 만료 정책, 안전 중지와 rollback 계약을 나타내는 태그 및 런북 유지"
+        ],
+        "playbook_id": "9d2336c4-5ce4-4e96-84e7-b4de496ab81e",
+        "permanent_remediation": "유지보수 트랜잭션의 최대 잠금 보유 시간과 실행 수명을 제한하고 모든 종료·예외 경로에서 transaction rollback 후 connection close를 보장한다. idle in transaction 및 장기 relation lock 경보, maintenance_released 이벤트의 run_id·backend_pid·rollback_complete·release_reason 관측, 독립 작업의 소유자·만료·안전 중지 계약을 운영 표준으로 추가한다. 데이터·리소스 삭제나 영구 인스턴스 종료는 이 실행 절차에 포함하지 않으며 필요 시 별도 수동 변경 심사를 거친다.",
+        "verification_steps": [
+          "current alarm window 2026-09-10T13:14:28.679Z~2026-09-10T13:24:28.679Z의 소유자 스트림에서 run_id=custlock-20260910T131524Z-0fe2, backend_pid=23992, sensor_readings ShareLock과 서비스 PID 20982의 blocking_pids=[23992]를 확인한다. Pass는 두 identity와 잠금 관계가 모두 일치하는 경우, Fail은 불일치, 에스컬레이션은 로그 범위 또는 스트림을 완결되게 조회할 수 없는 경우다.",
+          "조작 직전에 읽기 전용 ECS 조회로 태스크 ARN arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/ba00ccb71afc4aacaa90d67e7d646d62, 클러스터, standalone 상태, 현재 수명, RealisticDemoRunId, 태스크 정의 ARN과 컨테이너 digest를 재확인한다. Pass는 소유자 lifecycle identity와 태그가 일치하고 rollback 후 connection close 계약이 확인되는 경우, Fail은 하나라도 불일치하는 경우이며 Fail 시 중지하지 않고 수동 에스컬레이션한다.",
+          "실제 CloudWatch 목록과 알람 메타데이터를 읽기 전용으로 조회해 us-east-1의 Healthcare/Sensor/VitalIngestAttempts 및 Healthcare/Sensor/VitalIngestFailures, dimensions ServiceName=healthcare-sensor-app, statistic Sum, period 60초와 실패 알람 RcaAgentDev-Healthcare-VitalIngestFailures를 확인한다. Pass는 이름·차원·통계·주기·임계치가 관측값과 일치하는 경우, Fail은 불일치 또는 미지원 알람 형식이며 이때 자동 검증을 중단하고 에스컬레이션한다.",
+          "승인된 중지 조작 후 동일 소유자의 event=maintenance_released를 조회한다. identity_keys인 run_id와 backend_pid가 각각 custlock-20260910T131524Z-0fe2와 23992이고 rollback_success_field인 rollback_complete의 실제 값이 기대값 true이며 release_reason 필드가 존재하고, 계약상 connection close 뒤 발행된 이벤트임을 확인한다. Pass는 모든 조건 충족, Fail은 이벤트 누락·identity 불일치·rollback_complete가 true가 아님·release_reason 필드 누락이며 Fail 시 DB 및 작업 소유자에게 에스컬레이션한다.",
+          "승인된 실제 ECS 중지 성공 기록의 ended_at을 앵커로 다음 분 경계부터 첫 두 개의 완결된 60초 구간을 고정해 관측한다. 각 구간에서 VitalIngestAttempts Sum>0, VitalIngestFailures Sum=0이고 정확한 실패 알람이 OK여야 Pass다. 누락·부분 데이터·비정상 값·한 구간이라도 failures>0·attempts=0·알람 비-OK이면 Fail이며 뒤의 정상 구간으로 대체하지 않고 에스컬레이션한다."
+        ]
+      },
+      "engine": "headless-codex"
+    },
+    {
+      "spanId": "475fca4e-5eeb-4ce4-b03e-2f86e28f1e71",
+      "spanType": "REPORT",
+      "spanStatus": "COMPLETED",
+      "parentSpanId": null,
+      "loopIndex": null,
+      "startTime": "2026-09-10T13:26:14.040891+00:00",
+      "endTime": "2026-09-10T13:26:14.040891+00:00",
+      "durationMs": null,
+      "inputSummary": "# RcaAgentDev-Healthcare-VitalIngestFailures RCA 보고서\n\n## 인시던트 요약\n\n- 알람: `RcaAgentDev-Healthcare-VitalIngestFailures`\n- 리전: `us-east-1`\n- 상태 변경: `2026-09-10T13:19:28.679Z`, 상태 `ALARM`\n- 근본 원인: **확정**, 외부 유지보수 트랜잭션 잠금 (`confidence=0.97`, `fault_type=unsupported`)\n- 복구 상태: 이 실행에서는 복구하지 않았으며 잠금 해제, rollback 및 정상화는 미확인입니다.\n\n## 영향\n\n`healthcare-sensor-app`의 바이탈 기록 누락과 해당 기록의 이상값 알림 미발생 가능성이 있습니다. current alarm window에서 실패는 분당 최대 26건이었습니다. 영향 환자 수와 총 누락 레코드는 입력 증거로 확정되지 않았습니다.\n\n## 증거 시간 범위\n\n- current al",
+      "outputSummary": "# RcaAgentDev-Healthcare-VitalIngestFailures RCA 보고서\n\n## 인시던트 요약\n\n- 알람: `RcaAgentDev-Healthcare-VitalIngestFailures`\n- 리전: `us-east-1`\n- 상태 변경: `2026-09-10T13:19:28.679Z`, 상태 `ALARM`\n- 근본 원인: **확정**, 외부 유지보수 트랜잭션 잠금 (`confidence=0.97`, `fault_type=unsupported`)\n- 복구 상태: 이 실행에서는 복구하지 않았으며 잠금 해제, rollback 및 정상화는 미확인입니다.\n\n## 영향\n\n`healthcare-sensor-app`의 바이탈 기록 누락과 해당 기록의 이상값 알림 미발생 가능성이 있습니다. current alarm window에서 실패는 분당 최대 26건이었습니다. 영향 환자 수와 총 누락 레코드는 입력 증거로 확정되지 않았습니다.\n\n## 증거 시간 범위\n\n- current al",
+      "error": null,
+      "metadata": null,
+      "engine": "headless-codex"
+    }
+  ],
+  "hypotheses": [
+    {
+      "hypothesisId": "011da911-345b-4caa-b1fc-4b31c1473dc2",
+      "treeId": "7f3e3c22-30d4-4e2e-9b8e-6ca5188c60bd",
+      "parentId": null,
+      "depth": 0,
+      "title": "ECS 메모리 압박",
+      "description": "메모리 압박이나 OOM 전조로 ingest 처리 실패가 발생했을 수 있다. current alarm window의 메모리 사용률과 재시작·OOM 로그를 검토하되, 사용률이 17.29%로 고정되어 가능성은 낮다.",
+      "category": "INFRASTRUCTURE",
+      "confidenceScore": 0.1,
+      "status": "CLOSED",
+      "requiredEvidence": [
+        "ECS MemoryUtilization 급등",
+        "OOM 또는 컨테이너 재시작 이벤트"
+      ],
+      "referencedPlaybookId": null,
+      "evidenceSummary": "",
+      "judgmentReasoning": "",
+      "judgmentConfidence": null,
+      "createdAt": "2026-09-10T13:21:41.064879+00:00",
+      "updatedAt": "2026-09-10T13:22:23.217553+00:00",
+      "engine": "headless-codex"
+    },
+    {
+      "hypothesisId": "95dfd3f6-0800-4c09-b738-e0102d903d54",
+      "treeId": "7f3e3c22-30d4-4e2e-9b8e-6ca5188c60bd",
+      "parentId": null,
+      "depth": 0,
+      "title": "ECS CPU 포화",
+      "description": "서비스 태스크의 CPU 포화로 DB 작업과 메트릭 처리 루프가 지연될 수 있다. current alarm window의 ECS CPU와 throttling·처리 지연 로그를 확인하되, 현재 평균 약 3.3%라 가능성은 낮다.",
+      "category": "INFRASTRUCTURE",
+      "confidenceScore": 0.1,
+      "status": "CLOSED",
+      "requiredEvidence": [
+        "ECS CPUUtilization 급등",
+        "CPU 포화와 동일 시각의 처리 지연 또는 timeout"
+      ],
+      "referencedPlaybookId": null,
+      "evidenceSummary": "",
+      "judgmentReasoning": "",
+      "judgmentConfidence": null,
+      "createdAt": "2026-09-10T13:21:41.064879+00:00",
+      "updatedAt": "2026-09-10T13:22:23.217553+00:00",
+      "engine": "headless-codex"
+    },
+    {
+      "hypothesisId": "bc2a02e7-33df-488b-b114-9401e35cf264",
+      "treeId": "7f3e3c22-30d4-4e2e-9b8e-6ca5188c60bd",
+      "parentId": null,
+      "depth": 0,
+      "title": "바이탈 적재 SQL 호출 증폭",
+      "description": "요청량 자체는 급증하지 않았지만 애플리케이션 내부 재시도나 비효율 SQL로 실제 DB 작업이 증폭되어 지연·실패했을 수 있다. 실패 로그의 SQL 해시, 호출 횟수, 쿼리 지속시간과 차단자 부재 여부를 대조한다.",
+      "category": "TRAFFIC",
+      "confidenceScore": 0.03,
+      "status": "REJECTED",
+      "requiredEvidence": [
+        "current alarm window의 SQL 해시별 실행·실패 건수",
+        "PatientVitalsQueryDuration 또는 DB 작업 지연",
+        "외부 차단 PID가 없는 상태의 장기 실행 SQL"
+      ],
+      "referencedPlaybookId": null,
+      "evidenceSummary": "[CWMetric m1 VitalIngestAttempts, current alarm window 2026-09-10T13:14:28.679Z–13:24:28.679Z, observed_at/query cutoff 13:24:28.679Z] 24,27,23,34,21,26,23건으로 뚜렷한 트래픽 급증이 없다.\n[CWLI 5665a131-2103-44a5-ba59-6919ea426320, observed 13:17:06.215Z–13:19:42.473Z] 서비스 SQL hash 440d9d24927afdda33a147e252ba3fd5의 대기는 모두 blocking_pids=[23992]와 sensor_readings RowExclusiveLock granted=false로 설명된다.",
+      "judgmentReasoning": "[CWMetric m1 VitalIngestAttempts, current alarm window] 요청은 분당 21–34건으로 실패 시작 전후 급증하지 않았다. [CWLI 5665a131-2103-44a5-ba59-6919ea426320] 반복된 SQL hash 440d9d24927afdda33a147e252ba3fd5는 자체 장기 실행이나 호출 증폭이 아니라 외부 PID 23992의 relation lock을 기다리며 RowExclusiveLock granted=false인 상태였다. 따라서 비효율 SQL/호출 증폭이 독립 원인이라는 가설은 반증된다.",
+      "judgmentConfidence": null,
+      "createdAt": "2026-09-10T13:21:41.064879+00:00",
+      "updatedAt": "2026-09-10T13:22:23.217553+00:00",
+      "engine": "headless-codex"
+    },
+    {
+      "hypothesisId": "d5c8c414-34f4-4dd4-b8de-d8754cbb3981",
+      "treeId": "7f3e3c22-30d4-4e2e-9b8e-6ca5188c60bd",
+      "parentId": null,
+      "depth": 0,
+      "title": "외부 유지보수 트랜잭션 잠금",
+      "description": "낮은 CPU·메모리와 적은 DB 연결 수에도 ingest 실패만 급증해, 별도 세션의 미완료 트랜잭션이 쓰기 잠금을 보유했을 가능성이 가장 높다. 실패 시점의 db_wait_snapshot에서 차단 PID·트랜잭션 시작 시각·application_name을 확인하고, 소유자 lifecycle 이벤트 및 runtime identity와 연결해 검증한다.",
+      "category": "DEPENDENCY",
+      "confidenceScore": 0.97,
+      "status": "CONFIRMED",
+      "requiredEvidence": [
+        "current alarm window의 차단 PID와 lock wait가 포함된 db_wait_snapshot",
+        "동일 PID·xact_start·runId/application_name의 소유자 lifecycle 이벤트",
+        "소유자 이벤트 스트림의 ecs_runtime_identity와 ECS 태스크 제어 메타데이터"
+      ],
+      "referencedPlaybookId": null,
+      "evidenceSummary": "[CWMetric m1 VitalIngestFailures, current alarm window 2026-09-10T13:14:28.679Z–13:24:28.679Z, observed_at/query cutoff 13:24:28.679Z] 13:14–13:16Z 0건에서 13:17Z 17건, 13:18Z 21건, 13:19Z 26건으로 증가했다.\n[CWLI bf8f838a-753e-438d-a18f-3c52d077c147, current alarm window, observed event 2026-09-10T13:16:56.081Z] maintenance_lock_acquired: run_id=custlock-20260910T131524Z-0fe2, backend_pid=23992, acquired_at=2026-09-10T13:16:56.068101Z, transaction_start=2026-09-10T13:16:56.066293Z, expires_at=2026-09-10T15:16:56.068101Z, sensor_readings ShareLock granted=true.\n[CWLI 5665a131-2103-44a5-ba59-6919ea426320, current alarm window, observed event 2026-09-10T13:17:06.215Z] 서비스 PID 20982는 relation Lock 대기 중이며 sensor_readings RowExclusiveLock granted=false, blocking_pids=[23992]. 차단 PID 23992는 idle in transaction, xact_start=2026-09-10T13:16:56.066293Z, application_name=healthcare-maint-custlock-20260910T131524Z-0fe2, sensor_readings ShareLock granted=true. 같은 패턴이 13:19:42.473Z까지 반복 관측됐다.\n[CWLI bf8f838a-753e-438d-a18f-3c52d077c147, owner stream observed event 2026-09-10T13:16:55.965Z] ecs_runtime_identity TaskARN=arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/ba00ccb71afc4aacaa90d67e7d646d62, Cluster=arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare, Family=RcaAgentDevHealthcare-demo-maint-202ca4beacc2, Revision=1.\n[ECSControl observed_at=2026-09-10T13:21:54.336336Z] 정확한 소유자 ARN 조회 결과 launch_kind=standalone, group=family:RcaAgentDevHealthcare-demo-maint-202ca4beacc2, last_status=RUNNING, desired_status=RUNNING, started_by=demo-202ca4beacc254f73c846fb94a27789d, createdAt=13:16:21.479Z, startedAt=13:16:48.462Z. taskDefinitionArn=arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare-demo-maint-202ca4beacc2:1이며 family/revision은 task_definition_arn_derived(ARN-derived)이고 태스크 정의를 조회하지 않았다.\n[ECSControl observed_at=2026-09-10T13:21:54.336336Z] 태그 RealisticDemoRunId=custlock-20260910T131524Z-0fe2는 owner lifecycle run_id와 일치한다. RealisticDemoJournal",
+      "judgmentReasoning": "[CWLI bf8f838a-753e-438d-a18f-3c52d077c147] current alarm window의 소유자 스트림 healthcare/healthcare/ba00ccb71afc4aacaa90d67e7d646d62에서 13:16:56.081Z maintenance_lock_acquired가 backend_pid=23992, transaction_start=13:16:56.066293Z, run_id=custlock-20260910T131524Z-0fe2로 sensor_readings의 granted ShareLock을 기록했다. [CWLI 5665a131-2103-44a5-ba59-6919ea426320] 13:17:06.215Z부터 서비스 관측자 스트림은 healthcare-service PID 20982의 sensor_readings RowExclusiveLock이 granted=false이고 blocking_pids=[23992]임을 반복 기록했으며, 차단 세션",
+      "judgmentConfidence": null,
+      "createdAt": "2026-09-10T13:21:41.064879+00:00",
+      "updatedAt": "2026-09-10T13:22:23.217553+00:00",
+      "engine": "headless-codex"
+    },
+    {
+      "hypothesisId": "ec2ec6ee-22b5-401e-a504-a5dd0fa960a3",
+      "treeId": "7f3e3c22-30d4-4e2e-9b8e-6ca5188c60bd",
+      "parentId": null,
+      "depth": 0,
+      "title": "DB 커넥션 반환 누락",
+      "description": "애플리케이션이 연결을 반환하지 않으면 풀 고갈로 신규 ingest가 실패할 수 있다. 다만 현재 RDS 연결은 2→3에 그쳐 초기 가능성은 낮으며, pool_checked_out·pool_size와 연결 수의 지속 상승 여부로 반증한다.",
+      "category": "CONFIGURATION",
+      "confidenceScore": 0.02,
+      "status": "REJECTED",
+      "requiredEvidence": [
+        "pool_checked_out가 pool_size에 접근하는 연속 관측",
+        "DatabaseConnections의 지속 상승",
+        "연결 획득 실패 또는 풀 timeout 로그"
+      ],
+      "referencedPlaybookId": null,
+      "evidenceSummary": "[CWMetric m1 DatabaseConnections, current alarm window 2026-09-10T13:14:28.679Z–13:24:28.679Z, observed_at/query cutoff 13:24:28.679Z] 2,2,2,3,3,3,3으로 지속 상승·포화가 없다.\n[CWLI 5665a131-2103-44a5-ba59-6919ea426320, observed event 2026-09-10T13:17:06.215Z] pool_checked_out=1, pool_size=5, server_max_connections=79, database_connections=3.",
+      "judgmentReasoning": "[CWMetric m1 DatabaseConnections, current alarm window] 연결 수는 2에서 3으로만 증가했다. [CWLI 5665a131-2103-44a5-ba59-6919ea426320] 잠금 대기 중에도 pool_checked_out=1, pool_size=5, database_connections=3으로 풀 고갈이나 반환 누락 패턴이 없었다. 반환 누락이 원인이라는 가설은 반증된다.",
+      "judgmentConfidence": null,
+      "createdAt": "2026-09-10T13:21:41.064879+00:00",
+      "updatedAt": "2026-09-10T13:22:23.217553+00:00",
+      "engine": "headless-codex"
+    }
+  ],
+  "executions": []
+}

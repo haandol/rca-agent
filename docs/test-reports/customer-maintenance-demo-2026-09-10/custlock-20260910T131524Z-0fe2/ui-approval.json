@@ -1,0 +1,27 @@
+{
+  "observedAt": "2026-09-10T13:29:10.312566+00:00",
+  "method": "actual UI approval button and confirmation dialog",
+  "execution": {
+    "executionId": "4ef30f71-f094-4285-88eb-047493f0d407",
+    "rcaId": "f9b3a399-4218-5c8a-918b-a9fa08e6104f",
+    "engine": "headless-codex",
+    "state": "EXECUTING",
+    "stateLabel": "실행 중",
+    "approvalId": "4ef30f71-f094-4285-88eb-047493f0d407",
+    "requestedBy": "dashboard",
+    "attempt": 1,
+    "attemptedStepCount": 0,
+    "blockedCount": 0,
+    "failedStepCount": 0,
+    "resolutionConfirmed": null,
+    "errorReason": "",
+    "evidenceS3Key": "",
+    "retrospectiveStatus": "",
+    "retrospectiveSummary": "",
+    "playbookSnapshotS3Key": "",
+    "retrospectiveDiffS3Key": "",
+    "createdAt": "2026-09-10T13:28:49.504Z",
+    "updatedAt": "2026-09-10T13:28:50.451030+00:00"
+  },
+  "analysisCompletedAt": "2026-09-10T13:26:17.403707+00:00"
+}

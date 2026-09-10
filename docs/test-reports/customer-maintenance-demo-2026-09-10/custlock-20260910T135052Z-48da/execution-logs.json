@@ -1,0 +1,73 @@
+{
+  "events": [
+    {
+      "logStreamName": "playbook-execution/playbook-execution/7f6c66c52e924ed1a70c7f5cda443b85",
+      "timestamp": 1789049081437,
+      "message": "{\"execution_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"rca_id\": \"82791526-e84b-5ae4-bfe4-c65ba1369480\", \"engine\": \"headless-codex\", \"approval_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"event\": \"execution_request_received\", \"logger\": \"headless_codex.services.execution_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-09-10T14:04:41.437431Z\"}",
+      "ingestionTime": 1789049083516,
+      "eventId": "39897127712791799535642519646828335016559694166334570496"
+    },
+    {
+      "logStreamName": "playbook-execution/playbook-execution/7f6c66c52e924ed1a70c7f5cda443b85",
+      "timestamp": 1789049081654,
+      "message": "{\"profile\": \"execution\", \"execution_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"config\": \"/home/codexuser/.codex-runs/codex-execution-home-tq04hfzm/config.toml\", \"event\": \"execution_cli_started\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_execution_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T14:04:41.654120Z\"}",
+      "ingestionTime": 1789049083516,
+      "eventId": "39897127717631061243723664868541585881724388613132320769"
+    },
+    {
+      "logStreamName": "ecs-execute-command-drvbcqzheufuhbtjxkufgarbv4",
+      "timestamp": 1789049209347,
+      "message": "Script started on 2026-09-10 14:06:48+00:00 [COMMAND=\"cat /var/lib/amazon/ssm/7f6c66c52e924ed1a70c7f5cda443b85-3794925985/session/orchestration/ecs-execute-command-drvbcqzheufuhbtjxkufgarbv4/InteractiveCommands/ipcTempFile.log\" <not executed on terminal>]\n{\"executionId\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"recordCount\": 16, \"commandCount\": 13, \"stopCommands\": [{\"type\": \"attempt\", \"step_id\": \"step-stop-lock-owner-20260910\", \"command\": \"aws ecs stop-task --cluster RcaAgentDevHealthcare --task arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/3a86e9ad0e304126ba1aa4ab8a86c4df --reason approved-playbook-2dfebb2a-4551-45bc-b4a3-0cd9315f0968 --region us-east-1\", \"started_at\": \"2026-09-10T14:05:37.497844+00:00\", \"ended_at\": \"2026-09-10T14:05:38.223542+00:00\", \"succeeded\": true, \"exit_status\": \"0\", \"failure_class\": null, \"error_output\": \"\", \"recorded_at\": \"2026-09-10T14:05:38.225903+00:00\"}], \"last\": [{\"type\": \"attempt\", \"step_id\": \"step-verify-health-20260910\", \"command\": \"aws cloudwatch list-metrics --namespace Healthcare/Sensor --dimensions Name=ServiceName,Value=healthcare-sensor-app --region us-east-1\", \"started_at\": \"2026-09-10T14:06:41.442596+00:00\", \"ended_at\": \"2026-09-10T14:06:42.161577+00:00\", \"succeeded\": true, \"exit_status\": \"0\", \"failure_class\": null, \"error_output\": \"\", \"recorded_at\": \"2026-09-10T14:06:42.163176+00:00\"}, {\"type\": \"attempt\", \"step_id\": \"step-verify-health-20260910\", \"command\": \"aws cloudwatch describe-alarms --alarm-names RcaAgentDev-Healthcare-VitalIngestFailures --region us-east-1\", \"started_at\": \"2026-09-10T14:06:43.825272+00:00\", \"ended_at\": \"2026-09-10T14:06:44.586221+00:00\", \"succeeded\": true, \"exit_status\": \"0\", \"failure_class\": null, \"error_output\": \"\", \"recorded_at\": \"2026-09-10T14:06:44.587534+00:00\"}]}\r\n\nScript done on 2026-09-10 14:06:48+00:00 [COMMAND_EXIT_CODE=\"0\"]",
+      "ingestionTime": 1789049209383,
+      "eventId": "39897130565280117879694525832825737810631922942074552320"
+    },
+    {
+      "logStreamName": "playbook-execution/playbook-execution/7f6c66c52e924ed1a70c7f5cda443b85",
+      "timestamp": 1789049338684,
+      "message": "{\"rc\": 0, \"profile\": \"execution\", \"event\": \"execution_cli_finished\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_execution_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T14:08:58.684582Z\"}",
+      "ingestionTime": 1789049343518,
+      "eventId": "39897133449591599622049731251790307073691705105017667584"
+    },
+    {
+      "logStreamName": "playbook-execution/playbook-execution/7f6c66c52e924ed1a70c7f5cda443b85",
+      "timestamp": 1789049338685,
+      "message": "{\"execution_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"rca_id\": \"82791526-e84b-5ae4-bfe4-c65ba1369480\", \"engine\": \"headless-codex\", \"approval_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"succeeded\": true, \"cancelled\": false, \"detail\": \"\\uc774\\uc288 \\ud574\\uc18c\\ub97c \\ud655\\uc778\\ud558\\uace0 `resolved=true`\\ub85c \\uae30\\ub85d\\ud588\\uc2b5\\ub2c8\\ub2e4.\\n\\n- \\uc815\\ud655\\ud55c standalone \\uc720\\uc9c0\\ubcf4\\uc218 \\ud0dc\\uc2a4\\ud06c\\ub9cc \\uc911\\uc9c0\\n- PID `25631` rollback\\u00b7connection close \\ubc0f \\uc7a0\\uae08 \\ud574\\uc81c \\ud655\\uc778\\n- \\ud6c4\\uc18d \\uad6c\\uac04: attempts `27/18`, failures `0/0`\\n- \\uc2e4\\ud328 \\uc54c\\ub78c `OK`\\n- \\uac01 \\uad6c\\uac04\\uc5d0\\uc11c \\uc2e4\\uc81c vital ingest \\uc4f0\\uae30 \\uc131\\uacf5 6\\uac74 \\ud655\\uc778\", \"event\": \"execution_agent_returned\", \"logger\": \"headless_codex.services.execution_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-09-10T14:08:58.684899Z\"}",
+      "ingestionTime": 1789049343518,
+      "eventId": "39897133449613900367248261874931842791964353466523648001"
+    },
+    {
+      "logStreamName": "playbook-execution/playbook-execution/7f6c66c52e924ed1a70c7f5cda443b85",
+      "timestamp": 1789049338812,
+      "message": "{\"execution_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"rca_id\": \"82791526-e84b-5ae4-bfe4-c65ba1369480\", \"engine\": \"headless-codex\", \"approval_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"state\": \"RESOLVED\", \"blocked\": 0, \"failed\": 0, \"resolution_recorded\": true, \"attempted\": 4, \"event\": \"execution_judged\", \"logger\": \"headless_codex.services.execution_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-09-10T14:08:58.812430Z\"}",
+      "ingestionTime": 1789049343518,
+      "eventId": "39897133452446095007461651013906879012590695377783160834"
+    },
+    {
+      "logStreamName": "playbook-execution/playbook-execution/7f6c66c52e924ed1a70c7f5cda443b85",
+      "timestamp": 1789049338953,
+      "message": "{\"execution_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"rca_id\": \"82791526-e84b-5ae4-bfe4-c65ba1369480\", \"engine\": \"headless-codex\", \"approval_id\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"exc_info\": true, \"event\": \"retrospective_failed\", \"logger\": \"headless_codex.services.execution_pipeline\", \"level\": \"error\", \"timestamp\": \"2026-09-10T14:08:58.953694Z\"}",
+      "ingestionTime": 1789049343518,
+      "eventId": "39897133455590500080454468876863415289034114350126399491"
+    },
+    {
+      "logStreamName": "ecs-execute-command-jeeuirrnaaafb9h4a6gct4u89e",
+      "timestamp": 1789049395857,
+      "message": "Script started on 2026-09-10 14:09:54+00:00 [COMMAND=\"cat /var/lib/amazon/ssm/7f6c66c52e924ed1a70c7f5cda443b85-3794925985/session/orchestration/ecs-execute-command-jeeuirrnaaafb9h4a6gct4u89e/InteractiveCommands/ipcTempFile.log\" <not executed on terminal>]\n{\"executionId\": \"2dfebb2a-4551-45bc-b4a3-0cd9315f0968\", \"recordCount\": 0, \"commandCount\": 0, \"stopCommandCount\": 0, \"last\": []}\r\n\nScript done on 2026-09-10 14:09:54+00:00 [COMMAND_EXIT_CODE=\"0\"]",
+      "ingestionTime": 1789049395894,
+      "eventId": "39897134724592104857641048186130597981635512298670456832"
+    }
+  ],
+  "searchedLogStreams": [],
+  "nextToken": "Bxkq6kVGFtq2y_MoigeqscPOdhXVbhiVtLoAmXb5jCq9EMlNX4_1grIIUyDDp-4JpRD08rQQ6XfSfMwxBHm4pnjJhuHyteEqUJudIeQFMDn73i9oM9q95nfS_eCmdzrLFgs6lnwUvgcIOHvubWllYMbj7ZQCFEn3J-RQ1fug7NQQMGi9-d_LdX4pus7DQqI8pHR7O23qNCitAotHD6ivRQalwsLlfQoJ2KxOK4-iWQqfta4pqiwiZeaBiIOF0-_Au6hb2dwcz0sUc6DMPclsdSBRyUQaMBeNOQsb7GDMnT4525W0lC7yoz3bRrC2PZdsM5-R5a22LXGl2mKGJP7BBcTF0dsedSCV9JeQ1I5XRdA",
+  "ResponseMetadata": {
+    "RequestId": "e56d6392-e8a3-45b1-9b24-fe81f15a4a2f",
+    "HTTPStatusCode": 200,
+    "HTTPHeaders": {
+      "x-amzn-requestid": "e56d6392-e8a3-45b1-9b24-fe81f15a4a2f",
+      "content-type": "application/x-amz-json-1.1",
+      "content-length": "7571",
+      "date": "Thu, 10 Sep 2026 14:10:32 GMT"
+    },
+    "RetryAttempts": 0
+  }
+}

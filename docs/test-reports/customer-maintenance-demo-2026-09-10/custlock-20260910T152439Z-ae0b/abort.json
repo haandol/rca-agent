@@ -1,0 +1,4 @@
+{
+  "at": "2026-09-10T15:30:31.373963+00:00",
+  "reason": "User stopped live work and switched to offline verification. Cancel current owned analysis; no approval/execution; finally restore owned fault."
+}

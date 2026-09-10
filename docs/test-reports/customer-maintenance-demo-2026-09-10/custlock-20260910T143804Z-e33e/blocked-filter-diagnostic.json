@@ -1,0 +1,37 @@
+{
+  "blocked": [
+    {
+      "step_id": "step-4",
+      "attempt_index": 24,
+      "command": "aws logs filter-log-events --region us-east-1 --log-group-name /ecs/RcaAgentDev/healthcare --log-stream-names healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f --start-time 1789051920000 --end-time 1789051930000 --filter-pattern '{ $.event = \"db_operation\" && $.operation = \"ingest\" && $.outcome = \"ok\" }'",
+      "arguments": {
+        "service": "",
+        "operation": ""
+      },
+      "exit_status": "blocked",
+      "succeeded": false,
+      "intent": "첫 고정 구간 안에서 실제 ingest 데이터베이스 쓰기 완료 성공 이벤트를 잘림 없이 확인한다.",
+      "recorded_at": "2026-09-10T14:54:25.055107+00:00",
+      "failure_class": "BLOCKED_UNDECIDABLE",
+      "blocked": true,
+      "block_reason": "command could not be classified: command composes multiple shell operations"
+    },
+    {
+      "step_id": "step-4",
+      "attempt_index": 25,
+      "command": "aws logs filter-log-events --region us-east-1 --log-group-name /ecs/RcaAgentDev/healthcare --log-stream-names healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f --start-time 1789051980000 --end-time 1789051990000 --filter-pattern '{ $.event = \"db_operation\" && $.operation = \"ingest\" && $.outcome = \"ok\" }'",
+      "arguments": {
+        "service": "",
+        "operation": ""
+      },
+      "exit_status": "blocked",
+      "succeeded": false,
+      "intent": "두 번째 고정 구간 안에서 실제 ingest 데이터베이스 쓰기 완료 성공 이벤트를 잘림 없이 확인한다.",
+      "recorded_at": "2026-09-10T14:54:25.655419+00:00",
+      "failure_class": "BLOCKED_UNDECIDABLE",
+      "blocked": true,
+      "block_reason": "command could not be classified: command composes multiple shell operations"
+    }
+  ],
+  "resolution": "step-1에서 run_id=custlock-20260910T143804Z-e33e/backend_pid=27808의 유일한 standalone RUNNING ECS 소유자가 확정됐고, step-2의 승인 StopTask가 동일 태스크에 성공해 UserInitiated 중지 전이가 관측됐다. step-3에서 같은 소유자의 maintenance_released(release_reason=sigterm, rollback_complete=true) 및 연결 종료 후 이벤트 계약이 확인됐다. step-4의 고정 구간 2026-09-10T14:52:00Z~14:54:00Z에서 분별 attempts/failures가 27/0, 21/0이고 정확한 실패 알람은 OK였다. 그러나 실제 ingest 성공 이벤트를 포함한 서비스 로그 응답이 잘렸고, 완결 증거를 위한 정밀 필터 명령은 안전 게이트에 거부됐다. waiter도 completed_write_accounting=null/write_semantics_verified=false였다. 따라서 승인 기준 전체 충족을 관측으로 확정하지 못했다.\n[unobservable] step-4의 필수 실제 완료 쓰기 성공 증거가 완결된 조회로 확보되지 않았다. 부분·잘린 로그와 attempts-failures 산술값만으로 쓰기 성공을 선언할 수 없으며, 거부된 명령은 재시도하거나 우회할 수 없다."
+}

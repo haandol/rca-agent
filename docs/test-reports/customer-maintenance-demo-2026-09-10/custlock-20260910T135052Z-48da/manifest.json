@@ -1,0 +1,338 @@
+{
+  "runId": "custlock-20260910T135052Z-48da",
+  "startedAt": "2026-09-10T13:50:52.717405+00:00",
+  "scope": "actual AWS maintenance; approval is a separate dashboard user action",
+  "events": [
+    {
+      "action": "plan",
+      "startedAt": "2026-09-10T13:50:52.718288+00:00",
+      "finishedAt": "2026-09-10T13:51:19.161469+00:00",
+      "returncode": 0,
+      "stdout": "001-plan.stdout.json",
+      "stderr": "001-plan.stderr.log"
+    },
+    {
+      "action": "apply",
+      "startedAt": "2026-09-10T13:51:19.162243+00:00",
+      "finishedAt": "2026-09-10T13:52:18.944261+00:00",
+      "returncode": 0,
+      "stdout": "002-apply.stdout.json",
+      "stderr": "002-apply.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:52:18.947348+00:00",
+      "finishedAt": "2026-09-10T13:52:32.794935+00:00",
+      "returncode": 0,
+      "stdout": "003-status.stdout.json",
+      "stderr": "003-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:52:52.803590+00:00",
+      "finishedAt": "2026-09-10T13:53:08.164109+00:00",
+      "returncode": 0,
+      "stdout": "004-status.stdout.json",
+      "stderr": "004-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:53:28.168904+00:00",
+      "finishedAt": "2026-09-10T13:53:41.364495+00:00",
+      "returncode": 0,
+      "stdout": "005-status.stdout.json",
+      "stderr": "005-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:54:01.376551+00:00",
+      "finishedAt": "2026-09-10T13:54:20.587122+00:00",
+      "returncode": 0,
+      "stdout": "006-status.stdout.json",
+      "stderr": "006-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:54:40.594335+00:00",
+      "finishedAt": "2026-09-10T13:54:59.192029+00:00",
+      "returncode": 0,
+      "stdout": "007-status.stdout.json",
+      "stderr": "007-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:55:19.198407+00:00",
+      "finishedAt": "2026-09-10T13:55:39.168655+00:00",
+      "returncode": 0,
+      "stdout": "008-status.stdout.json",
+      "stderr": "008-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:55:59.172542+00:00",
+      "finishedAt": "2026-09-10T13:56:18.305092+00:00",
+      "returncode": 0,
+      "stdout": "009-status.stdout.json",
+      "stderr": "009-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:56:36.414308+00:00",
+      "finishedAt": "2026-09-10T13:56:55.052137+00:00",
+      "returncode": 0,
+      "stdout": "010-status.stdout.json",
+      "stderr": "010-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:57:15.058307+00:00",
+      "finishedAt": "2026-09-10T13:57:33.424170+00:00",
+      "returncode": 0,
+      "stdout": "011-status.stdout.json",
+      "stderr": "011-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:57:53.427463+00:00",
+      "finishedAt": "2026-09-10T13:58:11.671777+00:00",
+      "returncode": 0,
+      "stdout": "012-status.stdout.json",
+      "stderr": "012-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:58:31.674076+00:00",
+      "finishedAt": "2026-09-10T13:58:50.377704+00:00",
+      "returncode": 0,
+      "stdout": "013-status.stdout.json",
+      "stderr": "013-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:59:10.379844+00:00",
+      "finishedAt": "2026-09-10T13:59:29.199013+00:00",
+      "returncode": 0,
+      "stdout": "014-status.stdout.json",
+      "stderr": "014-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T13:59:49.206628+00:00",
+      "finishedAt": "2026-09-10T14:00:17.849223+00:00",
+      "returncode": 0,
+      "stdout": "015-status.stdout.json",
+      "stderr": "015-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:00:37.850806+00:00",
+      "finishedAt": "2026-09-10T14:00:56.801457+00:00",
+      "returncode": 0,
+      "stdout": "016-status.stdout.json",
+      "stderr": "016-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:01:16.808766+00:00",
+      "finishedAt": "2026-09-10T14:01:36.506999+00:00",
+      "returncode": 0,
+      "stdout": "017-status.stdout.json",
+      "stderr": "017-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:01:56.511575+00:00",
+      "finishedAt": "2026-09-10T14:02:14.699851+00:00",
+      "returncode": 0,
+      "stdout": "018-status.stdout.json",
+      "stderr": "018-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:02:34.706431+00:00",
+      "finishedAt": "2026-09-10T14:02:53.003410+00:00",
+      "returncode": 0,
+      "stdout": "019-status.stdout.json",
+      "stderr": "019-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:03:13.019837+00:00",
+      "finishedAt": "2026-09-10T14:03:31.080178+00:00",
+      "returncode": 0,
+      "stdout": "020-status.stdout.json",
+      "stderr": "020-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:03:51.086365+00:00",
+      "finishedAt": "2026-09-10T14:04:10.309706+00:00",
+      "returncode": 0,
+      "stdout": "021-status.stdout.json",
+      "stderr": "021-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:04:30.321692+00:00",
+      "finishedAt": "2026-09-10T14:04:48.276665+00:00",
+      "returncode": 0,
+      "stdout": "022-status.stdout.json",
+      "stderr": "022-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:05:08.288171+00:00",
+      "finishedAt": "2026-09-10T14:05:25.658231+00:00",
+      "returncode": 0,
+      "stdout": "023-status.stdout.json",
+      "stderr": "023-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:05:45.671169+00:00",
+      "finishedAt": "2026-09-10T14:06:03.643250+00:00",
+      "returncode": 0,
+      "stdout": "024-status.stdout.json",
+      "stderr": "024-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:06:23.645494+00:00",
+      "finishedAt": "2026-09-10T14:06:42.126014+00:00",
+      "returncode": 0,
+      "stdout": "025-status.stdout.json",
+      "stderr": "025-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:07:02.129336+00:00",
+      "finishedAt": "2026-09-10T14:07:20.897162+00:00",
+      "returncode": 0,
+      "stdout": "026-status.stdout.json",
+      "stderr": "026-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:07:40.905198+00:00",
+      "finishedAt": "2026-09-10T14:07:59.205987+00:00",
+      "returncode": 0,
+      "stdout": "027-status.stdout.json",
+      "stderr": "027-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:08:19.213387+00:00",
+      "finishedAt": "2026-09-10T14:08:37.672733+00:00",
+      "returncode": 0,
+      "stdout": "028-status.stdout.json",
+      "stderr": "028-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:08:57.674630+00:00",
+      "finishedAt": "2026-09-10T14:09:15.619519+00:00",
+      "returncode": 0,
+      "stdout": "029-status.stdout.json",
+      "stderr": "029-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:09:35.622556+00:00",
+      "finishedAt": "2026-09-10T14:09:55.798840+00:00",
+      "returncode": 0,
+      "stdout": "030-status.stdout.json",
+      "stderr": "030-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:10:15.800884+00:00",
+      "finishedAt": "2026-09-10T14:10:34.064326+00:00",
+      "returncode": 0,
+      "stdout": "031-status.stdout.json",
+      "stderr": "031-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:10:54.072315+00:00",
+      "finishedAt": "2026-09-10T14:11:12.750864+00:00",
+      "returncode": 0,
+      "stdout": "032-status.stdout.json",
+      "stderr": "032-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:11:32.752986+00:00",
+      "finishedAt": "2026-09-10T14:11:51.255318+00:00",
+      "returncode": 0,
+      "stdout": "033-status.stdout.json",
+      "stderr": "033-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:12:11.262145+00:00",
+      "finishedAt": "2026-09-10T14:12:29.227080+00:00",
+      "returncode": 0,
+      "stdout": "034-status.stdout.json",
+      "stderr": "034-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:12:51.257795+00:00",
+      "finishedAt": "2026-09-10T14:13:09.666883+00:00",
+      "returncode": 0,
+      "stdout": "035-status.stdout.json",
+      "stderr": "035-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:13:29.673111+00:00",
+      "finishedAt": "2026-09-10T14:13:48.344119+00:00",
+      "returncode": 0,
+      "stdout": "036-status.stdout.json",
+      "stderr": "036-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:14:08.351343+00:00",
+      "finishedAt": "2026-09-10T14:14:26.620041+00:00",
+      "returncode": 0,
+      "stdout": "037-status.stdout.json",
+      "stderr": "037-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:14:46.628179+00:00",
+      "finishedAt": "2026-09-10T14:15:04.808515+00:00",
+      "returncode": 0,
+      "stdout": "038-status.stdout.json",
+      "stderr": "038-status.stderr.log"
+    },
+    {
+      "action": "status",
+      "startedAt": "2026-09-10T14:15:24.813726+00:00",
+      "finishedAt": "2026-09-10T14:15:44.370623+00:00",
+      "returncode": 0,
+      "stdout": "039-status.stdout.json",
+      "stderr": "039-status.stderr.log"
+    },
+    {
+      "action": "restore",
+      "startedAt": "2026-09-10T14:16:04.380087+00:00",
+      "finishedAt": "2026-09-10T14:19:30.229099+00:00",
+      "returncode": 0,
+      "stdout": "040-restore.stdout.json",
+      "stderr": "040-restore.stderr.log"
+    }
+  ],
+  "completed": true,
+  "appliedAt": "2026-09-10T13:52:18.945687+00:00",
+  "error": {
+    "type": "RuntimeError",
+    "message": "operator requested abort; this run cannot establish approved recovery"
+  },
+  "cleanup": {
+    "returncode": 0,
+    "recoveryVerified": true
+  },
+  "finishedAt": "2026-09-10T14:19:30.230443+00:00"
+}

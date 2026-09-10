@@ -1,0 +1,22 @@
+{
+  "rcaId": "3a9819ad-5f84-55ec-a0ce-24f274ccda35",
+  "state": "HYPOTHESIS_PRIORITIZATION",
+  "readiness": "NOT_COMPLETED",
+  "readinessLabel": "미완료",
+  "executionStepCount": 0,
+  "alarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+  "alarmArn": "",
+  "rootCause": "",
+  "confirmed": false,
+  "stoppedAt": "HYPOTHESIS_GENERATION",
+  "errorReason": "",
+  "createdAt": "2026-09-10T15:28:28.951189+00:00",
+  "updatedAt": "2026-09-10T15:29:38.587706+00:00",
+  "engine": "headless-codex",
+  "executionState": "",
+  "executionStateLabel": "",
+  "executionId": "",
+  "executionAttempts": 0,
+  "executionBlockedCount": 0,
+  "retrospectiveStatus": ""
+}

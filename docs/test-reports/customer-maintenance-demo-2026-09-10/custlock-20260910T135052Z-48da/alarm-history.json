@@ -1,0 +1,31 @@
+{
+  "AlarmHistoryItems": [
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+      "AlarmType": "MetricAlarm",
+      "Timestamp": "2026-09-10 23:07:28.678000+09:00",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 2 datapoints [31.0 (10/09/26 13:53:00), 18.0 (10/09/26 13:52:00)] were greater than or equal to the threshold (1.0).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-09-10T13:54:28.677+0000\",\"startDate\":\"2026-09-10T13:52:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[18.0,31.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-10T13:53:00.000+0000\",\"sampleCount\":3.0,\"value\":31.0},{\"timestamp\":\"2026-09-10T13:52:00.000+0000\",\"sampleCount\":3.0,\"value\":18.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 datapoint [0.0 (10/09/26 14:06:00)] was not greater than or equal to the threshold (1.0).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-09-10T14:07:28.676+0000\",\"startDate\":\"2026-09-10T14:05:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[20.0,0.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-10T14:06:00.000+0000\",\"sampleCount\":3.0,\"value\":0.0}]}}}"
+    },
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+      "AlarmType": "MetricAlarm",
+      "Timestamp": "2026-09-10 22:54:28.678000+09:00",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 datapoint [0.0 (10/09/26 13:31:00)] was not greater than or equal to the threshold (1.0).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-09-10T13:32:28.677+0000\",\"startDate\":\"2026-09-10T13:30:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[10.0,0.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-10T13:31:00.000+0000\",\"sampleCount\":2.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 2 datapoints [31.0 (10/09/26 13:53:00), 18.0 (10/09/26 13:52:00)] were greater than or equal to the threshold (1.0).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-09-10T13:54:28.677+0000\",\"startDate\":\"2026-09-10T13:52:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[18.0,31.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-10T13:53:00.000+0000\",\"sampleCount\":3.0,\"value\":31.0},{\"timestamp\":\"2026-09-10T13:52:00.000+0000\",\"sampleCount\":3.0,\"value\":18.0}]}}}"
+    }
+  ],
+  "ResponseMetadata": {
+    "RequestId": "94b924fc-b65b-4311-bb72-f81646c4fc20",
+    "HTTPStatusCode": 200,
+    "HTTPHeaders": {
+      "x-amzn-requestid": "94b924fc-b65b-4311-bb72-f81646c4fc20",
+      "content-type": "application/x-amz-json-1.0",
+      "content-length": "2715",
+      "date": "Thu, 10 Sep 2026 14:08:49 GMT"
+    },
+    "RetryAttempts": 0
+  }
+}

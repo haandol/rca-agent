@@ -1,0 +1,140 @@
+[
+  {
+    "at": "2026-09-10T13:29:03.001000+00:00",
+    "operation": "ingest",
+    "outcome": "error",
+    "elapsed_ms": 2010.1401140000235
+  },
+  {
+    "at": "2026-09-10T13:29:05.955000+00:00",
+    "emfTimestamp": 1789046945955,
+    "attempts": 14,
+    "failures": 14
+  },
+  {
+    "at": "2026-09-10T13:29:18.001000+00:00",
+    "operation": "ingest",
+    "outcome": "error",
+    "elapsed_ms": 2009.6312160003436
+  },
+  {
+    "at": "2026-09-10T13:29:28.001000+00:00",
+    "operation": "ingest",
+    "outcome": "error",
+    "elapsed_ms": 2010.0087359996905
+  },
+  {
+    "at": "2026-09-10T13:29:35.956000+00:00",
+    "emfTimestamp": 1789046975956,
+    "attempts": 9,
+    "failures": 9
+  },
+  {
+    "at": "2026-09-10T13:29:38.002000+00:00",
+    "operation": "ingest",
+    "outcome": "error",
+    "elapsed_ms": 2010.3958800000328
+  },
+  {
+    "at": "2026-09-10T13:29:48.001000+00:00",
+    "operation": "ingest",
+    "outcome": "error",
+    "elapsed_ms": 2010.0982789999762
+  },
+  {
+    "at": "2026-09-10T13:29:58.003000+00:00",
+    "operation": "ingest",
+    "outcome": "error",
+    "elapsed_ms": 2010.0922159999755
+  },
+  {
+    "at": "2026-09-10T13:30:05.956000+00:00",
+    "emfTimestamp": 1789047005956,
+    "attempts": 10,
+    "failures": 10
+  },
+  {
+    "at": "2026-09-10T13:30:06.020000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 28.32870600013848
+  },
+  {
+    "at": "2026-09-10T13:30:21.007000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 14.242618000025686
+  },
+  {
+    "at": "2026-09-10T13:30:31.004000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 10.986479000166582
+  },
+  {
+    "at": "2026-09-10T13:30:35.957000+00:00",
+    "emfTimestamp": 1789047035957,
+    "attempts": 15,
+    "failures": 0
+  },
+  {
+    "at": "2026-09-10T13:30:41.007000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 14.042732999769214
+  },
+  {
+    "at": "2026-09-10T13:30:51.010000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 16.81382599963399
+  },
+  {
+    "at": "2026-09-10T13:31:01.008000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 14.492381999843928
+  },
+  {
+    "at": "2026-09-10T13:31:05.957000+00:00",
+    "emfTimestamp": 1789047065957,
+    "attempts": 14,
+    "failures": 0
+  },
+  {
+    "at": "2026-09-10T13:31:11.008000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 14.488148000054935
+  },
+  {
+    "at": "2026-09-10T13:31:26.013000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 19.784909000009065
+  },
+  {
+    "at": "2026-09-10T13:31:35.957000+00:00",
+    "emfTimestamp": 1789047095957,
+    "attempts": 8,
+    "failures": 0
+  },
+  {
+    "at": "2026-09-10T13:31:36.011000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 17.52773599946522
+  },
+  {
+    "at": "2026-09-10T13:31:46.009000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 15.225926000312029
+  },
+  {
+    "at": "2026-09-10T13:31:56.005000+00:00",
+    "operation": "ingest",
+    "outcome": "ok",
+    "elapsed_ms": 12.53323899982206
+  }
+]

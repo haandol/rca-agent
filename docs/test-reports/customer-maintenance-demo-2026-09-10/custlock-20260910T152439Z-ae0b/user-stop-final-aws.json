@@ -1,0 +1,59 @@
+{
+  "verifiedAt": "2026-09-10T15:40:53.447635+00:00",
+  "queues": {
+    "RcaAgentDevCcHeadless": {
+      "ApproximateNumberOfMessages": "0",
+      "ApproximateNumberOfMessagesNotVisible": "1",
+      "ApproximateNumberOfMessagesDelayed": "0"
+    },
+    "RcaAgentDevPlaybookExecution": {
+      "ApproximateNumberOfMessages": "0",
+      "ApproximateNumberOfMessagesNotVisible": "0",
+      "ApproximateNumberOfMessagesDelayed": "0"
+    }
+  },
+  "alarms": [
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-PatientVitalsQueryLatency",
+      "StateValue": "OK",
+      "StateUpdatedTimestamp": "2026-09-10 15:34:43.301000+09:00"
+    },
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-RdsHighConnections",
+      "StateValue": "OK",
+      "StateUpdatedTimestamp": "2026-08-31 15:40:29.331000+09:00"
+    },
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+      "StateValue": "OK",
+      "StateUpdatedTimestamp": "2026-09-11 00:32:28.679000+09:00"
+    }
+  ],
+  "session": {
+    "rcaId": "3a9819ad-5f84-55ec-a0ce-24f274ccda35",
+    "state": "CANCELLED",
+    "readiness": "NOT_COMPLETED",
+    "readinessLabel": "미완료",
+    "executionStepCount": 0,
+    "alarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+    "alarmArn": "",
+    "rootCause": "",
+    "confirmed": false,
+    "stoppedAt": "HYPOTHESIS_GENERATION",
+    "errorReason": "",
+    "createdAt": "2026-09-10T15:28:28.951189+00:00",
+    "updatedAt": "2026-09-10T15:30:39.560Z",
+    "engine": "headless-codex",
+    "executionState": "",
+    "executionStateLabel": "",
+    "executionId": "",
+    "executionAttempts": 0,
+    "executionBlockedCount": 0,
+    "retrospectiveStatus": ""
+  },
+  "executions": {
+    "rcaId": "3a9819ad-5f84-55ec-a0ce-24f274ccda35",
+    "engine": "headless-codex",
+    "executions": []
+  }
+}

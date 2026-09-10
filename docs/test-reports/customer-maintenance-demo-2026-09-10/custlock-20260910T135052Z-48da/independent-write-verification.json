@@ -1,0 +1,90 @@
+[
+  {
+    "command": "aws logs filter-log-events --log-group-name /ecs/RcaAgentDev/healthcare --log-stream-names healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f --start-time 1789049160000 --end-time 1789049220000 --filter-pattern ingest --region us-east-1",
+    "observedAt": "2026-09-10T14:08:18.044557+00:00",
+    "succeeded": true,
+    "stdoutTruncated": false,
+    "successfulWriteOperations": [
+      {
+        "timestamp": 1789049164976,
+        "requestId": "b898992608fe46ed913108c4265775c4",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049174968,
+        "requestId": "d51a2b7c7b5044c58f08694f64330738",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049184963,
+        "requestId": "ef755cb91f454ca4b291855fd617631a",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049194961,
+        "requestId": "2c6cbf0e55864814b2819e0e1a737dc9",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049204963,
+        "requestId": "88eaf7b0e9e840e5a42efe986551acb5",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049214965,
+        "requestId": "5400f83557664dddaf1e55becd02b436",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      }
+    ]
+  },
+  {
+    "command": "aws logs filter-log-events --log-group-name /ecs/RcaAgentDev/healthcare --log-stream-names healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f --start-time 1789049220000 --end-time 1789049280000 --filter-pattern ingest --region us-east-1",
+    "observedAt": "2026-09-10T14:08:20.925794+00:00",
+    "succeeded": true,
+    "stdoutTruncated": false,
+    "successfulWriteOperations": [
+      {
+        "timestamp": 1789049229964,
+        "requestId": "e78b98623ae242e49372d4e635f70ac9",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049239965,
+        "requestId": "4d6ee066855f468180c43c005e7c659f",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049249964,
+        "requestId": "55734369634141bd881337af2c0d2165",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049259967,
+        "requestId": "8b48b0f6d3a04ad3a8d2dfb2947b4de6",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049269966,
+        "requestId": "740be25621ae48e09b5dc70870757238",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      },
+      {
+        "timestamp": 1789049279968,
+        "requestId": "5e7f57d680bc44678095c05a71e89738",
+        "sqlCount": 1,
+        "stream": "healthcare/healthcare/aa0d1860d9e6422d821bc5359163558f"
+      }
+    ]
+  }
+]

@@ -1,0 +1,120 @@
+[
+  {
+    "event": "maintenance_lock_acquired",
+    "run_id": "custlock-20260910T143804Z-e33e",
+    "backend_pid": 27808,
+    "hold_seconds": 7200.0,
+    "max_hold_seconds": 7200,
+    "acquired_at": "2026-09-10T14:39:14.348836+00:00",
+    "expires_at": "2026-09-10T16:39:14.348836+00:00",
+    "transaction_start": "2026-09-10 14:39:14.340317+00:00",
+    "locks": [
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_namespace_oid_index",
+        "schema": "pg_catalog",
+        "table": "pg_namespace_oid_index"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_namespace_nspname_index",
+        "schema": "pg_catalog",
+        "table": "pg_namespace_nspname_index"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_class_tblspc_relfilenode_index",
+        "schema": "pg_catalog",
+        "table": "pg_class_tblspc_relfilenode_index"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_class_relname_nsp_index",
+        "schema": "pg_catalog",
+        "table": "pg_class_relname_nsp_index"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_class_oid_index",
+        "schema": "pg_catalog",
+        "table": "pg_class_oid_index"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_namespace",
+        "schema": "pg_catalog",
+        "table": "pg_namespace"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_class",
+        "schema": "pg_catalog",
+        "table": "pg_class"
+      },
+      {
+        "pid": 27808,
+        "mode": "AccessShareLock",
+        "granted": true,
+        "relation": "pg_locks",
+        "schema": "pg_catalog",
+        "table": "pg_locks"
+      },
+      {
+        "pid": 27808,
+        "mode": "ShareLock",
+        "granted": true,
+        "relation": "sensor_readings",
+        "schema": "public",
+        "table": "sensor_readings"
+      }
+    ],
+    "operation_contract": {
+      "kind": "lock_only",
+      "row_changing_dml": false,
+      "cleanup_order": [
+        "transaction_rollback",
+        "connection_close"
+      ],
+      "close_on_rollback_error": true,
+      "completion_event": {
+        "event": "maintenance_released",
+        "identity_keys": [
+          "run_id",
+          "backend_pid"
+        ],
+        "rollback_success_field": "rollback_complete",
+        "rollback_success_value": true,
+        "release_reason_field": "release_reason",
+        "emitted_after_connection_close": true
+      }
+    },
+    "signal_stop_contract": {
+      "SIGTERM": "sigterm",
+      "SIGINT": "sigint",
+      "action": "set_stop_event"
+    }
+  },
+  {
+    "event": "maintenance_released",
+    "run_id": "custlock-20260910T143804Z-e33e",
+    "backend_pid": 27808,
+    "release_reason": "sigterm",
+    "released_at": "2026-09-10T14:51:45.340867+00:00",
+    "rollback_complete": true,
+    "lock_acquired": true
+  }
+]

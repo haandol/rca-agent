@@ -1,0 +1,63 @@
+{
+  "verifiedAt": "2026-09-10T13:14:07.541410+00:00",
+  "ready": true,
+  "services": {
+    "RcaAgentDevCcHeadless": {
+      "stackStatus": "UPDATE_COMPLETE",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:40",
+      "runningCount": 1,
+      "pendingCount": 0,
+      "deployments": [
+        "COMPLETED"
+      ],
+      "images": [
+        {
+          "name": "cc-headless",
+          "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:a975cfa48c4d",
+          "imageDigest": "sha256:c9d1325eb76d20708728356185683d9588281dc009243396f3849fb11b649dea",
+          "healthStatus": "HEALTHY",
+          "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/6a6d3494ea6641deb2360aade0ee8b8d"
+        }
+      ],
+      "ready": true
+    },
+    "RcaAgentDevPlaybookExecution": {
+      "stackStatus": "UPDATE_COMPLETE",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:28",
+      "runningCount": 1,
+      "pendingCount": 0,
+      "deployments": [
+        "COMPLETED"
+      ],
+      "images": [
+        {
+          "name": "playbook-execution",
+          "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:a975cfa48c4d",
+          "imageDigest": "sha256:c9d1325eb76d20708728356185683d9588281dc009243396f3849fb11b649dea",
+          "healthStatus": "HEALTHY",
+          "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevPlaybookExecution/7f6c66c52e924ed1a70c7f5cda443b85"
+        }
+      ],
+      "ready": true
+    },
+    "RcaAgentDevHealthcare": {
+      "stackStatus": "UPDATE_COMPLETE",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:76",
+      "runningCount": 1,
+      "pendingCount": 0,
+      "deployments": [
+        "COMPLETED"
+      ],
+      "images": [
+        {
+          "name": "healthcare",
+          "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:572365e0ed61cb463386172d06fdedc721fd1c266ffe23331bf26f76dfa0555a",
+          "imageDigest": "sha256:572365e0ed61cb463386172d06fdedc721fd1c266ffe23331bf26f76dfa0555a",
+          "healthStatus": "HEALTHY",
+          "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/a9e51d82e2ce4e9f9f49715a99a0e38c"
+        }
+      ],
+      "ready": true
+    }
+  }
+}

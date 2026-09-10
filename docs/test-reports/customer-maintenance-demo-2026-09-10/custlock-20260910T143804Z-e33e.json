@@ -1,0 +1,182 @@
+{
+  "runId": "custlock-20260910T143804Z-e33e",
+  "candidateCommit": "69a897a56c4c",
+  "analysisImageTag": "a975cfa48c4d",
+  "executionImageTag": "69a897a56c4c",
+  "healthcareImageTag": "4772c9645abe",
+  "engine": "headless-codex",
+  "rcaId": "b6af511f-3447-5a4c-a186-8b7f334b1959",
+  "result": "FAILED",
+  "customerReady": false,
+  "fullWorkflowComplete": false,
+  "analysisConfirmed": true,
+  "analysisConfidence": 0.98,
+  "approvalIssued": true,
+  "approvalMethod": "actual dashboard UI",
+  "executionId": "83e7f82f-cd80-492d-bb5c-3529e28d5c92",
+  "executionState": "UNRESOLVED",
+  "approvedRecoveryDemonstrated": false,
+  "approvedStopAndRollbackDemonstrated": true,
+  "observedFailure": "Service get-log-events output203549chars truncatedto20000. Narrow CloudWatch JSON predicate was one single-quoted argument but raw shell-composition regex falsely rejected its && operators. Two blocked reads; model did not retry/bypass and correctly left actual-write evidence unmet. Old run remains FAILED/UNRESOLVED; metrics healthy does not replace approved verification.",
+  "actualCommands": 34,
+  "blockedCommands": 2,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/d3fee8ac522243d9aa6f428fa0b1f07c",
+  "ownerPID": 27808,
+  "release": {
+    "event": "maintenance_released",
+    "run_id": "custlock-20260910T143804Z-e33e",
+    "backend_pid": 27808,
+    "release_reason": "sigterm",
+    "released_at": "2026-09-10T14:51:45.340867+00:00",
+    "rollback_complete": true,
+    "lock_acquired": true
+  },
+  "fixedMetricWait": {
+    "start": "2026-09-10T14:52:00+00:00",
+    "end": "2026-09-10T14:54:00+00:00",
+    "status": "HEALTHY",
+    "observedAt": "2026-09-10T14:54:03.000870+00:00",
+    "bins": [
+      {
+        "start": "2026-09-10T14:52:00+00:00",
+        "end": "2026-09-10T14:53:00+00:00",
+        "attempts": 27,
+        "failures": 0,
+        "attempts_minus_failures": 27
+      },
+      {
+        "start": "2026-09-10T14:53:00+00:00",
+        "end": "2026-09-10T14:54:00+00:00",
+        "attempts": 21,
+        "failures": 0,
+        "attempts_minus_failures": 21
+      }
+    ]
+  },
+  "independentFreshMetrics": {
+    "observedAt": "2026-09-10T14:54:26.287576+00:00",
+    "anchor": "provisional actual release, pending durable StopTask audit",
+    "actionEndedAt": "2026-09-10T14:51:45.340867+00:00",
+    "releaseTime": "2026-09-10T14:51:45.340867+00:00",
+    "start": "2026-09-10T14:52:00+00:00",
+    "end": "2026-09-10T14:54:00+00:00",
+    "values": {
+      "VitalIngestAttempts": {
+        "Label": "VitalIngestAttempts",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 23:52:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 9.0,
+            "Sum": 27.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 23:53:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 9.0,
+            "Sum": 27.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "661ab1fa-c2fa-4eff-b6cf-491d216f12ce",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "661ab1fa-c2fa-4eff-b6cf-491d216f12ce",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "216",
+            "date": "Thu, 10 Sep 2026 14:54:31 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "VitalIngestFailures": {
+        "Label": "VitalIngestFailures",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 23:52:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 23:53:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "5eaddcd6-ee81-4945-b7f1-e7e026e6efc0",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "5eaddcd6-ee81-4945-b7f1-e7e026e6efc0",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "214",
+            "date": "Thu, 10 Sep 2026 14:54:31 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "PatientVitalsQueryDuration": {
+        "Label": "PatientVitalsQueryDuration",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 23:53:00+09:00",
+            "SampleCount": 5.0,
+            "Average": 12.49988020008459,
+            "Sum": 62.49940100042295,
+            "Unit": "Milliseconds"
+          },
+          {
+            "Timestamp": "2026-09-10 23:52:00+09:00",
+            "SampleCount": 6.0,
+            "Average": 20.546548999997565,
+            "Sum": 123.27929399998538,
+            "Unit": "Milliseconds"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "797b8cd5-c2b1-4522-908a-d8dddb88917a",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "797b8cd5-c2b1-4522-908a-d8dddb88917a",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "293",
+            "date": "Thu, 10 Sep 2026 14:54:31 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      }
+    }
+  },
+  "timings": {
+    "startedAt": "2026-09-10T14:38:04.057926+00:00",
+    "alarmAt": "2026-09-10T14:41:28.678+0000",
+    "analysisCompletedAt": "2026-09-10T14:49:03.050848+00:00",
+    "approvedAt": "2026-09-10T14:50:34.808Z",
+    "stopStartedAt": "2026-09-10T14:51:44.273910+00:00",
+    "stopEndedAt": "2026-09-10T14:51:45.019804+00:00",
+    "releaseAt": "2026-09-10T14:51:45.340867+00:00",
+    "executionTerminalAt": "2026-09-10T14:54:52.124169+00:00",
+    "approvalToResolvedSeconds": null,
+    "approvalToRetrospectiveCompleteSeconds": null
+  },
+  "evidence": {
+    "s3": "executions/b6af511f-3447-5a4c-a186-8b7f334b1959/83e7f82f-cd80-492d-bb5c-3529e28d5c92/evidence.json",
+    "local": "docs/test-reports/customer-maintenance-demo-2026-09-10/custlock-20260910T143804Z-e33e",
+    "snapshotDigestVerified": true,
+    "generatedEqualsStored": true,
+    "duplicateApprovalStatus": 409
+  },
+  "retrospective": "not run; execution UNRESOLVED",
+  "cleanup": {
+    "healthRecoveryVerified": true,
+    "status": "completed",
+    "completedAt": "2026-09-10T15:07:11.539663+00:00",
+    "enginePinRestored": true
+  }
+}

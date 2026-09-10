@@ -1,0 +1,30 @@
+{
+  "candidateCommit": "f420232cfe04",
+  "customerReady": false,
+  "actualFailedRun": "custlock-20260910T143804Z-e33e",
+  "actualExecutionId": "83e7f82f-cd80-492d-bb5c-3529e28d5c92",
+  "bug": "Raw shell-character scanning rejected quoted CloudWatch JSON AND predicates, preventing complete write-log verification.",
+  "fix": "Scan quote/escape state for composition and classify the leading AWS argv tokens. Preserve the literal filter argument bytes and shell-free subprocess execution.",
+  "preservedBlocks": [
+    "actual unquoted operators and redirections",
+    "command/process substitutions",
+    "malformed quoting and newlines",
+    "destructive operations",
+    "unsupported AWS global-option positions"
+  ],
+  "validation": {
+    "exactRegressionFailedBefore": true,
+    "exactRegressionPassedAfter": true,
+    "focusedPassed": 280,
+    "fullHeadlessPassed": 1504,
+    "ruff": "passed",
+    "format": "passed",
+    "diffCheck": "passed"
+  },
+  "officialSyntaxCheck": {
+    "source": "AWS CloudWatch Logs: Filter pattern syntax for metric filters, subscription filters, filter log events, and Live Tail",
+    "finding": "Compound JSON filters support logical AND and OR operators.",
+    "method": "DuckDuckGo fallback search followed by direct retrieval of the official AWS document; no private resource identifiers searched."
+  },
+  "deploymentAndFreshE2E": "pending"
+}

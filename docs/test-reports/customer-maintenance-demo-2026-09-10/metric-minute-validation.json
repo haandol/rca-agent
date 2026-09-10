@@ -1,0 +1,32 @@
+{
+  "candidateCommit": "4772c96",
+  "customerReady": false,
+  "actualFailureEvidence": "custlock-20260910T131524Z-0fe2/emission-attribution-diagnostic.json",
+  "bug": "Completions before 13:30 were buffered and emitted at13:30:05 with publish-time metric timestamp, incorrectly placing10 failures in the first post-action minute.",
+  "fix": "Rotate the single bounded aggregate before recording or flushing across source-minute boundaries. Retain the first source-event timestamp inside each minute. Preserve all counts and the existing flush deadline.",
+  "regression": "13:29:38/48/58 failures totaling10, flushed13:30:05, remain10 in13:29; counts are not dropped or shifted to a selected later success window.",
+  "sourceFiles": [
+    "packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py",
+    "packages/healthcare-sensor-app/tests/test_symptom_metrics.py"
+  ],
+  "validation": {
+    "focusedPassed": 67,
+    "fullHealthcarePassed": 181,
+    "existingSkipped": 7,
+    "existingXfailed": 1,
+    "ruff": "passed",
+    "format": "passed",
+    "diffCheck": "passed",
+    "source": "delegated test execution and main code/test review"
+  },
+  "preserved": [
+    "metric names and units",
+    "30-second monotonic flush deadline",
+    "100-sample bound",
+    "all counts and samples",
+    "in-flight gauges",
+    "periodic heartbeat and cancellation handling",
+    "fixed post-action verification criteria"
+  ],
+  "deploymentAndNewRehearsals": "pending"
+}

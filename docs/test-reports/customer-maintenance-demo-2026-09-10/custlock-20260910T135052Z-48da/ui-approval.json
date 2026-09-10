@@ -1,0 +1,27 @@
+{
+  "observedAt": "2026-09-10T14:04:51.286864+00:00",
+  "method": "actual UI approval and confirmation",
+  "execution": {
+    "executionId": "2dfebb2a-4551-45bc-b4a3-0cd9315f0968",
+    "rcaId": "82791526-e84b-5ae4-bfe4-c65ba1369480",
+    "engine": "headless-codex",
+    "state": "EXECUTING",
+    "stateLabel": "실행 중",
+    "approvalId": "2dfebb2a-4551-45bc-b4a3-0cd9315f0968",
+    "requestedBy": "dashboard",
+    "attempt": 1,
+    "attemptedStepCount": 0,
+    "blockedCount": 0,
+    "failedStepCount": 0,
+    "resolutionConfirmed": null,
+    "errorReason": "",
+    "evidenceS3Key": "",
+    "retrospectiveStatus": "",
+    "retrospectiveSummary": "",
+    "playbookSnapshotS3Key": "",
+    "retrospectiveDiffS3Key": "",
+    "createdAt": "2026-09-10T14:04:38.640Z",
+    "updatedAt": "2026-09-10T14:04:41.509817+00:00"
+  },
+  "analysisCompletedAt": "2026-09-10T14:01:35.157382+00:00"
+}

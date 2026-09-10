@@ -1,0 +1,30 @@
+{
+  "observedAt": "2026-09-10T14:11:23.723975+00:00",
+  "sourceExecutionId": "2dfebb2a-4551-45bc-b4a3-0cd9315f0968",
+  "sourcePath": "/private/tmp/rca-customer-focus/rehearsals/custlock-20260910T135052Z-48da/retrospective.json",
+  "unmodifiedEvidenceSha256": "904fc69c3ff76b6ace2f19121af753b5077d980aeb4f87a061947fee51efef52",
+  "rawJsonChars": 245919,
+  "attempts": 34,
+  "waitRecords": 20,
+  "reproduced": true,
+  "errorType": "ValueError",
+  "error": "retrospective evidence metadata exceeds JSON budget; durable evidence remains available",
+  "traceback": "Traceback (most recent call last):\n  File \"<stdin>\", line 6, in <module>\n  File \"/Users/dongkyl/git/rca-agent/packages/headless-codex/src/headless_codex/services/execution_prompt.py\", line 115, in build_retrospective_prompt\n    evidence_json = retrospective_evidence_json(evidence, max_chars=60_000)\n  File \"/Users/dongkyl/git/rca-agent/packages/headless-codex/src/headless_codex/services/execution_evidence.py\", line 430, in retrospective_evidence_json\n    raise ValueError(\"retrospective evidence metadata exceeds JSON budget; durable evidence remains available\")\nValueError: retrospective evidence metadata exceeds JSON budget; durable evidence remains available\n",
+  "minimumPayloadApproxChars": 69902,
+  "minimumByFieldChars": {
+    "execution_id": 38,
+    "rca_id": 38,
+    "playbook_id": 38,
+    "engine": 16,
+    "steps": 46619,
+    "resolution_observation": 483,
+    "resolution_confirmed": 4,
+    "final_state": 10,
+    "error_reason": 2,
+    "resolution_records": 591,
+    "started_at": 34,
+    "ended_at": 34,
+    "metric_wait_records": 21681,
+    "projection": 87
+  }
+}

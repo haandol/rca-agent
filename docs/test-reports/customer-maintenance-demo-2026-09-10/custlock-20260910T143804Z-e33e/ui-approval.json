@@ -1,0 +1,28 @@
+{
+  "observedAt": "2026-09-10T14:51:29.908874+00:00",
+  "method": "actual UI click after exact run/step-count assertions and screenshots",
+  "captureWarning": "Post-click response observer raised URL is not defined; no repeat click. Dashboard API confirms one EXECUTING execution requestedBy=dashboard.",
+  "execution": {
+    "executionId": "83e7f82f-cd80-492d-bb5c-3529e28d5c92",
+    "rcaId": "b6af511f-3447-5a4c-a186-8b7f334b1959",
+    "engine": "headless-codex",
+    "state": "EXECUTING",
+    "stateLabel": "실행 중",
+    "approvalId": "83e7f82f-cd80-492d-bb5c-3529e28d5c92",
+    "requestedBy": "dashboard",
+    "attempt": 1,
+    "attemptedStepCount": 0,
+    "blockedCount": 0,
+    "failedStepCount": 0,
+    "resolutionConfirmed": null,
+    "errorReason": "",
+    "evidenceS3Key": "",
+    "retrospectiveStatus": "",
+    "retrospectiveSummary": "",
+    "playbookSnapshotS3Key": "",
+    "retrospectiveDiffS3Key": "",
+    "createdAt": "2026-09-10T14:50:34.808Z",
+    "updatedAt": "2026-09-10T14:50:35.817364+00:00"
+  },
+  "analysisCompletedAt": "2026-09-10T14:49:03.050848+00:00"
+}

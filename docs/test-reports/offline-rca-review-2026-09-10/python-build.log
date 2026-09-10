@@ -1,0 +1,456 @@
+Building source distribution...
+running egg_info
+writing src/headless_codex.egg-info/PKG-INFO
+writing dependency_links to src/headless_codex.egg-info/dependency_links.txt
+writing entry points to src/headless_codex.egg-info/entry_points.txt
+writing requirements to src/headless_codex.egg-info/requires.txt
+writing top-level names to src/headless_codex.egg-info/top_level.txt
+reading manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+writing manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+running sdist
+running egg_info
+writing src/headless_codex.egg-info/PKG-INFO
+writing dependency_links to src/headless_codex.egg-info/dependency_links.txt
+writing entry points to src/headless_codex.egg-info/entry_points.txt
+writing requirements to src/headless_codex.egg-info/requires.txt
+writing top-level names to src/headless_codex.egg-info/top_level.txt
+reading manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+writing manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+warning: sdist: standard file not found: should have one of README, README.rst, README.txt, README.md
+
+running check
+creating headless_codex-0.1.1
+creating headless_codex-0.1.1/src/headless_codex
+creating headless_codex-0.1.1/src/headless_codex.egg-info
+creating headless_codex-0.1.1/src/headless_codex/adapters
+creating headless_codex-0.1.1/src/headless_codex/adapters/primary
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/codex
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/embedding
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/evidence
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/execution
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/playbook
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/report
+creating headless_codex-0.1.1/src/headless_codex/adapters/secondary/session
+creating headless_codex-0.1.1/src/headless_codex/config
+creating headless_codex-0.1.1/src/headless_codex/di
+creating headless_codex-0.1.1/src/headless_codex/ports
+creating headless_codex-0.1.1/src/headless_codex/ports/dto
+creating headless_codex-0.1.1/src/headless_codex/ports/interfaces
+creating headless_codex-0.1.1/src/headless_codex/services
+creating headless_codex-0.1.1/src/headless_codex/utils
+creating headless_codex-0.1.1/tests
+copying files to headless_codex-0.1.1...
+copying pyproject.toml -> headless_codex-0.1.1
+copying src/headless_codex/__init__.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/bedrock_token.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/eval_adapter.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/execution_main.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/execution_mcp_server.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/logging.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/main.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/mcp_server.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex/retrospective_mcp_server.py -> headless_codex-0.1.1/src/headless_codex
+copying src/headless_codex.egg-info/PKG-INFO -> headless_codex-0.1.1/src/headless_codex.egg-info
+copying src/headless_codex.egg-info/SOURCES.txt -> headless_codex-0.1.1/src/headless_codex.egg-info
+copying src/headless_codex.egg-info/dependency_links.txt -> headless_codex-0.1.1/src/headless_codex.egg-info
+copying src/headless_codex.egg-info/entry_points.txt -> headless_codex-0.1.1/src/headless_codex.egg-info
+copying src/headless_codex.egg-info/requires.txt -> headless_codex-0.1.1/src/headless_codex.egg-info
+copying src/headless_codex.egg-info/top_level.txt -> headless_codex-0.1.1/src/headless_codex.egg-info
+copying src/headless_codex/adapters/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters
+copying src/headless_codex/adapters/primary/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/primary
+copying src/headless_codex/adapters/primary/health_server.py -> headless_codex-0.1.1/src/headless_codex/adapters/primary
+copying src/headless_codex/adapters/secondary/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary
+copying src/headless_codex/adapters/secondary/codex/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_diagnostics.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_execution_runner.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_harness.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_subprocess_runner.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/embedding/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/embedding
+copying src/headless_codex/adapters/secondary/embedding/bedrock_embedding.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/embedding
+copying src/headless_codex/adapters/secondary/evidence/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/evidence
+copying src/headless_codex/adapters/secondary/evidence/ecs_control.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/evidence
+copying src/headless_codex/adapters/secondary/evidence/s3_evidence_store.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/evidence
+copying src/headless_codex/adapters/secondary/execution/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/execution
+copying src/headless_codex/adapters/secondary/execution/dynamodb_execution_store.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/execution
+copying src/headless_codex/adapters/secondary/playbook/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/playbook
+copying src/headless_codex/adapters/secondary/playbook/s3_vectors_playbook_store.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/playbook
+copying src/headless_codex/adapters/secondary/report/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/report
+copying src/headless_codex/adapters/secondary/report/s3_report_store.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/report
+copying src/headless_codex/adapters/secondary/session/__init__.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/session
+copying src/headless_codex/adapters/secondary/session/dynamodb_session_store.py -> headless_codex-0.1.1/src/headless_codex/adapters/secondary/session
+copying src/headless_codex/config/__init__.py -> headless_codex-0.1.1/src/headless_codex/config
+copying src/headless_codex/config/settings.py -> headless_codex-0.1.1/src/headless_codex/config
+copying src/headless_codex/di/__init__.py -> headless_codex-0.1.1/src/headless_codex/di
+copying src/headless_codex/di/app_container.py -> headless_codex-0.1.1/src/headless_codex/di
+copying src/headless_codex/di/container.py -> headless_codex-0.1.1/src/headless_codex/di
+copying src/headless_codex/di/execution_container.py -> headless_codex-0.1.1/src/headless_codex/di
+copying src/headless_codex/ports/__init__.py -> headless_codex-0.1.1/src/headless_codex/ports
+copying src/headless_codex/ports/dto/__init__.py -> headless_codex-0.1.1/src/headless_codex/ports/dto
+copying src/headless_codex/ports/dto/models.py -> headless_codex-0.1.1/src/headless_codex/ports/dto
+copying src/headless_codex/ports/interfaces/__init__.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/codex_runner.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/embedding.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/evidence_store.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/execution_runner.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/execution_store.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/playbook_store.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/report_store.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/session_store.py -> headless_codex-0.1.1/src/headless_codex/ports/interfaces
+copying src/headless_codex/services/__init__.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/analysis_contract.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/artifact_validation.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/artifact_watcher.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/command_gate.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/destructive_actions.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_capabilities.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_context.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_evidence.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_outcome.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_pipeline.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_prompt.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_request.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_state.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/execution_workspace.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/fault_taxonomy.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/pipeline.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/playbook_merge.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/post_action_metrics.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/services/prompt_builder.py -> headless_codex-0.1.1/src/headless_codex/services
+copying src/headless_codex/utils/__init__.py -> headless_codex-0.1.1/src/headless_codex/utils
+copying src/headless_codex/utils/embed_key.py -> headless_codex-0.1.1/src/headless_codex/utils
+copying tests/test_alarm_description.py -> headless_codex-0.1.1/tests
+copying tests/test_alarm_parser.py -> headless_codex-0.1.1/tests
+copying tests/test_alarm_region_normalization.py -> headless_codex-0.1.1/tests
+copying tests/test_analysis_effective_view.py -> headless_codex-0.1.1/tests
+copying tests/test_artifact_shape.py -> headless_codex-0.1.1/tests
+copying tests/test_artifact_validation.py -> headless_codex-0.1.1/tests
+copying tests/test_artifact_watcher.py -> headless_codex-0.1.1/tests
+copying tests/test_codex_harness_contract.py -> headless_codex-0.1.1/tests
+copying tests/test_codex_runner.py -> headless_codex-0.1.1/tests
+copying tests/test_codex_subprocess_diagnostics.py -> headless_codex-0.1.1/tests
+copying tests/test_command_gate.py -> headless_codex-0.1.1/tests
+copying tests/test_destructive_actions.py -> headless_codex-0.1.1/tests
+copying tests/test_ecs_control_discovery.py -> headless_codex-0.1.1/tests
+copying tests/test_eval_adapter.py -> headless_codex-0.1.1/tests
+copying tests/test_eval_alarm_metadata.py -> headless_codex-0.1.1/tests
+copying tests/test_eval_citation_fields.py -> headless_codex-0.1.1/tests
+copying tests/test_evidence_store.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_capabilities.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_context.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_evidence.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_harness_contracts.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_mcp_server.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_outcome.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_pipeline.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_request.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_runner.py -> headless_codex-0.1.1/tests
+copying tests/test_execution_store.py -> headless_codex-0.1.1/tests
+copying tests/test_gate_prompt_alignment.py -> headless_codex-0.1.1/tests
+copying tests/test_main.py -> headless_codex-0.1.1/tests
+copying tests/test_mcp_server.py -> headless_codex-0.1.1/tests
+copying tests/test_mcp_startup_harness_contract.py -> headless_codex-0.1.1/tests
+copying tests/test_offline_remediation_contract.py -> headless_codex-0.1.1/tests
+copying tests/test_operator_fencing.py -> headless_codex-0.1.1/tests
+copying tests/test_pipeline.py -> headless_codex-0.1.1/tests
+copying tests/test_pipeline_redelivery.py -> headless_codex-0.1.1/tests
+copying tests/test_playbook_merge.py -> headless_codex-0.1.1/tests
+copying tests/test_playbook_store.py -> headless_codex-0.1.1/tests
+copying tests/test_post_action_metrics.py -> headless_codex-0.1.1/tests
+copying tests/test_prompt_builder.py -> headless_codex-0.1.1/tests
+copying tests/test_prompt_contracts.py -> headless_codex-0.1.1/tests
+copying tests/test_rca_planning_context.py -> headless_codex-0.1.1/tests
+copying tests/test_report_store.py -> headless_codex-0.1.1/tests
+copying tests/test_retrospective_prompt_contracts.py -> headless_codex-0.1.1/tests
+copying tests/test_retrospective_replay.py -> headless_codex-0.1.1/tests
+copying tests/test_session_store.py -> headless_codex-0.1.1/tests
+copying tests/test_settings.py -> headless_codex-0.1.1/tests
+Writing headless_codex-0.1.1/setup.cfg
+Creating tar archive
+removing 'headless_codex-0.1.1' (and everything under it)
+Building wheel from source distribution...
+running egg_info
+writing src/headless_codex.egg-info/PKG-INFO
+writing dependency_links to src/headless_codex.egg-info/dependency_links.txt
+writing entry points to src/headless_codex.egg-info/entry_points.txt
+writing requirements to src/headless_codex.egg-info/requires.txt
+writing top-level names to src/headless_codex.egg-info/top_level.txt
+reading manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+writing manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+running bdist_wheel
+running build
+running build_py
+creating build/lib/headless_codex
+copying src/headless_codex/bedrock_token.py -> build/lib/headless_codex
+copying src/headless_codex/execution_main.py -> build/lib/headless_codex
+copying src/headless_codex/logging.py -> build/lib/headless_codex
+copying src/headless_codex/__init__.py -> build/lib/headless_codex
+copying src/headless_codex/eval_adapter.py -> build/lib/headless_codex
+copying src/headless_codex/retrospective_mcp_server.py -> build/lib/headless_codex
+copying src/headless_codex/execution_mcp_server.py -> build/lib/headless_codex
+copying src/headless_codex/main.py -> build/lib/headless_codex
+copying src/headless_codex/mcp_server.py -> build/lib/headless_codex
+creating build/lib/headless_codex/di
+copying src/headless_codex/di/__init__.py -> build/lib/headless_codex/di
+copying src/headless_codex/di/container.py -> build/lib/headless_codex/di
+copying src/headless_codex/di/app_container.py -> build/lib/headless_codex/di
+copying src/headless_codex/di/execution_container.py -> build/lib/headless_codex/di
+creating build/lib/headless_codex/config
+copying src/headless_codex/config/__init__.py -> build/lib/headless_codex/config
+copying src/headless_codex/config/settings.py -> build/lib/headless_codex/config
+creating build/lib/headless_codex/utils
+copying src/headless_codex/utils/__init__.py -> build/lib/headless_codex/utils
+copying src/headless_codex/utils/embed_key.py -> build/lib/headless_codex/utils
+creating build/lib/headless_codex/adapters
+copying src/headless_codex/adapters/__init__.py -> build/lib/headless_codex/adapters
+creating build/lib/headless_codex/ports
+copying src/headless_codex/ports/__init__.py -> build/lib/headless_codex/ports
+creating build/lib/headless_codex/services
+copying src/headless_codex/services/prompt_builder.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_outcome.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_request.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/post_action_metrics.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/__init__.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_prompt.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/playbook_merge.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_state.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_workspace.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/artifact_watcher.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_pipeline.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/pipeline.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_capabilities.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/analysis_contract.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/command_gate.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_context.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/fault_taxonomy.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/destructive_actions.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/execution_evidence.py -> build/lib/headless_codex/services
+copying src/headless_codex/services/artifact_validation.py -> build/lib/headless_codex/services
+creating build/lib/headless_codex/adapters/primary
+copying src/headless_codex/adapters/primary/health_server.py -> build/lib/headless_codex/adapters/primary
+copying src/headless_codex/adapters/primary/__init__.py -> build/lib/headless_codex/adapters/primary
+creating build/lib/headless_codex/adapters/secondary
+copying src/headless_codex/adapters/secondary/__init__.py -> build/lib/headless_codex/adapters/secondary
+creating build/lib/headless_codex/adapters/secondary/playbook
+copying src/headless_codex/adapters/secondary/playbook/s3_vectors_playbook_store.py -> build/lib/headless_codex/adapters/secondary/playbook
+copying src/headless_codex/adapters/secondary/playbook/__init__.py -> build/lib/headless_codex/adapters/secondary/playbook
+creating build/lib/headless_codex/adapters/secondary/evidence
+copying src/headless_codex/adapters/secondary/evidence/ecs_control.py -> build/lib/headless_codex/adapters/secondary/evidence
+copying src/headless_codex/adapters/secondary/evidence/s3_evidence_store.py -> build/lib/headless_codex/adapters/secondary/evidence
+copying src/headless_codex/adapters/secondary/evidence/__init__.py -> build/lib/headless_codex/adapters/secondary/evidence
+creating build/lib/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_diagnostics.py -> build/lib/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_execution_runner.py -> build/lib/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/__init__.py -> build/lib/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_subprocess_runner.py -> build/lib/headless_codex/adapters/secondary/codex
+copying src/headless_codex/adapters/secondary/codex/codex_harness.py -> build/lib/headless_codex/adapters/secondary/codex
+creating build/lib/headless_codex/adapters/secondary/embedding
+copying src/headless_codex/adapters/secondary/embedding/bedrock_embedding.py -> build/lib/headless_codex/adapters/secondary/embedding
+copying src/headless_codex/adapters/secondary/embedding/__init__.py -> build/lib/headless_codex/adapters/secondary/embedding
+creating build/lib/headless_codex/adapters/secondary/execution
+copying src/headless_codex/adapters/secondary/execution/dynamodb_execution_store.py -> build/lib/headless_codex/adapters/secondary/execution
+copying src/headless_codex/adapters/secondary/execution/__init__.py -> build/lib/headless_codex/adapters/secondary/execution
+creating build/lib/headless_codex/adapters/secondary/report
+copying src/headless_codex/adapters/secondary/report/s3_report_store.py -> build/lib/headless_codex/adapters/secondary/report
+copying src/headless_codex/adapters/secondary/report/__init__.py -> build/lib/headless_codex/adapters/secondary/report
+creating build/lib/headless_codex/adapters/secondary/session
+copying src/headless_codex/adapters/secondary/session/__init__.py -> build/lib/headless_codex/adapters/secondary/session
+copying src/headless_codex/adapters/secondary/session/dynamodb_session_store.py -> build/lib/headless_codex/adapters/secondary/session
+creating build/lib/headless_codex/ports/dto
+copying src/headless_codex/ports/dto/models.py -> build/lib/headless_codex/ports/dto
+copying src/headless_codex/ports/dto/__init__.py -> build/lib/headless_codex/ports/dto
+creating build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/evidence_store.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/embedding.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/codex_runner.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/__init__.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/playbook_store.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/execution_store.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/execution_runner.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/report_store.py -> build/lib/headless_codex/ports/interfaces
+copying src/headless_codex/ports/interfaces/session_store.py -> build/lib/headless_codex/ports/interfaces
+running egg_info
+writing src/headless_codex.egg-info/PKG-INFO
+writing dependency_links to src/headless_codex.egg-info/dependency_links.txt
+writing entry points to src/headless_codex.egg-info/entry_points.txt
+writing requirements to src/headless_codex.egg-info/requires.txt
+writing top-level names to src/headless_codex.egg-info/top_level.txt
+reading manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+writing manifest file 'src/headless_codex.egg-info/SOURCES.txt'
+installing to build/bdist.macosx-11.0-arm64/wheel
+running install
+running install_lib
+creating build/bdist.macosx-11.0-arm64/wheel
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex
+copying build/lib/headless_codex/bedrock_token.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+copying build/lib/headless_codex/execution_main.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+copying build/lib/headless_codex/logging.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/di
+copying build/lib/headless_codex/di/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/di
+copying build/lib/headless_codex/di/container.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/di
+copying build/lib/headless_codex/di/app_container.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/di
+copying build/lib/headless_codex/di/execution_container.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/di
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/config
+copying build/lib/headless_codex/config/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/config
+copying build/lib/headless_codex/config/settings.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/config
+copying build/lib/headless_codex/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/utils
+copying build/lib/headless_codex/utils/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/utils
+copying build/lib/headless_codex/utils/embed_key.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/utils
+copying build/lib/headless_codex/eval_adapter.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters
+copying build/lib/headless_codex/adapters/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/primary
+copying build/lib/headless_codex/adapters/primary/health_server.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/primary
+copying build/lib/headless_codex/adapters/primary/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/primary
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/playbook
+copying build/lib/headless_codex/adapters/secondary/playbook/s3_vectors_playbook_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/playbook
+copying build/lib/headless_codex/adapters/secondary/playbook/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/playbook
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/evidence
+copying build/lib/headless_codex/adapters/secondary/evidence/ecs_control.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/evidence
+copying build/lib/headless_codex/adapters/secondary/evidence/s3_evidence_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/evidence
+copying build/lib/headless_codex/adapters/secondary/evidence/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/evidence
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/codex
+copying build/lib/headless_codex/adapters/secondary/codex/codex_diagnostics.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/codex
+copying build/lib/headless_codex/adapters/secondary/codex/codex_execution_runner.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/codex
+copying build/lib/headless_codex/adapters/secondary/codex/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/codex
+copying build/lib/headless_codex/adapters/secondary/codex/codex_subprocess_runner.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/codex
+copying build/lib/headless_codex/adapters/secondary/codex/codex_harness.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/codex
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/embedding
+copying build/lib/headless_codex/adapters/secondary/embedding/bedrock_embedding.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/embedding
+copying build/lib/headless_codex/adapters/secondary/embedding/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/embedding
+copying build/lib/headless_codex/adapters/secondary/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/execution
+copying build/lib/headless_codex/adapters/secondary/execution/dynamodb_execution_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/execution
+copying build/lib/headless_codex/adapters/secondary/execution/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/execution
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/report
+copying build/lib/headless_codex/adapters/secondary/report/s3_report_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/report
+copying build/lib/headless_codex/adapters/secondary/report/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/report
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/adapters/secondary/session
+copying build/lib/headless_codex/adapters/secondary/session/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/session
+copying build/lib/headless_codex/adapters/secondary/session/dynamodb_session_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/adapters/secondary/session
+copying build/lib/headless_codex/retrospective_mcp_server.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+copying build/lib/headless_codex/execution_mcp_server.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+copying build/lib/headless_codex/main.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/ports
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/ports/dto
+copying build/lib/headless_codex/ports/dto/models.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/dto
+copying build/lib/headless_codex/ports/dto/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/dto
+copying build/lib/headless_codex/ports/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/evidence_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/embedding.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/codex_runner.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/playbook_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/execution_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/execution_runner.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/report_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+copying build/lib/headless_codex/ports/interfaces/session_store.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/ports/interfaces
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex/services
+copying build/lib/headless_codex/services/prompt_builder.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_outcome.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_request.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/post_action_metrics.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/__init__.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_prompt.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/playbook_merge.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_state.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_workspace.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/artifact_watcher.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_pipeline.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/pipeline.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_capabilities.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/analysis_contract.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/command_gate.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_context.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/fault_taxonomy.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/destructive_actions.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/execution_evidence.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/services/artifact_validation.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex/services
+copying build/lib/headless_codex/mcp_server.py -> build/bdist.macosx-11.0-arm64/wheel/./headless_codex
+running install_egg_info
+Copying src/headless_codex.egg-info to build/bdist.macosx-11.0-arm64/wheel/./headless_codex-0.1.1-py3.14.egg-info
+running install_scripts
+creating build/bdist.macosx-11.0-arm64/wheel/headless_codex-0.1.1.dist-info/WHEEL
+creating '/private/tmp/rca-offline-review-20260911/dist/.tmp-nanbg9me/headless_codex-0.1.1-py3-none-any.whl' and adding 'build/bdist.macosx-11.0-arm64/wheel' to it
+adding 'headless_codex/__init__.py'
+adding 'headless_codex/bedrock_token.py'
+adding 'headless_codex/eval_adapter.py'
+adding 'headless_codex/execution_main.py'
+adding 'headless_codex/execution_mcp_server.py'
+adding 'headless_codex/logging.py'
+adding 'headless_codex/main.py'
+adding 'headless_codex/mcp_server.py'
+adding 'headless_codex/retrospective_mcp_server.py'
+adding 'headless_codex/adapters/__init__.py'
+adding 'headless_codex/adapters/primary/__init__.py'
+adding 'headless_codex/adapters/primary/health_server.py'
+adding 'headless_codex/adapters/secondary/__init__.py'
+adding 'headless_codex/adapters/secondary/codex/__init__.py'
+adding 'headless_codex/adapters/secondary/codex/codex_diagnostics.py'
+adding 'headless_codex/adapters/secondary/codex/codex_execution_runner.py'
+adding 'headless_codex/adapters/secondary/codex/codex_harness.py'
+adding 'headless_codex/adapters/secondary/codex/codex_subprocess_runner.py'
+adding 'headless_codex/adapters/secondary/embedding/__init__.py'
+adding 'headless_codex/adapters/secondary/embedding/bedrock_embedding.py'
+adding 'headless_codex/adapters/secondary/evidence/__init__.py'
+adding 'headless_codex/adapters/secondary/evidence/ecs_control.py'
+adding 'headless_codex/adapters/secondary/evidence/s3_evidence_store.py'
+adding 'headless_codex/adapters/secondary/execution/__init__.py'
+adding 'headless_codex/adapters/secondary/execution/dynamodb_execution_store.py'
+adding 'headless_codex/adapters/secondary/playbook/__init__.py'
+adding 'headless_codex/adapters/secondary/playbook/s3_vectors_playbook_store.py'
+adding 'headless_codex/adapters/secondary/report/__init__.py'
+adding 'headless_codex/adapters/secondary/report/s3_report_store.py'
+adding 'headless_codex/adapters/secondary/session/__init__.py'
+adding 'headless_codex/adapters/secondary/session/dynamodb_session_store.py'
+adding 'headless_codex/config/__init__.py'
+adding 'headless_codex/config/settings.py'
+adding 'headless_codex/di/__init__.py'
+adding 'headless_codex/di/app_container.py'
+adding 'headless_codex/di/container.py'
+adding 'headless_codex/di/execution_container.py'
+adding 'headless_codex/ports/__init__.py'
+adding 'headless_codex/ports/dto/__init__.py'
+adding 'headless_codex/ports/dto/models.py'
+adding 'headless_codex/ports/interfaces/__init__.py'
+adding 'headless_codex/ports/interfaces/codex_runner.py'
+adding 'headless_codex/ports/interfaces/embedding.py'
+adding 'headless_codex/ports/interfaces/evidence_store.py'
+adding 'headless_codex/ports/interfaces/execution_runner.py'
+adding 'headless_codex/ports/interfaces/execution_store.py'
+adding 'headless_codex/ports/interfaces/playbook_store.py'
+adding 'headless_codex/ports/interfaces/report_store.py'
+adding 'headless_codex/ports/interfaces/session_store.py'
+adding 'headless_codex/services/__init__.py'
+adding 'headless_codex/services/analysis_contract.py'
+adding 'headless_codex/services/artifact_validation.py'
+adding 'headless_codex/services/artifact_watcher.py'
+adding 'headless_codex/services/command_gate.py'
+adding 'headless_codex/services/destructive_actions.py'
+adding 'headless_codex/services/execution_capabilities.py'
+adding 'headless_codex/services/execution_context.py'
+adding 'headless_codex/services/execution_evidence.py'
+adding 'headless_codex/services/execution_outcome.py'
+adding 'headless_codex/services/execution_pipeline.py'
+adding 'headless_codex/services/execution_prompt.py'
+adding 'headless_codex/services/execution_request.py'
+adding 'headless_codex/services/execution_state.py'
+adding 'headless_codex/services/execution_workspace.py'
+adding 'headless_codex/services/fault_taxonomy.py'
+adding 'headless_codex/services/pipeline.py'
+adding 'headless_codex/services/playbook_merge.py'
+adding 'headless_codex/services/post_action_metrics.py'
+adding 'headless_codex/services/prompt_builder.py'
+adding 'headless_codex/utils/__init__.py'
+adding 'headless_codex/utils/embed_key.py'
+adding 'headless_codex-0.1.1.dist-info/METADATA'
+adding 'headless_codex-0.1.1.dist-info/WHEEL'
+adding 'headless_codex-0.1.1.dist-info/entry_points.txt'
+adding 'headless_codex-0.1.1.dist-info/top_level.txt'
+adding 'headless_codex-0.1.1.dist-info/RECORD'
+removing build/bdist.macosx-11.0-arm64/wheel
+Successfully built /private/tmp/rca-offline-review-20260911/dist/headless_codex-0.1.1.tar.gz
+Successfully built /private/tmp/rca-offline-review-20260911/dist/headless_codex-0.1.1-py3-none-any.whl

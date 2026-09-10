@@ -1,0 +1,52 @@
+{
+  "engine": "headless-codex",
+  "rca_id": "b6af511f-3447-5a4c-a186-8b7f334b1959",
+  "alarm_name": "RcaAgentDev-Healthcare-VitalIngestFailures",
+  "idempotency_key": "RcaAgentDev-Healthcare-VitalIngestFailures#2026-09-10T14:41:28.678000+00:00",
+  "created_at": "2026-09-10T14:41:28.924681+00:00",
+  "updated_at": "2026-09-10T14:49:03.050848+00:00",
+  "state": "COMPLETED",
+  "report_s3_key": "reports/headless-codex/b6af511f-3447-5a4c-a186-8b7f334b1959/attempt-1-4ae2fa746a9f488c8cc036db26db11ed/report.md",
+  "playbook_id": "9d2336c4-5ce4-4e96-84e7-b4de496ab81e",
+  "confirmed": true,
+  "root_cause": "유지보수 트랜잭션의 쓰기 잠금 점유: current alarm window에서 소유자 lifecycle 이벤트와 서비스 관측 DB 대기, 동일 요청의 실패가 시간·PID·트랜잭션·테이블 단위로 직접 연결된다. 2026-09-10T14:39:14.367Z 소유자 스트림의 maintenance_lock_acquired는 run_id custlock-20260910T143804Z-e33e, backend_pid 27808, transaction_start 14:39:14.340317Z와 public.sensor_readings ShareLock을 기록했다(QueryId a0eb5437-8b8a-4e20-adb3-92e91b34e977). 14:39:15.253Z부터 서비스 관측 스트림은 쓰기 세션 PID 25671의 RowExclusiveLock이 granted=false이고 blocking_pids=[27808]임을 반복 관측했으며(QueryId 1d936918-1e6c-46c7-be2d-bc47f9704153), 약 2초 후 같은 ingest SQL이 DBAPIError로 실패했다(QueryId 6d4bdfb4-f3b5-40fb-b819-a30fe8d8d3f1). 이는 SQL 자체 비효율이 아니라 외부 잠금 소유자가 유발한 대기이므로 증거 기반 fault_type은 unsupported다.",
+  "alarmData": {
+    "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+    "AlarmDescription": "Patient vital readings are failing to be recorded. Impact: vitals are missing from the record and abnormal-value alerts are not raised. Resources: LogGroup=/ecs/RcaAgentDev/healthcare; ECSCluster=RcaAgentDevHealthcare; ECSService=RcaAgentDevHealthcare; RDSInstance=rcaagentdev-postgres.",
+    "AWSAccountId": "395271362395",
+    "AlarmConfigurationUpdatedTimestamp": "2026-09-10T06:31:51.034+0000",
+    "NewStateValue": "ALARM",
+    "NewStateReason": "Threshold Crossed: 2 datapoints [29.0 (10/09/26 14:40:00), 16.0 (10/09/26 14:39:00)] were greater than or equal to the threshold (1.0).",
+    "StateChangeTime": "2026-09-10T14:41:28.678+0000",
+    "Region": "US East (N. Virginia)",
+    "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures",
+    "OldStateValue": "OK",
+    "ActionExecutedAfterMuteWindow": false,
+    "OKActions": [
+      "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+    ],
+    "AlarmActions": [
+      "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+    ],
+    "InsufficientDataActions": [],
+    "Trigger": {
+      "MetricName": "VitalIngestFailures",
+      "Namespace": "Healthcare/Sensor",
+      "StatisticType": "Statistic",
+      "Statistic": "SUM",
+      "Unit": null,
+      "Dimensions": [
+        {
+          "value": "healthcare-sensor-app",
+          "name": "ServiceName"
+        }
+      ],
+      "Period": 60,
+      "EvaluationPeriods": 2,
+      "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+      "Threshold": 1.0,
+      "TreatMissingData": "notBreaching",
+      "EvaluateLowSampleCountPercentile": ""
+    }
+  }
+}

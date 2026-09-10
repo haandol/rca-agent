@@ -1,0 +1,49 @@
+{
+  "candidateCommit": "69a897a56c4c",
+  "customerReady": false,
+  "actualFailedRun": "custlock-20260910T135052Z-48da",
+  "actualExecutionId": "2dfebb2a-4551-45bc-b4a3-0cd9315f0968",
+  "diagnosis": {
+    "exception": "ValueError: retrospective evidence metadata exceeds JSON budget; durable evidence remains available",
+    "rawChars": 245919,
+    "minimumMetadataCharsBefore": 69902,
+    "budgetChars": 60000
+  },
+  "actualReplayAfterFix": {
+    "chars": 59892,
+    "literalGroups": 9,
+    "referencePaths": 48,
+    "allMetadataReconstructed": true,
+    "sourceBytesUnchanged": true,
+    "originalEvidenceUnchanged": true,
+    "priorRunRemainsRetrospectiveFailed": true
+  },
+  "fixes": [
+    "Share only exactly equal metadata literals by explicit paths when needed",
+    "Keep60k cap and preserve rawS3 evidence; oversized unique metadata still fails",
+    "Persist complete NO_CHANGE and UPDATED rationale and effective/proposed updates before publication",
+    "Record bounded redacted error type, detail and phase"
+  ],
+  "validation": {
+    "focusedPassed": 160,
+    "fullHeadlessPassed": 1403,
+    "ruff": "passed",
+    "build": "passed",
+    "actualCliCatalogProfiles": [
+      "rca",
+      "report",
+      "execution",
+      "retrospective"
+    ],
+    "catalogUsesModelStub": true,
+    "modelOrE2EPassCountFromCatalog": 0
+  },
+  "deploymentAndFreshE2E": "pending",
+  "deployment": {
+    "ready": true,
+    "evidence": "retrospective-validation/deployment-verified.json",
+    "analysisTag": "a975cfa48c4d",
+    "executionTag": "69a897a56c4c",
+    "healthcareTag": "4772c9645abe"
+  }
+}

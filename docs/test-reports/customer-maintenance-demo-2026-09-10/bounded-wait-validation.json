@@ -1,0 +1,63 @@
+{
+  "candidateCommit": "a975cfa48c4d",
+  "customerReady": false,
+  "scope": "Local code and actual CLI catalog verification; no deployed RCA success inferred",
+  "fullHeadlessSuite": {
+    "passed": 1384,
+    "seconds": 21.29,
+    "evidence": "bounded-wait-validation/full-tests.log"
+  },
+  "focusedSuite": {
+    "passed": 338,
+    "includedInFullSuite": true
+  },
+  "lintAndFormat": "passed",
+  "build": "passed",
+  "actualCliCatalogProfiles": {
+    "rca": {
+      "returncode": 0,
+      "evidence": "bounded-wait-validation/catalog-rca.json"
+    },
+    "report": {
+      "returncode": 0,
+      "evidence": "bounded-wait-validation/catalog-report.json"
+    },
+    "execution": {
+      "returncode": 0,
+      "evidence": "bounded-wait-validation/catalog-execution.json"
+    },
+    "retrospective": {
+      "returncode": 0,
+      "evidence": "bounded-wait-validation/catalog-retrospective.json"
+    }
+  },
+  "catalogUsesModelStub": true,
+  "liveModelOrE2EPassCountFromCatalog": 0,
+  "fixes": [
+    "Immutable first two post-action minute windows; next minute even for exact boundary",
+    "Bounded read-only availability wait inside existing execution deadline and claim",
+    "Failed or incomplete wait cannot be overwritten by positive model verdict",
+    "Preserve all wait receipts and raw command evidence",
+    "Bound log history queries and distinguish real writes from reads",
+    "Preserve retrospective cancellation; confirmed cause uses actual validated reasoning"
+  ],
+  "deployedVerification": "Deployed tool correctly rejected the observed nonzero first bin; full workflow success remains pending after producer timestamp fix.",
+  "deployment": {
+    "ready": true,
+    "evidence": "bounded-wait-validation/deployment-verified.json",
+    "actualRolePreflight": "bounded-wait-validation/reader-preflight.json",
+    "headlessAndExecutionTag": "a975cfa48c4d",
+    "healthcareTag": "212965e5852b"
+  },
+  "runtimeNegativeVerification": {
+    "runId": "custlock-20260910T131524Z-0fe2",
+    "executionId": "4ef30f71-f094-4285-88eb-047493f0d407",
+    "result": "UNRESOLVED",
+    "waitStatus": "UNHEALTHY",
+    "firstFixedMinute": "2026-09-10T13:30:00Z",
+    "observedFailures": 10,
+    "preservedFailure": true,
+    "evidence": "custlock-20260910T131524Z-0fe2/execution-evidence.json",
+    "note": "Real wait/tool integration exercised; this is not a completed RCA/remediation/retrospective demo."
+  }
+}

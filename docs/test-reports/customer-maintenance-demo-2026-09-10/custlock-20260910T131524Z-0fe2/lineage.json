@@ -1,0 +1,51 @@
+{
+  "engine": "headless-codex",
+  "rca_id": "f9b3a399-4218-5c8a-918b-a9fa08e6104f",
+  "alarm_name": "RcaAgentDev-Healthcare-VitalIngestFailures",
+  "idempotency_key": "RcaAgentDev-Healthcare-VitalIngestFailures#2026-09-10T13:19:28.679000+00:00",
+  "created_at": "2026-09-10T13:19:28.962289+00:00",
+  "state": "REPORT_GENERATION",
+  "report_s3_key": null,
+  "playbook_id": null,
+  "confirmed": null,
+  "root_cause": null,
+  "alarmData": {
+    "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+    "AlarmDescription": "Patient vital readings are failing to be recorded. Impact: vitals are missing from the record and abnormal-value alerts are not raised. Resources: LogGroup=/ecs/RcaAgentDev/healthcare; ECSCluster=RcaAgentDevHealthcare; ECSService=RcaAgentDevHealthcare; RDSInstance=rcaagentdev-postgres.",
+    "AWSAccountId": "395271362395",
+    "AlarmConfigurationUpdatedTimestamp": "2026-09-10T06:31:51.034+0000",
+    "NewStateValue": "ALARM",
+    "NewStateReason": "Threshold Crossed: 2 datapoints [21.0 (10/09/26 13:18:00), 17.0 (10/09/26 13:17:00)] were greater than or equal to the threshold (1.0).",
+    "StateChangeTime": "2026-09-10T13:19:28.679+0000",
+    "Region": "US East (N. Virginia)",
+    "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures",
+    "OldStateValue": "OK",
+    "ActionExecutedAfterMuteWindow": false,
+    "OKActions": [
+      "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+    ],
+    "AlarmActions": [
+      "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+    ],
+    "InsufficientDataActions": [],
+    "Trigger": {
+      "MetricName": "VitalIngestFailures",
+      "Namespace": "Healthcare/Sensor",
+      "StatisticType": "Statistic",
+      "Statistic": "SUM",
+      "Unit": null,
+      "Dimensions": [
+        {
+          "value": "healthcare-sensor-app",
+          "name": "ServiceName"
+        }
+      ],
+      "Period": 60,
+      "EvaluationPeriods": 2,
+      "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+      "Threshold": 1.0,
+      "TreatMissingData": "notBreaching",
+      "EvaluateLowSampleCountPercentile": ""
+    }
+  }
+}

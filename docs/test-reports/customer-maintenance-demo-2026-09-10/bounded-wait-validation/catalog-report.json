@@ -1,0 +1,28 @@
+{
+  "profile": "report",
+  "fixedEnv": false,
+  "waitOptional": false,
+  "elapsed": 5.65,
+  "returncode": 0,
+  "requestCount": 1,
+  "toolNames": [
+    "exec_command",
+    "write_stdin",
+    "list_mcp_resources",
+    "list_mcp_resource_templates",
+    "read_mcp_resource",
+    "update_plan",
+    "request_user_input",
+    "view_image",
+    "multi_agent_v1",
+    "close_agent",
+    "resume_agent",
+    "send_input",
+    "spawn_agent",
+    "wait_agent",
+    "mcp__rca_progress",
+    "save_report_artifact"
+  ],
+  "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a08b64-c27f-7481-abc3-034f3f88e6dd\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"error\",\"message\":\"Model metadata for `startup-probe` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\"}}\n{\"type\":\"turn.started\"}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":0,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0}}\n",
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/tmpbq364jyq\"))\nReading additional input from stdin...\n"
+}

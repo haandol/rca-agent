@@ -1,0 +1,20 @@
+[
+  {
+    "service": "headless-codex",
+    "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:a975cfa48c4d",
+    "repository": "rcaagentdev/cc-headless",
+    "tag": "a975cfa48c4d",
+    "returncode": 0,
+    "manifestDigest": "sha256:c9d1325eb76d20708728356185683d9588281dc009243396f3849fb11b649dea",
+    "publishedAt": "2026-09-10T12:58:58.025452+00:00"
+  },
+  {
+    "service": "healthcare",
+    "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare:212965e5852b",
+    "repository": "rcaagentdev/healthcare",
+    "tag": "212965e5852b",
+    "returncode": 0,
+    "manifestDigest": "sha256:572365e0ed61cb463386172d06fdedc721fd1c266ffe23331bf26f76dfa0555a",
+    "publishedAt": "2026-09-10T12:01:52.071828+00:00"
+  }
+]

@@ -1,0 +1,192 @@
+{
+  "runId": "custlock-20260910T135052Z-48da",
+  "candidateCommit": "4772c9645abe",
+  "headlessImageTag": "a975cfa48c4d",
+  "healthcareImageTag": "4772c9645abe",
+  "engine": "headless-codex",
+  "rcaId": "82791526-e84b-5ae4-bfe4-c65ba1369480",
+  "result": "FAILED",
+  "customerReady": false,
+  "fullWorkflowComplete": false,
+  "analysisConfirmed": true,
+  "analysisConfidence": 0.98,
+  "ownedTaskDiscovered": true,
+  "approvalIssued": true,
+  "approvalMethod": "actual dashboard UI",
+  "executionId": "2dfebb2a-4551-45bc-b4a3-0cd9315f0968",
+  "executionState": "RESOLVED",
+  "approvedRecoveryDemonstrated": true,
+  "observedFailure": "Retrospective failed before model invocation. Exact unmodified archived evidence replay raises ValueError: retrospective evidence metadata exceeds JSON budget; durable evidence remains available. Raw245919chars; minimum metadata~69902 exceeds60000. Recovery remained RESOLVED, full customer workflow FAILED.",
+  "actualCommands": 34,
+  "actualSteps": 4,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/3a86e9ad0e304126ba1aa4ab8a86c4df",
+  "ownerPID": 25631,
+  "release": {
+    "event": "maintenance_released",
+    "run_id": "custlock-20260910T135052Z-48da",
+    "backend_pid": 25631,
+    "release_reason": "sigterm",
+    "released_at": "2026-09-10T14:05:38.360475+00:00",
+    "rollback_complete": true,
+    "lock_acquired": true
+  },
+  "fixedMetricWait": {
+    "start": "2026-09-10T14:06:00+00:00",
+    "end": "2026-09-10T14:08:00+00:00",
+    "status": "HEALTHY",
+    "observedAt": "2026-09-10T14:08:02.946139+00:00",
+    "bins": [
+      {
+        "start": "2026-09-10T14:06:00+00:00",
+        "end": "2026-09-10T14:07:00+00:00",
+        "attempts": 27,
+        "failures": 0,
+        "attempts_minus_failures": 27
+      },
+      {
+        "start": "2026-09-10T14:07:00+00:00",
+        "end": "2026-09-10T14:08:00+00:00",
+        "attempts": 18,
+        "failures": 0,
+        "attempts_minus_failures": 18
+      }
+    ],
+    "pollRecords": 20
+  },
+  "independentFreshMetrics": {
+    "observedAt": "2026-09-10T14:08:40.702045+00:00",
+    "anchor": "provisional actual release, pending durable StopTask audit",
+    "actionEndedAt": "2026-09-10T14:05:38.360475+00:00",
+    "releaseTime": "2026-09-10T14:05:38.360475+00:00",
+    "start": "2026-09-10T14:06:00+00:00",
+    "end": "2026-09-10T14:08:00+00:00",
+    "values": {
+      "VitalIngestAttempts": {
+        "Label": "VitalIngestAttempts",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 23:07:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 9.666666666666666,
+            "Sum": 29.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 23:06:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 9.0,
+            "Sum": 27.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "9841315e-32d5-4667-8f69-2589e17e3d26",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "9841315e-32d5-4667-8f69-2589e17e3d26",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "230",
+            "date": "Thu, 10 Sep 2026 14:08:49 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "VitalIngestFailures": {
+        "Label": "VitalIngestFailures",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 23:07:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 23:06:00+09:00",
+            "SampleCount": 3.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "a23ce729-bc43-4052-8969-a55c2ce4b2f7",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "a23ce729-bc43-4052-8969-a55c2ce4b2f7",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "214",
+            "date": "Thu, 10 Sep 2026 14:08:49 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "PatientVitalsQueryDuration": {
+        "Label": "PatientVitalsQueryDuration",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 23:06:00+09:00",
+            "SampleCount": 6.0,
+            "Average": 12.768573500011371,
+            "Sum": 76.61144100006823,
+            "Unit": "Milliseconds"
+          },
+          {
+            "Timestamp": "2026-09-10 23:07:00+09:00",
+            "SampleCount": 5.0,
+            "Average": 11.913583199930144,
+            "Sum": 59.56791599965072,
+            "Unit": "Milliseconds"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "14669f50-3f68-4041-a31a-e07fb6db0629",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "14669f50-3f68-4041-a31a-e07fb6db0629",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "293",
+            "date": "Thu, 10 Sep 2026 14:08:49 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      }
+    }
+  },
+  "actualSuccessfulWriteOperationsPerBin": [
+    6,
+    6
+  ],
+  "timings": {
+    "startedAt": "2026-09-10T13:50:52.717405+00:00",
+    "alarmAt": "2026-09-10T13:54:28.678+0000",
+    "analysisCompletedAt": "2026-09-10T14:01:35.157382+00:00",
+    "approvedAt": "2026-09-10T14:04:38.640Z",
+    "stopStartedAt": "2026-09-10T14:05:37.497844+00:00",
+    "stopEndedAt": "2026-09-10T14:05:38.223542+00:00",
+    "releaseAt": "2026-09-10T14:05:38.360475+00:00",
+    "executionResolvedAt": "2026-09-10T14:08:58.812430+00:00",
+    "retrospectiveFailedAt": "2026-09-10T14:08:58.953694+00:00",
+    "alarmToAnalysisCompletedSeconds": 426.479382,
+    "approvalToResolvedSeconds": 260.17243,
+    "approvalToRetrospectiveCompleteSeconds": null
+  },
+  "evidence": {
+    "s3": "executions/82791526-e84b-5ae4-bfe4-c65ba1369480/2dfebb2a-4551-45bc-b4a3-0cd9315f0968/evidence.json",
+    "local": "docs/test-reports/customer-maintenance-demo-2026-09-10/custlock-20260910T135052Z-48da",
+    "approvalSnapshotDigestVerified": true,
+    "generatedEqualsStored": true,
+    "duplicateApprovalStatus": 409,
+    "sourceReplaySha256": "904fc69c3ff76b6ace2f19121af753b5077d980aeb4f87a061947fee51efef52"
+  },
+  "retrospective": {
+    "status": "FAILED",
+    "summary": "unhandled retrospective exception"
+  },
+  "cleanup": {
+    "healthRecoveryVerified": true,
+    "status": "completed",
+    "completedAt": "2026-09-10T14:19:30.230443+00:00",
+    "enginePinRestored": true
+  }
+}

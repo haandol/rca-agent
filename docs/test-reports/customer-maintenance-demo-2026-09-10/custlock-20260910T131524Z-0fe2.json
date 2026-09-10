@@ -1,0 +1,170 @@
+{
+  "runId": "custlock-20260910T131524Z-0fe2",
+  "candidateCommit": "a975cfa48c4d",
+  "healthcareImageTag": "212965e5852b",
+  "engine": "headless-codex",
+  "rcaId": "f9b3a399-4218-5c8a-918b-a9fa08e6104f",
+  "result": "FAILED",
+  "customerReady": false,
+  "analysisConfirmed": true,
+  "analysisConfidence": 0.97,
+  "ownedTaskDiscovered": true,
+  "approvalIssued": true,
+  "approvalMethod": "actual dashboard UI",
+  "executionId": "4ef30f71-f094-4285-88eb-047493f0d407",
+  "executionState": "UNRESOLVED",
+  "approvedRecoveryDemonstrated": false,
+  "approvedStopAndRollbackDemonstrated": true,
+  "observedFailure": "Fixed first post-action13:30 bin contained failures10. Waiter correctly sticky-rejected UNHEALTHY without rolling forward. Raw service errors completed13:29:38/48/58 before approved release13:29:59; their buffered counts were emitted13:30:05 with flush-time EMF timestamp. Actual ingest operations13:30 onward succeeded. Proven producer time-attribution bug; old run remains FAILED/UNRESOLVED and no retrospective.",
+  "actualCommands": 14,
+  "actualSteps": 3,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/ba00ccb71afc4aacaa90d67e7d646d62",
+  "ownerPID": 23992,
+  "release": {
+    "event": "maintenance_released",
+    "run_id": "custlock-20260910T131524Z-0fe2",
+    "backend_pid": 23992,
+    "release_reason": "sigterm",
+    "released_at": "2026-09-10T13:29:59.115507+00:00",
+    "rollback_complete": true,
+    "lock_acquired": true
+  },
+  "fixedMetricWait": {
+    "start": "2026-09-10T13:30:00+00:00",
+    "end": "2026-09-10T13:32:00+00:00",
+    "status": "UNHEALTHY",
+    "observedAt": "2026-09-10T13:31:01.470011+00:00",
+    "failures": [
+      "failures 2026-09-10T13:30:00+00:00 is nonzero"
+    ],
+    "pollRecords": 4
+  },
+  "freshMetrics": {
+    "observedAt": "2026-09-10T13:36:02.667038+00:00",
+    "anchor": "first successful server-recorded approved StopTask ended_at",
+    "actionEndedAt": "2026-09-10T13:29:58.471259+00:00",
+    "releaseTime": "2026-09-10T13:29:59.115507+00:00",
+    "start": "2026-09-10T13:30:00+00:00",
+    "end": "2026-09-10T13:32:00+00:00",
+    "values": {
+      "VitalIngestAttempts": {
+        "Label": "VitalIngestAttempts",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 22:31:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 11.0,
+            "Sum": 22.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 22:30:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 12.5,
+            "Sum": 25.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "2cfcbfac-6f38-43c0-931e-e9d468df8f92",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "2cfcbfac-6f38-43c0-931e-e9d468df8f92",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "216",
+            "date": "Thu, 10 Sep 2026 13:36:22 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "VitalIngestFailures": {
+        "Label": "VitalIngestFailures",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 22:31:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 22:30:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 5.0,
+            "Sum": 10.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "3305f35a-6dcd-4866-8173-198eadb582c5",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "3305f35a-6dcd-4866-8173-198eadb582c5",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "213",
+            "date": "Thu, 10 Sep 2026 13:36:22 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "PatientVitalsQueryDuration": {
+        "Label": "PatientVitalsQueryDuration",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 22:31:00+09:00",
+            "SampleCount": 6.0,
+            "Average": 9.957811999962965,
+            "Sum": 59.746871999777795,
+            "Unit": "Milliseconds"
+          },
+          {
+            "Timestamp": "2026-09-10 22:30:00+09:00",
+            "SampleCount": 5.0,
+            "Average": 9.418730799916375,
+            "Sum": 47.093653999581875,
+            "Unit": "Milliseconds"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "e0007479-dadb-41d2-8c8b-913d0bc4461e",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "e0007479-dadb-41d2-8c8b-913d0bc4461e",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "291",
+            "date": "Thu, 10 Sep 2026 13:36:22 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      }
+    }
+  },
+  "timings": {
+    "startedAt": "2026-09-10T13:15:24.826615+00:00",
+    "alarmAt": "2026-09-10T13:19:28.679+0000",
+    "analysisCompletedAt": "2026-09-10T13:26:17.403707+00:00",
+    "approvedAt": "2026-09-10T13:28:49.504Z",
+    "stopStartedAt": "2026-09-10T13:29:57.759446+00:00",
+    "stopEndedAt": "2026-09-10T13:29:58.471259+00:00",
+    "releaseAt": "2026-09-10T13:29:59.115507+00:00",
+    "executionTerminalAt": "2026-09-10T13:31:20.155093+00:00",
+    "alarmToAnalysisCompletedSeconds": 408.724707,
+    "approvalToExecutionTerminalSeconds": 150.651093,
+    "approvalToResolvedSeconds": null,
+    "approvalToRetrospectiveCompleteSeconds": null
+  },
+  "evidence": {
+    "s3": "executions/f9b3a399-4218-5c8a-918b-a9fa08e6104f/4ef30f71-f094-4285-88eb-047493f0d407/evidence.json",
+    "local": "docs/test-reports/customer-maintenance-demo-2026-09-10/custlock-20260910T131524Z-0fe2",
+    "approvalSnapshotDigestVerified": true,
+    "generatedEqualsStored": true,
+    "duplicateApprovalStatus": 409
+  },
+  "retrospective": "not run because execution UNRESOLVED",
+  "cleanup": {
+    "healthRecoveryVerified": true,
+    "status": "completed",
+    "completedAt": "2026-09-10T13:37:31.406990+00:00",
+    "enginePinRestored": true
+  }
+}

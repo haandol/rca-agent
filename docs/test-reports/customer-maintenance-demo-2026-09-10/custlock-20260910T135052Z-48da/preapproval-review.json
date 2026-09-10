@@ -1,0 +1,29 @@
+{
+  "reviewedAt": "2026-09-10T14:03:44.954646+00:00",
+  "generatedEqualsStored": true,
+  "executionStepCount": 4,
+  "onlyCurrentRunId": true,
+  "ownerPID": 25631,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/3a86e9ad0e304126ba1aa4ab8a86c4df",
+  "ownerControlAtReview": {
+    "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/3a86e9ad0e304126ba1aa4ab8a86c4df",
+    "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare-demo-maint-b7c1f40bad1f:1",
+    "group": "family:RcaAgentDevHealthcare-demo-maint-b7c1f40bad1f",
+    "startedBy": "demo-b7c1f40bad1f979bdc0395517ae53204",
+    "lastStatus": "RUNNING",
+    "tags": [
+      {
+        "key": "RealisticDemoRunId",
+        "value": "custlock-20260910T135052Z-48da"
+      },
+      {
+        "key": "RealisticDemoJournal",
+        "value": "b7c1f40bad1f979bdc0395517ae532048ff41343ab7fd9b00acf09031a5393ca"
+      }
+    ]
+  },
+  "waitBindingCriterionCompatible": true,
+  "actualWriteEvidenceRequired": true,
+  "approvedForUIAction": true
+}

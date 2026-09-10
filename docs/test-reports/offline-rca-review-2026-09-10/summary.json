@@ -1,0 +1,76 @@
+{
+  "recordedAt": "2026-09-10T21:06:55.585033+00:00",
+  "scope": "Offline code review and deterministic unit/integration/static checks; live work stopped by user.",
+  "codeCommits": [
+    "7679411",
+    "0e4b15f",
+    "c63220d",
+    "8cd9b59"
+  ],
+  "fixes": [
+    {
+      "name": "Contradictory success claims",
+      "before": "A failed command plus positive model flags could resolve execution.",
+      "after": "Each step needs a successful unblocked attempt; blocked/manual/unobservable or malformed positive claims cannot resolve. Guards run at MCP recording and final judgment."
+    },
+    {
+      "name": "Exact approved values",
+      "before": "Long success criteria were truncated at4000 characters and IDs at200, causing mismatch or collision.",
+      "after": "Approved criteria and step/playbook identities stay exact; different long IDs remain independently required."
+    },
+    {
+      "name": "Evidence on runner exceptions",
+      "before": "Runner exceptions could delete the workspace without persisting recorded commands and metric waits.",
+      "after": "Recover the actual approved-snapshot journal, check current claim, persist FAILED evidence before cleanup; preserve error and prevent retrospective publication."
+    },
+    {
+      "name": "Agent catalog test assumptions",
+      "before": "A stale test treated all scenarios as lacking AWS metadata.",
+      "after": "Assert exact supplied metadata and unknown values only for missing fields; runtime region cannot replace source metadata. Production code and catalog unchanged."
+    }
+  ],
+  "validation": {
+    "headless": {
+      "passed": 1597,
+      "log": "headless-full.log"
+    },
+    "strands": {
+      "passed": 781,
+      "log": "agent-full.log"
+    },
+    "healthcare": {
+      "passed": 181,
+      "skipped": 7,
+      "xfailed": 1,
+      "log": "healthcare-unit.log"
+    },
+    "infra": {
+      "passed": 84,
+      "log": "infra-unit.log"
+    },
+    "dashboardTypecheck": "passed",
+    "infraTypecheck": "passed",
+    "headlessRuffAndFormat": "passed",
+    "rootContracts": {
+      "passed": 140,
+      "failed": 1,
+      "failure": "existing approved input digest/file-set mismatch; approval gate retained",
+      "log": "root-contracts.log"
+    },
+    "offlineEvaluation": {
+      "passed": false,
+      "failure": "no normalized result JSON files in tests/fixtures/results",
+      "log": "offline-evaluation.log"
+    },
+    "pythonOfflineBuild": "passed using existing default cache",
+    "runtimeDependencyManifest": "Pydantic declared directly; 95 resolved versions unchanged"
+  },
+  "limits": [
+    "Successful command exit is necessary evidence, not deterministic proof of causal recovery or arbitrary natural-language success criteria.",
+    "External command/model/storage behavior in the new integration tests uses local doubles; this is not a live-model or deployed E2E pass.",
+    "No new deployment/model calls/fault injections after the user requested offline-first work; only existing live resources were cleaned up.",
+    "No baseline approval, result fabrication, fixture expectation reduction, remote Git push or current-demo-readiness claim."
+  ],
+  "cleanupEvidence": "../customer-maintenance-demo-2026-09-10/user-stop-cleanup.json",
+  "deployedSource": "Remains the pre-review deployment; new offline fixes are local commits only."
+}

@@ -1,0 +1,10 @@
+{
+  "status": 200,
+  "body": {
+    "cancelled": true,
+    "rcaId": "3a9819ad-5f84-55ec-a0ce-24f274ccda35",
+    "engine": "headless-codex",
+    "closedHypotheses": 4
+  },
+  "at": "2026-09-10T15:30:40.158915+00:00"
+}

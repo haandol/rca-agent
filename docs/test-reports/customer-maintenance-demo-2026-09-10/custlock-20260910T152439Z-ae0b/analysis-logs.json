@@ -1,0 +1,382 @@
+{
+  "events": [
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054108806,
+      "message": "{\"alarm_name\": \"RcaAgentDev-Healthcare-VitalIngestFailures\", \"idempotency_key\": \"RcaAgentDev-Healthcare-VitalIngestFailures#2026-09-10T15:28:28.677000+00:00\", \"rca_id\": \"3a9819ad-5f84-55ec-a0ce-24f274ccda35\", \"event\": \"alarm_received\", \"logger\": \"headless_codex.services.pipeline\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:28.805754Z\"}",
+      "ingestionTime": 1789054110911,
+      "eventId": "39897239826866887527342858163858565338252365040294559744"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054108969,
+      "message": "{\"alarm_name\": \"RcaAgentDev-Healthcare-VitalIngestFailures\", \"idempotency_key\": \"RcaAgentDev-Healthcare-VitalIngestFailures#2026-09-10T15:28:28.677000+00:00\", \"rca_id\": \"3a9819ad-5f84-55ec-a0ce-24f274ccda35\", \"event\": \"cc_analysis_started\", \"logger\": \"headless_codex.services.pipeline\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:28.969584Z\"}",
+      "ingestionTime": 1789054110911,
+      "eventId": "39897239830501908994703349735928887416694047965769367553"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054108974,
+      "message": "{\"profile\": \"analysis-rca\", \"config\": \"/home/codexuser/.codex-runs/codex-home-h5irxwgz/config.toml\", \"event\": \"codex_cli_started\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:28.974506Z\"}",
+      "ingestionTime": 1789054110911,
+      "eventId": "39897239830613412720696002851636566008057289773299269634"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054120984,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"thread.started\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:40.984005Z\"}",
+      "ingestionTime": 1789054125905,
+      "eventId": "39897240098445362555048786799607072023884319098960216064"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054120984,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"turn.started\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:40.984388Z\"}",
+      "ingestionTime": 1789054125905,
+      "eventId": "39897240098445362555048786799607072023884319098960216065"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054134994,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"agent_message\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:54.993782Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240410878802786462817024611494852318989576568307712"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054135194,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"command_execution\", \"status\": \"in_progress\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:55.194235Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240415338951826168941652918638506848661877764390913"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054135194,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"command_execution\", \"status\": \"failed\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:55.194467Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240415338951826168941652918638506848661877764390914"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054135595,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"command_execution\", \"status\": \"in_progress\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:55.595009Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240424281550650779721532674461534180654841662537731"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054135595,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"command_execution\", \"status\": \"failed\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:55.595240Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240424281550650779721532674461534180654841662537732"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054135795,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"command_execution\", \"status\": \"in_progress\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:55.795584Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240428741699690485846160981605188710327142858620933"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054135795,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"command_execution\", \"status\": \"failed\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:55.795814Z\"}",
+      "ingestionTime": 1789054135905,
+      "eventId": "39897240428741699690485846160981605188710327142858620934"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054136196,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"command_execution\", \"status\": \"in_progress\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:56.196306Z\"}",
+      "ingestionTime": 1789054140887,
+      "eventId": "39897240437684298515096626046760257298397225751419158528"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054136196,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"command_execution\", \"status\": \"failed\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:56.196534Z\"}",
+      "ingestionTime": 1789054140887,
+      "eventId": "39897240437684298515096626046760257298397225751419158529"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054136599,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"command_execution\", \"status\": \"in_progress\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:56.599079Z\"}",
+      "ingestionTime": 1789054140887,
+      "eventId": "39897240446671498830104467172799151762274515438329266178"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054136599,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"command_execution\", \"status\": \"failed\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:28:56.599336Z\"}",
+      "ingestionTime": 1789054140887,
+      "eventId": "39897240446671498830104467172799151762274515438329266179"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054147207,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"agent_message\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:07.207003Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240683237803896117317470325955905872642454307274752"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054147607,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_alarm_history\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:07.607661Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240692158101975529566726940243214931987056699441153"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054147808,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_alarm_history\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:07.808359Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240696640551760434221978388922587734307719401504770"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054148009,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:08.008856Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240701123001545338877229837601960536628382103568387"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054148209,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:08.209527Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240705583150585045001858144745615066300683299651588"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054148810,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:08.810300Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240718985898449361906366207712296927965948393881605"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054149011,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:09.010778Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240723468348234266561617656391669730286611095945222"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054149011,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"describe_log_groups\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:09.011238Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240723468348234266561617656391669730286611095945223"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054149212,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"describe_log_groups\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:09.211824Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240727950798019171216869105071042532607273798008840"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054149212,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_active_alarms\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:09.212277Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240727950798019171216869105071042532607273798008841"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054149413,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_active_alarms\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:09.412809Z\"}",
+      "ingestionTime": 1789054150909,
+      "eventId": "39897240732433247804075872120553750415334927936500072458"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054162221,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"agent_message\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:22.221402Z\"}",
+      "ingestionTime": 1789054165905,
+      "eventId": "39897241018061192306856093335472066997648517102300889088"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054165423,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"rca-progress\", \"tool\": \"save_analysis_artifact\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:25.423641Z\"}",
+      "ingestionTime": 1789054165905,
+      "eventId": "39897241089468178432551148634669436906668570644450181121"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054165824,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"rca-progress\", \"tool\": \"save_analysis_artifact\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:25.824387Z\"}",
+      "ingestionTime": 1789054165905,
+      "eventId": "39897241098410777257161928514425259934000563608348327938"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054171228,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"agent_message\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:31.227708Z\"}",
+      "ingestionTime": 1789054175905,
+      "eventId": "39897241218924004310021415983373571322585182178324316160"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054178633,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"rca-progress\", \"tool\": \"save_analysis_artifact\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:38.632959Z\"}",
+      "ingestionTime": 1789054180887,
+      "eventId": "39897241384061022505140680352468867545561613917561552896"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054178833,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"rca-progress\", \"tool\": \"save_analysis_artifact\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:29:38.833462Z\"}",
+      "ingestionTime": 1789054180887,
+      "eventId": "39897241388521171544846804980776011200091286218757636097"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054202248,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"execute_log_insights_query\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:02.248239Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241910693120368441345870076242918551559369742221312"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054203649,
+      "message": "{\"profile\": \"analysis-rca\", \"reason\": \"line_too_large\", \"event\": \"codex_jsonl_event_omitted\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:03.649546Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241941936464391582748891367784218531913839620784129"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054203651,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"execute_log_insights_query\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:03.650853Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241941981065881979810137650855655077210562632744962"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205252,
+      "message": "{\"profile\": \"analysis-rca\", \"reason\": \"line_too_large\", \"event\": \"codex_jsonl_event_omitted\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.252207Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241977684558944827337787249540609587237333707390979"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205253,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.252995Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241977706859690025868410391076327859885695213371396"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205453,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.453441Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241982167008729731993038698219982389557996409454597"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205453,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.453803Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241982167008729731993038698219982389557996409454598"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205454,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"get_metric_data\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.454054Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241982189309474930523661839755700662206357915435015"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205454,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudtrail\", \"tool\": \"lookup_events\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.454248Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241982189309474930523661839755700662206357915435016"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205855,
+      "message": "{\"profile\": \"analysis-rca\", \"reason\": \"line_too_large\", \"event\": \"codex_jsonl_event_omitted\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.854860Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241991131908299541303541595578727994199321813581833"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054205855,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudtrail\", \"tool\": \"lookup_events\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:05.855205Z\"}",
+      "ingestionTime": 1789054205902,
+      "eventId": "39897241991131908299541303541595578727994199321813581834"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054206056,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudtrail\", \"tool\": \"lookup_events\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:06.055781Z\"}",
+      "ingestionTime": 1789054210888,
+      "eventId": "39897241995614358084445958799071768744563934932318552064"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054227269,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"agent_message\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:27.269558Z\"}",
+      "ingestionTime": 1789054230901,
+      "eventId": "39897242468680065980876067524663029418627844129408024576"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054228270,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"execute_log_insights_query\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:28.270529Z\"}",
+      "ingestionTime": 1789054230901,
+      "eventId": "39897242491003111924605221289340283409548853996894420993"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054229471,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"execute_log_insights_query\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:29.471635Z\"}",
+      "ingestionTime": 1789054230901,
+      "eventId": "39897242517786306908040499682324681054999536165576900610"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054235276,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"rca-progress\", \"tool\": \"inspect_ecs_task_control\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:35.276001Z\"}",
+      "ingestionTime": 1789054235884,
+      "eventId": "39897242647242132785510767024963392468417897531497054208"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054235676,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.completed\", \"item_type\": \"mcp_tool_call\", \"status\": \"completed\", \"error_present\": false, \"server\": \"rca-progress\", \"tool\": \"inspect_ecs_task_control\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:35.676674Z\"}",
+      "ingestionTime": 1789054235884,
+      "eventId": "39897242656162430864923016281577679777477242133889220609"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054243081,
+      "message": "{\"profile\": \"analysis-rca\", \"event_type\": \"item.started\", \"item_type\": \"mcp_tool_call\", \"status\": \"in_progress\", \"error_present\": false, \"server\": \"cloudwatch\", \"tool\": \"execute_log_insights_query\", \"event\": \"codex_jsonl_event\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:43.081677Z\"}",
+      "ingestionTime": 1789054245907,
+      "eventId": "39897242821299449060042280656767248926177470989162643456"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054244015,
+      "message": "{\"event\": \"cancel_detected_killing_codex_process\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:44.015669Z\"}",
+      "ingestionTime": 1789054245907,
+      "eventId": "39897242842128345075469882670961609792831040635748352001"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054244076,
+      "message": "{\"profile\": \"analysis-rca\", \"rc\": 0, \"stdout_bytes\": 1510506, \"stderr_bytes\": 0, \"timed_out\": false, \"event\": \"codex_cli_finished\", \"logger\": \"headless_codex.adapters.secondary.codex.codex_subprocess_runner\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:44.076645Z\"}",
+      "ingestionTime": 1789054245907,
+      "eventId": "39897242843488690532580250682595288607462590687613157378"
+    },
+    {
+      "logStreamName": "cc-headless/cc-headless/6a6d3494ea6641deb2360aade0ee8b8d",
+      "timestamp": 1789054246087,
+      "message": "{\"alarm_name\": \"RcaAgentDev-Healthcare-VitalIngestFailures\", \"idempotency_key\": \"RcaAgentDev-Healthcare-VitalIngestFailures#2026-09-10T15:28:28.677000+00:00\", \"rca_id\": \"3a9819ad-5f84-55ec-a0ce-24f274ccda35\", \"elapsed_seconds\": 137, \"event\": \"session_terminated_after_cc\", \"logger\": \"headless_codex.services.pipeline\", \"level\": \"info\", \"timestamp\": \"2026-09-10T15:30:46.087643Z\"}",
+      "ingestionTime": 1789054250887,
+      "eventId": "39897242888335489126825333826243866171012915513110691840"
+    }
+  ]
+}

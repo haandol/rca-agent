@@ -1,0 +1,216 @@
+{
+  "runId": "custlock-20260910T152439Z-ae0b",
+  "result": "CANCELLED_BY_USER",
+  "customerReady": false,
+  "userStoppedLiveWork": true,
+  "analysisState": "CANCELLED",
+  "analysisId": "3a9819ad-5f84-55ec-a0ce-24f274ccda35",
+  "cancelledAt": "2026-09-10T15:30:40.158915+00:00",
+  "analysisProcessExitedAt": "2026-09-10T15:30:44.076645Z",
+  "approvalIssued": false,
+  "executionCount": 0,
+  "approvedRecoveryDemonstrated": false,
+  "cleanup": {
+    "returncode": 0,
+    "recoveryVerified": true
+  },
+  "cleanupFinishedAt": "2026-09-10T15:35:31.289212+00:00",
+  "ownerRelease": {
+    "event": "maintenance_released",
+    "run_id": "custlock-20260910T152439Z-ae0b",
+    "backend_pid": 29990,
+    "release_reason": "sigterm",
+    "released_at": "2026-09-10T15:31:01.307030+00:00",
+    "rollback_complete": true,
+    "lock_acquired": true
+  },
+  "checks": {
+    "alarmSettingsUnchanged": true,
+    "alarmsOk": true,
+    "originalImageDigests": true,
+    "originalRollout": true,
+    "originalSettings": true,
+    "originalTasks": true,
+    "ownedMaintenanceStopped": true,
+    "ownershipMatches": true,
+    "successfulFreshSymptoms": true
+  },
+  "freshHealthMetrics": {
+    "end": "2026-09-10T15:35:00+00:00",
+    "ready": true,
+    "start": "2026-09-10T15:33:00+00:00",
+    "values": {
+      "PatientVitalsQueryDuration": {
+        "Datapoints": [
+          {
+            "Average": 13.997720399856917,
+            "SampleCount": 5.0,
+            "Sum": 69.98860199928458,
+            "Timestamp": "2026-09-11T00:34:00+09:00",
+            "Unit": "Milliseconds"
+          },
+          {
+            "Average": 12.484362833371657,
+            "SampleCount": 6.0,
+            "Sum": 74.90617700022995,
+            "Timestamp": "2026-09-11T00:33:00+09:00",
+            "Unit": "Milliseconds"
+          }
+        ],
+        "Label": "PatientVitalsQueryDuration"
+      },
+      "VitalIngestAttempts": {
+        "Datapoints": [
+          {
+            "Average": 9.333333333333334,
+            "SampleCount": 3.0,
+            "Sum": 28.0,
+            "Timestamp": "2026-09-11T00:34:00+09:00",
+            "Unit": "Count"
+          },
+          {
+            "Average": 8.333333333333334,
+            "SampleCount": 3.0,
+            "Sum": 25.0,
+            "Timestamp": "2026-09-11T00:33:00+09:00",
+            "Unit": "Count"
+          }
+        ],
+        "Label": "VitalIngestAttempts"
+      },
+      "VitalIngestFailures": {
+        "Datapoints": [
+          {
+            "Average": 0.0,
+            "SampleCount": 3.0,
+            "Sum": 0.0,
+            "Timestamp": "2026-09-11T00:34:00+09:00",
+            "Unit": "Count"
+          },
+          {
+            "Average": 0.0,
+            "SampleCount": 3.0,
+            "Sum": 0.0,
+            "Timestamp": "2026-09-11T00:33:00+09:00",
+            "Unit": "Count"
+          }
+        ],
+        "Label": "VitalIngestFailures"
+      }
+    }
+  },
+  "alarms": [
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-PatientVitalsQueryLatency",
+      "StateValue": "OK",
+      "StateUpdatedTimestamp": "2026-09-10 15:34:43.301000+09:00"
+    },
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-RdsHighConnections",
+      "StateValue": "OK",
+      "StateUpdatedTimestamp": "2026-08-31 15:40:29.331000+09:00"
+    },
+    {
+      "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+      "StateValue": "OK",
+      "StateUpdatedTimestamp": "2026-09-11 00:32:28.679000+09:00"
+    }
+  ],
+  "environment": {
+    "verifiedAt": "2026-09-10T15:39:25.404846+00:00",
+    "ready": true,
+    "pinRestored": true,
+    "pinRestoreError": null,
+    "services": {
+      "RcaAgentDevCcHeadless": {
+        "checks": {
+          "active": true,
+          "counts": true,
+          "rollout": true,
+          "definition": true,
+          "taskHealthy": true,
+          "image": true
+        },
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:40",
+        "taskArns": [
+          "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/6a6d3494ea6641deb2360aade0ee8b8d"
+        ]
+      },
+      "RcaAgentDevPlaybookExecution": {
+        "checks": {
+          "active": true,
+          "counts": true,
+          "rollout": true,
+          "definition": true,
+          "taskHealthy": true,
+          "image": true
+        },
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:30",
+        "taskArns": [
+          "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevPlaybookExecution/8809effa88534e39849c4c0acf6f3db0"
+        ]
+      },
+      "RcaAgentDevHealthcare": {
+        "checks": {
+          "active": true,
+          "counts": true,
+          "rollout": true,
+          "definition": true,
+          "taskHealthy": true,
+          "image": true
+        },
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:77",
+        "taskArns": [
+          "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/aa0d1860d9e6422d821bc5359163558f"
+        ]
+      },
+      "RcaAgentDevRcaAgent": {
+        "checks": {
+          "active": true,
+          "counts": true,
+          "rollout": true,
+          "definition": true,
+          "taskHealthy": true,
+          "pinTagRemoved": true
+        },
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:24",
+        "taskArns": [
+          "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevRcaAgent/7b6fd2eaa3a84e5fb55a362590b37bf8"
+        ]
+      }
+    }
+  },
+  "pin": {
+    "owner": "maintenance-customer-93c28f5ca8cc",
+    "startedAt": "2026-09-10T15:23:32.737283+00:00",
+    "restored": true,
+    "serviceArn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent",
+    "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:24",
+    "originalDesired": 1,
+    "queueCounts": {
+      "ApproximateNumberOfMessages": "0",
+      "ApproximateNumberOfMessagesNotVisible": "0",
+      "ApproximateNumberOfMessagesDelayed": "0"
+    },
+    "tagged": true,
+    "pinRequestedAt": "2026-09-10T15:23:35.601390+00:00",
+    "readyAt": "2026-09-10T15:23:51.661714+00:00",
+    "finishedAt": "2026-09-10T15:31:14.575638+00:00"
+  },
+  "remainingOwnedProcesses": [],
+  "queues": {
+    "RcaAgentDevCcHeadless": {
+      "ApproximateNumberOfMessages": "0",
+      "ApproximateNumberOfMessagesNotVisible": "1",
+      "ApproximateNumberOfMessagesDelayed": "0"
+    },
+    "RcaAgentDevPlaybookExecution": {
+      "ApproximateNumberOfMessages": "0",
+      "ApproximateNumberOfMessagesNotVisible": "0",
+      "ApproximateNumberOfMessagesDelayed": "0"
+    }
+  },
+  "queueNote": "Analysis queue approximate in-flight=1; no identity inferred and no shared message received/deleted. Owned session CANCELLED and fenced, model process exited.",
+  "awsOperationsStoppedAt": "2026-09-10T15:40:53.447635+00:00",
+  "remainingScope": "offline code/tests only; live work stopped by user"
+}

@@ -1,0 +1,11 @@
+{
+  "reviewedAt": "2026-09-10T13:27:30.336798+00:00",
+  "generatedEqualsStored": true,
+  "executionStepCount": 3,
+  "onlyCurrentRunId": true,
+  "ownerPID": 23992,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/ba00ccb71afc4aacaa90d67e7d646d62",
+  "waitBindingCriterionCompatible": true,
+  "review": "Exact owned standalone stop, named actual release and rollback true; current metadata discovery; positive attempts/zero failures and exact alarm in immutable first two full post-action bins",
+  "approvedForUIAction": true
+}
