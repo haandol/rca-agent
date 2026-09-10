@@ -220,22 +220,36 @@ def _replace_section(markdown: str, title: str, body: str) -> str:
     replacement = f"## {title}\n{body.strip()}\n\n"
     if pattern.search(markdown) is None:
         raise ArtifactValidationError(f"report.md required section is missing or empty: {title}")
-    return pattern.sub(replacement, markdown, count=1).rstrip() + "\n"
+    return pattern.sub(lambda _: replacement, markdown, count=1).rstrip() + "\n"
+
+
+def _root_cause_summary(analysis: AnalysisResult) -> str:
+    """Use the selected direct judgment for both publication and report display."""
+    selected = analysis.selected_hypothesis
+    if not analysis.confirmed:
+        return f"미확정 — 가장 유력한 후보: {selected.title}. {selected.description}"
+    # Replay retains the selected judgment even when the final loop does not
+    # validate that hypothesis again. Its proposal is not the confirmed cause.
+    return f"{selected.title}: {analysis.snapshot.reasoning[selected.hypothesis_id]}"
 
 
 def _render_root_cause(analysis: AnalysisResult) -> str:
     selected = analysis.selected_hypothesis
     status = "확정" if analysis.confirmed else "미확정 — 가장 유력한 후보"
-    return "\n".join(
-        [
-            f"- **상태**: {status}",
-            f"- **신뢰도**: {analysis.selected_confidence:.2f}",
-            f"- **선택 가설 ID**: `{selected.hypothesis_id}`",
-            f"- **가설 제목**: {selected.title}",
-            "",
-            selected.description,
-        ]
-    )
+    lines = [
+        f"- **상태**: {status}",
+        f"- **신뢰도**: {analysis.selected_confidence:.2f}",
+        f"- **선택 가설 ID**: `{selected.hypothesis_id}`",
+        f"- **가설 제목**: {selected.title}",
+        "",
+        _root_cause_summary(analysis),
+    ]
+    if analysis.confirmed:
+        evidence = analysis.snapshot.evidence_summaries[selected.hypothesis_id]
+        if evidence:
+            lines.extend(["", "**직접 검증 증거**", "", *(f"- {item}" for item in evidence)])
+        lines.extend(["", "**최초 제안 (검증 전 가설)**", "", selected.description])
+    return "\n".join(lines)
 
 
 def _render_playbook(playbook: dict, *, confirmed: bool) -> str:
@@ -350,7 +364,7 @@ def validate_completion_artifacts(base: Path) -> CompletionArtifacts:
         report_markdown=report_markdown,
         playbook=playbook,
         confirmed=analysis.confirmed,
-        root_cause=analysis.selected_hypothesis.description,
+        root_cause=_root_cause_summary(analysis),
         selected_hypothesis_id=analysis.selected_hypothesis.hypothesis_id,
         confidence=analysis.selected_confidence,
         root_fault_type=analysis.selected_fault_type,

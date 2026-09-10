@@ -7,6 +7,7 @@ from headless_codex.services.artifact_validation import (
     _PLAYBOOK_STRING_FIELDS,
     _REPORT_SECTIONS,
     ArtifactValidationError,
+    render_completion_report,
     validate_completion_artifacts,
     validate_validation_artifacts,
 )
@@ -300,6 +301,85 @@ def test_completion_accepts_a_report_whose_prose_matches_the_structured_steps(co
     assert artifacts.playbook["execution_steps"][0]["step_id"] == "step-1"
 
 
+def test_confirmed_root_cause_uses_selected_judgment_and_preserves_original_proposal(confirmed_run):
+    hypotheses = json.loads((confirmed_run / "hypotheses.json").read_text())
+    selected = hypotheses["hypotheses"][0]
+    selected["title"] = "DB 외부 잠금 소유자의 쓰기 차단"
+    selected["description"] = "장시간 트랜잭션이 쓰기를 막았을 가능성이 있다. 소유자 이벤트와 일치해야 채택한다."
+    _write_json(confirmed_run / "hypotheses.json", hypotheses)
+    judgment = {
+        **_result("root", fault_type="unsupported", confidence=0.98),
+        "reasoning": (
+            "쓰기 세션의 잠금 대기와 차단 PID가 직접 관측되었고, "
+            "트랜잭션 시작 시각과 run_id가 소유자 이벤트와 일치한다."
+        ),
+        "evidence_summary": [
+            "[LOG-WAIT-001] PID 20982: blocking_pids=[21243], RowExclusiveLock(granted=false).",
+            r"[LOG-OWNER-001] PID 21243: ShareLock(granted=true); query PID=\d+, capture=\1.",
+        ],
+    }
+    _write_json(
+        confirmed_run / "validation-1.json",
+        _validation(
+            1,
+            confirmed=[_result("alternative-1", fault_type="db-leak", confidence=0.9), judgment],
+        ),
+    )
+    _write_json(confirmed_run / "playbook.json", _playbook())
+    original_report = _report(["step-1"]).replace("## 근본 원인\nplaceholder", "## 근본 원인\n모델이 별도로 쓴 원인")
+    (confirmed_run / "report.md").write_text(original_report)
+    before = {path.name: path.read_bytes() for path in confirmed_run.iterdir()}
+
+    artifacts = validate_completion_artifacts(confirmed_run)
+
+    expected = f"{selected['title']}: {judgment['reasoning']}"
+    assert artifacts.root_cause == expected
+    assert artifacts.confirmed is True
+    assert artifacts.selected_hypothesis_id == "root"
+    assert artifacts.confidence == 0.98
+    assert artifacts.root_fault_type.value == "unsupported"
+    root_section = artifacts.report_markdown.split("## 근본 원인\n")[1].split("\n## ")[0]
+    verified, original = root_section.split("**최초 제안 (검증 전 가설)**")
+    assert expected in verified
+    assert selected["description"] not in verified
+    assert original.strip() == selected["description"]
+    assert "alternative-1 classified" not in root_section
+    assert "모델이 별도로 쓴 원인" not in root_section
+    for evidence in judgment["evidence_summary"]:
+        assert evidence in verified
+    # The final publication re-renders after playbook enrichment using the same cause.
+    final_playbook = _playbook(steps=[_execution_step("enriched-step")])
+    final_report = render_completion_report(confirmed_run, final_playbook)
+    assert final_report.split("## 근본 원인\n")[1].split("\n## ")[0] == root_section
+    assert "enriched-step" in final_report
+    assert {path.name: path.read_bytes() for path in confirmed_run.iterdir()} == before
+
+
+def test_confirmed_root_cause_retains_direct_judgment_from_an_earlier_loop(confirmed_run):
+    judgment = {
+        **_result("root", fault_type="db-leak", confidence=0.85),
+        "reasoning": "Requests ended but their database sessions remained open.",
+        "evidence_summary": ["[LOG-1] Completed requests retain checked-out connections."],
+    }
+    _write_json(confirmed_run / "validation-1.json", _validation(1, confirmed=[judgment]))
+    for loop in (2, 3):
+        _write_json(
+            confirmed_run / f"validation-{loop}.json",
+            _validation(loop, needs_investigation=[_result("alternative-1", confidence=0.5)]),
+        )
+    _write_json(confirmed_run / "playbook.json", _playbook())
+    (confirmed_run / "report.md").write_text(_report(["step-1"]))
+
+    artifacts = validate_completion_artifacts(confirmed_run)
+
+    assert artifacts.confirmed is True
+    assert artifacts.confidence == 0.85
+    assert artifacts.root_cause == f"hypothesis root: {judgment['reasoning']}"
+    assert artifacts.root_cause in artifacts.report_markdown
+    assert judgment["evidence_summary"][0] in artifacts.report_markdown
+    assert "alternative-1 classified" not in artifacts.report_markdown
+
+
 def test_completion_replaces_a_report_omitting_a_structured_step(confirmed_run):
     _write_json(
         confirmed_run / "playbook.json",
@@ -406,6 +486,11 @@ def test_completion_accepts_an_unconfirmed_run_without_execution_steps(artifact_
 
     assert artifacts.confirmed is False
     assert artifacts.playbook["execution_steps"] == []
+    assert artifacts.root_cause.startswith("미확정 — 가장 유력한 후보:")
+    assert artifacts.root_cause in artifacts.report_markdown
+    assert f"description for {artifacts.selected_hypothesis_id}" in artifacts.root_cause
+    assert "**직접 검증 증거**" not in artifacts.report_markdown
+    assert render_completion_report(artifact_dir, artifacts.playbook) == artifacts.report_markdown
 
 
 def test_completion_rejects_a_playbook_claiming_verification(confirmed_run):

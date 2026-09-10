@@ -640,12 +640,16 @@ def test_report_artifact_is_uploaded_without_using_cli_fallback(monkeypatch, tmp
     assert "DB connection leak" in saved_report
     assert "실행 대상이 아니다" in saved_report
     completed = container.session_store.mark_completed.call_args
-    assert completed.args == ("rca-1", "DB connection leak", "reports/rca.md")
+    expected_cause = "미확정 — 가장 유력한 후보: Connection leak. DB connection leak"
+    assert completed.args == ("rca-1", expected_cause, "reports/rca.md")
+    assert expected_cause in saved_report
+    assert completed.kwargs["completion_notification"]["root_cause"] == expected_cause
     assert completed.kwargs["playbook"]["playbook_id"] == "playbook-1"
     assert completed.kwargs["confirmed"] is False
     assert completed.kwargs["claim_token"] == CLAIM_TOKEN
     assert completed.kwargs["side_effect_lease_token"] == "lease-token"
     container.report_store.send_notification.assert_called_once()
+    assert container.report_store.send_notification.call_args.args[2] == expected_cause
 
 
 def test_unconfirmed_result_completes_without_execution_steps(monkeypatch, tmp_path):
@@ -674,9 +678,19 @@ def test_unconfirmed_result_completes_without_execution_steps(monkeypatch, tmp_p
 
 
 def test_confirmed_completion_publishes_a_report_with_its_playbook(monkeypatch, tmp_path):
+    proposal = "A connection leak is possible; adopt only after checking returned sessions."
+    reasoning = "Request completion logs show connections were not returned while traffic remained flat."
+
     class ConfirmedReportWriter:
         def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
-            _write_confirmed_report_artifacts(artifact_dir_for_token(execution_token))
+            artifact_dir = artifact_dir_for_token(execution_token)
+            _write_confirmed_report_artifacts(artifact_dir)
+            hypotheses = json.loads((artifact_dir / "hypotheses.json").read_text())
+            hypotheses["hypotheses"][0]["description"] = proposal
+            (artifact_dir / "hypotheses.json").write_text(json.dumps(hypotheses))
+            validation = json.loads((artifact_dir / "validation-1.json").read_text())
+            validation["confirmed"][0]["reasoning"] = reasoning
+            (artifact_dir / "validation-1.json").write_text(json.dumps(validation))
             return CodexResult(True, "complete", "{}")
 
     container = _container(ConfirmedReportWriter())
@@ -694,6 +708,14 @@ def test_confirmed_completion_publishes_a_report_with_its_playbook(monkeypatch, 
     completed = container.session_store.mark_completed.call_args.kwargs
     assert completed["playbook"]["playbook_id"] == "playbook-1"
     assert completed["confirmed"] is True
+    expected_cause = f"Connection leak: {reasoning}"
+    assert container.session_store.mark_completed.call_args.args[1] == expected_cause
+    assert completed["completion_notification"]["root_cause"] == expected_cause
+    assert container.report_store.send_notification.call_args.args[2] == expected_cause
+    saved_report = container.report_store.save_report.call_args.args[1]
+    assert expected_cause in saved_report
+    assert f"**최초 제안 (검증 전 가설)**\n\n{proposal}" in saved_report
+    assert "connections rise while traffic remains flat" in saved_report
 
 
 @pytest.fixture
