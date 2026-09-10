@@ -18,9 +18,13 @@ max(0, 3-N)이다. 이 값은 추가 회차의 보장이 아니며 서버의 다
 기존 우선순위로 선택한 상위 3개 가설만 검증한다. 선택 밖 추가 sweep을 하지 않고,
 기각을 더 기록하려고 신뢰도를 낮추거나 종료를 지연하지 않는다.
 
-선택 원인의 증거 수집과 함께 제어 메타데이터를 수집한다. production RCA에서 DB
-차단 PID·application_name·runId를 발견하면 같은 `@log`/`@logStream`의
+선택 원인의 증거 수집과 함께 제어 메타데이터를 수집한다. production RCA에서
+`db_wait_snapshot`은 서비스 관측자가 다른 DB 세션을 관측해 기록한 이벤트다.
+그 `activity[]`에 차단 PID가 나타났다는 이유만으로 관측자 서비스 태스크를 차단자에 연결하지 않는다.
+먼저 차단 PID·트랜잭션 시작 시각·runId/application_name을 `maintenance_lock_acquired` 같은
+소유자 lifecycle 이벤트와 대조해 연결한다. 이렇게 연결한 소유자 이벤트의 `@log`/`@logStream`에서
 `ecs_runtime_identity`를 찾아 실제 관측된 TaskARN과 Cluster ARN에 연결한다.
+이때 사용할 스트림은 DB 스냅샷을 출력한 관측자의 스트림이 아니라 소유자 이벤트의 스트림이다.
 서비스 이름, DB PID 또는 runId로 ARN을 만들지 않는다. Cluster가 이름뿐이거나
 identity가 partial/unavailable이면 누락으로 기록하고 다른 태스크를 추측하지 않는다.
 관측된 두 ARN으로 `inspect_ecs_task_control(task_arn, cluster_arn)`을 호출한다.
@@ -32,7 +36,9 @@ confidence ≥ 0.9의 validation 저장은 즉시 Report 인계가 될 수 있�
 새 조회를 시도하거나 제어 정보 수집을 위해 신뢰도를 낮추거나 종료를 늦추지 않는다.
 조회 시각(`observed_at`), 태스크·클러스터·정의 ARN, group/독립 태스크·서비스·unknown 구분,
 현재 상태, startedBy, 생명주기 시각, 소유 run/journal 태그, 태스크 image/digest를
-DB 소유자·같은 로그 스트림의 runtime identity와 대조한다.
+앞서 연결한 소유자 lifecycle 이벤트·그 이벤트의 스트림에서 찾은 runtime identity와 대조한다.
+특히 도구가 반환한 태스크 식별자와 소유 run/journal 태그가 소유자 이벤트의 실행과 일치하는지
+확인한다. 연결 근거가 누락되거나 불일치하면 관측자 태스크로 대체하지 않고 소유권 미확인으로 남긴다.
 조회는 `DescribeTasks(include=["TAGS"])`만 사용한다. 관측된 taskDefinitionArn에서 파싱한
 family/revision은 `task_definition_arn_derived`(ARN-derived)이며, 태스크 정의를 조회한
 결과로 서술하지 않는다. 정의 상태·등록 시각·컨테이너 정의를 추가 조회하지 않는다.

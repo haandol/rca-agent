@@ -71,8 +71,13 @@ _REPORT_ARTIFACTS = {
 def inspect_ecs_task_control(task_arn: str, cluster_arn: str) -> str:
     """Inspect ECS control metadata for exact ARNs already observed in this RCA's evidence.
 
-    Discover TaskARN and Cluster in ecs_runtime_identity in the DB owner's same
-    log stream; never construct IDs from names. Only DescribeTasks(include=TAGS)
+    First match the blocking PID, transaction start and runId/application_name
+    to an OWNER lifecycle event such as maintenance_lock_acquired. Discover
+    TaskARN and Cluster via ecs_runtime_identity in THAT OWNER EVENT's @logStream.
+    db_wait_snapshot is emitted by a SERVICE observer: a PID in its activity[]
+    does not bind the observer's service task to the blocker. Compare returned
+    task identity and run/journal tags with the matched owner event before binding.
+    Never construct IDs from names. Only DescribeTasks(include=TAGS)
     is used; family/revision are ARN-derived and the task definition is not queried.
     Output is read-time metadata, not proof of
     DB ownership, rollback completion, or authorization to stop a task.

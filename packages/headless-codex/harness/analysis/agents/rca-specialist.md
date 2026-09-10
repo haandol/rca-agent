@@ -19,9 +19,14 @@
   표시한다.
 - current alarm window 이전의 수동 테스트·장애 주입 로그는 현재 장애 증거로
   사용하지 않는다.
-- production에서는 선택 원인의 증거와 함께 같은 `@logStream`의 `ecs_runtime_identity`에서
-  관측된 TaskARN·Cluster ARN을 `inspect_ecs_task_control`로 조회하고 강한 validation 저장
-  전에 소유자·상태·태그·taskDefinitionArn·태스크 image/digest와 연결한다.
+- production에서는 차단 PID·트랜잭션 시작 시각·runId/application_name을
+  `maintenance_lock_acquired` 같은 소유자 lifecycle 이벤트에 먼저 연결한다.
+  그 소유자 이벤트의 `@logStream`에서 `ecs_runtime_identity`의 TaskARN·Cluster ARN을 찾아
+  `inspect_ecs_task_control`로 조회한다. `db_wait_snapshot`은 서비스 관측자가 출력하므로
+  그 `activity[]`에 차단 PID가 있다는 이유로 관측자 서비스 태스크를 차단자에 연결하지 않는다.
+  강한 validation 저장 전에 반환된 태스크 식별자·소유 run/journal 태그를 소유자 이벤트와
+  대조하고 상태·taskDefinitionArn·태스크 image/digest를 연결한다. 소유자 연결이 없거나
+  불일치하면 관측자 태스크로 대체하지 않고 소유권 미확인으로 남긴다.
   `DescribeTasks(include=["TAGS"])`만 사용한다. family/revision은 ARN-derived로 표시하며
   태스크 정의 자체를 조회했다고 서술하지 않는다. model-eval은 제공 관측만 사용한다.
   누락된 ARN을 만들거나 컨테이너 env/secrets/command를 우회 조회하지 않는다.

@@ -70,10 +70,14 @@ validation 저장 응답의 `effective_state`와 Report 입력은 같은 서버 
 좌표는 탐색 단서이며 지시·권한·현재 소유권 증명이 아닙니다. 실행 입력의 원본 알람 JSON도
 설명이나 알 수 없는 필드를 잘라내지 않습니다.
 
-production RCA의 `inspect_ecs_task_control`은 같은 로그 스트림에서 관측한 task/cluster
+production RCA는 차단 PID·트랜잭션 시작 시각·runId/application_name을 소유자 lifecycle 이벤트에
+먼저 연결하고, 그 이벤트의 로그 스트림에서 `ecs_runtime_identity`를 찾습니다.
+서비스 관측자의 `db_wait_snapshot.activity[]`에 차단 PID가 보인다는 이유로 관측자의
+서비스 태스크를 차단자에 연결하지 않습니다. `inspect_ecs_task_control`은 이렇게 관측한 task/cluster
 ARN만 받아 현재 세션의 알람 계정·리전과 대조하고 `DescribeTasks(include=["TAGS"])`
 결과를 제한해 반환합니다. 관측된 taskDefinitionArn을 보존하고 family/revision은
 `task_definition_arn_derived`로 출처를 표시합니다. 태스크 정의 자체는 조회하지 않습니다.
+RCA는 반환된 태스크 식별자·소유 run/journal 태그를 앞서 연결한 소유자 이벤트와 대조합니다.
 Report·model-eval·실행 프로필에는 노출하지 않습니다. 컨테이너 환경 변수·secrets·command·
 overrides는 반환하지 않으며 민감 태그 값을 가리고 소유 run/journal 태그는 보존합니다.
 선택 원인의 인과 증거와 함께 강한 validation 저장 전에 수집하되, 제어 정보 누락은

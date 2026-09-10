@@ -460,3 +460,20 @@ def test_compiled_prompt_collects_control_alongside_cause_before_handoff(role):
         "전체 validation은 최대 3회",
     ):
         assert text in prompt
+
+
+def test_compiled_prompt_binds_owner_event_before_resolving_task_identity():
+    for role in ("orchestrator", "rca"):
+        prompt = build_prompt(AlarmContext(alarm_name="owner-observer-contract"), role=role)
+        owner_match = prompt.index("먼저 차단 PID·트랜잭션 시작 시각·runId/application_name")
+        owner_stream = prompt.index("소유자 이벤트의 `@log`/`@logStream`")
+        inspection = prompt.index("관측된 두 ARN으로 `inspect_ecs_task_control")
+        assert owner_match < owner_stream < inspection
+        for text in (
+            "`db_wait_snapshot`은 서비스 관측자가 다른 DB 세션을 관측해 기록한 이벤트",
+            "`activity[]`에 차단 PID가 나타났다는 이유만으로 관측자 서비스 태스크를 차단자에 연결하지 않는다",
+            "`maintenance_lock_acquired`",
+            "도구가 반환한 태스크 식별자와 소유 run/journal 태그가 소유자 이벤트의 실행과 일치하는지",
+            "관측자 태스크로 대체하지 않고 소유권 미확인으로 남긴다",
+        ):
+            assert text in prompt
