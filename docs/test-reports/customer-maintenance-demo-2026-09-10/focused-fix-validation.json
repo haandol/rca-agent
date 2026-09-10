@@ -1,0 +1,27 @@
+{
+  "verifiedAt": "2026-09-10T09:44:42.926090+00:00",
+  "customerReady": false,
+  "unitTests": {
+    "command": "uv run pytest -q",
+    "passed": 1194,
+    "seconds": 14.56
+  },
+  "lint": "uv run ruff check src tests: PASS",
+  "build": "uv build: PASS",
+  "changes": [
+    "Normalize actual SNS region display labels from valid alarm ARN; reject conflicting/unresolvable supplied regions.",
+    "Use role-specific read-tool lists: analysis44 to16 MCPtools, execution CloudWatch19 to7.",
+    "Observe CLI JSONL event metadata live; preserve full successful output and bounded redacted failure diagnostics."
+  ],
+  "sourceSha256": {
+    "packages/headless-codex/harness/analysis/rca.config.toml": "f18487664bc3b4be45b3f24f06e505d6893e29f0b08cdf848f8ddd0afaf009d7",
+    "packages/headless-codex/harness/execution/config.toml": "4d255a2f6901bf7e910b199367ddc91c8105a42f16c31bc171f3a476f8d5829d",
+    "packages/headless-codex/src/headless_codex/adapters/secondary/codex/codex_subprocess_runner.py": "653ece8398eefb7448564c005870e0e0f72fdfa566cedf248416bde32ce9d4eb",
+    "packages/headless-codex/src/headless_codex/adapters/secondary/codex/codex_diagnostics.py": "56f6adc49e832245f73cc47a14db732fbf9916019b9a94d23ffa13fe508164e1",
+    "packages/headless-codex/src/headless_codex/ports/dto/models.py": "54b2e0b62e68913ba6ad62a133a73b0e8bd3a2adc9ff92595bf11a6a93c09d32"
+  },
+  "limitations": [
+    "No successful complete customer rehearsal yet.",
+    "Model evaluation baseline has not been approved."
+  ]
+}

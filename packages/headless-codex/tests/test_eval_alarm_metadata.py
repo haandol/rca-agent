@@ -1,6 +1,7 @@
 """Offline adapter boundary checks; no model, database or AWS calls."""
 
 import json
+from copy import deepcopy
 from dataclasses import asdict
 
 import pytest
@@ -176,21 +177,54 @@ def test_provided_details_and_zero_reach_actual_prompt(role):
     assert json.dumps(supplied, sort_keys=True) == original
 
 
-def test_catalog_missing_region_stays_unknown_in_actual_prompts():
-    """All active cases and specialist roles render their original metadata consistently."""
+def test_catalog_prompts_preserve_supplied_metadata_and_mark_only_missing_fields_unknown(monkeypatch):
+    """Read all four sources so observed maintenance metadata survives alongside unknown local fields."""
     from pathlib import Path
 
+    monkeypatch.setenv("AWS_REGION", "eu-west-3")
     paths = sorted((Path(__file__).resolve().parents[3] / "tests/scenarios").glob("*.json"))
     assert len(paths) == 4
     for path in paths:
         supplied = json.loads(path.read_text())
+        original = deepcopy(supplied)
+        source = supplied["alarm"]
         alarm = eval_adapter._alarm_for(supplied)
+        metadata = {key: source[key] for key in (*FIELDS, "arn") if key in source and source[key] is not None}
+        assert alarm.eval_source_metadata == {**metadata, "metric": source.get("metric")}
+        rendered = {}
+        for key in (*FIELDS, "metric"):
+            value = source.get(key)
+            missing = value is None or (isinstance(value, str) and not value.strip())
+            rendered[key] = "not provided" if missing else str(value)
+            if key in FIELDS:
+                expected = value
+                if key == "region" and missing:
+                    expected = "not provided"
+                elif key == "dimensions" and value is None:
+                    expected = {}
+                assert getattr(alarm, FIELDS[key]) == expected
+            if not missing and key == "period":
+                rendered[key] = f"{value}초"
+            elif not missing and key == "dimensions":
+                rendered[key] = ", ".join(f"{name}={item}" for name, item in value.items()) if value else "{}"
+        assert alarm.alarm_name == source["name"]
+        assert alarm.alarm_description == source.get("description")
         for role in ("rca", "report"):
             prompt = build_prompt(alarm, role=role)
-            assert "- **리전**: not provided" in prompt.splitlines()
-            assert f"- **통계**: {supplied['alarm']['statistic']}" in prompt.splitlines()
-            assert f"- **주기**: {supplied['alarm']['period']}초" in prompt.splitlines()
-            assert "us-east-1" not in prompt
+            for line in (
+                f"- **리전**: {rendered['region']}",
+                f"- **상태 변경 시각**: {rendered['stateChangeTime']}",
+                f"- **메트릭**: {rendered['namespace']}/{rendered['metric']}",
+                f"- **차원**: {rendered['dimensions']}",
+                f"- **통계**: {rendered['statistic']}",
+                f"- **주기**: {rendered['period']}",
+                f"- **임계치**: {rendered['threshold']} ({rendered['comparisonOperator']})",
+            ):
+                assert line in prompt.splitlines(), path.name
+            assert json.dumps(metadata, ensure_ascii=False) in prompt
+            if source.get("description") is not None:
+                assert json.dumps(source["description"], ensure_ascii=False) in prompt
+        assert supplied == original
 
 
 def test_production_defaults_remain_compatible(monkeypatch):

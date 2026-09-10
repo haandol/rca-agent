@@ -10,6 +10,7 @@ mcp_optional_startup_grace_ms = 0
 required = true
 command = "uvx"
 args = ["awslabs.cloudwatch-mcp-server"]
+enabled_tools = ["get_active_alarms", "get_alarm_history", "get_metric_data", "describe_log_groups", "execute_log_insights_query", "get_logs_insight_query_results", "execute_cwl_insights_batch"]
 default_tools_approval_mode = "approve"
 env_vars = ["AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "UV_CACHE_DIR", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_OFFLINE"]
 startup_timeout_sec = 30

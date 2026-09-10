@@ -35,6 +35,15 @@ AWS_ENV_NAMES = {
     "AWS_CONTAINER_AUTHORIZATION_TOKEN",
     "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
 }
+CW_TOOLS = [
+    "get_active_alarms",
+    "get_alarm_history",
+    "get_metric_data",
+    "describe_log_groups",
+    "execute_log_insights_query",
+    "get_logs_insight_query_results",
+    "execute_cwl_insights_batch",
+]
 
 
 def _render(tmp_path, profile):
@@ -43,6 +52,42 @@ def _render(tmp_path, profile):
     home.mkdir()
     path = prepare_codex_home(home, profile)
     return home, tomllib.loads(path.read_text())
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        (
+            ANALYSIS_RCA_PROFILE,
+            {
+                "cloudwatch": CW_TOOLS,
+                "cloudtrail": ["lookup_events"],
+                "github": ["get_file_contents", "get_commit", "list_commits", "search_code", "pull_request_read"],
+                "aws-knowledge": ["aws___search_documentation", "aws___read_documentation"],
+                "rca-progress": ["save_analysis_artifact"],
+            },
+        ),
+        (
+            EXECUTION_PROFILE,
+            {
+                "cloudwatch": CW_TOOLS,
+                "playbook-execution": ["run_playbook_command", "record_step_outcome", "record_resolution"],
+            },
+        ),
+    ],
+)
+def test_generated_role_catalogs_expose_only_reviewed_evidence_and_artifact_tools(tmp_path, profile, expected):
+    """Preserve metric/log polling, change lookup and source reading without whole-server catalogs."""
+    _, config = _render(tmp_path, profile)
+    servers = config["mcp_servers"]
+    assert set(servers) == set(expected)
+    for name, tools in expected.items():
+        assert servers[name]["enabled_tools"] == tools
+        assert len(tools) == len(set(tools))
+        assert servers[name].get("disabled_tools", []) == []
+    if profile == ANALYSIS_RCA_PROFILE:
+        assert servers["github"]["env"]["GITHUB_READ_ONLY"] == "1"
+        assert servers["github"]["env"]["GITHUB_TOOLSETS"] == "repos,pull_requests"
 
 
 @pytest.mark.parametrize("profile", REQUIRED_SERVERS)

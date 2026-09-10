@@ -1,0 +1,315 @@
+{
+  "scope": "Diagnostic probes only; none is a successful RCA/customer rehearsal. A stopped diagnostic container with exit0 can still contain a model timeout.",
+  "imageCommit": "96ef26db4b5f",
+  "probes": [
+    {
+      "diagnostic": "live-catalog-probe",
+      "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/6177ebd6afd54408a15b7cf897b98b25",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:36",
+      "taskStatus": "STOPPED",
+      "finishedAt": "2026-09-10T09:11:37.438037+00:00",
+      "measurements": [
+        {
+          "profile": "rca",
+          "fixedEnv": false,
+          "waitOptional": false,
+          "elapsed": 25.1,
+          "returncode": 0,
+          "requestCount": 1,
+          "toolNames": [
+            "exec_command",
+            "write_stdin",
+            "list_mcp_resources",
+            "list_mcp_resource_templates",
+            "read_mcp_resource",
+            "update_plan",
+            "request_user_input",
+            "view_image",
+            "multi_agent_v1",
+            "close_agent",
+            "resume_agent",
+            "send_input",
+            "spawn_agent",
+            "wait_agent",
+            "mcp__aws_knowledge",
+            "aws___get_regional_availability",
+            "aws___list_regions",
+            "aws___read_documentation",
+            "aws___retrieve_skill",
+            "aws___search_documentation",
+            "mcp__cloudtrail",
+            "get_query_results",
+            "get_query_status",
+            "lake_query",
+            "list_event_data_stores",
+            "lookup_events",
+            "mcp__cloudwatch",
+            "analyze_log_group",
+            "analyze_metric",
+            "cancel_logs_insight_query",
+            "describe_log_groups",
+            "execute_cwl_insights_batch",
+            "execute_log_insights_query",
+            "execute_promql_query",
+            "execute_promql_range_query",
+            "get_active_alarms",
+            "get_alarm_history",
+            "get_logs_insight_query_results",
+            "get_metric_data",
+            "get_metric_metadata",
+            "get_promql_label_values",
+            "get_promql_labels",
+            "get_promql_series",
+            "get_recommended_metric_alarms",
+            "recommend_indexes_account",
+            "recommend_indexes_loggroup",
+            "mcp__github",
+            "get_commit",
+            "get_file_contents",
+            "get_latest_release",
+            "get_release_by_tag",
+            "get_tag",
+            "list_branches",
+            "list_commits",
+            "list_pull_requests",
+            "list_releases",
+            "list_tags",
+            "pull_request_read",
+            "search_code",
+            "search_pull_requests",
+            "search_repositories",
+            "mcp__rca_progress",
+            "save_analysis_artifact"
+          ],
+          "stdoutBytes": 455,
+          "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/tmpl_f_ylvk\"))\nReading additional input from stdin...\n"
+        }
+      ]
+    },
+    {
+      "diagnostic": "live-model-latency-probe",
+      "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/fedd448e49d34075a1764e87ab719d20",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:36",
+      "taskStatus": "STOPPED",
+      "finishedAt": "2026-09-10T09:16:59.958274+00:00",
+      "measurements": [
+        {
+          "kind": "model-latency-diagnostic-not-rca-eval",
+          "elapsed": 37.33,
+          "returncode": 0,
+          "ready": true,
+          "events": [
+            {
+              "type": "thread.started",
+              "itemType": null,
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "turn.started",
+              "itemType": null,
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "item.completed",
+              "itemType": "agent_message",
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "turn.completed",
+              "itemType": null,
+              "toolName": null,
+              "usage": {
+                "input_tokens": 7715,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 7713,
+                "output_tokens": 5,
+                "reasoning_output_tokens": 0
+              },
+              "error": null
+            }
+          ],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "diagnostic": "live-full-catalog-latency",
+      "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/741d866f4b7443559a4974967fdb50b2",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:36",
+      "taskStatus": "STOPPED",
+      "finishedAt": "2026-09-10T09:22:57.086310+00:00",
+      "measurements": [
+        {
+          "kind": "full-catalog-model-latency-not-rca-eval",
+          "elapsed": 32.06,
+          "returncode": 0,
+          "ready": true,
+          "events": [
+            {
+              "type": "thread.started",
+              "itemType": null,
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "turn.started",
+              "itemType": null,
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "item.completed",
+              "itemType": "agent_message",
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "turn.completed",
+              "itemType": null,
+              "toolName": null,
+              "usage": {
+                "input_tokens": 23732,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 23730,
+                "output_tokens": 5,
+                "reasoning_output_tokens": 0
+              },
+              "error": null
+            }
+          ],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "diagnostic": "live-one-cloudwatch-call",
+      "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/91cad00a83a1416cad460bbd69854a24",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:36",
+      "taskStatus": "STOPPED",
+      "finishedAt": "2026-09-10T09:28:01.415373+00:00",
+      "measurements": [
+        {
+          "kind": "single-cloudwatch-call-not-rca-eval",
+          "elapsed": 180.1,
+          "timeout": true,
+          "partialEvents": [
+            {
+              "type": "thread.started",
+              "itemType": null,
+              "toolName": null,
+              "status": null
+            },
+            {
+              "type": "turn.started",
+              "itemType": null,
+              "toolName": null,
+              "status": null
+            },
+            {
+              "type": "item.completed",
+              "itemType": "agent_message",
+              "toolName": null,
+              "status": null
+            },
+            {
+              "type": "item.started",
+              "itemType": "mcp_tool_call",
+              "toolName": "get_active_alarms",
+              "status": "in_progress"
+            },
+            {
+              "type": "item.completed",
+              "itemType": "mcp_tool_call",
+              "toolName": "get_active_alarms",
+              "status": "completed"
+            }
+          ],
+          "stdoutBytes": 939,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "diagnostic": "live-minimal-cloudwatch-call",
+      "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevCcHeadless/4caf8839603c4a63ad2d812e6bd369ea",
+      "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:36",
+      "taskStatus": "STOPPED",
+      "finishedAt": "2026-09-10T09:32:47.407663+00:00",
+      "measurements": [
+        {
+          "kind": "minimal-cloudwatch-call-not-rca-eval",
+          "elapsed": 90.05,
+          "returncode": 0,
+          "lastMessage": "Active alarms in `us-east-1`: **0**.",
+          "events": [
+            {
+              "type": "thread.started",
+              "itemType": null,
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "turn.started",
+              "itemType": null,
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "item.completed",
+              "itemType": "agent_message",
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "item.started",
+              "itemType": "mcp_tool_call",
+              "toolName": "get_active_alarms",
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "item.completed",
+              "itemType": "mcp_tool_call",
+              "toolName": "get_active_alarms",
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "item.completed",
+              "itemType": "agent_message",
+              "toolName": null,
+              "usage": null,
+              "error": null
+            },
+            {
+              "type": "turn.completed",
+              "itemType": null,
+              "toolName": null,
+              "usage": {
+                "input_tokens": 16950,
+                "cached_input_tokens": 8401,
+                "cache_write_input_tokens": 8545,
+                "output_tokens": 104,
+                "reasoning_output_tokens": 31
+              },
+              "error": null
+            }
+          ],
+          "stderr": ""
+        }
+      ]
+    }
+  ]
+}

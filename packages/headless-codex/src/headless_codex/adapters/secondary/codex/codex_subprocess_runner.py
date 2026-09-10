@@ -5,11 +5,16 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Event, Thread
 
 import structlog
 
+from headless_codex.adapters.secondary.codex.codex_diagnostics import (
+    failed_role_diagnostics,
+    failure_diagnostics,
+    observe_jsonl,
+)
 from headless_codex.adapters.secondary.codex.codex_harness import (
     ANALYSIS_PROFILE,
     ANALYSIS_RCA_PROFILE,
@@ -120,7 +125,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
             return CodexResult(
                 success=False,
                 result=f"RCA effective state could not be verified: {exc}",
-                raw_output=rca_result.raw_output,
+                raw_output=failed_role_diagnostics(rca_result.raw_output),
             )
 
         report_result = self._run_single(
@@ -144,7 +149,11 @@ class CodexSubprocessRunner(CodexRunnerPort):
         return CodexResult(
             success=report_result.success,
             result=report_result.result,
-            raw_output=rca_result.raw_output + "\n" + report_result.raw_output,
+            raw_output=(
+                rca_result.raw_output + "\n" + report_result.raw_output
+                if report_result.success
+                else failed_role_diagnostics(rca_result.raw_output, report_result.raw_output)
+            ),
             cancelled=report_result.cancelled,
         )
 
@@ -194,57 +203,84 @@ class CodexSubprocessRunner(CodexRunnerPort):
                 return timed_out()
             logger.info("codex_cli_started", profile=profile, config=str(config_path))
 
-            try:
-                proc = subprocess.Popen(
-                    args,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    cwd=workspace,
-                    env=codex_environment(home_path, extra_env),
+            # NamedTemporaryFile creates mode 0600 files inside this private, disposable home.
+            # The observer opens a separate descriptor: its reads cannot steal pipe output or
+            # move the child's write offset. communicate still owns stdin and the same deadline.
+            with (
+                NamedTemporaryFile(prefix="stdout-", dir=home) as output_file,
+                NamedTemporaryFile(prefix="stderr-", dir=home) as error_file,
+            ):
+                stdout_path, stderr_path = Path(output_file.name), Path(error_file.name)
+                try:
+                    proc = subprocess.Popen(
+                        args,
+                        stdin=subprocess.PIPE,
+                        stdout=output_file,
+                        stderr=error_file,
+                        text=True,
+                        cwd=workspace,
+                        env=codex_environment(home_path, extra_env),
+                    )
+                except FileNotFoundError:
+                    return CodexResult(
+                        success=False,
+                        result="Codex CLI not found. Ensure @openai/codex is installed globally.",
+                        raw_output="",
+                    )
+
+                stop_event = Event()
+                observer_done = Event()
+                log = logger.bind(profile=profile)
+                observer = Thread(
+                    target=observe_jsonl,
+                    args=(stdout_path, observer_done, log),
+                    daemon=True,
+                    name="codex-jsonl-observer",
                 )
-            except FileNotFoundError:
-                return CodexResult(
-                    success=False,
-                    result="Codex CLI not found. Ensure @openai/codex is installed globally.",
-                    raw_output="",
+                observer.start()
+                if cancel_checker:
+                    Thread(target=_watch_cancel, args=(proc, stop_event, cancel_checker), daemon=True).start()
+
+                expired = False
+                try:
+                    timeout = CODEX_TIMEOUT_SECONDS if deadline is None else max(0, deadline - time.monotonic())
+                    proc.communicate(input=prompt, timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    expired = True
+                finally:
+                    stop_event.set()
+                    observer_done.set()
+                    observer.join(timeout=2)
+
+                log.info(
+                    "codex_cli_finished",
+                    rc=proc.returncode,
+                    stdout_bytes=stdout_path.stat().st_size,
+                    stderr_bytes=stderr_path.stat().st_size,
+                    timed_out=expired,
                 )
+                cancelled = proc.returncode == -15
+                if expired or proc.returncode != 0:
+                    diagnostics = failure_diagnostics(stdout_path, stderr_path, interrupted=expired or cancelled)
+                    if expired:
+                        result = timed_out()
+                        return CodexResult(success=False, result=result.result, raw_output=diagnostics)
+                    if cancelled:
+                        return CodexResult(
+                            success=False,
+                            result="Process terminated (cancelled)",
+                            raw_output=diagnostics,
+                            cancelled=True,
+                        )
+                    log.error("codex_cli_failed", rc=proc.returncode)
+                    return CodexResult(
+                        success=False, result=f"Codex process error (rc={proc.returncode})", raw_output=diagnostics
+                    )
 
-            stop_event = Event()
-            if cancel_checker:
-                Thread(target=_watch_cancel, args=(proc, stop_event, cancel_checker), daemon=True).start()
+                # Successful output remains complete and unmodified for the existing handoff.
+                stdout = stdout_path.read_text()
+                result = last_message.read_text().strip() if last_message.is_file() else _last_agent_message(stdout)
 
-            try:
-                timeout = CODEX_TIMEOUT_SECONDS if deadline is None else max(0, deadline - time.monotonic())
-                stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-                stop_event.set()
-                return timed_out()
-            finally:
-                stop_event.set()
-
-            result = last_message.read_text().strip() if last_message.is_file() else _last_agent_message(stdout or "")
-
-        logger.info(
-            "codex_cli_finished",
-            rc=proc.returncode,
-            stdout_bytes=len(stdout or ""),
-            stderr_bytes=len(stderr or ""),
-        )
-        if stderr:
-            logger.info("codex_cli_stderr", stderr=stderr[:5000])
-
-        if proc.returncode == -15:
-            return CodexResult(success=False, result="Process terminated (cancelled)", raw_output="", cancelled=True)
-        if proc.returncode != 0:
-            logger.error("codex_cli_failed", rc=proc.returncode, stdout=(stdout or "")[:5000])
-            return CodexResult(
-                success=False,
-                result=f"Codex process error (rc={proc.returncode})",
-                raw_output=stdout or stderr or "",
-            )
-
-        return CodexResult(success=True, result=result or (stdout or "").strip(), raw_output=stdout or "")
+        return CodexResult(success=True, result=result or stdout.strip(), raw_output=stdout)

@@ -49,6 +49,9 @@ class FakeProcess:
     def communicate(self, input: str, timeout: int) -> tuple[str, str]:
         self.input = input
         self.timeout = timeout
+        for stream, text in zip(getattr(self, "output_files", ()), (self.stdout, self.stderr), strict=False):
+            stream.write(text.encode("utf-8"))
+            stream.flush()
         if self.returncode == 0:
             Path(self.args[self.args.index("-o") + 1]).write_text(self.result)
         return self.stdout, self.stderr
@@ -80,6 +83,7 @@ def _capture_processes(monkeypatch, processes: list[dict] | None = None) -> list
         }
         calls.append(call)
         process = FakeProcess(args, **(queued.pop(0) if queued else {}))
+        process.output_files = (kwargs["stdout"], kwargs["stderr"])
         call["process"] = process
         return process
 
@@ -253,7 +257,28 @@ def test_runner_preserves_nonzero_exit_diagnostics(monkeypatch):
 
     assert result.success is False
     assert "rc=2" in result.result
-    assert result.raw_output == "provider failed"
+    assert json.loads(result.raw_output)["stderr"]["text"] == "provider failed"
+
+
+def test_failed_report_does_not_leak_or_return_unbounded_successful_rca_payload(monkeypatch):
+    raw_rca = (
+        json.dumps(
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "CANARY_RCA_PRIVATE " * 20_000}}
+        )
+        + "\n"
+    )
+    _capture_processes(
+        monkeypatch,
+        [{"stdout": raw_rca}, {"returncode": 2, "stderr": "provider error: token=CANARY_REPORT_SECRET\n"}],
+    )
+    result = CodexSubprocessRunner().run("input", execution_token=EXECUTION_TOKEN)
+    assert not result.success
+    diagnostics = json.loads(result.raw_output)
+    assert diagnostics["rca"]["total_bytes"] == len(raw_rca.encode())
+    assert diagnostics["rca"]["truncated"]
+    assert "provider error" in diagnostics["report"]["stderr"]["text"]
+    assert "CANARY" not in result.raw_output
+    assert len(result.raw_output) < 1000
 
 
 def test_jsonl_fallback_returns_the_last_agent_message():
@@ -301,7 +326,7 @@ def test_roles_share_one_monotonic_deadline(monkeypatch, profile, rca_seconds, e
     else:
         assert not result.success
         assert "timed out" in result.result
-        assert "rca trace" in result.raw_output
+        assert json.loads(result.raw_output)["rca"]["total_bytes"] == len("rca trace")
 
 
 @pytest.mark.parametrize("expire_during_setup", [False, True])
@@ -357,7 +382,7 @@ def test_report_is_killed_at_remaining_deadline(monkeypatch):
     assert calls[1]["process"].killed
     assert not result.success
     assert "timed out" in result.result
-    assert "RCA diagnostics" in result.raw_output
+    assert json.loads(result.raw_output)["rca"]["total_bytes"] == len("RCA diagnostics")
 
 
 @pytest.mark.parametrize("profile", ["analysis-rca", "analysis-report", "model-eval-rca", "model-eval-report"])
@@ -412,4 +437,4 @@ def test_unverifiable_analysis_stops_before_report(monkeypatch, analysis_artifac
     assert not result.success
     assert len(calls) == 1
     assert "effective state could not be verified" in result.result
-    assert result.raw_output == "raw RCA trace"
+    assert json.loads(result.raw_output)["rca"]["total_bytes"] == len("raw RCA trace")

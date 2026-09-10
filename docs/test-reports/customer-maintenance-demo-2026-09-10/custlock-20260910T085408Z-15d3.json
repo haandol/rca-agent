@@ -1,0 +1,102 @@
+{
+  "runId": "custlock-20260910T085408Z-15d3",
+  "candidateCommit": "96ef26db4b5f",
+  "engine": "headless-codex",
+  "rcaId": "67026e41-0519-5b14-a32a-ae5bd41069b1",
+  "result": "FAILED",
+  "customerReady": false,
+  "fault": {
+    "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/5d1a8383c6804e9dac80f7d2538e524a",
+    "backendPid": 11838,
+    "acquiredAt": "2026-09-10T08:55:25.928433+00:00"
+  },
+  "analysisStartedAt": "2026-09-10T08:57:41.304978Z",
+  "cancelledAt": "2026-09-10T09:13:22.517930+00:00",
+  "observedFailure": "Still SCOPING with no saved analysis/report after more than15minutes. No current Logs Insights query had been observed. Cancelled to investigate; no root cause of the wait has been established yet.",
+  "approvalIssued": false,
+  "executionId": null,
+  "cleanup": {
+    "actor": "rehearsal supervisor",
+    "healthRecoveryVerified": true,
+    "completedAt": "2026-09-10T09:18:19.543098+00:00",
+    "release": {
+      "event": "maintenance_released",
+      "run_id": "custlock-20260910T085408Z-15d3",
+      "backend_pid": 11838,
+      "release_reason": "sigterm",
+      "released_at": "2026-09-10T09:13:52.343557+00:00",
+      "rollback_complete": true,
+      "lock_acquired": true
+    },
+    "freshMetrics": {
+      "ready": true,
+      "start": "2026-09-10T09:16:00+00:00",
+      "end": "2026-09-10T09:18:00+00:00",
+      "values": {
+        "VitalIngestAttempts": {
+          "Label": "VitalIngestAttempts",
+          "Datapoints": [
+            {
+              "Timestamp": "2026-09-10T18:16:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 9.5,
+              "Sum": 19.0,
+              "Unit": "Count"
+            },
+            {
+              "Timestamp": "2026-09-10T18:17:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 10.5,
+              "Sum": 21.0,
+              "Unit": "Count"
+            }
+          ]
+        },
+        "VitalIngestFailures": {
+          "Label": "VitalIngestFailures",
+          "Datapoints": [
+            {
+              "Timestamp": "2026-09-10T18:16:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 0.0,
+              "Sum": 0.0,
+              "Unit": "Count"
+            },
+            {
+              "Timestamp": "2026-09-10T18:17:00+09:00",
+              "SampleCount": 2.0,
+              "Average": 0.0,
+              "Sum": 0.0,
+              "Unit": "Count"
+            }
+          ]
+        },
+        "PatientVitalsQueryDuration": {
+          "Label": "PatientVitalsQueryDuration",
+          "Datapoints": [
+            {
+              "Timestamp": "2026-09-10T18:17:00+09:00",
+              "SampleCount": 5.0,
+              "Average": 9.252633799769683,
+              "Sum": 46.263168998848414,
+              "Unit": "Milliseconds"
+            },
+            {
+              "Timestamp": "2026-09-10T18:16:00+09:00",
+              "SampleCount": 6.0,
+              "Average": 9.645420666856808,
+              "Sum": 57.872524001140846,
+              "Unit": "Milliseconds"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "approvedRecoveryDemonstrated": false,
+  "separateDiagnostics": {
+    "awsRuntimeCatalogReadySeconds": 25.1,
+    "tinyModelReadySeconds": 37.33,
+    "theseAreRcaPasses": false
+  }
+}
