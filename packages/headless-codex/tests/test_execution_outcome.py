@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from headless_codex.services.execution_evidence import FailureClass
@@ -69,6 +71,157 @@ def test_observed_resolution_completes_the_execution():
     verdict = judge_resolution(_assemble(_resolved_records()), agent_succeeded=True)
 
     assert verdict.state is ExecutionState.RESOLVED
+
+
+@pytest.mark.parametrize("contradiction", ["failed_stop", "blocked", "manual"])
+def test_positive_model_outcomes_cannot_override_recorded_execution_contradictions(contradiction):
+    records = _resolved_records()
+    if contradiction == "failed_stop":
+        records[0].update(
+            command="aws ecs stop-task --cluster demo --task owner",
+            succeeded=False,
+            exit_status="254",
+            error_output="AccessDenied: not authorized to perform ecs:StopTask",
+            failure_class="PERMISSION_DENIED",
+        )
+    elif contradiction == "blocked":
+        records[0].update(succeeded=False, blocked=True, failure_class="BLOCKED_DESTRUCTIVE")
+    else:
+        records[1]["manual_action_required"] = True
+
+    verdict = judge_resolution(_assemble(records), agent_succeeded=True)
+
+    assert verdict.state is ExecutionState.UNRESOLVED
+
+
+@pytest.mark.parametrize(
+    ("record_index", "field", "value"),
+    [
+        (0, "succeeded", "false"),
+        (0, "succeeded", "true"),
+        (0, "succeeded", 1),
+        (0, "blocked", "false"),
+        (0, "exit_status", "254"),
+        (0, "failure_class", "BLOCKED_UNDECIDABLE"),
+        (1, "criteria_met", "false"),
+        (1, "criteria_met", "true"),
+        (1, "criteria_met", 1),
+        (1, "manual_action_required", "false"),
+        (1, "manual_action_required", 0),
+        (-1, "resolved", "false"),
+        (-1, "resolved", "true"),
+        (-1, "resolved", 1),
+        (-1, "unobservable_reason", "Recovery could not be observed"),
+    ],
+)
+def test_replayed_flags_and_explicit_exit_contradictions_fail_closed(record_index, field, value):
+    records = _resolved_records()
+    records[record_index][field] = value
+
+    assert judge_resolution(_assemble(records), agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+
+@pytest.mark.parametrize("source", ["outcome", "resolution"])
+def test_later_attempts_cannot_retroactively_validate_earlier_positive_outcomes(source):
+    records = _resolved_records()
+    if source == "outcome":
+        records.insert(0, records.pop(1))
+    else:
+        records.insert(0, records.pop())
+
+    assert judge_resolution(_assemble(records), agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+    # New observations after the actual execution can validate an ordinary retry.
+    records.extend([_resolved_records()[1], _resolved_records()[-1]])
+    assert judge_resolution(_assemble(records), agent_succeeded=True).state is ExecutionState.RESOLVED
+
+
+def test_failed_read_followed_by_successful_retry_and_revalidation_can_resolve():
+    records = _resolved_records()
+    records[0]["command"] = "aws rds describe-db-instances"
+    failure = {
+        "type": "attempt",
+        "step_id": "step-1",
+        "command": "aws rds describe-db-instances",
+        "succeeded": False,
+        "exit_status": "254",
+        "failure_class": "THROTTLED",
+    }
+    negative = {**records[1], "criteria_met": False, "observation": "Read was throttled"}
+    evidence = _assemble([failure, negative, *records])
+
+    assert len(evidence.step("step-1").attempts) == 2
+    assert evidence.step("step-1").attempts[0].failure_class is FailureClass.THROTTLED
+    assert judge_resolution(evidence, agent_succeeded=True).state is ExecutionState.RESOLVED
+
+
+@pytest.mark.parametrize("block", ["blocked", "manual"])
+def test_later_success_cannot_clear_policy_blocks_or_manual_action_requirements(block):
+    records = _resolved_records()
+    if block == "blocked":
+        records.insert(
+            0,
+            {
+                "type": "attempt",
+                "step_id": "step-1",
+                "succeeded": False,
+                "blocked": True,
+                "failure_class": "BLOCKED_DESTRUCTIVE",
+            },
+        )
+    else:
+        records.insert(1, {**records[1], "criteria_met": False, "manual_action_required": True})
+        records[2]["manual_action_required"] = False
+
+    assert judge_resolution(_assemble(records), agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+
+@pytest.mark.parametrize("contradiction", ["failed", "blocked", "manual"])
+def test_final_judge_independently_rechecks_facts_even_with_positive_assembled_flags(contradiction):
+    evidence = _assemble(_resolved_records())
+    step = evidence.step("step-1")
+    if contradiction == "manual":
+        step.manual_action_required = True
+    elif contradiction == "blocked":
+        step.attempts[0] = replace(step.attempts[0], blocked=True)
+    else:
+        step.attempts[0] = replace(step.attempts[0], succeeded=False, exit_status="254")
+    assert evidence.step("step-1").resolved is True
+    assert evidence.resolution_confirmed is True
+
+    assert judge_resolution(evidence, agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+
+def test_empty_approved_plan_cannot_be_declared_resolved():
+    evidence = assemble_evidence(
+        [{"type": "resolution", "observation": "Recovered", "resolved": True}],
+        execution_id="exec-1",
+        rca_id="rca-1",
+        engine="headless-codex",
+        playbook={"execution_steps": []},
+    )
+    assert judge_resolution(evidence, agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+
+@pytest.mark.parametrize(
+    "contradiction",
+    [{"resolved": "false"}, {"resolved": 1}, {"unobservable_reason": "cannotverify"}],
+)
+def test_final_judge_rechecks_latest_resolution_record_despite_positive_summary(contradiction):
+    evidence = _assemble(_resolved_records())
+    evidence.resolution_records[-1].update(contradiction)
+    assert evidence.resolution_confirmed is True
+
+    assert judge_resolution(evidence, agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+
+def test_new_valid_observation_can_follow_an_earlier_unobservable_read():
+    records = [
+        {"type": "resolution", "resolved": False, "observation": "", "unobservable_reason": "cannotverify"},
+        *_resolved_records(),
+    ]
+
+    assert judge_resolution(_assemble(records), agent_succeeded=True).state is ExecutionState.RESOLVED
 
 
 def test_a_missing_resolution_observation_is_not_assumed_to_be_resolved():

@@ -15,6 +15,7 @@ from headless_codex.services.execution_evidence import (
     CommandAttempt,
     ExecutionEvidence,
     FailureClass,
+    StepEvidence,
     capture_command_output,
     parse_failure_class,
     redact,
@@ -29,7 +30,49 @@ class ResolutionVerdict:
     reason: str
 
 
-def _as_str(value: object, *, limit: int = 4000) -> str:
+def step_execution_blocker(step: StepEvidence) -> str | None:
+    """Reject factual contradictions, not infer command intent or causal recovery.
+
+    A successful exit is necessary evidence of execution, not proof that the
+    approved action or its causal success criteria were actually satisfied.
+    Failed reads may be retried; a recorded policy block or manual requirement
+    cannot be cleared by a model's later positive assertion.
+    """
+    if any(attempt.blocked is not False or attempt.failure_class in BLOCKED_CLASSES for attempt in step.attempts):
+        return f"step {step.step_id} has a blocked attempt and requires manual action"
+    if step.manual_action_required is not False:
+        return f"step {step.step_id} still requires manual action"
+    if not any(
+        attempt.succeeded is True
+        and attempt.blocked is False
+        # Legacy server records may omit exit status; an explicit nonzero exit
+        # must never be overridden by a contradictory succeeded flag.
+        and attempt.exit_status in ("", "0")
+        for attempt in step.attempts
+    ):
+        return f"step {step.step_id} has no successful unblocked command attempt"
+    return None
+
+
+def _steps_blocker(evidence: ExecutionEvidence) -> str | None:
+    if not evidence.steps:
+        return "execution has no approved steps"
+    skipped = [step.step_id for step in evidence.steps if not step.attempts]
+    if skipped:
+        return f"steps were not attempted: {', '.join(skipped)}"
+    for step in evidence.steps:
+        if reason := step_execution_blocker(step):
+            return reason
+    unmet = [step.step_id for step in evidence.steps if step.resolved is not True and step.resolved is not None]
+    if unmet:
+        return f"steps did not meet their success criteria: {', '.join(unmet)}"
+    unobserved = [step.step_id for step in evidence.steps if step.resolved is None or not step.observation.strip()]
+    if unobserved:
+        return f"steps have no recorded observation: {', '.join(unobserved)}"
+    return None
+
+
+def _as_str(value: object, *, limit: int | None = 4000) -> str:
     if value is None:
         return ""
     return (value if isinstance(value, str) else str(value))[:limit]
@@ -129,7 +172,7 @@ def assemble_evidence(
     evidence = ExecutionEvidence(
         execution_id=execution_id,
         rca_id=rca_id,
-        playbook_id=_as_str(playbook.get("playbook_id"), limit=200),
+        playbook_id=_as_str(playbook.get("playbook_id"), limit=None),
         engine=engine,
         started_at=started_at,
         ended_at=ended_at,
@@ -141,19 +184,22 @@ def assemble_evidence(
         for step in declared_steps:
             if not isinstance(step, dict):
                 continue
-            step_id = _as_str(step.get("step_id"), limit=200)
+            # Identifiers select approved contracts; preview truncation can merge distinct steps.
+            step_id = _as_str(step.get("step_id"), limit=None)
             if not step_id:
                 continue
             declared_step_ids.add(step_id)
             tracked = evidence.step(step_id)
             tracked.intent = _as_str(step.get("intent"))
-            tracked.success_criteria = _as_str(step.get("success_criteria"))
+            # This is the approved contract used for exact comparison, not a UI preview.
+            criterion = step.get("success_criteria")
+            tracked.success_criteria = criterion if isinstance(criterion, str) else ""
 
     attempt_counts: dict[str, int] = {}
     criteria_mismatches: set[str] = set()
     for record in records:
         record_type = record.get("type")
-        step_id = _as_str(record.get("step_id"), limit=200)
+        step_id = _as_str(record.get("step_id"), limit=None)
         if step_id and step_id not in declared_step_ids:
             continue
         if record_type == "metric_wait" and step_id:
@@ -162,14 +208,14 @@ def assemble_evidence(
         if record_type == "attempt" and step_id:
             attempt_counts[step_id] = attempt_counts.get(step_id, 0) + 1
             failure_class = parse_failure_class(record.get("failure_class")) if record.get("failure_class") else None
-            blocked = bool(record.get("blocked"))
+            blocked = record.get("blocked", False) is not False or failure_class in BLOCKED_CLASSES
             evidence.record_attempt(
                 CommandAttempt(
                     step_id=step_id,
                     command=redact(record.get("command")),
                     arguments=redact_arguments(record.get("arguments")),
                     exit_status=_as_str(record.get("exit_status"), limit=64),
-                    succeeded=bool(record.get("succeeded")),
+                    succeeded=record.get("succeeded") is True,
                     attempt_index=attempt_counts[step_id],
                     error_output=redact(record.get("error_output"))[:4000],
                     failure_class=failure_class,
@@ -189,14 +235,16 @@ def assemble_evidence(
         elif record_type == "step_outcome" and step_id:
             step = evidence.step(step_id)
             step.outcomes.append(_outcome_record(record))
+            if record.get("manual_action_required", False) is not False:
+                step.manual_action_required = True
             criteria = record.get("success_criteria")
             if not isinstance(criteria, str) or criteria != step.success_criteria:
                 criteria_mismatches.add(step_id)
                 continue
             step.observation = redact(record.get("observation"))[:4000]
-            step.resolved = bool(record.get("criteria_met"))
-            if record.get("manual_action_required"):
-                step.manual_action_required = True
+            # Evaluate at this point in the log. A later successful attempt
+            # cannot retroactively validate an outcome written before it.
+            step.resolved = record.get("criteria_met") is True and step_execution_blocker(step) is None
 
         elif record_type == "resolution":
             evidence.resolution_records.append(_outcome_record(record))
@@ -207,7 +255,9 @@ def assemble_evidence(
                 evidence.resolution_observation = (
                     f"{evidence.resolution_observation}\n[unobservable] {unobservable}".strip()
                 )
-            evidence.resolution_confirmed = bool(record.get("resolved"))
+            evidence.resolution_confirmed = (
+                record.get("resolved") is True and not unobservable and _steps_blocker(evidence) is None
+            )
 
     for step_id in criteria_mismatches:
         step = evidence.step(step_id)
@@ -222,11 +272,11 @@ def assemble_evidence(
 def judge_resolution(evidence: ExecutionEvidence, *, agent_succeeded: bool) -> ResolutionVerdict:
     """실행 증거로 종료 상태를 확정한다.
 
-    해결로 전이하는 조건은 세 가지가 모두 성립할 때다. 에이전트 실행이 정상 종료했고,
-    해소가 관측으로 확인되었고, 시도된 절차 중 관측 기준을 만족하지 못한 것이 없어야
-    한다. 하나라도 아니면 완료로 전이하지 않는다.
+    에이전트 실행이 정상 종료하고, 모든 승인 절차에 성공한 비차단 시도와 성공 기준
+    관측이 있어야 한다. 차단·수동 조치가 남거나 해소를 관측하지 못하면 해결로 전이하지
+    않는다. 명령 성공은 필요조건이며 승인 조치의 인과적 효과까지 증명하지는 않는다.
     """
-    if not agent_succeeded:
+    if agent_succeeded is not True:
         return ResolutionVerdict(ExecutionState.FAILED, "execution agent did not finish")
 
     if evidence.resolution_confirmed is None:
@@ -234,11 +284,20 @@ def judge_resolution(evidence: ExecutionEvidence, *, agent_succeeded: bool) -> R
             ExecutionState.UNRESOLVED,
             "execution recorded no resolution observation, so resolution cannot be confirmed",
         )
-    if not evidence.resolution_confirmed:
+    if reason := _steps_blocker(evidence):
+        return ResolutionVerdict(ExecutionState.UNRESOLVED, reason)
+    if evidence.resolution_confirmed is not True:
         return ResolutionVerdict(
             ExecutionState.UNRESOLVED,
             "observation did not confirm that the issue was resolved",
         )
+    if evidence.resolution_records:
+        latest_resolution = evidence.resolution_records[-1]
+        if latest_resolution.get("resolved") is not True or latest_resolution.get("unobservable_reason"):
+            return ResolutionVerdict(
+                ExecutionState.UNRESOLVED,
+                "latest resolution record is unconfirmed or unobservable",
+            )
 
     waits = evidence.metric_wait_records
     for step_id in {r.get("step_id") for r in waits}:
@@ -250,27 +309,6 @@ def judge_resolution(evidence: ExecutionEvidence, *, agent_succeeded: bool) -> R
         return ResolutionVerdict(
             ExecutionState.UNRESOLVED,
             "resolved=true requires a nonblank resolution observation",
-        )
-
-    skipped = [step.step_id for step in evidence.steps if not step.attempts]
-    if skipped:
-        return ResolutionVerdict(
-            ExecutionState.UNRESOLVED,
-            f"steps were not attempted: {', '.join(skipped)}",
-        )
-
-    unmet = [step.step_id for step in evidence.steps if step.resolved is False]
-    if unmet:
-        return ResolutionVerdict(
-            ExecutionState.UNRESOLVED,
-            f"steps did not meet their success criteria: {', '.join(unmet)}",
-        )
-
-    unobserved = [step.step_id for step in evidence.steps if step.resolved is None or not step.observation.strip()]
-    if unobserved:
-        return ResolutionVerdict(
-            ExecutionState.UNRESOLVED,
-            f"steps have no recorded observation: {', '.join(unobserved)}",
         )
 
     return ResolutionVerdict(ExecutionState.RESOLVED, evidence.resolution_observation[:500])

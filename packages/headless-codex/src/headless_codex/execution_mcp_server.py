@@ -19,15 +19,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastmcp import FastMCP
+from pydantic import StrictBool
 
 from headless_codex.services.command_gate import evaluate_command
 from headless_codex.services.execution_evidence import (
+    ExecutionEvidence,
     FailureClass,
     capture_command_output,
     parse_failure_class,
     redact,
     redact_arguments,
 )
+from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution, step_execution_blocker
+from headless_codex.services.execution_state import ExecutionState
 from headless_codex.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
     APPROVED_SUCCESS_CRITERIA_ENV,
@@ -499,14 +503,30 @@ def _metric_wait_blocks_success(records: list[dict], step_id: str | None = None)
     )
 
 
+def _outcome_evidence(records: list[dict]) -> ExecutionEvidence:
+    """Replay the approved steps for recording guards using the final judge's contract."""
+    criteria = _approved_success_criteria()
+    return assemble_evidence(
+        records,
+        execution_id=os.environ.get(EXECUTION_ID_ENV, ""),
+        rca_id="",
+        engine="headless-codex",
+        playbook={
+            "execution_steps": [
+                {"step_id": step_id, "success_criteria": criteria.get(step_id, "")} for step_id in _approved_step_ids()
+            ]
+        },
+    )
+
+
 @mcp.tool()
 def record_step_outcome(
     step_id: str,
     success_criteria: str,
     observation: str,
-    criteria_met: bool,
+    criteria_met: StrictBool,
     failure_class: str = "",
-    manual_action_required: bool = False,
+    manual_action_required: StrictBool = False,
 ) -> str:
     """한 절차의 관측 결과를 증거에 기록한다.
 
@@ -521,6 +541,12 @@ def record_step_outcome(
     step_error = _validate_step_id(step_id)
     if step_error:
         return json.dumps({"ok": False, "error": step_error}, ensure_ascii=False)
+    if type(criteria_met) is not bool or type(manual_action_required) is not bool:
+        return json.dumps({"ok": False, "error": "criteria_met and manual_action_required must be booleans"})
+    if criteria_met and (not isinstance(observation, str) or not observation.strip()):
+        return json.dumps({"ok": False, "error": "criteria_met=true requires a nonblank observation"})
+    if criteria_met and manual_action_required:
+        return json.dumps({"ok": False, "error": "criteria_met=true conflicts with manual_action_required"})
 
     approved_criteria = _approved_success_criteria().get(step_id.strip())
     if approved_criteria is None:
@@ -557,15 +583,20 @@ def record_step_outcome(
             ensure_ascii=False,
         )
 
+    if criteria_met:
+        reason = step_execution_blocker(_outcome_evidence(records).step(normalized_step_id))
+        if reason:
+            return json.dumps({"ok": False, "error": reason}, ensure_ascii=False)
+
     ok = _append_record(
         {
             "type": "step_outcome",
             "step_id": step_id.strip(),
             "success_criteria": approved_criteria,
             "observation": redact(observation),
-            "criteria_met": bool(criteria_met),
+            "criteria_met": criteria_met,
             "failure_class": str(parse_failure_class(failure_class)) if failure_class else None,
-            "manual_action_required": bool(manual_action_required),
+            "manual_action_required": manual_action_required,
         }
     )
     if not ok:
@@ -574,7 +605,7 @@ def record_step_outcome(
 
 
 @mcp.tool()
-def record_resolution(observation: str, resolved: bool, unobservable_reason: str = "") -> str:
+def record_resolution(observation: str, resolved: StrictBool, unobservable_reason: str = "") -> str:
     """이슈 해소 여부의 관측 결과를 기록한다.
 
     관측으로 확정할 수 없으면 `resolved=false` 와 함께 `unobservable_reason` 을 남긴다.
@@ -586,11 +617,22 @@ def record_resolution(observation: str, resolved: bool, unobservable_reason: str
         resolved: 관측이 해소를 확인했는지.
         unobservable_reason: 관측으로 확정할 수 없었던 이유.
     """
+    if type(resolved) is not bool:
+        return json.dumps({"ok": False, "error": "resolved must be a boolean"})
     if resolved and (not isinstance(observation, str) or not observation.strip()):
         return json.dumps(
             {"ok": False, "error": "resolved=true requires a nonblank observation"},
             ensure_ascii=False,
         )
+    if resolved and unobservable_reason:
+        return json.dumps({"ok": False, "error": "resolved=true conflicts with unobservable_reason"})
+
+    record = {
+        "type": "resolution",
+        "observation": redact(observation),
+        "resolved": resolved,
+        "unobservable_reason": redact(unobservable_reason),
+    }
 
     if resolved:
         approved_step_ids = _approved_step_ids()
@@ -619,14 +661,13 @@ def record_resolution(observation: str, resolved: bool, unobservable_reason: str
                 ensure_ascii=False,
             )
 
-    ok = _append_record(
-        {
-            "type": "resolution",
-            "observation": redact(observation),
-            "resolved": bool(resolved),
-            "unobservable_reason": redact(unobservable_reason),
-        }
-    )
+        if any(step_id not in _approved_success_criteria() for step_id in approved_step_ids):
+            return json.dumps({"ok": False, "error": "approved success_criteria is unavailable"})
+        verdict = judge_resolution(_outcome_evidence([*records, record]), agent_succeeded=True)
+        if verdict.state is not ExecutionState.RESOLVED:
+            return json.dumps({"ok": False, "error": verdict.reason}, ensure_ascii=False)
+
+    ok = _append_record(record)
     if not ok:
         return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
     return json.dumps({"ok": True}, ensure_ascii=False)

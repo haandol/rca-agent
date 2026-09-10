@@ -5,10 +5,12 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
+from fastmcp.exceptions import ValidationError
 
 from headless_codex import execution_mcp_server, retrospective_mcp_server
 from headless_codex.services import execution_workspace
-from headless_codex.services.execution_outcome import assemble_evidence
+from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution
+from headless_codex.services.execution_state import ExecutionState
 from headless_codex.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
     APPROVED_SUCCESS_CRITERIA_ENV,
@@ -236,6 +238,270 @@ def test_a_verification_only_step_succeeds_after_a_read_only_cli_attempt(workspa
     assert records[0]["arguments"] == {"service": "cloudwatch", "operation": "describe-alarms"}
     assert records[1]["criteria_met"] is True
     assert records[2]["resolved"] is True
+
+
+def test_long_approved_criterion_survives_public_recording_replay_and_final_judgment(workspace, spawned, monkeypatch):
+    criterion = (
+        " \n" + "The recorded observation must satisfy this approved requirement. " * 90 + "\nTAIL: failures = 0 "
+    )
+    assert len(criterion) > 4000
+    monkeypatch.setenv(APPROVED_SUCCESS_CRITERIA_ENV, json.dumps({"step-1": criterion}))
+    execution_mcp_server.run_playbook_command("step-1", "aws cloudwatch describe-alarms")
+    before = workspace.read_records()
+    for incorrect in (criterion[:4000], criterion.replace("TAIL: failures = 0", "TAIL: failures <= 10")):
+        rejected = json.loads(
+            execution_mcp_server.record_step_outcome("step-1", incorrect, "Observed", criteria_met=True)
+        )
+        assert rejected["ok"] is False
+        assert workspace.read_records() == before
+    outcome = json.loads(execution_mcp_server.record_step_outcome("step-1", criterion, "Observed", criteria_met=True))
+    resolution = json.loads(execution_mcp_server.record_resolution("Recovery observed", resolved=True))
+    assert outcome["ok"] is True
+    assert resolution["ok"] is True, resolution
+
+    records = workspace.read_records()
+    assert records[1]["success_criteria"] == criterion
+    evidence = assemble_evidence(
+        records,
+        execution_id="exec-1",
+        rca_id="rca-1",
+        engine="headless-codex",
+        playbook={"execution_steps": [{"step_id": "step-1", "success_criteria": criterion}]},
+    )
+    assert evidence.step("step-1").success_criteria == criterion
+    assert evidence.to_dict()["steps"][0]["success_criteria"] == criterion
+    assert judge_resolution(evidence, agent_succeeded=True).state is ExecutionState.RESOLVED
+
+
+def test_long_step_ids_with_shared_prefix_remain_distinct_required_identities(workspace, spawned, monkeypatch):
+    prefix = "step-" + "x" * 195
+    first, second = prefix + "-first", prefix + "-second"
+    criteria = {first: "Alarm state OK", second: "Failures 0"}
+    playbook_id = "playbook-" + "p" * 220
+    playbook = {
+        "playbook_id": playbook_id,
+        "execution_steps": [
+            {"step_id": identifier, "success_criteria": criterion} for identifier, criterion in criteria.items()
+        ],
+    }
+    monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps([first, second]))
+    monkeypatch.setenv(APPROVED_SUCCESS_CRITERIA_ENV, json.dumps(criteria))
+
+    def assembled(records):
+        return assemble_evidence(
+            records, execution_id="exec-1", rca_id="rca-1", engine="headless-codex", playbook=playbook
+        )
+
+    assert json.loads(execution_mcp_server.run_playbook_command(first, "aws cloudwatch describe-alarms"))["ok"]
+    outcome = json.loads(
+        execution_mcp_server.record_step_outcome(first, criteria[first], "Observed first criterion", criteria_met=True)
+    )
+    assert outcome["ok"] is True, outcome
+    premature = json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))
+    assert premature["ok"] is False
+    assert premature["missing_attempt_step_ids"] == [second]
+    assert premature["missing_outcome_step_ids"] == [second]
+
+    # A replayed positive model claim cannot collapse the missing second step into the first.
+    incomplete = assembled(
+        [*workspace.read_records(), {"type": "resolution", "observation": "Recovered", "resolved": True}]
+    )
+    assert incomplete.playbook_id == playbook_id
+    assert [step.step_id for step in incomplete.steps] == [first, second]
+    assert [len(step.attempts) for step in incomplete.steps] == [1, 0]
+    assert judge_resolution(incomplete, agent_succeeded=True).state is ExecutionState.UNRESOLVED
+
+    assert json.loads(execution_mcp_server.run_playbook_command(second, "aws cloudwatch get-metric-data"))["ok"]
+    assert json.loads(
+        execution_mcp_server.record_step_outcome(
+            second, criteria[second], "Observed second criterion", criteria_met=True
+        )
+    )["ok"]
+    assert json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))["ok"]
+
+    complete = assembled(workspace.read_records())
+    assert complete.playbook_id == playbook_id
+    assert [step.step_id for step in complete.steps] == [first, second]
+    assert [step.success_criteria for step in complete.steps] == list(criteria.values())
+    for step in complete.steps:
+        assert len(step.attempts) == 1
+        assert step.attempts[0].step_id == step.step_id
+        assert step.attempts[0].attempt_index == 1
+        assert step.outcomes[0]["step_id"] == step.step_id
+    assert judge_resolution(complete, agent_succeeded=True).state is ExecutionState.RESOLVED
+
+
+@pytest.mark.parametrize("contradiction", ["failed_stop", "blocked", "manual"])
+@pytest.mark.parametrize("recording", ["step_outcome", "resolution"])
+def test_positive_recording_refuses_execution_contradictions(workspace, spawned, contradiction, recording):
+    if contradiction == "failed_stop":
+        spawned.return_value = subprocess.CompletedProcess(
+            args=[], returncode=254, stdout="", stderr="AccessDenied: not authorized to perform ecs:StopTask"
+        )
+    command = (
+        "aws ecs delete-service --service api"
+        if contradiction == "blocked"
+        else "aws ecs stop-task --cluster demo --task owner"
+    )
+    execution_mcp_server.run_playbook_command("step-1", command)
+    if recording == "resolution":
+        # Replay a previously accepted contradictory record, bypassing the public step guard.
+        execution_mcp_server._append_record(
+            {
+                "type": "step_outcome",
+                "step_id": "step-1",
+                "success_criteria": "DatabaseConnections 20 이하",
+                "observation": "DatabaseConnections 12",
+                "criteria_met": True,
+                "manual_action_required": contradiction == "manual",
+            }
+        )
+    before = workspace.read_records()
+
+    if recording == "step_outcome":
+        result = json.loads(
+            execution_mcp_server.record_step_outcome(
+                "step-1",
+                "DatabaseConnections 20 이하",
+                "DatabaseConnections 12",
+                criteria_met=True,
+                manual_action_required=contradiction == "manual",
+            )
+        )
+    else:
+        result = json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))
+
+    assert result["ok"] is False
+    assert workspace.read_records() == before
+
+
+def test_failed_read_can_be_retried_and_revalidated_without_poisoning_the_step(workspace, spawned):
+    spawned.side_effect = [
+        subprocess.CompletedProcess(args=[], returncode=254, stdout="", stderr="ThrottlingException"),
+        subprocess.CompletedProcess(args=[], returncode=0, stdout='{"healthy":true}', stderr=""),
+    ]
+    command = "aws rds describe-db-instances"
+    assert not json.loads(execution_mcp_server.run_playbook_command("step-1", command))["ok"]
+    assert not json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1", "DatabaseConnections 20 이하", "Model claims success", criteria_met=True
+        )
+    )["ok"]
+    assert json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1", "DatabaseConnections 20 이하", "Read throttled", criteria_met=False, failure_class="THROTTLED"
+        )
+    )["ok"]
+    assert json.loads(execution_mcp_server.run_playbook_command("step-1", command))["ok"]
+    assert json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
+        )
+    )["ok"]
+    assert json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))["ok"]
+    assert [r["type"] for r in workspace.read_records()] == [
+        "attempt",
+        "step_outcome",
+        "attempt",
+        "step_outcome",
+        "resolution",
+    ]
+
+
+@pytest.mark.parametrize("flag", ["criteria_met", "manual_action_required", "resolved"])
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, None])
+def test_public_recording_requires_real_booleans(workspace, spawned, flag, value):
+    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    if flag == "resolved":
+        execution_mcp_server.record_step_outcome(
+            "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
+        )
+    before = workspace.read_records()
+    if flag == "resolved":
+        result = json.loads(execution_mcp_server.record_resolution("Recovered", resolved=value))
+    else:
+        arguments = {
+            "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 20 이하",
+            "observation": "DatabaseConnections 12",
+            "criteria_met": True,
+            "manual_action_required": False,
+        }
+        arguments[flag] = value
+        result = json.loads(execution_mcp_server.record_step_outcome(**arguments))
+
+    assert result["ok"] is False
+    assert workspace.read_records() == before
+
+
+@pytest.mark.parametrize("flag", ["criteria_met", "manual_action_required", "resolved"])
+@pytest.mark.parametrize("value", ["true", 1])
+@pytest.mark.asyncio
+async def test_mcp_validation_does_not_coerce_nonboolean_flags_before_recording(workspace, flag, value):
+    if flag == "resolved":
+        tool = "record_resolution"
+        arguments = {"observation": "Recovered", "resolved": value}
+    else:
+        tool = "record_step_outcome"
+        arguments = {
+            "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 20 이하",
+            "observation": "DatabaseConnections 12",
+            "criteria_met": True,
+            "manual_action_required": False,
+        }
+        arguments[flag] = value
+    with pytest.raises(ValidationError, match="bool"):
+        await execution_mcp_server.mcp.call_tool(tool, arguments)
+    assert workspace.read_records() == []
+
+
+@pytest.mark.parametrize("criteria_met", [False, "true"])
+def test_resolution_rechecks_replayed_outcome_flags(workspace, spawned, criteria_met):
+    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    execution_mcp_server._append_record(
+        {
+            "type": "step_outcome",
+            "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 20 이하",
+            "observation": "DatabaseConnections 12",
+            "criteria_met": criteria_met,
+        }
+    )
+    before = workspace.read_records()
+
+    assert not json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))["ok"]
+    assert workspace.read_records() == before
+
+
+def test_resolution_rejects_outcome_replayed_before_attempt(workspace, spawned):
+    execution_mcp_server._append_record(
+        {
+            "type": "step_outcome",
+            "step_id": "step-1",
+            "success_criteria": "DatabaseConnections 20 이하",
+            "observation": "DatabaseConnections 12",
+            "criteria_met": True,
+        }
+    )
+    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    assert not json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))["ok"]
+
+
+def test_positive_outcomes_require_nonblank_observations_and_no_unobservable_claim(workspace, spawned):
+    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    assert not json.loads(
+        execution_mcp_server.record_step_outcome("step-1", "DatabaseConnections 20 이하", " ", criteria_met=True)
+    )["ok"]
+    assert json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
+        )
+    )["ok"]
+    assert not json.loads(
+        execution_mcp_server.record_resolution("Recovered", resolved=True, unobservable_reason="cannotverify")
+    )["ok"]
+    assert [r["type"] for r in workspace.read_records()] == ["attempt", "step_outcome"]
 
 
 def test_a_verification_only_outcome_without_an_attempt_is_rejected(workspace):
