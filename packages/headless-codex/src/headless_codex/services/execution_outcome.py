@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from headless_codex.services.execution_evidence import (
@@ -155,6 +156,8 @@ def assemble_evidence(
         step_id = _as_str(record.get("step_id"), limit=200)
         if step_id and step_id not in declared_step_ids:
             continue
+        if record_type == "metric_wait" and step_id:
+            evidence.metric_wait_records.append(json.loads(redact(json.dumps(record, ensure_ascii=False))))
 
         if record_type == "attempt" and step_id:
             attempt_counts[step_id] = attempt_counts.get(step_id, 0) + 1
@@ -236,6 +239,12 @@ def judge_resolution(evidence: ExecutionEvidence, *, agent_succeeded: bool) -> R
             ExecutionState.UNRESOLVED,
             "observation did not confirm that the issue was resolved",
         )
+
+    waits = evidence.metric_wait_records
+    for step_id in {r.get("step_id") for r in waits}:
+        terminal = [r for r in waits if r.get("step_id") == step_id and r.get("phase") == "terminal"]
+        if not terminal or any(r.get("status") != "HEALTHY" for r in terminal):
+            return ResolutionVerdict(ExecutionState.UNRESOLVED, "fixed metric wait did not confirm healthy bins")
 
     if not evidence.resolution_observation.strip():
         return ResolutionVerdict(

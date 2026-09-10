@@ -71,7 +71,12 @@ def _render(tmp_path, profile):
             EXECUTION_PROFILE,
             {
                 "cloudwatch": CW_TOOLS,
-                "playbook-execution": ["run_playbook_command", "record_step_outcome", "record_resolution"],
+                "playbook-execution": [
+                    "run_playbook_command",
+                    "wait_for_post_action_metrics",
+                    "record_step_outcome",
+                    "record_resolution",
+                ],
             },
         ),
     ],

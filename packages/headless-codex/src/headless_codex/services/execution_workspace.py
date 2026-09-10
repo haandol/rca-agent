@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -17,6 +18,7 @@ from pathlib import Path
 
 EXECUTION_TOKEN_ENV = "PLAYBOOK_EXECUTION_TOKEN"
 EXECUTION_ID_ENV = "PLAYBOOK_EXECUTION_ID"
+EXECUTION_DEADLINE_ENV = "PLAYBOOK_EXECUTION_DEADLINE_EPOCH"
 APPROVED_STEP_IDS_ENV = "PLAYBOOK_APPROVED_STEP_IDS"
 APPROVED_SUCCESS_CRITERIA_ENV = "PLAYBOOK_APPROVED_SUCCESS_CRITERIA"
 
@@ -24,6 +26,8 @@ _WORKSPACE_ROOT = Path(tempfile.gettempdir()) / "headless-codex-executions"
 _TOKEN_PATTERN = re.compile(r"[0-9a-f]{32}")
 _EVIDENCE_FILE = "evidence.jsonl"
 _RETROSPECTIVE_FILE = "retrospective.json"
+_OBSERVATION_CONTROL_FILE = "observation-control.json"
+_OBSERVATION_CONTEXT_FILE = "observation-context.json"
 
 
 def workspace_for_token(token: str) -> Path:
@@ -38,6 +42,26 @@ def evidence_path_for_token(token: str) -> Path:
 
 def retrospective_path_for_token(token: str) -> Path:
     return workspace_for_token(token) / _RETROSPECTIVE_FILE
+
+
+def observation_control_path_for_token(token: str) -> Path:
+    return workspace_for_token(token) / _OBSERVATION_CONTROL_FILE
+
+
+def observation_context_path_for_token(token: str) -> Path:
+    return workspace_for_token(token) / _OBSERVATION_CONTEXT_FILE
+
+
+def write_observation_json(path: Path, record: dict) -> None:
+    """Publish a complete server-owned record without exposing a partial JSON read."""
+    raw = json.dumps(record, ensure_ascii=False, allow_nan=False)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(raw)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 @dataclass(frozen=True)
@@ -68,6 +92,12 @@ class ExecutionWorkspace:
         self.path.mkdir(mode=0o700, exist_ok=False)
         self.evidence_path.touch(mode=0o600)
         return self.path
+
+    def write_observation_context(self, *, playbook: dict, alarm_data: dict, alarm_name: str) -> None:
+        write_observation_json(
+            observation_context_path_for_token(self.token),
+            {"playbook": playbook, "alarm_data": alarm_data, "alarm_name": alarm_name},
+        )
 
     def read_records(self) -> list[dict]:
         """서버가 기록한 증거 줄을 읽는다. 깨진 줄은 건너뛴다."""

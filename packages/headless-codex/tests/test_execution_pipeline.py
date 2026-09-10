@@ -111,6 +111,10 @@ class RecordingRunner:
         self.execution_prompts.append(prompt)
         self.approved_step_ids = approved_step_ids
         self.approved_success_criteria = approved_success_criteria
+        self.observation_context = json.loads(
+            execution_workspace.observation_context_path_for_token(execution_token).read_text()
+        )
+        self.cancel_checker = cancel_checker
         path = execution_workspace.evidence_path_for_token(execution_token)
         with path.open("a", encoding="utf-8") as handle:
             for record in self._records:
@@ -122,7 +126,8 @@ class RecordingRunner:
             cancelled=self._cancelled,
         )
 
-    def run_retrospective(self, prompt, *, execution_token, execution_id):
+    def run_retrospective(self, prompt, *, execution_token, execution_id, cancel_checker=None):
+        self.retrospective_cancel_checker = cancel_checker
         self.retrospective_prompts.append(prompt)
         if self._retrospective is not None:
             execution_workspace.retrospective_path_for_token(execution_token).write_text(
@@ -142,6 +147,7 @@ def _container(runner, *, target=None, claim=None, retrospective_claimed=True):
         load_target=Mock(return_value=target if target is not None else _target()),
         update_state=Mock(),
         load_state=Mock(return_value=ExecutionState.EXECUTING),
+        is_execution_current=Mock(return_value=True),
         claim_retrospective=Mock(return_value=retrospective_claimed),
         record_retrospective=Mock(),
         save_playbook_revision=Mock(),
@@ -194,6 +200,54 @@ def test_an_approved_execution_runs_the_playbook_steps_and_resolves():
     assert "VitalIngestFailure" in runner.execution_prompts[0]
     assert runner.approved_step_ids == ("step-1",)
     assert runner.approved_success_criteria == {"step-1": "DatabaseConnections 20 이하"}
+
+
+def test_observation_context_is_approved_server_data_not_rendered_prompt(monkeypatch):
+    target = _target()
+    target.alarm_data["ExtraUntrustedField"] = {"verbatim": "observed context"}
+    runner = RecordingRunner()
+    container = _container(runner, target=target)
+    monkeypatch.setattr(
+        "headless_codex.services.execution_pipeline.build_execution_prompt",
+        lambda *args, **kwargs: "A deliberately unrelated prompt",
+    )
+
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    assert runner.observation_context == {
+        "playbook": target.playbook,
+        "alarm_data": target.alarm_data,
+        "alarm_name": target.alarm_name,
+    }
+    container.evidence_store.load_approved_playbook.assert_called_once_with(
+        "approved/rca-1/exec-1/playbook.json", playbook_digest="a" * 64
+    )
+
+
+@pytest.mark.parametrize("current", [True, False, RuntimeError("store unavailable")])
+def test_cancel_callback_checks_claim_and_fails_closed(current):
+    runner = RecordingRunner()
+    container = _container(runner)
+    check = container.execution_store.is_execution_current
+    if isinstance(current, Exception):
+        check.side_effect = current
+    else:
+        check.return_value = current
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    assert runner.cancel_checker() is (current is not True)
+    check.assert_called_once_with("exec-1", rca_id=RCA_ID, claim_token=CLAIM_TOKEN)
+    container.execution_store.load_state.assert_not_called()
+
+
+def test_shutdown_aborts_control_without_store_read():
+    from threading import Event
+
+    shutdown = Event()
+    runner = RecordingRunner()
+    container = _container(runner)
+    assert ExecutionOrchestrator(container, shutdown_event=shutdown).process_message(APPROVAL)
+    shutdown.set()
+    assert runner.cancel_checker() is True
+    container.execution_store.is_execution_current.assert_not_called()
 
 
 def test_persisted_evidence_keeps_command_output_and_source_times_with_actual_runner_boundaries():
@@ -683,3 +737,41 @@ def test_a_revision_commit_failure_leaves_verified_search_fail_closed():
     assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "FAILED"
     container.execution_store.save_playbook_revision.assert_called_once()
     assert container.playbook_store.save_to_s3_vectors.call_args.kwargs["publication_id"] == "exec-1"
+
+
+def test_retrospective_shutdown_callback_does_not_require_executing_claim():
+    runner = RecordingRunner()
+    container = _container(runner)
+    orchestrator = ExecutionOrchestrator(container)
+    assert orchestrator.process_message(APPROVAL)
+    assert runner.retrospective_prompts
+    container.execution_store.is_execution_current.return_value = False
+    assert runner.retrospective_cancel_checker() is False
+    orchestrator._shutdown_event.set()
+    assert runner.retrospective_cancel_checker() is True
+
+
+def test_fixed_wait_journal_survives_evidence_publication_and_workspace_cleanup():
+    waits = [
+        {
+            "type": "metric_wait",
+            "phase": "started",
+            "step_id": "step-1",
+            "binding": {"start": "2026-09-10T12:35:00+00:00", "end": "2026-09-10T12:37:00+00:00"},
+        },
+        {
+            "type": "metric_wait",
+            "phase": "poll",
+            "step_id": "step-1",
+            "observed_at": "2026-09-10T12:37:01+00:00",
+            "response": {"ok": False, "stdout": '{"partial":', "stderr": "query failed", "exit_status": 255},
+        },
+        {"type": "metric_wait", "phase": "terminal", "step_id": "step-1", "status": "UNOBSERVABLE"},
+    ]
+    runner = RecordingRunner(records=_resolved_records() + waits)
+    container = _container(runner)
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    persisted = container.evidence_store.save_execution_evidence.call_args.kwargs["evidence"]
+    assert persisted["metric_wait_records"] == waits
+    assert persisted["final_state"] == "UNRESOLVED"
+    assert not runner.retrospective_prompts

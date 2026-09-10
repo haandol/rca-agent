@@ -433,6 +433,26 @@ class DynamoDbExecutionStore(ExecutionStorePort):
             return None
         return parse_state(item.get("execution_state", {}).get("S"))
 
+    def is_execution_current(self, execution_id: str, *, rca_id: str, claim_token: str) -> bool:
+        """Observe the claim without renewing it or changing execution state."""
+        if not claim_token:
+            return False
+        item = self._get_execution(rca_id, execution_id)
+        if item is None:
+            return False
+        try:
+            expires_at = int(item.get("claim_expires_at", {}).get("N", ""))
+        except (ValueError, TypeError):
+            return False
+        return (
+            item.get("execution_id", {}).get("S") == execution_id
+            and item.get("rca_id", {}).get("S") == rca_id
+            and item.get("claim_token", {}).get("S") == claim_token
+            and parse_state(item.get("execution_state", {}).get("S"))
+            in {ExecutionState.EXECUTING, ExecutionState.VERIFYING}
+            and expires_at > time.time()
+        )
+
     def claim_retrospective(self, execution_id: str, *, rca_id: str, claim_token: str) -> bool:
         """실행 단위로 회고를 한 번만 수행하도록 보장한다."""
         if not DYNAMODB_TABLE_NAME or not self._ddb:

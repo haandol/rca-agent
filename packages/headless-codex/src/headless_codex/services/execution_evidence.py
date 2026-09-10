@@ -317,6 +317,7 @@ class ExecutionEvidence:
     final_state: str = ""
     error_reason: str = ""
     resolution_records: list[dict] = field(default_factory=list)
+    metric_wait_records: list[dict] = field(default_factory=list)
 
     def step(self, step_id: str) -> StepEvidence:
         for existing in self.steps:
@@ -358,6 +359,8 @@ class ExecutionEvidence:
         for name in ("started_at", "ended_at"):
             if (moment := getattr(self, name)) is not None:
                 payload[name] = moment
+        if self.metric_wait_records:
+            payload["metric_wait_records"] = self.metric_wait_records
         return payload
 
     def summary(self) -> dict:
@@ -388,6 +391,15 @@ def retrospective_evidence_json(evidence: ExecutionEvidence, *, max_chars: int =
         for name in ("stdout", "stderr", "observation", "error_output")
         if isinstance(attempt.get(name), str) and attempt[name]
     ]
+    # Fixed-wait receipts retain a second audit copy of query output. Apply the
+    # same preview budget to that copy; the durable S3 journal remains intact.
+    previews.extend(
+        (record["response"], name, record["response"][name])
+        for record in payload.get("metric_wait_records", [])
+        if isinstance(record.get("response"), dict)
+        for name in ("stdout", "stderr")
+        if isinstance(record["response"].get(name), str) and record["response"][name]
+    )
     payload["projection"] = {
         "output_previews_omitted": False,
         "omitted_chars": 0,

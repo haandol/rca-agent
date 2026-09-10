@@ -15,7 +15,7 @@ FASTMCP_LOG_LEVEL = "ERROR"
 [mcp_servers.playbook-execution]
 command = "fastmcp"
 args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/execution_mcp_server.py:mcp"]
-enabled_tools = ["run_playbook_command", "record_step_outcome", "record_resolution"]
+enabled_tools = ["run_playbook_command", "wait_for_post_action_metrics", "record_step_outcome", "record_resolution"]
 startup_timeout_sec = 30
 tool_timeout_sec = 360
 

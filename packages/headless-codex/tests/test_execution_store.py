@@ -1,4 +1,5 @@
 import json
+from unittest.mock import Mock
 
 import boto3
 import pytest
@@ -38,6 +39,65 @@ PLAYBOOK = {
     "failure_type": "DB 커넥션 누수",
     "execution_steps": PLAYBOOK_STEPS,
 }
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        (None, None, True),
+        ("execution_state", {"S": "VERIFYING"}, True),
+        ("execution_state", {"S": "CANCELLED"}, False),
+        ("execution_state", {"S": "RESOLVED"}, False),
+        ("execution_state", {"S": "FAILED"}, False),
+        ("execution_state", {"S": "PENDING_APPROVAL"}, False),
+        ("execution_state", {"S": "UNKNOWN"}, False),
+        ("claim_token", {"S": "other-claim"}, False),
+        ("execution_id", {"S": "other-execution"}, False),
+        ("rca_id", {"S": "other-rca"}, False),
+        ("claim_expires_at", {"N": "1000"}, False),
+        ("claim_expires_at", {"N": "999"}, False),
+        ("claim_expires_at", {"N": "NaN"}, False),
+        ("claim_expires_at", {"N": "Infinity"}, False),
+        ("claim_expires_at", {"N": "1001.5"}, False),
+        ("claim_expires_at", {}, False),
+    ],
+)
+def test_is_execution_current_reads_identity_claim_state_and_expiry_only(monkeypatch, field, value, expected):
+    monkeypatch.setattr(dynamodb_execution_store, "DYNAMODB_TABLE_NAME", TABLE)
+    monkeypatch.setattr(dynamodb_execution_store.time, "time", lambda: 1000.0)
+    item = {
+        "execution_id": {"S": EXECUTION_ID},
+        "rca_id": {"S": RCA_ID},
+        "execution_state": {"S": "EXECUTING"},
+        "claim_token": {"S": "owned-token"},
+        "claim_expires_at": {"N": "1001"},
+    }
+    if field:
+        item[field] = value
+    ddb = Mock()
+    ddb.get_item.return_value = {"Item": item}
+    store = DynamoDbExecutionStore(ddb)
+    assert store.is_execution_current(EXECUTION_ID, rca_id=RCA_ID, claim_token="owned-token") is expected
+    ddb.get_item.assert_called_once_with(
+        TableName=TABLE,
+        Key={"PK": {"S": f"RCA#{RCA_ID}"}, "SK": {"S": f"EXEC#{EXECUTION_ID}"}},
+        ConsistentRead=True,
+    )
+    assert [call[0] for call in ddb.mock_calls] == ["get_item"]
+
+
+def test_is_execution_current_missing_or_unavailable_never_grants_ownership(monkeypatch):
+    monkeypatch.setattr(dynamodb_execution_store, "DYNAMODB_TABLE_NAME", TABLE)
+    ddb = Mock()
+    store = DynamoDbExecutionStore(ddb)
+    assert not store.is_execution_current(EXECUTION_ID, rca_id=RCA_ID, claim_token="")
+    ddb.get_item.assert_not_called()
+    ddb.get_item.return_value = {}
+    assert not store.is_execution_current(EXECUTION_ID, rca_id=RCA_ID, claim_token="owned")
+    ddb.get_item.side_effect = RuntimeError("read unavailable")
+    with pytest.raises(RuntimeError, match="read unavailable"):
+        store.is_execution_current(EXECUTION_ID, rca_id=RCA_ID, claim_token="owned")
+    assert not DynamoDbExecutionStore().is_execution_current(EXECUTION_ID, rca_id=RCA_ID, claim_token="owned")
 
 
 @pytest.fixture

@@ -9,9 +9,12 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+import math
 import os
 import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,8 +31,18 @@ from headless_codex.services.execution_evidence import (
 from headless_codex.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
     APPROVED_SUCCESS_CRITERIA_ENV,
+    EXECUTION_ID_ENV,
     EXECUTION_TOKEN_ENV,
     evidence_path_for_token,
+)
+from headless_codex.services.post_action_metrics import (
+    ObservationBudget,
+    ObservationStoppedError,
+    bind_request,
+    normalize_request,
+    poll_fixed_metrics,
+    timestamp,
+    utc,
 )
 
 mcp = FastMCP("playbook-execution")
@@ -148,8 +161,7 @@ def _classify_exit(stderr: str, returncode: int) -> FailureClass:
     return FailureClass.UNKNOWN
 
 
-@mcp.tool()
-def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
+def _run_command(step_id: str, command: str, intent: str = "", *, budget: ObservationBudget | None = None) -> str:
     """플레이북 절차의 한 명령을 실행한다. 파괴적·판정 불가 명령은 거부된다.
 
     Args:
@@ -166,6 +178,7 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
     safe_command = redact(command)
     attempt_metadata = {
         "type": "attempt",
+        "execution_id": os.environ.get(EXECUTION_ID_ENV, ""),
         "step_id": step_id.strip(),
         "intent": redact(intent),
         "command": safe_command,
@@ -200,13 +213,18 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
 
     started_at = _now_iso()
     try:
-        completed = subprocess.run(  # noqa: S603 - argv comes from the gate, never a shell string
-            list(verdict.argv),
-            capture_output=True,
-            text=True,
-            timeout=_COMMAND_TIMEOUT_SECONDS,
-            check=False,
-        )
+        if budget is None:
+            completed = subprocess.run(  # noqa: S603 - argv comes from the gate, never a shell string
+                list(verdict.argv),
+                capture_output=True,
+                text=True,
+                timeout=_COMMAND_TIMEOUT_SECONDS,
+                check=False,
+            )
+        else:
+            if verdict.service != "cloudwatch" or verdict.operation not in ("get-metric-statistics", "describe-alarms"):
+                raise ObservationStoppedError("bounded observations permit only fixed CloudWatch reads")
+            completed = _run_observation_process(verdict.argv, budget)
     except subprocess.TimeoutExpired as exc:
         ended_at = _now_iso()
         captured = capture_command_output(exc.stdout, exc.stderr)
@@ -242,6 +260,23 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
             }
         )
         return json.dumps({"ok": False, "error": f"command could not start: {redact(exc)}"}, ensure_ascii=False)
+    except ObservationStoppedError as exc:
+        captured = capture_command_output(getattr(exc, "stdout", ""), getattr(exc, "stderr", ""))
+        _append_record(
+            {
+                **attempt_metadata,
+                **captured,
+                "started_at": started_at,
+                "ended_at": _now_iso(),
+                "succeeded": False,
+                "exit_status": "observation_stopped",
+                "failure_class": str(FailureClass.TIMEOUT),
+                "error_output": redact(str(exc)),
+                "output_incomplete": True,
+                "output_incomplete_reason": "cancelled, fenced or budget exhausted",
+            }
+        )
+        return json.dumps({"ok": False, **captured, "output_incomplete": True, "error": str(exc)})
 
     ended_at = _now_iso()
     captured = capture_command_output(completed.stdout, completed.stderr)
@@ -279,6 +314,191 @@ def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
     )
 
 
+def _run_observation_process(argv: tuple[str, ...], budget: ObservationBudget) -> subprocess.CompletedProcess:
+    """Use the same gate/attempt audit with a cancellable, remaining-budget-bounded child."""
+    remaining = min(_COMMAND_TIMEOUT_SECONDS, budget.remaining())
+    if remaining <= 1:
+        raise ObservationStoppedError("insufficient remaining command budget")
+    # Reserve bounded process cleanup inside the existing call/execution budget.
+    command_deadline = budget.monotonic() + remaining - 1
+    proc = subprocess.Popen(  # noqa: S603 - only gate-approved fixed CloudWatch reads
+        list(argv),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        while True:
+            remaining = min(budget.remaining(), command_deadline - budget.monotonic())
+            if remaining <= 0:
+                raise ObservationStoppedError("command deadline exhausted")
+            try:
+                stdout, stderr = proc.communicate(timeout=min(0.5, remaining))
+                budget.remaining()
+                return subprocess.CompletedProcess(list(argv), proc.returncode, stdout, stderr)
+            except subprocess.TimeoutExpired:
+                continue
+    except BaseException as exc:
+        proc.kill()
+        try:
+            stdout, stderr = proc.communicate(timeout=0.5)
+        except subprocess.TimeoutExpired as cleanup_error:
+            stdout, stderr = cleanup_error.stdout, cleanup_error.stderr
+        if isinstance(exc, ObservationStoppedError):
+            exc.stdout = stdout
+            exc.stderr = stderr
+        raise
+
+
+@mcp.tool()
+def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
+    """Execute one approved-step AWS CLI command through the server gate and audit."""
+    return _run_command(step_id, command, intent)
+
+
+def _observation_control() -> float:
+    """Read the runner's fail-closed claim/cancellation heartbeat without adding AWS clients."""
+    from headless_codex.services.execution_workspace import observation_control_path_for_token
+
+    try:
+        path = observation_control_path_for_token(os.environ.get(EXECUTION_TOKEN_ENV, ""))
+        control = json.loads(path.read_text())
+        now = time.time()
+        checked = float(control["checked_at_epoch"])
+        deadline = float(control["deadline_epoch"])
+        if (
+            control.get("execution_id") != os.environ.get(EXECUTION_ID_ENV)
+            or control.get("active") is not True
+            or not 0 <= now - checked <= 10
+            or deadline <= now
+        ):
+            raise ValueError("inactive, expired or stale execution control")
+        if not all(math.isfinite(v) for v in (checked, deadline)):
+            raise ValueError("invalid execution control time")
+        return deadline
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ObservationStoppedError(f"execution cancellation/claim control unavailable: {exc}") from exc
+
+
+@mcp.tool()
+def wait_for_post_action_metrics(
+    step_id: str,
+    action_step_id: str,
+    metrics: dict,
+    failure_alarm_name: str,
+    region: str,
+    max_wait_seconds: int = 300,
+    latency_alarm_name: str = "",
+    completed_work_evidence: dict | None = None,
+) -> str:
+    """Wait once for the first two complete post-StopTask 60s bins; never resolve the execution.
+
+    Pass approved verification/prior action IDs and observed metrics: attempts, failures,
+    optional approved latency, each with namespace, metric_name, dimensions (Name-to-Value mapping).
+    First discover their coordinates and required simple alarms through run_playbook_command.
+    The server binds actual StopTask ended_at, alarm thresholds and execution scope.
+    Repeating this request replays its terminal receipt; changing it cannot rebase bins.
+    Optional completed_work_evidence references an actual observed producer accounting descriptor
+    with record_index and json_pointer; otherwise arithmetic is not labeled successful writes.
+    """
+    from headless_codex.services.execution_workspace import observation_context_path_for_token
+
+    try:
+        for candidate in (step_id, action_step_id):
+            if error := _validate_step_id(candidate):
+                raise ValueError(error)
+        request = normalize_request(
+            step_id,
+            action_step_id,
+            metrics,
+            failure_alarm_name,
+            latency_alarm_name,
+            region,
+            max_wait_seconds,
+            completed_work_evidence,
+        )
+        path = _evidence_file()
+        if path is None:
+            raise ValueError("missing execution context")
+        # Nonblocking process lock also excludes a second MCP process in the same workspace.
+        with (path.parent / "metric-wait.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return json.dumps({"ok": False, "error": "an observation wait is already running"})
+            records = _read_records()
+            if records is None:
+                raise ValueError("missing execution evidence")
+            previous = [r for r in records if r.get("type") == "metric_wait" and r.get("step_id") == step_id]
+            started = next((r for r in previous if r.get("phase") == "started"), None)
+            if started:
+                if started["binding"]["request"] != request:
+                    raise ValueError("verification request is immutable; different anchor or arguments rejected")
+                terminal = next((r for r in previous if r.get("phase") == "terminal"), None)
+                if terminal:
+                    return json.dumps(terminal, ensure_ascii=False)
+                # Crash/disconnect cannot create a fresh budget or reuse a partial result as healthy.
+                receipt = {
+                    "type": "metric_wait",
+                    "phase": "terminal",
+                    "step_id": step_id,
+                    "observed_at": _now_iso(),
+                    "ok": False,
+                    "status": "UNOBSERVABLE",
+                    "error": "prior wait was interrupted; no restart or rebase",
+                    "binding": started["binding"],
+                }
+                _append_record(receipt)
+                return json.dumps(receipt, ensure_ascii=False)
+            context = json.loads(
+                observation_context_path_for_token(os.environ.get(EXECUTION_TOKEN_ENV, "")).read_text()
+            )
+            bound = bind_request(request, records, context, os.environ.get(EXECUTION_ID_ENV, ""), evaluate_command)
+            if timestamp(bound["anchor"]["ended_at"]) > time.time():
+                raise ValueError("action ended_at is in the future")
+            deadline = min(_observation_control(), time.time() + max_wait_seconds)
+            bound.update(request=request, deadline=utc(deadline))
+            if not _append_record(
+                {
+                    "type": "metric_wait",
+                    "phase": "started",
+                    "step_id": step_id,
+                    "observed_at": _now_iso(),
+                    "binding": bound,
+                }
+            ):
+                raise ValueError("cannot persist anchor before polling")
+
+            def append(receipt: dict) -> None:
+                if not _append_record(receipt):
+                    raise ValueError("cannot persist observation receipt")
+
+            budget = ObservationBudget(deadline, _observation_control)
+            result = poll_fixed_metrics(
+                bound,
+                budget,
+                lambda command, budget: json.loads(
+                    _run_command(step_id, command, "Fixed post-action metric observation", budget=budget)
+                ),
+                append,
+            )
+            return json.dumps(result, ensure_ascii=False)
+    except (OSError, ValueError, TypeError, KeyError, ObservationStoppedError) as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def _metric_wait_blocks_success(records: list[dict], step_id: str | None = None) -> bool:
+    waits = [r for r in records if r.get("type") == "metric_wait" and (step_id is None or r.get("step_id") == step_id)]
+    steps = {r.get("step_id") for r in waits}
+    return any(
+        not any(
+            r.get("phase") == "terminal" and r.get("status") == "HEALTHY" for r in waits if r.get("step_id") == step
+        )
+        or any(r.get("phase") == "terminal" and r.get("status") != "HEALTHY" for r in waits if r.get("step_id") == step)
+        for step in steps
+    )
+
+
 @mcp.tool()
 def record_step_outcome(
     step_id: str,
@@ -313,6 +533,8 @@ def record_step_outcome(
     if records is None:
         return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
     normalized_step_id = step_id.strip()
+    if criteria_met and _metric_wait_blocks_success(records, normalized_step_id):
+        return json.dumps({"ok": False, "error": "fixed metric wait is failed, incomplete or unobservable"})
     has_attempt = any(
         record.get("type") == "attempt" and record.get("step_id") == normalized_step_id for record in records
     )
@@ -380,6 +602,8 @@ def record_resolution(observation: str, resolved: bool, unobservable_reason: str
         records = _read_records()
         if records is None:
             return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
+        if _metric_wait_blocks_success(records):
+            return json.dumps({"ok": False, "error": "fixed metric wait is failed, incomplete or unobservable"})
         attempted_step_ids = {record.get("step_id") for record in records if record.get("type") == "attempt"}
         outcome_step_ids = {record.get("step_id") for record in records if record.get("type") == "step_outcome"}
         missing_attempt_step_ids = [step_id for step_id in approved_step_ids if step_id not in attempted_step_ids]

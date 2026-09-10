@@ -105,6 +105,11 @@ class ExecutionStorePort(ABC):
     def load_state(self, execution_id: str, *, rca_id: str) -> ExecutionState | None: ...
 
     @abstractmethod
+    def is_execution_current(self, execution_id: str, *, rca_id: str, claim_token: str) -> bool:
+        """Read-only check of current execution identity, active state and unexpired claim."""
+        ...
+
+    @abstractmethod
     def claim_retrospective(self, execution_id: str, *, rca_id: str, claim_token: str) -> bool: ...
 
     @abstractmethod

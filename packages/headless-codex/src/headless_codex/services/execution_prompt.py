@@ -82,7 +82,12 @@ def build_execution_prompt(target: ExecutionTarget, *, execution_id: str) -> str
    교정해 다시 시도하고, 거부된 명령은 우회하지 않는다. verification-only 절차도
    안전한 읽기 전용 AWS CLI 명령을 최소 한 번 이 도구로 실행한다. CloudWatch MCP 직접
    조회는 성공 기준 관측에는 사용할 수 있지만 attempt 증거가 아니므로 이를 대신하지
-   못한다.
+   못한다. 고정 사후 구간 검증은 위 지침대로 현재 검증 step_id에서 list-metrics와
+   describe-alarms를 먼저 기록하고 `wait_for_post_action_metrics`를 호출한다.
+   재시도는 고정 구간의 최종 실패를 초기화하지 않는다. latency는 승인 기준에 있을 때만
+   전달한다. successful_writes가 없는 영수증은 산술 차이일 뿐이므로 실제 쓰기 작업의
+   성공을 별도로 확인한다. 과거 로그는 현재 사고 시간과 관측한 소유자 스트림으로
+   범위를 정하고 페이지 완결 여부를 보존한다.
 2. 절차마다 `record_step_outcome` 으로 `success_criteria` 관측 결과를 기록한다.
 3. 마지막에 `record_resolution` 으로 이슈 해소 여부를 기록한다. 관측으로 확정할 수
    없으면 `resolved=false` 와 사유를 남긴다. `resolved=true` 호출이

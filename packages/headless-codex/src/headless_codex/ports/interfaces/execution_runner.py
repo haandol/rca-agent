@@ -32,4 +32,5 @@ class ExecutionRunnerPort(ABC):
         *,
         execution_token: str,
         execution_id: str,
+        cancel_checker: Callable[[], bool] | None = None,
     ) -> CodexResult: ...

@@ -150,7 +150,13 @@ def test_missing_metadata_is_unknown_in_actual_prompt(missing, role, monkeypatch
         "- **임계치**: not provided (not provided)",
     ):
         assert line in prompt.splitlines()
+    # Runtime capability limits are known independently of incident metadata.
+    # Keep the no-invention check on the actual alarm input, including its trigger.
+    assert prompt.count("## 알람 상세\n") == 1
+    alarm_input = prompt.split("## 알람 상세\n", 1)[1]
     for invented in ("us-east-1", "eu-west-3", "Average", "300초", "arn:aws:"):
+        assert invented not in alarm_input
+    for invented in ("us-east-1", "eu-west-3", "Average", "arn:aws:"):
         assert invented not in prompt
 
 

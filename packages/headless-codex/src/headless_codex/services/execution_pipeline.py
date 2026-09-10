@@ -170,13 +170,21 @@ class ExecutionOrchestrator:
                 approved_step_ids.append(normalized_step_id)
                 approved_success_criteria[normalized_step_id] = success_criteria
 
+            workspace.write_observation_context(
+                playbook=target.playbook,
+                alarm_data=target.alarm_data,
+                alarm_name=target.alarm_name,
+            )
             prompt = build_execution_prompt(target, execution_id=execution_id)
 
             def _should_cancel() -> bool:
                 if self._shutdown_event.is_set():
                     return True
-                state = store.load_state(execution_id, rca_id=request.rca_id)
-                return state is ExecutionState.CANCELLED
+                try:
+                    return not store.is_execution_current(execution_id, rca_id=request.rca_id, claim_token=claim_token)
+                except Exception:
+                    log.exception("execution_control_check_failed")
+                    return True
 
             execution_started_at = datetime.now(UTC).isoformat()
             codex_result = self._c.execution_runner.run_execution(
@@ -357,6 +365,7 @@ class ExecutionOrchestrator:
                 prompt,
                 execution_token=workspace.token,
                 execution_id=execution_id,
+                cancel_checker=self._shutdown_event.is_set,
             )
             if not result.success:
                 store.record_retrospective(
