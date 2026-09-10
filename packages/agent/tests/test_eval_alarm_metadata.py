@@ -193,21 +193,62 @@ def test_all_provided_details_and_zero_reach_actual_prompt():
     assert json.dumps(supplied, sort_keys=True) == original
 
 
-def test_catalog_missing_region_stays_unknown_in_actual_prompt():
-    """Every active catalog entry renders supplied values without AWS coordinates."""
+def test_catalog_prompts_preserve_supplied_metadata_and_mark_only_missing_fields_unknown(monkeypatch):
+    """Keep observed AWS metadata while missing local fields stay unknown, never runtime defaults."""
     from pathlib import Path
 
+    monkeypatch.setenv("AWS_REGION", "eu-west-3")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-west-3")
     paths = sorted((Path(__file__).resolve().parents[3] / "tests/scenarios").glob("*.json"))
     assert len(paths) == 4
     for path in paths:
         supplied = json.loads(path.read_text())
-        _, prompts = render_details(supplied)
+        original = json.dumps(supplied, sort_keys=True)
+        source = supplied["alarm"]
+        alarm, prompts = render_details(supplied)
+        metadata = {key: source[key] for key in METADATA if key in source and source[key] is not None}
+        assert alarm.eval_source_metadata == {**metadata, "metric": source.get("metric")}
+        assert alarm.alarm_name == source["name"]
+        assert alarm.alarm_description == source.get("description")
+        assert alarm.alarm_arn == source.get("arn")
+
+        rendered = {}
+        for key in (*METADATA, "metric"):
+            value = source.get(key)
+            missing = value is None or (isinstance(value, str) and not value.strip())
+            rendered[key] = "not provided" if missing else str(value)
+            if not missing and key == "dimensions":
+                rendered[key] = json.dumps(value, ensure_ascii=False)
+            elif not missing and key == "period":
+                rendered[key] = f"{value}s"
+        assert alarm.region == rendered["region"]
+        assert alarm.trigger is not None
+        assert alarm.trigger.metric_name == source["metric"]
+        assert alarm.trigger.namespace == source["namespace"]
+        assert alarm.trigger.dimensions == source.get("dimensions", {})
+        for key, attribute in (
+            ("statistic", "statistic"),
+            ("period", "period"),
+            ("threshold", "threshold"),
+            ("comparisonOperator", "comparison_operator"),
+        ):
+            assert getattr(alarm.trigger, attribute) == source.get(key)
+
         for prompt in prompts:
-            assert "- **Region**: not provided" in prompt.splitlines()
-            assert f"- **Statistic**: {supplied['alarm']['statistic']}" in prompt.splitlines()
-            assert f"- **Period**: {supplied['alarm']['period']}s" in prompt.splitlines()
-            assert "us-east-1" not in prompt
+            for line in (
+                f"- **Region**: {rendered['region']}",
+                f"- **State Change Time**: {rendered['stateChangeTime']}",
+                f"- **Metric**: {rendered['namespace']}/{rendered['metric']}",
+                f"- **Dimensions**: {rendered['dimensions']}",
+                f"- **Statistic**: {rendered['statistic']}",
+                f"- **Period**: {rendered['period']}",
+                f"- **Threshold**: {rendered['threshold']} ({rendered['comparisonOperator']})",
+            ):
+                assert line in prompt.splitlines(), path.name
+            assert json.dumps(metadata, ensure_ascii=False) in prompt
+            assert "eu-west-3" not in prompt
             assert RUN_TIME not in prompt
+        assert json.dumps(supplied, sort_keys=True) == original
 
 
 def test_production_defaults_remain_compatible():
