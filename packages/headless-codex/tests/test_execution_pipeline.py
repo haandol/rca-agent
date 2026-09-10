@@ -1,3 +1,6 @@
+import copy
+import hashlib
+import io
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,6 +10,8 @@ from unittest.mock import Mock
 import pytest
 from structlog.testing import capture_logs
 
+from headless_codex.adapters.secondary.evidence import s3_evidence_store
+from headless_codex.adapters.secondary.evidence.s3_evidence_store import S3EvidenceStore
 from headless_codex.ports.dto.models import CodexResult
 from headless_codex.ports.interfaces.execution_store import (
     ExecutionClaim,
@@ -495,6 +500,144 @@ def test_a_retrospective_with_no_correction_still_promotes_the_procedure():
     assert revised["verification_status"] == "VERIFIED"
     # 다음 실행은 개정본을, 다음 RCA 의 보강은 인덱스를 읽으므로 양쪽이 같아야 한다.
     assert indexed["verification_status"] == "VERIFIED"
+
+
+class LocalEvidenceObjects:
+    """Injected S3 client double: bytes remain readable after the execution workspace is removed."""
+
+    def __init__(self, *, fail_diff=False):
+        self.objects = {}
+        self.fail_diff = fail_diff
+
+    def put_object(self, **request):
+        if self.fail_diff and request["Key"].endswith("retrospective-diff.json"):
+            raise OSError("attestation storage unavailable")
+        self.objects[request["Key"]] = request["Body"]
+
+    def get_object(self, **request):
+        return {"Body": io.BytesIO(self.objects[request["Key"]])}
+
+
+@pytest.mark.parametrize(
+    ("update", "expected_status", "verification"),
+    [
+        ({}, "NO_CHANGE", "VERIFIED"),
+        ({"symptom_pattern": "", "execution_steps": [], "verification_status": "VERIFIED"}, "NO_CHANGE", "VERIFIED"),
+        ({"temporary_mitigation": "관측된 완화 근거를 보존"}, "UPDATED", "VERIFIED"),
+        ({"execution_steps": [{"step_id": "step-1", "action": "대기 후 재확인"}]}, "UPDATED", "DRAFT"),
+    ],
+)
+def test_public_orchestrator_persists_readable_attestation_before_publication(
+    monkeypatch, update, expected_status, verification
+):
+    rationale = "승인된 절차와 실제 관측을 대조한 근거. " * 250 + "마지막 관측도 보존한다."
+    saved = {"update": update, "rationale": rationale}
+    saved_before = copy.deepcopy(saved)
+    runner = RecordingRunner(retrospective=saved)
+    container = _container(runner)
+    client = LocalEvidenceObjects()
+    monkeypatch.setattr(s3_evidence_store, "S3_EVIDENCE_BUCKET", "offline-evidence")
+    container.evidence_store = S3EvidenceStore(client)
+    approval = json.loads(APPROVAL)
+    snapshot = json.dumps(PLAYBOOK, ensure_ascii=False).encode()
+    snapshot_key = approval["approved_playbook_s3_key"]
+    client.objects[snapshot_key] = snapshot
+    approval["playbook_digest"] = hashlib.sha256(snapshot).hexdigest()
+    original_playbook = copy.deepcopy(PLAYBOOK)
+    diff_key = "executions/rca-1/exec-1/retrospective-diff.json"
+
+    def assert_attested_before_publication(*args, **kwargs):
+        assert diff_key in client.objects
+        assert json.loads(client.objects[diff_key])["rationale"] == rationale
+
+    container.execution_store.save_playbook_revision.side_effect = assert_attested_before_publication
+    assert ExecutionOrchestrator(container).process_message(json.dumps(approval))
+
+    recorded = container.execution_store.record_retrospective.call_args.kwargs
+    assert recorded["status"] == expected_status
+    assert recorded["diff_s3_key"] == diff_key
+    assert recorded["summary"] == rationale[:500]
+    assert recorded["playbook_snapshot_s3_key"] == snapshot_key
+    stored = json.loads(client.get_object(Bucket="offline-evidence", Key=recorded["diff_s3_key"])["Body"].read())
+    assert stored["rationale"] == rationale
+    assert stored["proposed_update"] == update
+    assert stored["update"] == ({} if expected_status == "NO_CHANGE" else update)
+    assert all(name in stored for name in ("changed_fields", "corrected_steps", "added_steps", "preserved_steps"))
+    if expected_status == "NO_CHANGE":
+        assert not (stored["changed_fields"] or stored["corrected_steps"] or stored["added_steps"])
+    assert container.execution_store.publish_playbook_revision.call_args.args[2]["verification_status"] == verification
+    assert client.objects[snapshot_key] == snapshot
+    assert original_playbook == PLAYBOOK
+    assert saved == saved_before
+    assert _states(container)[-1] is ExecutionState.RESOLVED
+
+
+@pytest.mark.parametrize("update", [{}, {"temporary_mitigation": "clarified mitigation"}])
+def test_public_orchestrator_attestation_s3_failure_blocks_completion_and_publication(monkeypatch, update):
+    runner = RecordingRunner(retrospective={"update": update, "rationale": "observed evidence rationale"})
+    container = _container(runner)
+    client = LocalEvidenceObjects(fail_diff=True)
+    monkeypatch.setattr(s3_evidence_store, "S3_EVIDENCE_BUCKET", "offline-evidence")
+    container.evidence_store = S3EvidenceStore(client)
+    approval = json.loads(APPROVAL)
+    snapshot = json.dumps(PLAYBOOK).encode()
+    client.objects[approval["approved_playbook_s3_key"]] = snapshot
+    approval["playbook_digest"] = hashlib.sha256(snapshot).hexdigest()
+
+    assert ExecutionOrchestrator(container).process_message(json.dumps(approval))
+
+    assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "FAILED"
+    assert _states(container)[-1] is ExecutionState.RESOLVED
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.execution_store.publish_playbook_revision.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
+    assert client.objects[approval["approved_playbook_s3_key"]] == snapshot
+
+
+def test_no_change_empty_diff_key_does_not_claim_durable_attestation():
+    container = _container(RecordingRunner(retrospective={"update": {}, "rationale": "no procedure defects"}))
+    container.evidence_store.save_retrospective_diff.return_value = ""
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "FAILED"
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "retrospective evidence metadata exceeds JSON budget; durable evidence remains available",
+        'diagnostic password="CANARY secret" Authorization: Bearer CANARY-token '
+        '{"name":"AWS_SECRET_ACCESS_KEY","value":"CANARY-key"} '
+        "postgresql://CANARY-user:CANARY-pass@db.local " + "bounded detail " * 100,
+    ],
+)
+def test_retrospective_exception_diagnostic_is_visible_bounded_and_redacted(monkeypatch, message):
+    container = _container(RecordingRunner())
+
+    def fail_prompt(*args, **kwargs):
+        raise ValueError(message)
+
+    monkeypatch.setattr("headless_codex.services.execution_pipeline.build_retrospective_prompt", fail_prompt)
+    with capture_logs() as logs:
+        assert ExecutionOrchestrator(container).process_message(APPROVAL)
+
+    event = next(entry for entry in logs if entry["event"] == "retrospective_failed")
+    assert event["phase"] == "build_prompt"
+    assert event["error_type"] == "ValueError"
+    assert 0 < len(event["detail"]) <= 500
+    assert "CANARY" not in json.dumps(logs)
+    assert "exc_info" not in event
+    assert "traceback" not in event
+    if message.startswith("retrospective evidence"):
+        assert event["detail"] == message
+    recorded = container.execution_store.record_retrospective.call_args.kwargs
+    assert recorded["status"] == "FAILED"
+    assert recorded["summary"].startswith("build_prompt: ValueError: ")
+    assert len(recorded["summary"]) <= 500
+    assert "CANARY" not in recorded["summary"]
+    assert _states(container)[-1] is ExecutionState.RESOLVED
+    container.execution_store.save_playbook_revision.assert_not_called()
 
 
 @pytest.mark.parametrize("initial_status", ["DRAFT", "VERIFIED"])

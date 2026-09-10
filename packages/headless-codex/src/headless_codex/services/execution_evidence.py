@@ -373,13 +373,69 @@ class ExecutionEvidence:
         }
 
 
+def _share_retrospective_metadata(payload: dict) -> None:
+    """Factor repeated literal metadata only; paths, not source-shaped objects, identify references."""
+    groups: dict[str, list[list[str | int]]] = {}
+
+    def collect(value: object, path: list[str | int]) -> None:
+        if isinstance(value, dict):
+            for name, item in value.items():
+                location = [*path, name]
+                if name in {"command", "intent", "success_criteria", "binding", "request"}:
+                    literal = json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+                    groups.setdefault(literal, []).append(location)
+                else:
+                    collect(item, location)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                collect(item, [*path, index])
+
+    # Do not visit projection annotations or recursively share inside a selected value.
+    for name in ("steps", "metric_wait_records"):
+        collect(payload.get(name, []), [name])
+    shared = []
+    for literal, paths in groups.items():
+        entry = {"value": json.loads(literal), "paths": paths}
+        entry_size = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"))) + 1
+        if len(paths) < 2 or entry_size + 4 * len(paths) >= len(literal) * len(paths):
+            continue
+        shared.append(entry)
+        for path in paths:
+            parent = payload
+            for part in path[:-1]:
+                parent = parent[part]
+            parent[path[-1]] = None
+    if shared:
+        payload["projection"]["shared_values"] = shared
+
+
+def resolve_retrospective_references(payload: dict) -> dict:
+    """Restore generated path references in a copy; shared values are opaque literals, never code."""
+    restored = json.loads(json.dumps(payload, ensure_ascii=False))
+    shared = restored.get("projection", {}).pop("shared_values", [])
+    for entry in shared:
+        for path in entry["paths"]:
+            if not path or path[0] not in ("steps", "metric_wait_records"):
+                raise ValueError("invalid retrospective shared-value path")
+            parent = restored
+            try:
+                for part in path[:-1]:
+                    parent = parent[part]
+                if parent[path[-1]] is not None:
+                    raise ValueError("retrospective shared-value path is not a placeholder")
+                parent[path[-1]] = json.loads(json.dumps(entry["value"], ensure_ascii=False))
+            except (KeyError, IndexError, TypeError) as exc:
+                raise ValueError("unresolvable retrospective shared-value path") from exc
+    return restored
+
+
 def retrospective_evidence_json(evidence: ExecutionEvidence, *, max_chars: int = 60_000) -> str:
     """Return valid bounded JSON without mutating durable evidence or omitting steps and verdicts.
 
     Only per-attempt output/observation/error previews shrink. Identity, command metadata,
     outcome records, resolution and timestamps remain intact. Explicit per-field omissions
-    distinguish this projection from persisted evidence. If metadata alone cannot fit, raise
-    ValueError so the existing retrospective failure path applies instead of supplying bad JSON.
+    distinguish this projection from persisted evidence. Repeated metadata may use explicit
+    shared literals. If unique metadata cannot fit, raise ValueError rather than lose evidence.
     """
     payload = evidence.to_dict()
     # Round-trip makes nested outcome records independent of the durable evidence object.
@@ -426,6 +482,9 @@ def retrospective_evidence_json(evidence: ExecutionEvidence, *, max_chars: int =
     if len(full) <= max_chars:
         return full
     minimum = render(0)
+    if len(minimum) > max_chars:
+        _share_retrospective_metadata(payload)
+        minimum = render(0)
     if len(minimum) > max_chars:
         raise ValueError("retrospective evidence metadata exceeds JSON budget; durable evidence remains available")
     lower = 0

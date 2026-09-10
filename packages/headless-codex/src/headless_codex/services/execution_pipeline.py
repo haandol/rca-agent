@@ -18,7 +18,7 @@ from headless_codex.ports.interfaces.execution_store import (
     ExecutionClaimLostError,
     ExecutionTarget,
 )
-from headless_codex.services.execution_evidence import ExecutionEvidence
+from headless_codex.services.execution_evidence import ExecutionEvidence, redact
 from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution
 from headless_codex.services.execution_prompt import (
     build_execution_prompt,
@@ -359,8 +359,10 @@ class ExecutionOrchestrator:
             log.info("retrospective_already_claimed")
             return
 
+        phase = "build_prompt"
         try:
             prompt = build_retrospective_prompt(target, evidence, execution_id=execution_id)
+            phase = "run_agent"
             result = self._c.execution_runner.run_retrospective(
                 prompt,
                 execution_token=workspace.token,
@@ -379,6 +381,7 @@ class ExecutionOrchestrator:
                 log.error("retrospective_agent_failed", detail=result.result[:500])
                 return
 
+            phase = "read_attestation"
             saved = workspace.read_retrospective()
             if (
                 saved is None
@@ -397,33 +400,44 @@ class ExecutionOrchestrator:
                 log.error("retrospective_attestation_missing")
                 return
 
+            phase = "merge_update"
             merged, diff = merge_playbook_update(target.playbook, saved.get("update"))
+            phase = "persist_attestation"
+            diff_key = self._c.evidence_store.save_retrospective_diff(
+                execution_id,
+                rca_id=request.rca_id,
+                diff={
+                    "rationale": saved["rationale"],
+                    "update": {} if diff.is_empty else saved["update"],
+                    "proposed_update": saved["update"],
+                    **diff.to_dict(),
+                },
+            )
+            if not diff_key:
+                raise RuntimeError("retrospective attestation did not persist")
             if diff.is_empty:
+                phase = "publish_playbook"
                 self._publish_playbook(request, target, promote_to_verified(merged), execution_id)
+                phase = "record_result"
                 store.record_retrospective(
                     execution_id,
                     rca_id=request.rca_id,
                     claim_token=claim_token,
                     status="NO_CHANGE",
-                    summary="proposed update changed nothing",
+                    summary=saved["rationale"][:500],
                     playbook_snapshot_s3_key=snapshot_key,
+                    diff_s3_key=diff_key,
                 )
                 log.info("retrospective_update_changed_nothing", promoted=True)
                 return
 
-            diff_key = self._c.evidence_store.save_retrospective_diff(
-                execution_id,
-                rca_id=request.rca_id,
-                diff={
-                    "rationale": str(saved.get("rationale", ""))[:4000],
-                    **diff.to_dict(),
-                },
-            )
             if diff.corrected_steps or diff.added_steps:
                 published = {**merged, VERIFICATION_STATUS_FIELD: PLAYBOOK_DRAFT}
             else:
                 published = promote_to_verified(merged)
+            phase = "publish_playbook"
             self._publish_playbook(request, target, published, execution_id)
+            phase = "record_result"
             store.record_retrospective(
                 execution_id,
                 rca_id=request.rca_id,
@@ -438,16 +452,18 @@ class ExecutionOrchestrator:
                 corrected=len(diff.corrected_steps),
                 added=len(diff.added_steps),
             )
-        except Exception:
+        except Exception as exc:
             # 회고 실패는 이미 확정된 실행 결과를 되돌리지 않는다.
-            log.exception("retrospective_failed")
+            error_type = redact(type(exc).__name__)[:100]
+            detail = redact(str(exc))[:500]
+            log.error("retrospective_failed", phase=phase, error_type=error_type, detail=detail)
             try:
                 store.record_retrospective(
                     execution_id,
                     rca_id=request.rca_id,
                     claim_token=claim_token,
                     status="FAILED",
-                    summary="unhandled retrospective exception",
+                    summary=f"{phase}: {error_type}: {detail}"[:500],
                     playbook_snapshot_s3_key=snapshot_key,
                 )
             except Exception:
