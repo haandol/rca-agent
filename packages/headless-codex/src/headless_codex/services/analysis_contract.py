@@ -93,6 +93,7 @@ class AnalysisSnapshot:
     statuses: dict[str, str] = field(default_factory=dict)
     confidences: dict[str, float] = field(default_factory=dict)
     reasoning: dict[str, str] = field(default_factory=dict)
+    closure_reasons: dict[str, str] = field(default_factory=dict)
     evidence_summaries: dict[str, list[str]] = field(default_factory=dict)
     evidence_failures: dict[str, bool] = field(default_factory=dict)
     validated_fault_types: dict[str, FaultType] = field(default_factory=dict)
@@ -114,7 +115,7 @@ class AnalysisResult:
         return bool(self.snapshot.latest_decision and self.snapshot.latest_decision.root_cause_confirmed)
 
     def effective_state_view(self) -> dict:
-        """Project replay-owned judgments without inventing evidence or treating closure as rejection."""
+        """Keep direct judgments and server closure reasons separate for the authoritative Report input."""
         snapshot = self.snapshot
         return {
             "decision": snapshot.latest_decision.as_dict() if snapshot.latest_decision else None,
@@ -133,6 +134,7 @@ class AnalysisResult:
                         else None
                     ),
                     "reasoning": snapshot.reasoning[identifier],
+                    "closure_reason": snapshot.closure_reasons.get(identifier),
                     "evidence_summary": list(snapshot.evidence_summaries[identifier]),
                     "evidence_collection_failed": snapshot.evidence_failures[identifier],
                 }
@@ -380,6 +382,19 @@ def _classify(
 def _remove_result_entry(artifact: dict, hypothesis_id: str) -> None:
     for bucket in _RESULT_BUCKETS:
         artifact[bucket] = [entry for entry in artifact[bucket] if entry.get("hypothesis_id") != hypothesis_id]
+
+
+def _closed_entry_reasoning(entry: dict, artifact: dict, label: str) -> str:
+    """Read saved direct reasoning; legacy closure text cannot recover a lost judgment."""
+    reasoning = entry.get("reasoning", "")
+    if not isinstance(reasoning, str):
+        raise AnalysisContractError(f"{label} closed reasoning must be a string")
+    if (
+        "closure_reason" not in entry
+        and reasoning == f"Server termination: {artifact['server_decision'].get('reason')}"
+    ):
+        return ""
+    return reasoning
 
 
 def _tokens(text: str) -> set[str]:
@@ -690,7 +705,7 @@ def _apply_validation_loop(
         snapshot.validated_fault_types[context.hypothesis_id] = FaultType.UNSUPPORTED
 
     # Saved closures replace the submitted pending/investigation entries. Restore
-    # their real confidence and evidence before replaying the same termination;
+    # their real confidence, direct reasoning and evidence before replaying the same termination;
     # otherwise replay silently falls back to generation-time values.
     for entry in artifact["closed"]:
         hypothesis_id = _required_string(entry, "hypothesis_id", label)
@@ -700,7 +715,7 @@ def _apply_validation_loop(
         if not isinstance(entry.get("evidence_collection_failed"), bool):
             raise AnalysisContractError(f"{label} evidence_collection_failed must be a boolean")
         snapshot.confidences[hypothesis_id] = _confidence(entry.get("confidence"), label)
-        snapshot.reasoning[hypothesis_id] = _required_string(entry, "reasoning", label)
+        snapshot.reasoning[hypothesis_id] = _closed_entry_reasoning(entry, artifact, label)
         snapshot.evidence_summaries[hypothesis_id] = _entry_evidence(entry, label)
         snapshot.evidence_failures[hypothesis_id] = entry["evidence_collection_failed"]
 
@@ -719,14 +734,15 @@ def _apply_validation_loop(
                 {
                     "hypothesis_id": hypothesis_id,
                     "confidence": snapshot.confidences.get(hypothesis_id, 0.0),
-                    "reasoning": f"Server termination: {decision.reason}",
+                    "reasoning": snapshot.reasoning.get(hypothesis_id, ""),
+                    "closure_reason": decision.reason,
                     "evidence_summary": snapshot.evidence_summaries.get(hypothesis_id, []),
                     "evidence_collection_failed": snapshot.evidence_failures.get(hypothesis_id, False),
                     "server_closed": True,
                 }
             )
             snapshot.statuses[hypothesis_id] = "closed"
-            snapshot.reasoning[hypothesis_id] = f"Server termination: {decision.reason}"
+            snapshot.closure_reasons[hypothesis_id] = decision.reason
 
     normalized["server_decision"] = decision.as_dict()
     snapshot.blocked_streak = decision.blocked_streak
