@@ -1,0 +1,26 @@
+{
+  "observedAt": "2026-09-10T12:28:16.218356+00:00",
+  "method": "actual UI click Execution approval then Approve and execute",
+  "execution": {
+    "executionId": "a079178c-e144-408f-8850-4ddcaad08518",
+    "rcaId": "3342630d-0a48-56fa-8c02-a09fce1763b0",
+    "engine": "headless-codex",
+    "state": "EXECUTING",
+    "stateLabel": "\uc2e4\ud589 \uc911",
+    "approvalId": "a079178c-e144-408f-8850-4ddcaad08518",
+    "requestedBy": "dashboard",
+    "attempt": 1,
+    "attemptedStepCount": 0,
+    "blockedCount": 0,
+    "failedStepCount": 0,
+    "resolutionConfirmed": null,
+    "errorReason": "",
+    "evidenceS3Key": "",
+    "retrospectiveStatus": "",
+    "retrospectiveSummary": "",
+    "playbookSnapshotS3Key": "",
+    "retrospectiveDiffS3Key": "",
+    "createdAt": "2026-09-10T12:28:07.649Z",
+    "updatedAt": "2026-09-10T12:28:08.527693+00:00"
+  }
+}

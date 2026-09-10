@@ -1,0 +1,154 @@
+{
+  "runId": "custlock-20260910T121625Z-1e41",
+  "candidateCommit": "212965e5852b",
+  "engine": "headless-codex",
+  "rcaId": "3342630d-0a48-56fa-8c02-a09fce1763b0",
+  "result": "FAILED",
+  "customerReady": false,
+  "analysisConfirmed": true,
+  "analysisConfidence": 0.98,
+  "ownedTaskDiscovered": true,
+  "approvalIssued": true,
+  "approvalMethod": "actual dashboard UI",
+  "executionId": "a079178c-e144-408f-8850-4ddcaad08518",
+  "executionState": "UNRESOLVED",
+  "approvedRecoveryDemonstrated": false,
+  "approvedStopAndRollbackDemonstrated": true,
+  "observedFailure": "B2 actual: alarm waiter returned12:36:33 before second fixed minute12:36-12:37 complete; terminal UNRESOLVED12:37:26. Query logs also selected patient_vitals reads, not ingest writes. Independent subsequent fixed-bin metrics are healthy but do not replace execution evidence or establish retrospective completion.",
+  "actualCommands": 14,
+  "actualSteps": 4,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/bf30eb3a650c4f8d93a88070200b1315",
+  "ownerPID": 21243,
+  "release": {
+    "event": "maintenance_released",
+    "run_id": "custlock-20260910T121625Z-1e41",
+    "backend_pid": 21243,
+    "release_reason": "sigterm",
+    "released_at": "2026-09-10T12:34:07.573070+00:00",
+    "rollback_complete": true,
+    "lock_acquired": true
+  },
+  "freshMetrics": {
+    "observedAt": "2026-09-10T12:37:05.680952+00:00",
+    "anchor": "actual maintenance_released; first two full periods only",
+    "releaseTime": "2026-09-10T12:34:07.573070+00:00",
+    "start": "2026-09-10T12:35:00+00:00",
+    "end": "2026-09-10T12:37:00+00:00",
+    "values": {
+      "VitalIngestAttempts": {
+        "Label": "VitalIngestAttempts",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 21:35:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 10.0,
+            "Sum": 20.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 21:36:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 14.5,
+            "Sum": 29.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "e4b28a13-0c1a-4c15-9902-4f4e54b42b69",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "e4b28a13-0c1a-4c15-9902-4f4e54b42b69",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "217",
+            "date": "Thu, 10 Sep 2026 12:37:22 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "VitalIngestFailures": {
+        "Label": "VitalIngestFailures",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 21:35:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          },
+          {
+            "Timestamp": "2026-09-10 21:36:00+09:00",
+            "SampleCount": 2.0,
+            "Average": 0.0,
+            "Sum": 0.0,
+            "Unit": "Count"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "5086c21b-4bc9-49e3-936e-faa3516b82ad",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "5086c21b-4bc9-49e3-936e-faa3516b82ad",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "213",
+            "date": "Thu, 10 Sep 2026 12:37:22 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      },
+      "PatientVitalsQueryDuration": {
+        "Label": "PatientVitalsQueryDuration",
+        "Datapoints": [
+          {
+            "Timestamp": "2026-09-10 21:36:00+09:00",
+            "SampleCount": 5.0,
+            "Average": 9.845035200032726,
+            "Sum": 49.22517600016363,
+            "Unit": "Milliseconds"
+          },
+          {
+            "Timestamp": "2026-09-10 21:35:00+09:00",
+            "SampleCount": 6.0,
+            "Average": 9.417380666604913,
+            "Sum": 56.50428399962948,
+            "Unit": "Milliseconds"
+          }
+        ],
+        "ResponseMetadata": {
+          "RequestId": "e8882a5b-0966-4825-b3a8-ac8da91425cf",
+          "HTTPStatusCode": 200,
+          "HTTPHeaders": {
+            "x-amzn-requestid": "e8882a5b-0966-4825-b3a8-ac8da91425cf",
+            "content-type": "application/x-amz-json-1.0",
+            "content-length": "290",
+            "date": "Thu, 10 Sep 2026 12:37:23 GMT"
+          },
+          "RetryAttempts": 0
+        }
+      }
+    }
+  },
+  "timings": {
+    "startedAt": "2026-09-10T12:16:25.512077+00:00",
+    "alarmAt": "2026-09-10T12:20:28.679Z",
+    "analysisCompletedAt": "2026-09-10T12:26:41.667880+00:00",
+    "approvedAt": "2026-09-10T12:28:07.649Z",
+    "stopStartedAt": "2026-09-10T12:34:06.685695+00:00",
+    "stopEndedAt": "2026-09-10T12:34:07.435002+00:00",
+    "terminalAt": "2026-09-10T12:37:26.341857+00:00"
+  },
+  "evidence": {
+    "s3": "executions/3342630d-0a48-56fa-8c02-a09fce1763b0/a079178c-e144-408f-8850-4ddcaad08518/evidence.json",
+    "local": "/Users/dongkyl/git/rca-agent/docs/test-reports/customer-maintenance-demo-2026-09-10/custlock-20260910T121625Z-1e41",
+    "approvalSnapshotDigestVerified": true,
+    "generatedEqualsStored": true,
+    "duplicateApprovalStatus": 409
+  },
+  "retrospective": "not run because execution UNRESOLVED",
+  "cleanup": {
+    "healthRecoveryVerified": true,
+    "status": "completed",
+    "completedAt": "2026-09-10T12:42:41.144749+00:00",
+    "enginePinRestored": true,
+    "actor": "supervisor after terminal UNRESOLVED; no success inferred"
+  }
+}

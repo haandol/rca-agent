@@ -1,0 +1,99 @@
+{
+  "observedAt": "2026-09-10T12:37:05.680952+00:00",
+  "anchor": "actual maintenance_released; first two full periods only",
+  "releaseTime": "2026-09-10T12:34:07.573070+00:00",
+  "start": "2026-09-10T12:35:00+00:00",
+  "end": "2026-09-10T12:37:00+00:00",
+  "values": {
+    "VitalIngestAttempts": {
+      "Label": "VitalIngestAttempts",
+      "Datapoints": [
+        {
+          "Timestamp": "2026-09-10 21:35:00+09:00",
+          "SampleCount": 2.0,
+          "Average": 10.0,
+          "Sum": 20.0,
+          "Unit": "Count"
+        },
+        {
+          "Timestamp": "2026-09-10 21:36:00+09:00",
+          "SampleCount": 2.0,
+          "Average": 14.5,
+          "Sum": 29.0,
+          "Unit": "Count"
+        }
+      ],
+      "ResponseMetadata": {
+        "RequestId": "e4b28a13-0c1a-4c15-9902-4f4e54b42b69",
+        "HTTPStatusCode": 200,
+        "HTTPHeaders": {
+          "x-amzn-requestid": "e4b28a13-0c1a-4c15-9902-4f4e54b42b69",
+          "content-type": "application/x-amz-json-1.0",
+          "content-length": "217",
+          "date": "Thu, 10 Sep 2026 12:37:22 GMT"
+        },
+        "RetryAttempts": 0
+      }
+    },
+    "VitalIngestFailures": {
+      "Label": "VitalIngestFailures",
+      "Datapoints": [
+        {
+          "Timestamp": "2026-09-10 21:35:00+09:00",
+          "SampleCount": 2.0,
+          "Average": 0.0,
+          "Sum": 0.0,
+          "Unit": "Count"
+        },
+        {
+          "Timestamp": "2026-09-10 21:36:00+09:00",
+          "SampleCount": 2.0,
+          "Average": 0.0,
+          "Sum": 0.0,
+          "Unit": "Count"
+        }
+      ],
+      "ResponseMetadata": {
+        "RequestId": "5086c21b-4bc9-49e3-936e-faa3516b82ad",
+        "HTTPStatusCode": 200,
+        "HTTPHeaders": {
+          "x-amzn-requestid": "5086c21b-4bc9-49e3-936e-faa3516b82ad",
+          "content-type": "application/x-amz-json-1.0",
+          "content-length": "213",
+          "date": "Thu, 10 Sep 2026 12:37:22 GMT"
+        },
+        "RetryAttempts": 0
+      }
+    },
+    "PatientVitalsQueryDuration": {
+      "Label": "PatientVitalsQueryDuration",
+      "Datapoints": [
+        {
+          "Timestamp": "2026-09-10 21:36:00+09:00",
+          "SampleCount": 5.0,
+          "Average": 9.845035200032726,
+          "Sum": 49.22517600016363,
+          "Unit": "Milliseconds"
+        },
+        {
+          "Timestamp": "2026-09-10 21:35:00+09:00",
+          "SampleCount": 6.0,
+          "Average": 9.417380666604913,
+          "Sum": 56.50428399962948,
+          "Unit": "Milliseconds"
+        }
+      ],
+      "ResponseMetadata": {
+        "RequestId": "e8882a5b-0966-4825-b3a8-ac8da91425cf",
+        "HTTPStatusCode": 200,
+        "HTTPHeaders": {
+          "x-amzn-requestid": "e8882a5b-0966-4825-b3a8-ac8da91425cf",
+          "content-type": "application/x-amz-json-1.0",
+          "content-length": "290",
+          "date": "Thu, 10 Sep 2026 12:37:23 GMT"
+        },
+        "RetryAttempts": 0
+      }
+    }
+  }
+}

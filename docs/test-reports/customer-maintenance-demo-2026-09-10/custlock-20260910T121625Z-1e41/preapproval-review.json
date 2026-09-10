@@ -1,0 +1,10 @@
+{
+  "reviewedAt": "2026-09-10T12:27:18.817319+00:00",
+  "generatedEqualsStored": true,
+  "executionStepCount": 4,
+  "onlyCurrentRunId": true,
+  "ownerPID": 21243,
+  "ownerTaskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/bf30eb3a650c4f8d93a88070200b1315",
+  "review": "Exact current owner, standalone stop only, actual named completion event and rollback true, two full post-action periods required",
+  "approvedForUIAction": true
+}
