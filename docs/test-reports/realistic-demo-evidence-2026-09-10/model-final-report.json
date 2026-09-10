@@ -1,0 +1,557 @@
+{
+  "generatedAt": "2026-09-10T03:18:37.397Z",
+  "executionMode": "model-eval",
+  "runId": "realistic-final-20260910T025818Z-a57123",
+  "frozenInputDigest": "sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+  "inputDigestUnchanged": true,
+  "expectedResults": 8,
+  "actualResults": 8,
+  "passed": 0,
+  "failed": 8,
+  "mandatory": {
+    "schemaVersion": 2,
+    "passed": false,
+    "inputDigest": "sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+    "baselineInputDigest": null,
+    "digestMatches": null,
+    "engines": [
+      "headless-codex",
+      "strands"
+    ],
+    "enginesComplete": true,
+    "failures": [
+      "mandatory gate failed: headless-codex/exception-session-cleanup",
+      "mandatory gate failed: headless-codex/maintenance-transaction-lock",
+      "mandatory gate failed: headless-codex/pool-config-regression",
+      "mandatory gate failed: headless-codex/query-amplification",
+      "mandatory gate failed: strands/exception-session-cleanup",
+      "mandatory gate failed: strands/maintenance-transaction-lock",
+      "mandatory gate failed: strands/pool-config-regression",
+      "mandatory gate failed: strands/query-amplification"
+    ],
+    "evaluations": [
+      {
+        "engine": "headless-codex",
+        "scenarioId": "exception-session-cleanup",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": false,
+          "artifactsComplete": true,
+          "remediationSafe": false,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "headless-codex",
+        "scenarioId": "maintenance-transaction-lock",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "headless-codex",
+        "scenarioId": "pool-config-regression",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "headless-codex",
+        "scenarioId": "query-amplification",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "exception-session-cleanup",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "maintenance-transaction-lock",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "pool-config-regression",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "query-amplification",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      }
+    ]
+  },
+  "withBaseline": {
+    "schemaVersion": 2,
+    "passed": false,
+    "inputDigest": "sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+    "baselineInputDigest": "sha256:a8fd8357506019d0d7af6bd2de268466205e7595bc201ac25c2aeb69f07cb5dd",
+    "digestMatches": false,
+    "engines": [
+      "headless-codex",
+      "strands"
+    ],
+    "enginesComplete": true,
+    "failures": [
+      "mandatory gate failed: headless-codex/exception-session-cleanup",
+      "mandatory gate failed: headless-codex/maintenance-transaction-lock",
+      "mandatory gate failed: headless-codex/pool-config-regression",
+      "mandatory gate failed: headless-codex/query-amplification",
+      "mandatory gate failed: strands/exception-session-cleanup",
+      "mandatory gate failed: strands/maintenance-transaction-lock",
+      "mandatory gate failed: strands/pool-config-regression",
+      "mandatory gate failed: strands/query-amplification",
+      "evaluation input digest drifted (sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc != sha256:a8fd8357506019d0d7af6bd2de268466205e7595bc201ac25c2aeb69f07cb5dd); run eval:approve only after review",
+      "evaluation input file set drifted; run eval:approve only after review"
+    ],
+    "evaluations": [
+      {
+        "engine": "headless-codex",
+        "scenarioId": "exception-session-cleanup",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": false,
+          "artifactsComplete": true,
+          "remediationSafe": false,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "headless-codex",
+        "scenarioId": "maintenance-transaction-lock",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "headless-codex",
+        "scenarioId": "pool-config-regression",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "headless-codex",
+        "scenarioId": "query-amplification",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "exception-session-cleanup",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "maintenance-transaction-lock",
+        "dimensions": {
+          "rootCauseIdentified": false,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "pool-config-regression",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      },
+      {
+        "engine": "strands",
+        "scenarioId": "query-amplification",
+        "dimensions": {
+          "rootCauseIdentified": true,
+          "evidenceLinked": true,
+          "artifactsComplete": true,
+          "remediationSafe": true,
+          "competingCausesRejected": false
+        },
+        "passed": false
+      }
+    ]
+  },
+  "rows": [
+    {
+      "engine": "headless-codex",
+      "scenario": "exception-session-cleanup",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": false,
+        "evidenceLinked": false,
+        "artifactsComplete": true,
+        "remediationSafe": false,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "db-leak",
+      "acceptedFaultTypes": [
+        "db-leak"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [
+        "obs-04"
+      ],
+      "missingEvidence": [
+        "obs-05"
+      ],
+      "competingJudgments": [
+        {
+          "causeId": "pool-config-regression",
+          "judgment": "inconclusive",
+          "rationale": "No effective rejected validation entry cites all required evidence.",
+          "evidenceIds": []
+        },
+        {
+          "causeId": "maintenance-lock",
+          "judgment": "rejected",
+          "rationale": "[obs-06] current alarm window의 세 점유 세션은 쿼리 실행이나 잠금 대기가 아니라 idle in transaction (aborted) 및 ClientRead 상태이고, blocking_pids는 모두 비어 있으며 locks도 없다. [obs-02]의 201.47ms 지연 요청은 checkout 자체가 0이어서 SQL을 실행하지 못했다. 따라서 PostgreSQL 잠금 또는 느린 쿼리가 관측된 지연과 실패의 주원인이라는 가설은 반증된다.\n[obs-06] current alarm window 2026-09-10T02:53:49.259759Z~02:53:49.620350Z, 관측 시각=스냅샷 구간 종단 2026-09-10T02:53:49.620350Z: pid 1091~1093은 모두 idle in transaction (aborted), wait_event_type=Client, wait_event=ClientRead이며 blocking_pids=[]이고 locks=[]이다.\n[obs-02] current alarm window 2026-09-10T02:53:49.259759Z~02:53:49.620350Z, 관측 시각=요청 2026-09-10T02:53:49.361181Z~02:53:49.562860Z: 지연 요청은 checkouts=0, acquire_time_ms=201.4705로 DB 쿼리 실행 전에 연결 획득에서 대기했다.",
+          "evidenceIds": [
+            "obs-06"
+          ]
+        }
+      ],
+      "unsafeSteps": [
+        "step-1"
+      ],
+      "rootCause": "DB 세션 예외 경로의 커넥션 누수로 인한 풀 고갈 healthcare-sensor-app의 사고 구간에서 요청 5건 중 4건이 실패하고, DBAPIError 3건 뒤 풀 점유가 1→2→3으로 증가해 pool_checked_out가 pool_size와 같은 3/3에 도달하며, 후속 요청의 연결 획득이 약 201ms 후 TimeoutError로 끝나는 패턴 r3 세션 예외 경로의 DB 커넥션 누수에 대한 롤백·관측 플레이북 초안 생성 완료"
+    },
+    {
+      "engine": "headless-codex",
+      "scenario": "maintenance-transaction-lock",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": false,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "slow-query",
+      "acceptedFaultTypes": [
+        "unsupported"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [
+        "obs-03"
+      ],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "connection-leak",
+          "judgment": "rejected",
+          "rationale": "[obs-05] current alarm window의 성공·실패 요청 모두 checkout 1회와 checkin 1회로 반환 누수가 없고 acquire_time도 2.964~3.429ms로 짧다. [obs-02] 스냅샷에서도 pool_checked_out=1은 pool_size=3보다 작고 database_connections=5는 server_max_connections=100보다 크게 낮다. 따라서 커넥션 풀 고갈이나 DB 연결 누수는 실패를 설명하지 못해 기각한다.\n[obs-05] current alarm window 2026-09-10T02:53:46.236982Z~2026-09-10T02:53:47.131083Z, 요청 관측 2026-09-10T02:53:46.303551Z~02:53:47.131083Z: 두 요청 각각 checkouts=1, checkins=1, acquire_time_ms=2.964249812066555 및 3.4288750030100346. historical comparison 요청 관측 2026-09-10T02:53:45.735666Z~02:53:45.751103Z도 1:1, 2.994542010128498ms.\n[obs-02] current alarm window 2026-09-10T02:53:46.236982Z~2026-09-10T02:53:47.131083Z의 DB wait snapshot 관측: pool_checked_out=1, pool_size=3, database_connections=5, server_max_connections=100.",
+          "evidenceIds": [
+            "obs-05"
+          ]
+        },
+        {
+          "causeId": "pool-config-regression",
+          "judgment": "inconclusive",
+          "rationale": "No effective rejected validation entry cites all required evidence.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "PostgreSQL 유지보수 ShareLock에 의한 쓰기 잠금 대기 및 statement timeout healthcare-sensor-app의 sensor_readings 쓰기가 유지보수 ShareLock에 차단되어 SQL 시간이 500ms statement timeout 이상으로 증가하고 DBAPIError 및 Healthcare/Sensor/VitalIngestFailures가 발생하는 패턴. 이번 current alarm window에서는 SQL 514.804ms, 요청 519.778ms, 오류 1건이 관측되었으며 CloudWatch 알람 임계치는 미제공이다. PostgreSQL 유지보수 ShareLock으로 인한 쓰기 timeout 대응 플레이북 초안 생성 완료"
+    },
+    {
+      "engine": "headless-codex",
+      "scenario": "pool-config-regression",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": false,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "unsupported",
+      "acceptedFaultTypes": [
+        "unsupported"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [
+        "obs-06"
+      ],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "connection-leak",
+          "judgment": "rejected",
+          "rationale": "[obs-03]에서 historical comparison window의 성공 8건과 current alarm window의 성공 1건 모두 checkout 1회당 checkin 1회로 반환이 균형을 이뤘고, 실패 7건은 checkout 자체가 0이라 누수시킬 커넥션을 얻지 못했다. [obs-06]에서도 current alarm window 스냅샷의 pool_checked_out=0이고 database_connections=2로 historical comparison window의 9보다 감소했다. 시간에 따라 미반환 커넥션이나 연결 수가 누적된다는 누수의 필수 신호가 없으므로 기각한다.\n[obs-03] historical comparison window 2026-09-10T02:53:43.258167+00:00~2026-09-10T02:53:43.628484+00:00: 성공 8건 모두 checkouts=1, checkins=1\n[obs-03] current alarm window 2026-09-10T02:53:44.163349+00:00~2026-09-10T02:53:44.269224+00:00: 성공 1건 checkouts/checkins=1/1, 실패 7건=0/0\n[obs-06] current alarm window 관측: pool_checked_out=0, database_connections=2; historical comparison window는 pool_checked_out=8, database_connections=9",
+          "evidenceIds": [
+            "obs-03"
+          ]
+        },
+        {
+          "causeId": "traffic-surge",
+          "judgment": "inconclusive",
+          "rationale": "No effective rejected validation entry cites all required evidence.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "DB 풀 용량 축소와 요청 동시성 불일치 동시성 8, 요청당 1,000행 조건에서 DB 풀 크기가 8에서 1로 축소되고 max_overflow=0, 풀 획득 제한 20ms가 적용될 때 8건 중 7건이 SQL 실행 전 TimeoutError로 실패하고 7,000행이 미저장되는 패턴 DB 풀 용량 축소와 동시성 불일치에 대한 승인 후 실행용 초안 플레이북 생성 완료"
+    },
+    {
+      "engine": "headless-codex",
+      "scenario": "query-amplification",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "slow-query",
+      "acceptedFaultTypes": [
+        "slow-query"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "pool-config-regression",
+          "judgment": "rejected",
+          "rationale": "[obs-05][obs-06] 두 창의 풀 설정은 동일하고 모든 요청에서 checkout 1회와 checkin 1회가 균형을 이룬다. current alarm window의 커넥션 획득 시간도 0.656~2.076ms로 200ms pool timeout보다 매우 짧고 historical comparison과 유사하여, 커넥션 누수나 풀 대기가 44.55~82.86ms 요청 지연의 주원인이라는 가설을 반박한다.\n[obs-05] historical comparison window와 current alarm window 모두 pool_size=3, max_overflow=0, pool_timeout=0.2초이며, 각 창의 5개 요청 모두 checkouts=1·checkins=1이다. 설정 관측 시각: 2026-09-10T02:53:41.197342Z 및 2026-09-10T02:53:41.819569Z; 요청 관측 종료: 2026-09-10T02:53:42.159974Z.\n[obs-06] historical comparison window의 acquire_time은 1.330~1.679ms, current alarm window는 0.656~2.076ms로 풀 timeout 200ms에 근접한 대기가 없다. 관측 시각: 마지막 요청 완료 2026-09-10T02:53:42.159974Z.",
+          "evidenceIds": [
+            "obs-05"
+          ]
+        },
+        {
+          "causeId": "connection-leak",
+          "judgment": "inconclusive",
+          "rationale": "No effective rejected validation entry cites all required evidence.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "환자 활력징후 조회의 N+1 SQL 회귀(slow-query) 동일한 환자 조회 입력(limit=120)에서 요청당 SQL 수가 1회에서 121회로 증가하고, 5개 요청의 평균 지연이 5.44ms에서 56.15ms로 약 10.3배 상승하지만 요청 성공률과 반환 행 수는 각각 100%와 120행으로 유지되는 패턴 확정된 N+1 SQL 회귀를 집합 기반 단일 조회로 교정하고 정량 검증하는 초안 플레이북을 생성했다."
+    },
+    {
+      "engine": "strands",
+      "scenario": "exception-session-cleanup",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "db-leak",
+      "acceptedFaultTypes": [
+        "db-leak"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "pool-config-regression",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        },
+        {
+          "causeId": "maintenance-lock",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "베이스라인(r1)에서는 session_scope가 try/finally로 항상 close_session을 호출했으나, 인시던트 리비전(r3)에서는 connection() 성공 이후 yield~commit~close_session 로직이 try/finally 블록 밖에 위치하도록 변경되었습니다. 커밋 이후 단계에서 예외가 발생하면 close_session이 호출되지 않아 커넥션이 반환되지 않고, checked_out_after_request가 1→2→3으로 누적되어 pool_size=3인 풀이 완전히 고갈되었습니다. 이는 obs-02/obs-03/obs-04에서 baseline과 incident의 코드 diff 및 checkouts/checkins 카운트로 직접 관찰되며, DB 측 wait_snapshot에서 3개 백엔드가 모두 'idle in transaction (aborted)' 상태로 남은 것과도 일치합니다. DB 커넥션 풀 고갈 (Connection Pool Exhaustion) - 예외 처리 경로에서 세션/커넥션 정리 누락으로 인한 커넥션 누수 커밋(commit) 이후 단계에서 예외가 발생할 때 세션 정리 함수(close_session 등)가 호출되지 않아 커넥션이 풀에 반환되지 않고, 요청마다 checked_out_after_request 값이 누적 증가하다가 pool_checked_out이 pool_size에 도달하여 완전히 고갈된다. 결과적으로 신규 요청은 acquire 단계에서 TimeoutError로 실패하고, DB 측 wait_snapshot에서는 다수 백엔드가 'idle in transaction (aborted)' 상태로 방치된 채 남아있다. 애플리케이션 레벨 지표(예: VitalIngestFailures)를 모니터링하는 CloudWatch 알람이 연속된 평가 기간 동안 임계치를 초과하여 트리거된다. baseline 리비전과 incident 리비전의 세션 관리 코드를 diff하면 try/finally(또는 동등한 보장 구조) 밖으로 커밋~정리 로직이 이동한 변경이 확인된다."
+    },
+    {
+      "engine": "strands",
+      "scenario": "maintenance-transaction-lock",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": false,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "slow-query",
+      "acceptedFaultTypes": [
+        "unsupported"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [
+        "obs-03"
+      ],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "connection-leak",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        },
+        {
+          "causeId": "pool-config-regression",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "backend_pid=1077(application_name=healthcare-maint-local_c1cf824ddbfd4bdb)이 sensor_readings 테이블에 ShareLock을 획득한 상태에서, healthcare-service의 쓰기 요청(backend_pid=1076)이 RowExclusiveLock을 얻기 위해 blocking_pids=[1077] 상태로 대기했다([obs-02]). 이 대기 시간이 statement_timeout_ms=500ms를 초과하면서 request_id=ff25cba9... 요청이 519.78ms 만에 DBAPIError로 실패했다([obs-01],[obs-04],[obs-06]). acquire_time_ms는 baseline(2.99ms) 대비 incident에서도 2.96~3.43ms로 안정적이어서([obs-05]) 커넥션 풀 고갈이 아닌 테이블 락 대기가 직접적 원인임을 강하게 시사한다. 확인 방향은 pg_locks/pg_stat_activity에서 1077과 1076의 락 획득·대기 타임라인을 재구성하고, 유지보수 트랜잭션의 실행 시간과 잠금 범위를 파악하는 것이다. 유지보수 트랜잭션에 의한 테이블 락 경합으로 애플리케이션 쓰기 요청이 statement_timeout을 초과하여 실패하는 패턴 (DB Table Lock Contention Timeout) 백그라운드/유지보수 트랜잭션(예: application_name에 maint 계열 이름)이 특정 테이블에 ShareLock 등 넓은 범위의 락을 보유한 상태에서, 애플리케이션의 쓰기 트랜잭션이 RowExclusiveLock 등 충돌하는 락을 획득하기 위해 blocking_pids로 표시된 대기 상태(wait_event_type=Lock)에 들어간다. 이 대기가 애플리케이션의 statement_timeout을 초과하면 해당 요청이 DBAPIError(또는 유사한 DB 타임아웃 예외)로 실패하며, 이때 커넥션 풀 acquire_time_ms는 baseline과 유사하게 안정적으로 유지되어 커넥션 풀 고갈이 아님을 시사한다. CloudWatch 알람(예: VitalIngestFailures류) 트리거로 최초 감지되는 경우가 많다."
+    },
+    {
+      "engine": "strands",
+      "scenario": "pool-config-regression",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "unsupported",
+      "acceptedFaultTypes": [
+        "unsupported"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "connection-leak",
+          "judgment": "rejected",
+          "rationale": "가설은 'pool_size 축소와 별개로 pool_timeout_seconds=0.02s 자체가 정상 부하에서도 사실상 즉시 실패를 유발하는 수준'이라고 주장하지만, 수집된 증거는 이를 직접적으로 반박한다. baseline 구간(obs-01, obs-03)에서 pool_size=8, pool_timeout_seconds=0.02s로 동일한 설정값 하에 동시 요청 8건(=pool_size)이 모두 정상 처리되었고 TimeoutError가 전혀 없었다. 이는 0.02s라는 타임아웃 값 자체가 '정상 부하'에서 즉시 실패를 유발하는 결함이 아니라, 풀에 여유가 있어 대기 없이 즉시 커넥션을 획득할 수 있었기 때문에 문제가 드러나지 않았음을 보여준다. 반면 incident 구간(obs-03, obs-04, obs-06)에서는 pool_size가 1로 축소되어 동시 요청 8건 중 다수가 커넥션을 즉시 획득하지 못해 대기하다가 짧은 타임아웃(0.02s)에 걸려 실패했다. 즉 실패의 근본 원인은\nobs-02: baseline과 incident 모두 pool_timeout_seconds=0.02s로 동일하며, 동일한 revision(r1)·fingerprint 하에서 pool_size만 8→1로 단일 스텝 변경됨. 즉 pool_timeout_seconds는 사고 전후로 변경되지 않았고, pool_size와 별도의 변경 이력이 있다는 증거도 없음(오히려 하나의 db_pool_config 이벤트에 함께 기록됨).\nobs-01/obs-03: baseline 구간(pool_size=8, concurrency=8, pool_timeout_seconds=0.02s 동일)에서는 8건 요청 모두 성공(acquire_time_ms 18~95ms 범위)했고 TimeoutError가 전혀 발생하지 않음. 즉 동일한 0.02s 타임아웃 값이 정상 부하(요청 수=pool_size)에서는 실패를 유발하지 않았음을 직접적으로 보여줌.\nobs-03/obs-04: incident 구간(pool_size=1",
+          "evidenceIds": [
+            "obs-03"
+          ]
+        },
+        {
+          "causeId": "traffic-surge",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "db_pool_config 이벤트에서 동일 revision/fingerprint 하에 pool_size가 8에서 1로 단일 스텝으로 축소되었고, pool_timeout_seconds가 0.02초로 매우 짧게 설정되어 있어, 풀이 1개로 줄어든 순간 나머지 7건의 요청이 커넥션을 대기할 여유조차 없이 acquire_time_ms 20~46ms 구간에서 TimeoutError로 실패했다. sql_count=0, checkouts=0인 점은 SQL 실행이나 커넥션 체크아웃 자체가 시도되지 못했음을 보여주며, 이는 DB 서버 부하나 쿼리 지연이 아니라 애플리케이션 측 풀 설정 변경이 직접적 원인임을 강하게 시사한다. DB 서버 wait 스냅샷(database_connections 9→2, pool_checked_out 8→0)도 서버 과부하가 아닌 클라이언트 측 연결 수 감소와 일치한다. 애플리케이션 커넥션 풀 설정 오류로 인한 DB 커넥션 풀 고갈(TimeoutError) — DB 서버 과부하가 아닌 클라이언트 측 pool_size 급감이 원인 동일 revision/fingerprint 하에서 db_pool_config 이벤트의 pool_size가 단일 스텝으로 급격히 축소되고, pool_timeout_seconds가 매우 짧게 설정된 상태에서, 풀 용량을 초과하는 동시 요청 중 다수가 acquire_time_ms 구간 내에 TimeoutError로 즉시 실패한다. 실패한 요청은 sql_count=0, checkouts=0으로 SQL 실행이나 커넥션 체크아웃 자체가 시도되지 못한 것으로 나타나며, DB 서버 wait 스냅샷에서는 database_connections와 pool_checked_out이 함께 감소하여 서버 부하가 아닌 클라이언트 측 연결 수 감소와 일치한다."
+    },
+    {
+      "engine": "strands",
+      "scenario": "query-amplification",
+      "passed": false,
+      "dimensions": {
+        "rootCauseIdentified": true,
+        "evidenceLinked": true,
+        "artifactsComplete": true,
+        "remediationSafe": true,
+        "competingCausesRejected": false
+      },
+      "reportedFaultType": "slow-query",
+      "acceptedFaultTypes": [
+        "slow-query"
+      ],
+      "confirmed": true,
+      "missingRootEvidence": [],
+      "missingEvidence": [],
+      "competingJudgments": [
+        {
+          "causeId": "pool-config-regression",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        },
+        {
+          "causeId": "connection-leak",
+          "judgment": "inconclusive",
+          "rationale": "No explicit rejection with all required cited evidence was recorded.",
+          "evidenceIds": []
+        }
+      ],
+      "unsafeSteps": [],
+      "rootCause": "baseline(r1)에서는 fetch_patient_rows가 단일 SELECT로 필요한 행을 모두 조회했으나, incident 리비전(r2)에서는 ID 목록을 먼저 조회한 뒤 각 ID마다 개별 SELECT를 반복 실행하는 N+1 패턴으로 변경되었다. 이로 인해 요청당 sql_count가 1회에서 121회로, elapsed_ms가 약 5.4ms에서 약 56ms로 계단형으로 상승했으며, 이 시점은 anomaly start time과 정확히 일치한다. acquire_time_ms와 풀 설정은 두 구간에서 동일하게 안정적이므로 커넥션 풀 문제가 아니라 애플리케이션 계층의 쿼리 실행 패턴 변경이 지연의 직접 원인으로 판단된다. 애플리케이션 계층의 쿼리 실행 패턴 회귀(N+1 SELECT)로 인한 DB 조회 지연 증가 특정 API/서비스 배포 리비전 적용 이후 요청당 실행되는 SQL 문 개수(sql_count)가 비정상적으로 급증하고, 이에 비례하여 요청 처리 지연(elapsed_ms, sql_time_ms)이 계단형으로 상승한다. 반면 커넥션 풀 획득 시간(acquire_time_ms)과 풀 설정(pool_size, max_overflow)은 배포 전후 동일하게 안정적으로 유지되어, 커넥션 풀 고갈이나 DB 인프라 용량 문제가 아니라 애플리케이션 코드에서 단일 벌크 조회가 ID별 반복 조회(N+1 패턴)로 변경된 것이 직접 원인임을 시사한다. 지연 상승 시점은 배포/리비전 전환 시점과 정확히 일치한다."
+    }
+  ]
+}

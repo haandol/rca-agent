@@ -1,0 +1,26 @@
+[
+  {
+    "tag": "rca-realism-ea868dcd:r1",
+    "imageId": "sha256:3c9c7e489c8027c4e245f26d1885a329bf34d2284c97dc723e94c26086bd0c9f",
+    "revision": "r1",
+    "sourceFingerprint": "7e71a3b7beea6a007a573204731b4a1653e27fffe0ce908c777acdb76bbd30fb",
+    "verified": true,
+    "matchesMeasuredSource": true
+  },
+  {
+    "tag": "rca-realism-ea868dcd:r2",
+    "imageId": "sha256:9d6f780d1bacee048ec0f67da2746a1b33adf352b9dff99c4f74fdbb7a3fe6a3",
+    "revision": "r2",
+    "sourceFingerprint": "b36dc7442a3467e0a25ba400634179c24ac2c963e4134394a2b7c3812292ac0a",
+    "verified": true,
+    "matchesMeasuredSource": true
+  },
+  {
+    "tag": "rca-realism-ea868dcd:r3",
+    "imageId": "sha256:ed6477162b122acb75ec5dae03fd2bc704f477902513531b6f7e4a89742b3098",
+    "revision": "r3",
+    "sourceFingerprint": "4e3e2743fbf28e227998c1f60ed3ab2fd42a82fd73433099428a7fee75f082f6",
+    "verified": true,
+    "matchesMeasuredSource": true
+  }
+]

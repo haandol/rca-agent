@@ -21,7 +21,15 @@ import {
   validateModelEnvironment,
 } from './model-cli.mjs';
 
-const fixturesDirectory = path.join(REPOSITORY_ROOT, 'tests/fixtures/results');
+// Offline command/approval plumbing uses preserved historical snapshots only.
+const scenariosDirectory = path.join(
+  REPOSITORY_ROOT,
+  'tests/fixtures/historical/original-four/scenarios',
+);
+const fixturesDirectory = path.join(
+  REPOSITORY_ROOT,
+  'tests/fixtures/historical/original-four/results',
+);
 const fakeEnginePath = path.join(
   REPOSITORY_ROOT,
   'tests/fixtures/fake-engine.mjs',
@@ -242,6 +250,7 @@ test('approval writes a baseline only to the explicit destination', async () => 
   const directory = await mkdtemp(path.join(tmpdir(), 'rca-approval-'));
   const baselinePath = path.join(directory, 'approved.json');
   const baseline = await approveBaseline({
+    scenariosDirectory,
     resultsDirectory: fixturesDirectory,
     baselinePath,
     approvedAt: '2026-07-21T00:00:00.000Z',
@@ -270,6 +279,7 @@ test('fake model commands run both engines and write normalized results and repo
   const resultsDirectory = path.join(directory, 'model-results');
   const reportPath = path.join(directory, 'report.json');
   await approveBaseline({
+    scenariosDirectory,
     resultsDirectory: fixturesDirectory,
     baselinePath,
     approvedAt: '2026-07-21T00:00:00.000Z',
@@ -294,6 +304,7 @@ test('fake model commands run both engines and write normalized results and repo
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
   };
   const outcome = await runModelEvaluation({
+    scenariosDirectory,
     env,
     baselinePath,
     resultsDirectory,
@@ -315,10 +326,8 @@ test('fake model commands run both engines and write normalized results and repo
   });
   // Every scenario is run against every engine, so a new scenario has to appear
   // on both sides rather than being scored for one engine only.
-  const scenarioCount = (
-    await loadScenarios(path.join(REPOSITORY_ROOT, 'tests/scenarios'))
-  ).filter(({ executionModes }) =>
-    executionModes.includes('model-eval'),
+  const scenarioCount = (await loadScenarios(scenariosDirectory)).filter(
+    ({ executionModes }) => executionModes.includes('model-eval'),
   ).length;
   assert.equal(
     outcome.report.evaluations.length,
@@ -357,12 +366,14 @@ test('one engine can be evaluated alone and the report says so', async () => {
   const baselinePath = path.join(directory, 'baseline.json');
   const resultsDirectory = path.join(directory, 'model-results');
   await approveBaseline({
+    scenariosDirectory,
     resultsDirectory: fixturesDirectory,
     baselinePath,
     approvedAt: '2026-07-21T00:00:00.000Z',
   });
 
   const outcome = await runModelEvaluation({
+    scenariosDirectory,
     // Only the engine under evaluation needs a command configured; requiring the
     // other one would defeat the point of narrowing the run.
     env: {
@@ -409,6 +420,7 @@ test('a partial round cannot be approved until the other engine runs into it', a
   const baselinePath = path.join(directory, 'baseline.json');
   const resultsDirectory = path.join(directory, 'model-results');
   await approveBaseline({
+    scenariosDirectory,
     resultsDirectory: fixturesDirectory,
     baselinePath,
     approvedAt: '2026-07-21T00:00:00.000Z',
@@ -433,6 +445,7 @@ test('a partial round cannot be approved until the other engine runs into it', a
     RCA_EVAL_STRANDS_COMMAND: JSON.stringify([...baseCommand, 'strands']),
   };
   const common = {
+    scenariosDirectory,
     env,
     baselinePath,
     resultsDirectory,
@@ -452,6 +465,7 @@ test('a partial round cannot be approved until the other engine runs into it', a
   // The second run covers the remaining engine and reuses what is already on
   // disk, so the round reaches full coverage without repeating the first engine.
   const second = await runModelEvaluation({
+    scenariosDirectory,
     ...common,
     engines: ['headless-codex'],
   });

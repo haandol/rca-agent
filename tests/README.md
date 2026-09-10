@@ -3,6 +3,70 @@
 루트 하네스는 오프라인 계약 테스트, fixture 구조 회귀, 실모델 계약 평가를
 분리한다. 실제 배포 이벤트 전달과 증거 탐색은 별도의 배포 E2E로 검증한다.
 
+## 현실적 시나리오 카탈로그 — 로컬 실측 반영, 알람 보정 대기
+
+현재 `tests/scenarios/`는 HTTP 오류 로그 보호까지 반영한 서비스의 실제 로컬
+PostgreSQL 재현 결과(`proof-review-fixed-01`)와 측정 소스 해시를 사용한다.
+**알람 외곽 입력은 합성 예시이며 AWS에서 수집한 알람이 아니다.**
+[원본과 실측 요약](fixtures/observations/realistic-local-20260910/README.md)에
+정상·장애·복원과 과거 실패 실행을 보존했다. 모델에는 실제 UTC 기준의 정상·사고
+관측만 제공하고 복원 후 정보는 제외한다. 초기 합성 관측도
+[초안 이력](fixtures/historical/illustrative-drafts/)에 보존했다.
+
+| ID | 기대 유형 | 원인과 복원 |
+|---|---|---|
+| `pool-config-regression` | `unsupported` | 실제 풀 설정 축소 → 원래 설정 복원 |
+| `query-amplification` | `slow-query` | 일괄 조회의 행별 재조회 → 원래 이미지 복원 |
+| `maintenance-transaction-lock` | `unsupported` | 소유 정비 트랜잭션의 쓰기 차단 → 해당 작업만 롤백 |
+| `exception-session-cleanup` | `db-leak` | 예외 경로 세션 반환 누락 → 정상 이미지 복귀·결함 태스크 종료 |
+
+중립 관측 ID, 제공된 시각·단위·리소스, 원본 형태의 레코드와 독립적인 경쟁 원인
+반증을 사용한다. 풀 부족·락을 누수로 바꾸어 채점하지 않는다. 모든 사례는 원인
+확정·필수 산출물·안전한 실행 절차를 요구하며 평가기는 변경하지 않았다.
+실측 요청 항목과 관측 대응표는
+[측정 인계](../docs/demo/scenario-evidence-handoff.md)에 있다.
+[브라우저용 설명](../docs/demo/realistic-scenarios.html)은 별도 빌드 없이 열린다.
+
+공용 조회 증상은 `${ns}-Healthcare-PatientVitalsQueryLatency`, 메트릭
+`PatientVitalsQueryDuration`, `Healthcare/Sensor`, `ServiceName=healthcare-sensor-app`,
+Milliseconds, Average, 60초×2 평가다. 배포 기본 튜닝 값 500ms는 검증된 임계치가
+아니다. 이번 로컬 조회는 정상·결함·복원 모두 개별 500ms 미만이므로 알람 발동을
+주장하지 않고 카탈로그 threshold는 생략한다. `SOURCE_REVISION=r1/r2/r3`는
+빌드할 소스를 선택하며, 관측은 측정된 source manifest의 실제 해시와 연결한다.
+
+원래 네 시나리오와 정규화 fixture는
+[`fixtures/historical/original-four/`](fixtures/historical/original-four/)에 바이트
+그대로 보존했다. `tests/results/model/efficiency-20260909T145305Z-b05412`의 기존
+실패·부분 결과는 수정하지 않았다. 새 모델 결과 fixture는 없다.
+`tests/baseline/`도 수정하지 않았다. **현재 `eval:offline`은 결과 부재로 실패하고,
+기존 기준선 digest 검사는 변경 승인을 요구하며 실패한다.** 테스트용 fake engine이나
+메모리 내 구조 검증용 객체는 실제 모델 결과·승인 자료가 아니다.
+
+네 입력은 `model-eval`만 선언한다. 배포 제어와 복원 경로를 검증한 뒤 해당 사례에만
+`deployed-e2e`를 추가한다. 로컬 DB 재현, 제공 관측 실모델 평가, AWS 배포 E2E의
+결과는 각각 기록하며 서로의 성공을 대신하지 않는다.
+
+## 선택 알람 메타데이터
+
+`alarm`은 `name`, `metric`, `stateReason` 외에 `stateChangeTime`, `region`,
+`namespace`, `dimensions`(이름→값 객체), `statistic`, `period`(초), `threshold`,
+`comparisonOperator`, `evaluationPeriods`, `datapointsToAlarm`, `treatMissingData`,
+`arn`을 제공할 수 있다. 숫자 0과 빈 차원 객체도 보존한다. 생략/null 값으로
+관측이나 평가 조건을 만들어내지 않는다. `datapointsToAlarm`을 평가 기간 수에서
+추정하지 않는다.
+
+Headless Codex는 기존 `AlarmContext`의 선택 필드로 전달한다. 두 엔진은 공용
+프롬프트/DTO가 별도로 표시하지 않는 항목도 읽을 수 있도록 제공된 메타데이터를
+알람 사유에 함께 보존한다. 운영 DTO·프롬프트 기본값은 유지한다. `model-eval`에서는 별도 원본 메타데이터를
+최종 프롬프트까지 전달하여 누락·null·빈 값은 `not provided`로 표시한다.
+Strands도 ARN 없이 제공된 `region`을 평가 프롬프트에 그대로 표시한다. 런타임의
+AWS 실행 리전을 관측된 사고 리전으로 채우거나 없는 ARN을 생성하지 않는다.
+
+Strands의 payload `StateChangeTime`은 실행마다 새 세션을 만드는 현재 시각이다.
+시나리오의 `stateChangeTime`은 원본 알람 메타데이터에 따로 남고 실제 사고 구간은
+각 관측의 `summary`에도 명시한다. 원본에 구간이 없으면 null과 누락 사유를 보존한다. 새 세션 시각을 관측 시각으로 해석하지 않는다.
+평가자의 `expectation`은 모델 입력으로 전달하지 않는다.
+
 ## 로컬 검증
 
 ```bash

@@ -1,0 +1,62 @@
+{
+  "checkedAt": "2026-09-10T03:24:02.142640+00:00",
+  "draft": false,
+  "officialCommands": [
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-materialize.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004"
+      ],
+      "exitCode": 0,
+      "output": "materialized /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/implementation-review.md\n"
+    },
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-validate.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004"
+      ],
+      "exitCode": 0,
+      "output": "ADR implementation review artifacts are valid\n"
+    },
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-report.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/findings.json",
+        "--out",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/adr-impl-review-report.html"
+      ],
+      "exitCode": 0,
+      "output": "wrote /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/adr-impl-review-report.html\n"
+    }
+  ],
+  "officialRendererOutputSha256": "9caedcd8ed548854e64a44122636a3545ed6299f09e24683a69f55376b6ffd0a",
+  "ownedHtmlAnchorNormalization": [
+    {
+      "original": "code-h1-C1-1",
+      "replacement": "code-h1-c1-1"
+    },
+    {
+      "original": "code-h1-C2-1",
+      "replacement": "code-h1-c2-1"
+    },
+    {
+      "original": "code-h1-C3-1",
+      "replacement": "code-h1-c3-1"
+    },
+    {
+      "original": "code-h1-C4-1",
+      "replacement": "code-h1-c4-1"
+    },
+    {
+      "original": "code-h2-C1-1",
+      "replacement": "code-h2-c1-1"
+    }
+  ],
+  "deliveredHtmlSha256": "57feac51cce5435c7b531ecce32ef4bd108652dabe5e652d1da4071bc10f6e2e",
+  "browser": "NOT_OPENED",
+  "openHelperExecuted": false,
+  "reason": "Explicit user policy block: no local file://, HTTP, shell, or other-browser workaround."
+}

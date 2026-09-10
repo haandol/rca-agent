@@ -1,0 +1,114 @@
+ M docs/adr/.mapping.json
+ M docs/adr/agent/0016-rca-evaluation-test-harness.md
+ M docs/adr/agent/decision-log.md
+ M docs/adr/infra/0004-rds-healthcare-deployment.md
+ M docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md
+ M docs/adr/infra/decision-log.md
+ M packages/agent/src/rca_agent/adapters/secondary/queue/sqs_consumer.py
+ M packages/agent/src/rca_agent/eval_adapter.py
+ M packages/agent/src/rca_agent/main.py
+ M packages/agent/src/rca_agent/ports/interfaces/queue_consumer.py
+ M packages/agent/src/rca_agent/prompts/hypothesis.py
+ M packages/agent/src/rca_agent/prompts/prioritization.py
+ M packages/agent/src/rca_agent/prompts/scoping.py
+ M packages/agent/src/rca_agent/services/branching.py
+ M packages/agent/src/rca_agent/services/destructive_actions.py
+ M packages/agent/src/rca_agent/services/hypothesis.py
+ M packages/agent/src/rca_agent/services/pipeline.py
+ M packages/agent/src/rca_agent/services/prioritization.py
+ M packages/agent/src/rca_agent/services/validation.py
+ M packages/agent/tests/test_agent_main.py
+ M packages/agent/tests/test_destructive_actions.py
+ M packages/agent/tests/test_h03_validated_fault_type_integration.py
+ M packages/agent/tests/test_harness_prompt_dto_contracts.py
+ M packages/headless-codex/harness/analysis/agents/report-specialist.md
+ M packages/headless-codex/harness/skills/reporting/SKILL.md
+ M packages/headless-codex/prompts/rca-user.md
+ M packages/headless-codex/prompts/sections/core/principles.md
+ M packages/headless-codex/prompts/sections/stages/1-rca-agent.md
+ M packages/headless-codex/prompts/sections/stages/2-report-agent.md
+ M packages/headless-codex/src/headless_codex/adapters/secondary/codex/codex_subprocess_runner.py
+ M packages/headless-codex/src/headless_codex/eval_adapter.py
+ M packages/headless-codex/src/headless_codex/ports/interfaces/codex_runner.py
+ M packages/headless-codex/src/headless_codex/services/destructive_actions.py
+ M packages/headless-codex/src/headless_codex/services/pipeline.py
+ M packages/headless-codex/src/headless_codex/services/prompt_builder.py
+ M packages/headless-codex/tests/test_codex_runner.py
+ M packages/headless-codex/tests/test_destructive_actions.py
+ M packages/headless-codex/tests/test_eval_adapter.py
+ M packages/headless-codex/tests/test_pipeline.py
+ M packages/headless-codex/tests/test_prompt_builder.py
+ M packages/headless-codex/tests/test_prompt_contracts.py
+ M packages/healthcare-sensor-app/AGENTS.md
+ M packages/healthcare-sensor-app/Dockerfile
+ M packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py
+ M packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py
+ M packages/healthcare-sensor-app/src/test_service/config/settings.py
+ M packages/healthcare-sensor-app/src/test_service/di/app_container.py
+ M packages/healthcare-sensor-app/src/test_service/main.py
+ M packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py
+ M packages/healthcare-sensor-app/src/test_service/services/sensor.py
+ M packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py
+ M packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py
+ M packages/infra/bin/infra.ts
+ M packages/infra/config/loader.ts
+ M packages/infra/lib/stacks/healthcare-service-stack.ts
+ M packages/infra/test/healthcare-service-stack.test.ts
+ M tests/README.md
+ D tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json
+ D tests/fixtures/results/headless-codex/deployment-query-regression.json
+ D tests/fixtures/results/headless-codex/iam-policy-access-denied.json
+ D tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json
+ D tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json
+ D tests/fixtures/results/strands/deployment-query-regression.json
+ D tests/fixtures/results/strands/iam-policy-access-denied.json
+ D tests/fixtures/results/strands/rds-connection-pool-exhaustion.json
+ M tests/harness/evaluator.test.mjs
+ M tests/harness/model-and-approval.test.mjs
+ D tests/scenarios/deployed-connection-leak-vital-ingest.json
+ D tests/scenarios/deployment-query-regression.json
+ D tests/scenarios/iam-policy-access-denied.json
+ D tests/scenarios/rds-connection-pool-exhaustion.json
+?? .adr-invariants-code-ignore
+?? docs/demo/
+?? docs/test-reports/rca-efficiency-audit-2026-09-09.html
+?? docs/test-reports/rca-efficiency-evidence-2026-09-09/
+?? docs/test-reports/rca-efficiency-fixes-2026-09-09.html
+?? docs/test-reports/rca-efficiency-live-validation.html
+?? docs/test-reports/rca-validation-order-proposal-2026-09-09.md
+?? docs/test-reports/realistic-demo-scenarios-proposal.html
+?? packages/agent/tests/test_beam_global_exhaustion.py
+?? packages/agent/tests/test_eval_alarm_metadata.py
+?? packages/agent/tests/test_planning_runtime_context.py
+?? packages/agent/tests/test_strands_audit_fixes.py
+?? packages/headless-codex/prompts/rca-specialist.md
+?? packages/headless-codex/prompts/report-specialist.md
+?? packages/headless-codex/prompts/sections/core/specialist.md
+?? packages/headless-codex/prompts/sections/roles/
+?? packages/headless-codex/tests/test_eval_alarm_metadata.py
+?? packages/headless-codex/tests/test_eval_citation_fields.py
+?? packages/headless-codex/tests/test_pipeline_redelivery.py
+?? packages/headless-codex/tests/test_rca_planning_context.py
+?? packages/healthcare-sensor-app/demo/
+?? packages/healthcare-sensor-app/src/test_service/maintenance.py
+?? packages/healthcare-sensor-app/src/test_service/revision/
+?? packages/healthcare-sensor-app/src/test_service/services/db_observability.py
+?? packages/healthcare-sensor-app/tests/test_bounded_observability.py
+?? packages/healthcare-sensor-app/tests/test_bounded_workload.py
+?? packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py
+?? packages/healthcare-sensor-app/tests/test_observability_lifespan.py
+?? packages/healthcare-sensor-app/tests/test_real_mechanisms.py
+?? packages/healthcare-sensor-app/tests/test_workload_settings.py
+?? scripts/run_realistic_demo.html
+?? scripts/run_realistic_demo.py
+?? tests/fixtures/historical/
+?? tests/fixtures/observations/
+?? tests/fixtures/results/README.md
+?? tests/harness/realistic-demo-script.test.mjs
+?? tests/harness/realistic-scenarios.test.mjs
+?? tests/harness/realistic_demo_cases.py
+?? tests/harness/scenario-capture-boundary.mjs
+?? tests/scenarios/exception-session-cleanup.json
+?? tests/scenarios/maintenance-transaction-lock.json
+?? tests/scenarios/pool-config-regression.json
+?? tests/scenarios/query-amplification.json

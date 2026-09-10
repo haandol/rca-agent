@@ -1,0 +1,22 @@
+{
+  "artifactState": "DRAFT_AWAITING_MAIN_FINAL_DATA",
+  "contractIds": [
+    "D0",
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+  ],
+  "mainFinalDataReceived": false,
+  "finalValidationCompleted": false,
+  "browser": {
+    "status": "NOT_OPENED",
+    "reason": "사용자가 전달한 이전 자동 승인 검토가 local file:// 열기를 거부했고 HTTP·shell·다른 브라우저 우회도 금지했다.",
+    "openHelperExecuted": false,
+    "visualInspection": "NOT_PERFORMED",
+    "staticSvgValidation": "PENDING"
+  }
+}

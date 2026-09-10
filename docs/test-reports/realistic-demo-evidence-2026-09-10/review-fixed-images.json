@@ -1,0 +1,26 @@
+[
+  {
+    "tag": "rca-realism-ea868dcd:r1-review-fixed",
+    "imageId": "sha256:d50a760b35022be41407cd3e6f248807fea4f704ec9e718659ce4878835baec4",
+    "revision": "r1",
+    "sourceFingerprint": "05a84c86958fb4281d43a0a1b308427e0fe6a04e9f8ad452082a859f858488f7",
+    "verified": true,
+    "matchesMeasuredSource": true
+  },
+  {
+    "tag": "rca-realism-ea868dcd:r2-review-fixed",
+    "imageId": "sha256:218a8eeb3874d6b06fe38f68286169a86e3e7edb7773f7edcce32a54a6dba730",
+    "revision": "r2",
+    "sourceFingerprint": "b5a3bf51dbd30343e9fff552d52c7bc1476dc54a43979b4535c8d4f34705bffc",
+    "verified": true,
+    "matchesMeasuredSource": true
+  },
+  {
+    "tag": "rca-realism-ea868dcd:r3-review-fixed",
+    "imageId": "sha256:9ff21da1885601251e53945c54d62811a827454f062dc09565456d520fe8938a",
+    "revision": "r3",
+    "sourceFingerprint": "7b338f0a9bae0b93211fbe2a3efe2a533e167418327a21c97538ce8995b7b3dc",
+    "verified": true,
+    "matchesMeasuredSource": true
+  }
+]

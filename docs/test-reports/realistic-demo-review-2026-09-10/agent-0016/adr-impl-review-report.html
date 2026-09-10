@@ -1,0 +1,1913 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실제 관측으로 두 RCA 엔진을 평가하는 경계 검토 — ADR 구현 리뷰</title>
+<style>
+/* Embedded in the exported HTML. The reading page has one visual system. */
+:root {
+  color-scheme: light;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic",
+    sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --paper: #ffffff;
+  --card: #ffffff;
+  --ink: #20211f;
+  --ink-2: #646861;
+  --line: #d8dad2;
+  --focus: #20594c;
+  --wash: #eeefe8;
+  --accent-wash: #edf2ed;
+  --danger: #943e22;
+}
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.85 var(--sans);
+}
+body.has-bar {
+  padding-bottom: 100px;
+}
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 64px 42px 100px;
+}
+.wrap {
+  min-width: 0;
+}
+:target {
+  scroll-margin-top: 28px;
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+h1,
+h2,
+h3 {
+  line-height: 1.4;
+  letter-spacing: -0.035em;
+  text-wrap: pretty;
+}
+h1 {
+  max-width: 900px;
+  font-size: 38px;
+  font-weight: 720;
+  margin: 12px 0 24px;
+  overflow-wrap: anywhere;
+}
+h2 {
+  font-size: 25px;
+  margin: 48px 0 16px;
+}
+h3 {
+  font-size: 19px;
+  margin: 30px 0 12px;
+}
+p {
+  max-width: 900px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+a {
+  color: var(--focus);
+  text-underline-offset: 4px;
+}
+strong {
+  font-weight: 650;
+}
+ul,
+ol {
+  padding-left: 24px;
+}
+li {
+  margin: 7px 0;
+}
+code,
+pre {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+code {
+  overflow-wrap: anywhere;
+  background: var(--wash);
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow: auto;
+  background: var(--wash);
+  padding: 18px;
+  line-height: 1.65;
+  margin: 18px 0;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+blockquote {
+  margin: 20px 0;
+  border-left: 3px solid var(--line);
+  padding: 2px 0 2px 22px;
+  color: var(--ink-2);
+}
+
+/* Start with a readable title and outcome; file paths remain inspectable metadata. */
+.eyebrow {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.review-meta {
+  margin: 16px 0 26px;
+}
+.doc__meta {
+  color: var(--ink-2);
+  font-size: 13px;
+  padding: 10px 0;
+}
+.doc__meta > div {
+  margin: 7px 0;
+  overflow-wrap: anywhere;
+}
+.doc__path {
+  font: 13px/1.7 var(--mono);
+  margin: 8px 0;
+}
+.doc__status {
+  font-size: 13px;
+}
+.overview {
+  border-left: 3px solid var(--focus);
+  padding-left: 24px;
+  margin: 30px 0 34px;
+}
+.overview__title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--focus);
+}
+.overview__value {
+  margin: 9px 0;
+}
+.overview__value:first-of-type {
+  font-size: 20px;
+  line-height: 1.8;
+}
+.overview__risk {
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.toc {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+  margin: 32px 0 44px;
+}
+.toc__contents {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.toc ol {
+  columns: 2;
+  column-gap: 40px;
+  margin: 18px 0 4px;
+}
+.toc li {
+  break-inside: avoid;
+  font-size: 14px;
+}
+.toc li[data-level="1"] {
+  margin-left: 10px;
+}
+.toc li[data-level="2"] {
+  margin-left: 22px;
+  font-size: 13px;
+}
+.toc li[data-level="3"] {
+  margin-left: 34px;
+  font-size: 13px;
+}
+.toc a {
+  text-decoration-thickness: 1px;
+}
+
+/* Thin rules separate topics; prose is not placed in repeated cards. */
+.paper-section,
+#analysis,
+#validation,
+#findings,
+#conclusion {
+  margin-top: 44px;
+}
+.section-title,
+.explanation__title {
+  margin: 0 0 18px;
+}
+.paper-subsection[id^="hill-"] {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+  margin-top: 38px;
+}
+.paper-subsection[id^="hill-"] > h3 {
+  font-size: 22px;
+}
+.hill__authored-narrative {
+  margin: 18px 0 24px;
+}
+.narrative-lead {
+  font-weight: 600;
+}
+.context-narrative,
+.hill__narrative,
+.component__narrative {
+  max-width: 900px;
+}
+.paper-subsection:not([id]) {
+  margin: 30px 0;
+}
+.paper-subsection:not([id]) > h3 {
+  margin-top: 0;
+}
+#conclusion {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+}
+.contract-links {
+  font-size: 14px;
+}
+
+/* Evidence uses indented disclosures and quiet labels. */
+details {
+  border-left: 2px solid var(--line);
+  margin: 20px 0;
+  padding-left: 18px;
+}
+summary {
+  cursor: pointer;
+  color: var(--focus);
+  font-weight: 600;
+  line-height: 1.65;
+}
+details[open] > summary {
+  margin-bottom: 14px;
+}
+.technical-evidence,
+.review-meta {
+  font-size: 14px;
+}
+.section-disclosure {
+  margin: 32px 0;
+}
+.section-disclosure > summary {
+  font-size: 18px;
+}
+.section-disclosure__body,
+.hill__details-body {
+  padding: 4px 0 12px;
+}
+.hill__details {
+  margin-top: 26px;
+}
+.component,
+.choice,
+.finding {
+  border-top: 1px solid var(--line);
+  padding: 20px 0;
+  margin-top: 20px;
+}
+.component__head,
+.finding__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+.component__head h3 {
+  margin: 0;
+}
+.component-section-title {
+  margin: 24px 0 12px;
+  font-size: 18px;
+}
+.component__narrative p,
+.choice p,
+.finding p {
+  font-size: 15px;
+}
+.code-evidence {
+  margin: 16px 0;
+}
+.code-evidence > summary {
+  font: 13px/1.7 var(--mono);
+  overflow-wrap: anywhere;
+}
+.meta {
+  margin: 16px 0;
+  font-size: 13px;
+}
+.meta__row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.meta__k,
+.side__label {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.meta__v {
+  overflow-wrap: anywhere;
+}
+.meta__v--mono,
+.side__body--mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.tag {
+  font: 600 12px/1.5 var(--sans);
+  color: var(--sev, var(--ink-2));
+}
+/* prettier-ignore */
+.hill__tag { --sev: #426b4f; }
+/* prettier-ignore */
+.choice__tag { --sev: #217a68; }
+.component__tag {
+  --sev: var(--ink-2);
+}
+.conf,
+.finding__idx {
+  color: var(--ink-2);
+  font: 12px/1.5 var(--mono);
+}
+.finding__idx {
+  margin-left: auto;
+}
+.finding__idx-total {
+  opacity: 0.7;
+}
+.finding__head-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+}
+.finding__title {
+  margin-top: 14px;
+  font-size: 20px;
+}
+.task-group__title {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.task-impact {
+  font-size: 16px;
+}
+.task-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 18px 0;
+}
+.task-field {
+  margin: 14px 0;
+}
+.task-field .side__label {
+  display: block;
+  margin-bottom: 5px;
+}
+.task-field p {
+  margin: 0;
+}
+.task-next,
+.task-field--primary {
+  border-left: 3px solid var(--focus);
+  padding-left: 18px;
+}
+.confront {
+  display: grid;
+  grid-template-columns: 1fr 52px 1fr;
+  gap: 16px;
+  margin: 22px 0;
+}
+.confront--single {
+  grid-template-columns: 1fr;
+}
+.side {
+  background: var(--wash);
+  padding: 16px;
+}
+.side__body {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.rel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: var(--ink-2);
+}
+.rel__glyph {
+  font-size: 24px;
+}
+.rel__label {
+  font-size: 10px;
+  text-align: center;
+}
+
+.coverage {
+  --tone: var(--focus);
+  margin: 14px 0;
+}
+.coverage--violated {
+  --tone: var(--danger);
+}
+.coverage--unverified {
+  --tone: #86510e;
+}
+.coverage--contradicted {
+  --tone: #744483;
+}
+.coverage__summary {
+  color: var(--ink);
+  font-size: 14px;
+}
+.coverage__status {
+  color: var(--tone);
+  font-size: 12px;
+  font-weight: 650;
+  margin-right: 10px;
+}
+.coverage__requirement {
+  overflow-wrap: anywhere;
+}
+.coverage__body {
+  padding: 8px 0;
+}
+.coverage__implementation p {
+  font-size: 15px;
+}
+.coverage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  color: var(--ink-2);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.coverage-index {
+  list-style: none;
+  padding: 0;
+}
+.coverage-index li {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  font-size: 14px;
+}
+.coverage-index li > span,
+.coverage-index li > a {
+  margin-right: 14px;
+}
+.coverage-index p {
+  margin: 4px 0 12px;
+}
+
+/* Diagrams have room to breathe; long prose does not restrict their width. */
+.diagram {
+  margin: 26px 0;
+  padding: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.diagram__viewport {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.diagram svg {
+  display: block;
+  margin: 0 auto;
+  color: var(--ink);
+  font: 14px/1.4 var(--sans);
+}
+.diagram svg text {
+  fill: var(--ink);
+  stroke: none;
+}
+.diagram-node rect,
+.diagram-node path,
+.sequence__participant rect {
+  fill: var(--card);
+  stroke: var(--focus);
+  stroke-width: 1.5;
+}
+.diagram-boundary rect {
+  fill: var(--accent-wash);
+  stroke: var(--line);
+  stroke-dasharray: 6 4;
+}
+.sequence__frame {
+  fill: none;
+  stroke: var(--ink-2);
+}
+.sequence__note rect {
+  fill: var(--wash);
+  stroke: var(--line);
+}
+.sequence__lifeline {
+  opacity: 0.35;
+}
+.diagram-label {
+  paint-order: stroke;
+  stroke: var(--card) !important;
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+.sequence__condition,
+.sequence__block-title {
+  font-weight: 650;
+}
+.diagram-source {
+  margin: 18px 0 0;
+  font-size: 13px;
+}
+.diagram-source summary,
+.diagram--fallback figcaption {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* Optional checks remain quiet, keyboard-visible, and free of score decoration. */
+.quiz {
+  padding: 26px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+}
+.quiz__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.quiz__id {
+  font-family: var(--mono);
+}
+.quiz__revisit {
+  color: var(--focus);
+}
+.quiz__question {
+  font-size: 18px;
+  line-height: 1.7;
+  font-weight: 600;
+  margin-top: 14px;
+}
+.quiz__recall,
+.quiz__teach-back,
+.quiz__revisit-guidance,
+.quiz__limit {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.quiz__options {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.quiz__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--card);
+  font-size: 15px;
+  cursor: pointer;
+}
+.quiz__option:has(input:checked) {
+  border-color: var(--focus);
+  background: var(--accent-wash);
+}
+.quiz__option input {
+  margin-top: 6px;
+  accent-color: var(--focus);
+}
+.quiz__reveal,
+.quiz__check,
+button.export {
+  border: 1px solid var(--focus);
+  border-radius: 3px;
+  background: var(--focus);
+  color: var(--card);
+  padding: 11px 18px;
+  font: 600 14px/1.5 var(--sans);
+  cursor: pointer;
+}
+.quiz__reveal {
+  color: var(--focus);
+  background: transparent;
+}
+.quiz__required {
+  color: var(--danger);
+  font-size: 14px;
+}
+.quiz__feedback {
+  background: var(--accent-wash);
+  border-left: 3px solid var(--focus);
+  padding: 18px 22px;
+  margin-top: 22px;
+}
+.quiz__feedback strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.quiz__feedback .quiz__result {
+  font-size: 16px;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.quiz__feedback p {
+  font-size: 14px;
+  margin: 6px 0 14px;
+}
+#comprehension .overview {
+  border: 0;
+  padding: 0;
+  margin: 8px 0 24px;
+}
+#comprehension .overview__value {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.ruling {
+  margin-top: 22px;
+}
+.ruling__label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.seg__input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.seg__label {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.seg__input:checked + .seg__label {
+  border-color: var(--focus);
+  background: var(--accent-wash);
+  color: var(--focus);
+}
+.seg__input:focus-visible + .seg__label {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.ruling__note {
+  width: 100%;
+  min-height: 84px;
+  padding: 12px;
+  margin-top: 14px;
+  font: 14px/1.6 var(--sans);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  resize: vertical;
+}
+.bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.bar__inner {
+  max-width: 1080px;
+  margin: auto;
+  padding: 16px 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.hint {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 30px 20px 60px;
+  }
+  h1 {
+    font-size: 29px;
+  }
+  h2 {
+    font-size: 23px;
+  }
+  .paper-subsection[id^="hill-"] > h3 {
+    font-size: 20px;
+  }
+  .overview {
+    padding-left: 18px;
+  }
+  .overview__value:first-of-type {
+    font-size: 18px;
+  }
+  .toc ol {
+    columns: 1;
+  }
+  .meta__row,
+  .task-comparison,
+  .confront {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .rel {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .diagram {
+    padding: 12px;
+  }
+  .bar__inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 20px;
+  }
+  .quiz__option {
+    padding: 12px;
+  }
+  .quiz__feedback {
+    padding: 16px;
+  }
+}
+/* Handout view: print the reading path and blank questions, not screen controls. */
+.print-only {
+  display: none;
+}
+#comprehension {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+  margin-top: 44px;
+}
+.comprehension__screen-guidance {
+  color: var(--ink-2);
+  font-size: 15px;
+}
+@page {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font: 9pt sans-serif;
+    color: #646861;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --paper: #fff;
+    --card: #fff;
+    --ink: #20211f;
+    --ink-2: #545851;
+    --line: #c8cbc4;
+    --focus: #242a25;
+    --wash: #f3f4ef;
+    --accent-wash: #fff;
+  }
+  body {
+    font-size: 11pt;
+    line-height: 1.65;
+  }
+  body.has-bar {
+    padding-bottom: 0;
+  }
+  .page {
+    padding: 0;
+    max-width: none;
+  }
+  h1 {
+    font-size: 26pt;
+    margin-top: 8pt;
+  }
+  h2 {
+    font-size: 17pt;
+    margin-top: 24pt;
+  }
+  h3,
+  .paper-subsection[id^="hill-"] > h3 {
+    font-size: 14pt;
+  }
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  .overview {
+    margin: 16pt 0 22pt;
+  }
+  .overview__value:first-of-type {
+    font-size: 13pt;
+  }
+  .overview__risk {
+    font-size: 10pt;
+  }
+  .paper-section,
+  #analysis,
+  #validation,
+  #findings,
+  #conclusion {
+    margin-top: 24pt;
+  }
+  .paper-subsection[id^="hill-"] {
+    margin-top: 24pt;
+    padding-top: 16pt;
+  }
+  .toc,
+  .bar,
+  .review-meta,
+  .hill__details,
+  .technical-evidence,
+  .diagram-source,
+  #evidence,
+  .comprehension__screen-guidance,
+  .quiz__recall,
+  .quiz__teach-back,
+  .quiz__revisit-guidance,
+  .quiz__reveal,
+  .quiz__check,
+  .quiz__required,
+  .quiz__feedback,
+  .quiz__option input {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .print-evidence-note {
+    color: var(--ink-2);
+    font-size: 9pt;
+    border-top: 1px solid var(--line);
+    padding-top: 10pt;
+    margin-top: 24pt;
+  }
+  .diagram {
+    padding: 10pt;
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  .diagram__viewport {
+    overflow: visible;
+  }
+  .diagram svg {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto;
+    max-height: 205mm;
+  }
+  .quiz {
+    break-inside: avoid;
+    padding: 16pt 0;
+    margin-top: 18pt;
+  }
+  .quiz__question {
+    font-size: 12pt;
+  }
+  .quiz__options,
+  .quiz__options[hidden] {
+    display: grid !important;
+    gap: 7pt;
+    margin: 12pt 0;
+  }
+  .quiz__option,
+  .quiz__option:has(input:checked) {
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-size: 10.5pt;
+    padding: 9pt 11pt;
+  }
+}
+
+</style>
+</head>
+<body class="has-bar">
+<div class="page">
+
+<main class="wrap">
+  <header class="doc">
+    <div class="doc__id">
+      <p class="eyebrow">ADR 구현 리뷰</p>
+      <h1 class="doc__title">실제 관측으로 두 RCA 엔진을 평가하는 경계 검토</h1>
+      <details class="review-meta">
+      <summary>리뷰 상세</summary>
+      <div class="doc__meta">
+        <p class="doc__path">docs/adr/agent/0016-rca-evaluation-test-harness.md</p>
+        <div class="doc__status">Proposed</div>
+        <div>리뷰 모드 · <code>full</code></div>
+        <div>전체 구현 범위 · <code>docs/execution-live-e2e-runbook.md</code> <code>packages/agent/src/rca_agent/eval_adapter.py</code> <code>packages/agent/src/rca_agent/ports/dto/models.py</code> <code>packages/agent/src/rca_agent/prompts/scoping.py</code> <code>packages/agent/src/rca_agent/services/scoping.py</code> <code>packages/agent/tests/test_eval_alarm_metadata.py</code> <code>packages/headless-codex/prompts/rca-user.md</code> <code>packages/headless-codex/src/headless_codex/eval_adapter.py</code> <code>packages/headless-codex/src/headless_codex/ports/dto/models.py</code> <code>packages/headless-codex/src/headless_codex/services/prompt_builder.py</code> <code>packages/headless-codex/tests/test_eval_alarm_metadata.py</code> <code>packages/healthcare-sensor-app/demo/local_runner.py</code> <code>packages/healthcare-sensor-app/demo/local_worker.py</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</code> <code>packages/healthcare-sensor-app/src/test_service/main.py</code> <code>packages/infra/lib/stacks/healthcare-service-stack.ts</code> <code>packages/infra/lib/stacks/rds-stack.ts</code> <code>scripts/run_deployed_e2e.py</code> <code>scripts/run_realistic_demo.py</code> <code>tests/fixtures/historical/</code> <code>tests/fixtures/observations/</code> <code>tests/fixtures/results/README.md</code> <code>tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json</code> <code>tests/fixtures/results/headless-codex/deployment-query-regression.json</code> <code>tests/fixtures/results/headless-codex/iam-policy-access-denied.json</code> <code>tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json</code> <code>tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json</code> <code>tests/fixtures/results/strands/deployment-query-regression.json</code> <code>tests/fixtures/results/strands/iam-policy-access-denied.json</code> <code>tests/fixtures/results/strands/rds-connection-pool-exhaustion.json</code> <code>tests/harness/approve-cli.mjs</code> <code>tests/harness/deployed-e2e-driver.test.mjs</code> <code>tests/harness/evaluator.mjs</code> <code>tests/harness/evaluator.test.mjs</code> <code>tests/harness/model-and-approval.test.mjs</code> <code>tests/harness/model-cli.mjs</code> <code>tests/harness/realistic-demo-script.test.mjs</code> <code>tests/harness/realistic-scenarios.test.mjs</code> <code>tests/harness/realistic_demo_cases.py</code> <code>tests/harness/scenario-capture-boundary.mjs</code> <code>tests/scenarios</code> <code>tests/scenarios/deployed-connection-leak-vital-ingest.json</code> <code>tests/scenarios/deployment-query-regression.json</code> <code>tests/scenarios/exception-session-cleanup.json</code> <code>tests/scenarios/iam-policy-access-denied.json</code> <code>tests/scenarios/maintenance-transaction-lock.json</code> <code>tests/scenarios/pool-config-regression.json</code> <code>tests/scenarios/query-amplification.json</code> <code>tests/scenarios/rds-connection-pool-exhaustion.json</code></div>
+        <div>변경 범위 · <code>docs/execution-live-e2e-runbook.md</code> <code>packages/agent/src/rca_agent/eval_adapter.py</code> <code>packages/agent/src/rca_agent/ports/dto/models.py</code> <code>packages/agent/src/rca_agent/prompts/scoping.py</code> <code>packages/agent/src/rca_agent/services/scoping.py</code> <code>packages/agent/tests/test_eval_alarm_metadata.py</code> <code>packages/headless-codex/prompts/rca-user.md</code> <code>packages/headless-codex/src/headless_codex/eval_adapter.py</code> <code>packages/headless-codex/src/headless_codex/ports/dto/models.py</code> <code>packages/headless-codex/src/headless_codex/services/prompt_builder.py</code> <code>packages/headless-codex/tests/test_eval_alarm_metadata.py</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</code> <code>scripts/run_deployed_e2e.py</code> <code>scripts/run_realistic_demo.py</code> <code>tests/fixtures/historical/</code> <code>tests/fixtures/observations/</code> <code>tests/fixtures/results/README.md</code> <code>tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json</code> <code>tests/fixtures/results/headless-codex/deployment-query-regression.json</code> <code>tests/fixtures/results/headless-codex/iam-policy-access-denied.json</code> <code>tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json</code> <code>tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json</code> <code>tests/fixtures/results/strands/deployment-query-regression.json</code> <code>tests/fixtures/results/strands/iam-policy-access-denied.json</code> <code>tests/fixtures/results/strands/rds-connection-pool-exhaustion.json</code> <code>tests/harness/deployed-e2e-driver.test.mjs</code> <code>tests/harness/evaluator.test.mjs</code> <code>tests/harness/model-and-approval.test.mjs</code> <code>tests/harness/realistic-demo-script.test.mjs</code> <code>tests/harness/realistic-scenarios.test.mjs</code> <code>tests/harness/realistic_demo_cases.py</code> <code>tests/harness/scenario-capture-boundary.mjs</code> <code>tests/scenarios/deployed-connection-leak-vital-ingest.json</code> <code>tests/scenarios/deployment-query-regression.json</code> <code>tests/scenarios/exception-session-cleanup.json</code> <code>tests/scenarios/iam-policy-access-denied.json</code> <code>tests/scenarios/maintenance-transaction-lock.json</code> <code>tests/scenarios/pool-config-regression.json</code> <code>tests/scenarios/query-amplification.json</code> <code>tests/scenarios/rds-connection-pool-exhaustion.json</code></div>
+        <div>프로젝트 규칙 · <code>AGENTS.md; docs/agent-protocol.md; 사용자 지정 writing-only 소유 범위</code></div>
+        
+        <div>리뷰 보고서 · <code>/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/implementation-review.md</code></div>
+        
+      </div>
+      </details>
+    </div>
+  </header>
+
+  <section class="overview" id="overview">
+           <h2 class="overview__title">초록</h2>
+           <p class="overview__value"><strong>INCONCLUSIVE.</strong> 독립 코드 재검토는 PASS이며 F1/F2/F3/F4와 관측시간 U3를 해소했다. 현재 로컬 proof·이미지의 출처가 일치한다.</p>
+           <p class="overview__value">최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다.</p>
+           <p class="overview__value overview__risk">실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다.</p>
+         </section>
+
+  <nav class="toc" aria-label="목차">
+  <details class="toc__contents">
+    <summary>목차</summary>
+    <ol>
+      <li data-level="0"><a href="#overview">초록</a></li><li data-level="0"><a href="#review-context">관련 ADR과 변경 맥락</a></li><li data-level="0"><a href="#analysis">핵심 구현 방법과 알고리즘</a></li><li data-level="1"><a href="#hill-h1">H1 · 실제 결함 관측에서 사고 입력을 만든다</a></li><li data-level="2"><a href="#component-h1-c1">C1 · 사고 전후 관측의 선택</a></li><li data-level="3"><a href="#code-h1-c1-1">Code 1 · excerpt</a></li><li data-level="2"><a href="#component-h1-c2">C2 · 같은 입력과 세션 수명</a></li><li data-level="3"><a href="#code-h1-c2-1">Code 1 · diff</a></li><li data-level="1"><a href="#hill-h2">H2 · 제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다</a></li><li data-level="2"><a href="#component-h2-c1">C1 · 원본 알람 메타데이터의 전달</a></li><li data-level="3"><a href="#code-h2-c1-1">Code 1 · diff</a></li><li data-level="1"><a href="#hill-h3">H3 · 배포 검증을 실제 복원 증거로 제한한다</a></li><li data-level="2"><a href="#component-h3-c1">C1 · 고정 정비 명령과 기존 실행 복원</a></li><li data-level="3"><a href="#code-h3-c1-1">Code 1 · excerpt</a></li><li data-level="2"><a href="#component-h3-c2">C2 · 기록·진단 출력 실패와 복원 제어의 분리</a></li><li data-level="3"><a href="#code-h3-c2-1">Code 1 · excerpt</a></li><li data-level="0"><a href="#validation">자체 검증 방법과 결과</a></li><li data-level="0"><a href="#findings">결과 해석, 한계와 향후 보완</a></li><li data-level="0"><a href="#conclusion">결론</a></li><li data-level="0"><a href="#evidence">근거 부록</a></li>
+    </ol>
+  </details>
+</nav>
+
+  
+  <section class="paper-section" id="review-context">
+    <h2 class="explanation__title">관련 ADR과 변경 맥락</h2>
+    <div class="context-narrative" aria-label="관련 ADR과 변경 맥락">
+      <p class="narrative-lead">두 분석 엔진을 같은 관측·원인·반증·안전성 계약으로 비교하며 일반 CI와 실모델·배포 검증을 분리한다.</p>
+      <p>사설 서비스 또는 전용 로컬 PostgreSQL, 소유 실행 ID, 불변 소스와 같은 부하 조건을 전제로 한다.</p>
+      <p>네 평가 계층, 공용 분석 경로, 관측의 부재·출처, 엔진 공통 기준과 두 엔진 전수 결과의 명시 승인 경계를 보존한다.</p>
+      <p>전체 ADR 본문과 원래 호출 경로를 검토했다. 독립 코드 재검토는 PASS이며 열린 코드 발견사항은 없다. 남은 미검증 행은 실제 AWS 실행과 모델 품질·승인의 증거 한계이므로 전체 판정은 INCONCLUSIVE다.</p>
+      <p class="adr-comparison"><strong>ADR 0007: 데모 시나리오 — 실제 결함·증상 관측·원상복원</strong>와 비교하면 관측의 원본·시간을 보존하고 실제 결함·복원 증거와 합성 입력을 구별한다. 반면 agent/0016의 model-eval은 제공 관측의 해석·인용을 평가하며 infra/0007의 실제 배포 알람·회복 검증을 대신하지 않는다. 따라서 같은 원본을 읽어도 모델 품질, 로컬 DB 메커니즘, AWS 증거 탐색의 결과를 서로 다른 증거 수준으로 기록한다.</p>
+        <details class="technical-evidence">
+          <summary>근거 부록 · ADR 0007: 데모 시나리오 — 실제 결함·증상 관측·원상복원</summary>
+          <p><code>docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md</code></p>
+          <p>비교한 두 ADR의 전체 Decision 및 Requirement contract</p>
+        </details>
+    </div>
+    
+    
+  </section>
+  
+  <section id="analysis">
+    <h2 class="section-title">핵심 구현 방법과 알고리즘</h2>
+    
+  <section class="paper-subsection" id="hill-h1">
+    <h3 class="explanation__title">실제 결함 관측에서 사고 입력을 만든다</h3>
+    <div class="explanation__body hill__authored-narrative"><p>동일 요청에서 생긴 네 원인을 구별할 관측만 모델에 제공하는가?</p>
+<p>화살표는 호출 순서 또는 자료 이동을 나타낸다. 실제 실행 증거의 범위는 도식 아래 문장과 함께 읽는다.</p>
+<figure class="diagram diagram--flow" data-rendered="true"><div class="diagram__viewport"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mermaid-9f621c61f346-title" viewBox="0 0 1510 373" style="width:1510px;max-width:none">
+    <title id="mermaid-9f621c61f346-title">flowchart</title>
+    <defs><marker id="mermaid-9f621c61f346-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+    <g class="diagram-relationship" data-from="Raw" data-to="Cut">
+      <title>시각이 있는 원본 관측 → normal과 fault만 선택: </title>
+      <path d="M 270 112 C 317.5 112, 317.5 112, 365 112" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9f621c61f346-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Raw" data-to="Archive">
+      <title>시각이 있는 원본 관측 → 운영자용 복원 증거 보존: </title>
+      <path d="M 270 112 C 317.5 112, 317.5 251, 365 251" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9f621c61f346-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Cut" data-to="Model">
+      <title>normal과 fault만 선택 → 모델 입력: </title>
+      <path d="M 555 112 C 602.5 112, 602.5 181.5, 650 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9f621c61f346-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Model" data-to="Result">
+      <title>모델 입력 → 실제 분석 산출물: </title>
+      <path d="M 840 181.5 C 887.5 181.5, 887.5 181.5, 935 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9f621c61f346-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Result" data-to="Eval">
+      <title>실제 분석 산출물 → 공통 평가: </title>
+      <path d="M 1125 181.5 C 1172.5 181.5, 1172.5 181.5, 1220 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9f621c61f346-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Expected" data-to="Eval">
+      <title>평가자 전용 정답과 필수 증거 → 공통 평가: </title>
+      <path d="M 270 251 C 745 251, 745 181.5, 1220 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9f621c61f346-arrow)"/>
+      </g><g class="diagram-node" data-node="Raw"><rect x="80" y="80" width="190" height="64" rx="7"/><text class="" x="175" y="105" text-anchor="middle"><tspan x="175" dy="0">시각이 있는 원본 관측</tspan></text></g><g class="diagram-node" data-node="Expected"><rect x="80" y="219" width="190" height="64" rx="7"/><text class="" x="175" y="244" text-anchor="middle"><tspan x="175" dy="0">평가자 전용 정답과 필수 증</tspan><tspan x="175" dy="18">거</tspan></text></g><g class="diagram-node" data-node="Cut"><rect x="365" y="80" width="190" height="64" rx="7"/><text class="" x="460" y="105" text-anchor="middle"><tspan x="460" dy="0">normal과 fault만 선택</tspan></text></g><g class="diagram-node" data-node="Archive"><rect x="365" y="219" width="190" height="64" rx="7"/><text class="" x="460" y="244" text-anchor="middle"><tspan x="460" dy="0">운영자용 복원 증거 보존</tspan></text></g><g class="diagram-node" data-node="Model"><rect x="650" y="149.5" width="190" height="64" rx="7"/><text class="" x="745" y="174.5" text-anchor="middle"><tspan x="745" dy="0">모델 입력</tspan></text></g><g class="diagram-node" data-node="Result"><rect x="935" y="149.5" width="190" height="64" rx="7"/><text class="" x="1030" y="174.5" text-anchor="middle"><tspan x="1030" dy="0">실제 분석 산출물</tspan></text></g><g class="diagram-node" data-node="Eval"><rect x="1220" y="149.5" width="190" height="64" rx="7"/><text class="" x="1315" y="174.5" text-anchor="middle"><tspan x="1315" dy="0">공통 평가</tspan></text></g></svg></div><details class="diagram-source"><summary>Mermaid 원문</summary><pre><code>%% requirement: V1
+flowchart LR
+  Raw[시각이 있는 원본 관측] --&gt; Cut[normal과 fault만 선택]
+  Raw --&gt; Archive[운영자용 복원 증거 보존]
+  Cut --&gt; Model[모델 입력]
+  Model --&gt; Result[실제 분석 산출물]
+  Result --&gt; Eval[공통 평가]
+  Expected[평가자 전용 정답과 필수 증거] --&gt; Eval</code></pre></details></figure>
+<p>Notice: 복원 원본은 운영자에게 남고 모델은 사고 전후 두 구간만 받는다.</p></div>
+    <div class="hill__narrative" aria-label="실제 결함 관측에서 사고 입력을 만든다">
+      <p class="narrative-lead">실제 결함 관측에서 사고 입력을 만든다. 모델 입력은 실제 PostgreSQL의 정상·결함 구간에서 선택하며 원인 정답은 평가자 측에 둔다.</p>
+<p>원본 검토는 중립 obs/capture 식별자와 4개 source snippet의 hash·줄 일치를 확인했다.</p>
+<p>미래 복원 결과나 정리 성공을 입력에 넣으면 사고 시점에 알 수 없던 정보를 원인 근거로 쓰게 된다.</p>
+<p>원본 시각·단위·리소스와 코드 차이가 있는 사고 입력을 만든다. 원본 보존과 모델 투영을 분리하고 동일 원본의 normal과 fault를 선택한다.</p>
+<p>실제 원인 관측과 평가 기대값의 혼입을 막는 경계를 읽을 수 있다. 현재 canonical 관측은 SHA-256 83aac573…의 컴파일된 로컬 proof를 가리킨다. 실제 proof와 이미지 3개는 verified=true이며 소스가 일치한다. 복원·정답의 입력 혼입 거부 시험도 통과했다.</p>
+    </div>
+    <details class="hill__details">
+      <summary>
+        <span>구현과 검증 근거</span>
+      </summary>
+      <div class="hill__details-body">
+        <h3 class="component-section-title">결과를 만드는 구현</h3>
+        <div class="components">
+    <article class="component" id="component-h1-c1">
+      <header class="component__head">
+        <span class="tag component__tag">Component C1</span>
+        <h3>사고 전후 관측의 선택</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 모델 입력에서 미래 복원 정보와 평가자의 정답을 제외한다.</p>
+        <p><strong>동작 방식.</strong> 같은 원본의 normal과 fault만 pair로 구성하고 원본 포인터 매핑을 따로 둔다. 관측 식별자는 중립적인 obs/capture 값이다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> 원본 T10 15 PASS, T12 projection 함수 문서 보완 후 11 PASS. 입력 변경 불변성은 catalog 회귀로 검사했다.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h1-c1-1">
+      <summary>코드 근거 1 · excerpt · tests/harness/scenario-capture-boundary.mjs:207</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">tests/harness/scenario-capture-boundary.mjs:207</span></div>
+        <pre><code>export function projectIncidentCaptures(scenarioId, proof, snippets = {}) {
+  const caseName = CASES[scenarioId];
+  assert.ok(caseName, 'unknown catalog id');
+  const baseline = phaseData(proof, caseName, 'normal');
+  const incident = phaseData(proof, caseName, 'fault');
+  const pair = [baseline, incident];
+  const resource = { runId: proof.run_id, schema: proof.schema };
+  const operatorMapping = {};</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">모델로 들어갈 두 구간을 직접 선택하는 연속 코드다. 복원·cleanup 구간을 pair에 추가하지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원본 T10 15 PASS, T12 projection 함수 문서 보완 후 11 PASS. 입력 변경 불변성은 catalog 회귀로 검사했다.</span></div>
+      </div>
+    </details></div>
+    </article>
+
+    <article class="component" id="component-h1-c2">
+      <header class="component__head">
+        <span class="tag component__tag">Component C2</span>
+        <h3>같은 입력과 세션 수명</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 저장·조회가 같은 요청 조건과 세션 정리 경계를 사용한다.</p>
+        <p><strong>동작 방식.</strong> 데이터 접근부는 session_context로 요청 본문의 예외를 정리 경로에 전달한다. 빌드 리비전 r2는 실제 행별 SQL을, r3는 예외 경로 반환 누락을 선택한다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> 현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h1-c2-1">
+      <summary>코드 근거 1 · diff · packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</span></div>
+        <pre><code>@@ -6,14 +6,17 @@ from test_service.adapters.secondary.sensor_repository.models import SensorReadi
+ from test_service.ports.dto.sensor import SensorReadingEntity
+ from test_service.ports.interfaces.database import DatabasePort
+ from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort
++from test_service.revision.query import fetch_patient_rows
+ 
+ 
+ class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
+     def __init__(self, database: DatabasePort) -&gt; None:
++        &quot;&quot;&quot;Use the database port's lifetime contract rather than owning a separate pool.&quot;&quot;&quot;
+         self._database = database
+ 
+     async def save_batch(self, readings: list[SensorReadingEntity]) -&gt; list[SensorReadingEntity]:
+-        async for session in self._database.session():
++        &quot;&quot;&quot;Persist a batch in one scope so flush errors reach the compiled cleanup path.&quot;&quot;&quot;
++        async with self._database.session_context() as session:
+             rows = []
+             for r in readings:
+                 row = SensorReadingRow(</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">generator 순회에서 context manager로 바꾼 실제 diff다. 세션의 종료 책임이 요청 본문 실패와 연결된다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.</span></div>
+      </div>
+    </details></div>
+    </article></div>
+        <div class="hill__evidence">
+  <details class="coverage coverage--proven" id="contract-R1">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R1</span>
+      <span class="coverage__requirement">공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 02</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>네 scenario가 최신 현재-source PostgreSQL baseline/incident를 사용한다. 같은 입력의 restore 검증은 원본에 유지하되 모델 input에는 넣지 않는다.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/harness/scenario-capture-boundary.mjs:207; packages/healthcare-sensor-app/demo/local_worker.py; proof-review-fixed-01 15phases</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N1/N4/N5, canonical source hash83aac573…</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R2">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R2</span>
+      <span class="coverage__requirement">에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.</span>
+      <span class="finding__idx">02<span class="finding__idx-total"> / 02</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>중립 obs/capture ID, UTC/단위/run/schema와 current-source snippets를 유지. expectation/미래cleanup은 projection 밖. source metadata는 실제 최종prompt까지 보존.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/harness/scenario-capture-boundary.mjs:37,207; 양 eval_adapter→DTO→prompt source-view 경로</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N2 canonical projection·metadata tests; N3 finalprompt probes; N5 source/snippet 대조</span></div>
+      </div>
+    </details>
+    </div>
+  </details></div>
+      </div>
+    </details>
+  </section>
+
+  <section class="paper-subsection" id="hill-h2">
+    <h3 class="explanation__title">제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다</h3>
+    <div class="explanation__body hill__authored-narrative"><p>없는 알람 정보를 만들어내지 않고 두 엔진의 실제 결과가 모두 모여야 승인되는가?</p>
+<p>두 엔진의 락 사례는 기대 유형 unsupported 대신 slow-query로 분류됐다. Headless의 세션 정리·정비 락·풀 설정 사례에는 확정 원인에 필요한 인용이 각각 누락됐다. Headless 세션 정리 사례의 step-1은 안전성 정적 검사에 걸렸지만, main 검토에서는 메모리상의 소유 집합 제거와 rollback 표현에 따른 오탐 가능성을 남겼다. 실제로 위험한 작업을 실행했다는 증거로 해석하지 않는다.</p>
+<p>Strands의 세션 정리 설명은 예외 위치를 commit 이후로 서술했다. main이 대조한 probe의 SQL 오류는 commit 이전에 발생하므로 이 설명에는 사건 순서의 정밀도 한계가 있다. 이는 제공된 정성 검토 결과이며 새로운 코드 결함 판정을 추가하지 않는다.</p>
+<p>화살표는 호출 순서 또는 자료 이동을 나타낸다. 실제 실행 증거의 범위는 도식 아래 문장과 함께 읽는다.</p>
+<figure class="diagram diagram--flow" data-rendered="true"><div class="diagram__viewport"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mermaid-7c2155a1aaa8-title" viewBox="0 0 2365 373" style="width:2365px;max-width:none">
+    <title id="mermaid-7c2155a1aaa8-title">flowchart</title>
+    <defs><marker id="mermaid-7c2155a1aaa8-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+    <g class="diagram-relationship" data-from="Input" data-to="Adapter">
+      <title>동결한 시나리오 입력 → 두 엔진의 번역 어댑터: </title>
+      <path d="M 270 112 C 317.5 112, 317.5 112, 365 112" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Adapter" data-to="Prompt">
+      <title>두 엔진의 번역 어댑터 → 공용 최종 프롬프트: </title>
+      <path d="M 555 112 C 602.5 112, 602.5 181.5, 650 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Prompt" data-to="Model">
+      <title>공용 최종 프롬프트 → 실모델 분석: </title>
+      <path d="M 840 181.5 C 887.5 181.5, 887.5 181.5, 935 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Model" data-to="Result">
+      <title>실모델 분석 → 정규화 결과와 보고서: </title>
+      <path d="M 1125 181.5 C 1172.5 181.5, 1172.5 181.5, 1220 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Result" data-to="Gate">
+      <title>정규화 결과와 보고서 → 모든 엔진과 시나리오 검사: </title>
+      <path d="M 1410 181.5 C 1457.5 181.5, 1457.5 181.5, 1505 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Gate" data-to="Review">
+      <title>모든 엔진과 시나리오 검사 → 결과 검토와 명시 승인: </title>
+      <path d="M 1695 181.5 C 1742.5 181.5, 1742.5 181.5, 1790 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Review" data-to="Baseline">
+      <title>결과 검토와 명시 승인 → 새 기준선: </title>
+      <path d="M 1980 181.5 C 2027.5 181.5, 2027.5 181.5, 2075 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Missing" data-to="Boundary">
+      <title>누락된 메타데이터 → 부재를 그대로 전달: </title>
+      <path d="M 270 251 C 317.5 251, 317.5 251, 365 251" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Boundary" data-to="Prompt">
+      <title>부재를 그대로 전달 → 공용 최종 프롬프트: </title>
+      <path d="M 555 251 C 602.5 251, 602.5 181.5, 650 181.5" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-7c2155a1aaa8-arrow)"/>
+      </g><g class="diagram-node" data-node="Input"><rect x="80" y="80" width="190" height="64" rx="7"/><text class="" x="175" y="105" text-anchor="middle"><tspan x="175" dy="0">동결한 시나리오 입력</tspan></text></g><g class="diagram-node" data-node="Missing"><rect x="80" y="219" width="190" height="64" rx="7"/><text class="" x="175" y="244" text-anchor="middle"><tspan x="175" dy="0">누락된 메타데이터</tspan></text></g><g class="diagram-node" data-node="Adapter"><rect x="365" y="80" width="190" height="64" rx="7"/><text class="" x="460" y="105" text-anchor="middle"><tspan x="460" dy="0">두 엔진의 번역 어댑터</tspan></text></g><g class="diagram-node" data-node="Boundary"><rect x="365" y="219" width="190" height="64" rx="7"/><text class="" x="460" y="244" text-anchor="middle"><tspan x="460" dy="0">부재를 그대로 전달</tspan></text></g><g class="diagram-node" data-node="Prompt"><rect x="650" y="149.5" width="190" height="64" rx="7"/><text class="" x="745" y="174.5" text-anchor="middle"><tspan x="745" dy="0">공용 최종 프롬프트</tspan></text></g><g class="diagram-node" data-node="Model"><rect x="935" y="149.5" width="190" height="64" rx="7"/><text class="" x="1030" y="174.5" text-anchor="middle"><tspan x="1030" dy="0">실모델 분석</tspan></text></g><g class="diagram-node" data-node="Result"><rect x="1220" y="149.5" width="190" height="64" rx="7"/><text class="" x="1315" y="174.5" text-anchor="middle"><tspan x="1315" dy="0">정규화 결과와 보고서</tspan></text></g><g class="diagram-node" data-node="Gate"><rect x="1505" y="149.5" width="190" height="64" rx="7"/><text class="" x="1600" y="174.5" text-anchor="middle"><tspan x="1600" dy="0">모든 엔진과 시나리오 검사</tspan></text></g><g class="diagram-node" data-node="Review"><rect x="1790" y="149.5" width="190" height="64" rx="7"/><text class="" x="1885" y="174.5" text-anchor="middle"><tspan x="1885" dy="0">결과 검토와 명시 승인</tspan></text></g><g class="diagram-node" data-node="Baseline"><rect x="2075" y="149.5" width="190" height="64" rx="7"/><text class="" x="2170" y="174.5" text-anchor="middle"><tspan x="2170" dy="0">새 기준선</tspan></text></g></svg></div><details class="diagram-source"><summary>Mermaid 원문</summary><pre><code>%% requirement: V2
+flowchart LR
+  Input[동결한 시나리오 입력] --&gt; Adapter[두 엔진의 번역 어댑터]
+  Adapter --&gt; Prompt[공용 최종 프롬프트]
+  Prompt --&gt; Model[실모델 분석]
+  Model --&gt; Result[정규화 결과와 보고서]
+  Result --&gt; Gate[모든 엔진과 시나리오 검사]
+  Gate --&gt; Review[결과 검토와 명시 승인]
+  Review --&gt; Baseline[새 기준선]
+  Missing[누락된 메타데이터] --&gt; Boundary[부재를 그대로 전달]
+  Boundary --&gt; Prompt</code></pre></details></figure>
+<p>Notice: 없는 사고 metadata를 기본값으로 채우지 않는 경계는 검증됐다. 새 기준선 화살표는 승인 조건이며 현재 승인 사실이 아니다.</p></div>
+    <div class="hill__narrative" aria-label="제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다">
+      <p class="narrative-lead">제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다. 평가 어댑터는 제공된 메타데이터의 값과 부재를 공용 최종 프롬프트까지 유지하며 운영 기본값은 보존한다.</p>
+<p>region이 없는 현재 네 입력에는 not provided가 표시된다. region만 ap-northeast-2로 주고 ARN을 생략한 입력은 그 리전을 유지한다.</p>
+<p>누락·null·공백은 not provided로 표현하지만 제공된 0이나 빈 차원 집합은 지우지 않는다. 새 세션 시각을 사고의 원본 시각으로 제시하지 않는다.</p>
+<p>두 엔진의 원인·반증·산출물·안전성 기준을 같은 규칙으로 검사한다. 입력 어댑터, 공용 프롬프트, 실제 분석, 정규화 결과와 공통 평가가 이어지고 전수 결과 뒤에 검토·승인이 온다.</p>
+<p>오프라인 통과나 한 엔진의 부분 결과만으로 새 모델 품질을 승인하지 않는다. F4 관련 시험과 독립 prompt 재현은 통과했다. 최종 실모델 결과 8개는 모두 필수 평가에 실패했고 경쟁 원인 기각은 0/8이다. 기준선 변경이나 새 fixture 승인은 없다.</p>
+    </div>
+    <details class="hill__details" open>
+      <summary>
+        <span>구현과 검증 근거</span>
+      </summary>
+      <div class="hill__details-body">
+        <h3 class="component-section-title">결과를 만드는 구현</h3>
+        <div class="components">
+    <article class="component" id="component-h2-c1">
+      <header class="component__head">
+        <span class="tag component__tag">Component C1</span>
+        <h3>원본 알람 메타데이터의 전달</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 평가 어댑터가 제공 값과 부재를 공용 분석 경계로 옮긴다.</p>
+        <p><strong>동작 방식.</strong> 제공된 Region/AlarmArn/Trigger와 명시적 eval source view를 전달한다. 없는 region/statistic/period/time은 최종 프롬프트에서 not provided로 표시하고 운영 기본값을 유지한다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> Strands113/Headless201 PASS 및 Curie의 실제 최종 prompt 재현 PASS. 현재 네 입력·minimal·region-only·null/blank·0/{} 경계를 확인했다.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h2-c1-1">
+      <summary>코드 근거 1 · diff · packages/agent/src/rca_agent/eval_adapter.py</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/agent/src/rca_agent/eval_adapter.py</span></div>
+        <pre><code>@@ -128,9 +153,32 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -&gt; dict
+         &quot;NewStateReason&quot;: state_reason,
+         &quot;StateChangeTime&quot;: state_change_time,
+     }
+-    metric = alarm.get(&quot;metric&quot;)
+-    if metric:
+-        envelope[&quot;Trigger&quot;] = {&quot;MetricName&quot;: metric, &quot;Namespace&quot;: &quot;&quot;, &quot;Dimensions&quot;: []}
++    for source, target in ((&quot;region&quot;, &quot;Region&quot;), (&quot;arn&quot;, &quot;AlarmArn&quot;)):
++        if source in alarm and alarm[source] is not None:
++            envelope[target] = alarm[source]
++    trigger = {
++        target: alarm[source]
++        for source, target in (
++            (&quot;metric&quot;, &quot;MetricName&quot;),
++            (&quot;namespace&quot;, &quot;Namespace&quot;),
++            (&quot;statistic&quot;, &quot;Statistic&quot;),
++            (&quot;period&quot;, &quot;Period&quot;),
++            (&quot;threshold&quot;, &quot;Threshold&quot;),
++            (&quot;comparisonOperator&quot;, &quot;ComparisonOperator&quot;),
++            (&quot;evaluationPeriods&quot;, &quot;EvaluationPeriods&quot;),
++            (&quot;datapointsToAlarm&quot;, &quot;DatapointsToAlarm&quot;),
++            (&quot;treatMissingData&quot;, &quot;TreatMissingData&quot;),
++        )
++        if source in alarm and alarm[source] is not None
++    }
++    if alarm.get(&quot;dimensions&quot;) is not None:
++        trigger[&quot;Dimensions&quot;] = [{&quot;name&quot;: name, &quot;value&quot;: value} for name, value in alarm[&quot;dimensions&quot;].items()]
++    if trigger:
++        envelope[&quot;Trigger&quot;] = trigger
++    if _supports_model_eval(scenario):
++        # An explicit source view prevents production defaults and the fresh
++        # session timestamp from being presented as incident observations.
++        envelope[&quot;EvalSourceMetadata&quot;] = {**metadata, &quot;metric&quot;: alarm.get(&quot;metric&quot;)}
+     return envelope</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">현재 실제 diff는 어댑터 경계의 변경 증거다. 기존 좁은 테스트의 통과를 최종 프롬프트 비노출 보장으로 확대하지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">Strands113/Headless201 PASS 및 Curie의 실제 최종 prompt 재현 PASS. 현재 네 입력·minimal·region-only·null/blank·0/{} 경계를 확인했다.</span></div>
+      </div>
+    </details></div>
+    </article></div>
+        <div class="hill__evidence">
+  <details class="coverage coverage--unverified" id="contract-D0" open>
+    <summary class="coverage__summary">
+      <span class="coverage__status">검증 필요 · D0</span>
+      <span class="coverage__requirement">RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네 계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 05</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네 계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>네 계층/공용 분석 경로/오프라인 enforcement는 구현·검사됨. 현행 fixture 승인digest gate는 FAIL, 최종8model 결과와 검토·승인은 아직 완료되지 않음(U2). 실제E2E 품질은 별도runtime미검증(U1).</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">Decision</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/harness/model-cli.mjs:runModelEvaluation; evaluator.mjs:evaluateResults/createBaseline; 양 eval_adapter의 공용 runner/pipeline 호출</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N2 Strands113/Headless201 PASS; catalog gates41/42; 최종model8/AWS NOT RUN by reviewer</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R3">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R3</span>
+      <span class="coverage__requirement">알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.</span>
+      <span class="finding__idx">02<span class="finding__idx-total"> / 05</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>F4 해소. eval 전용source view에서 없는/null/blank metadata는not provided; 제공된region은ARN 없이도 유지. numeric0/{} 유지. Strands의 새session시각은 모델의 원본시각으로 제시하지 않음. 운영기본값은별도호환 유지.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/agent/src/rca_agent/eval_adapter.py:181; ports/dto/models.py:101; services/scoping.py:124; packages/headless-codex/src/headless_codex/eval_adapter.py:317; services/prompt_builder.py:67</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N2 113+201 PASS; N3 current4+minimal/region-only 양엔진 PASS; N5 production3사례/engine before-after 동등</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R4">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R4</span>
+      <span class="coverage__requirement">합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.</span>
+      <span class="finding__idx">03<span class="finding__idx-total"> / 05</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>새관측은localPG로 명시, alarm은illustrative. model-eval만sourceview/observation을 전달하며 production/deployed 옵트아웃 유지. 배포E2E 성공은 주장하지 않음.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/scenarios/*.json:provenance; 양eval_adapter mode checks; scripts/run_deployed_e2e.py:run</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N2 opt-out·projection·metadata PASS; AWS NOT RUN</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R6">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R6</span>
+      <span class="coverage__requirement">원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.</span>
+      <span class="finding__idx">04<span class="finding__idx-total"> / 05</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>허용 5종 유지. pool/lock=unsupported, query=slow-query, exception=db-leak. 0.8 확정/0.3 기각/0.9 종료, 깊이3·검증3·재생성2 유지. 경쟁 원인별 분리된 증거와 안전성 기준은 공통 evaluator.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/harness/evaluator.mjs:10,75,351; packages/agent/src/rca_agent/config/settings.py:24; packages/headless-codex/src/headless_codex/services/analysis_contract.py:10</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원 검토의 T2,T3,T4,T5,T10; 정책 파일 git diff 없음</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R7">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R7</span>
+      <span class="coverage__requirement">교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.</span>
+      <span class="finding__idx">05<span class="finding__idx-total"> / 05</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>교체된입력/원본결과와 실패이력 보존. 현재결과fixture는미승인/부재, baseline미변경. 두엔진전수결과의검토전에는새baseline을 만들지 않고 현재digest변경을차단함.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/fixtures/historical; tests/fixtures/results/README.md; tests/harness/evaluator.mjs:createBaseline</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N2 archive/hash/approval-policy PASS; 승인digest assertion FAIL; 승인 실행 없음</span></div>
+      </div>
+    </details>
+    </div>
+  </details></div>
+      </div>
+    </details>
+  </section>
+
+  <section class="paper-subsection" id="hill-h3">
+    <h3 class="explanation__title">배포 검증을 실제 복원 증거로 제한한다</h3>
+    <div class="explanation__body hill__authored-narrative"><p>deployed-e2e를 선언한 실행이 실제 소유 자원과 서비스 회복으로 끝나는가?</p>
+<p>화살표는 호출 순서 또는 자료 이동을 나타낸다. 실제 실행 증거의 범위는 도식 아래 문장과 함께 읽는다.</p>
+<figure class="diagram diagram--flow" data-rendered="true"><div class="diagram__viewport"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mermaid-c5665d5749ee-title" viewBox="0 0 620 1382" style="width:620px;max-width:none">
+    <title id="mermaid-c5665d5749ee-title">flowchart</title>
+    <defs><marker id="mermaid-c5665d5749ee-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+    <g class="diagram-relationship" data-from="Original" data-to="Apply">
+      <title>원본과 소유 실행 영속 기록 → 결함 적용: </title>
+      <path d="M 300 144 C 300 194, 300 194, 300 244" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Apply" data-to="Failure">
+      <title>결함 적용 → 실패 또는 중단: </title>
+      <path d="M 300 308 C 300 358, 300 358, 300 408" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Failure" data-to="Recover">
+      <title>실패 또는 중단 → 소유권 확인과 복원 경계: </title>
+      <path d="M 300 472 C 300 604, 300 604, 300 736" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Recover" data-to="Service">
+      <title>소유권 확인과 복원 경계 → 원래 서비스 정의 복귀 시도: </title>
+      <path d="M 300 800 C 300 850, 175 850, 175 900" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Recover" data-to="Job">
+      <title>소유권 확인과 복원 경계 → 자기 정비 작업 중지 시도: </title>
+      <path d="M 300 800 C 300 850, 425 850, 425 900" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Service" data-to="Check">
+      <title>원래 서비스 정의 복귀 시도 → 새 서비스 증상 확인: </title>
+      <path d="M 175 964 C 175 1014, 300 1014, 300 1064" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Job" data-to="Check">
+      <title>자기 정비 작업 중지 시도 → 새 서비스 증상 확인: </title>
+      <path d="M 425 964 C 425 1014, 300 1014, 300 1064" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Check" data-to="Result">
+      <title>새 서비스 증상 확인 → 기록과 증상으로 복원 판정: </title>
+      <path d="M 300 1128 C 300 1178, 300 1178, 300 1228" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Failure" data-to="Journal">
+      <title>실패 또는 중단 → 기록과 진단 오류 격리: </title>
+      <path d="M 300 472 C 300 522, 300 522, 300 572" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-relationship" data-from="Journal" data-to="Recover">
+      <title>기록과 진단 오류 격리 → 소유권 확인과 복원 경계: </title>
+      <path d="M 300 636 C 300 686, 300 686, 300 736" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-c5665d5749ee-arrow)"/>
+      </g><g class="diagram-node" data-node="Original"><rect x="205" y="80" width="190" height="64" rx="7"/><text class="" x="300" y="105" text-anchor="middle"><tspan x="300" dy="0">원본과 소유 실행 영속 기록</tspan></text></g><g class="diagram-node" data-node="Apply"><rect x="205" y="244" width="190" height="64" rx="7"/><text class="" x="300" y="269" text-anchor="middle"><tspan x="300" dy="0">결함 적용</tspan></text></g><g class="diagram-node" data-node="Failure"><rect x="205" y="408" width="190" height="64" rx="7"/><text class="" x="300" y="433" text-anchor="middle"><tspan x="300" dy="0">실패 또는 중단</tspan></text></g><g class="diagram-node" data-node="Recover"><rect x="205" y="736" width="190" height="64" rx="7"/><text class="" x="300" y="761" text-anchor="middle"><tspan x="300" dy="0">소유권 확인과 복원 경계</tspan></text></g><g class="diagram-node" data-node="Service"><rect x="80" y="900" width="190" height="64" rx="7"/><text class="" x="175" y="925" text-anchor="middle"><tspan x="175" dy="0">원래 서비스 정의 복귀 시도</tspan></text></g><g class="diagram-node" data-node="Job"><rect x="330" y="900" width="190" height="64" rx="7"/><text class="" x="425" y="925" text-anchor="middle"><tspan x="425" dy="0">자기 정비 작업 중지 시도</tspan></text></g><g class="diagram-node" data-node="Check"><rect x="205" y="1064" width="190" height="64" rx="7"/><text class="" x="300" y="1089" text-anchor="middle"><tspan x="300" dy="0">새 서비스 증상 확인</tspan></text></g><g class="diagram-node" data-node="Result"><rect x="205" y="1228" width="190" height="64" rx="7"/><text class="" x="300" y="1253" text-anchor="middle"><tspan x="300" dy="0">기록과 증상으로 복원 판정</tspan></text></g><g class="diagram-node" data-node="Journal"><rect x="205" y="572" width="190" height="64" rx="7"/><text class="" x="300" y="597" text-anchor="middle"><tspan x="300" dy="0">기록과 진단 오류 격리</tspan></text></g></svg></div><details class="diagram-source"><summary>Mermaid 원문</summary><pre><code>%% requirement: V3
+flowchart TD
+  Original[원본과 소유 실행 영속 기록] --&gt; Apply[결함 적용]
+  Apply --&gt; Failure[실패 또는 중단]
+  Failure --&gt; Recover[소유권 확인과 복원 경계]
+  Recover --&gt; Service[원래 서비스 정의 복귀 시도]
+  Recover --&gt; Job[자기 정비 작업 중지 시도]
+  Service --&gt; Check[새 서비스 증상 확인]
+  Job --&gt; Check
+  Check --&gt; Result[기록과 증상으로 복원 판정]
+  Failure --&gt; Journal[기록과 진단 오류 격리]
+  Journal --&gt; Recover</code></pre></details></figure>
+<p>Notice: 이 도식은 검증해야 할 배포 경계이며 AWS 성공 증거를 대신하지 않는다.</p></div>
+    <div class="hill__narrative" aria-label="배포 검증을 실제 복원 증거로 제한한다">
+      <p class="narrative-lead">배포 검증을 실제 복원 증거로 제한한다. 현재 네 사례는 model-eval만 선언하며 배포 E2E 성공을 선언하지 않는다.</p>
+<p>F2 저장·진단 동시 오류의 원래 반례가 원본 서비스 복귀와 소유 작업 정리로 끝난다. Python56·Node4는 성공 표시와 소유권의 경계도 확인한다.</p>
+<p>reset 응답이나 준비된 관측만으로 실제 배포와 서비스 회복을 통과시킬 수 없다.</p>
+<p>실행 가능한 제어와 실제 복원 관측이 있는 배포 사례만 허용한다. 소유 원본 기록에서 서비스와 정비 작업의 복원을 각각 시도하고 후속 증상을 확인한다.</p>
+<p>제공 관측 평가와 실제 증거 탐색의 검증 범위를 분리한다. 코드 복원 경로는 검증됐지만 실제 AWS 태스크 종료·서비스 증상 회복은 수행하지 않았다. R5의 미검증 상태는 이 실행 증거 한계를 표시한다.</p>
+    </div>
+    <details class="hill__details" open>
+      <summary>
+        <span>구현과 검증 근거</span>
+      </summary>
+      <div class="hill__details-body">
+        <h3 class="component-section-title">결과를 만드는 구현</h3>
+        <div class="components">
+    <article class="component" id="component-h3-c1">
+      <header class="component__head">
+        <span class="tag component__tag">Component C1</span>
+        <h3>고정 정비 명령과 기존 실행 복원</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 소유된 정비 모듈만 시작하고 과거 journal의 임의 프로그램 실행을 거부한다.</p>
+        <p><strong>동작 방식.</strong> 명령은 MAINTENANCE_COMMAND에서 만들고 run ID·유한 유지 시간·schema를 검사한다. 기존 journal의 복원은 launch 검증과 분리된다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> necessity-review-final.md: 독립 N1 반례 재검사 PASS, Python 40 PASS, 관련 Node 15 PASS. 실제 AWS 호출 없음.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h3-c1-1">
+      <summary>코드 근거 1 · excerpt · scripts/run_realistic_demo.py:131</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">scripts/run_realistic_demo.py:131</span></div>
+        <pre><code>def maintenance_command(options):
+    &quot;&quot;&quot;Build only the bounded maintenance module command, including for old journals.&quot;&quot;&quot;
+    if (
+        &quot;maintenance_command&quot; in options
+        and options[&quot;maintenance_command&quot;] != MAINTENANCE_COMMAND
+    ):
+        raise RuntimeError(
+            &quot;journal records an unsupported maintenance command; restore only&quot;
+        )
+    run_id = options[&quot;run_id&quot;]
+    hold_seconds = options[&quot;hold_seconds&quot;]
+    schema = options.get(&quot;maintenance_schema&quot;, &quot;public&quot;)
+    if not isinstance(run_id, str) or not re.fullmatch(r&quot;[A-Za-z0-9_-]{1,48}&quot;, run_id):
+        raise ValueError(&quot;RunId must be 1..48 letters, digits, underscores or hyphens&quot;)
+    if type(hold_seconds) not in (int, float) or not 0 &lt; hold_seconds &lt;= 7200:
+        raise ValueError(&quot;hold-seconds must be finite, positive and &lt;=7200&quot;)
+    if not isinstance(schema, str) or not re.fullmatch(
+        r&quot;[a-z_][a-z0-9_]{0,62}&quot;, schema
+    ):
+        raise ValueError(&quot;maintenance-schema must be a safe PostgreSQL identifier&quot;)
+    return [
+        part.format(run_id=run_id, hold_seconds=hold_seconds, schema=schema)
+        for part in MAINTENANCE_COMMAND
+    ]</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">N1 해소를 확인한 고정 명령 경계다. 임의 command를 포맷하여 실행하는 기존 선택 기능이 없다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">necessity-review-final.md: 독립 N1 반례 재검사 PASS, Python 40 PASS, 관련 Node 15 PASS. 실제 AWS 호출 없음.</span></div>
+      </div>
+    </details></div>
+    </article>
+
+    <article class="component" id="component-h3-c2">
+      <header class="component__head">
+        <span class="tag component__tag">Component C2</span>
+        <h3>기록·진단 출력 실패와 복원 제어의 분리</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 복원 중 저장 오류와 stderr 출력 오류를 메모리에 남기고 정리를 계속한다. 신규 변경의 사전 기록 실패는 원래 저장 오류를 다시 던진다.</p>
+        <p><strong>동작 방식.</strong> 복원 중 저장 오류와 stderr 출력 오류를 메모리에 남기고 정리를 계속한다. 신규 변경의 사전 기록 실패는 원래 저장 오류를 다시 던진다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> Curie recheck-03: Python56 PASS/Node4 PASS, 원래 반례의 OSError와 실제 닫힌 stream ValueError 모두 원본:1 복원 PASS.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h3-c2-1">
+      <summary>코드 근거 1 · excerpt · scripts/run_realistic_demo.py:337</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">scripts/run_realistic_demo.py:337</span></div>
+        <pre><code>    def record(self, kind, data, *, recovery=False):
+        &quot;&quot;&quot;Keep new intents strict while neither storage nor diagnostic I/O blocks cleanup.&quot;&quot;&quot;
+        try:
+            return self.journal.append(kind, data)
+        except RECOVERABLE_ERRORS as error:
+            failure = {
+                &quot;step&quot;: &quot;journal&quot;,
+                &quot;event&quot;: kind,
+                &quot;error&quot;: f&quot;journal append failed: {type(error).__name__}&quot;,
+            }
+            self.journal_errors.append(failure)
+            # Do not expose event payloads or arbitrary filesystem exception text.
+            try:
+                print(
+                    json.dumps(failure | {&quot;recoveryVerified&quot;: False}), file=sys.stderr
+                )
+            except (OSError, ValueError) as diagnostic_error:
+                # The returned in-memory evidence survives even a closed/full stderr.
+                failure[&quot;diagnosticErrorType&quot;] = type(diagnostic_error).__name__
+            if not recovery:
+                raise
+            return None</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">F2의 마지막 잔여 반례를 닫은 실제 코드다. 기록 오류를 먼저 보존하고 진단 출력 실패를 따로 격리한다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">Curie recheck-03: Python56 PASS/Node4 PASS, 원래 반례의 OSError와 실제 닫힌 stream ValueError 모두 원본:1 복원 PASS.</span></div>
+      </div>
+    </details></div>
+    </article></div>
+        <div class="hill__evidence">
+  <details class="coverage coverage--unverified" id="contract-R5" open>
+    <summary class="coverage__summary">
+      <span class="coverage__status">검증 필요 · R5</span>
+      <span class="coverage__requirement">실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 01</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>active 사례는 model-eval만 선언하며 미검증 deployed-e2e 선언을 하지 않음. CLI의 사전원본/소유task 복원과 F2 오류경로 검사는 통과했다. 실제AWS task/증상복원만 U1 runtime으로 미검증이며 추가배포를 ADR상태선행조건으로 만들지 않는다.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">tests/scenarios/*.json:executionModes; scripts/run_realistic_demo.py:restore,status</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">보존된 CLI lifecycle + 최종 Python56/Node4 PASS; 실제AWS runtime NOT RUN</span></div>
+      </div>
+    </details>
+    </div>
+  </details></div>
+      </div>
+    </details>
+  </section>
+  </section>
+
+  <section class="paper-section" id="validation">
+    <h2 class="section-title">자체 검증 방법과 결과</h2>
+    <p>독립 코드 재검토는 PASS다. 최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.</p>
+    <p>평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다. 출처: tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json</p>
+  </section>
+
+  <section id="findings">
+    <h2 class="section-title">결과 해석, 한계와 향후 보완</h2>
+    <div class="discussion-prose"><section class="paper-subsection">
+        <h3>계약 누락</h3>
+        <p>26개 원본 계약을 모두 기록했고 코드 위반 0개다. 21 PROVEN/5 UNVERIFIED는 세 보고서 합계다.</p>
+        <p>sufficiency-residual-final-recheck.md; sufficiency-closed-coverage.json</p>
+      </section><section class="paper-subsection">
+        <h3>테스트 공백</h3>
+        <p>독립 코드 재검토는 PASS다. 최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.</p>
+        <p>평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다. 출처: tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json</p>
+      </section><section class="paper-subsection">
+        <h3>과다 변경</h3>
+        <p>N1 독립 해소, N2 선택적·변경 없음. 열린 필수 코드 수정 없음.</p>
+        <p>necessity-review-final.md; sufficiency-residual-final-recheck.md</p>
+      </section></div>
+    <p>실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다. 로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다. 현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다. AWS normal→fault→restore 알람·복원 E2E — NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.</p><p>최종 모델 평가 8개가 모두 실패했고 새 기준선은 미승인이다. 오프라인 코드 시험 통과는 새 관측에 대한 두 모델의 원인·반증·안전성 품질을 증명하지 않는다. 최종 실패 결과를 그대로 보존하고 모델 자체 확정, 정적 안전성 검출과 실제 실행 사실을 구분해 읽는다. 이 문서에서 코드 종료 판정이나 승인 정책을 바꾸지 않는다. 최종 두 엔진×4개 사례의 실모델 회차; 루트 승인 digest 검사 — COMPLETED — normalized8, 0 PASS/8 FAIL; competingCausesRejected0/8. Root136 PASS/1 old-baseline digest FAIL; 기준선 변경·새 fixture 승인 없음.</p>
+    <p>작성 전용 최종 모델·정리 문맥 갱신. 열린 코드 발견사항 없음. INCONCLUSIVE/Proposed와 closed coverage21PROVEN/5UNVERIFIED 유지. coverage의 실행 설명은 Curie 코드 종료 시점 스냅샷이며 이후 최종 모델 결과는 별도 문맥에서 갱신했다. 부모 index/model summary는 main 담당.</p>
+  </section>
+
+  <section id="conclusion">
+    <h2 class="section-title">결론</h2>
+    <p>INCONCLUSIVE. 최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다. 실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다.</p>
+  </section>
+
+  
+
+  <p class="print-only print-evidence-note">상세 코드와 검증 근거는 HTML 보고서의 근거 부록에서 확인할 수 있습니다.</p>
+
+  <details class="section-disclosure" id="evidence">
+          <summary>근거 부록</summary>
+          <div class="section-disclosure__body">
+          <div class="coverage-summary" aria-label="계약 검증 요약">
+            <span>충족됨 6</span>
+            <span>수정 필요 0</span>
+            <span>검증 필요 2</span>
+            <span>근거 충돌 0</span>
+          </div>
+          <h3>계약 검증 결과</h3><ul class="coverage-index"><li><a href="#contract-D0">D0</a><span>검증 필요</span><a href="#hill-h2">H2</a><p>RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네 계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.</p></li><li><a href="#contract-R1">R1</a><span>충족됨</span><a href="#hill-h1">H1</a><p>공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.</p></li><li><a href="#contract-R2">R2</a><span>충족됨</span><a href="#hill-h1">H1</a><p>에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.</p></li><li><a href="#contract-R3">R3</a><span>충족됨</span><a href="#hill-h2">H2</a><p>알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.</p></li><li><a href="#contract-R4">R4</a><span>충족됨</span><a href="#hill-h2">H2</a><p>합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.</p></li><li><a href="#contract-R5">R5</a><span>검증 필요</span><a href="#hill-h3">H3</a><p>실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.</p></li><li><a href="#contract-R6">R6</a><span>충족됨</span><a href="#hill-h2">H2</a><p>원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.</p></li><li><a href="#contract-R7">R7</a><span>충족됨</span><a href="#hill-h2">H2</a><p>교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.</p></li></ul>
+          <details class="section-disclosure">
+                  <summary>주요 구현 선택 · 3</summary>
+                  <div class="section-disclosure__body">
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 03</span></span>
+    </header>
+    <h3 class="finding__title">로컬 latency 후보29.73166643641889ms, 초기 AWS500ms</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>측정과 환경별 calibration(R6)을 분리</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">demo/local_runner.py:194; healthcare-service-stack.ts:314</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">서로 다른 지표 집계이며 전자를 AWS 보장값으로 쓰지 않는다.</span></div>
+    </div>
+  </article>
+
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">02<span class="finding__idx-total"> / 03</span></span>
+    </header>
+    <h3 class="finding__title">alarm envelope는 illustrative, 현재 observation은 baseline+incident만</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>원인 답안·미래 복원을 input에 누설하지 않는 경계(A16 R2/R4)</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">scenario-capture-boundary.mjs:phaseData,projectIncidentCaptures; tests/scenarios/*.json</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">source hash와 원본 capture 참조로 현재 입력을 추적한다.</span></div>
+    </div>
+  </article>
+
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">03<span class="finding__idx-total"> / 03</span></span>
+    </header>
+    <h3 class="finding__title">eval source view의 None은 운영 경로, dict는 제공값 전용 평가 경로</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>제공되지 않은 사고 metadata를 런타임 기본값으로 채우지 않는다.</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">양 DTO/eval_adapter와 공용 scoping/prompt_builder</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">누락값은 not provided지만 실제 0/{}는 보존하고 운영 프롬프트 호환성을 유지한다.</span></div>
+    </div>
+  </article></div>
+                </details>
+          <h3>발견 사항과 논의</h3>
+
+<section class="task-group task-group--verify">
+        <h3 class="task-group__title">검증 필요 · 2</h3>
+        
+  <article class="finding" id="finding-f1" data-needs-decision="true" style="--sev:#7a5b14">
+    <header class="finding__head">
+      <span class="tag">검증 필요</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="evidence strength">high</span><span class="finding__idx">01<span class="finding__idx-total"> / 02</span></span></span>
+    </header>
+    <h3 class="finding__title">실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다.</h3>
+    <div class="task-impact">
+      <span class="side__label">왜 중요한가</span>
+      <p>로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다.</p>
+    </div>
+    <div class="task-comparison">
+      <div class="task-field">
+        <span class="side__label">기대 동작</span>
+        <p>실제 AWS 결과를 주장할 때 해당 실행의 이미지·부하·알람·복원 관측이 연결되어야 한다.</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">현재 동작</span>
+        <p>Healthcare AWS 배포 E2E는 수행하지 않았다. 별도 평가용 AWS 자원과 로컬 PostgreSQL 자원은 정리 후 부재 확인을 마쳤다.</p>
+      </div>
+    </div>
+    <div class="task-next">
+      <div class="task-field task-field--primary">
+        <span class="side__label">요청하는 변경</span>
+        <p>현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다.</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">수정 위치</span>
+        <p class="meta__v--mono">packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">완료 조건</span>
+        <p>AWS normal→fault→restore 알람·복원 E2E — NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.</p>
+      </div>
+    </div>
+    <details class="technical-evidence">
+        <summary>상세 기술 근거</summary>
+        <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">원본 계약의 실제 배포·증상·회복 관측 의무</p>
+         </div><div class="rel" title="decide which side is right">
+             <span class="rel__glyph">⇄</span>
+             <span class="rel__label">Needs a ruling</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore</p>
+         </div></div>
+        <div class="meta"><div class="meta__row"><span class="meta__k">분류</span><span class="meta__v">Unverified risk</span></div><div class="meta__row"><span class="meta__k">근거 수준</span><span class="meta__v">high</span></div><div class="meta__row"><span class="meta__k">관점</span><span class="meta__v">sufficiency</span></div><div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v">compiled proof SHA83aac573…와 review-fixed-images.json은 로컬 자료; AWS not-run — main-verification.json; 정리 결과: tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json</span></div><div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">AWS normal→fault→restore 알람·복원 E2E</span></div><div class="meta__row"><span class="meta__k">결과</span><span class="meta__v">NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.</span></div></div>
+      </details>
+    <div class="contract-links"><a href="#contract-R5">R5</a></div>
+    <footer class="ruling">
+      <span class="ruling__label">사용자 결정</span>
+      <div class="seg" role="radiogroup" aria-label="실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다. ruling">
+        <input type="radio" class="seg__input" id="r-0-fix" name="dec-0" value="fix"><label class="seg__label" for="r-0-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-0-skip" name="dec-0" value="skip"><label class="seg__label" for="r-0-skip">제외</label>
+        <input type="radio" class="seg__input" id="r-0-defer" name="dec-0" value="defer" checked><label class="seg__label" for="r-0-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="0" rows="2" placeholder="선택 근거나 원하는 방향을 적어주세요 (선택)"></textarea>
+    </footer>
+  </article>
+
+  <article class="finding" id="finding-f2" data-needs-decision="true" style="--sev:#7a5b14">
+    <header class="finding__head">
+      <span class="tag">검증 필요</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="evidence strength">high</span><span class="finding__idx">02<span class="finding__idx-total"> / 02</span></span></span>
+    </header>
+    <h3 class="finding__title">최종 모델 평가 8개가 모두 실패했고 새 기준선은 미승인이다.</h3>
+    <div class="task-impact">
+      <span class="side__label">왜 중요한가</span>
+      <p>오프라인 코드 시험 통과는 새 관측에 대한 두 모델의 원인·반증·안전성 품질을 증명하지 않는다.</p>
+    </div>
+    <div class="task-comparison">
+      <div class="task-field">
+        <span class="side__label">기대 동작</span>
+        <p>같은 digest의 모든 엔진·시나리오 실제 결과와 읽을 수 있는 보고서를 검토한 뒤 승인한다.</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">현재 동작</span>
+        <p>정규화 결과 8개가 완료됐고 필수 평가는0 PASS/8 FAIL이다. 입력 digest는 유지됐으며 기존 기준선과 승인되지 않은 새 fixture 상태를 보존한다.</p>
+      </div>
+    </div>
+    <div class="task-next">
+      <div class="task-field task-field--primary">
+        <span class="side__label">요청하는 변경</span>
+        <p>최종 실패 결과를 그대로 보존하고 모델 자체 확정, 정적 안전성 검출과 실제 실행 사실을 구분해 읽는다. 이 문서에서 코드 종료 판정이나 승인 정책을 바꾸지 않는다.</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">수정 위치</span>
+        <p class="meta__v--mono">tests/harness/model-cli.mjs; tests/harness/evaluator.mjs:createBaseline; tests/harness/approve-cli.mjs</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">완료 조건</span>
+        <p>최종 두 엔진×4개 사례의 실모델 회차; 루트 승인 digest 검사 — COMPLETED — normalized8, 0 PASS/8 FAIL; competingCausesRejected0/8. Root136 PASS/1 old-baseline digest FAIL; 기준선 변경·새 fixture 승인 없음.</p>
+      </div>
+    </div>
+    <details class="technical-evidence">
+        <summary>상세 기술 근거</summary>
+        <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 새 기준선 승인</p>
+         </div><div class="rel" title="decide which side is right">
+             <span class="rel__glyph">⇄</span>
+             <span class="rel__label">Needs a ruling</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">tests/harness/model-cli.mjs; tests/harness/evaluator.mjs:createBaseline; tests/harness/approve-cli.mjs</p>
+         </div></div>
+        <div class="meta"><div class="meta__row"><span class="meta__k">분류</span><span class="meta__v">Unverified risk</span></div><div class="meta__row"><span class="meta__k">근거 수준</span><span class="meta__v">high</span></div><div class="meta__row"><span class="meta__k">관점</span><span class="meta__v">sufficiency</span></div><div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v">tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; 동일 입력 digest 유지; 사용자 main 최종 품질 검토</span></div><div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">최종 두 엔진×4개 사례의 실모델 회차; 루트 승인 digest 검사</span></div><div class="meta__row"><span class="meta__k">결과</span><span class="meta__v">COMPLETED — normalized8, 0 PASS/8 FAIL; competingCausesRejected0/8. Root136 PASS/1 old-baseline digest FAIL; 기준선 변경·새 fixture 승인 없음.</span></div></div>
+      </details>
+    <div class="contract-links"><a href="#contract-D0">D0</a><a href="#contract-R7">R7</a></div>
+    <footer class="ruling">
+      <span class="ruling__label">사용자 결정</span>
+      <div class="seg" role="radiogroup" aria-label="최종 모델 평가 8개가 모두 실패했고 새 기준선은 미승인이다. ruling">
+        <input type="radio" class="seg__input" id="r-1-fix" name="dec-1" value="fix"><label class="seg__label" for="r-1-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-1-skip" name="dec-1" value="skip"><label class="seg__label" for="r-1-skip">제외</label>
+        <input type="radio" class="seg__input" id="r-1-defer" name="dec-1" value="defer" checked><label class="seg__label" for="r-1-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="1" rows="2" placeholder="선택 근거나 원하는 방향을 적어주세요 (선택)"></textarea>
+    </footer>
+  </article>
+      </section>
+
+          </div>
+        </details>
+
+
+</main>
+</div>
+
+<div class="bar">
+  <div class="bar__inner">
+    <span class="hint">사용자 결정이 필요한 finding만 판단한 뒤 내보내세요.</span>
+    <button class="export" id="export">결정 내보내기</button>
+  </div>
+</div>
+
+<script>
+  const EMBED = {"adr":"docs/adr/agent/0016-rca-evaluation-test-harness.md","reviewMode":"full","verdict":"INCONCLUSIVE","atAGlance":{"impact":"독립 코드 재검토는 PASS이며 F1/F2/F3/F4와 관측시간 U3를 해소했다. 현재 로컬 proof·이미지의 출처가 일치한다.","action":"최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다.","risk":"실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다."},"scope":["docs/execution-live-e2e-runbook.md","packages/agent/src/rca_agent/eval_adapter.py","packages/agent/src/rca_agent/ports/dto/models.py","packages/agent/src/rca_agent/prompts/scoping.py","packages/agent/src/rca_agent/services/scoping.py","packages/agent/tests/test_eval_alarm_metadata.py","packages/headless-codex/prompts/rca-user.md","packages/headless-codex/src/headless_codex/eval_adapter.py","packages/headless-codex/src/headless_codex/ports/dto/models.py","packages/headless-codex/src/headless_codex/services/prompt_builder.py","packages/headless-codex/tests/test_eval_alarm_metadata.py","packages/healthcare-sensor-app/demo/local_runner.py","packages/healthcare-sensor-app/demo/local_worker.py","packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py","packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py","packages/healthcare-sensor-app/src/test_service/main.py","packages/infra/lib/stacks/healthcare-service-stack.ts","packages/infra/lib/stacks/rds-stack.ts","scripts/run_deployed_e2e.py","scripts/run_realistic_demo.py","tests/fixtures/historical/","tests/fixtures/observations/","tests/fixtures/results/README.md","tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json","tests/fixtures/results/headless-codex/deployment-query-regression.json","tests/fixtures/results/headless-codex/iam-policy-access-denied.json","tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json","tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json","tests/fixtures/results/strands/deployment-query-regression.json","tests/fixtures/results/strands/iam-policy-access-denied.json","tests/fixtures/results/strands/rds-connection-pool-exhaustion.json","tests/harness/approve-cli.mjs","tests/harness/deployed-e2e-driver.test.mjs","tests/harness/evaluator.mjs","tests/harness/evaluator.test.mjs","tests/harness/model-and-approval.test.mjs","tests/harness/model-cli.mjs","tests/harness/realistic-demo-script.test.mjs","tests/harness/realistic-scenarios.test.mjs","tests/harness/realistic_demo_cases.py","tests/harness/scenario-capture-boundary.mjs","tests/scenarios","tests/scenarios/deployed-connection-leak-vital-ingest.json","tests/scenarios/deployment-query-regression.json","tests/scenarios/exception-session-cleanup.json","tests/scenarios/iam-policy-access-denied.json","tests/scenarios/maintenance-transaction-lock.json","tests/scenarios/pool-config-regression.json","tests/scenarios/query-amplification.json","tests/scenarios/rds-connection-pool-exhaustion.json"],"changeScope":["docs/execution-live-e2e-runbook.md","packages/agent/src/rca_agent/eval_adapter.py","packages/agent/src/rca_agent/ports/dto/models.py","packages/agent/src/rca_agent/prompts/scoping.py","packages/agent/src/rca_agent/services/scoping.py","packages/agent/tests/test_eval_alarm_metadata.py","packages/headless-codex/prompts/rca-user.md","packages/headless-codex/src/headless_codex/eval_adapter.py","packages/headless-codex/src/headless_codex/ports/dto/models.py","packages/headless-codex/src/headless_codex/services/prompt_builder.py","packages/headless-codex/tests/test_eval_alarm_metadata.py","packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py","scripts/run_deployed_e2e.py","scripts/run_realistic_demo.py","tests/fixtures/historical/","tests/fixtures/observations/","tests/fixtures/results/README.md","tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json","tests/fixtures/results/headless-codex/deployment-query-regression.json","tests/fixtures/results/headless-codex/iam-policy-access-denied.json","tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json","tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json","tests/fixtures/results/strands/deployment-query-regression.json","tests/fixtures/results/strands/iam-policy-access-denied.json","tests/fixtures/results/strands/rds-connection-pool-exhaustion.json","tests/harness/deployed-e2e-driver.test.mjs","tests/harness/evaluator.test.mjs","tests/harness/model-and-approval.test.mjs","tests/harness/realistic-demo-script.test.mjs","tests/harness/realistic-scenarios.test.mjs","tests/harness/realistic_demo_cases.py","tests/harness/scenario-capture-boundary.mjs","tests/scenarios/deployed-connection-leak-vital-ingest.json","tests/scenarios/deployment-query-regression.json","tests/scenarios/exception-session-cleanup.json","tests/scenarios/iam-policy-access-denied.json","tests/scenarios/maintenance-transaction-lock.json","tests/scenarios/pool-config-regression.json","tests/scenarios/query-amplification.json","tests/scenarios/rds-connection-pool-exhaustion.json"],"findings":[{"sourceIndex":0,"id":"f1","category":"Unverified risk","unknownCat":false,"summary":"실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다.","whyItMatters":"로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다.","expectedBehavior":"실제 AWS 결과를 주장할 때 해당 실행의 이미지·부하·알람·복원 관측이 연결되어야 한다.","observedBehavior":"Healthcare AWS 배포 E2E는 수행하지 않았다. 별도 평가용 AWS 자원과 로컬 PostgreSQL 자원은 정리 후 부재 확인을 마쳤다.","requestedChange":"현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다.","editTargets":"packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore","completionCriteria":"AWS normal→fault→restore 알람·복원 E2E — NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.","adrQuote":"원본 계약의 실제 배포·증상·회복 관측 의무","code":"packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore","fix":"","route":"","basis":"","weight":"","impact":"","confidence":"high","perspective":"sufficiency","evidence":"compiled proof SHA83aac573…와 review-fixed-images.json은 로컬 자료; AWS not-run — main-verification.json; 정리 결과: tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json","test":"AWS normal→fault→restore 알람·복원 E2E","testResult":"NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.","contractIds":["R5"],"actionGroup":"verify"},{"sourceIndex":1,"id":"f2","category":"Unverified risk","unknownCat":false,"summary":"최종 모델 평가 8개가 모두 실패했고 새 기준선은 미승인이다.","whyItMatters":"오프라인 코드 시험 통과는 새 관측에 대한 두 모델의 원인·반증·안전성 품질을 증명하지 않는다.","expectedBehavior":"같은 digest의 모든 엔진·시나리오 실제 결과와 읽을 수 있는 보고서를 검토한 뒤 승인한다.","observedBehavior":"정규화 결과 8개가 완료됐고 필수 평가는0 PASS/8 FAIL이다. 입력 digest는 유지됐으며 기존 기준선과 승인되지 않은 새 fixture 상태를 보존한다.","requestedChange":"최종 실패 결과를 그대로 보존하고 모델 자체 확정, 정적 안전성 검출과 실제 실행 사실을 구분해 읽는다. 이 문서에서 코드 종료 판정이나 승인 정책을 바꾸지 않는다.","editTargets":"tests/harness/model-cli.mjs; tests/harness/evaluator.mjs:createBaseline; tests/harness/approve-cli.mjs","completionCriteria":"최종 두 엔진×4개 사례의 실모델 회차; 루트 승인 digest 검사 — COMPLETED — normalized8, 0 PASS/8 FAIL; competingCausesRejected0/8. Root136 PASS/1 old-baseline digest FAIL; 기준선 변경·새 fixture 승인 없음.","adrQuote":"새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 새 기준선 승인","code":"tests/harness/model-cli.mjs; tests/harness/evaluator.mjs:createBaseline; tests/harness/approve-cli.mjs","fix":"","route":"","basis":"","weight":"","impact":"","confidence":"high","perspective":"sufficiency","evidence":"tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; 동일 입력 digest 유지; 사용자 main 최종 품질 검토","test":"최종 두 엔진×4개 사례의 실모델 회차; 루트 승인 digest 검사","testResult":"COMPLETED — normalized8, 0 PASS/8 FAIL; competingCausesRejected0/8. Root136 PASS/1 old-baseline digest FAIL; 기준선 변경·새 fixture 승인 없음.","contractIds":["D0","R7"],"actionGroup":"verify"}],"reviewHike":{"context":{"intent":"두 분석 엔진을 같은 관측·원인·반증·안전성 계약으로 비교하며 일반 CI와 실모델·배포 검증을 분리한다.","preconditions":"사설 서비스 또는 전용 로컬 PostgreSQL, 소유 실행 ID, 불변 소스와 같은 부하 조건을 전제로 한다.","contracts":"네 평가 계층, 공용 분석 경로, 관측의 부재·출처, 엔진 공통 기준과 두 엔진 전수 결과의 명시 승인 경계를 보존한다.","scopeAndRisk":"전체 ADR 본문과 원래 호출 경로를 검토했다. 독립 코드 재검토는 PASS이며 열린 코드 발견사항은 없다. 남은 미검증 행은 실제 AWS 실행과 모델 품질·승인의 증거 한계이므로 전체 판정은 INCONCLUSIVE다."},"hills":[{"id":"H1","title":"실제 결함 관측에서 사고 입력을 만든다","sliceType":"logical-capability","sliceName":"실제 결함 관측에서 사고 입력을 만든다","reviewQuestion":"동일 요청에서 생긴 네 원인을 구별할 관측만 모델에 제공하는가?","diagramIds":["V1"],"claim":"모델 입력은 실제 PostgreSQL의 정상·결함 구간에서 선택하며 원인 정답은 평가자 측에 둔다.","workedExample":"원본 검토는 중립 obs/capture 식별자와 4개 source snippet의 hash·줄 일치를 확인했다.","counterexample":"미래 복원 결과나 정리 성공을 입력에 넣으면 사고 시점에 알 수 없던 정보를 원인 근거로 쓰게 된다.","assessment":"현재 canonical 관측은 SHA-256 83aac573…의 컴파일된 로컬 proof를 가리킨다. 실제 proof와 이미지 3개는 verified=true이며 소스가 일치한다. 복원·정답의 입력 혼입 거부 시험도 통과했다.","container":{"responsibility":"원본 시각·단위·리소스와 코드 차이가 있는 사고 입력을 만든다.","interactions":"원본 보존과 모델 투영을 분리하고 동일 원본의 normal과 fault를 선택한다.","outcome":"실제 원인 관측과 평가 기대값의 혼입을 막는 경계를 읽을 수 있다."},"components":[{"id":"C1","name":"사고 전후 관측의 선택","responsibility":"모델 입력에서 미래 복원 정보와 평가자의 정답을 제외한다.","implementation":"같은 원본의 normal과 fault만 pair로 구성하고 원본 포인터 매핑을 따로 둔다. 관측 식별자는 중립적인 obs/capture 값이다.","verification":"원본 T10 15 PASS, T12 projection 함수 문서 보완 후 11 PASS. 입력 변경 불변성은 catalog 회귀로 검사했다.","codeEvidence":[{"kind":"excerpt","location":"tests/harness/scenario-capture-boundary.mjs:207","content":"export function projectIncidentCaptures(scenarioId, proof, snippets = {}) {\n  const caseName = CASES[scenarioId];\n  assert.ok(caseName, 'unknown catalog id');\n  const baseline = phaseData(proof, caseName, 'normal');\n  const incident = phaseData(proof, caseName, 'fault');\n  const pair = [baseline, incident];\n  const resource = { runId: proof.run_id, schema: proof.schema };\n  const operatorMapping = {};","explanation":"모델로 들어갈 두 구간을 직접 선택하는 연속 코드다. 복원·cleanup 구간을 pair에 추가하지 않는다.","tests":"원본 T10 15 PASS, T12 projection 함수 문서 보완 후 11 PASS. 입력 변경 불변성은 catalog 회귀로 검사했다."}]},{"id":"C2","name":"같은 입력과 세션 수명","responsibility":"저장·조회가 같은 요청 조건과 세션 정리 경계를 사용한다.","implementation":"데이터 접근부는 session_context로 요청 본문의 예외를 정리 경로에 전달한다. 빌드 리비전 r2는 실제 행별 SQL을, r3는 예외 경로 반환 누락을 선택한다.","verification":"현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.","codeEvidence":[{"kind":"diff","location":"packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py","content":"@@ -6,14 +6,17 @@ from test_service.adapters.secondary.sensor_repository.models import SensorReadi\n from test_service.ports.dto.sensor import SensorReadingEntity\n from test_service.ports.interfaces.database import DatabasePort\n from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort\n+from test_service.revision.query import fetch_patient_rows\n \n \n class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):\n     def __init__(self, database: DatabasePort) -\u003e None:\n+        \"\"\"Use the database port's lifetime contract rather than owning a separate pool.\"\"\"\n         self._database = database\n \n     async def save_batch(self, readings: list[SensorReadingEntity]) -\u003e list[SensorReadingEntity]:\n-        async for session in self._database.session():\n+        \"\"\"Persist a batch in one scope so flush errors reach the compiled cleanup path.\"\"\"\n+        async with self._database.session_context() as session:\n             rows = []\n             for r in readings:\n                 row = SensorReadingRow(","explanation":"generator 순회에서 context manager로 바꾼 실제 diff다. 세션의 종료 책임이 요청 본문 실패와 연결된다.","tests":"현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다."}]}],"contractIds":["R1","R2"]},{"id":"H2","title":"제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다","sliceType":"logical-capability","sliceName":"제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다","reviewQuestion":"없는 알람 정보를 만들어내지 않고 두 엔진의 실제 결과가 모두 모여야 승인되는가?","diagramIds":["V2"],"claim":"평가 어댑터는 제공된 메타데이터의 값과 부재를 공용 최종 프롬프트까지 유지하며 운영 기본값은 보존한다.","workedExample":"region이 없는 현재 네 입력에는 not provided가 표시된다. region만 ap-northeast-2로 주고 ARN을 생략한 입력은 그 리전을 유지한다.","counterexample":"누락·null·공백은 not provided로 표현하지만 제공된 0이나 빈 차원 집합은 지우지 않는다. 새 세션 시각을 사고의 원본 시각으로 제시하지 않는다.","assessment":"F4 관련 시험과 독립 prompt 재현은 통과했다. 최종 실모델 결과 8개는 모두 필수 평가에 실패했고 경쟁 원인 기각은 0/8이다. 기준선 변경이나 새 fixture 승인은 없다.","container":{"responsibility":"두 엔진의 원인·반증·산출물·안전성 기준을 같은 규칙으로 검사한다.","interactions":"입력 어댑터, 공용 프롬프트, 실제 분석, 정규화 결과와 공통 평가가 이어지고 전수 결과 뒤에 검토·승인이 온다.","outcome":"오프라인 통과나 한 엔진의 부분 결과만으로 새 모델 품질을 승인하지 않는다."},"components":[{"id":"C1","name":"원본 알람 메타데이터의 전달","responsibility":"평가 어댑터가 제공 값과 부재를 공용 분석 경계로 옮긴다.","implementation":"제공된 Region/AlarmArn/Trigger와 명시적 eval source view를 전달한다. 없는 region/statistic/period/time은 최종 프롬프트에서 not provided로 표시하고 운영 기본값을 유지한다.","verification":"Strands113/Headless201 PASS 및 Curie의 실제 최종 prompt 재현 PASS. 현재 네 입력·minimal·region-only·null/blank·0/{} 경계를 확인했다.","codeEvidence":[{"kind":"diff","location":"packages/agent/src/rca_agent/eval_adapter.py","content":"@@ -128,9 +153,32 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -\u003e dict\n         \"NewStateReason\": state_reason,\n         \"StateChangeTime\": state_change_time,\n     }\n-    metric = alarm.get(\"metric\")\n-    if metric:\n-        envelope[\"Trigger\"] = {\"MetricName\": metric, \"Namespace\": \"\", \"Dimensions\": []}\n+    for source, target in ((\"region\", \"Region\"), (\"arn\", \"AlarmArn\")):\n+        if source in alarm and alarm[source] is not None:\n+            envelope[target] = alarm[source]\n+    trigger = {\n+        target: alarm[source]\n+        for source, target in (\n+            (\"metric\", \"MetricName\"),\n+            (\"namespace\", \"Namespace\"),\n+            (\"statistic\", \"Statistic\"),\n+            (\"period\", \"Period\"),\n+            (\"threshold\", \"Threshold\"),\n+            (\"comparisonOperator\", \"ComparisonOperator\"),\n+            (\"evaluationPeriods\", \"EvaluationPeriods\"),\n+            (\"datapointsToAlarm\", \"DatapointsToAlarm\"),\n+            (\"treatMissingData\", \"TreatMissingData\"),\n+        )\n+        if source in alarm and alarm[source] is not None\n+    }\n+    if alarm.get(\"dimensions\") is not None:\n+        trigger[\"Dimensions\"] = [{\"name\": name, \"value\": value} for name, value in alarm[\"dimensions\"].items()]\n+    if trigger:\n+        envelope[\"Trigger\"] = trigger\n+    if _supports_model_eval(scenario):\n+        # An explicit source view prevents production defaults and the fresh\n+        # session timestamp from being presented as incident observations.\n+        envelope[\"EvalSourceMetadata\"] = {**metadata, \"metric\": alarm.get(\"metric\")}\n     return envelope","explanation":"현재 실제 diff는 어댑터 경계의 변경 증거다. 기존 좁은 테스트의 통과를 최종 프롬프트 비노출 보장으로 확대하지 않는다.","tests":"Strands113/Headless201 PASS 및 Curie의 실제 최종 prompt 재현 PASS. 현재 네 입력·minimal·region-only·null/blank·0/{} 경계를 확인했다."}]}],"contractIds":["D0","R3","R4","R6","R7"]},{"id":"H3","title":"배포 검증을 실제 복원 증거로 제한한다","sliceType":"logical-capability","sliceName":"배포 검증을 실제 복원 증거로 제한한다","reviewQuestion":"deployed-e2e를 선언한 실행이 실제 소유 자원과 서비스 회복으로 끝나는가?","diagramIds":["V3"],"claim":"현재 네 사례는 model-eval만 선언하며 배포 E2E 성공을 선언하지 않는다.","workedExample":"F2 저장·진단 동시 오류의 원래 반례가 원본 서비스 복귀와 소유 작업 정리로 끝난다. Python56·Node4는 성공 표시와 소유권의 경계도 확인한다.","counterexample":"reset 응답이나 준비된 관측만으로 실제 배포와 서비스 회복을 통과시킬 수 없다.","assessment":"코드 복원 경로는 검증됐지만 실제 AWS 태스크 종료·서비스 증상 회복은 수행하지 않았다. R5의 미검증 상태는 이 실행 증거 한계를 표시한다.","container":{"responsibility":"실행 가능한 제어와 실제 복원 관측이 있는 배포 사례만 허용한다.","interactions":"소유 원본 기록에서 서비스와 정비 작업의 복원을 각각 시도하고 후속 증상을 확인한다.","outcome":"제공 관측 평가와 실제 증거 탐색의 검증 범위를 분리한다."},"components":[{"id":"C1","name":"고정 정비 명령과 기존 실행 복원","responsibility":"소유된 정비 모듈만 시작하고 과거 journal의 임의 프로그램 실행을 거부한다.","implementation":"명령은 MAINTENANCE_COMMAND에서 만들고 run ID·유한 유지 시간·schema를 검사한다. 기존 journal의 복원은 launch 검증과 분리된다.","verification":"necessity-review-final.md: 독립 N1 반례 재검사 PASS, Python 40 PASS, 관련 Node 15 PASS. 실제 AWS 호출 없음.","codeEvidence":[{"kind":"excerpt","location":"scripts/run_realistic_demo.py:131","content":"def maintenance_command(options):\n    \"\"\"Build only the bounded maintenance module command, including for old journals.\"\"\"\n    if (\n        \"maintenance_command\" in options\n        and options[\"maintenance_command\"] != MAINTENANCE_COMMAND\n    ):\n        raise RuntimeError(\n            \"journal records an unsupported maintenance command; restore only\"\n        )\n    run_id = options[\"run_id\"]\n    hold_seconds = options[\"hold_seconds\"]\n    schema = options.get(\"maintenance_schema\", \"public\")\n    if not isinstance(run_id, str) or not re.fullmatch(r\"[A-Za-z0-9_-]{1,48}\", run_id):\n        raise ValueError(\"RunId must be 1..48 letters, digits, underscores or hyphens\")\n    if type(hold_seconds) not in (int, float) or not 0 \u003c hold_seconds \u003c= 7200:\n        raise ValueError(\"hold-seconds must be finite, positive and \u003c=7200\")\n    if not isinstance(schema, str) or not re.fullmatch(\n        r\"[a-z_][a-z0-9_]{0,62}\", schema\n    ):\n        raise ValueError(\"maintenance-schema must be a safe PostgreSQL identifier\")\n    return [\n        part.format(run_id=run_id, hold_seconds=hold_seconds, schema=schema)\n        for part in MAINTENANCE_COMMAND\n    ]","explanation":"N1 해소를 확인한 고정 명령 경계다. 임의 command를 포맷하여 실행하는 기존 선택 기능이 없다.","tests":"necessity-review-final.md: 독립 N1 반례 재검사 PASS, Python 40 PASS, 관련 Node 15 PASS. 실제 AWS 호출 없음."}]},{"id":"C2","name":"기록·진단 출력 실패와 복원 제어의 분리","responsibility":"복원 중 저장 오류와 stderr 출력 오류를 메모리에 남기고 정리를 계속한다. 신규 변경의 사전 기록 실패는 원래 저장 오류를 다시 던진다.","implementation":"복원 중 저장 오류와 stderr 출력 오류를 메모리에 남기고 정리를 계속한다. 신규 변경의 사전 기록 실패는 원래 저장 오류를 다시 던진다.","verification":"Curie recheck-03: Python56 PASS/Node4 PASS, 원래 반례의 OSError와 실제 닫힌 stream ValueError 모두 원본:1 복원 PASS.","codeEvidence":[{"kind":"excerpt","location":"scripts/run_realistic_demo.py:337","content":"    def record(self, kind, data, *, recovery=False):\n        \"\"\"Keep new intents strict while neither storage nor diagnostic I/O blocks cleanup.\"\"\"\n        try:\n            return self.journal.append(kind, data)\n        except RECOVERABLE_ERRORS as error:\n            failure = {\n                \"step\": \"journal\",\n                \"event\": kind,\n                \"error\": f\"journal append failed: {type(error).__name__}\",\n            }\n            self.journal_errors.append(failure)\n            # Do not expose event payloads or arbitrary filesystem exception text.\n            try:\n                print(\n                    json.dumps(failure | {\"recoveryVerified\": False}), file=sys.stderr\n                )\n            except (OSError, ValueError) as diagnostic_error:\n                # The returned in-memory evidence survives even a closed/full stderr.\n                failure[\"diagnosticErrorType\"] = type(diagnostic_error).__name__\n            if not recovery:\n                raise\n            return None","explanation":"F2의 마지막 잔여 반례를 닫은 실제 코드다. 기록 오류를 먼저 보존하고 진단 출력 실패를 따로 격리한다.","tests":"Curie recheck-03: Python56 PASS/Node4 PASS, 원래 반례의 OSError와 실제 닫힌 stream ValueError 모두 원본:1 복원 PASS."}]}],"contractIds":["R5"]}]},"contractCoverage":[{"contractId":"D0","requirement":"RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네 계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.","status":"UNVERIFIED","adrBasis":"Decision","implementation":"네 계층/공용 분석 경로/오프라인 enforcement는 구현·검사됨. 현행 fixture 승인digest gate는 FAIL, 최종8model 결과와 검토·승인은 아직 완료되지 않음(U2). 실제E2E 품질은 별도runtime미검증(U1).","evidence":"tests/harness/model-cli.mjs:runModelEvaluation; evaluator.mjs:evaluateResults/createBaseline; 양 eval_adapter의 공용 runner/pipeline 호출","tests":"N2 Strands113/Headless201 PASS; catalog gates41/42; 최종model8/AWS NOT RUN by reviewer"},{"contractId":"R1","requirement":"공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.","status":"PROVEN","adrBasis":"공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.","implementation":"네 scenario가 최신 현재-source PostgreSQL baseline/incident를 사용한다. 같은 입력의 restore 검증은 원본에 유지하되 모델 input에는 넣지 않는다.","evidence":"tests/harness/scenario-capture-boundary.mjs:207; packages/healthcare-sensor-app/demo/local_worker.py; proof-review-fixed-01 15phases","tests":"N1/N4/N5, canonical source hash83aac573…"},{"contractId":"R2","requirement":"에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.","status":"PROVEN","adrBasis":"에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.","implementation":"중립 obs/capture ID, UTC/단위/run/schema와 current-source snippets를 유지. expectation/미래cleanup은 projection 밖. source metadata는 실제 최종prompt까지 보존.","evidence":"tests/harness/scenario-capture-boundary.mjs:37,207; 양 eval_adapter→DTO→prompt source-view 경로","tests":"N2 canonical projection·metadata tests; N3 finalprompt probes; N5 source/snippet 대조"},{"contractId":"R3","requirement":"알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.","status":"PROVEN","adrBasis":"알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.","implementation":"F4 해소. eval 전용source view에서 없는/null/blank metadata는not provided; 제공된region은ARN 없이도 유지. numeric0/{} 유지. Strands의 새session시각은 모델의 원본시각으로 제시하지 않음. 운영기본값은별도호환 유지.","evidence":"packages/agent/src/rca_agent/eval_adapter.py:181; ports/dto/models.py:101; services/scoping.py:124; packages/headless-codex/src/headless_codex/eval_adapter.py:317; services/prompt_builder.py:67","tests":"N2 113+201 PASS; N3 current4+minimal/region-only 양엔진 PASS; N5 production3사례/engine before-after 동등"},{"contractId":"R4","requirement":"합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.","status":"PROVEN","adrBasis":"합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.","implementation":"새관측은localPG로 명시, alarm은illustrative. model-eval만sourceview/observation을 전달하며 production/deployed 옵트아웃 유지. 배포E2E 성공은 주장하지 않음.","evidence":"tests/scenarios/*.json:provenance; 양eval_adapter mode checks; scripts/run_deployed_e2e.py:run","tests":"N2 opt-out·projection·metadata PASS; AWS NOT RUN"},{"contractId":"R5","requirement":"실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.","status":"UNVERIFIED","adrBasis":"실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.","implementation":"active 사례는 model-eval만 선언하며 미검증 deployed-e2e 선언을 하지 않음. CLI의 사전원본/소유task 복원과 F2 오류경로 검사는 통과했다. 실제AWS task/증상복원만 U1 runtime으로 미검증이며 추가배포를 ADR상태선행조건으로 만들지 않는다.","evidence":"tests/scenarios/*.json:executionModes; scripts/run_realistic_demo.py:restore,status","tests":"보존된 CLI lifecycle + 최종 Python56/Node4 PASS; 실제AWS runtime NOT RUN"},{"contractId":"R6","requirement":"원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.","status":"PROVEN","adrBasis":"원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.","implementation":"허용 5종 유지. pool/lock=unsupported, query=slow-query, exception=db-leak. 0.8 확정/0.3 기각/0.9 종료, 깊이3·검증3·재생성2 유지. 경쟁 원인별 분리된 증거와 안전성 기준은 공통 evaluator.","evidence":"tests/harness/evaluator.mjs:10,75,351; packages/agent/src/rca_agent/config/settings.py:24; packages/headless-codex/src/headless_codex/services/analysis_contract.py:10","tests":"원 검토의 T2,T3,T4,T5,T10; 정책 파일 git diff 없음"},{"contractId":"R7","requirement":"교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.","status":"PROVEN","adrBasis":"교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.","implementation":"교체된입력/원본결과와 실패이력 보존. 현재결과fixture는미승인/부재, baseline미변경. 두엔진전수결과의검토전에는새baseline을 만들지 않고 현재digest변경을차단함.","evidence":"tests/fixtures/historical; tests/fixtures/results/README.md; tests/harness/evaluator.mjs:createBaseline","tests":"N2 archive/hash/approval-policy PASS; 승인digest assertion FAIL; 승인 실행 없음"}],"implementationChoices":[{"choice":"로컬 latency 후보29.73166643641889ms, 초기 AWS500ms","evidence":"demo/local_runner.py:194; healthcare-service-stack.ts:314","intentFit":"측정과 환경별 calibration(R6)을 분리","whyItMatters":"서로 다른 지표 집계이며 전자를 AWS 보장값으로 쓰지 않는다."},{"choice":"alarm envelope는 illustrative, 현재 observation은 baseline+incident만","evidence":"scenario-capture-boundary.mjs:phaseData,projectIncidentCaptures; tests/scenarios/*.json","intentFit":"원인 답안·미래 복원을 input에 누설하지 않는 경계(A16 R2/R4)","whyItMatters":"source hash와 원본 capture 참조로 현재 입력을 추적한다."},{"choice":"eval source view의 None은 운영 경로, dict는 제공값 전용 평가 경로","evidence":"양 DTO/eval_adapter와 공용 scoping/prompt_builder","intentFit":"제공되지 않은 사고 metadata를 런타임 기본값으로 채우지 않는다.","whyItMatters":"누락값은 not provided지만 실제 0/{}는 보존하고 운영 프롬프트 호환성을 유지한다."}],"comprehensionCheck":{"prGuidance":"","questions":[]}};
+  const decode = (encoded) => {
+    const bytes = Uint8Array.from(atob(encoded || ""), (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  };
+  document.querySelectorAll(".quiz__reveal").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = button.dataset.questionIndex;
+      const options = document.querySelector('.quiz__options[data-question-index="' + index + '"]');
+      const check = document.querySelector('.quiz__check[data-question-index="' + index + '"]');
+      if (options) options.hidden = false;
+      if (check) check.hidden = false;
+      button.hidden = true;
+    });
+  });
+  document.querySelectorAll('.quiz__option input[type="radio"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      const index = input.name.replace("quiz-", "");
+      const teachBack = document.querySelector('.quiz__teach-back[data-question-index="' + index + '"]');
+      const feedback = document.querySelector('.quiz__feedback[data-question-index="' + index + '"]');
+      const required = document.querySelector('.quiz__required[data-question-index="' + index + '"]');
+      if (teachBack) teachBack.hidden = false;
+      if (feedback) feedback.hidden = true;
+      if (required) required.hidden = true;
+    });
+  });
+  document.querySelectorAll(".quiz__check").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = button.dataset.questionIndex;
+      const answer = document.querySelector('input[name="quiz-' + index + '"]:checked');
+      const required = document.querySelector('.quiz__required[data-question-index="' + index + '"]');
+      const feedback = document.querySelector('.quiz__feedback[data-question-index="' + index + '"]');
+      if (!answer) {
+        if (required) required.hidden = false;
+        if (feedback) feedback.hidden = true;
+        return;
+      }
+      if (required) required.hidden = true;
+      if (feedback) {
+        const feedbackByOption = JSON.parse(decode(button.dataset.feedback) || "{}");
+        const correct = answer.value === button.dataset.correct;
+        feedback.querySelector(".quiz__result").textContent = correct
+          ? "정답"
+          : "다시 확인 필요";
+        feedback.querySelector(".quiz__selected-feedback").textContent =
+          feedbackByOption[answer.value] || "";
+        feedback.querySelector(".quiz__criteria").textContent = decode(button.dataset.explanation);
+        feedback.querySelector(".quiz__evidence").textContent = decode(button.dataset.evidence);
+        feedback.hidden = false;
+      }
+    });
+  });
+  const exportButton = document.getElementById("export");
+  if (exportButton) exportButton.addEventListener("click", () => {
+    const reviews = EMBED.findings.map((f, index) => {
+      const picked = document.querySelector('input[name="dec-' + index + '"]:checked');
+      const note = document.querySelector('textarea.ruling__note[data-finding-index="' + index + '"]');
+      return {
+        ...f,
+        finding_id: f.id,
+        decision: picked ? picked.value : "not-required",
+        comment: note ? note.value.trim() : "",
+      };
+    });
+    const out = {
+      adr: EMBED.adr,
+      reviewMode: EMBED.reviewMode,
+      verdict: EMBED.verdict,
+      scope: EMBED.scope,
+      changeScope: EMBED.changeScope,
+      contractCoverage: EMBED.contractCoverage,
+      implementationChoices: EMBED.implementationChoices,
+      comprehensionCheck: EMBED.comprehensionCheck,
+      reviews,
+      status: "complete",
+    };
+    const blob = new Blob([JSON.stringify(out, null, 2) + "\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "feedback.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const btn = document.getElementById("export");
+    btn.textContent = "저장됨 · feedback.json";
+    btn.classList.add("done");
+  });
+</script>
+</body>
+</html>

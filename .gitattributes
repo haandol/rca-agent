@@ -1,2 +1,5 @@
 # Verbatim validation logs retain their original terminal-output whitespace.
 docs/test-reports/**/*.log -whitespace
+# Generated review pages preserve renderer output and embedded code excerpts.
+docs/test-reports/**/adr-impl-review-report.html -whitespace
+docs/test-reports/**/implementation-review.md -whitespace

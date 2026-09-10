@@ -1,0 +1,25 @@
+{
+  "frozenAt": "2026-09-10T03:11:11.314995+00:00",
+  "scope": "Final realistic demo controller: fixed maintenance command; strict prechange intents; best-effort owned restoration despite journal and diagnostic I/O failures. Healthcare digest-pinned baseline documentation included.",
+  "sourceSha256": {
+    "scripts/run_realistic_demo.py": "74b73b5cc6401a916b342d68dde91afd29c6788b7357ce542add3f0686f96685",
+    "scripts/run_realistic_demo.html": "f127b4d328d3101212a03b423a99baa54a92f76bf47179c8ece80c6e7e40925a",
+    "tests/harness/realistic_demo_cases.py": "5e4c9985179c133d6e8d7e69e40bc18adca6f4516888a524122eef81070470b9",
+    "tests/harness/realistic-demo-script.test.mjs": "edc9cfcc4d16c9e25d676bcb5d854fc871ed9145ec6f3f83dc8bc7699e2be8bf"
+  },
+  "observedAppContractSha256": {
+    "packages/healthcare-sensor-app/src/test_service/maintenance.py": "b785eca035ab70be4906390a797d599265868e4ae21ecb0764135ecc10e130d7",
+    "packages/healthcare-sensor-app/src/test_service/revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py": "5d7e5603d821d251be847e12348716bc1d4da24109cff79ae6c52401f463f8f7"
+  },
+  "checks": {
+    "pythonCasesPassed": 56,
+    "nodeHarnessTestsPassed": 4,
+    "ruff": "passed",
+    "format": "passed"
+  },
+  "previousEvidence": "docs/test-reports/realistic-demo-evidence-2026-09-10/controller-freeze-before-diagnostic-fix.json",
+  "awsWritesPerformed": false,
+  "deploymentPerformed": false,
+  "commitPerformed": false
+}

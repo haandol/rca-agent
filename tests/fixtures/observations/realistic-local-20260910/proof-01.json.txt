@@ -1,0 +1,3753 @@
+{
+  "run_id": "local_8b71c1238dec4a2c",
+  "schema": "proof_local_8b71c1238dec4a2c",
+  "boundary": "local_postgresql_service",
+  "phases": [
+    {
+      "case": "query",
+      "phase": "normal",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+        "revision": "r1",
+        "verified": true
+      },
+      "pool_size": 3,
+      "queries": [
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 6.148874992504716,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "700cb5d46a59400cb70cb5658a4de5f8",
+            "sql_count": 1,
+            "sql_time_ms": 2.0398751366883516,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.867708982899785,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 2.0398751366883516
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 5.500458879396319,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "1650e21e7a21464fa0938f20b764f0bc",
+            "sql_count": 1,
+            "sql_time_ms": 1.6601248644292355,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 2.3991670459508896,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 1.6601248644292355
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 5.973665975034237,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "754568adde974a3eb25ece183fc25b6b",
+            "sql_count": 1,
+            "sql_time_ms": 2.243666909635067,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 2.8944159857928753,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 2.243666909635067
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 3.071499988436699,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "a5f6798aca6944bab209af3674913c9a",
+            "sql_count": 1,
+            "sql_time_ms": 1.176874851807952,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.0124999098479748,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 1.176874851807952
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 4.313749959692359,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "be1baa9c083a41a3ae7bc2ad6a785ea2",
+            "sql_count": 1,
+            "sql_time_ms": 2.0552920177578926,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.5283748507499695,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 2.0552920177578926
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      ],
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+          "revision": "r1",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 3,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.2,
+          "statement_timeout_ms": 0
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.1077078524976969,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.267084153369069,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.246000174432993,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "700cb5d46a59400cb70cb5658a4de5f8"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "700cb5d46a59400cb70cb5658a4de5f8",
+          "elapsed_ms": 1.867708982899785,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "700cb5d46a59400cb70cb5658a4de5f8",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 2.0398751366883516,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "700cb5d46a59400cb70cb5658a4de5f8"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "700cb5d46a59400cb70cb5658a4de5f8",
+          "outcome": "error",
+          "elapsed_ms": 6.105207838118076,
+          "sql_count": 1,
+          "sql_time_ms": 2.0398751366883516,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.867708982899785,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 2.0398751366883516
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "1650e21e7a21464fa0938f20b764f0bc"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "1650e21e7a21464fa0938f20b764f0bc",
+          "elapsed_ms": 2.3991670459508896,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "1650e21e7a21464fa0938f20b764f0bc",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 1.6601248644292355,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "1650e21e7a21464fa0938f20b764f0bc"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "1650e21e7a21464fa0938f20b764f0bc",
+          "outcome": "error",
+          "elapsed_ms": 5.466707982122898,
+          "sql_count": 1,
+          "sql_time_ms": 1.6601248644292355,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.3991670459508896,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 1.6601248644292355
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "754568adde974a3eb25ece183fc25b6b"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "754568adde974a3eb25ece183fc25b6b",
+          "elapsed_ms": 2.8944159857928753,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "754568adde974a3eb25ece183fc25b6b",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 2.243666909635067,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "754568adde974a3eb25ece183fc25b6b"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "754568adde974a3eb25ece183fc25b6b",
+          "outcome": "error",
+          "elapsed_ms": 5.941166076809168,
+          "sql_count": 1,
+          "sql_time_ms": 2.243666909635067,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.8944159857928753,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 2.243666909635067
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "a5f6798aca6944bab209af3674913c9a"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "a5f6798aca6944bab209af3674913c9a",
+          "elapsed_ms": 1.0124999098479748,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "a5f6798aca6944bab209af3674913c9a",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 1.176874851807952,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "a5f6798aca6944bab209af3674913c9a"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "a5f6798aca6944bab209af3674913c9a",
+          "outcome": "error",
+          "elapsed_ms": 3.045042045414448,
+          "sql_count": 1,
+          "sql_time_ms": 1.176874851807952,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.0124999098479748,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 1.176874851807952
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "be1baa9c083a41a3ae7bc2ad6a785ea2"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "be1baa9c083a41a3ae7bc2ad6a785ea2",
+          "elapsed_ms": 1.5283748507499695,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "be1baa9c083a41a3ae7bc2ad6a785ea2",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 2.0552920177578926,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "be1baa9c083a41a3ae7bc2ad6a785ea2"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "be1baa9c083a41a3ae7bc2ad6a785ea2",
+          "outcome": "error",
+          "elapsed_ms": 4.2749999556690454,
+          "sql_count": 1,
+          "sql_time_ms": 2.0552920177578926,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.5283748507499695,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 2.0552920177578926
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "query",
+      "phase": "fault",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "95f43d2f56a286990a5c0779e6fd5d786a33b2ee6d1dc379a94b79d63a075c8c",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "07800058af17029ec489582c89e3c7d28c7a022bbeb805e8c50bbe8b458649e0",
+        "revision": "r2",
+        "verified": true
+      },
+      "pool_size": 3,
+      "queries": [
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 8.47662496380508,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "1ae06ff8b1bb491ba178c551626763c7",
+            "sql_count": 1,
+            "sql_time_ms": 3.218540921807289,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 2.821333007887006,
+            "patterns": {
+              "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200": {
+                "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+                "count": 1,
+                "time_ms": 3.218540921807289
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 6.09895889647305,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "1ec33f88ddb84d24a4b4d79234d9e132",
+            "sql_count": 1,
+            "sql_time_ms": 2.2973748855292797,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 2.7034999802708626,
+            "patterns": {
+              "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200": {
+                "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+                "count": 1,
+                "time_ms": 2.2973748855292797
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 4.930041031911969,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "c3fb21cd5761413cb1d7bdaada684df5",
+            "sql_count": 1,
+            "sql_time_ms": 1.8164999783039093,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 2.2496250458061695,
+            "patterns": {
+              "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200": {
+                "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+                "count": 1,
+                "time_ms": 1.8164999783039093
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 4.240625072270632,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "0c690d7827e04d07a26b10851f9c0f27",
+            "sql_count": 1,
+            "sql_time_ms": 1.6165841370821,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.5390419866889715,
+            "patterns": {
+              "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200": {
+                "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+                "count": 1,
+                "time_ms": 1.6165841370821
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 4.4239170383661985,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "1d28832c8c4a4fcfa518c510e3a66402",
+            "sql_count": 1,
+            "sql_time_ms": 1.799499848857522,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.6408332157880068,
+            "patterns": {
+              "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200": {
+                "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+                "count": 1,
+                "time_ms": 1.799499848857522
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      ],
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "95f43d2f56a286990a5c0779e6fd5d786a33b2ee6d1dc379a94b79d63a075c8c",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "07800058af17029ec489582c89e3c7d28c7a022bbeb805e8c50bbe8b458649e0",
+          "revision": "r2",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 3,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.2,
+          "statement_timeout_ms": 0
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.8414577934890985,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.8677499610930681,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.87241705134511,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "1ae06ff8b1bb491ba178c551626763c7"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "1ae06ff8b1bb491ba178c551626763c7",
+          "elapsed_ms": 2.821333007887006,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "1ae06ff8b1bb491ba178c551626763c7",
+          "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+          "count": 1,
+          "elapsed_ms": 3.218540921807289,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "1ae06ff8b1bb491ba178c551626763c7"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "1ae06ff8b1bb491ba178c551626763c7",
+          "outcome": "error",
+          "elapsed_ms": 8.43641604296863,
+          "sql_count": 1,
+          "sql_time_ms": 3.218540921807289,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.821333007887006,
+          "sql_patterns": [
+            {
+              "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+              "count": 1,
+              "time_ms": 3.218540921807289
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "1ec33f88ddb84d24a4b4d79234d9e132"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "1ec33f88ddb84d24a4b4d79234d9e132",
+          "elapsed_ms": 2.7034999802708626,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "1ec33f88ddb84d24a4b4d79234d9e132",
+          "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+          "count": 1,
+          "elapsed_ms": 2.2973748855292797,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "1ec33f88ddb84d24a4b4d79234d9e132"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "1ec33f88ddb84d24a4b4d79234d9e132",
+          "outcome": "error",
+          "elapsed_ms": 6.070166127756238,
+          "sql_count": 1,
+          "sql_time_ms": 2.2973748855292797,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.7034999802708626,
+          "sql_patterns": [
+            {
+              "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+              "count": 1,
+              "time_ms": 2.2973748855292797
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "c3fb21cd5761413cb1d7bdaada684df5"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "c3fb21cd5761413cb1d7bdaada684df5",
+          "elapsed_ms": 2.2496250458061695,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "c3fb21cd5761413cb1d7bdaada684df5",
+          "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+          "count": 1,
+          "elapsed_ms": 1.8164999783039093,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "c3fb21cd5761413cb1d7bdaada684df5"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "c3fb21cd5761413cb1d7bdaada684df5",
+          "outcome": "error",
+          "elapsed_ms": 4.905125126242638,
+          "sql_count": 1,
+          "sql_time_ms": 1.8164999783039093,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.2496250458061695,
+          "sql_patterns": [
+            {
+              "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+              "count": 1,
+              "time_ms": 1.8164999783039093
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "0c690d7827e04d07a26b10851f9c0f27"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "0c690d7827e04d07a26b10851f9c0f27",
+          "elapsed_ms": 1.5390419866889715,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "0c690d7827e04d07a26b10851f9c0f27",
+          "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+          "count": 1,
+          "elapsed_ms": 1.6165841370821,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "0c690d7827e04d07a26b10851f9c0f27"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "0c690d7827e04d07a26b10851f9c0f27",
+          "outcome": "error",
+          "elapsed_ms": 4.207709105685353,
+          "sql_count": 1,
+          "sql_time_ms": 1.6165841370821,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.5390419866889715,
+          "sql_patterns": [
+            {
+              "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+              "count": 1,
+              "time_ms": 1.6165841370821
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "1d28832c8c4a4fcfa518c510e3a66402"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "1d28832c8c4a4fcfa518c510e3a66402",
+          "elapsed_ms": 1.6408332157880068,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "1d28832c8c4a4fcfa518c510e3a66402",
+          "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+          "count": 1,
+          "elapsed_ms": 1.799499848857522,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "1d28832c8c4a4fcfa518c510e3a66402"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "1d28832c8c4a4fcfa518c510e3a66402",
+          "outcome": "error",
+          "elapsed_ms": 4.397333133965731,
+          "sql_count": 1,
+          "sql_time_ms": 1.799499848857522,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.6408332157880068,
+          "sql_patterns": [
+            {
+              "sql_hash": "dce85568241aa40d9331c7182da4f9904cc0f78a5830edf250aa242ffbcbd200",
+              "count": 1,
+              "time_ms": 1.799499848857522
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "query",
+      "phase": "restore",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+        "revision": "r1",
+        "verified": true
+      },
+      "pool_size": 3,
+      "queries": [
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 4.875666927546263,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "35cd168e67e8483b8f2684b0219745d7",
+            "sql_count": 1,
+            "sql_time_ms": 1.3351249508559704,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.2419158592820168,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 1.3351249508559704
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 3.0432078056037426,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "735be09e9ef0440aad91e0a430be89bb",
+            "sql_count": 1,
+            "sql_time_ms": 1.0199998505413532,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.218999968841672,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 1.0199998505413532
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 5.8366660960018635,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "0157499cd9e3422bbca9cc7d2c8aa4e0",
+            "sql_count": 1,
+            "sql_time_ms": 3.8660841528326273,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.205208944156766,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 3.8660841528326273
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 2.7060408610850573,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "83db0cc59d804dde889e2caeeca1456a",
+            "sql_count": 1,
+            "sql_time_ms": 0.9808330796658993,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 0.8005830459296703,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 0.9808330796658993
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 3.370957914739847,
+          "operation": {
+            "name": "patient_vitals",
+            "request_id": "ff3371682bf3485b97ea341442873f7c",
+            "sql_count": 1,
+            "sql_time_ms": 1.0302909649908543,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 1.7285831272602081,
+            "patterns": {
+              "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298": {
+                "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+                "count": 1,
+                "time_ms": 1.0302909649908543
+              }
+            }
+          },
+          "row_count": 0,
+          "rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      ],
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+          "revision": "r1",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 3,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.2,
+          "statement_timeout_ms": 0
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 0.6391669157892466,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 0.891875009983778,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 0.8699172176420689,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "35cd168e67e8483b8f2684b0219745d7"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "35cd168e67e8483b8f2684b0219745d7",
+          "elapsed_ms": 1.2419158592820168,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "35cd168e67e8483b8f2684b0219745d7",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 1.3351249508559704,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "35cd168e67e8483b8f2684b0219745d7"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "35cd168e67e8483b8f2684b0219745d7",
+          "outcome": "error",
+          "elapsed_ms": 4.819332854822278,
+          "sql_count": 1,
+          "sql_time_ms": 1.3351249508559704,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.2419158592820168,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 1.3351249508559704
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "735be09e9ef0440aad91e0a430be89bb"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "735be09e9ef0440aad91e0a430be89bb",
+          "elapsed_ms": 1.218999968841672,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "735be09e9ef0440aad91e0a430be89bb",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 1.0199998505413532,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "735be09e9ef0440aad91e0a430be89bb"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "735be09e9ef0440aad91e0a430be89bb",
+          "outcome": "error",
+          "elapsed_ms": 3.002250101417303,
+          "sql_count": 1,
+          "sql_time_ms": 1.0199998505413532,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.218999968841672,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 1.0199998505413532
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "0157499cd9e3422bbca9cc7d2c8aa4e0"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "0157499cd9e3422bbca9cc7d2c8aa4e0",
+          "elapsed_ms": 1.205208944156766,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "0157499cd9e3422bbca9cc7d2c8aa4e0",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 3.8660841528326273,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "0157499cd9e3422bbca9cc7d2c8aa4e0"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "0157499cd9e3422bbca9cc7d2c8aa4e0",
+          "outcome": "error",
+          "elapsed_ms": 5.800708895549178,
+          "sql_count": 1,
+          "sql_time_ms": 3.8660841528326273,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.205208944156766,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 3.8660841528326273
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "83db0cc59d804dde889e2caeeca1456a"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "83db0cc59d804dde889e2caeeca1456a",
+          "elapsed_ms": 0.8005830459296703,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "83db0cc59d804dde889e2caeeca1456a",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 0.9808330796658993,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "83db0cc59d804dde889e2caeeca1456a"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "83db0cc59d804dde889e2caeeca1456a",
+          "outcome": "error",
+          "elapsed_ms": 2.6713330298662186,
+          "sql_count": 1,
+          "sql_time_ms": 0.9808330796658993,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 0.8005830459296703,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 0.9808330796658993
+            }
+          ]
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "ff3371682bf3485b97ea341442873f7c"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "ff3371682bf3485b97ea341442873f7c",
+          "elapsed_ms": 1.7285831272602081,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "ff3371682bf3485b97ea341442873f7c",
+          "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+          "count": 1,
+          "elapsed_ms": 1.0302909649908543,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "ff3371682bf3485b97ea341442873f7c"
+        },
+        {
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "ff3371682bf3485b97ea341442873f7c",
+          "outcome": "error",
+          "elapsed_ms": 3.3380831591784954,
+          "sql_count": 1,
+          "sql_time_ms": 1.0302909649908543,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.7285831272602081,
+          "sql_patterns": [
+            {
+              "sql_hash": "b14e514a99fa9815c6239873883a940756baf4586c65a046739a7d7acd116298",
+              "count": 1,
+              "time_ms": 1.0302909649908543
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "pool",
+      "phase": "normal",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+        "revision": "r1",
+        "verified": true
+      },
+      "pool_size": 8,
+      "concurrency": 8,
+      "batch_rows": 1000,
+      "writes": [
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 128.25304199941456,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "e23559525a6f44cba6fd7f5e091664f1",
+            "sql_count": 1,
+            "sql_time_ms": 62.17529182322323,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 50.10295799002051,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 62.17529182322323
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 127.17508408240974,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "d86c12fb23004d488fc11b116591e272",
+            "sql_count": 1,
+            "sql_time_ms": 5.4967079777270555,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 105.4252500180155,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 5.4967079777270555
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 123.82616591639817,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "66f9f5ce9edb4acbb7cf4c05f23dff9d",
+            "sql_count": 1,
+            "sql_time_ms": 74.20916692353785,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 31.849791994318366,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 74.20916692353785
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 121.20104185305536,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "1a110f9c7d6648b68aa512198e8583d2",
+            "sql_count": 1,
+            "sql_time_ms": 87.0236661285162,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 15.361708821728826,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 87.0236661285162
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 118.26883303001523,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "c4f9e4de44304a99a8ef844409b38bb0",
+            "sql_count": 1,
+            "sql_time_ms": 39.855125127360225,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 61.25162495300174,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 39.855125127360225
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 113.60700009390712,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "2b939976213a48c0a4ee0561faf3c4cc",
+            "sql_count": 1,
+            "sql_time_ms": 50.798875046893954,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 46.439917059615254,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 50.798875046893954
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 111.24704219400883,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "129fd34dbe804bb18d570d0fc2d526d0",
+            "sql_count": 1,
+            "sql_time_ms": 27.874083956703544,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 67.35358410514891,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 27.874083956703544
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 109.56879099830985,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "adbfb69805ac4fe781a634dc144e7a26",
+            "sql_count": 1,
+            "sql_time_ms": 17.854500096291304,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 75.68837492726743,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 17.854500096291304
+              }
+            }
+          },
+          "saved_rows": 0
+        }
+      ],
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+          "revision": "r1",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 8,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.02,
+          "statement_timeout_ms": 0
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.0871251579374075,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.1040829122066498,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.1347080580890179,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.5213750302791595,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.7515411600470543,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.8699171487241983,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.196915913373232,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.1571670658886433,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "1a110f9c7d6648b68aa512198e8583d2"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "1a110f9c7d6648b68aa512198e8583d2",
+          "elapsed_ms": 15.361708821728826,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "66f9f5ce9edb4acbb7cf4c05f23dff9d"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "66f9f5ce9edb4acbb7cf4c05f23dff9d",
+          "elapsed_ms": 31.849791994318366,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "e23559525a6f44cba6fd7f5e091664f1"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "e23559525a6f44cba6fd7f5e091664f1",
+          "elapsed_ms": 50.10295799002051,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "2b939976213a48c0a4ee0561faf3c4cc"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "2b939976213a48c0a4ee0561faf3c4cc",
+          "elapsed_ms": 46.439917059615254,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "c4f9e4de44304a99a8ef844409b38bb0"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "c4f9e4de44304a99a8ef844409b38bb0",
+          "elapsed_ms": 61.25162495300174,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "129fd34dbe804bb18d570d0fc2d526d0"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "129fd34dbe804bb18d570d0fc2d526d0",
+          "elapsed_ms": 67.35358410514891,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "adbfb69805ac4fe781a634dc144e7a26"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "adbfb69805ac4fe781a634dc144e7a26",
+          "elapsed_ms": 75.68837492726743,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "d86c12fb23004d488fc11b116591e272"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "d86c12fb23004d488fc11b116591e272",
+          "elapsed_ms": 105.4252500180155,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_sql",
+          "request_id": "e23559525a6f44cba6fd7f5e091664f1",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 62.17529182322323,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "2b939976213a48c0a4ee0561faf3c4cc",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 50.798875046893954,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "66f9f5ce9edb4acbb7cf4c05f23dff9d",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 74.20916692353785,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "129fd34dbe804bb18d570d0fc2d526d0",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 27.874083956703544,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "1a110f9c7d6648b68aa512198e8583d2",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 87.0236661285162,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "e23559525a6f44cba6fd7f5e091664f1"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "c4f9e4de44304a99a8ef844409b38bb0",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 39.855125127360225,
+          "outcome": "error"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "e23559525a6f44cba6fd7f5e091664f1",
+          "outcome": "error",
+          "elapsed_ms": 128.2187500037253,
+          "sql_count": 1,
+          "sql_time_ms": 62.17529182322323,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 50.10295799002051,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 62.17529182322323
+            }
+          ]
+        },
+        {
+          "event": "db_sql",
+          "request_id": "d86c12fb23004d488fc11b116591e272",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 5.4967079777270555,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "2b939976213a48c0a4ee0561faf3c4cc"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "2b939976213a48c0a4ee0561faf3c4cc",
+          "outcome": "error",
+          "elapsed_ms": 113.58616687357426,
+          "sql_count": 1,
+          "sql_time_ms": 50.798875046893954,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 46.439917059615254,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 50.798875046893954
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "129fd34dbe804bb18d570d0fc2d526d0"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "adbfb69805ac4fe781a634dc144e7a26",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 17.854500096291304,
+          "outcome": "error"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "129fd34dbe804bb18d570d0fc2d526d0",
+          "outcome": "error",
+          "elapsed_ms": 111.23183299787343,
+          "sql_count": 1,
+          "sql_time_ms": 27.874083956703544,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 67.35358410514891,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 27.874083956703544
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "66f9f5ce9edb4acbb7cf4c05f23dff9d"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "66f9f5ce9edb4acbb7cf4c05f23dff9d",
+          "outcome": "error",
+          "elapsed_ms": 123.80966707132757,
+          "sql_count": 1,
+          "sql_time_ms": 74.20916692353785,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 31.849791994318366,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 74.20916692353785
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "1a110f9c7d6648b68aa512198e8583d2"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "c4f9e4de44304a99a8ef844409b38bb0"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "d86c12fb23004d488fc11b116591e272"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "1a110f9c7d6648b68aa512198e8583d2",
+          "outcome": "error",
+          "elapsed_ms": 121.18716677650809,
+          "sql_count": 1,
+          "sql_time_ms": 87.0236661285162,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 15.361708821728826,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 87.0236661285162
+            }
+          ]
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "c4f9e4de44304a99a8ef844409b38bb0",
+          "outcome": "error",
+          "elapsed_ms": 118.25558310374618,
+          "sql_count": 1,
+          "sql_time_ms": 39.855125127360225,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 61.25162495300174,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 39.855125127360225
+            }
+          ]
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "d86c12fb23004d488fc11b116591e272",
+          "outcome": "error",
+          "elapsed_ms": 127.15979106724262,
+          "sql_count": 1,
+          "sql_time_ms": 5.4967079777270555,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 105.4252500180155,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 5.4967079777270555
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "adbfb69805ac4fe781a634dc144e7a26"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "adbfb69805ac4fe781a634dc144e7a26",
+          "outcome": "error",
+          "elapsed_ms": 109.55483419820666,
+          "sql_count": 1,
+          "sql_time_ms": 17.854500096291304,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 75.68837492726743,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 17.854500096291304
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "pool",
+      "phase": "fault",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+        "revision": "r1",
+        "verified": true
+      },
+      "pool_size": 1,
+      "concurrency": 8,
+      "batch_rows": 1000,
+      "writes": [
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 49.28295803256333,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "e58c997c965e4fa2918b2c0255eb3b0f",
+            "sql_count": 1,
+            "sql_time_ms": 3.43300006352365,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 26.503250002861023,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 3.43300006352365
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 24.226624984294176,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "e1e9f9c33435452d8e6f36e10ddebf02",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 20.742292050272226,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 39.34604092501104,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "1c95548ff97445c683c4d0b04751373a",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 35.53087497130036,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 36.28616710193455,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "d5f2be871cb34956bc17c886c8ce03d8",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 32.522458117455244,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 33.27429108321667,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "58c0306eea3549b5aa612ba18b30f392",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 29.2819170281291,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 30.047083972021937,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "7675ec4649be45d2bd667dfd7bfb9920",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 26.038415962830186,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 26.831249939277768,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "6eb5e33d2d0e43fa902bf1a4c4f0193a",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 22.439041174948215,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "TimeoutError",
+          "elapsed_ms": 23.883749963715672,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "2dac563537e44128999bc571c517d292",
+            "sql_count": 0,
+            "sql_time_ms": 0,
+            "checkouts": 0,
+            "checkins": 0,
+            "acquire_time_ms": 20.17929102294147,
+            "patterns": {}
+          },
+          "saved_rows": 0
+        }
+      ],
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+          "revision": "r1",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 1,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.02,
+          "statement_timeout_ms": 0
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 0.802250113338232,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "e1e9f9c33435452d8e6f36e10ddebf02",
+          "elapsed_ms": 20.742292050272226,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "e1e9f9c33435452d8e6f36e10ddebf02",
+          "outcome": "error",
+          "elapsed_ms": 24.126833071932197,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 20.742292050272226,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "e58c997c965e4fa2918b2c0255eb3b0f"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "e58c997c965e4fa2918b2c0255eb3b0f",
+          "elapsed_ms": 26.503250002861023,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "1c95548ff97445c683c4d0b04751373a",
+          "elapsed_ms": 35.53087497130036,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "d5f2be871cb34956bc17c886c8ce03d8",
+          "elapsed_ms": 32.522458117455244,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "58c0306eea3549b5aa612ba18b30f392",
+          "elapsed_ms": 29.2819170281291,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "7675ec4649be45d2bd667dfd7bfb9920",
+          "elapsed_ms": 26.038415962830186,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "6eb5e33d2d0e43fa902bf1a4c4f0193a",
+          "elapsed_ms": 22.439041174948215,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "1c95548ff97445c683c4d0b04751373a",
+          "outcome": "error",
+          "elapsed_ms": 39.20687502250075,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 35.53087497130036,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "d5f2be871cb34956bc17c886c8ce03d8",
+          "outcome": "error",
+          "elapsed_ms": 36.20183281600475,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 32.522458117455244,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "58c0306eea3549b5aa612ba18b30f392",
+          "outcome": "error",
+          "elapsed_ms": 33.20016711950302,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 29.2819170281291,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "7675ec4649be45d2bd667dfd7bfb9920",
+          "outcome": "error",
+          "elapsed_ms": 29.96695786714554,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 26.038415962830186,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "6eb5e33d2d0e43fa902bf1a4c4f0193a",
+          "outcome": "error",
+          "elapsed_ms": 26.761749992147088,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 22.439041174948215,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "2dac563537e44128999bc571c517d292",
+          "elapsed_ms": 20.17929102294147,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "2dac563537e44128999bc571c517d292",
+          "outcome": "error",
+          "elapsed_ms": 23.79804104566574,
+          "sql_count": 0,
+          "sql_time_ms": 0,
+          "checkouts": 0,
+          "checkins": 0,
+          "acquire_time_ms": 20.17929102294147,
+          "sql_patterns": []
+        },
+        {
+          "event": "db_sql",
+          "request_id": "e58c997c965e4fa2918b2c0255eb3b0f",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 3.43300006352365,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "e58c997c965e4fa2918b2c0255eb3b0f"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "e58c997c965e4fa2918b2c0255eb3b0f",
+          "outcome": "error",
+          "elapsed_ms": 49.24550000578165,
+          "sql_count": 1,
+          "sql_time_ms": 3.43300006352365,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 26.503250002861023,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 3.43300006352365
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "pool",
+      "phase": "restore",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+        "revision": "r1",
+        "verified": true
+      },
+      "pool_size": 8,
+      "concurrency": 8,
+      "batch_rows": 1000,
+      "writes": [
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 149.28433392196894,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "6469d93f6155485a87799770183c5c73",
+            "sql_count": 1,
+            "sql_time_ms": 84.37883295118809,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 44.9096669908613,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 84.37883295118809
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 146.12591709010303,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "eb92af20a0ee413ca23295b176ae267c",
+            "sql_count": 1,
+            "sql_time_ms": 72.52683397382498,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 55.630333023145795,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 72.52683397382498
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 143.09566607698798,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "d3f3467fb3424819ab6d52df33d36889",
+            "sql_count": 1,
+            "sql_time_ms": 45.349666150286794,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 78.3139169216156,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 45.349666150286794
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 139.36991686932743,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "53fb7a49460d461bb72d27fdc8283356",
+            "sql_count": 1,
+            "sql_time_ms": 31.019208021461964,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 89.12912500090897,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 31.019208021461964
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 134.2897079885006,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "83d9b05e064c4fae84244d8107f120fc",
+            "sql_count": 1,
+            "sql_time_ms": 98.10891607776284,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 16.27799984999001,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 98.10891607776284
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 133.0694581847638,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "04f1f7cb9a1a489f862c7ebfe61f9e45",
+            "sql_count": 1,
+            "sql_time_ms": 4.070041002705693,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 108.3611249923706,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 4.070041002705693
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 126.96329108439386,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "998f31eeffe241ed8e61621175daee68",
+            "sql_count": 1,
+            "sql_time_ms": 16.625832999125123,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 90.433832956478,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 16.625832999125123
+              }
+            }
+          },
+          "saved_rows": 0
+        },
+        {
+          "outcome": "error",
+          "error_type": "ProgrammingError",
+          "elapsed_ms": 123.68583399802446,
+          "operation": {
+            "name": "sensor_ingest",
+            "request_id": "fc4eb5e6819043f58d06701de1147469",
+            "sql_count": 1,
+            "sql_time_ms": 59.256625128909945,
+            "checkouts": 1,
+            "checkins": 1,
+            "acquire_time_ms": 45.386541867628694,
+            "patterns": {
+              "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+                "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+                "count": 1,
+                "time_ms": 59.256625128909945
+              }
+            }
+          },
+          "saved_rows": 0
+        }
+      ],
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+          "revision": "r1",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 8,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.02,
+          "statement_timeout_ms": 0
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.7154999077320099,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.8465830944478512,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.112041926011443,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.077166922390461,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.9835829734802246,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.0717501174658537,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.1721250377595425,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 2.2651248145848513,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "83d9b05e064c4fae84244d8107f120fc"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "83d9b05e064c4fae84244d8107f120fc",
+          "elapsed_ms": 16.27799984999001,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "6469d93f6155485a87799770183c5c73"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "6469d93f6155485a87799770183c5c73",
+          "elapsed_ms": 44.9096669908613,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "eb92af20a0ee413ca23295b176ae267c"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "eb92af20a0ee413ca23295b176ae267c",
+          "elapsed_ms": 55.630333023145795,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "fc4eb5e6819043f58d06701de1147469"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "fc4eb5e6819043f58d06701de1147469",
+          "elapsed_ms": 45.386541867628694,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "d3f3467fb3424819ab6d52df33d36889"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "d3f3467fb3424819ab6d52df33d36889",
+          "elapsed_ms": 78.3139169216156,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "53fb7a49460d461bb72d27fdc8283356"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "53fb7a49460d461bb72d27fdc8283356",
+          "elapsed_ms": 89.12912500090897,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "998f31eeffe241ed8e61621175daee68"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "998f31eeffe241ed8e61621175daee68",
+          "elapsed_ms": 90.433832956478,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "04f1f7cb9a1a489f862c7ebfe61f9e45"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "04f1f7cb9a1a489f862c7ebfe61f9e45",
+          "elapsed_ms": 108.3611249923706,
+          "pool_checked_out": 8
+        },
+        {
+          "event": "db_sql",
+          "request_id": "83d9b05e064c4fae84244d8107f120fc",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 98.10891607776284,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "6469d93f6155485a87799770183c5c73",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 84.37883295118809,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "53fb7a49460d461bb72d27fdc8283356",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 31.019208021461964,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "83d9b05e064c4fae84244d8107f120fc"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "998f31eeffe241ed8e61621175daee68",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 16.625832999125123,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "fc4eb5e6819043f58d06701de1147469",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 59.256625128909945,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "eb92af20a0ee413ca23295b176ae267c",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 72.52683397382498,
+          "outcome": "error"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "d3f3467fb3424819ab6d52df33d36889",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 45.349666150286794,
+          "outcome": "error"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "83d9b05e064c4fae84244d8107f120fc",
+          "outcome": "error",
+          "elapsed_ms": 134.26129100844264,
+          "sql_count": 1,
+          "sql_time_ms": 98.10891607776284,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 16.27799984999001,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 98.10891607776284
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "6469d93f6155485a87799770183c5c73"
+        },
+        {
+          "event": "db_sql",
+          "request_id": "04f1f7cb9a1a489f862c7ebfe61f9e45",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 4.070041002705693,
+          "outcome": "error"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "6469d93f6155485a87799770183c5c73",
+          "outcome": "error",
+          "elapsed_ms": 149.21479183249176,
+          "sql_count": 1,
+          "sql_time_ms": 84.37883295118809,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 44.9096669908613,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 84.37883295118809
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "53fb7a49460d461bb72d27fdc8283356"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "998f31eeffe241ed8e61621175daee68"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "fc4eb5e6819043f58d06701de1147469"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "eb92af20a0ee413ca23295b176ae267c"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "d3f3467fb3424819ab6d52df33d36889"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "53fb7a49460d461bb72d27fdc8283356",
+          "outcome": "error",
+          "elapsed_ms": 139.34733299538493,
+          "sql_count": 1,
+          "sql_time_ms": 31.019208021461964,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 89.12912500090897,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 31.019208021461964
+            }
+          ]
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "998f31eeffe241ed8e61621175daee68",
+          "outcome": "error",
+          "elapsed_ms": 126.94120802916586,
+          "sql_count": 1,
+          "sql_time_ms": 16.625832999125123,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 90.433832956478,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 16.625832999125123
+            }
+          ]
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "fc4eb5e6819043f58d06701de1147469",
+          "outcome": "error",
+          "elapsed_ms": 123.66283405572176,
+          "sql_count": 1,
+          "sql_time_ms": 59.256625128909945,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 45.386541867628694,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 59.256625128909945
+            }
+          ]
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "eb92af20a0ee413ca23295b176ae267c",
+          "outcome": "error",
+          "elapsed_ms": 146.10108290798962,
+          "sql_count": 1,
+          "sql_time_ms": 72.52683397382498,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 55.630333023145795,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 72.52683397382498
+            }
+          ]
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "d3f3467fb3424819ab6d52df33d36889",
+          "outcome": "error",
+          "elapsed_ms": 143.06537504307926,
+          "sql_count": 1,
+          "sql_time_ms": 45.349666150286794,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 78.3139169216156,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 45.349666150286794
+            }
+          ]
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "04f1f7cb9a1a489f862c7ebfe61f9e45"
+        },
+        {
+          "event": "db_operation",
+          "operation": "sensor_ingest",
+          "request_id": "04f1f7cb9a1a489f862c7ebfe61f9e45",
+          "outcome": "error",
+          "elapsed_ms": 133.04616697132587,
+          "sql_count": 1,
+          "sql_time_ms": 4.070041002705693,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 108.3611249923706,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 4.070041002705693
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "lock",
+      "phase": "normal",
+      "source": {
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+          "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+          "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+          "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+          "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+          "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+          "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+          "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+          "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+          "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+        "revision": "r1",
+        "verified": true
+      },
+      "pool_size": 3,
+      "write": {
+        "outcome": "error",
+        "error_type": "ProgrammingError",
+        "elapsed_ms": 6.653915857896209,
+        "operation": {
+          "name": "valid_write",
+          "request_id": "a9f9c4da8de6469194e324d20a785188",
+          "sql_count": 1,
+          "sql_time_ms": 2.2549577988684177,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.245750045403838,
+          "patterns": {
+            "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395": {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 2.2549577988684177
+            }
+          }
+        }
+      },
+      "checked_out_before_dispose": 0,
+      "owned_sessions_after_dispose": 0,
+      "remaining_owned_schema_locks": 0,
+      "events": [
+        {
+          "event": "source_manifest",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/fault/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/fault/fault_controller.py": "cbcc29cde2a2de4ffdccc5d6ef3d760ea093a52dd39eaefece38aafb2aa49654",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "1cb893c854227eeee186fceab8e6f670633458bdaa23426596751cbf2ccfa2fe",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "adcf922ee2584ad7e6736a3bb7ba1f5829af286c40141737b38f22fa4d6cafa3",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "25a93c4ead7a210f567aa51bbb5ba2864f211ee7ec9b14052d99e853d61b0616",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "1190bc3da0fc119a4d385de1654dbfc2661776b89e0358da615f59f317027ef1",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "ac1e5924b06bf5c6becd5e58640951856ee47740690760206b403571d6bbb0d2",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "1a8e48b3a66640b5fd6a9c74d0ed03886e6f3ff39e3e1e077e617a83aa7d306b",
+            "maintenance.py": "5968c72aeb6c4a10d2b02a264545f839d83ceaa0ca794bae4e30f422fb485bde",
+            "middleware/__init__.py": "9678a80b984b72e1967673b7073bac9a80b6a64cbfcba4b1054140ee60ba89c9",
+            "middleware/fault_flag.py": "b3f4a2c9fcfa801a3c04c1d15b946c8b82e47725acaa39b467e6fa5a2c48e599",
+            "middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "35d223f47d19231c148ffbf2890a3bd6bcdcc5046ba10ad723db7231542e6160",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "ba0848de9b9a6698143ec52588e62eeec396f9db432df053b94d029c0747325b",
+            "services/fault.py": "4000860e6055836c0c4f3bc9956e50ba230d009900727b0e96e67f3098704beb",
+            "services/fault_state.py": "db70357ea4b465cdb9f261b5353108641a201ea9dca5f8721d691950e3168ac1",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/sensor.py": "c0f8c4298a9f8e03374bf764cd92b9c8027cc3735dc2e3f3743e722899896cf6",
+            "services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+            "services/traffic_generator.py": "2f44ad80a8b863a30dd681f3e33b523d0c74f9f3a47c840de49ea67039e05d19",
+            "telemetry.py": "9e251a439707f566803758d4f87ea79065963327d30d1fbdd7a99db277578e0e",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "614554456a7b34d5a1b3a0877ca0ae962c1227f169f00a5ebad49cb5091a6871",
+          "revision": "r1",
+          "verified": true
+        },
+        {
+          "event": "db_pool_config",
+          "pool_size": 3,
+          "max_overflow": 0,
+          "pool_timeout_seconds": 0.2,
+          "statement_timeout_ms": 500
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": null
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.2609169352799654,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.411832869052887,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "count": 1,
+          "elapsed_ms": 1.3724998570978642,
+          "outcome": "ok"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkin",
+          "request_id": null
+        },
+        {
+          "event": "db_checkout",
+          "request_id": "a9f9c4da8de6469194e324d20a785188"
+        },
+        {
+          "event": "db_acquire",
+          "request_id": "a9f9c4da8de6469194e324d20a785188",
+          "elapsed_ms": 2.245750045403838,
+          "pool_checked_out": 1
+        },
+        {
+          "event": "db_sql",
+          "request_id": "a9f9c4da8de6469194e324d20a785188",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "count": 1,
+          "elapsed_ms": 2.2549577988684177,
+          "outcome": "error"
+        },
+        {
+          "event": "db_checkin",
+          "request_id": "a9f9c4da8de6469194e324d20a785188"
+        },
+        {
+          "event": "db_operation",
+          "operation": "valid_write",
+          "request_id": "a9f9c4da8de6469194e324d20a785188",
+          "outcome": "error",
+          "elapsed_ms": 6.617542123422027,
+          "sql_count": 1,
+          "sql_time_ms": 2.2549577988684177,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.245750045403838,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 2.2549577988684177
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "schema_removed": true,
+  "cleanup_errors": []
+}

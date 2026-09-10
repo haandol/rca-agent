@@ -1,0 +1,262 @@
+[
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "D0",
+    "adrBasis": "Decision",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "독립 RDS/Healthcare 스택, 사설 배치, DB 선행 의존성을 코드와 합성으로 확인. 실제 AWS 배포 성공을 뜻하지 않는다.",
+    "evidence": "packages/infra/bin/infra.ts:48; packages/infra/lib/stacks/rds-stack.ts:29; packages/infra/lib/stacks/healthcare-service-stack.ts:37",
+    "tests": "T1,T6"
+  },
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "R1",
+    "adrBasis": "데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "사설 서브넷·공인 IP 없음·VPC CIDR DB 접근, 생성 비밀의 username/password 참조. Docker는 소스·가상환경만 복사한다.",
+    "evidence": "packages/infra/lib/stacks/rds-stack.ts:23; packages/infra/lib/stacks/healthcare-service-stack.ts:138; packages/healthcare-sensor-app/Dockerfile:22",
+    "tests": "T1,T6"
+  },
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "R2",
+    "adrBasis": "서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "완료와 분리된 슬롯 계획, active 상한, missed/capacity skipped 계수, 취소 후 gather.",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:85 (특히 121–144)",
+    "tests": "T1: test_stalled_requests_do_not_stop_offers_or_exceed_concurrency; test_event_loop_delay_skips_missed_deadlines_without_catchup_tasks"
+  },
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "R3",
+    "adrBasis": "정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "r1 빌드 기본; r2 실제 121 SELECT, r3 예외 뒤 세션 잔류; 풀 설정·별도 락 작업; 레거시 플래그/API 별도 유지. 로컬 원본은 verified=false.",
+    "evidence": "packages/healthcare-sensor-app/Dockerfile:12; demo/build_revision.py:67; demo/revisions/r2/query.py:10; demo/revisions/r3/session.py:23; services/fault.py (후자의 상대 경로는 healthcare 패키지)",
+    "tests": "T1,T7,T9,T10"
+  },
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "R4",
+    "adrBasis": "요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.",
+    "hill": "H1",
+    "status": "VIOLATED",
+    "implementation": "SQL/풀 계측과 독립 EMF는 구현됨. HTTP 오류 경로가 드라이버 DETAIL 값을 traceback에 노출한다(F1).",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/middleware/logging.py:29; services/db_observability.py:83; services/symptom_metrics.py:153",
+    "tests": "T1,T8/log_boundary: canary_in_log=true"
+  },
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "R5",
+    "adrBasis": "서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.",
+    "hill": "H2",
+    "status": "PROVEN",
+    "implementation": "서비스 작업 drain 뒤 소유 세션/관측 풀 정리; 정비는 자기 transaction만 rollback. 정상·취소·SIGTERM·기한 만료는 실측, start/LOCK/rollback 오류는 독립 probe에서 close 확인.",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/main.py:69; adapters/secondary/database_adapter.py:157; maintenance.py:91; demo/local_runner.py:44",
+    "tests": "T1,T7,T8/maintenance_failure_probes,T9"
+  },
+  {
+    "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "contractId": "R6",
+    "adrBasis": "배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.\n",
+    "hill": "H1",
+    "status": "UNVERIFIED",
+    "implementation": "소스 manifest·원본 digest 검증·같은 로컬 부하 비교는 확인. 최신 Docker 재빌드 완료/실배포 이미지 식별/같은 부하의 AWS 복원 증거는 이 검토 시점 미확인(U1).",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/revision/manifest.py:8; scripts/run_realistic_demo.py:immutable_baseline_image,baseline_source_manifests; proof03/source_snapshot",
+    "tests": "T1,T7,T9,T10; 최신 이미지/AWS: NOT RUN"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "D0",
+    "adrBasis": "Decision",
+    "hill": "H1",
+    "status": "UNVERIFIED",
+    "implementation": "네 실제 메커니즘과 복원은 로컬에서 확인. 증상 알람의 정상→결함→복원 실제 관계는 AWS에서 아직 검증되지 않음(U1).",
+    "evidence": "packages/healthcare-sensor-app/demo/local_runner.py:106; packages/infra/lib/stacks/healthcare-service-stack.ts:283; scripts/run_realistic_demo.py:status",
+    "tests": "T1,T6,T7,T9; AWS: NOT RUN"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R1",
+    "adrBasis": "풀 설정 회귀는 실제 애플리케이션 풀 설정 변경으로 재현하고 원래 설정 복원 뒤 같은 부하에서 저장과 연결 대기가 회복되어야 한다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "동일 8×1000 쓰기에서 정상/복원 pool=8, fault=1; 동일 overflow=0, timeout=.02. 정상·복원 8건 성공, 결함에 실제 checkout timeout. CLI 원래 definition 복귀도 mock 검증. AWS 성공 판정은 제외.",
+    "evidence": "packages/healthcare-sensor-app/demo/local_worker.py:125,301; scripts/run_realistic_demo.py:register,assert_scenario_environment; proof03 pool phases",
+    "tests": "T1,T2,T7,T9,T10"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R2",
+    "adrBasis": "조회 증폭은 불변 결함 이미지의 실제 업무 SQL 증가로 재현한다. 정상 이미지로 되돌리면 같은 응답 데이터와 SQL 횟수·조회 시간이 회복되어야 한다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "같은 120개 응답의 전체 hash 동일, 정상/복원 1 SQL·결함 121 SQL, 실제 시간 분리. 빌드 고정 overlay 및 runtime 변경 거부 확인. AWS 이미지 실행은 제외.",
+    "evidence": "packages/healthcare-sensor-app/demo/local_worker.py:101; demo/revisions/r2/query.py:10; demo/build_revision.py:67; proof03 query phases",
+    "tests": "T1,T7,T9"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R3",
+    "adrBasis": "정비 트랜잭션은 실제 쓰기 충돌 락과 소유 실행 식별자를 가져야 한다. 유한한 유지 한도와 종료·실패·시그널의 롤백 경로가 있고 다른 실행의 작업은 종료하지 않는다.",
+    "hill": "H2",
+    "status": "PROVEN",
+    "implementation": "독립 backend의 SHARE 락과 쓰기 blocker 관계, run ID, 유한 7200초 상한, 만료·SIGTERM rollback 실측. 오류 close probe 및 foreign-task stop 거부 검증.",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/maintenance.py:30; scripts/run_realistic_demo.py:owned_tasks,maintenance_command; proof03 lock-fault",
+    "tests": "T1,T2,T7,T8,T9,T10"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R4",
+    "adrBasis": "세션 정리 회귀는 같은 예외 입력에서 결함 이미지에만 반환 누락이 생겨 이후 정상 저장을 방해해야 한다. 정상 이미지 복원과 결함 태스크 종료 뒤 연결 반환과 저장 성공을 확인한다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "같은 limit=-1 입력에 r3만 1/2/3 checkout 잔류와 후속 저장 timeout. r1 복원 뒤 반환·저장 성공, 소유 프로세스/연결 종료 확인. ECS 실제 task 종료 판정은 제외.",
+    "evidence": "packages/healthcare-sensor-app/demo/local_worker.py:149; demo/revisions/r3/session.py:23; src/test_service/adapters/primary/patients/patient_controller.py:24; proof03 exception phases",
+    "tests": "T1,T7,T9"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R5",
+    "adrBasis": "요청 시작·완료·실패·진행 중 상태와 실행하지 못한 부하를 구분하며 무한 대기열이나 몰아 보내기를 만들지 않는다. 기존 완료 기반 지표 의미는 보존한다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "offered/started/completed/failed/cancelled/skipped 분리, 진행 중 gauge 유지, 취소는 기존 완료 리딩 수에서 제외.",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:147; services/symptom_metrics.py:73,90",
+    "tests": "T1: test_bounded_workload.py; test_bounded_observability.py"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R6",
+    "adrBasis": "조회 시간은 밀리초로 관측하고 요청 완료와 독립적으로 메트릭을 방출한다. 정상·복원은 비위반이고 결함은 위반인 증상 알람 관계를 실제 비교로 확인한다.",
+    "hill": "H1",
+    "status": "UNVERIFIED",
+    "implementation": "Milliseconds·독립 heartbeat·Average/60초/2회 구성은 확인. 로컬 후보 33.27841707505286ms는 같은 표본에 맞춘 값이며 AWS 초기 500ms를 입증하지 않는다(U1).",
+    "evidence": "packages/healthcare-sensor-app/src/test_service/services/sensor.py:121; services/symptom_metrics.py:153; packages/infra/lib/stacks/healthcare-service-stack.ts:314; demo/local_runner.py:194",
+    "tests": "T1,T6,T7,T9; AWS 알람 비교 NOT RUN"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R7",
+    "adrBasis": "관측은 시각·단위·리소스·원본 로그·변경 차이를 보존한다. 정답성 플래그나 해석을 관측으로 대신하지 않으며 SQL 매개변수와 자격 증명은 기록하지 않는다.",
+    "hill": "H3",
+    "status": "VIOLATED",
+    "implementation": "모델 입력의 시간·단위·좌표·원본 참조·소스 차이 보존은 확인. HTTP traceback 값 노출로 서비스 전체 비노출 의무는 실패(F1).",
+    "evidence": "tests/harness/scenario-capture-boundary.mjs:phaseData,projectIncidentCaptures; packages/healthcare-sensor-app/src/test_service/middleware/logging.py:29",
+    "tests": "T2,T8/log_boundary,T10"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R8",
+    "adrBasis": "변경 전에 원래 실행 정의·이미지·관련 설정과 부재 값을 소유 실행 ID에 묶어 보존한다. 실패·중단에도 모든 복원 단계를 시도하고 서비스 회복으로 성공을 판정한다.",
+    "hill": "H2",
+    "status": "VIOLATED",
+    "implementation": "사전 snapshot/부재값/소유 ID·정상 오류 복원은 구현. UpdateService 성공 후 journal 쓰기 실패 시 오류 기록이 다시 실패하여 restore에 진입하지 않는다(F2).",
+    "evidence": "scripts/run_realistic_demo.py:apply except BaseException; restore_once 첫 restore_intent append",
+    "tests": "T2,T8/journal_boundary,T10: 원본 :1 대신 :2 잔류, 복원 시도 0"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R9",
+    "adrBasis": "레거시 기본 풀 5개·초과 10개, 연결 알람 12개, 직접 연결 주입 기본 20개는 유지한다. 기존 저장 실패 알람의 30초 집계·1분 주기 2회 평가·최소 2분 30초 관측 구간을 해당 경로에 유지한다.",
+    "hill": "H1",
+    "status": "UNVERIFIED",
+    "implementation": "5+10 풀, 연결 12, 직접주입 20, EMF 30초, 저장알람 60초×2는 확인. 해당 저장 실패 경로의 최소 150초 관측 보장은 찾거나 실행으로 입증하지 못함(U3). 주입 전 red-herring 대기 150초와 구별.",
+    "evidence": "settings.py:98; primary/schemas.py:40 (healthcare src/test_service); packages/infra/lib/stacks/healthcare-service-stack.ts:131,297,356; scripts/run_deployed_e2e.py:312,399",
+    "tests": "T1,T2,T6; 150초 관측 보장 NOT RUN"
+  },
+  {
+    "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+    "contractId": "R10",
+    "adrBasis": "합성·실제 PostgreSQL·배포 E2E 증거를 구분하고, 배포 E2E에 준비된 정답 관측을 주입하지 않는다. 새 입력과 양쪽 엔진 결과 검토 전에는 기준선을 갱신하지 않는다.\n",
+    "hill": "H3",
+    "status": "PROVEN",
+    "implementation": "네 active case는 model-eval만 선언. 합성 alarm envelope와 로컬 PG 자료를 구분. 기존 결과는 archive, 새 model fixture 없음, baseline 무변경·drift 차단.",
+    "evidence": "tests/scenarios/*.json:executionModes/provenance; tests/fixtures/results/README.md; tests/harness/evaluator.mjs:611; approve-cli.mjs:34",
+    "tests": "T2,T10; baseline 갱신 없음"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "D0",
+    "adrBasis": "Decision",
+    "hill": "H3",
+    "status": "UNVERIFIED",
+    "implementation": "네 평가 계층·공용 하네스/분석 호출·상태·안전 gate는 확인. 새 입력의 양 엔진 모델 결과와 승인 스냅샷 미존재, 현재 offline digest gate 실패. 실제 전달·단일 승자·산출물 E2E 미실행(U2).",
+    "evidence": "tests/harness/model-cli.mjs:296; evaluator.mjs:611; packages/agent/src/rca_agent/eval_adapter.py:475; packages/headless-codex/src/headless_codex/eval_adapter.py:576; scripts/run_deployed_e2e.py:329",
+    "tests": "T2,T3,T4,T5; 모델/AWS NOT RUN"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R1",
+    "adrBasis": "공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락,\n  예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로\n  비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.",
+    "hill": "H1",
+    "status": "PROVEN",
+    "implementation": "네 active 입력은 실제 PG proof03 정상/결함에서 투영. 복원 증거는 원본에 보존하고 입력에서는 제외. 동일 요청/소스 차이로 각 메커니즘을 구별.",
+    "evidence": "tests/harness/scenario-capture-boundary.mjs:projectIncidentCaptures; packages/healthcare-sensor-app/demo/local_worker.py:101; proof03 15 phases",
+    "tests": "T1,T7,T9,T10"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R2",
+    "adrBasis": "에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를\n  보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을\n  정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.",
+    "hill": "H3",
+    "status": "PROVEN",
+    "implementation": "obs-xx/capture-xxxx 중립 ID, UTC 구간/단위/run/schema, 본문·code excerpt만 입력. expectation/복원/정리 결과는 projection 밖. 현재 excerpt의 실제 파일 hash·모든 줄을 독립 대조함.",
+    "evidence": "tests/harness/scenario-capture-boundary.mjs:projectIncidentCaptures; tests/harness/realistic-scenarios.test.mjs:196; tests/fixtures/observations/realistic-local-20260910/source-snippets.json",
+    "tests": "T2,T10; source snippet 4개 hash/line 대조 PASS"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R3",
+    "adrBasis": "알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용\n  파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.",
+    "hill": "H3",
+    "status": "VIOLATED",
+    "implementation": "envelope/reason은 부재를 보존하지만 공용 parser/DTO/prompt가 리전 us-east-1을 생성한다. 양 엔진의 현재 네 입력에서 확인. Strands는 region만 제공해도 ARN이 없으면 다른 리전을 출력한다(F4).",
+    "evidence": "packages/agent/src/rca_agent/ports/dto/models.py:111; services/scoping.py:113; packages/headless-codex/src/headless_codex/ports/dto/models.py:12; services/prompt_builder.py:57",
+    "tests": "T3/T4 좁은 경계 테스트 PASS; T11 실제 model-bound prompt 계약 FAIL"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R4",
+    "adrBasis": "합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다.\n  실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된\n  관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.",
+    "hill": "H3",
+    "status": "PROVEN",
+    "implementation": "합성 envelope를 명시하고 AWS 실측 false. 모델 전용 observation 삽입; 배포 driver는 제공 관측을 삽입하지 않음. 선언 경계 확인이지 E2E 실행 성공이 아님.",
+    "evidence": "tests/scenarios/*.json:provenance; agent/eval_adapter.py:125; headless_codex/eval_adapter.py:298; scripts/run_deployed_e2e.py:399",
+    "tests": "T2,T3,T4,T10"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R5",
+    "adrBasis": "실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다.\n  복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로\n  확인하며 reset 응답만으로 통과하지 않는다.",
+    "hill": "H2",
+    "status": "UNVERIFIED",
+    "implementation": "미검증 case의 deployed-e2e 선언 없음은 충족. 복원 CLI와 local cleanup은 있지만 최신 AWS 배포·정비 task 종료·증상 회복은 미검증이고 journal 장애 반례도 존재(F2,U1).",
+    "evidence": "tests/scenarios/*.json:executionModes; scripts/run_realistic_demo.py:restore_once,status; tests/fixtures/results/README.md",
+    "tests": "T2,T7,T9,T10; AWS NOT RUN"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R6",
+    "adrBasis": "원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을\n  커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성\n  기준은 양쪽 엔진에 동일하게 적용한다.",
+    "hill": "H3",
+    "status": "PROVEN",
+    "implementation": "허용 5종 유지. pool/lock=unsupported, query=slow-query, exception=db-leak. 0.8 확정/0.3 기각/0.9 종료, 깊이3·검증3·재생성2 유지. 경쟁 원인별 분리된 증거와 안전성 기준은 공통 evaluator.",
+    "evidence": "tests/harness/evaluator.mjs:10,75,351; packages/agent/src/rca_agent/config/settings.py:24; packages/headless-codex/src/headless_codex/services/analysis_contract.py:10",
+    "tests": "T2,T3,T4,T5,T10; 정책 파일 git diff 없음"
+  },
+  {
+    "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "contractId": "R7",
+    "adrBasis": "교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한\n  두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나\n  모델 결과를 만들어 채워 승인하지 않는다.\n",
+    "hill": "H3",
+    "status": "PROVEN",
+    "implementation": "원래 4입력·8결과와 실패/초안 자료 archive 보존. 신규 결과 없음. 기준선 원본 유지, 둘 다 결과 있어야 승인. 현재 drift 실패는 이 정책의 정상 차단이며 새 모델 합격 증거가 아님.",
+    "evidence": "tests/fixtures/historical/original-four; tests/fixtures/results/README.md; tests/harness/evaluator.mjs:690; tests/harness/approve-cli.mjs:34",
+    "tests": "T2,T10; 원본 byte hash 테스트 PASS; 승인 미실행"
+  }
+]

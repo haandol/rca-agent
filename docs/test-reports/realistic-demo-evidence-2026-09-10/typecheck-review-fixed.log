@@ -1,0 +1,40 @@
+$ nx run-many -t typecheck
+
+ NX   Running target typecheck for 2 projects:
+
+- dashboard
+- infra
+
+
+
+> nx run infra:typecheck  [existing outputs match the cache, left as is]
+
+> tsc --build tsconfig.json --emitDeclarationOnly
+
+
+> nx run dashboard:typecheck
+
+(node:2428) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2429) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ nuxt typecheck[22m
+
+ ERROR  (node:2457) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use node --trace-warnings ... to show where the warning was created)
+
+
+
+
+ NX   Successfully ran target typecheck for 2 projects
+
+Nx read the output from the cache instead of running the command for 1 out of 2 tasks.
+
+  Run duration:      6.7s
+  Cache:             1/2 hit (50%)
+  Critical path:     6.6s (1 task)
+  Recoverable time:  <1ms
+
+  Recommendations:
+    - Speed up or split the longest tasks on the critical path:
+        dashboard:typecheck    6.6s

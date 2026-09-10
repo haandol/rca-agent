@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/dongkyl/git/rca-agent/packages/healthcare-sensor-app
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.14.2
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items
+
+tests/test_real_mechanisms.py .                                          [ 50%]
+tests/test_slow_query_integration.py .                                   [100%]
+
+============================== 2 passed in 15.54s ==============================

@@ -1,0 +1,55 @@
+{
+  "runId": "realistic-final-20260910T025818Z-a57123",
+  "verifiedAt": "2026-09-10T03:18:42.516672+00:00",
+  "checks": [
+    {
+      "service": "dynamodb",
+      "resource": {
+        "TableName": "RcaEval-realistic-final-20260910T025818Z-a57123-c45ced27b9"
+      },
+      "absent": true,
+      "responseCode": "ResourceNotFoundException"
+    },
+    {
+      "service": "dynamodb",
+      "resource": {
+        "TableName": "RcaEval-realistic-final-20260910T025818Z-a57123-caebe6df7e"
+      },
+      "absent": true,
+      "responseCode": "ResourceNotFoundException"
+    },
+    {
+      "service": "dynamodb",
+      "resource": {
+        "TableName": "RcaEval-realistic-final-20260910T025818Z-a57123-972f9b49af"
+      },
+      "absent": true,
+      "responseCode": "ResourceNotFoundException"
+    },
+    {
+      "service": "dynamodb",
+      "resource": {
+        "TableName": "RcaEval-realistic-final-20260910T025818Z-a57123-f5035cb45d"
+      },
+      "absent": true,
+      "responseCode": "ResourceNotFoundException"
+    },
+    {
+      "service": "s3",
+      "resource": {
+        "Bucket": "rca-eval-realistic-final-20260910t025818z-a57123"
+      },
+      "absent": true,
+      "responseCode": "404"
+    },
+    {
+      "service": "s3vectors",
+      "resource": {
+        "vectorBucketName": "rca-eval-realistic-final-20260910t025818z-a57123"
+      },
+      "absent": true,
+      "responseCode": "NotFoundException"
+    }
+  ],
+  "allAbsent": true
+}

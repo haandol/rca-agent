@@ -1,0 +1,58 @@
+{
+  "checkedAt": "2026-09-10T03:08:08.610338+00:00",
+  "draft": true,
+  "officialCommands": [
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-materialize.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016"
+      ],
+      "exitCode": 0,
+      "output": "materialized /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/implementation-review.md\n"
+    },
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-validate.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016"
+      ],
+      "exitCode": 0,
+      "output": "ADR implementation review artifacts are valid\n"
+    },
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-report.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/findings.json",
+        "--out",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/adr-impl-review-report.html"
+      ],
+      "exitCode": 0,
+      "output": "wrote /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/adr-impl-review-report.html\n"
+    }
+  ],
+  "officialRendererOutputSha256": "83509eb0f10bad3a6d8d0ef091716aa1454b5a32bd3a649a5c36a50cb27d155b",
+  "ownedHtmlAnchorNormalization": [
+    {
+      "original": "code-h1-C1-1",
+      "replacement": "code-h1-c1-1"
+    },
+    {
+      "original": "code-h1-C2-1",
+      "replacement": "code-h1-c2-1"
+    },
+    {
+      "original": "code-h2-C1-1",
+      "replacement": "code-h2-c1-1"
+    },
+    {
+      "original": "code-h3-C1-1",
+      "replacement": "code-h3-c1-1"
+    }
+  ],
+  "deliveredHtmlSha256": "e4f6ad06ccc4c7d0ef07b7bd53859d681a62fa254f5f20d51ff227d32a1d7cd2",
+  "browser": "NOT_OPENED",
+  "openHelperExecuted": false,
+  "reason": "Explicit user policy block: no local file://, HTTP, shell, or other-browser workaround."
+}

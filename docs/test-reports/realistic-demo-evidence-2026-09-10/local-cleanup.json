@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-09-10T03:12:45.965004+00:00",
+  "container": "rca-realism-ea868dcd",
+  "containerId": "524c451b07b2800aeb834ae47cbe8dcc32ca892f4a2e3f188c87cf3e64c414b9",
+  "ownerLabelVerified": true,
+  "remainingProofSchemasBeforeStop": 0,
+  "containerRemoved": true,
+  "anonymousVolumesRemoved": {
+    "2142bd26c0be8e4bd9be73a40ef5c8af3a74cfb1230f5a31560177875dc3593c": true
+  },
+  "otherContainersTouched": false
+}

@@ -1,0 +1,1793 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>같은 부하에서 결함과 복원을 관측하는 Healthcare 서비스 — ADR 구현 리뷰</title>
+<style>
+/* Embedded in the exported HTML. The reading page has one visual system. */
+:root {
+  color-scheme: light;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic",
+    sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --paper: #ffffff;
+  --card: #ffffff;
+  --ink: #20211f;
+  --ink-2: #646861;
+  --line: #d8dad2;
+  --focus: #20594c;
+  --wash: #eeefe8;
+  --accent-wash: #edf2ed;
+  --danger: #943e22;
+}
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.85 var(--sans);
+}
+body.has-bar {
+  padding-bottom: 100px;
+}
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 64px 42px 100px;
+}
+.wrap {
+  min-width: 0;
+}
+:target {
+  scroll-margin-top: 28px;
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+h1,
+h2,
+h3 {
+  line-height: 1.4;
+  letter-spacing: -0.035em;
+  text-wrap: pretty;
+}
+h1 {
+  max-width: 900px;
+  font-size: 38px;
+  font-weight: 720;
+  margin: 12px 0 24px;
+  overflow-wrap: anywhere;
+}
+h2 {
+  font-size: 25px;
+  margin: 48px 0 16px;
+}
+h3 {
+  font-size: 19px;
+  margin: 30px 0 12px;
+}
+p {
+  max-width: 900px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+a {
+  color: var(--focus);
+  text-underline-offset: 4px;
+}
+strong {
+  font-weight: 650;
+}
+ul,
+ol {
+  padding-left: 24px;
+}
+li {
+  margin: 7px 0;
+}
+code,
+pre {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+code {
+  overflow-wrap: anywhere;
+  background: var(--wash);
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow: auto;
+  background: var(--wash);
+  padding: 18px;
+  line-height: 1.65;
+  margin: 18px 0;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+blockquote {
+  margin: 20px 0;
+  border-left: 3px solid var(--line);
+  padding: 2px 0 2px 22px;
+  color: var(--ink-2);
+}
+
+/* Start with a readable title and outcome; file paths remain inspectable metadata. */
+.eyebrow {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.review-meta {
+  margin: 16px 0 26px;
+}
+.doc__meta {
+  color: var(--ink-2);
+  font-size: 13px;
+  padding: 10px 0;
+}
+.doc__meta > div {
+  margin: 7px 0;
+  overflow-wrap: anywhere;
+}
+.doc__path {
+  font: 13px/1.7 var(--mono);
+  margin: 8px 0;
+}
+.doc__status {
+  font-size: 13px;
+}
+.overview {
+  border-left: 3px solid var(--focus);
+  padding-left: 24px;
+  margin: 30px 0 34px;
+}
+.overview__title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--focus);
+}
+.overview__value {
+  margin: 9px 0;
+}
+.overview__value:first-of-type {
+  font-size: 20px;
+  line-height: 1.8;
+}
+.overview__risk {
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.toc {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+  margin: 32px 0 44px;
+}
+.toc__contents {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.toc ol {
+  columns: 2;
+  column-gap: 40px;
+  margin: 18px 0 4px;
+}
+.toc li {
+  break-inside: avoid;
+  font-size: 14px;
+}
+.toc li[data-level="1"] {
+  margin-left: 10px;
+}
+.toc li[data-level="2"] {
+  margin-left: 22px;
+  font-size: 13px;
+}
+.toc li[data-level="3"] {
+  margin-left: 34px;
+  font-size: 13px;
+}
+.toc a {
+  text-decoration-thickness: 1px;
+}
+
+/* Thin rules separate topics; prose is not placed in repeated cards. */
+.paper-section,
+#analysis,
+#validation,
+#findings,
+#conclusion {
+  margin-top: 44px;
+}
+.section-title,
+.explanation__title {
+  margin: 0 0 18px;
+}
+.paper-subsection[id^="hill-"] {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+  margin-top: 38px;
+}
+.paper-subsection[id^="hill-"] > h3 {
+  font-size: 22px;
+}
+.hill__authored-narrative {
+  margin: 18px 0 24px;
+}
+.narrative-lead {
+  font-weight: 600;
+}
+.context-narrative,
+.hill__narrative,
+.component__narrative {
+  max-width: 900px;
+}
+.paper-subsection:not([id]) {
+  margin: 30px 0;
+}
+.paper-subsection:not([id]) > h3 {
+  margin-top: 0;
+}
+#conclusion {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+}
+.contract-links {
+  font-size: 14px;
+}
+
+/* Evidence uses indented disclosures and quiet labels. */
+details {
+  border-left: 2px solid var(--line);
+  margin: 20px 0;
+  padding-left: 18px;
+}
+summary {
+  cursor: pointer;
+  color: var(--focus);
+  font-weight: 600;
+  line-height: 1.65;
+}
+details[open] > summary {
+  margin-bottom: 14px;
+}
+.technical-evidence,
+.review-meta {
+  font-size: 14px;
+}
+.section-disclosure {
+  margin: 32px 0;
+}
+.section-disclosure > summary {
+  font-size: 18px;
+}
+.section-disclosure__body,
+.hill__details-body {
+  padding: 4px 0 12px;
+}
+.hill__details {
+  margin-top: 26px;
+}
+.component,
+.choice,
+.finding {
+  border-top: 1px solid var(--line);
+  padding: 20px 0;
+  margin-top: 20px;
+}
+.component__head,
+.finding__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+.component__head h3 {
+  margin: 0;
+}
+.component-section-title {
+  margin: 24px 0 12px;
+  font-size: 18px;
+}
+.component__narrative p,
+.choice p,
+.finding p {
+  font-size: 15px;
+}
+.code-evidence {
+  margin: 16px 0;
+}
+.code-evidence > summary {
+  font: 13px/1.7 var(--mono);
+  overflow-wrap: anywhere;
+}
+.meta {
+  margin: 16px 0;
+  font-size: 13px;
+}
+.meta__row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.meta__k,
+.side__label {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.meta__v {
+  overflow-wrap: anywhere;
+}
+.meta__v--mono,
+.side__body--mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.tag {
+  font: 600 12px/1.5 var(--sans);
+  color: var(--sev, var(--ink-2));
+}
+/* prettier-ignore */
+.hill__tag { --sev: #426b4f; }
+/* prettier-ignore */
+.choice__tag { --sev: #217a68; }
+.component__tag {
+  --sev: var(--ink-2);
+}
+.conf,
+.finding__idx {
+  color: var(--ink-2);
+  font: 12px/1.5 var(--mono);
+}
+.finding__idx {
+  margin-left: auto;
+}
+.finding__idx-total {
+  opacity: 0.7;
+}
+.finding__head-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+}
+.finding__title {
+  margin-top: 14px;
+  font-size: 20px;
+}
+.task-group__title {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.task-impact {
+  font-size: 16px;
+}
+.task-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 18px 0;
+}
+.task-field {
+  margin: 14px 0;
+}
+.task-field .side__label {
+  display: block;
+  margin-bottom: 5px;
+}
+.task-field p {
+  margin: 0;
+}
+.task-next,
+.task-field--primary {
+  border-left: 3px solid var(--focus);
+  padding-left: 18px;
+}
+.confront {
+  display: grid;
+  grid-template-columns: 1fr 52px 1fr;
+  gap: 16px;
+  margin: 22px 0;
+}
+.confront--single {
+  grid-template-columns: 1fr;
+}
+.side {
+  background: var(--wash);
+  padding: 16px;
+}
+.side__body {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.rel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: var(--ink-2);
+}
+.rel__glyph {
+  font-size: 24px;
+}
+.rel__label {
+  font-size: 10px;
+  text-align: center;
+}
+
+.coverage {
+  --tone: var(--focus);
+  margin: 14px 0;
+}
+.coverage--violated {
+  --tone: var(--danger);
+}
+.coverage--unverified {
+  --tone: #86510e;
+}
+.coverage--contradicted {
+  --tone: #744483;
+}
+.coverage__summary {
+  color: var(--ink);
+  font-size: 14px;
+}
+.coverage__status {
+  color: var(--tone);
+  font-size: 12px;
+  font-weight: 650;
+  margin-right: 10px;
+}
+.coverage__requirement {
+  overflow-wrap: anywhere;
+}
+.coverage__body {
+  padding: 8px 0;
+}
+.coverage__implementation p {
+  font-size: 15px;
+}
+.coverage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  color: var(--ink-2);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.coverage-index {
+  list-style: none;
+  padding: 0;
+}
+.coverage-index li {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  font-size: 14px;
+}
+.coverage-index li > span,
+.coverage-index li > a {
+  margin-right: 14px;
+}
+.coverage-index p {
+  margin: 4px 0 12px;
+}
+
+/* Diagrams have room to breathe; long prose does not restrict their width. */
+.diagram {
+  margin: 26px 0;
+  padding: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.diagram__viewport {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.diagram svg {
+  display: block;
+  margin: 0 auto;
+  color: var(--ink);
+  font: 14px/1.4 var(--sans);
+}
+.diagram svg text {
+  fill: var(--ink);
+  stroke: none;
+}
+.diagram-node rect,
+.diagram-node path,
+.sequence__participant rect {
+  fill: var(--card);
+  stroke: var(--focus);
+  stroke-width: 1.5;
+}
+.diagram-boundary rect {
+  fill: var(--accent-wash);
+  stroke: var(--line);
+  stroke-dasharray: 6 4;
+}
+.sequence__frame {
+  fill: none;
+  stroke: var(--ink-2);
+}
+.sequence__note rect {
+  fill: var(--wash);
+  stroke: var(--line);
+}
+.sequence__lifeline {
+  opacity: 0.35;
+}
+.diagram-label {
+  paint-order: stroke;
+  stroke: var(--card) !important;
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+.sequence__condition,
+.sequence__block-title {
+  font-weight: 650;
+}
+.diagram-source {
+  margin: 18px 0 0;
+  font-size: 13px;
+}
+.diagram-source summary,
+.diagram--fallback figcaption {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* Optional checks remain quiet, keyboard-visible, and free of score decoration. */
+.quiz {
+  padding: 26px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+}
+.quiz__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.quiz__id {
+  font-family: var(--mono);
+}
+.quiz__revisit {
+  color: var(--focus);
+}
+.quiz__question {
+  font-size: 18px;
+  line-height: 1.7;
+  font-weight: 600;
+  margin-top: 14px;
+}
+.quiz__recall,
+.quiz__teach-back,
+.quiz__revisit-guidance,
+.quiz__limit {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.quiz__options {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.quiz__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--card);
+  font-size: 15px;
+  cursor: pointer;
+}
+.quiz__option:has(input:checked) {
+  border-color: var(--focus);
+  background: var(--accent-wash);
+}
+.quiz__option input {
+  margin-top: 6px;
+  accent-color: var(--focus);
+}
+.quiz__reveal,
+.quiz__check,
+button.export {
+  border: 1px solid var(--focus);
+  border-radius: 3px;
+  background: var(--focus);
+  color: var(--card);
+  padding: 11px 18px;
+  font: 600 14px/1.5 var(--sans);
+  cursor: pointer;
+}
+.quiz__reveal {
+  color: var(--focus);
+  background: transparent;
+}
+.quiz__required {
+  color: var(--danger);
+  font-size: 14px;
+}
+.quiz__feedback {
+  background: var(--accent-wash);
+  border-left: 3px solid var(--focus);
+  padding: 18px 22px;
+  margin-top: 22px;
+}
+.quiz__feedback strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.quiz__feedback .quiz__result {
+  font-size: 16px;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.quiz__feedback p {
+  font-size: 14px;
+  margin: 6px 0 14px;
+}
+#comprehension .overview {
+  border: 0;
+  padding: 0;
+  margin: 8px 0 24px;
+}
+#comprehension .overview__value {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.ruling {
+  margin-top: 22px;
+}
+.ruling__label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.seg__input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.seg__label {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.seg__input:checked + .seg__label {
+  border-color: var(--focus);
+  background: var(--accent-wash);
+  color: var(--focus);
+}
+.seg__input:focus-visible + .seg__label {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.ruling__note {
+  width: 100%;
+  min-height: 84px;
+  padding: 12px;
+  margin-top: 14px;
+  font: 14px/1.6 var(--sans);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  resize: vertical;
+}
+.bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.bar__inner {
+  max-width: 1080px;
+  margin: auto;
+  padding: 16px 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.hint {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 30px 20px 60px;
+  }
+  h1 {
+    font-size: 29px;
+  }
+  h2 {
+    font-size: 23px;
+  }
+  .paper-subsection[id^="hill-"] > h3 {
+    font-size: 20px;
+  }
+  .overview {
+    padding-left: 18px;
+  }
+  .overview__value:first-of-type {
+    font-size: 18px;
+  }
+  .toc ol {
+    columns: 1;
+  }
+  .meta__row,
+  .task-comparison,
+  .confront {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .rel {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .diagram {
+    padding: 12px;
+  }
+  .bar__inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 20px;
+  }
+  .quiz__option {
+    padding: 12px;
+  }
+  .quiz__feedback {
+    padding: 16px;
+  }
+}
+/* Handout view: print the reading path and blank questions, not screen controls. */
+.print-only {
+  display: none;
+}
+#comprehension {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+  margin-top: 44px;
+}
+.comprehension__screen-guidance {
+  color: var(--ink-2);
+  font-size: 15px;
+}
+@page {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font: 9pt sans-serif;
+    color: #646861;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --paper: #fff;
+    --card: #fff;
+    --ink: #20211f;
+    --ink-2: #545851;
+    --line: #c8cbc4;
+    --focus: #242a25;
+    --wash: #f3f4ef;
+    --accent-wash: #fff;
+  }
+  body {
+    font-size: 11pt;
+    line-height: 1.65;
+  }
+  body.has-bar {
+    padding-bottom: 0;
+  }
+  .page {
+    padding: 0;
+    max-width: none;
+  }
+  h1 {
+    font-size: 26pt;
+    margin-top: 8pt;
+  }
+  h2 {
+    font-size: 17pt;
+    margin-top: 24pt;
+  }
+  h3,
+  .paper-subsection[id^="hill-"] > h3 {
+    font-size: 14pt;
+  }
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  .overview {
+    margin: 16pt 0 22pt;
+  }
+  .overview__value:first-of-type {
+    font-size: 13pt;
+  }
+  .overview__risk {
+    font-size: 10pt;
+  }
+  .paper-section,
+  #analysis,
+  #validation,
+  #findings,
+  #conclusion {
+    margin-top: 24pt;
+  }
+  .paper-subsection[id^="hill-"] {
+    margin-top: 24pt;
+    padding-top: 16pt;
+  }
+  .toc,
+  .bar,
+  .review-meta,
+  .hill__details,
+  .technical-evidence,
+  .diagram-source,
+  #evidence,
+  .comprehension__screen-guidance,
+  .quiz__recall,
+  .quiz__teach-back,
+  .quiz__revisit-guidance,
+  .quiz__reveal,
+  .quiz__check,
+  .quiz__required,
+  .quiz__feedback,
+  .quiz__option input {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .print-evidence-note {
+    color: var(--ink-2);
+    font-size: 9pt;
+    border-top: 1px solid var(--line);
+    padding-top: 10pt;
+    margin-top: 24pt;
+  }
+  .diagram {
+    padding: 10pt;
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  .diagram__viewport {
+    overflow: visible;
+  }
+  .diagram svg {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto;
+    max-height: 205mm;
+  }
+  .quiz {
+    break-inside: avoid;
+    padding: 16pt 0;
+    margin-top: 18pt;
+  }
+  .quiz__question {
+    font-size: 12pt;
+  }
+  .quiz__options,
+  .quiz__options[hidden] {
+    display: grid !important;
+    gap: 7pt;
+    margin: 12pt 0;
+  }
+  .quiz__option,
+  .quiz__option:has(input:checked) {
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-size: 10.5pt;
+    padding: 9pt 11pt;
+  }
+}
+
+</style>
+</head>
+<body class="has-bar">
+<div class="page">
+
+<main class="wrap">
+  <header class="doc">
+    <div class="doc__id">
+      <p class="eyebrow">ADR 구현 리뷰</p>
+      <h1 class="doc__title">같은 부하에서 결함과 복원을 관측하는 Healthcare 서비스</h1>
+      <details class="review-meta">
+      <summary>리뷰 상세</summary>
+      <div class="doc__meta">
+        <p class="doc__path">docs/adr/infra/0004-rds-healthcare-deployment.md</p>
+        <div class="doc__status">Proposed</div>
+        <div>리뷰 모드 · <code>full</code></div>
+        <div>전체 구현 범위 · <code>packages/agent/src/rca_agent/eval_adapter.py</code> <code>packages/headless-codex/src/headless_codex/eval_adapter.py</code> <code>packages/healthcare-sensor-app/AGENTS.md</code> <code>packages/healthcare-sensor-app/Dockerfile</code> <code>packages/healthcare-sensor-app/demo/</code> <code>packages/healthcare-sensor-app/demo/local_runner.py</code> <code>packages/healthcare-sensor-app/demo/local_worker.py</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</code> <code>packages/healthcare-sensor-app/src/test_service/config/settings.py</code> <code>packages/healthcare-sensor-app/src/test_service/di/app_container.py</code> <code>packages/healthcare-sensor-app/src/test_service/main.py</code> <code>packages/healthcare-sensor-app/src/test_service/maintenance.py</code> <code>packages/healthcare-sensor-app/src/test_service/middleware/logging.py</code> <code>packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py</code> <code>packages/healthcare-sensor-app/src/test_service/revision/</code> <code>packages/healthcare-sensor-app/src/test_service/services/db_observability.py</code> <code>packages/healthcare-sensor-app/src/test_service/services/sensor.py</code> <code>packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py</code> <code>packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py</code> <code>packages/healthcare-sensor-app/tests/test_bounded_observability.py</code> <code>packages/healthcare-sensor-app/tests/test_bounded_workload.py</code> <code>packages/healthcare-sensor-app/tests/test_http_exception_logging.py</code> <code>packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py</code> <code>packages/healthcare-sensor-app/tests/test_observability_lifespan.py</code> <code>packages/healthcare-sensor-app/tests/test_real_mechanisms.py</code> <code>packages/healthcare-sensor-app/tests/test_workload_settings.py</code> <code>packages/infra/bin/infra.ts</code> <code>packages/infra/config/loader.ts</code> <code>packages/infra/lib/stacks/healthcare-service-stack.ts</code> <code>packages/infra/lib/stacks/rds-stack.ts</code> <code>packages/infra/test/healthcare-image-config.test.ts</code> <code>packages/infra/test/healthcare-service-stack.test.ts</code> <code>scripts/run_deployed_e2e.py</code> <code>scripts/run_realistic_demo.py</code> <code>tests/harness/approve-cli.mjs</code> <code>tests/harness/evaluator.mjs</code> <code>tests/harness/model-cli.mjs</code> <code>tests/scenarios</code></div>
+        <div>변경 범위 · <code>packages/healthcare-sensor-app/AGENTS.md</code> <code>packages/healthcare-sensor-app/Dockerfile</code> <code>packages/healthcare-sensor-app/demo/</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py</code> <code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</code> <code>packages/healthcare-sensor-app/src/test_service/config/settings.py</code> <code>packages/healthcare-sensor-app/src/test_service/di/app_container.py</code> <code>packages/healthcare-sensor-app/src/test_service/main.py</code> <code>packages/healthcare-sensor-app/src/test_service/maintenance.py</code> <code>packages/healthcare-sensor-app/src/test_service/middleware/logging.py</code> <code>packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py</code> <code>packages/healthcare-sensor-app/src/test_service/revision/</code> <code>packages/healthcare-sensor-app/src/test_service/services/db_observability.py</code> <code>packages/healthcare-sensor-app/src/test_service/services/sensor.py</code> <code>packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py</code> <code>packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py</code> <code>packages/healthcare-sensor-app/tests/test_bounded_observability.py</code> <code>packages/healthcare-sensor-app/tests/test_bounded_workload.py</code> <code>packages/healthcare-sensor-app/tests/test_http_exception_logging.py</code> <code>packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py</code> <code>packages/healthcare-sensor-app/tests/test_observability_lifespan.py</code> <code>packages/healthcare-sensor-app/tests/test_real_mechanisms.py</code> <code>packages/healthcare-sensor-app/tests/test_workload_settings.py</code> <code>packages/infra/bin/infra.ts</code> <code>packages/infra/config/loader.ts</code> <code>packages/infra/lib/stacks/healthcare-service-stack.ts</code> <code>packages/infra/test/healthcare-image-config.test.ts</code> <code>packages/infra/test/healthcare-service-stack.test.ts</code></div>
+        <div>프로젝트 규칙 · <code>AGENTS.md; docs/agent-protocol.md; 사용자 지정 writing-only 소유 범위</code></div>
+        
+        <div>리뷰 보고서 · <code>/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/implementation-review.md</code></div>
+        
+      </div>
+      </details>
+    </div>
+  </header>
+
+  <section class="overview" id="overview">
+           <h2 class="overview__title">초록</h2>
+           <p class="overview__value"><strong>INCONCLUSIVE.</strong> 독립 코드 재검토는 PASS이며 F1/F2/F3/F4와 관측시간 U3를 해소했다. 현재 로컬 proof·이미지의 출처가 일치한다.</p>
+           <p class="overview__value">최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다.</p>
+           <p class="overview__value overview__risk">실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다.</p>
+         </section>
+
+  <nav class="toc" aria-label="목차">
+  <details class="toc__contents">
+    <summary>목차</summary>
+    <ol>
+      <li data-level="0"><a href="#overview">초록</a></li><li data-level="0"><a href="#review-context">관련 ADR과 변경 맥락</a></li><li data-level="0"><a href="#analysis">핵심 구현 방법과 알고리즘</a></li><li data-level="1"><a href="#hill-h1">H1 · 같은 부하에서 실제 결함과 안전한 관측을 비교한다</a></li><li data-level="2"><a href="#component-h1-c1">C1 · 완료 지연과 독립적인 요청 시작</a></li><li data-level="3"><a href="#code-h1-c1-1">Code 1 · excerpt</a></li><li data-level="2"><a href="#component-h1-c2">C2 · 같은 입력과 세션 수명</a></li><li data-level="3"><a href="#code-h1-c2-1">Code 1 · diff</a></li><li data-level="2"><a href="#component-h1-c3">C3 · HTTP 오류의 안전한 기록</a></li><li data-level="3"><a href="#code-h1-c3-1">Code 1 · diff</a></li><li data-level="2"><a href="#component-h1-c4">C4 · 배포 이미지의 선택적 digest 고정</a></li><li data-level="3"><a href="#code-h1-c4-1">Code 1 · excerpt</a></li><li data-level="1"><a href="#hill-h2">H2 · 종료와 실패에서 자기 트랜잭션을 정리한다</a></li><li data-level="2"><a href="#component-h2-c1">C1 · 소유 트랜잭션 종료</a></li><li data-level="3"><a href="#code-h2-c1-1">Code 1 · excerpt</a></li><li data-level="0"><a href="#validation">자체 검증 방법과 결과</a></li><li data-level="0"><a href="#findings">결과 해석, 한계와 향후 보완</a></li><li data-level="0"><a href="#conclusion">결론</a></li><li data-level="0"><a href="#evidence">근거 부록</a></li>
+    </ol>
+  </details>
+</nav>
+
+  
+  <section class="paper-section" id="review-context">
+    <h2 class="explanation__title">관련 ADR과 변경 맥락</h2>
+    <div class="context-narrative" aria-label="관련 ADR과 변경 맥락">
+      <p class="narrative-lead">실제 데이터베이스를 사용하는 사설 데모 서비스를 두고, 코드·설정 차이가 사용자 증상으로 나타나는지 비교한다.</p>
+      <p>사설 서비스 또는 전용 로컬 PostgreSQL, 소유 실행 ID, 불변 소스와 같은 부하 조건을 전제로 한다.</p>
+      <p>사설 네트워크와 비밀 참조, 정상 이미지 기본값, 제한된 부하, SQL 값 비노출, 소유 연결 정리와 동일 부하 비교를 보존한다.</p>
+      <p>전체 ADR 본문과 원래 호출 경로를 검토했다. 독립 코드 재검토는 PASS이며 열린 코드 발견사항은 없다. 남은 미검증 행은 실제 AWS 실행과 모델 품질·승인의 증거 한계이므로 전체 판정은 INCONCLUSIVE다.</p>
+      <p class="adr-comparison"><strong>ADR 0007: 데모 시나리오 — 실제 결함·증상 관측·원상복원</strong>와 비교하면 정상·결함·복원을 같은 요청 조건으로 비교하고 소유 연결을 정리한다. 반면 infra/0004는 서비스 배포와 관측 기반을, infra/0007은 결함 적용과 알람·복원 판단을 정한다. 따라서 서비스의 제한된 부하와 로그 비노출은 여기서 읽고, 실제 알람 성공 여부는 별도 실행 증거로 구분한다.</p>
+        <details class="technical-evidence">
+          <summary>근거 부록 · ADR 0007: 데모 시나리오 — 실제 결함·증상 관측·원상복원</summary>
+          <p><code>docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md</code></p>
+          <p>비교한 두 ADR의 전체 Decision 및 Requirement contract</p>
+        </details>
+    </div>
+    
+    
+  </section>
+  
+  <section id="analysis">
+    <h2 class="section-title">핵심 구현 방법과 알고리즘</h2>
+    
+  <section class="paper-subsection" id="hill-h1">
+    <h3 class="explanation__title">같은 부하에서 실제 결함과 안전한 관측을 비교한다</h3>
+    <div class="explanation__body hill__authored-narrative"><p>처리가 지연되어도 같은 요청 계획을 유지하고 값 노출 없이 실제 증상을 관측하는가?</p>
+<p>화살표는 호출 순서 또는 자료 이동을 나타낸다. 실제 실행 증거의 범위는 도식 아래 문장과 함께 읽는다.</p>
+<figure class="diagram diagram--sequence" data-rendered="true"><div class="diagram__viewport"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mermaid-0c610cb00bb9-title" viewBox="0 0 770 898" style="width:770px;max-width:none">
+    <title id="mermaid-0c610cb00bb9-title">Sequence diagram</title>
+    <defs><marker id="mermaid-0c610cb00bb9-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+    <line class="sequence__lifeline" x1="110" x2="110" y1="64" y2="878" stroke="currentColor" stroke-dasharray="4 5"/><line class="sequence__lifeline" x1="310" x2="310" y1="64" y2="878" stroke="currentColor" stroke-dasharray="4 5"/><line class="sequence__lifeline" x1="510" x2="510" y1="64" y2="878" stroke="currentColor" stroke-dasharray="4 5"/><g class="sequence__message" data-from="Runner" data-to="Service">
+          <title>로컬 비교 실행 → 고정 리비전 서비스: 정상 구성과 요청 조건</title>
+          <text class="diagram-label" x="210" y="112" text-anchor="middle"><tspan x="210" dy="0">정상 구성과 요청 조건</tspan></text>
+          <path class="sequence__arrow" d="M 110 130 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="Service" data-to="DB">
+          <title>고정 리비전 서비스 → PostgreSQL: 업무 SQL</title>
+          <text class="diagram-label" x="410" y="184" text-anchor="middle"><tspan x="410" dy="0">업무 SQL</tspan></text>
+          <path class="sequence__arrow" d="M 310 202 H 510" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="DB" data-to="Service">
+          <title>PostgreSQL → 고정 리비전 서비스: 응답과 연결 반환</title>
+          <text class="diagram-label" x="410" y="256" text-anchor="middle"><tspan x="410" dy="0">응답과 연결 반환</tspan></text>
+          <path class="sequence__arrow sequence__arrow--dashed" d="M 510 274 H 310" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="Runner" data-to="Service">
+          <title>로컬 비교 실행 → 고정 리비전 서비스: 같은 요청과 결함 구성</title>
+          <text class="diagram-label" x="210" y="328" text-anchor="middle"><tspan x="210" dy="0">같은 요청과 결함 구성</tspan></text>
+          <path class="sequence__arrow" d="M 110 346 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="Service" data-to="DB">
+          <title>고정 리비전 서비스 → PostgreSQL: 변경된 SQL 또는 연결 수명</title>
+          <text class="diagram-label" x="410" y="400" text-anchor="middle"><tspan x="410" dy="0">변경된 SQL 또는 연결 수명</tspan></text>
+          <path class="sequence__arrow" d="M 310 418 H 510" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="DB" data-to="Service">
+          <title>PostgreSQL → 고정 리비전 서비스: 증폭 또는 대기와 실패</title>
+          <text class="diagram-label" x="410" y="472" text-anchor="middle"><tspan x="410" dy="0">증폭 또는 대기와 실패</tspan></text>
+          <path class="sequence__arrow sequence__arrow--dashed" d="M 510 490 H 310" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="Runner" data-to="Service">
+          <title>로컬 비교 실행 → 고정 리비전 서비스: 정상 리비전 복원과 같은 요청</title>
+          <text class="diagram-label" x="210" y="544" text-anchor="middle"><tspan x="210" dy="0">정상 리비전 복원과 같은 </tspan><tspan x="210" dy="18">요청</tspan></text>
+          <path class="sequence__arrow" d="M 110 580 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="Service" data-to="DB">
+          <title>고정 리비전 서비스 → PostgreSQL: 업무 SQL 재실행</title>
+          <text class="diagram-label" x="410" y="634" text-anchor="middle"><tspan x="410" dy="0">업무 SQL 재실행</tspan></text>
+          <path class="sequence__arrow" d="M 310 652 H 510" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="DB" data-to="Service">
+          <title>PostgreSQL → 고정 리비전 서비스: 응답과 연결 반환</title>
+          <text class="diagram-label" x="410" y="706" text-anchor="middle"><tspan x="410" dy="0">응답과 연결 반환</tspan></text>
+          <path class="sequence__arrow sequence__arrow--dashed" d="M 510 724 H 310" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__message" data-from="Runner" data-to="Runner">
+          <title>로컬 비교 실행 → 로컬 비교 실행: 원본 시각과 동일 입력 비교</title>
+          <text class="diagram-label" x="185" y="778" text-anchor="start"><tspan x="185" dy="0">원본 시각과 동일 입력 비</tspan><tspan x="185" dy="18">교</tspan></text>
+          <path class="sequence__arrow" d="M 110 814 h 65 v 30 h -65" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-0c610cb00bb9-arrow)"/></g><g class="sequence__participant" data-participant="Runner"><rect x="20" y="14" width="180" height="48" rx="6"/><text class="" x="110" y="40" text-anchor="middle"><tspan x="110" dy="0">로컬 비교 실행</tspan></text></g><g class="sequence__participant" data-participant="Service"><rect x="220" y="14" width="180" height="48" rx="6"/><text class="" x="310" y="40" text-anchor="middle"><tspan x="310" dy="0">고정 리비전 서비스</tspan></text></g><g class="sequence__participant" data-participant="DB"><rect x="420" y="14" width="180" height="48" rx="6"/><text class="" x="510" y="40" text-anchor="middle"><tspan x="510" dy="0">PostgreSQL</tspan></text></g></svg></div><details class="diagram-source"><summary>Mermaid 원문</summary><pre><code>%% requirement: V1
+sequenceDiagram
+  participant Runner as 로컬 비교 실행
+  participant Service as 고정 리비전 서비스
+  participant DB as PostgreSQL
+  Runner-&gt;&gt;Service: 정상 구성과 요청 조건
+  Service-&gt;&gt;DB: 업무 SQL
+  DB--&gt;&gt;Service: 응답과 연결 반환
+  Runner-&gt;&gt;Service: 같은 요청과 결함 구성
+  Service-&gt;&gt;DB: 변경된 SQL 또는 연결 수명
+  DB--&gt;&gt;Service: 증폭 또는 대기와 실패
+  Runner-&gt;&gt;Service: 정상 리비전 복원과 같은 요청
+  Service-&gt;&gt;DB: 업무 SQL 재실행
+  DB--&gt;&gt;Service: 응답과 연결 반환
+  Runner-&gt;&gt;Runner: 원본 시각과 동일 입력 비교</code></pre></details></figure>
+<p>Notice: 이 순서도는 로컬 비교를 설명하며 실제 AWS 알람 전이를 확인했다는 뜻이 아니다.</p></div>
+    <div class="hill__narrative" aria-label="같은 부하에서 실제 결함과 안전한 관측을 비교한다">
+      <p class="narrative-lead">같은 부하에서 실제 결함과 안전한 관측을 비교한다. 요청 완료와 분리한 부하 계획, 실제 결함 리비전과 안전한 HTTP 관측 경계가 같은 조건의 로컬 비교를 뒷받침한다.</p>
+<p>원본 검토의 120개 응답 비교에서는 정상·복원의 SQL 1회와 결함의 121회가 같은 응답 hash를 유지했다.</p>
+<p>수정 전 F1에서는 driver DETAIL의 canary가 로그에 남았다. 수정 후 같은 반례는 일반 500 응답과 canary 비노출로 바뀌었다.</p>
+<p>정상·결함·복원에 같은 요청 조건을 적용한다. 내장 부하가 서비스와 DB를 호출하고, 독립 관측 경로가 요청 상태와 SQL 시간을 남긴다.</p>
+<p>요청 시작량과 완료량을 구별하며 실제 SQL·연결 차이를 비교할 수 있다. 현재 컴파일된 로컬 proof와 이미지 3개는 verified=true이며 소스가 일치한다. verified=false는 UNBUILT 체크아웃 manifest에만 해당한다. 실제 AWS 배포 관측은 U1로 남는다.</p>
+    </div>
+    <details class="hill__details" open>
+      <summary>
+        <span>구현과 검증 근거</span>
+      </summary>
+      <div class="hill__details-body">
+        <h3 class="component-section-title">결과를 만드는 구현</h3>
+        <div class="components">
+    <article class="component" id="component-h1-c1">
+      <header class="component__head">
+        <span class="tag component__tag">Component C1</span>
+        <h3>완료 지연과 독립적인 요청 시작</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 처리 중인 요청 상한과 실행하지 못한 요청을 구별한다.</p>
+        <p><strong>동작 방식.</strong> 정해진 슬롯을 놓치면 skipped로 세고, active 상한이면 새 작업을 만들지 않는다. 다음 시각은 현재 시각과 간격으로 잡아 몰아 보내기를 피한다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> 원본 T1의 stalled_requests 및 event_loop_delay 경계 시험 PASS; 반복 실행 결과를 새 측정으로 세지 않는다.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h1-c1-1">
+      <summary>코드 근거 1 · excerpt · packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:121</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:121</span></div>
+        <pre><code>            missed = max(0, math.floor((now - next_due) / interval)) if interval else 0
+            slot += missed
+            if symptom_metrics is not None:
+                symptom_metrics.record_traffic(offered=missed + 1, skipped=missed)
+            if len(active) &gt;= max_concurrency:
+                if symptom_metrics is not None:
+                    symptom_metrics.record_traffic(skipped=1)
+            else:
+                # Slot-local seeds preserve inputs for matching slots despite skipped work.
+                rng = random.Random(f&quot;{seed}:{slot}&quot;) if seed is not None else None
+                task = asyncio.create_task(
+                    _run_request(
+                        sensor_service,
+                        _REQUEST_PLAN[slot % len(_REQUEST_PLAN)],
+                        rng=rng,
+                        patient_id=patient_id,
+                        query_limit=query_limit,
+                        symptom_metrics=symptom_metrics,
+                    ),
+                    name=&quot;healthcare-traffic-request&quot;,
+                )
+                active.add(task)</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">missed와 active 상한이 서로 다른 생략 사유를 계수한다. 이 발췌는 실제 함수의 연속 구간이다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원본 T1의 stalled_requests 및 event_loop_delay 경계 시험 PASS; 반복 실행 결과를 새 측정으로 세지 않는다.</span></div>
+      </div>
+    </details></div>
+    </article>
+
+    <article class="component" id="component-h1-c2">
+      <header class="component__head">
+        <span class="tag component__tag">Component C2</span>
+        <h3>같은 입력과 세션 수명</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 저장·조회가 같은 요청 조건과 세션 정리 경계를 사용한다.</p>
+        <p><strong>동작 방식.</strong> 데이터 접근부는 session_context로 요청 본문의 예외를 정리 경로에 전달한다. 빌드 리비전 r2는 실제 행별 SQL을, r3는 예외 경로 반환 누락을 선택한다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> 현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h1-c2-1">
+      <summary>코드 근거 1 · diff · packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py</span></div>
+        <pre><code>@@ -6,14 +6,17 @@ from test_service.adapters.secondary.sensor_repository.models import SensorReadi
+ from test_service.ports.dto.sensor import SensorReadingEntity
+ from test_service.ports.interfaces.database import DatabasePort
+ from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort
++from test_service.revision.query import fetch_patient_rows
+ 
+ 
+ class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
+     def __init__(self, database: DatabasePort) -&gt; None:
++        &quot;&quot;&quot;Use the database port's lifetime contract rather than owning a separate pool.&quot;&quot;&quot;
+         self._database = database
+ 
+     async def save_batch(self, readings: list[SensorReadingEntity]) -&gt; list[SensorReadingEntity]:
+-        async for session in self._database.session():
++        &quot;&quot;&quot;Persist a batch in one scope so flush errors reach the compiled cleanup path.&quot;&quot;&quot;
++        async with self._database.session_context() as session:
+             rows = []
+             for r in readings:
+                 row = SensorReadingRow(</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">generator 순회에서 context manager로 바꾼 실제 diff다. 세션의 종료 책임이 요청 본문 실패와 연결된다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.</span></div>
+      </div>
+    </details></div>
+    </article>
+
+    <article class="component" id="component-h1-c3">
+      <header class="component__head">
+        <span class="tag component__tag">Component C3</span>
+        <h3>HTTP 오류의 안전한 기록</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 요청 처리 중 드라이버 오류의 원문 값이 앱·서버 로그로 넘어가는 것을 막는다.</p>
+        <p><strong>동작 방식.</strong> 전체 응답 수명을 감싸는 ASGI 경계에서 오류 종류만 추출한다. 응답 전 오류는 일반 500 응답으로 처리하고, 응답 시작 뒤 오류는 원래 예외가 연결되지 않은 안전한 오류로 종료한다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> Curie Healthcare125 PASS 및 원래 canary 반례 PASS. 전체 응답 수명과 오류·취소·세션 반환·다음 정상 저장을 확인했다.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h1-c3-1">
+      <summary>코드 근거 1 · diff · packages/healthcare-sensor-app/src/test_service/middleware/logging.py</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/middleware/logging.py</span></div>
+        <pre><code>@@ -16,8 +41,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
+-            response = await call_next(request)
+-            elapsed_ms = int((time.perf_counter() - start) * 1000)
+-            extra = {
+-                &quot;method&quot;: request.method,
+-                &quot;path&quot;: request.url.path,
+-                &quot;status_code&quot;: response.status_code,
+-                &quot;elapsed_ms&quot;: elapsed_ms,
+-            }
++            await self.app(scope, receive, track_response)
++        except Exception as exc:
++            error_type = type(exc).__name__
++
++        # Outside the except block: logging/send failures must not chain driver data.
++        extra = {
++            &quot;method&quot;: scope[&quot;method&quot;],
++            &quot;path&quot;: getattr(scope.get(&quot;route&quot;), &quot;path&quot;, &quot;&lt;unmatched&gt;&quot;),
++            &quot;status_code&quot;: status_code if status_code is not None else 500,
++            &quot;elapsed_ms&quot;: int((time.perf_counter() - start) * 1000),
++        }
++        if error_type is None:
+@@ -25,6 +54,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
+-            return response
+-        except Exception:
+-            elapsed_ms = int((time.perf_counter() - start) * 1000)
+-            extra = {&quot;method&quot;: request.method, &quot;path&quot;: request.url.path, &quot;elapsed_ms&quot;: elapsed_ms}
+-            logger.exception(&quot;Request failed&quot;, extra=extra)
+-            raise
++            return
++        logger.error(&quot;Request failed&quot;, extra={**extra, &quot;error_type&quot;: error_type})
++        if status_code is None:
++            response = JSONResponse({&quot;detail&quot;: &quot;Internal server error&quot;}, status_code=500)
++            await response(scope, receive, send)
++            return
++
++        raise RuntimeError(&quot;HTTP response failed after headers were sent&quot;)</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">원래 logger.exception과 재전파를 바꾼 실제 diff다. driver DETAIL을 그대로 기록하지 않는 HTTP 경계를 보여준다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">Curie Healthcare125 PASS 및 원래 canary 반례 PASS. 전체 응답 수명과 오류·취소·세션 반환·다음 정상 저장을 확인했다.</span></div>
+      </div>
+    </details></div>
+    </article>
+
+    <article class="component" id="component-h1-c4">
+      <header class="component__head">
+        <span class="tag component__tag">Component C4</span>
+        <h3>배포 이미지의 선택적 digest 고정</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> imageDigest가 있으면 repository@sha256를 사용하고 없으면 기존 repository:tag를 유지한다. imageTag는 기존 리비전 라벨로 남는다.</p>
+        <p><strong>동작 방식.</strong> imageDigest가 있으면 repository@sha256를 사용하고 없으면 기존 repository:tag를 유지한다. imageTag는 기존 리비전 라벨로 남는다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> Curie의 loader→bin→stack focused 48 PASS/2 suites; main 전체 infra 82 PASS. 실제 AWS 배포는 미실행.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h1-c4-1">
+      <summary>코드 근거 1 · excerpt · packages/infra/lib/stacks/healthcare-service-stack.ts:75</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/infra/lib/stacks/healthcare-service-stack.ts:75</span></div>
+        <pre><code>    if (
+      props.imageDigest !== undefined &amp;&amp;
+      (props.imageDigest.length !== 71 ||
+        !/^sha256:[a-f0-9]{64}$/.test(props.imageDigest))
+    ) {
+      throw new Error(
+        'healthcare.imageDigest must be sha256:&lt;64 lowercase hex digits&gt;',
+      );
+    }
+    const imageSuffix =
+      props.imageDigest === undefined
+        ? `:${props.imageTag}`
+        : `@${props.imageDigest}`;</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">정상 배포에서도 CLI가 요구하는 불변 이미지 원본을 선택할 수 있게 하는 경계다. 소스 manifest 검증과 이미지 식별은 별도로 유지한다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">Curie의 loader→bin→stack focused 48 PASS/2 suites; main 전체 infra 82 PASS. 실제 AWS 배포는 미실행.</span></div>
+      </div>
+    </details></div>
+    </article></div>
+        <div class="hill__evidence">
+  <details class="coverage coverage--proven" id="contract-D0">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · D0</span>
+      <span class="coverage__requirement">관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 06</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>독립 RDS/Healthcare 스택, 사설 배치, DB 선행 의존성을 코드와 합성으로 확인. 실제 AWS 배포 성공을 뜻하지 않는다.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">Decision</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/infra/bin/infra.ts:48; packages/infra/lib/stacks/rds-stack.ts:29; packages/infra/lib/stacks/healthcare-service-stack.ts:37</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원 검토의 T1,T6</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R1">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R1</span>
+      <span class="coverage__requirement">데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.</span>
+      <span class="finding__idx">02<span class="finding__idx-total"> / 06</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>사설 서브넷·공인 IP 없음·VPC CIDR DB 접근, 생성 비밀의 username/password 참조. Docker는 소스·가상환경만 복사한다.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/infra/lib/stacks/rds-stack.ts:23; packages/infra/lib/stacks/healthcare-service-stack.ts:138; packages/healthcare-sensor-app/Dockerfile:22</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원 검토의 T1,T6</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R2">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R2</span>
+      <span class="coverage__requirement">서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.</span>
+      <span class="finding__idx">03<span class="finding__idx-total"> / 06</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>완료와 분리된 슬롯 계획, active 상한, missed/capacity skipped 계수, 취소 후 gather.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:85 (특히 121–144)</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원 검토의 T1: test_stalled_requests_do_not_stop_offers_or_exceed_concurrency; test_event_loop_delay_skips_missed_deadlines_without_catchup_tasks</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R3">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R3</span>
+      <span class="coverage__requirement">정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.</span>
+      <span class="finding__idx">04<span class="finding__idx-total"> / 06</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>r1 빌드 기본; r2 실제 121 SELECT, r3 예외 뒤 세션 잔류; 풀 설정·별도 락 작업; 레거시 플래그/API 별도 유지. verified=false는 UNBUILT 체크아웃 manifest에만 해당한다. 현재 컴파일된 로컬 proof와 이미지 3개는 verified=true이며 소스가 일치한다.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/Dockerfile:12; demo/build_revision.py:67; demo/revisions/r2/query.py:10; demo/revisions/r3/session.py:23; services/fault.py (후자의 상대 경로는 healthcare 패키지)</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원 검토의 T1,T7,T9,T10</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--proven" id="contract-R4">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R4</span>
+      <span class="coverage__requirement">요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.</span>
+      <span class="finding__idx">05<span class="finding__idx-total"> / 06</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>F1 해소. 요청·SQL·연결·풀 관측/독립 방출을 유지하며 HTTP driver 예외는 안전한500 또는 원래 context 없는 late-error로 처리. 실패 리딩 계수·세션 반환은 유지.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/middleware/logging.py:17; services/db_observability.py:83; services/symptom_metrics.py:153</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N1 Healthcare125 PASS; F1 재현 generic500/canary=false</span></div>
+      </div>
+    </details>
+    </div>
+  </details>
+
+  <details class="coverage coverage--unverified" id="contract-R6" open>
+    <summary class="coverage__summary">
+      <span class="coverage__status">검증 필요 · R6</span>
+      <span class="coverage__requirement">배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.</span>
+      <span class="finding__idx">06<span class="finding__idx-total"> / 06</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>구현·로컬 이미지/소스 식별·같은 부하의3구간 검사는 확인. 세 최신 imageID/기록된 source fingerprint가 현재 실측과 일치한다. 실제 AWS 배포 자원의 이미지와3구간 관측은 미검증(U1 runtime); 새 ADR 상태 선행조건으로 요구하지 않음. 선택적 HEALTHCARE_IMAGE_DIGEST/TOML imageDigest가 real loader→bin→stack의 repository@sha256로 연결되며 잘못된 pin은 거부한다. 현재인프라48시험으로 확인.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">revision/manifest.py:source_manifest (healthcare src/test_service); scripts/run_realistic_demo.py:immutable_baseline_image,baseline_source_manifests; review-fixed-images.json; packages/infra/config/loader.ts:143; packages/infra/bin/infra.ts:64; packages/infra/lib/stacks/healthcare-service-stack.ts:75–87,122</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">N1/N5 current-source proof; N5 docker image inspect3/3 및 fingerprint 대조; recheck-03 infra-pin:48 PASS/2 suites</span></div>
+      </div>
+    </details>
+    </div>
+  </details></div>
+      </div>
+    </details>
+  </section>
+
+  <section class="paper-subsection" id="hill-h2">
+    <h3 class="explanation__title">종료와 실패에서 자기 트랜잭션을 정리한다</h3>
+    <div class="explanation__body hill__authored-narrative"><p>종료 신호나 rollback 실패가 발생해도 자기 연결 정리를 마치는가?</p>
+<p>화살표는 호출 순서 또는 자료 이동을 나타낸다. 실제 실행 증거의 범위는 도식 아래 문장과 함께 읽는다.</p>
+<figure class="diagram diagram--sequence" data-rendered="true"><div class="diagram__viewport"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mermaid-9d102c5b1a82-title" viewBox="0 0 770 772" style="width:770px;max-width:none">
+    <title id="mermaid-9d102c5b1a82-title">Sequence diagram</title>
+    <defs><marker id="mermaid-9d102c5b1a82-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+    <line class="sequence__lifeline" x1="110" x2="110" y1="64" y2="752" stroke="currentColor" stroke-dasharray="4 5"/><line class="sequence__lifeline" x1="310" x2="310" y1="64" y2="752" stroke="currentColor" stroke-dasharray="4 5"/><line class="sequence__lifeline" x1="510" x2="510" y1="64" y2="752" stroke="currentColor" stroke-dasharray="4 5"/><g class="sequence__message" data-from="Owner" data-to="DB">
+          <title>소유 정비 작업 → PostgreSQL: 자기 트랜잭션 시작과 쓰기 충돌 락</title>
+          <text class="diagram-label" x="210" y="112" text-anchor="middle"><tspan x="210" dy="0">자기 트랜잭션 시작과 쓰기</tspan><tspan x="210" dy="18"> 충돌 락</tspan></text>
+          <path class="sequence__arrow" d="M 110 148 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g><g class="sequence__message" data-from="Stop" data-to="Owner">
+          <title>종료 또는 유지 시간 만료 → 소유 정비 작업: 종료 요청</title>
+          <text class="diagram-label" x="310" y="202" text-anchor="middle"><tspan x="310" dy="0">종료 요청</tspan></text>
+          <path class="sequence__arrow" d="M 510 220 H 110" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g><g class="sequence__message" data-from="Owner" data-to="DB">
+          <title>소유 정비 작업 → PostgreSQL: 자기 트랜잭션 rollback</title>
+          <text class="diagram-label" x="210" y="274" text-anchor="middle"><tspan x="210" dy="0">자기 트랜잭션 rollback</tspan></text>
+          <path class="sequence__arrow" d="M 110 292 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g><g class="sequence__block" data-block="alt">
+          <rect class="sequence__frame" x="15" y="324" width="740" height="410" rx="5"/>
+          <text class="sequence__block-title" x="25" y="343" text-anchor="start"><tspan x="25" dy="0">alt</tspan></text><text class="sequence__condition" x="29" y="370" text-anchor="start"><tspan x="29" dy="0">rollback 성공</tspan></text><g class="sequence__message" data-from="DB" data-to="Owner">
+          <title>PostgreSQL → 소유 정비 작업: 종료 확인</title>
+          <text class="diagram-label" x="210" y="410" text-anchor="middle"><tspan x="210" dy="0">종료 확인</tspan></text>
+          <path class="sequence__arrow sequence__arrow--dashed" d="M 310 428 H 110" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g><g class="sequence__message" data-from="Owner" data-to="DB">
+          <title>소유 정비 작업 → PostgreSQL: 자기 연결 닫기</title>
+          <text class="diagram-label" x="210" y="482" text-anchor="middle"><tspan x="210" dy="0">자기 연결 닫기</tspan></text>
+          <path class="sequence__arrow" d="M 110 500 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g><line x1="15" x2="755" y1="532" y2="532" stroke="currentColor" stroke-dasharray="4 4"/><text class="sequence__condition" x="29" y="550" text-anchor="start"><tspan x="29" dy="0">rollback 실패</tspan></text><g class="sequence__message" data-from="DB" data-to="Owner">
+          <title>PostgreSQL → 소유 정비 작업: 오류</title>
+          <text class="diagram-label" x="210" y="590" text-anchor="middle"><tspan x="210" dy="0">오류</tspan></text>
+          <path class="sequence__arrow sequence__arrow--dashed" d="M 310 608 H 110" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g><g class="sequence__message" data-from="Owner" data-to="DB">
+          <title>소유 정비 작업 → PostgreSQL: finally에서 자기 연결 닫기</title>
+          <text class="diagram-label" x="210" y="662" text-anchor="middle"><tspan x="210" dy="0">finally에서 자기 연결 닫</tspan><tspan x="210" dy="18">기</tspan></text>
+          <path class="sequence__arrow" d="M 110 698 H 310" fill="none" stroke="currentColor" stroke-width="1.8"  marker-end="url(#mermaid-9d102c5b1a82-arrow)"/></g></g><g class="sequence__participant" data-participant="Owner"><rect x="20" y="14" width="180" height="48" rx="6"/><text class="" x="110" y="40" text-anchor="middle"><tspan x="110" dy="0">소유 정비 작업</tspan></text></g><g class="sequence__participant" data-participant="DB"><rect x="220" y="14" width="180" height="48" rx="6"/><text class="" x="310" y="40" text-anchor="middle"><tspan x="310" dy="0">PostgreSQL</tspan></text></g><g class="sequence__participant" data-participant="Stop"><rect x="420" y="14" width="180" height="48" rx="6"/><text class="" x="510" y="40" text-anchor="middle"><tspan x="510" dy="0">종료 또는 유지 시간 만료</tspan></text></g></svg></div><details class="diagram-source"><summary>Mermaid 원문</summary><pre><code>%% requirement: V2
+sequenceDiagram
+  participant Owner as 소유 정비 작업
+  participant DB as PostgreSQL
+  participant Stop as 종료 또는 유지 시간 만료
+  Owner-&gt;&gt;DB: 자기 트랜잭션 시작과 쓰기 충돌 락
+  Stop-&gt;&gt;Owner: 종료 요청
+  Owner-&gt;&gt;DB: 자기 트랜잭션 rollback
+  alt rollback 성공
+    DB--&gt;&gt;Owner: 종료 확인
+    Owner-&gt;&gt;DB: 자기 연결 닫기
+  else rollback 실패
+    DB--&gt;&gt;Owner: 오류
+    Owner-&gt;&gt;DB: finally에서 자기 연결 닫기
+  end</code></pre></details></figure>
+<p>Notice: rollback 오류 뒤에도 연결 닫기 화살표가 이어지는지가 검토 지점이다.</p></div>
+    <div class="hill__narrative" aria-label="종료와 실패에서 자기 트랜잭션을 정리한다">
+      <p class="narrative-lead">종료와 실패에서 자기 트랜잭션을 정리한다. 정비 작업은 자신이 연 트랜잭션과 연결만 정리한다.</p>
+<p>원본 T8은 트랜잭션 시작·LOCK·rollback 오류 각각에서 close 호출을 확인했다.</p>
+<p>다른 실행의 연결을 닫는 방식은 이 계약을 충족하지 않는다. 소유권 거부 시험을 별도로 유지한다.</p>
+<p>유한한 락 유지와 종료 처리를 하나의 작업이 소유한다. 종료 요청은 cleanup 작업을 기다리고, rollback 성공 여부와 무관하게 연결을 닫는다.</p>
+<p>서비스 종료나 유지 한도 만료 뒤 자기 DB 자원을 남기지 않는 경로를 검사한다. 소유 연결 정리는 독립 오류 시험과 보존된 실제 PostgreSQL 증거로 확인했다. 코드 종료 판정은 PASS이며 AWS 실행 증거와 구분한다.</p>
+    </div>
+    <details class="hill__details">
+      <summary>
+        <span>구현과 검증 근거</span>
+      </summary>
+      <div class="hill__details-body">
+        <h3 class="component-section-title">결과를 만드는 구현</h3>
+        <div class="components">
+    <article class="component" id="component-h2-c1">
+      <header class="component__head">
+        <span class="tag component__tag">Component C1</span>
+        <h3>소유 트랜잭션 종료</h3>
+      </header>
+      <div class="component__narrative">
+        <p><strong>흐름에서 맡은 역할.</strong> 정비 작업 자신의 트랜잭션과 연결을 종료한다.</p>
+        <p><strong>동작 방식.</strong> rollback이 실패해도 finally에서 connection을 닫는다. cleanup task를 shield하고 취소 중에도 종료를 기다린다.</p>
+        <p class="verification-note"><strong>검증 방법과 결과.</strong> 원본 T8의 start/LOCK/rollback 오류 close 3종 PASS; T9는 실제 PostgreSQL 별도 제공 실행 2 PASS.</p>
+      </div>
+      <div class="component__code">
+    <details class="code-evidence" id="code-h2-c1-1">
+      <summary>코드 근거 1 · excerpt · packages/healthcare-sensor-app/src/test_service/maintenance.py:93</summary>
+      <div class="code-evidence__body">
+        <div class="meta__row"><span class="meta__k">위치</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/maintenance.py:93</span></div>
+        <pre><code>        async def release():
+            &quot;&quot;&quot;Rollback this task's transaction and close its backend even if rollback fails.&quot;&quot;&quot;
+            try:
+                if started:
+                    await transaction.rollback()
+            finally:
+                await conn.close(timeout=5)
+
+        cleanup = asyncio.create_task(release())
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await cleanup
+            raise</code></pre>
+        <div class="meta__row"><span class="meta__k">코드 근거 설명</span><span class="meta__v">소유 연결 정리가 rollback의 성공 여부와 독립적으로 실행되는 실제 코드다.</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원본 T8의 start/LOCK/rollback 오류 close 3종 PASS; T9는 실제 PostgreSQL 별도 제공 실행 2 PASS.</span></div>
+      </div>
+    </details></div>
+    </article></div>
+        <div class="hill__evidence">
+  <details class="coverage coverage--proven" id="contract-R5">
+    <summary class="coverage__summary">
+      <span class="coverage__status">충족됨 · R5</span>
+      <span class="coverage__requirement">서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 01</span></span>
+    </summary>
+    <div class="coverage__body">
+    <h3 class="finding__title">서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.</h3>
+    <div class="coverage__implementation">
+      <span class="side__label">검토 결과</span>
+      <p>서비스 작업 drain 뒤 소유 세션/관측 풀 정리; 정비는 자기 transaction만 rollback. 정상·취소·SIGTERM·기한 만료는 실측, start/LOCK/rollback 오류는 독립 probe에서 close 확인.</p>
+    </div>
+    <details class="technical-evidence">
+      <summary>상세 기술 근거</summary>
+      <div class="meta">
+        <div class="meta__row"><span class="meta__k">ADR</span><span class="meta__v">서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.</span></div>
+        <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">packages/healthcare-sensor-app/src/test_service/main.py:69; adapters/secondary/database_adapter.py:157; maintenance.py:91; demo/local_runner.py:44</span></div>
+        <div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">원 검토의 T1,T7,T8/maintenance_failure_probes,T9</span></div>
+      </div>
+    </details>
+    </div>
+  </details></div>
+      </div>
+    </details>
+  </section>
+  </section>
+
+  <section class="paper-section" id="validation">
+    <h2 class="section-title">자체 검증 방법과 결과</h2>
+    <p>독립 코드 재검토는 PASS다. 최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.</p>
+    <p>평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다. 출처: tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json</p>
+  </section>
+
+  <section id="findings">
+    <h2 class="section-title">결과 해석, 한계와 향후 보완</h2>
+    <div class="discussion-prose"><section class="paper-subsection">
+        <h3>계약 누락</h3>
+        <p>26개 원본 계약을 모두 기록했고 코드 위반 0개다. 21 PROVEN/5 UNVERIFIED는 세 보고서 합계다.</p>
+        <p>sufficiency-residual-final-recheck.md; sufficiency-closed-coverage.json</p>
+      </section><section class="paper-subsection">
+        <h3>테스트 공백</h3>
+        <p>독립 코드 재검토는 PASS다. 최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.</p>
+        <p>평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다. 출처: tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json</p>
+      </section><section class="paper-subsection">
+        <h3>과다 변경</h3>
+        <p>N1 독립 해소, N2 선택적·변경 없음. 열린 필수 코드 수정 없음.</p>
+        <p>necessity-review-final.md; sufficiency-residual-final-recheck.md</p>
+      </section></div>
+    <p>실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다. 로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다. 현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다. AWS normal→fault→restore 알람·복원 E2E — NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.</p>
+    <p>작성 전용 최종 모델·정리 문맥 갱신. 열린 코드 발견사항 없음. INCONCLUSIVE/Proposed와 closed coverage21PROVEN/5UNVERIFIED 유지. coverage의 실행 설명은 Curie 코드 종료 시점 스냅샷이며 이후 최종 모델 결과는 별도 문맥에서 갱신했다. 부모 index/model summary는 main 담당.</p>
+  </section>
+
+  <section id="conclusion">
+    <h2 class="section-title">결론</h2>
+    <p>INCONCLUSIVE. 최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다. 실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다.</p>
+  </section>
+
+  
+
+  <p class="print-only print-evidence-note">상세 코드와 검증 근거는 HTML 보고서의 근거 부록에서 확인할 수 있습니다.</p>
+
+  <details class="section-disclosure" id="evidence">
+          <summary>근거 부록</summary>
+          <div class="section-disclosure__body">
+          <div class="coverage-summary" aria-label="계약 검증 요약">
+            <span>충족됨 6</span>
+            <span>수정 필요 0</span>
+            <span>검증 필요 1</span>
+            <span>근거 충돌 0</span>
+          </div>
+          <h3>계약 검증 결과</h3><ul class="coverage-index"><li><a href="#contract-D0">D0</a><span>충족됨</span><a href="#hill-h1">H1</a><p>관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.</p></li><li><a href="#contract-R1">R1</a><span>충족됨</span><a href="#hill-h1">H1</a><p>데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.</p></li><li><a href="#contract-R2">R2</a><span>충족됨</span><a href="#hill-h1">H1</a><p>서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.</p></li><li><a href="#contract-R3">R3</a><span>충족됨</span><a href="#hill-h1">H1</a><p>정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.</p></li><li><a href="#contract-R4">R4</a><span>충족됨</span><a href="#hill-h1">H1</a><p>요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.</p></li><li><a href="#contract-R5">R5</a><span>충족됨</span><a href="#hill-h2">H2</a><p>서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.</p></li><li><a href="#contract-R6">R6</a><span>검증 필요</span><a href="#hill-h1">H1</a><p>배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.</p></li></ul>
+          <details class="section-disclosure">
+                  <summary>주요 구현 선택 · 4</summary>
+                  <div class="section-disclosure__body">
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">01<span class="finding__idx-total"> / 04</span></span>
+    </header>
+    <h3 class="finding__title">개별 요청 간격5초, 동시1, query20, 고정 seed/patient 선택</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>유한 요청 시작 계획(R2/R5)을 유지하는 조정값</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">healthcare settings.py:25; traffic_generator.py:121</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">데모 성공 부하를 보장하는 수치가 아니다. 늦은 슬롯은 버리고 다음 due=now+interval로 잡는다.</span></div>
+    </div>
+  </article>
+
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">02<span class="finding__idx-total"> / 04</span></span>
+    </header>
+    <h3 class="finding__title">observer 별도 pool1/overflow0, pool timeout2초, statement timeout2000ms; activity100/locks200</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>앱 풀 고갈 중에도 유한 읽기 관측(R4)</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">database_adapter.py:178</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">관측 연결 자체가 연결 수에 포함되므로 앱 pool과 DB 전체를 분리한다.</span></div>
+    </div>
+  </article>
+
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">03<span class="finding__idx-total"> / 04</span></span>
+    </header>
+    <h3 class="finding__title">EMF sample 배열100, 기본 flush30초, gauge 유지</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>독립 방출과 유한 메모리</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">symptom_metrics.py:27,118,168</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">sample capacity 방출은 정상이며 취소를 기존 완료 계수에 더하지 않는다. 30초는 legacy 계약 수치다.</span></div>
+    </div>
+  </article>
+
+  <article class="choice">
+    <header class="finding__head">
+      <span class="tag choice__tag">구현 선택</span>
+      <span class="finding__idx">04<span class="finding__idx-total"> / 04</span></span>
+    </header>
+    <h3 class="finding__title">r1 정상, r2 N+1, r3 획득 후 body-error cleanup 누락을 빌드 overlay로 고정</h3>
+    <div class="choice__value">
+      <span class="side__label">ADR 의도와 양립하는 이유</span>
+      <p>명시적인 불변 소스 선택(R3), 같은 응답(R2)</p>
+    </div>
+    <div class="meta">
+      <div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v meta__v--mono">Dockerfile:12; demo/build_revision.py:67</span></div>
+      <div class="meta__row"><span class="meta__k">영향</span><span class="meta__v">런타임 환경 이름으로 구현을 바꾸지 않는다. r3의 고의 결함 자체는 정상 코드 버그로 신고하지 않았다.</span></div>
+    </div>
+  </article></div>
+                </details>
+          <h3>발견 사항과 논의</h3>
+
+<section class="task-group task-group--verify">
+        <h3 class="task-group__title">검증 필요 · 1</h3>
+        
+  <article class="finding" id="finding-f1" data-needs-decision="true" style="--sev:#7a5b14">
+    <header class="finding__head">
+      <span class="tag">검증 필요</span>
+      <span class="finding__head-right"><span class="conf conf--high" title="evidence strength">high</span><span class="finding__idx">01<span class="finding__idx-total"> / 01</span></span></span>
+    </header>
+    <h3 class="finding__title">실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다.</h3>
+    <div class="task-impact">
+      <span class="side__label">왜 중요한가</span>
+      <p>로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다.</p>
+    </div>
+    <div class="task-comparison">
+      <div class="task-field">
+        <span class="side__label">기대 동작</span>
+        <p>실제 AWS 결과를 주장할 때 해당 실행의 이미지·부하·알람·복원 관측이 연결되어야 한다.</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">현재 동작</span>
+        <p>Healthcare AWS 배포 E2E는 수행하지 않았다. 별도 평가용 AWS 자원과 로컬 PostgreSQL 자원은 정리 후 부재 확인을 마쳤다.</p>
+      </div>
+    </div>
+    <div class="task-next">
+      <div class="task-field task-field--primary">
+        <span class="side__label">요청하는 변경</span>
+        <p>현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다.</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">수정 위치</span>
+        <p class="meta__v--mono">packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore</p>
+      </div>
+      <div class="task-field">
+        <span class="side__label">완료 조건</span>
+        <p>AWS normal→fault→restore 알람·복원 E2E — NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.</p>
+      </div>
+    </div>
+    <details class="technical-evidence">
+        <summary>상세 기술 근거</summary>
+        <div class="confront"><div class="side side--adr">
+           <span class="side__label">ADR 결정</span>
+           <p class="side__body side__body--quote">원본 계약의 실제 배포·증상·회복 관측 의무</p>
+         </div><div class="rel" title="decide which side is right">
+             <span class="rel__glyph">⇄</span>
+             <span class="rel__label">Needs a ruling</span>
+           </div><div class="side side--code">
+           <span class="side__label">현재 코드</span>
+           <p class="side__body side__body--mono">packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore</p>
+         </div></div>
+        <div class="meta"><div class="meta__row"><span class="meta__k">분류</span><span class="meta__v">Unverified risk</span></div><div class="meta__row"><span class="meta__k">근거 수준</span><span class="meta__v">high</span></div><div class="meta__row"><span class="meta__k">관점</span><span class="meta__v">sufficiency</span></div><div class="meta__row"><span class="meta__k">근거 부록</span><span class="meta__v">compiled proof SHA83aac573…와 review-fixed-images.json은 로컬 자료; AWS not-run — main-verification.json; 정리 결과: tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json</span></div><div class="meta__row"><span class="meta__k">테스트</span><span class="meta__v meta__v--mono">AWS normal→fault→restore 알람·복원 E2E</span></div><div class="meta__row"><span class="meta__k">결과</span><span class="meta__v">NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.</span></div></div>
+      </details>
+    <div class="contract-links"><a href="#contract-R6">R6</a></div>
+    <footer class="ruling">
+      <span class="ruling__label">사용자 결정</span>
+      <div class="seg" role="radiogroup" aria-label="실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다. ruling">
+        <input type="radio" class="seg__input" id="r-0-fix" name="dec-0" value="fix"><label class="seg__label" for="r-0-fix">반영</label>
+        <input type="radio" class="seg__input" id="r-0-skip" name="dec-0" value="skip"><label class="seg__label" for="r-0-skip">제외</label>
+        <input type="radio" class="seg__input" id="r-0-defer" name="dec-0" value="defer" checked><label class="seg__label" for="r-0-defer">보류</label>
+      </div>
+      <textarea class="ruling__note" data-finding-index="0" rows="2" placeholder="선택 근거나 원하는 방향을 적어주세요 (선택)"></textarea>
+    </footer>
+  </article>
+      </section>
+
+          </div>
+        </details>
+
+
+</main>
+</div>
+
+<div class="bar">
+  <div class="bar__inner">
+    <span class="hint">사용자 결정이 필요한 finding만 판단한 뒤 내보내세요.</span>
+    <button class="export" id="export">결정 내보내기</button>
+  </div>
+</div>
+
+<script>
+  const EMBED = {"adr":"docs/adr/infra/0004-rds-healthcare-deployment.md","reviewMode":"full","verdict":"INCONCLUSIVE","atAGlance":{"impact":"독립 코드 재검토는 PASS이며 F1/F2/F3/F4와 관측시간 U3를 해소했다. 현재 로컬 proof·이미지의 출처가 일치한다.","action":"최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다.","risk":"실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다."},"scope":["packages/agent/src/rca_agent/eval_adapter.py","packages/headless-codex/src/headless_codex/eval_adapter.py","packages/healthcare-sensor-app/AGENTS.md","packages/healthcare-sensor-app/Dockerfile","packages/healthcare-sensor-app/demo/","packages/healthcare-sensor-app/demo/local_runner.py","packages/healthcare-sensor-app/demo/local_worker.py","packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py","packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py","packages/healthcare-sensor-app/src/test_service/config/settings.py","packages/healthcare-sensor-app/src/test_service/di/app_container.py","packages/healthcare-sensor-app/src/test_service/main.py","packages/healthcare-sensor-app/src/test_service/maintenance.py","packages/healthcare-sensor-app/src/test_service/middleware/logging.py","packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py","packages/healthcare-sensor-app/src/test_service/revision/","packages/healthcare-sensor-app/src/test_service/services/db_observability.py","packages/healthcare-sensor-app/src/test_service/services/sensor.py","packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py","packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py","packages/healthcare-sensor-app/tests/test_bounded_observability.py","packages/healthcare-sensor-app/tests/test_bounded_workload.py","packages/healthcare-sensor-app/tests/test_http_exception_logging.py","packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py","packages/healthcare-sensor-app/tests/test_observability_lifespan.py","packages/healthcare-sensor-app/tests/test_real_mechanisms.py","packages/healthcare-sensor-app/tests/test_workload_settings.py","packages/infra/bin/infra.ts","packages/infra/config/loader.ts","packages/infra/lib/stacks/healthcare-service-stack.ts","packages/infra/lib/stacks/rds-stack.ts","packages/infra/test/healthcare-image-config.test.ts","packages/infra/test/healthcare-service-stack.test.ts","scripts/run_deployed_e2e.py","scripts/run_realistic_demo.py","tests/harness/approve-cli.mjs","tests/harness/evaluator.mjs","tests/harness/model-cli.mjs","tests/scenarios"],"changeScope":["packages/healthcare-sensor-app/AGENTS.md","packages/healthcare-sensor-app/Dockerfile","packages/healthcare-sensor-app/demo/","packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py","packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py","packages/healthcare-sensor-app/src/test_service/config/settings.py","packages/healthcare-sensor-app/src/test_service/di/app_container.py","packages/healthcare-sensor-app/src/test_service/main.py","packages/healthcare-sensor-app/src/test_service/maintenance.py","packages/healthcare-sensor-app/src/test_service/middleware/logging.py","packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py","packages/healthcare-sensor-app/src/test_service/revision/","packages/healthcare-sensor-app/src/test_service/services/db_observability.py","packages/healthcare-sensor-app/src/test_service/services/sensor.py","packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py","packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py","packages/healthcare-sensor-app/tests/test_bounded_observability.py","packages/healthcare-sensor-app/tests/test_bounded_workload.py","packages/healthcare-sensor-app/tests/test_http_exception_logging.py","packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py","packages/healthcare-sensor-app/tests/test_observability_lifespan.py","packages/healthcare-sensor-app/tests/test_real_mechanisms.py","packages/healthcare-sensor-app/tests/test_workload_settings.py","packages/infra/bin/infra.ts","packages/infra/config/loader.ts","packages/infra/lib/stacks/healthcare-service-stack.ts","packages/infra/test/healthcare-image-config.test.ts","packages/infra/test/healthcare-service-stack.test.ts"],"findings":[{"sourceIndex":0,"id":"f1","category":"Unverified risk","unknownCat":false,"summary":"실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다.","whyItMatters":"로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다.","expectedBehavior":"실제 AWS 결과를 주장할 때 해당 실행의 이미지·부하·알람·복원 관측이 연결되어야 한다.","observedBehavior":"Healthcare AWS 배포 E2E는 수행하지 않았다. 별도 평가용 AWS 자원과 로컬 PostgreSQL 자원은 정리 후 부재 확인을 마쳤다.","requestedChange":"현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다.","editTargets":"packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore","completionCriteria":"AWS normal→fault→restore 알람·복원 E2E — NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.","adrQuote":"원본 계약의 실제 배포·증상·회복 관측 의무","code":"packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore","fix":"","route":"","basis":"","weight":"","impact":"","confidence":"high","perspective":"sufficiency","evidence":"compiled proof SHA83aac573…와 review-fixed-images.json은 로컬 자료; AWS not-run — main-verification.json; 정리 결과: tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json","test":"AWS normal→fault→restore 알람·복원 E2E","testResult":"NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.","contractIds":["R6"],"actionGroup":"verify"}],"reviewHike":{"context":{"intent":"실제 데이터베이스를 사용하는 사설 데모 서비스를 두고, 코드·설정 차이가 사용자 증상으로 나타나는지 비교한다.","preconditions":"사설 서비스 또는 전용 로컬 PostgreSQL, 소유 실행 ID, 불변 소스와 같은 부하 조건을 전제로 한다.","contracts":"사설 네트워크와 비밀 참조, 정상 이미지 기본값, 제한된 부하, SQL 값 비노출, 소유 연결 정리와 동일 부하 비교를 보존한다.","scopeAndRisk":"전체 ADR 본문과 원래 호출 경로를 검토했다. 독립 코드 재검토는 PASS이며 열린 코드 발견사항은 없다. 남은 미검증 행은 실제 AWS 실행과 모델 품질·승인의 증거 한계이므로 전체 판정은 INCONCLUSIVE다."},"hills":[{"id":"H1","title":"같은 부하에서 실제 결함과 안전한 관측을 비교한다","sliceType":"logical-capability","sliceName":"같은 부하에서 실제 결함과 안전한 관측을 비교한다","reviewQuestion":"처리가 지연되어도 같은 요청 계획을 유지하고 값 노출 없이 실제 증상을 관측하는가?","diagramIds":["V1"],"claim":"요청 완료와 분리한 부하 계획, 실제 결함 리비전과 안전한 HTTP 관측 경계가 같은 조건의 로컬 비교를 뒷받침한다.","workedExample":"원본 검토의 120개 응답 비교에서는 정상·복원의 SQL 1회와 결함의 121회가 같은 응답 hash를 유지했다.","counterexample":"수정 전 F1에서는 driver DETAIL의 canary가 로그에 남았다. 수정 후 같은 반례는 일반 500 응답과 canary 비노출로 바뀌었다.","assessment":"현재 컴파일된 로컬 proof와 이미지 3개는 verified=true이며 소스가 일치한다. verified=false는 UNBUILT 체크아웃 manifest에만 해당한다. 실제 AWS 배포 관측은 U1로 남는다.","container":{"responsibility":"정상·결함·복원에 같은 요청 조건을 적용한다.","interactions":"내장 부하가 서비스와 DB를 호출하고, 독립 관측 경로가 요청 상태와 SQL 시간을 남긴다.","outcome":"요청 시작량과 완료량을 구별하며 실제 SQL·연결 차이를 비교할 수 있다."},"components":[{"id":"C1","name":"완료 지연과 독립적인 요청 시작","responsibility":"처리 중인 요청 상한과 실행하지 못한 요청을 구별한다.","implementation":"정해진 슬롯을 놓치면 skipped로 세고, active 상한이면 새 작업을 만들지 않는다. 다음 시각은 현재 시각과 간격으로 잡아 몰아 보내기를 피한다.","verification":"원본 T1의 stalled_requests 및 event_loop_delay 경계 시험 PASS; 반복 실행 결과를 새 측정으로 세지 않는다.","codeEvidence":[{"kind":"excerpt","location":"packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:121","content":"            missed = max(0, math.floor((now - next_due) / interval)) if interval else 0\n            slot += missed\n            if symptom_metrics is not None:\n                symptom_metrics.record_traffic(offered=missed + 1, skipped=missed)\n            if len(active) \u003e= max_concurrency:\n                if symptom_metrics is not None:\n                    symptom_metrics.record_traffic(skipped=1)\n            else:\n                # Slot-local seeds preserve inputs for matching slots despite skipped work.\n                rng = random.Random(f\"{seed}:{slot}\") if seed is not None else None\n                task = asyncio.create_task(\n                    _run_request(\n                        sensor_service,\n                        _REQUEST_PLAN[slot % len(_REQUEST_PLAN)],\n                        rng=rng,\n                        patient_id=patient_id,\n                        query_limit=query_limit,\n                        symptom_metrics=symptom_metrics,\n                    ),\n                    name=\"healthcare-traffic-request\",\n                )\n                active.add(task)","explanation":"missed와 active 상한이 서로 다른 생략 사유를 계수한다. 이 발췌는 실제 함수의 연속 구간이다.","tests":"원본 T1의 stalled_requests 및 event_loop_delay 경계 시험 PASS; 반복 실행 결과를 새 측정으로 세지 않는다."}]},{"id":"C2","name":"같은 입력과 세션 수명","responsibility":"저장·조회가 같은 요청 조건과 세션 정리 경계를 사용한다.","implementation":"데이터 접근부는 session_context로 요청 본문의 예외를 정리 경로에 전달한다. 빌드 리비전 r2는 실제 행별 SQL을, r3는 예외 경로 반환 누락을 선택한다.","verification":"현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.","codeEvidence":[{"kind":"diff","location":"packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py","content":"@@ -6,14 +6,17 @@ from test_service.adapters.secondary.sensor_repository.models import SensorReadi\n from test_service.ports.dto.sensor import SensorReadingEntity\n from test_service.ports.interfaces.database import DatabasePort\n from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort\n+from test_service.revision.query import fetch_patient_rows\n \n \n class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):\n     def __init__(self, database: DatabasePort) -\u003e None:\n+        \"\"\"Use the database port's lifetime contract rather than owning a separate pool.\"\"\"\n         self._database = database\n \n     async def save_batch(self, readings: list[SensorReadingEntity]) -\u003e list[SensorReadingEntity]:\n-        async for session in self._database.session():\n+        \"\"\"Persist a batch in one scope so flush errors reach the compiled cleanup path.\"\"\"\n+        async with self._database.session_context() as session:\n             rows = []\n             for r in readings:\n                 row = SensorReadingRow(","explanation":"generator 순회에서 context manager로 바꾼 실제 diff다. 세션의 종료 책임이 요청 본문 실패와 연결된다.","tests":"현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다."}]},{"id":"C3","name":"HTTP 오류의 안전한 기록","responsibility":"요청 처리 중 드라이버 오류의 원문 값이 앱·서버 로그로 넘어가는 것을 막는다.","implementation":"전체 응답 수명을 감싸는 ASGI 경계에서 오류 종류만 추출한다. 응답 전 오류는 일반 500 응답으로 처리하고, 응답 시작 뒤 오류는 원래 예외가 연결되지 않은 안전한 오류로 종료한다.","verification":"Curie Healthcare125 PASS 및 원래 canary 반례 PASS. 전체 응답 수명과 오류·취소·세션 반환·다음 정상 저장을 확인했다.","codeEvidence":[{"kind":"diff","location":"packages/healthcare-sensor-app/src/test_service/middleware/logging.py","content":"@@ -16,8 +41,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):\n-            response = await call_next(request)\n-            elapsed_ms = int((time.perf_counter() - start) * 1000)\n-            extra = {\n-                \"method\": request.method,\n-                \"path\": request.url.path,\n-                \"status_code\": response.status_code,\n-                \"elapsed_ms\": elapsed_ms,\n-            }\n+            await self.app(scope, receive, track_response)\n+        except Exception as exc:\n+            error_type = type(exc).__name__\n+\n+        # Outside the except block: logging/send failures must not chain driver data.\n+        extra = {\n+            \"method\": scope[\"method\"],\n+            \"path\": getattr(scope.get(\"route\"), \"path\", \"\u003cunmatched\u003e\"),\n+            \"status_code\": status_code if status_code is not None else 500,\n+            \"elapsed_ms\": int((time.perf_counter() - start) * 1000),\n+        }\n+        if error_type is None:\n@@ -25,6 +54,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):\n-            return response\n-        except Exception:\n-            elapsed_ms = int((time.perf_counter() - start) * 1000)\n-            extra = {\"method\": request.method, \"path\": request.url.path, \"elapsed_ms\": elapsed_ms}\n-            logger.exception(\"Request failed\", extra=extra)\n-            raise\n+            return\n+        logger.error(\"Request failed\", extra={**extra, \"error_type\": error_type})\n+        if status_code is None:\n+            response = JSONResponse({\"detail\": \"Internal server error\"}, status_code=500)\n+            await response(scope, receive, send)\n+            return\n+\n+        raise RuntimeError(\"HTTP response failed after headers were sent\")","explanation":"원래 logger.exception과 재전파를 바꾼 실제 diff다. driver DETAIL을 그대로 기록하지 않는 HTTP 경계를 보여준다.","tests":"Curie Healthcare125 PASS 및 원래 canary 반례 PASS. 전체 응답 수명과 오류·취소·세션 반환·다음 정상 저장을 확인했다."}]},{"id":"C4","name":"배포 이미지의 선택적 digest 고정","responsibility":"imageDigest가 있으면 repository@sha256를 사용하고 없으면 기존 repository:tag를 유지한다. imageTag는 기존 리비전 라벨로 남는다.","implementation":"imageDigest가 있으면 repository@sha256를 사용하고 없으면 기존 repository:tag를 유지한다. imageTag는 기존 리비전 라벨로 남는다.","verification":"Curie의 loader→bin→stack focused 48 PASS/2 suites; main 전체 infra 82 PASS. 실제 AWS 배포는 미실행.","codeEvidence":[{"kind":"excerpt","location":"packages/infra/lib/stacks/healthcare-service-stack.ts:75","content":"    if (\n      props.imageDigest !== undefined \u0026\u0026\n      (props.imageDigest.length !== 71 ||\n        !/^sha256:[a-f0-9]{64}$/.test(props.imageDigest))\n    ) {\n      throw new Error(\n        'healthcare.imageDigest must be sha256:\u003c64 lowercase hex digits\u003e',\n      );\n    }\n    const imageSuffix =\n      props.imageDigest === undefined\n        ? `:${props.imageTag}`\n        : `@${props.imageDigest}`;","explanation":"정상 배포에서도 CLI가 요구하는 불변 이미지 원본을 선택할 수 있게 하는 경계다. 소스 manifest 검증과 이미지 식별은 별도로 유지한다.","tests":"Curie의 loader→bin→stack focused 48 PASS/2 suites; main 전체 infra 82 PASS. 실제 AWS 배포는 미실행."}]}],"contractIds":["D0","R1","R2","R3","R4","R6"]},{"id":"H2","title":"종료와 실패에서 자기 트랜잭션을 정리한다","sliceType":"logical-capability","sliceName":"종료와 실패에서 자기 트랜잭션을 정리한다","reviewQuestion":"종료 신호나 rollback 실패가 발생해도 자기 연결 정리를 마치는가?","diagramIds":["V2"],"claim":"정비 작업은 자신이 연 트랜잭션과 연결만 정리한다.","workedExample":"원본 T8은 트랜잭션 시작·LOCK·rollback 오류 각각에서 close 호출을 확인했다.","counterexample":"다른 실행의 연결을 닫는 방식은 이 계약을 충족하지 않는다. 소유권 거부 시험을 별도로 유지한다.","assessment":"소유 연결 정리는 독립 오류 시험과 보존된 실제 PostgreSQL 증거로 확인했다. 코드 종료 판정은 PASS이며 AWS 실행 증거와 구분한다.","container":{"responsibility":"유한한 락 유지와 종료 처리를 하나의 작업이 소유한다.","interactions":"종료 요청은 cleanup 작업을 기다리고, rollback 성공 여부와 무관하게 연결을 닫는다.","outcome":"서비스 종료나 유지 한도 만료 뒤 자기 DB 자원을 남기지 않는 경로를 검사한다."},"components":[{"id":"C1","name":"소유 트랜잭션 종료","responsibility":"정비 작업 자신의 트랜잭션과 연결을 종료한다.","implementation":"rollback이 실패해도 finally에서 connection을 닫는다. cleanup task를 shield하고 취소 중에도 종료를 기다린다.","verification":"원본 T8의 start/LOCK/rollback 오류 close 3종 PASS; T9는 실제 PostgreSQL 별도 제공 실행 2 PASS.","codeEvidence":[{"kind":"excerpt","location":"packages/healthcare-sensor-app/src/test_service/maintenance.py:93","content":"        async def release():\n            \"\"\"Rollback this task's transaction and close its backend even if rollback fails.\"\"\"\n            try:\n                if started:\n                    await transaction.rollback()\n            finally:\n                await conn.close(timeout=5)\n\n        cleanup = asyncio.create_task(release())\n        try:\n            await asyncio.shield(cleanup)\n        except asyncio.CancelledError:\n            await cleanup\n            raise","explanation":"소유 연결 정리가 rollback의 성공 여부와 독립적으로 실행되는 실제 코드다.","tests":"원본 T8의 start/LOCK/rollback 오류 close 3종 PASS; T9는 실제 PostgreSQL 별도 제공 실행 2 PASS."}]}],"contractIds":["R5"]}]},"contractCoverage":[{"contractId":"D0","requirement":"관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.","status":"PROVEN","adrBasis":"Decision","implementation":"독립 RDS/Healthcare 스택, 사설 배치, DB 선행 의존성을 코드와 합성으로 확인. 실제 AWS 배포 성공을 뜻하지 않는다.","evidence":"packages/infra/bin/infra.ts:48; packages/infra/lib/stacks/rds-stack.ts:29; packages/infra/lib/stacks/healthcare-service-stack.ts:37","tests":"원 검토의 T1,T6"},{"contractId":"R1","requirement":"데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.","status":"PROVEN","adrBasis":"데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.","implementation":"사설 서브넷·공인 IP 없음·VPC CIDR DB 접근, 생성 비밀의 username/password 참조. Docker는 소스·가상환경만 복사한다.","evidence":"packages/infra/lib/stacks/rds-stack.ts:23; packages/infra/lib/stacks/healthcare-service-stack.ts:138; packages/healthcare-sensor-app/Dockerfile:22","tests":"원 검토의 T1,T6"},{"contractId":"R2","requirement":"서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.","status":"PROVEN","adrBasis":"서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.","implementation":"완료와 분리된 슬롯 계획, active 상한, missed/capacity skipped 계수, 취소 후 gather.","evidence":"packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:85 (특히 121–144)","tests":"원 검토의 T1: test_stalled_requests_do_not_stop_offers_or_exceed_concurrency; test_event_loop_delay_skips_missed_deadlines_without_catchup_tasks"},{"contractId":"R3","requirement":"정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.","status":"PROVEN","adrBasis":"정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.","implementation":"r1 빌드 기본; r2 실제 121 SELECT, r3 예외 뒤 세션 잔류; 풀 설정·별도 락 작업; 레거시 플래그/API 별도 유지. verified=false는 UNBUILT 체크아웃 manifest에만 해당한다. 현재 컴파일된 로컬 proof와 이미지 3개는 verified=true이며 소스가 일치한다.","evidence":"packages/healthcare-sensor-app/Dockerfile:12; demo/build_revision.py:67; demo/revisions/r2/query.py:10; demo/revisions/r3/session.py:23; services/fault.py (후자의 상대 경로는 healthcare 패키지)","tests":"원 검토의 T1,T7,T9,T10"},{"contractId":"R4","requirement":"요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.","status":"PROVEN","adrBasis":"요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.","implementation":"F1 해소. 요청·SQL·연결·풀 관측/독립 방출을 유지하며 HTTP driver 예외는 안전한500 또는 원래 context 없는 late-error로 처리. 실패 리딩 계수·세션 반환은 유지.","evidence":"packages/healthcare-sensor-app/src/test_service/middleware/logging.py:17; services/db_observability.py:83; services/symptom_metrics.py:153","tests":"N1 Healthcare125 PASS; F1 재현 generic500/canary=false"},{"contractId":"R5","requirement":"서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.","status":"PROVEN","adrBasis":"서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.","implementation":"서비스 작업 drain 뒤 소유 세션/관측 풀 정리; 정비는 자기 transaction만 rollback. 정상·취소·SIGTERM·기한 만료는 실측, start/LOCK/rollback 오류는 독립 probe에서 close 확인.","evidence":"packages/healthcare-sensor-app/src/test_service/main.py:69; adapters/secondary/database_adapter.py:157; maintenance.py:91; demo/local_runner.py:44","tests":"원 검토의 T1,T7,T8/maintenance_failure_probes,T9"},{"contractId":"R6","requirement":"배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.","status":"UNVERIFIED","adrBasis":"배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.","implementation":"구현·로컬 이미지/소스 식별·같은 부하의3구간 검사는 확인. 세 최신 imageID/기록된 source fingerprint가 현재 실측과 일치한다. 실제 AWS 배포 자원의 이미지와3구간 관측은 미검증(U1 runtime); 새 ADR 상태 선행조건으로 요구하지 않음. 선택적 HEALTHCARE_IMAGE_DIGEST/TOML imageDigest가 real loader→bin→stack의 repository@sha256로 연결되며 잘못된 pin은 거부한다. 현재인프라48시험으로 확인.","evidence":"revision/manifest.py:source_manifest (healthcare src/test_service); scripts/run_realistic_demo.py:immutable_baseline_image,baseline_source_manifests; review-fixed-images.json; packages/infra/config/loader.ts:143; packages/infra/bin/infra.ts:64; packages/infra/lib/stacks/healthcare-service-stack.ts:75–87,122","tests":"N1/N5 current-source proof; N5 docker image inspect3/3 및 fingerprint 대조; recheck-03 infra-pin:48 PASS/2 suites"}],"implementationChoices":[{"choice":"개별 요청 간격5초, 동시1, query20, 고정 seed/patient 선택","evidence":"healthcare settings.py:25; traffic_generator.py:121","intentFit":"유한 요청 시작 계획(R2/R5)을 유지하는 조정값","whyItMatters":"데모 성공 부하를 보장하는 수치가 아니다. 늦은 슬롯은 버리고 다음 due=now+interval로 잡는다."},{"choice":"observer 별도 pool1/overflow0, pool timeout2초, statement timeout2000ms; activity100/locks200","evidence":"database_adapter.py:178","intentFit":"앱 풀 고갈 중에도 유한 읽기 관측(R4)","whyItMatters":"관측 연결 자체가 연결 수에 포함되므로 앱 pool과 DB 전체를 분리한다."},{"choice":"EMF sample 배열100, 기본 flush30초, gauge 유지","evidence":"symptom_metrics.py:27,118,168","intentFit":"독립 방출과 유한 메모리","whyItMatters":"sample capacity 방출은 정상이며 취소를 기존 완료 계수에 더하지 않는다. 30초는 legacy 계약 수치다."},{"choice":"r1 정상, r2 N+1, r3 획득 후 body-error cleanup 누락을 빌드 overlay로 고정","evidence":"Dockerfile:12; demo/build_revision.py:67","intentFit":"명시적인 불변 소스 선택(R3), 같은 응답(R2)","whyItMatters":"런타임 환경 이름으로 구현을 바꾸지 않는다. r3의 고의 결함 자체는 정상 코드 버그로 신고하지 않았다."}],"comprehensionCheck":{"prGuidance":"","questions":[]}};
+  const decode = (encoded) => {
+    const bytes = Uint8Array.from(atob(encoded || ""), (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  };
+  document.querySelectorAll(".quiz__reveal").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = button.dataset.questionIndex;
+      const options = document.querySelector('.quiz__options[data-question-index="' + index + '"]');
+      const check = document.querySelector('.quiz__check[data-question-index="' + index + '"]');
+      if (options) options.hidden = false;
+      if (check) check.hidden = false;
+      button.hidden = true;
+    });
+  });
+  document.querySelectorAll('.quiz__option input[type="radio"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      const index = input.name.replace("quiz-", "");
+      const teachBack = document.querySelector('.quiz__teach-back[data-question-index="' + index + '"]');
+      const feedback = document.querySelector('.quiz__feedback[data-question-index="' + index + '"]');
+      const required = document.querySelector('.quiz__required[data-question-index="' + index + '"]');
+      if (teachBack) teachBack.hidden = false;
+      if (feedback) feedback.hidden = true;
+      if (required) required.hidden = true;
+    });
+  });
+  document.querySelectorAll(".quiz__check").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = button.dataset.questionIndex;
+      const answer = document.querySelector('input[name="quiz-' + index + '"]:checked');
+      const required = document.querySelector('.quiz__required[data-question-index="' + index + '"]');
+      const feedback = document.querySelector('.quiz__feedback[data-question-index="' + index + '"]');
+      if (!answer) {
+        if (required) required.hidden = false;
+        if (feedback) feedback.hidden = true;
+        return;
+      }
+      if (required) required.hidden = true;
+      if (feedback) {
+        const feedbackByOption = JSON.parse(decode(button.dataset.feedback) || "{}");
+        const correct = answer.value === button.dataset.correct;
+        feedback.querySelector(".quiz__result").textContent = correct
+          ? "정답"
+          : "다시 확인 필요";
+        feedback.querySelector(".quiz__selected-feedback").textContent =
+          feedbackByOption[answer.value] || "";
+        feedback.querySelector(".quiz__criteria").textContent = decode(button.dataset.explanation);
+        feedback.querySelector(".quiz__evidence").textContent = decode(button.dataset.evidence);
+        feedback.hidden = false;
+      }
+    });
+  });
+  const exportButton = document.getElementById("export");
+  if (exportButton) exportButton.addEventListener("click", () => {
+    const reviews = EMBED.findings.map((f, index) => {
+      const picked = document.querySelector('input[name="dec-' + index + '"]:checked');
+      const note = document.querySelector('textarea.ruling__note[data-finding-index="' + index + '"]');
+      return {
+        ...f,
+        finding_id: f.id,
+        decision: picked ? picked.value : "not-required",
+        comment: note ? note.value.trim() : "",
+      };
+    });
+    const out = {
+      adr: EMBED.adr,
+      reviewMode: EMBED.reviewMode,
+      verdict: EMBED.verdict,
+      scope: EMBED.scope,
+      changeScope: EMBED.changeScope,
+      contractCoverage: EMBED.contractCoverage,
+      implementationChoices: EMBED.implementationChoices,
+      comprehensionCheck: EMBED.comprehensionCheck,
+      reviews,
+      status: "complete",
+    };
+    const blob = new Blob([JSON.stringify(out, null, 2) + "\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "feedback.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const btn = document.getElementById("export");
+    btn.textContent = "저장됨 · feedback.json";
+    btn.classList.add("done");
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "checkedAt": "2026-09-10T03:24:03.070129+00:00",
+  "artifactState": "FINAL_SYNTHESIS_RECEIVED",
+  "staticChecks": "PASS",
+  "htmlBytes": 146870,
+  "htmlSha256": "6800c9bca377946893deccc4ae9c564f6869552a4b4c9eb8dd54708fb2c91409",
+  "contractRows": 8,
+  "hills": 3,
+  "svgCount": 3,
+  "svgChecks": [
+    {
+      "viewBox": [
+        0.0,
+        0.0,
+        1510.0,
+        373.0
+      ],
+      "textNodes": 7,
+      "relationshipPrimitives": 7
+    },
+    {
+      "viewBox": [
+        0.0,
+        0.0,
+        2365.0,
+        373.0
+      ],
+      "textNodes": 10,
+      "relationshipPrimitives": 10
+    },
+    {
+      "viewBox": [
+        0.0,
+        0.0,
+        620.0,
+        1382.0
+      ],
+      "textNodes": 9,
+      "relationshipPrimitives": 11
+    }
+  ],
+  "internalAnchors": "PASS",
+  "language": "ko",
+  "externalRenderingDependencies": [],
+  "quizIncluded": false,
+  "browser": "NOT_OPENED",
+  "policyBlock": "Prior automatic approval review rejected local file://; user forbids HTTP, shell, or other-browser workarounds.",
+  "openHelperExecuted": false,
+  "visualInspection": "NOT_PERFORMED",
+  "limitation": "XML, geometry presence and anchor checks only; no browser layout, pixel, screenshot, or label-overlap inspection."
+}

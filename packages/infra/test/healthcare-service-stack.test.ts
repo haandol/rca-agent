@@ -18,7 +18,12 @@ type MetricQuery = {
   };
 };
 
-function synthesize(): Template {
+/** Synthesize a private demo service with optional workload tuning and image pin. */
+function synthesize(
+  queryLatencyThresholdMs?: number,
+  controlledEnvironment?: Readonly<Record<string, string | undefined>>,
+  imageDigest?: string,
+): Template {
   const app = new cdk.App({ context: { ns: 'RcaAgentDev' } });
   const network = new cdk.Stack(app, 'Network');
   const vpc = new ec2.Vpc(network, 'Vpc', { maxAzs: 2 });
@@ -30,7 +35,10 @@ function synthesize(): Template {
     dbInstance: database.instance,
     alarmTopic,
     imageTag: 'latest',
+    imageDigest,
     tracing: false,
+    queryLatencyThresholdMs,
+    controlledEnvironment,
   });
   return Template.fromStack(stack);
 }
@@ -63,6 +71,40 @@ test('the RCA entry alarm watches a domain symptom metric', () => {
     MetricName: 'VitalIngestFailures',
     Dimensions: [{ Name: 'ServiceName', Value: 'healthcare-sensor-app' }],
   });
+});
+
+test('healthy workload controls are explicit and cannot select a fault', () => {
+  synthesize(500, {
+    TRAFFIC_ENABLED: 'true',
+    TRAFFIC_INTERVAL_SECONDS: '0.5',
+    TRAFFIC_MAX_CONCURRENCY: '4',
+    TRAFFIC_QUERY_LIMIT: '100',
+    TRAFFIC_PATIENT_ID: 'patient-1',
+    TRAFFIC_SEED: '42',
+    DB_POOL_TIMEOUT_SECONDS: '5',
+    DB_STATEMENT_TIMEOUT_MS: '2000',
+    DB_OBSERVABILITY_ENABLED: 'true',
+    DB_OBSERVABILITY_INTERVAL_SECONDS: '5',
+  }).hasResourceProperties('AWS::ECS::TaskDefinition', {
+    ContainerDefinitions: Match.arrayWith([
+      Match.objectLike({
+        Environment: Match.arrayWith([
+          { Name: 'FAULT_DB_LEAK', Value: 'false' },
+          { Name: 'TRAFFIC_MAX_CONCURRENCY', Value: '4' },
+          { Name: 'DB_POOL_TIMEOUT_SECONDS', Value: '5' },
+        ]),
+      }),
+    ]),
+  });
+  for (const settings of [
+    { FAULT_DB_LEAK: 'true' },
+    { TRAFFIC_MAX_CONCURRENCY: '1.5' },
+    { DB_POOL_TIMEOUT_SECONDS: '0' },
+    { DB_STATEMENT_TIMEOUT_MS: '-1' },
+    { TRAFFIC_ENABLED: 'yes' },
+  ]) {
+    expect(() => synthesize(500, settings)).toThrow();
+  }
 });
 
 test('the entry alarm does not name the subsystem that caused the failure', () => {
@@ -102,24 +144,28 @@ test('cause-level alarms remain available as evidence', () => {
   expect(metricNames).toContain('MemoryUtilization');
 });
 
-test('only the symptom alarm publishes state changes to the RCA topic', () => {
+test('only symptom alarms publish state changes to the RCA topic', () => {
   const alarms = Object.values(
     synthesize().findResources('AWS::CloudWatch::Alarm'),
   ) as CfnResource[];
-  const entryAlarmName = 'RcaAgentDev-Healthcare-VitalIngestFailures';
+  const entryAlarmNames = [
+    'RcaAgentDev-Healthcare-VitalIngestFailures',
+    'RcaAgentDev-Healthcare-PatientVitalsQueryLatency',
+  ];
   const alarmsWithActions = alarms.filter(
-    (alarm) => (alarm.Properties?.AlarmActions as unknown[] | undefined)?.length,
+    (alarm) =>
+      (alarm.Properties?.AlarmActions as unknown[] | undefined)?.length,
   );
   const alarmsWithOkActions = alarms.filter(
     (alarm) => (alarm.Properties?.OKActions as unknown[] | undefined)?.length,
   );
 
-  expect(
-    alarmsWithActions.map((alarm) => alarm.Properties?.AlarmName),
-  ).toEqual([entryAlarmName]);
+  expect(alarmsWithActions.map((alarm) => alarm.Properties?.AlarmName)).toEqual(
+    entryAlarmNames,
+  );
   expect(
     alarmsWithOkActions.map((alarm) => alarm.Properties?.AlarmName),
-  ).toEqual([entryAlarmName]);
+  ).toEqual(entryAlarmNames);
 
   const alarmActions = alarmsWithActions[0].Properties
     ?.AlarmActions as unknown[];
@@ -128,6 +174,30 @@ test('only the symptom alarm publishes state changes to the RCA topic', () => {
   expect(okActions).toEqual(alarmActions);
   expect(alarmActions[0]).toEqual({
     'Fn::ImportValue': expect.stringContaining('AlarmTopic'),
+  });
+});
+
+test('query latency uses the app metric unit and a configurable threshold', () => {
+  for (const threshold of [500, 850]) {
+    synthesize(threshold).hasResourceProperties('AWS::CloudWatch::Alarm', {
+      MetricName: 'PatientVitalsQueryDuration',
+      Namespace: 'Healthcare/Sensor',
+      Dimensions: [{ Name: 'ServiceName', Value: 'healthcare-sensor-app' }],
+      Unit: 'Milliseconds',
+      Statistic: 'Average',
+      Period: 60,
+      EvaluationPeriods: 2,
+      Threshold: threshold,
+      TreatMissingData: 'missing',
+    });
+  }
+  expect(
+    alarmThreshold(synthesize(), 'RcaAgentDev-Healthcare-RdsHighConnections'),
+  ).toBe(12);
+  synthesize().hasResourceProperties('AWS::ECS::Service', {
+    NetworkConfiguration: {
+      AwsvpcConfiguration: Match.objectLike({ AssignPublicIp: 'DISABLED' }),
+    },
   });
 });
 
@@ -142,6 +212,43 @@ test('the deployed revision is exposed to the container', () => {
       }),
     ]),
   });
+});
+
+test('opting into a digest changes only the application image', () => {
+  const legacy = synthesize().toJSON();
+  const digest = `sha256:${'a1'.repeat(32)}`;
+  const pinned = synthesize(undefined, undefined, digest).toJSON();
+  const task = Object.values(legacy.Resources).find(
+    (resource) =>
+      (resource as { Type: string }).Type === 'AWS::ECS::TaskDefinition',
+  ) as { Properties: { ContainerDefinitions: { Image: unknown }[] } };
+  const container = task.Properties.ContainerDefinitions[0];
+  expect(JSON.stringify(container.Image)).toContain('/healthcare:latest');
+  // Keep every other resource/property identical, including the revision label,
+  // roles, network, alarms and workload settings.
+  container.Image = JSON.parse(
+    JSON.stringify(container.Image).replace(
+      '/healthcare:latest',
+      `/healthcare@${digest}`,
+    ),
+  );
+  expect(pinned).toEqual(legacy);
+});
+
+test.each([
+  '',
+  'latest',
+  `sha256:${'a'.repeat(63)}`,
+  `sha256:${'a'.repeat(65)}`,
+  `sha256:${'G'.repeat(64)}`,
+  `sha256:${'A'.repeat(64)}`,
+  `sha512:${'a'.repeat(64)}`,
+  `repository@sha256:${'a'.repeat(64)}`,
+  `sha256:${'a'.repeat(64)}\n`,
+])('rejects a malformed direct stack digest: %j', (digest) => {
+  expect(() => synthesize(undefined, undefined, digest)).toThrow(
+    'healthcare.imageDigest',
+  );
 });
 
 test('task roles have stable names for scoped pass-role permission', () => {

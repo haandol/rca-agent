@@ -62,8 +62,8 @@
         },
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
-          "status": "Accepted (2026-08-31)",
-          "summary": "네 평가 계층이 두 엔진의 상태·판정·탐색 상한·승인 산출물 패리티를 결정적으로 검증한다."
+          "status": "Proposed",
+          "summary": "네 평가 계층이 두 엔진의 공통 분석 계약과 현실적 원본 관측·원상복원 시나리오를 검증하며 합성·로컬 DB·배포 증거를 구분한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
@@ -136,8 +136,8 @@
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
-          "status": "Accepted (2026-04-22)",
-          "summary": "Healthcare 데모 서비스와 데이터베이스를 배포 기반 장애 주입이 가능한 검증 환경으로 운영한다."
+          "status": "Proposed",
+          "summary": "Healthcare를 제한된 요청 시작 부하와 독립 관측, 정상·결함 이미지 및 소유 정비 작업으로 재현 가능한 사설 검증 환경으로 운영한다."
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
@@ -151,8 +151,8 @@
         },
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
-          "status": "Accepted (2026-07-31)",
-          "summary": "데모를 증상 알람 진입점과 배포 기반 장애 주입으로 재구성하고, 커넥션 누수만 증상까지 이어지도록 임계치·주입량을 정합시킨다."
+          "status": "Proposed",
+          "summary": "실제 풀 설정·조회 증폭·트랜잭션 락·세션 정리 결함을 증상에 연결하고 같은 부하의 정상·결함·원상복원으로 검증한다."
         },
         {
           "path": "docs/adr/infra/0008-playbook-execution-stack.md",

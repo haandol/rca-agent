@@ -1,0 +1,37 @@
+{
+  "unit": {
+    "passed": 1771,
+    "agent": 740,
+    "headless": 824,
+    "healthcare": 125,
+    "infra": 82,
+    "healthcareSkippedInUnitOnly": 2,
+    "knownLegacyXfail": 1
+  },
+  "realPostgresqlIntegration": {
+    "passed": 2,
+    "source": "postgres-tests.log"
+  },
+  "contracts": {
+    "passed": 136,
+    "failed": 1,
+    "failure": "Unapproved input digest/file set; original baseline retained"
+  },
+  "format": "pass",
+  "lint": "pass",
+  "build": "pass",
+  "typecheck": "pass",
+  "localProof": "tests/fixtures/observations/realistic-local-20260910/proof-review-fixed-01.json.txt",
+  "awsDeploymentE2e": "not-run",
+  "modelEvaluation": "running",
+  "activeInputDigest": "sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+  "images": {
+    "count": 3,
+    "build": "pass",
+    "installedSourceMatchesMeasuredSource": true,
+    "details": "review-fixed-images.json"
+  },
+  "controllerPythonCases": {
+    "passed": 56
+  }
+}

@@ -72,6 +72,7 @@ pnpm nx affected -t test
 | [Deployment](./docs/deployment.md) | CDK 스택, 패키지별 배포, 테스트 가이드 |
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
+| [현실적 데모 시나리오](./docs/demo/realistic-scenarios.html) | 실제 PostgreSQL의 네 장애 재현, 사고 시점 관측 입력, 로컬·모델·배포 검증 경계 |
 | [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [RCA에서 플레이북 실행까지](./docs/rca-to-remediation-flow.md) | 분석 → 리포트 → 승인 → 실행 → 해결 판정 → 회고로 이어지는 닫힌 루프 전체 흐름 |

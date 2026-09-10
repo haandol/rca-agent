@@ -1,0 +1,26 @@
+{
+  "reviewedAt": "2026-09-10T02:47:41.899278+00:00",
+  "sha256": {
+    "docs/adr/.mapping.json": "75c7fcc9f211be329950c31b83b9d2fb666e5d2f7dd4c6a65b5c4c1b2d6c4de3",
+    "docs/adr/agent/0016-rca-evaluation-test-harness.md": "ae9e868495fd07b3479e9aa50e6720bf529244ae3300dac6c256ce64f2f23b03",
+    "docs/adr/infra/0004-rds-healthcare-deployment.md": "f4957afd5083d2accf839b04211c513e4a1fa038a6414258a8cda7a4391ac3bc",
+    "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md": "0d274d02bdb9521e274a8b728029e5715dfa86fda8f537d49290578fb8aa5bcd",
+    "packages/agent/src/rca_agent/eval_adapter.py": "532ecd354d515c1eef265713dca404cf9a9cd29e05c27cd571c148a9d4cbdfef",
+    "packages/agent/src/rca_agent/ports/dto/models.py": "ff60af74d4cf73dd643fe91748cb4ee53a440637e47b8e8a8226e8cd119a2f82",
+    "packages/agent/src/rca_agent/prompts/scoping.py": "cbfe6d7ba3c207f610e96884842e08415f8b9522d318673cad779b73a83efb4b",
+    "packages/agent/src/rca_agent/services/scoping.py": "6539abee5c198d0216c29b359cd8309628ec1306ca0273585fd0c262bc3c51a7",
+    "packages/headless-codex/prompts/rca-user.md": "7c9bb1dd00b3e06fc9137b74770112aedf27cc7685d445aa90bd066059368c00",
+    "packages/headless-codex/src/headless_codex/eval_adapter.py": "7ca6a62b0d2c9259d85540e9c0abce1eafb04ac3eec9be3a21669cf3360be499",
+    "packages/headless-codex/src/headless_codex/ports/dto/models.py": "d23d608a0418b73032f51a39afeeef41d6f95a2329c803fb61116392c40bbe17",
+    "packages/headless-codex/src/headless_codex/services/prompt_builder.py": "54f0ab054ef811110bab42a5bdc361d7c9742b91078fc86aa69a46c11ba55d9d",
+    "packages/healthcare-sensor-app/src/test_service/middleware/logging.py": "78ac6dc90145dbf61cbe88010c10470937892c7bd8b8faa022c5b26f1ad1ef89",
+    "scripts/run_realistic_demo.py": "5562cb41c16ee202bd24506a9b130868d432d7e2eeb89854eb25d29009cf7e85",
+    "tests/harness/realistic-demo-script.test.mjs": "edc9cfcc4d16c9e25d676bcb5d854fc871ed9145ec6f3f83dc8bc7699e2be8bf",
+    "tests/harness/realistic_demo_cases.py": "2df1988e2217438c569516345c5de03536a2b13e7149a6de232cd728c812f488",
+    "tests/harness/scenario-capture-boundary.mjs": "52c6f18d60c7264e757e38610808956b605441a0f67db70290c3034dc59c788c",
+    "tests/scenarios/exception-session-cleanup.json": "29396810a2e721d3288b0504535ddb23b725ecaa67c7956f17568db6adef2624",
+    "tests/scenarios/maintenance-transaction-lock.json": "51c637c51f781cff40e127dfa8b7533cf2fa20f51a175aa79ce2997ce9d80016",
+    "tests/scenarios/pool-config-regression.json": "ca8e8314c217a4ca7852c84b02adaf4870142e8470a334472fbefec5ad1653b5",
+    "tests/scenarios/query-amplification.json": "0e66bc0b918411dcb9cc2141f517cee59fb6c643834dbfcf6ee881adbb824bb6"
+  }
+}

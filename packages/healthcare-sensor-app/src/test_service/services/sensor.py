@@ -1,9 +1,12 @@
+import asyncio
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 
 from test_service.ports.dto.sensor import SensorReadingEntity
 from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort
+from test_service.services.db_observability import operation_context
 from test_service.services.symptom_metrics import SymptomMetrics
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,34 @@ class SensorService:
         self._symptom_metrics = symptom_metrics
 
     async def ingest(self, readings: list[dict]) -> list[SensorReadingEntity]:
+        """Count starts before persistence and release live readings on every exit.
+
+        Successful and failed readings retain the legacy completion meaning;
+        cancellation only releases the gauge. Repository errors are logged by
+        type so SQL bind values and credentials cannot escape through tracebacks.
+        """
+        if self._symptom_metrics is not None:
+            self._symptom_metrics.record_ingest_started(len(readings))
+        failed = False
+        cancelled = False
+        try:
+            return await self._ingest_readings(readings)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        except Exception as exc:
+            failed = True
+            logger.error(
+                "Vital ingest failed",
+                extra={"batch_size": len(readings), "error_type": type(exc).__name__},
+            )
+            raise
+        finally:
+            if self._symptom_metrics is not None:
+                self._symptom_metrics.record_ingest_finished(len(readings), failed=failed, cancelled=cancelled)
+
+    async def _ingest_readings(self, readings: list[dict]) -> list[SensorReadingEntity]:
+        """Classify and persist one batch under its DB operation, then measure saved alerts."""
         entities = []
         abnormal_entities: list[SensorReadingEntity] = []
         for r in readings:
@@ -49,20 +80,12 @@ class SensorService:
                 abnormal_entities.append(entity)
                 logger.warning(
                     "Abnormal reading detected",
-                    extra={"patient_id": entity.patient_id, "reading_type": reading_type, "value": value},
+                    extra={"reading_type": reading_type},
                 )
 
-        try:
+        with operation_context("ingest"):
             saved = await self._repository.save_batch(entities)
-        except Exception:
-            self._record_ingest(attempted=len(entities), failed=len(entities))
-            logger.exception(
-                "Vital ingest failed — readings were not persisted",
-                extra={"batch_size": len(entities)},
-            )
-            raise
 
-        self._record_ingest(attempted=len(entities), failed=0)
         self._record_alert_delays(abnormal_entities)
         return saved
 
@@ -90,9 +113,16 @@ class SensorService:
         to_ts: datetime | None = None,
         limit: int = 100,
     ) -> list[SensorReadingEntity]:
-        return await self._repository.find_by_patient(
-            patient_id, reading_type=reading_type, from_ts=from_ts, to_ts=to_ts, limit=limit
-        )
+        """Time all service-level queries, including internal callers, errors and cancellation."""
+        started = time.perf_counter()
+        try:
+            with operation_context("patient_vitals"):
+                return await self._repository.find_by_patient(
+                    patient_id, reading_type=reading_type, from_ts=from_ts, to_ts=to_ts, limit=limit
+                )
+        finally:
+            if self._symptom_metrics is not None:
+                self._symptom_metrics.record_patient_vitals_duration((time.perf_counter() - started) * 1000)
 
     async def get_alerts(
         self,
@@ -103,9 +133,11 @@ class SensorService:
         to_ts: datetime | None = None,
         limit: int = 50,
     ) -> list[SensorReadingEntity]:
-        return await self._repository.find_abnormal(
-            patient_id=patient_id, reading_type=reading_type, from_ts=from_ts, to_ts=to_ts, limit=limit
-        )
+        """Associate alert repository work with an isolated request context without bind logging."""
+        with operation_context("alerts"):
+            return await self._repository.find_abnormal(
+                patient_id=patient_id, reading_type=reading_type, from_ts=from_ts, to_ts=to_ts, limit=limit
+            )
 
     @staticmethod
     def _is_abnormal(reading_type: str, value: float) -> bool:

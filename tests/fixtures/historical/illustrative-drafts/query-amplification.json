@@ -1,0 +1,85 @@
+{
+  "id": "query-amplification",
+  "category": "code-change",
+  "executionModes": ["model-eval"],
+  "provenance": {
+    "kind": "synthetic-illustrative",
+    "status": "draft-awaiting-local-measurements",
+    "awsMeasured": false,
+    "calibration": "pending-real-runner",
+    "evidenceHandoff": "docs/demo/scenario-evidence-handoff.md"
+  },
+  "alarm": {
+    "name": "Illustrative-Healthcare-PatientReadLatency",
+    "metric": "PatientReadLatency",
+    "stateReason": "Illustrative source window 2026-09-10T00:03:00Z/2026-09-10T00:06:00Z; symptom samples are included below; evaluation threshold pending measurement.",
+    "stateChangeTime": "2026-09-10T00:06:00Z",
+    "namespace": "Illustrative/Healthcare",
+    "dimensions": {
+      "Service": "healthcare-sensor"
+    }
+  },
+  "observations": [
+    {
+      "id": "obs-01",
+      "source": "illustrative-application-metrics",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"PatientReadLatency\":\"Milliseconds\",\"rowsReturned\":\"Count\",\"sqlPerRead\":\"Count\",\"reads\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"PatientReadLatency\":35,\"rowsReturned\":40,\"sqlPerRead\":1,\"reads\":1800,\"responseDigest\":\"illustrative-response-a\"},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"PatientReadLatency\":420,\"rowsReturned\":40,\"sqlPerRead\":41,\"reads\":1800,\"responseDigest\":\"illustrative-response-a\"},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"PatientReadLatency\":36,\"rowsReturned\":40,\"sqlPerRead\":1,\"reads\":1800,\"responseDigest\":\"illustrative-response-a\"}]}"
+    },
+    {
+      "id": "obs-02",
+      "source": "illustrative-source-diff",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"line\":\"source-line-number\",\"text\":\"code\",\"sha256\":\"content-digest\"},\"records\":[{\"timestamp\":null,\"sourceKind\":\"working-tree-source-snapshot-not-deployed\",\"before\":{\"path\":\"packages/healthcare-sensor-app/src/test_service/revision/query.py\",\"sha256\":\"dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9\",\"lines\":[{\"line\":3,\"text\":\"from sqlalchemy.ext.asyncio import AsyncSession\"},{\"line\":4,\"text\":\"from sqlalchemy.sql import Select\"},{\"line\":6,\"text\":\"from test_service.adapters.secondary.sensor_repository.models import SensorReadingRow\"},{\"line\":9,\"text\":\"async def fetch_patient_rows(session: AsyncSession, stmt: Select) -> list[SensorReadingRow]:\"},{\"line\":11,\"text\":\"    return list((await session.execute(stmt)).scalars().all())\"}]},\"after\":{\"path\":\"packages/healthcare-sensor-app/demo/revisions/r2/query.py\",\"sha256\":\"95f43d2f56a286990a5c0779e6fd5d786a33b2ee6d1dc379a94b79d63a075c8c\",\"lines\":[{\"line\":3,\"text\":\"from sqlalchemy import select\"},{\"line\":4,\"text\":\"from sqlalchemy.ext.asyncio import AsyncSession\"},{\"line\":5,\"text\":\"from sqlalchemy.sql import Select\"},{\"line\":7,\"text\":\"from test_service.adapters.secondary.sensor_repository.models import SensorReadingRow\"},{\"line\":10,\"text\":\"async def fetch_patient_rows(session: AsyncSession, stmt: Select) -> list[SensorReadingRow]:\"},{\"line\":12,\"text\":\"    ids = (await session.execute(stmt.with_only_columns(SensorReadingRow.id))).scalars().all()\"},{\"line\":13,\"text\":\"    rows = []\"},{\"line\":14,\"text\":\"    for reading_id in ids:\"},{\"line\":16,\"text\":\"        row = (\"},{\"line\":17,\"text\":\"            await session.execute(select(SensorReadingRow).where(SensorReadingRow.id == reading_id))\"},{\"line\":18,\"text\":\"        ).scalar_one_or_none()\"},{\"line\":19,\"text\":\"        if row is not None:\"},{\"line\":20,\"text\":\"            rows.append(row)\"},{\"line\":21,\"text\":\"    return rows\"}]}}]}"
+    },
+    {
+      "id": "obs-03",
+      "source": "illustrative-sql-profile",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"callsPerRead\":\"Count\",\"meanTime\":\"Milliseconds\",\"maxTime\":\"Milliseconds\"},\"records\":[{\"timestamp\":\"2026-09-10T00:01:00Z\",\"pattern\":\"SELECT ... FROM sensor_readings WHERE patient_id = :patient_id\",\"callsPerRead\":1,\"meanTime\":20,\"maxTime\":25},{\"timestamp\":\"2026-09-10T00:04:00Z\",\"pattern\":\"SELECT id FROM sensor_readings WHERE patient_id = :patient_id\",\"callsPerRead\":1,\"meanTime\":18,\"maxTime\":23},{\"timestamp\":\"2026-09-10T00:04:00Z\",\"pattern\":\"SELECT ... FROM sensor_readings WHERE id = :row_id\",\"callsPerRead\":40,\"meanTime\":8,\"maxTime\":12},{\"timestamp\":\"2026-09-10T00:07:00Z\",\"pattern\":\"SELECT ... FROM sensor_readings WHERE patient_id = :patient_id\",\"callsPerRead\":1,\"meanTime\":20,\"maxTime\":25}]}"
+    },
+    {
+      "id": "obs-04",
+      "source": "illustrative-release-record",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"revision\":\"identifier\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"image\":\"illustrative:rev-a\",\"source\":\"illustrative-source-a\",\"repositoryDiff\":\"obs-02\"},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"image\":\"illustrative:rev-b\",\"source\":\"illustrative-source-b\",\"repositoryDiff\":\"obs-02\"},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"image\":\"illustrative:rev-a\",\"source\":\"illustrative-source-a\",\"repositoryDiff\":\"obs-02\"}]}"
+    },
+    {
+      "id": "obs-05",
+      "source": "illustrative-load-generator",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"plannedStarts\":\"Count\",\"started\":\"Count\",\"completed\":\"Count\",\"notStarted\":\"Count\",\"startRate\":\"requests/second\",\"maxConcurrency\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0}]}"
+    },
+    {
+      "id": "obs-06",
+      "source": "illustrative-postgresql-samples",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"samples\":\"Count\",\"blockedBackends\":\"Count\",\"statementTime\":\"Milliseconds\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"samples\":180,\"blockedBackends\":0,\"waitEventTypeCounts\":{\"Client\":160,\"IO\":20},\"sql\":\"SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname = current_database()\"},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"samples\":180,\"blockedBackends\":0,\"waitEventTypeCounts\":{\"Client\":150,\"IO\":30},\"sql\":\"SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname = current_database()\"},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"samples\":180,\"blockedBackends\":0,\"waitEventTypeCounts\":{\"Client\":160,\"IO\":20},\"sql\":\"SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname = current_database()\"}]}"
+    }
+  ],
+  "expectation": {
+    "requireConfirmedRootCause": true,
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["slow-query"],
+    "requiredRootCauseEvidenceIds": ["obs-01", "obs-02", "obs-03", "obs-04"],
+    "requiredEvidenceIds": [
+      "obs-01",
+      "obs-02",
+      "obs-03",
+      "obs-04",
+      "obs-05",
+      "obs-06"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "competingCauses": [
+      {
+        "id": "traffic-surge",
+        "requiredEvidenceIds": ["obs-05"]
+      },
+      {
+        "id": "maintenance-lock",
+        "requiredEvidenceIds": ["obs-06"]
+      }
+    ]
+  }
+}

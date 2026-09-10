@@ -221,7 +221,26 @@ npx cdk deploy RcaAgentDevHealthcareServiceStack
 | `RcaAgentServiceStack` | Strands RCA 에이전트 (ECS Fargate) |
 | `HeadlessCodexStack` | Headless Codex RCA 에이전트 (배포 스택 물리 이름은 `CcHeadlessStack` 유지) |
 
-## 데모 시나리오: DB 커넥션 누수 장애
+## 현실적 데모 시나리오
+
+현재 평가 카탈로그는 같은 입력으로 정상 → 장애 → 복원을 비교하는 네 사례입니다.
+실제 PostgreSQL의 SQL 실행, 연결 반환과 잠금으로 재현하며, 모델에는 정상·사고
+구간의 관측만 제공합니다.
+
+| 사례 | 실제 장애 | 복원 |
+|---|---|---|
+| 풀 설정 회귀 | 연결 풀 축소로 저장 요청이 연결을 얻지 못함 | 원래 풀 설정 |
+| 조회 증폭 | 일괄 조회가 행별 재조회로 바뀌어 SQL 횟수가 증가함 | 정상 r1 이미지 |
+| 정비 트랜잭션 잠금 | 소유 정비 작업의 ShareLock이 쓰기를 차단함 | 해당 작업의 롤백·종료 |
+| 예외 경로 세션 반환 누락 | DB 오류 뒤 연결이 남아 후속 저장까지 실패함 | 정상 이미지와 결함 태스크 종료 |
+
+[시나리오와 검증 경계](docs/demo/realistic-scenarios.html),
+[로컬 재현·이미지 빌드](packages/healthcare-sensor-app/demo/README.md),
+[배포 제어·원상복원](scripts/run_realistic_demo.html)을 참조하세요.
+로컬 재현, 제공 관측 모델 평가, AWS 배포 E2E는 각각 검증합니다. 조회 알람의
+배포 기본값 500ms는 환경별 보정이 필요하며, 로컬 재현이 AWS 알람 발생을 보장하지 않습니다.
+
+## 레거시 API 데모: DB 커넥션 누수 장애
 
 Healthcare 센서 서비스에 DB 커넥션 누수 장애를 주입하고, RCA 에이전트가 자동으로 근본 원인을 분석하는 전체 흐름입니다.
 
@@ -244,7 +263,8 @@ HEALTHCARE_HOST="healthcare.rcaagentdev.local"
 curl -X POST http://${HEALTHCARE_HOST}:8000/fault/db-leak
 ```
 
-장애 주입 후 background traffic generator가 요청을 보내면서 커넥션이 누적됩니다. 수 분 내에 RDS `DatabaseConnections` 메트릭이 임계치를 초과하여 CloudWatch 알람이 발생합니다.
+실제 연결 수와 배포된 RDS `DatabaseConnections` 알람의 평가 조건을 확인합니다.
+지표가 해당 조건을 충족하면 CloudWatch 알람이 발생합니다.
 
 ### Step 2. RCA 자동 실행
 
@@ -261,7 +281,9 @@ CloudWatch Alarm → SNS → SQS 경로로 알람이 전달되면, RCA 에이전
 8. **Playbook**: 재사용 가능한 대응 플레이북 생성 및 S3 Vectors 인덱싱
 9. **Notification**: SNS 알림 발행 (presigned URL + 플레이북 포함)
 
-**Headless Codex Agent (서브 에이전트 오케스트레이션)**: 동일한 알람을 독립적으로 수신하여 RCA → 조건부 Remediation → Report 역할을 순서대로 실행합니다.
+두 엔진은 공용 큐에서 경쟁 소비하며 세션 락을 획득한 엔진이 분석합니다.
+**Headless Codex 분석 워커**는 읽기 전용 RCA → Report 역할을 실행합니다.
+플레이북 실행은 사용자 승인 후 별도 실행 워커가 담당합니다.
 
 ### Step 3. 결과 확인
 
@@ -296,7 +318,9 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 | `POST /fault/high-memory` | 메모리 과부하 | ECS MemoryUtilization 임계치 초과 |
 | `POST /fault/slow-query` | 슬로우 쿼리 | 응답 지연 증가 |
 
-모든 장애는 `/reset` 엔드포인트로 해제됩니다 (예: `POST /fault/high-cpu/reset`).
+이 레거시 API로 시작한 실행 중 장애는 해당 `/reset`으로 해제합니다
+(예: `POST /fault/high-cpu/reset`). 새 네 시나리오는 원래 설정·이미지 또는 소유
+정비 작업을 복원하며, reset 응답만으로 복구 성공을 판정하지 않습니다.
 
 ## 환경 변수
 

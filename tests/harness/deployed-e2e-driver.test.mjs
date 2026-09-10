@@ -9,6 +9,21 @@ import { REPOSITORY_ROOT } from './evaluator.mjs';
 
 const driverPath = path.join(REPOSITORY_ROOT, 'scripts/run_deployed_e2e.py');
 
+// Only the test launcher replaces the observation clock. The production CLI
+// has no duration override, and subprocess/signal timing remains real.
+const driverLauncher = String.raw`
+import importlib.util
+import os
+import sys
+driver_path = sys.argv[1]
+sys.argv = [driver_path, *sys.argv[2:]]
+spec = importlib.util.spec_from_file_location("tested_driver", driver_path)
+driver = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(driver)
+clock = iter((0.0, float(os.environ["FAKE_OBSERVATION_SECONDS"])))
+raise SystemExit(driver.run(observation_clock=lambda: next(clock)))
+`;
+
 const fakeFaultScript = String.raw`
 import hashlib
 import json
@@ -152,6 +167,8 @@ async function runDriver(validationCommand, options = {}) {
   const result = spawnSync(
     'python3',
     [
+      '-c',
+      driverLauncher,
       driverPath,
       '--run-id',
       'caller-run-1',
@@ -180,6 +197,7 @@ async function runDriver(validationCommand, options = {}) {
         FAKE_CLEANUP_SIGNAL: options.cleanupSignal ?? '',
         FAKE_INITIAL_ISSUE: options.initialIssue ?? '',
         FAKE_OWNERSHIP: options.ownership ?? 'valid',
+        FAKE_OBSERVATION_SECONDS: String(options.observationSeconds ?? 150),
       },
       timeout: 15_000,
     },
@@ -223,6 +241,10 @@ test('deployed E2E driver preserves state and cleans up after validation success
     'rca-e2e-caller-run-1-6974c7493482-temp',
   ]);
   assert.equal(manifest.cleanup.result.clean, true);
+  assert.equal(manifest.validation.minimumObservationSeconds, 150);
+  assert.equal(manifest.validation.observationSeconds, 150);
+  assert.equal(manifest.validation.observationWindowSufficient, true);
+  assert.ok(manifest.validation.startedAt);
 
   const cleanup = cleanupCall(calls);
   assert.ok(cleanup);
@@ -246,6 +268,20 @@ test('deployed E2E driver preserves state and cleans up after validation success
     ),
   );
   assert.ok(!cleanup.includes('legacy-custom'));
+});
+
+test('deployed E2E rejects a successful validator before 150 post-fault seconds and still cleans up', async () => {
+  const { calls, manifest, result } = await runDriver(
+    ['python3', '-c', 'raise SystemExit(0)'],
+    { observationSeconds: 149 },
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.equal(manifest.validation.exitCode, 0);
+  assert.equal(manifest.validation.observationSeconds, 149);
+  assert.equal(manifest.validation.observationWindowSufficient, false);
+  assert.match(manifest.orchestrationError.message, /150-second post-fault/);
+  assert.equal(manifest.cleanup.result.clean, true);
+  assert.ok(cleanupCall(calls));
 });
 
 test('deployed E2E driver fails closed on every dirty initial state', async (t) => {

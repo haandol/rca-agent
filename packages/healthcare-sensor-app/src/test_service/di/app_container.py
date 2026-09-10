@@ -48,8 +48,12 @@ class AppContainer(Container):
 
     @property
     def symptom_metrics(self) -> SymptomMetrics:
+        """Share one bounded publisher with the alarm's stable service dimension and tuning."""
         if self._symptom_metrics is None:
-            self._symptom_metrics = SymptomMetrics(self.settings.otel_service_name)
+            self._symptom_metrics = SymptomMetrics(
+                "healthcare-sensor-app",
+                flush_interval=self.settings.metric_flush_interval_seconds,
+            )
         return self._symptom_metrics
 
     @property
@@ -86,7 +90,10 @@ class AppContainer(Container):
         return router
 
     async def cleanup(self) -> None:
-        if self._symptom_metrics is not None:
-            self._symptom_metrics.flush()
-        if self._database is not None:
-            await self._database.dispose()
+        """Flush final symptoms while guaranteeing database disposal even if log emission fails."""
+        try:
+            if self._symptom_metrics is not None:
+                self._symptom_metrics.flush()
+        finally:
+            if self._database is not None:
+                await self._database.dispose()

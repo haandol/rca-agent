@@ -1,0 +1,70 @@
+{
+  "checkedAt": "2026-09-10T03:24:02.133403+00:00",
+  "draft": false,
+  "officialCommands": [
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-materialize.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0007"
+      ],
+      "exitCode": 0,
+      "output": "materialized /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0007/implementation-review.md\n"
+    },
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-validate.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0007"
+      ],
+      "exitCode": 0,
+      "output": "ADR implementation review artifacts are valid\n"
+    },
+    {
+      "command": [
+        "node",
+        "/private/tmp/rca-adr-tools-0.8.19/scripts/adr-impl-review-report.mjs",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0007/findings.json",
+        "--out",
+        "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0007/adr-impl-review-report.html"
+      ],
+      "exitCode": 0,
+      "output": "wrote /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0007/adr-impl-review-report.html\n"
+    }
+  ],
+  "officialRendererOutputSha256": "ca1598e2e3cf95efa7435583ea1838b08ca4fc099acb9a34cea96b4e3c328f0c",
+  "ownedHtmlAnchorNormalization": [
+    {
+      "original": "code-h1-C1-1",
+      "replacement": "code-h1-c1-1"
+    },
+    {
+      "original": "code-h1-C2-1",
+      "replacement": "code-h1-c2-1"
+    },
+    {
+      "original": "code-h2-C1-1",
+      "replacement": "code-h2-c1-1"
+    },
+    {
+      "original": "code-h2-C2-1",
+      "replacement": "code-h2-c2-1"
+    },
+    {
+      "original": "code-h2-C3-1",
+      "replacement": "code-h2-c3-1"
+    },
+    {
+      "original": "code-h3-C1-1",
+      "replacement": "code-h3-c1-1"
+    },
+    {
+      "original": "code-h3-C2-1",
+      "replacement": "code-h3-c2-1"
+    }
+  ],
+  "deliveredHtmlSha256": "4e3577db5c858a30623812a430d25eedcd5938faaedcaabc447fd8b9ce06ef54",
+  "browser": "NOT_OPENED",
+  "openHelperExecuted": false,
+  "reason": "Explicit user policy block: no local file://, HTTP, shell, or other-browser workaround."
+}

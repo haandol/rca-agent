@@ -1,0 +1,37 @@
+✔ deployed E2E driver preserves state and cleans up after validation success (2141.951916ms)
+✔ deployed E2E rejects a successful validator before 150 post-fault seconds and still cleans up (2554.010334ms)
+▶ deployed E2E driver fails closed on every dirty initial state
+  ✔ fault (935.168583ms)
+  ✔ service (1230.964958ms)
+  ✔ database (1416.23475ms)
+  ✔ apply (1534.961458ms)
+  ✔ alarm (1358.850958ms)
+  ✔ foreign-run (978.951125ms)
+✔ deployed E2E driver fails closed on every dirty initial state (7456.654958ms)
+✔ deployed E2E driver never deletes inventory-difference groups without current-run proof (984.188167ms)
+✔ deployed E2E driver rejects foreign ownership proof after mutation without deleting it (1488.468333ms)
+✔ deployed E2E driver cleans up after a validation failure and restores absent LOG_LEVEL (1393.219125ms)
+▶ deployed E2E driver defers SIGINT and SIGTERM until cleanup completes
+  ✔ SIGINT (1205.264416ms)
+  ✔ SIGTERM (2092.857917ms)
+✔ deployed E2E driver defers SIGINT and SIGTERM until cleanup completes (3298.493875ms)
+▶ deployed E2E driver reaps interrupted fault and status children before cleanup
+  ✔ red-herring SIGINT (1481.878625ms)
+  ✔ red-herring SIGTERM (1399.013ms)
+  ✔ db-leak SIGINT (1146.665334ms)
+  ✔ db-leak SIGTERM (827.245125ms)
+  ✔ status SIGINT (1044.561625ms)
+  ✔ status SIGTERM (1159.051958ms)
+✔ deployed E2E driver reaps interrupted fault and status children before cleanup (7059.457708ms)
+▶ deployed E2E driver defers signals raised by the cleanup child
+  ✔ SIGINT (1160.303792ms)
+  ✔ SIGTERM (1095.676375ms)
+✔ deployed E2E driver defers signals raised by the cleanup child (2256.394417ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28713.010625

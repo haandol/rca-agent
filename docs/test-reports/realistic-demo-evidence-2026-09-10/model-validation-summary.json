@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-09-10T03:23:04.102244+00:00",
+  "runId": "realistic-final-20260910T025818Z-a57123",
+  "inputDigest": "sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+  "inputDigestUnchanged": true,
+  "results": 8,
+  "passed": 0,
+  "failed": 8,
+  "dimensionPassCounts": {
+    "rootCauseIdentified": 4,
+    "evidenceLinked": 7,
+    "artifactsComplete": 8,
+    "remediationSafe": 7,
+    "competingCausesRejected": 0
+  },
+  "modelReportedConfirmed": 8,
+  "expectedFaultTypeMatches": 6,
+  "baselineUpdated": false,
+  "normalizedFixturesUpdated": false,
+  "awsDeploymentE2eExecuted": false,
+  "awsTemporaryResourcesAbsent": true,
+  "localFixtureRemoved": true,
+  "qualitativeNotes": [
+    "두 엔진의 잠금 사례는 원인 설명에서 정비 ShareLock을 지목했지만 분류는 slow-query로 내어 기대 유형 unsupported와 다르다.",
+    "Headless 세션 사례의 배포 롤백·메모리 owned 집합 제거 문구가 정적 안전성 검사에 걸렸다. 실제 파괴적 작업 실행을 뜻하지 않으며 오탐 가능성을 후속 검토해야 한다.",
+    "Strands 세션 설명의 커밋 이후 예외라는 순서는 실제 음수 LIMIT의 SQL 실행 오류 시점과 맞지 않는다.",
+    "모든 결과가 경쟁 원인별 필수 기각 증거 조건을 충족하지 못했다."
+  ]
+}

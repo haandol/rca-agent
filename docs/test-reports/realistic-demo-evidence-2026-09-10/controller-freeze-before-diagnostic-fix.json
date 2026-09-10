@@ -1,0 +1,56 @@
+{
+  "frozenAt": "2026-09-10T02:52:26.964704+00:00",
+  "scope": "F2 only: root demo controller journal-failure cleanup, focused regression tests and documentation. N1 fixed maintenance command enforcement and all 40 original Python tests are preserved. Other workstreams own the observed app contracts; their recorded hashes are unchanged.",
+  "sourceSha256": {
+    "scripts/run_realistic_demo.py": "dd901337259fdfa77399404cb3ca722a8c98c9bdade166a214ba572958469f77",
+    "scripts/run_realistic_demo.html": "0974bbe5e835ef341cca53480d172da5ea8e571262fe6f051998184eea0a51c2",
+    "tests/harness/realistic_demo_cases.py": "f4b6daf753aae91328cfda8b8c32c1dd3d14a77c2590eb682186f4f6761589c5",
+    "tests/harness/realistic-demo-script.test.mjs": "edc9cfcc4d16c9e25d676bcb5d854fc871ed9145ec6f3f83dc8bc7699e2be8bf"
+  },
+  "observedAppContractSha256": {
+    "packages/healthcare-sensor-app/src/test_service/maintenance.py": "b785eca035ab70be4906390a797d599265868e4ae21ecb0764135ecc10e130d7",
+    "packages/healthcare-sensor-app/src/test_service/revision/manifest.py": "37bdc2c480bd0b0d173e3e31b0897f22b3f7e3d9a51db9a4479a395e4a9ae585",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py": "5d7e5603d821d251be847e12348716bc1d4da24109cff79ae6c52401f463f8f7"
+  },
+  "checks": {
+    "pythonCasesPassed": 55,
+    "nodeHarnessTestsPassed": 4,
+    "ruff": "passed",
+    "format": "passed",
+    "diffCheck": "passed",
+    "focusedRootTestsPassed": 47
+  },
+  "awsWritesPerformed": false,
+  "deploymentPerformed": false,
+  "commitPerformed": false,
+  "checkCommands": [
+    "node --test tests/harness/realistic-demo-script.test.mjs tests/harness/realistic-scenarios.test.mjs tests/harness/deployment-fault-script.test.mjs tests/harness/deployed-e2e-driver.test.mjs",
+    "python3 tests/harness/realistic_demo_cases.py",
+    "ruff check scripts/run_realistic_demo.py tests/harness/realistic_demo_cases.py",
+    "ruff format --check scripts/run_realistic_demo.py tests/harness/realistic_demo_cases.py",
+    "pnpm exec prettier --check tests/harness/realistic-demo-script.test.mjs",
+    "git diff --check"
+  ],
+  "f2RecoveryEvidence": {
+    "baselinePythonCasesPassed": 40,
+    "newPythonCasesPassed": 15,
+    "originalTestsAndN1GuardsUnchanged": "AST comparison passed",
+    "originalReviewReproduction": {
+      "source": "/private/tmp/rca-realistic-review/sufficiency-reproductions.py:journal_counterexample",
+      "scope": "Only the original F2 function was executed against the deterministic cloud double.",
+      "restoredOriginalDefinition": true,
+      "updateServiceCalls": 2,
+      "restoreIntentCount": 1,
+      "output": "/private/tmp/rca-f2-fix/sufficiency-journal-repro.json"
+    },
+    "coverage": [
+      "successful update/run-task followed by failed response, error and cleanup writes",
+      "post-apply status failure and each independent recovery/discovery/task-stop write",
+      "lost-response rediscovery from the original persisted intent in a fresh controller",
+      "both cleanup branches, multiple owned tasks, retry budget and foreign-resource refusal",
+      "strict new prechange intents and immutable original-image guard",
+      "sticky journalErrors, recoveryVerified=false, CLI nonzero exit and retained owner",
+      "late recovery/release journal failures and refusal to reclaim foreign ownership"
+    ]
+  }
+}

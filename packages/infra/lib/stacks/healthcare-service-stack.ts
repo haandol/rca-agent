@@ -20,7 +20,11 @@ interface IProps extends cdk.StackProps {
   readonly dbInstance: rds.DatabaseInstance;
   readonly alarmTopic: sns.ITopic;
   readonly imageTag: string;
+  /** Optional immutable image pin; imageTag still supplies the revision label. */
+  readonly imageDigest?: string;
   readonly tracing: boolean;
+  readonly queryLatencyThresholdMs?: number;
+  readonly controlledEnvironment?: Readonly<Record<string, string | undefined>>;
 }
 
 export class HealthcareServiceStack extends cdk.Stack {
@@ -63,10 +67,25 @@ export class HealthcareServiceStack extends cdk.Stack {
     });
   }
 
+  /** Create the private service, optionally pinning its image without changing its revision label. */
   private newTaskDefinition(
     ns: string,
     props: IProps,
   ): ecs.FargateTaskDefinition {
+    if (
+      props.imageDigest !== undefined &&
+      (props.imageDigest.length !== 71 ||
+        !/^sha256:[a-f0-9]{64}$/.test(props.imageDigest))
+    ) {
+      throw new Error(
+        'healthcare.imageDigest must be sha256:<64 lowercase hex digits>',
+      );
+    }
+    const imageSuffix =
+      props.imageDigest === undefined
+        ? `:${props.imageTag}`
+        : `@${props.imageDigest}`;
+
     const taskRole = new iam.Role(this, 'TaskRole', {
       roleName: healthcareTaskRoleName(ns),
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
@@ -100,7 +119,7 @@ export class HealthcareServiceStack extends cdk.Stack {
     taskDef.addContainer('Healthcare', {
       containerName: 'healthcare',
       image: ecs.ContainerImage.fromRegistry(
-        `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/healthcare:${props.imageTag}`,
+        `${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com/${ns.toLowerCase()}/healthcare${imageSuffix}`,
       ),
       essential: true,
       environment: {
@@ -118,6 +137,7 @@ export class HealthcareServiceStack extends cdk.Stack {
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
         FAULT_ERROR_RATE: '0.0',
+        ...this.controlledEnvironment(props.controlledEnvironment ?? {}),
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(
@@ -175,6 +195,55 @@ export class HealthcareServiceStack extends cdk.Stack {
     return taskDef;
   }
 
+  /** Validate only approved workload controls; fault settings are never defaults. */
+  private controlledEnvironment(
+    values: Readonly<Record<string, string | undefined>>,
+  ): Record<string, string> {
+    const booleans = ['TRAFFIC_ENABLED', 'DB_OBSERVABILITY_ENABLED'];
+    const positive = [
+      'TRAFFIC_INTERVAL_SECONDS',
+      'TRAFFIC_MAX_CONCURRENCY',
+      'TRAFFIC_QUERY_LIMIT',
+      'DB_POOL_TIMEOUT_SECONDS',
+      'DB_OBSERVABILITY_INTERVAL_SECONDS',
+    ];
+    const integers = [
+      'TRAFFIC_MAX_CONCURRENCY',
+      'TRAFFIC_QUERY_LIMIT',
+      'TRAFFIC_SEED',
+      'DB_STATEMENT_TIMEOUT_MS',
+    ];
+    const allowed = new Set([
+      ...booleans,
+      ...positive,
+      ...integers,
+      'TRAFFIC_PATIENT_ID',
+    ]);
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) continue;
+      if (!allowed.has(key))
+        throw new Error(`Unsupported healthcare setting: ${key}`);
+      if (booleans.includes(key) && !['true', 'false'].includes(value)) {
+        throw new Error(`${key} must be true or false`);
+      }
+      if (positive.includes(key) || integers.includes(key)) {
+        const number = Number(value);
+        if (
+          value.trim() === '' ||
+          !Number.isFinite(number) ||
+          (positive.includes(key) && number <= 0) ||
+          (integers.includes(key) && !Number.isSafeInteger(number)) ||
+          (key === 'DB_STATEMENT_TIMEOUT_MS' && number < 0)
+        ) {
+          throw new Error(`Invalid healthcare setting: ${key}`);
+        }
+      }
+      result[key] = value;
+    }
+    return result;
+  }
+
   private newService(
     ns: string,
     cluster: ecs.Cluster,
@@ -202,6 +271,7 @@ export class HealthcareServiceStack extends cdk.Stack {
     return service;
   }
 
+  /** Publish user-visible symptoms while retaining cause-level evidence alarms. */
   private newAlarms(
     ns: string,
     props: IProps,
@@ -235,6 +305,31 @@ export class HealthcareServiceStack extends cdk.Stack {
     );
     ingestFailureAlarm.addAlarmAction(alarmAction);
     ingestFailureAlarm.addOkAction(alarmAction);
+
+    const queryLatencyAlarm = new cloudwatch.Alarm(
+      this,
+      'PatientVitalsQueryLatency',
+      {
+        alarmName: `${ns}-Healthcare-PatientVitalsQueryLatency`,
+        alarmDescription:
+          'Patient vital record queries are slow. Initial threshold requires calibration against healthy and restored traffic.',
+        metric: new cloudwatch.Metric({
+          namespace: 'Healthcare/Sensor',
+          metricName: 'PatientVitalsQueryDuration',
+          dimensionsMap: { ServiceName: 'healthcare-sensor-app' },
+          unit: cloudwatch.Unit.MILLISECONDS,
+          statistic: 'Average',
+          period: cdk.Duration.minutes(1),
+        }),
+        threshold: props.queryLatencyThresholdMs ?? 500,
+        evaluationPeriods: 2,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.MISSING,
+      },
+    );
+    queryLatencyAlarm.addAlarmAction(alarmAction);
+    queryLatencyAlarm.addOkAction(alarmAction);
 
     // Threshold sits between normal usage and the app's pool capacity, so a leak
     // trips this alarm before it exhausts the pool and turns into the ingest

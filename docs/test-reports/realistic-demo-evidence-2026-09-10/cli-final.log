@@ -1,0 +1,12 @@
+✔ realistic demo deterministic lifecycle and failure contracts (6877.699792ms)
+✔ realistic demo CLI rejects incomplete controls without AWS calls (6063.161875ms)
+✔ arbitrary maintenance argv is rejected before AWS access (3465.672375ms)
+✔ apply cannot replace the profile frozen by plan (2688.628083ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19154.076208

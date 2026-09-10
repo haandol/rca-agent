@@ -1,0 +1,49 @@
+{
+  "kind": "catalog-handoff-not-baseline-approval",
+  "inputDigest": "sha256:2e55a2d8af232a5ac1f19be705f673182c7daf56fad06cd6466025532065fb9a",
+  "inputFileCount": 69,
+  "catalogFiles": {
+    "tests/scenarios/exception-session-cleanup.json": "29396810a2e721d3288b0504535ddb23b725ecaa67c7956f17568db6adef2624",
+    "tests/scenarios/maintenance-transaction-lock.json": "51c637c51f781cff40e127dfa8b7533cf2fa20f51a175aa79ce2997ce9d80016",
+    "tests/scenarios/pool-config-regression.json": "ca8e8314c217a4ca7852c84b02adaf4870142e8470a334472fbefec5ad1653b5",
+    "tests/scenarios/query-amplification.json": "0e66bc0b918411dcb9cc2141f517cee59fb6c643834dbfcf6ee881adbb824bb6"
+  },
+  "sourceProof": "tests/fixtures/observations/realistic-local-20260910/proof-time-aligned-03.json.txt",
+  "sourceProofSha256": "4087598ac6f67460b88d52cb1d0f3d876655a51aa94db734f8eba513e11b1a38",
+  "boundary": "baseline-and-incident-only; opaque capture IDs; complete proof operator-only",
+  "checks": {
+    "strandsAdapterTests": {
+      "passed": 83,
+      "failed": 0
+    },
+    "headlessAdapterTests": {
+      "passed": 63,
+      "failed": 0
+    },
+    "rootContracts": {
+      "passed": 134,
+      "failed": 1,
+      "failure": "unchanged approved baseline digest/file-set drift"
+    },
+    "rootFormat": "passed",
+    "changedPythonRuff": "passed",
+    "diffWhitespace": "passed"
+  },
+  "modelEvaluationExecuted": false,
+  "modelResultFixtures": 0,
+  "baselineModified": false,
+  "evaluatorPolicyModified": false,
+  "limitations": [
+    "AWS alarm calibration pending",
+    "No deployed-e2e declaration or AWS success claim",
+    "Snapshot collection instants are not invented; recorded measurement bounds retained"
+  ],
+  "supersedesInputDigest": "sha256:abcd82f400d9443c5b5d574b5c94e9b25d4e2baf0eb3fa30af971a78bd89b063",
+  "sourceProofChecks": [
+    "utc_phase_windows",
+    "utc_operation_windows",
+    "identical_query_inputs",
+    "common_source_base",
+    "local_query_threshold_relation"
+  ]
+}

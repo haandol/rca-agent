@@ -1,0 +1,79 @@
+$ pnpm run format:check:root && nx run-many -t format:check
+$ prettier --check package.json "packages/*/package.json" ".github/workflows/*.yml" "tests/**/*.mjs" "tests/**/*.json"
+Checking formatting...
+All matched files use Prettier code style!
+
+ NX   Running target format:check for 5 projects:
+
+- healthcare-sensor-app
+- @org/headless-codex
+- dashboard
+- agent
+- infra
+
+
+
+> nx run agent:"format:check"
+
+(node:15161) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:15164) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format --check src/ tests/[22m
+112 files already formatted
+
+> nx run @org/headless-codex:"format:check"
+
+(node:15162) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:15165) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format --check src/ tests/[22m
+102 files already formatted
+
+> nx run dashboard:"format:check"
+
+(node:15160) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:15163) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ prettier --check "app/**/*.{ts,vue}" "server/**/*.ts" nuxt.config.ts[22m
+(node:15185) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Checking formatting...
+All matched files use Prettier code style!
+
+> nx run infra:"format:check"
+
+(node:15384) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:15386) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ prettier --check "lib/**/*.ts" "bin/**/*.ts" "config/**/*.ts"[22m
+(node:15449) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Checking formatting...
+All matched files use Prettier code style!
+
+> nx run healthcare-sensor-app:"format:check"
+
+(node:15383) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:15385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff format --check src/ tests/[22m
+64 files already formatted
+
+
+
+ NX   Successfully ran target format:check for 5 projects
+
+
+  Run duration:      2.6s
+  Cache:             0/5 hit (0%)
+  Critical path:     1.4s (1 task)
+  Recoverable time:  1.2s (46% of the run)
+
+  Recommendations:
+    - Increase parallelism to recover up to 1.2s → https://nx.dev/docs/concepts/ci-concepts/parallelization-distribution?utm_source=nx-cli&utm_medium=cli&utm_campaign=performance-report&utm_content=parallelization.
+    - Drastically reduce your run duration by sharing a cache across your team and CI → https://nx.dev/ci/features/remote-cache?utm_source=nx-cli&utm_medium=cli&utm_campaign=performance-report&utm_content=remote-cache.

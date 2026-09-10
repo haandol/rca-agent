@@ -1,0 +1,60 @@
+$ nx run-many -t lint
+
+ NX   Running target lint for 4 projects:
+
+- healthcare-sensor-app
+- @org/headless-codex
+- agent
+- infra
+
+
+
+> nx run @org/headless-codex:lint
+
+(node:4644) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4646) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff check src/ tests/[22m
+[1;32mAll checks passed![0m
+
+> nx run agent:lint
+
+(node:4645) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4647) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff check src/ tests/[22m
+[1;32mAll checks passed![0m
+
+> nx run infra:lint
+
+> pnpm eslint .
+
+(node:4643) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4648) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> nx run healthcare-sensor-app:lint
+
+(node:4869) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4870) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync ruff check src/ tests/[22m
+[1;32mAll checks passed![0m
+
+
+
+ NX   Successfully ran target lint for 4 projects
+
+
+  Run duration:      2.4s
+  Cache:             0/4 hit (0%)
+  Critical path:     1.8s (1 task)
+  Recoverable time:  570ms (24% of the run)
+
+  Recommendations:
+    - Increase parallelism to recover up to 570ms → https://nx.dev/docs/concepts/ci-concepts/parallelization-distribution?utm_source=nx-cli&utm_medium=cli&utm_campaign=performance-report&utm_content=parallelization.
+    - Drastically reduce your run duration by sharing a cache across your team and CI → https://nx.dev/ci/features/remote-cache?utm_source=nx-cli&utm_medium=cli&utm_campaign=performance-report&utm_content=remote-cache.

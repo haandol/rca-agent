@@ -61,6 +61,9 @@ const healthcareServiceStack = new HealthcareServiceStack(
     dbInstance: rdsStack.instance,
     alarmTopic: eventBusStack.alarmTopic,
     imageTag: Config.healthcare.imageTag,
+    imageDigest: Config.healthcare.imageDigest,
+    queryLatencyThresholdMs: Config.healthcare.queryLatencyThresholdMs,
+    controlledEnvironment: Config.healthcare.environment,
     tracing: Config.tracing.enabled,
   },
 );

@@ -1,0 +1,127 @@
+{
+  "run_id": "realistic-final-20260910T025818Z-a57123",
+  "started_at": "2026-09-10T02:59:21.486376+00:00",
+  "storage": {
+    "table": "RcaEval-realistic-final-20260910T025818Z-a57123",
+    "s3_bucket": "rca-eval-realistic-final-20260910t025818z-a57123",
+    "vector_bucket": "rca-eval-realistic-final-20260910t025818z-a57123"
+  },
+  "created": {
+    "s3": true,
+    "tables": {
+      "RcaEval-realistic-final-20260910T025818Z-a57123-c45ced27b9": "arn:aws:dynamodb:us-east-1:395271362395:table/RcaEval-realistic-final-20260910T025818Z-a57123-c45ced27b9",
+      "RcaEval-realistic-final-20260910T025818Z-a57123-caebe6df7e": "arn:aws:dynamodb:us-east-1:395271362395:table/RcaEval-realistic-final-20260910T025818Z-a57123-caebe6df7e",
+      "RcaEval-realistic-final-20260910T025818Z-a57123-972f9b49af": "arn:aws:dynamodb:us-east-1:395271362395:table/RcaEval-realistic-final-20260910T025818Z-a57123-972f9b49af",
+      "RcaEval-realistic-final-20260910T025818Z-a57123-f5035cb45d": "arn:aws:dynamodb:us-east-1:395271362395:table/RcaEval-realistic-final-20260910T025818Z-a57123-f5035cb45d"
+    },
+    "vectors": "arn:aws:s3vectors:us-east-1:395271362395:bucket/rca-eval-realistic-final-20260910t025818z-a57123"
+  },
+  "engines": {
+    "headless-codex/exception-session-cleanup": {
+      "pid": 3858,
+      "status": "finished",
+      "started_at": "2026-09-10T02:59:58.191344+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:03:28.621549+00:00"
+    },
+    "headless-codex/maintenance-transaction-lock": {
+      "pid": 3859,
+      "status": "finished",
+      "started_at": "2026-09-10T02:59:58.217039+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:02:40.511035+00:00"
+    },
+    "strands/exception-session-cleanup": {
+      "pid": 3860,
+      "status": "finished",
+      "started_at": "2026-09-10T02:59:58.235195+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:07:33.005529+00:00"
+    },
+    "strands/maintenance-transaction-lock": {
+      "pid": 3861,
+      "status": "finished",
+      "started_at": "2026-09-10T02:59:58.256452+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:06:28.908503+00:00"
+    },
+    "headless-codex/pool-config-regression": {
+      "pid": 10989,
+      "status": "finished",
+      "started_at": "2026-09-10T03:02:42.544715+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:05:56.866469+00:00"
+    },
+    "headless-codex/query-amplification": {
+      "pid": 13242,
+      "status": "finished",
+      "started_at": "2026-09-10T03:03:30.648090+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:06:40.940163+00:00"
+    },
+    "strands/pool-config-regression": {
+      "pid": 23264,
+      "status": "finished",
+      "started_at": "2026-09-10T03:06:30.926312+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:13:45.547735+00:00"
+    },
+    "strands/query-amplification": {
+      "pid": 26130,
+      "status": "finished",
+      "started_at": "2026-09-10T03:07:35.040629+00:00",
+      "returncode": 1,
+      "finished_at": "2026-09-10T03:14:13.572685+00:00"
+    }
+  },
+  "cleanup": {
+    "tables": {
+      "RcaEval-realistic-final-20260910T025818Z-a57123-c45ced27b9": {
+        "deleted": true,
+        "exported_items": 16
+      },
+      "RcaEval-realistic-final-20260910T025818Z-a57123-caebe6df7e": {
+        "deleted": true,
+        "exported_items": 16
+      },
+      "RcaEval-realistic-final-20260910T025818Z-a57123-972f9b49af": {
+        "deleted": true,
+        "exported_items": 17
+      },
+      "RcaEval-realistic-final-20260910T025818Z-a57123-f5035cb45d": {
+        "deleted": true,
+        "exported_items": 17
+      }
+    },
+    "vectors": {
+      "deleted": true,
+      "indexes": 8
+    },
+    "s3": {
+      "deleted": true,
+      "exported_objects": 4
+    }
+  },
+  "deployed_model": {
+    "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevCcHeadless:34",
+    "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:0ab2a495a90f",
+    "CODEX_MODEL": "global.openai.gpt-5.6-sol",
+    "CODEX_REASONING_EFFORT": "high",
+    "CODEX_MODEL_PROVIDER": "amazon-bedrock-runtime"
+  },
+  "credential_source": "verified default IAM profile; ambient bearer/access keys removed",
+  "eval_environment": {
+    "AWS_PROFILE": "default",
+    "AWS_REGION": "us-east-1",
+    "DYNAMODB_TABLE_NAME": "RcaEval-realistic-final-20260910T025818Z-a57123",
+    "S3_REPORT_BUCKET": "rca-eval-realistic-final-20260910t025818z-a57123",
+    "S3_EVIDENCE_BUCKET": "rca-eval-realistic-final-20260910t025818z-a57123",
+    "S3_VECTOR_BUCKET_NAME": "rca-eval-realistic-final-20260910t025818z-a57123",
+    "BEDROCK_MODEL_ID": "global.anthropic.claude-sonnet-5",
+    "CODEX_MODEL": "global.openai.gpt-5.6-sol",
+    "CODEX_REASONING_EFFORT": "high",
+    "CODEX_MODEL_PROVIDER": "amazon-bedrock-runtime",
+    "RCA_EVAL_TIMEOUT_MS": "3900000"
+  },
+  "finished_at": "2026-09-10T03:14:53.056743+00:00"
+}

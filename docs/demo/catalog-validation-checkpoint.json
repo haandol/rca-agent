@@ -1,0 +1,44 @@
+{
+  "kind": "catalog-final-validation-not-baseline-approval",
+  "generatedAt": "2026-09-10T03:25:49.011Z",
+  "inputDigest": "sha256:8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+  "inputFileCount": 69,
+  "catalogFiles": {
+    "tests/scenarios/exception-session-cleanup.json": "90dba7c1c822017648fed8d911897dc0c3881ae0ead701395a8d1e1f41e69b5c",
+    "tests/scenarios/maintenance-transaction-lock.json": "6237ee51da6dffb1909ac0bd6e7e7cded3b7ad87501095b1554d5aff277a67cb",
+    "tests/scenarios/pool-config-regression.json": "a36450e3b1875eacefff37cee067c2a0cf8b8926571ddafb42a176f9942cfa49",
+    "tests/scenarios/query-amplification.json": "ef0e15254a22a3b245bd2358d5491e87a4fca5d6bbaa6412296004ed91380774"
+  },
+  "sourceProof": "tests/fixtures/observations/realistic-local-20260910/proof-review-fixed-01.json.txt",
+  "sourceProofSha256": "83aac573c02bd6eb9596ced5e0797460018704b62b955905b68b15707d1b4f2b",
+  "boundary": "baseline-and-incident-only; opaque capture IDs; complete proof operator-only",
+  "checks": {
+    "unitPassed": 1771,
+    "rootContracts": {
+      "passed": 136,
+      "failed": 1,
+      "failure": "unchanged approved baseline digest/file-set drift"
+    },
+    "controllerPythonPassed": 56,
+    "format": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "typecheck": "passed",
+    "localPostgresqlMechanisms": "passed"
+  },
+  "modelEvaluationExecuted": true,
+  "modelRun": "tests/results/model/realistic-final-20260910T025818Z-a57123",
+  "modelResults": 8,
+  "modelPassed": 0,
+  "modelFailed": 8,
+  "modelResultFixtures": 0,
+  "baselineModified": false,
+  "evaluatorPolicyModified": false,
+  "awsDeploymentE2eExecuted": false,
+  "temporaryResourcesCleanedAndVerified": true,
+  "limitations": [
+    "AWS alarm calibration and deployed workflow remain unverified",
+    "All eight model results fail the competing-cause rejection gate",
+    "No new normalized fixture or baseline approval"
+  ]
+}

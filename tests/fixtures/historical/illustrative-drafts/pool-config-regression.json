@@ -1,0 +1,91 @@
+{
+  "id": "pool-config-regression",
+  "category": "database",
+  "executionModes": ["model-eval"],
+  "provenance": {
+    "kind": "synthetic-illustrative",
+    "status": "draft-awaiting-local-measurements",
+    "awsMeasured": false,
+    "calibration": "pending-real-runner",
+    "evidenceHandoff": "docs/demo/scenario-evidence-handoff.md"
+  },
+  "alarm": {
+    "name": "Illustrative-Healthcare-VitalIngestFailures",
+    "metric": "VitalIngestFailures",
+    "stateReason": "Illustrative source window 2026-09-10T00:03:00Z/2026-09-10T00:06:00Z; symptom samples are included below; evaluation threshold pending measurement.",
+    "stateChangeTime": "2026-09-10T00:06:00Z",
+    "namespace": "Illustrative/Healthcare",
+    "dimensions": {
+      "Service": "healthcare-sensor"
+    }
+  },
+  "observations": [
+    {
+      "id": "obs-01",
+      "source": "illustrative-application-metrics",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"VitalIngestFailures\":\"Count\",\"VitalIngestSuccesses\":\"Count\",\"poolAcquireP95\":\"Milliseconds\",\"poolTimeouts\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"VitalIngestFailures\":0,\"VitalIngestSuccesses\":1800,\"poolAcquireP95\":5,\"poolTimeouts\":0},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"VitalIngestFailures\":600,\"VitalIngestSuccesses\":1200,\"poolAcquireP95\":1000,\"poolTimeouts\":600},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"VitalIngestFailures\":0,\"VitalIngestSuccesses\":1800,\"poolAcquireP95\":6,\"poolTimeouts\":0}]}"
+    },
+    {
+      "id": "obs-02",
+      "source": "illustrative-config-diff",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"poolSize\":\"Count\",\"maxOverflow\":\"Count\",\"poolTimeout\":\"Seconds\"},\"records\":[{\"timestamp\":\"2026-09-10T00:03:00Z\",\"process\":\"api-1\",\"imageBefore\":\"illustrative:rev-a\",\"imageAfter\":\"illustrative:rev-a\",\"before\":{\"poolSize\":5,\"maxOverflow\":10,\"poolTimeout\":1},\"after\":{\"poolSize\":1,\"maxOverflow\":0,\"poolTimeout\":1}}]}"
+    },
+    {
+      "id": "obs-03",
+      "source": "illustrative-pool-events",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"checkouts\":\"Count\",\"checkins\":\"Count\",\"checkedOutAfterDrain\":\"Count\",\"drainTime\":\"Milliseconds\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"checkouts\":1800,\"checkins\":1800,\"checkedOutAfterDrain\":0,\"drainTime\":1000,\"events\":[\"request=r-01 checkout=c-01\",\"request=r-01 checkin=c-01\",\"request=r-01 end\"]},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"checkouts\":1200,\"checkins\":1200,\"checkedOutAfterDrain\":0,\"drainTime\":1000,\"events\":[\"request=r-02 checkout=c-02\",\"request=r-02 checkin=c-02\",\"request=r-02 end\"]},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"checkouts\":1800,\"checkins\":1800,\"checkedOutAfterDrain\":0,\"drainTime\":1000,\"events\":[\"request=r-03 checkout=c-03\",\"request=r-03 checkin=c-03\",\"request=r-03 end\"]}]}"
+    },
+    {
+      "id": "obs-04",
+      "source": "illustrative-postgresql-samples",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"maxConnections\":\"Count\",\"applicationBackends\":\"Count\",\"sqlPerSuccessfulRequest\":\"Count\",\"sqlP95\":\"Milliseconds\",\"blockedBackends\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"maxConnections\":100,\"applicationBackends\":5,\"sqlPerSuccessfulRequest\":1,\"sqlP95\":180,\"blockedBackends\":0,\"sql\":\"INSERT INTO sensor_readings (...) VALUES (...)\"},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"maxConnections\":100,\"applicationBackends\":1,\"sqlPerSuccessfulRequest\":1,\"sqlP95\":181,\"blockedBackends\":0,\"sql\":\"INSERT INTO sensor_readings (...) VALUES (...)\"},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"maxConnections\":100,\"applicationBackends\":5,\"sqlPerSuccessfulRequest\":1,\"sqlP95\":180,\"blockedBackends\":0,\"sql\":\"INSERT INTO sensor_readings (...) VALUES (...)\"}]}"
+    },
+    {
+      "id": "obs-05",
+      "source": "illustrative-load-generator",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"plannedStarts\":\"Count\",\"started\":\"Count\",\"completed\":\"Count\",\"notStarted\":\"Count\",\"startRate\":\"requests/second\",\"maxConcurrency\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0}]}"
+    },
+    {
+      "id": "obs-06",
+      "source": "illustrative-restore-record",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"poolSize\":\"Count\",\"maxOverflow\":\"Count\",\"VitalIngestFailures\":\"Count\"},\"records\":[{\"timestamp\":\"2026-09-10T00:06:00Z\",\"process\":\"api-1\",\"image\":\"illustrative:rev-a\",\"effectiveConfig\":{\"poolSize\":5,\"maxOverflow\":10,\"poolTimeout\":1},\"loadProfile\":\"same-as-obs-05\",\"windowEnd\":\"2026-09-10T00:09:00Z\",\"VitalIngestFailures\":0}]}"
+    }
+  ],
+  "expectation": {
+    "requireConfirmedRootCause": true,
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["unsupported"],
+    "requiredRootCauseEvidenceIds": [
+      "obs-01",
+      "obs-02",
+      "obs-03",
+      "obs-04",
+      "obs-06"
+    ],
+    "requiredEvidenceIds": [
+      "obs-01",
+      "obs-02",
+      "obs-03",
+      "obs-04",
+      "obs-05",
+      "obs-06"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "competingCauses": [
+      {
+        "id": "connection-leak",
+        "requiredEvidenceIds": ["obs-03"]
+      },
+      {
+        "id": "traffic-surge",
+        "requiredEvidenceIds": ["obs-05"]
+      }
+    ]
+  }
+}

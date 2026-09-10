@@ -1,0 +1,647 @@
+{
+  "language": "ko",
+  "reviewMode": "full",
+  "title": "같은 부하에서 결함과 복원을 관측하는 Healthcare 서비스",
+  "adr": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+  "status": "Proposed",
+  "verdict": "INCONCLUSIVE",
+  "artifactState": "FINAL_SYNTHESIS_RECEIVED",
+  "mainUpdates": {
+    "source": "사용자 main FINAL MODEL/cleanup 통보와 보존된 final-report.json, 최종/중단 두 회차 cleanup-verification.json, local-cleanup.json을 적용했다. 전체 INCONCLUSIVE/Proposed와 closed coverage를 유지한다. 모델0PASS/8FAIL, 기준선 미변경·새 fixture 미승인, 자원 정리 완료. 안전성 정적 검출의 오탐 가능성과 commit 서술 정밀도 한계는 main 제공 판단이다.",
+    "f4": {
+      "applied": true,
+      "strandsTargetedPassed": 113,
+      "headlessTargetedPassed": 201,
+      "behavior": "eval의 missing region/statistic/period/time은 not provided; production defaults unchanged",
+      "testPlan": "/private/tmp/rca-realistic-review/f4-test-plan.md"
+    },
+    "verification": {
+      "unitPassed": 1771,
+      "packages": {
+        "agent": 740,
+        "headless": 824,
+        "healthcare": 125,
+        "infra": 82
+      },
+      "rootPassed": 136,
+      "rootFailed": 1,
+      "rootFailure": "old approved-baseline digest mismatch",
+      "format": "PASS",
+      "lint": "PASS",
+      "build": "PASS",
+      "typecheck": "PASS"
+    },
+    "model": {
+      "runId": "realistic-final-20260910T025818Z-a57123",
+      "inputDigest": "8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+      "inputDigestUnchanged": true,
+      "status": "COMPLETED",
+      "finished": 8,
+      "strandsRunning": 0,
+      "finalResultReceived": true,
+      "passed": 0,
+      "failed": 8,
+      "source": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json",
+      "dimensionsPassed": {
+        "rootCauseIdentified": 4,
+        "evidenceLinked": 7,
+        "artifactsComplete": 8,
+        "remediationSafe": 7,
+        "competingCausesRejected": 0
+      },
+      "modelSelfConfirmed": 8,
+      "selfConfirmationIsReviewerTruth": false
+    },
+    "images": {
+      "count": 3,
+      "matchesLatestProof": true,
+      "record": "docs/test-reports/realistic-demo-evidence-2026-09-10/review-fixed-images.json"
+    },
+    "infraIntegration": {
+      "status": "IMPLEMENTED",
+      "change": "optional healthcare imageDigest; legacy imageTag default preserved",
+      "reason": "CLI baseline requires a digest-pinned image",
+      "finalTestsReceived": true,
+      "infraTestsPassed": 82
+    },
+    "curieFinalRecheck": "PASS — all code findings closed",
+    "awsDeployment": "NOT_RUN",
+    "f2Residual": {
+      "status": "CLOSED_BY_INDEPENDENT_RECHECK",
+      "pythonPassed": 56,
+      "nodePassed": 4,
+      "ruff": "PASS",
+      "originalStorageErrorPreserved": true
+    }
+  },
+  "atAGlance": {
+    "impact": "독립 코드 재검토는 PASS이며 F1/F2/F3/F4와 관측시간 U3를 해소했다. 현재 로컬 proof·이미지의 출처가 일치한다.",
+    "action": "최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다.",
+    "risk": "실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다."
+  },
+  "relatedAdrComparisons": [
+    {
+      "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+      "title": "ADR 0007: 데모 시나리오 — 실제 결함·증상 관측·원상복원",
+      "similarity": "정상·결함·복원을 같은 요청 조건으로 비교하고 소유 연결을 정리한다.",
+      "difference": "infra/0004는 서비스 배포와 관측 기반을, infra/0007은 결함 적용과 알람·복원 판단을 정한다.",
+      "reviewImpact": "따라서 서비스의 제한된 부하와 로그 비노출은 여기서 읽고, 실제 알람 성공 여부는 별도 실행 증거로 구분한다.",
+      "evidence": "비교한 두 ADR의 전체 Decision 및 Requirement contract"
+    }
+  ],
+  "diagramRequirements": [
+    {
+      "id": "V1",
+      "question": "처리가 지연되어도 같은 요청 계획을 유지하고 값 노출 없이 실제 증상을 관측하는가?",
+      "diagramType": "sequenceDiagram",
+      "section": "같은 부하에서 실제 결함과 안전한 관측을 비교한다",
+      "reason": "세 구간의 동일 요청과 DB 응답 순서를 비교해야 하므로 요청 순서도를 사용한다.",
+      "evidence": "sufficiency-review.md의 원본 수직 기능 및 계약 근거; packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:121; packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py; packages/healthcare-sensor-app/src/test_service/middleware/logging.py"
+    },
+    {
+      "id": "V2",
+      "question": "종료 신호나 rollback 실패가 발생해도 자기 연결 정리를 마치는가?",
+      "diagramType": "sequenceDiagram",
+      "section": "종료와 실패에서 자기 트랜잭션을 정리한다",
+      "reason": "종료 요청과 DB 응답, 오류 후 정리 순서가 핵심이므로 요청 순서도를 사용한다.",
+      "evidence": "sufficiency-review.md의 원본 수직 기능 및 계약 근거; packages/healthcare-sensor-app/src/test_service/maintenance.py:93"
+    }
+  ],
+  "reviewHike": {
+    "context": {
+      "intent": "실제 데이터베이스를 사용하는 사설 데모 서비스를 두고, 코드·설정 차이가 사용자 증상으로 나타나는지 비교한다.",
+      "preconditions": "사설 서비스 또는 전용 로컬 PostgreSQL, 소유 실행 ID, 불변 소스와 같은 부하 조건을 전제로 한다.",
+      "contracts": "사설 네트워크와 비밀 참조, 정상 이미지 기본값, 제한된 부하, SQL 값 비노출, 소유 연결 정리와 동일 부하 비교를 보존한다.",
+      "scopeAndRisk": "전체 ADR 본문과 원래 호출 경로를 검토했다. 독립 코드 재검토는 PASS이며 열린 코드 발견사항은 없다. 남은 미검증 행은 실제 AWS 실행과 모델 품질·승인의 증거 한계이므로 전체 판정은 INCONCLUSIVE다."
+    },
+    "hills": [
+      {
+        "title": "같은 부하에서 실제 결함과 안전한 관측을 비교한다",
+        "reviewQuestion": "처리가 지연되어도 같은 요청 계획을 유지하고 값 노출 없이 실제 증상을 관측하는가?",
+        "sliceType": "logical-capability",
+        "sliceName": "같은 부하에서 실제 결함과 안전한 관측을 비교한다",
+        "contractIds": [
+          "D0",
+          "R1",
+          "R2",
+          "R3",
+          "R4",
+          "R6"
+        ],
+        "claim": "요청 완료와 분리한 부하 계획, 실제 결함 리비전과 안전한 HTTP 관측 경계가 같은 조건의 로컬 비교를 뒷받침한다.",
+        "workedExample": "원본 검토의 120개 응답 비교에서는 정상·복원의 SQL 1회와 결함의 121회가 같은 응답 hash를 유지했다.",
+        "counterexample": "수정 전 F1에서는 driver DETAIL의 canary가 로그에 남았다. 수정 후 같은 반례는 일반 500 응답과 canary 비노출로 바뀌었다.",
+        "assessment": "현재 컴파일된 로컬 proof와 이미지 3개는 verified=true이며 소스가 일치한다. verified=false는 UNBUILT 체크아웃 manifest에만 해당한다. 실제 AWS 배포 관측은 U1로 남는다.",
+        "container": {
+          "responsibility": "정상·결함·복원에 같은 요청 조건을 적용한다.",
+          "interactions": "내장 부하가 서비스와 DB를 호출하고, 독립 관측 경로가 요청 상태와 SQL 시간을 남긴다.",
+          "outcome": "요청 시작량과 완료량을 구별하며 실제 SQL·연결 차이를 비교할 수 있다."
+        },
+        "components": [
+          {
+            "name": "완료 지연과 독립적인 요청 시작",
+            "responsibility": "처리 중인 요청 상한과 실행하지 못한 요청을 구별한다.",
+            "implementation": "정해진 슬롯을 놓치면 skipped로 세고, active 상한이면 새 작업을 만들지 않는다. 다음 시각은 현재 시각과 간격으로 잡아 몰아 보내기를 피한다.",
+            "verification": "원본 T1의 stalled_requests 및 event_loop_delay 경계 시험 PASS; 반복 실행 결과를 새 측정으로 세지 않는다.",
+            "codeEvidence": [
+              {
+                "kind": "excerpt",
+                "location": "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:121",
+                "content": "            missed = max(0, math.floor((now - next_due) / interval)) if interval else 0\n            slot += missed\n            if symptom_metrics is not None:\n                symptom_metrics.record_traffic(offered=missed + 1, skipped=missed)\n            if len(active) >= max_concurrency:\n                if symptom_metrics is not None:\n                    symptom_metrics.record_traffic(skipped=1)\n            else:\n                # Slot-local seeds preserve inputs for matching slots despite skipped work.\n                rng = random.Random(f\"{seed}:{slot}\") if seed is not None else None\n                task = asyncio.create_task(\n                    _run_request(\n                        sensor_service,\n                        _REQUEST_PLAN[slot % len(_REQUEST_PLAN)],\n                        rng=rng,\n                        patient_id=patient_id,\n                        query_limit=query_limit,\n                        symptom_metrics=symptom_metrics,\n                    ),\n                    name=\"healthcare-traffic-request\",\n                )\n                active.add(task)",
+                "explanation": "missed와 active 상한이 서로 다른 생략 사유를 계수한다. 이 발췌는 실제 함수의 연속 구간이다.",
+                "tests": "원본 T1의 stalled_requests 및 event_loop_delay 경계 시험 PASS; 반복 실행 결과를 새 측정으로 세지 않는다."
+              }
+            ],
+            "id": "C1"
+          },
+          {
+            "name": "같은 입력과 세션 수명",
+            "responsibility": "저장·조회가 같은 요청 조건과 세션 정리 경계를 사용한다.",
+            "implementation": "데이터 접근부는 session_context로 요청 본문의 예외를 정리 경로에 전달한다. 빌드 리비전 r2는 실제 행별 SQL을, r3는 예외 경로 반환 누락을 선택한다.",
+            "verification": "현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.",
+            "codeEvidence": [
+              {
+                "kind": "diff",
+                "location": "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py",
+                "content": "@@ -6,14 +6,17 @@ from test_service.adapters.secondary.sensor_repository.models import SensorReadi\n from test_service.ports.dto.sensor import SensorReadingEntity\n from test_service.ports.interfaces.database import DatabasePort\n from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort\n+from test_service.revision.query import fetch_patient_rows\n \n \n class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):\n     def __init__(self, database: DatabasePort) -> None:\n+        \"\"\"Use the database port's lifetime contract rather than owning a separate pool.\"\"\"\n         self._database = database\n \n     async def save_batch(self, readings: list[SensorReadingEntity]) -> list[SensorReadingEntity]:\n-        async for session in self._database.session():\n+        \"\"\"Persist a batch in one scope so flush errors reach the compiled cleanup path.\"\"\"\n+        async with self._database.session_context() as session:\n             rows = []\n             for r in readings:\n                 row = SensorReadingRow(",
+                "explanation": "generator 순회에서 context manager로 바꾼 실제 diff다. 세션의 종료 책임이 요청 본문 실패와 연결된다.",
+                "tests": "현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다."
+              }
+            ],
+            "id": "C2"
+          },
+          {
+            "name": "HTTP 오류의 안전한 기록",
+            "responsibility": "요청 처리 중 드라이버 오류의 원문 값이 앱·서버 로그로 넘어가는 것을 막는다.",
+            "implementation": "전체 응답 수명을 감싸는 ASGI 경계에서 오류 종류만 추출한다. 응답 전 오류는 일반 500 응답으로 처리하고, 응답 시작 뒤 오류는 원래 예외가 연결되지 않은 안전한 오류로 종료한다.",
+            "verification": "Curie Healthcare125 PASS 및 원래 canary 반례 PASS. 전체 응답 수명과 오류·취소·세션 반환·다음 정상 저장을 확인했다.",
+            "codeEvidence": [
+              {
+                "kind": "diff",
+                "location": "packages/healthcare-sensor-app/src/test_service/middleware/logging.py",
+                "content": "@@ -16,8 +41,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):\n-            response = await call_next(request)\n-            elapsed_ms = int((time.perf_counter() - start) * 1000)\n-            extra = {\n-                \"method\": request.method,\n-                \"path\": request.url.path,\n-                \"status_code\": response.status_code,\n-                \"elapsed_ms\": elapsed_ms,\n-            }\n+            await self.app(scope, receive, track_response)\n+        except Exception as exc:\n+            error_type = type(exc).__name__\n+\n+        # Outside the except block: logging/send failures must not chain driver data.\n+        extra = {\n+            \"method\": scope[\"method\"],\n+            \"path\": getattr(scope.get(\"route\"), \"path\", \"<unmatched>\"),\n+            \"status_code\": status_code if status_code is not None else 500,\n+            \"elapsed_ms\": int((time.perf_counter() - start) * 1000),\n+        }\n+        if error_type is None:\n@@ -25,6 +54,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):\n-            return response\n-        except Exception:\n-            elapsed_ms = int((time.perf_counter() - start) * 1000)\n-            extra = {\"method\": request.method, \"path\": request.url.path, \"elapsed_ms\": elapsed_ms}\n-            logger.exception(\"Request failed\", extra=extra)\n-            raise\n+            return\n+        logger.error(\"Request failed\", extra={**extra, \"error_type\": error_type})\n+        if status_code is None:\n+            response = JSONResponse({\"detail\": \"Internal server error\"}, status_code=500)\n+            await response(scope, receive, send)\n+            return\n+\n+        raise RuntimeError(\"HTTP response failed after headers were sent\")",
+                "explanation": "원래 logger.exception과 재전파를 바꾼 실제 diff다. driver DETAIL을 그대로 기록하지 않는 HTTP 경계를 보여준다.",
+                "tests": "Curie Healthcare125 PASS 및 원래 canary 반례 PASS. 전체 응답 수명과 오류·취소·세션 반환·다음 정상 저장을 확인했다."
+              }
+            ],
+            "id": "C3"
+          },
+          {
+            "name": "배포 이미지의 선택적 digest 고정",
+            "responsibility": "imageDigest가 있으면 repository@sha256를 사용하고 없으면 기존 repository:tag를 유지한다. imageTag는 기존 리비전 라벨로 남는다.",
+            "implementation": "imageDigest가 있으면 repository@sha256를 사용하고 없으면 기존 repository:tag를 유지한다. imageTag는 기존 리비전 라벨로 남는다.",
+            "verification": "Curie의 loader→bin→stack focused 48 PASS/2 suites; main 전체 infra 82 PASS. 실제 AWS 배포는 미실행.",
+            "codeEvidence": [
+              {
+                "kind": "excerpt",
+                "location": "packages/infra/lib/stacks/healthcare-service-stack.ts:75",
+                "content": "    if (\n      props.imageDigest !== undefined &&\n      (props.imageDigest.length !== 71 ||\n        !/^sha256:[a-f0-9]{64}$/.test(props.imageDigest))\n    ) {\n      throw new Error(\n        'healthcare.imageDigest must be sha256:<64 lowercase hex digits>',\n      );\n    }\n    const imageSuffix =\n      props.imageDigest === undefined\n        ? `:${props.imageTag}`\n        : `@${props.imageDigest}`;",
+                "explanation": "정상 배포에서도 CLI가 요구하는 불변 이미지 원본을 선택할 수 있게 하는 경계다. 소스 manifest 검증과 이미지 식별은 별도로 유지한다.",
+                "tests": "Curie의 loader→bin→stack focused 48 PASS/2 suites; main 전체 infra 82 PASS. 실제 AWS 배포는 미실행."
+              }
+            ],
+            "id": "C4"
+          }
+        ],
+        "id": "H1",
+        "diagramIds": [
+          "V1"
+        ]
+      },
+      {
+        "title": "종료와 실패에서 자기 트랜잭션을 정리한다",
+        "reviewQuestion": "종료 신호나 rollback 실패가 발생해도 자기 연결 정리를 마치는가?",
+        "sliceType": "logical-capability",
+        "sliceName": "종료와 실패에서 자기 트랜잭션을 정리한다",
+        "contractIds": [
+          "R5"
+        ],
+        "claim": "정비 작업은 자신이 연 트랜잭션과 연결만 정리한다.",
+        "workedExample": "원본 T8은 트랜잭션 시작·LOCK·rollback 오류 각각에서 close 호출을 확인했다.",
+        "counterexample": "다른 실행의 연결을 닫는 방식은 이 계약을 충족하지 않는다. 소유권 거부 시험을 별도로 유지한다.",
+        "assessment": "소유 연결 정리는 독립 오류 시험과 보존된 실제 PostgreSQL 증거로 확인했다. 코드 종료 판정은 PASS이며 AWS 실행 증거와 구분한다.",
+        "container": {
+          "responsibility": "유한한 락 유지와 종료 처리를 하나의 작업이 소유한다.",
+          "interactions": "종료 요청은 cleanup 작업을 기다리고, rollback 성공 여부와 무관하게 연결을 닫는다.",
+          "outcome": "서비스 종료나 유지 한도 만료 뒤 자기 DB 자원을 남기지 않는 경로를 검사한다."
+        },
+        "components": [
+          {
+            "name": "소유 트랜잭션 종료",
+            "responsibility": "정비 작업 자신의 트랜잭션과 연결을 종료한다.",
+            "implementation": "rollback이 실패해도 finally에서 connection을 닫는다. cleanup task를 shield하고 취소 중에도 종료를 기다린다.",
+            "verification": "원본 T8의 start/LOCK/rollback 오류 close 3종 PASS; T9는 실제 PostgreSQL 별도 제공 실행 2 PASS.",
+            "codeEvidence": [
+              {
+                "kind": "excerpt",
+                "location": "packages/healthcare-sensor-app/src/test_service/maintenance.py:93",
+                "content": "        async def release():\n            \"\"\"Rollback this task's transaction and close its backend even if rollback fails.\"\"\"\n            try:\n                if started:\n                    await transaction.rollback()\n            finally:\n                await conn.close(timeout=5)\n\n        cleanup = asyncio.create_task(release())\n        try:\n            await asyncio.shield(cleanup)\n        except asyncio.CancelledError:\n            await cleanup\n            raise",
+                "explanation": "소유 연결 정리가 rollback의 성공 여부와 독립적으로 실행되는 실제 코드다.",
+                "tests": "원본 T8의 start/LOCK/rollback 오류 close 3종 PASS; T9는 실제 PostgreSQL 별도 제공 실행 2 PASS."
+              }
+            ],
+            "id": "C1"
+          }
+        ],
+        "id": "H2",
+        "diagramIds": [
+          "V2"
+        ]
+      }
+    ]
+  },
+  "reviewDiagnostics": {
+    "contractCompleteness": {
+      "status": "CLEAR",
+      "assessment": "26개 원본 계약을 모두 기록했고 코드 위반 0개다. 21 PROVEN/5 UNVERIFIED는 세 보고서 합계다.",
+      "evidence": "sufficiency-residual-final-recheck.md; sufficiency-closed-coverage.json"
+    },
+    "testSufficiency": {
+      "status": "UNVERIFIED",
+      "assessment": "독립 코드 재검토는 PASS다. 최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.",
+      "evidence": "평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다. 출처: tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json"
+    },
+    "necessity": {
+      "status": "CLEAR",
+      "assessment": "N1 독립 해소, N2 선택적·변경 없음. 열린 필수 코드 수정 없음.",
+      "evidence": "necessity-review-final.md; sufficiency-residual-final-recheck.md"
+    }
+  },
+  "report": "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/implementation-review.md",
+  "scope": [
+    "packages/agent/src/rca_agent/eval_adapter.py",
+    "packages/headless-codex/src/headless_codex/eval_adapter.py",
+    "packages/healthcare-sensor-app/AGENTS.md",
+    "packages/healthcare-sensor-app/Dockerfile",
+    "packages/healthcare-sensor-app/demo/",
+    "packages/healthcare-sensor-app/demo/local_runner.py",
+    "packages/healthcare-sensor-app/demo/local_worker.py",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py",
+    "packages/healthcare-sensor-app/src/test_service/config/settings.py",
+    "packages/healthcare-sensor-app/src/test_service/di/app_container.py",
+    "packages/healthcare-sensor-app/src/test_service/main.py",
+    "packages/healthcare-sensor-app/src/test_service/maintenance.py",
+    "packages/healthcare-sensor-app/src/test_service/middleware/logging.py",
+    "packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py",
+    "packages/healthcare-sensor-app/src/test_service/revision/",
+    "packages/healthcare-sensor-app/src/test_service/services/db_observability.py",
+    "packages/healthcare-sensor-app/src/test_service/services/sensor.py",
+    "packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py",
+    "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py",
+    "packages/healthcare-sensor-app/tests/test_bounded_observability.py",
+    "packages/healthcare-sensor-app/tests/test_bounded_workload.py",
+    "packages/healthcare-sensor-app/tests/test_http_exception_logging.py",
+    "packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py",
+    "packages/healthcare-sensor-app/tests/test_observability_lifespan.py",
+    "packages/healthcare-sensor-app/tests/test_real_mechanisms.py",
+    "packages/healthcare-sensor-app/tests/test_workload_settings.py",
+    "packages/infra/bin/infra.ts",
+    "packages/infra/config/loader.ts",
+    "packages/infra/lib/stacks/healthcare-service-stack.ts",
+    "packages/infra/lib/stacks/rds-stack.ts",
+    "packages/infra/test/healthcare-image-config.test.ts",
+    "packages/infra/test/healthcare-service-stack.test.ts",
+    "scripts/run_deployed_e2e.py",
+    "scripts/run_realistic_demo.py",
+    "tests/harness/approve-cli.mjs",
+    "tests/harness/evaluator.mjs",
+    "tests/harness/model-cli.mjs",
+    "tests/scenarios"
+  ],
+  "changeScope": [
+    "packages/healthcare-sensor-app/AGENTS.md",
+    "packages/healthcare-sensor-app/Dockerfile",
+    "packages/healthcare-sensor-app/demo/",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py",
+    "packages/healthcare-sensor-app/src/test_service/config/settings.py",
+    "packages/healthcare-sensor-app/src/test_service/di/app_container.py",
+    "packages/healthcare-sensor-app/src/test_service/main.py",
+    "packages/healthcare-sensor-app/src/test_service/maintenance.py",
+    "packages/healthcare-sensor-app/src/test_service/middleware/logging.py",
+    "packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py",
+    "packages/healthcare-sensor-app/src/test_service/revision/",
+    "packages/healthcare-sensor-app/src/test_service/services/db_observability.py",
+    "packages/healthcare-sensor-app/src/test_service/services/sensor.py",
+    "packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py",
+    "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py",
+    "packages/healthcare-sensor-app/tests/test_bounded_observability.py",
+    "packages/healthcare-sensor-app/tests/test_bounded_workload.py",
+    "packages/healthcare-sensor-app/tests/test_http_exception_logging.py",
+    "packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py",
+    "packages/healthcare-sensor-app/tests/test_observability_lifespan.py",
+    "packages/healthcare-sensor-app/tests/test_real_mechanisms.py",
+    "packages/healthcare-sensor-app/tests/test_workload_settings.py",
+    "packages/infra/bin/infra.ts",
+    "packages/infra/config/loader.ts",
+    "packages/infra/lib/stacks/healthcare-service-stack.ts",
+    "packages/infra/test/healthcare-image-config.test.ts",
+    "packages/infra/test/healthcare-service-stack.test.ts"
+  ],
+  "changeScopeBasis": "원본 change-scope.txt의 해당 기능 경로 및 main이 통보한 후속 F1/F4/U3 변경. 혼합 작업 트리의 기존 효율 수정 전체를 새 데모 변경으로 귀속하지 않는다.",
+  "conventions": "AGENTS.md; docs/agent-protocol.md; 사용자 지정 writing-only 소유 범위",
+  "implementationChoices": [
+    {
+      "choice": "개별 요청 간격5초, 동시1, query20, 고정 seed/patient 선택",
+      "evidence": "healthcare settings.py:25; traffic_generator.py:121",
+      "intentFit": "유한 요청 시작 계획(R2/R5)을 유지하는 조정값",
+      "whyItMatters": "데모 성공 부하를 보장하는 수치가 아니다. 늦은 슬롯은 버리고 다음 due=now+interval로 잡는다."
+    },
+    {
+      "choice": "observer 별도 pool1/overflow0, pool timeout2초, statement timeout2000ms; activity100/locks200",
+      "evidence": "database_adapter.py:178",
+      "intentFit": "앱 풀 고갈 중에도 유한 읽기 관측(R4)",
+      "whyItMatters": "관측 연결 자체가 연결 수에 포함되므로 앱 pool과 DB 전체를 분리한다."
+    },
+    {
+      "choice": "EMF sample 배열100, 기본 flush30초, gauge 유지",
+      "evidence": "symptom_metrics.py:27,118,168",
+      "intentFit": "독립 방출과 유한 메모리",
+      "whyItMatters": "sample capacity 방출은 정상이며 취소를 기존 완료 계수에 더하지 않는다. 30초는 legacy 계약 수치다."
+    },
+    {
+      "choice": "r1 정상, r2 N+1, r3 획득 후 body-error cleanup 누락을 빌드 overlay로 고정",
+      "evidence": "Dockerfile:12; demo/build_revision.py:67",
+      "intentFit": "명시적인 불변 소스 선택(R3), 같은 응답(R2)",
+      "whyItMatters": "런타임 환경 이름으로 구현을 바꾸지 않는다. r3의 고의 결함 자체는 정상 코드 버그로 신고하지 않았다."
+    }
+  ],
+  "contractCoverage": [
+    {
+      "contractId": "D0",
+      "adrBasis": "Decision",
+      "status": "PROVEN",
+      "implementation": "독립 RDS/Healthcare 스택, 사설 배치, DB 선행 의존성을 코드와 합성으로 확인. 실제 AWS 배포 성공을 뜻하지 않는다.",
+      "evidence": "packages/infra/bin/infra.ts:48; packages/infra/lib/stacks/rds-stack.ts:29; packages/infra/lib/stacks/healthcare-service-stack.ts:37",
+      "tests": "원 검토의 T1,T6",
+      "requirement": "관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis",
+      "decisionObligationsFullText": "관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.\n\n### Requirement contract\n\n- 데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.\n- 서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.\n- 정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.\n- 요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.\n- 서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.\n- 배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.\n\n### 데이터베이스\n\n- **네트워크 격리**: 사설 서브넷에 두고 VPC 내부에서만 데이터베이스 포트 접근을 허용한다.\n- **자격 증명**: 비밀 관리 서비스가 생성·보관하고 서비스는 참조로만 주입받는다. 자격 증명이 배포 구성이나 이미지에 들어가면 안 된다.\n- **비용 최적화**: 데모 규모에 맞는 최소 인스턴스 등급과 스토리지를 사용한다. 자동 스케일링이 필요한 규모가 아니다.\n- **개발 환경 수준 보호**: 삭제 보호를 두지 않는다. 데모 환경은 재생성이 정상 운영이며, 삭제 보호는 반복 검증을 방해한다.\n\n### Healthcare 서비스\n\n- **DB 연결 구성**: 접속 대상은 환경 설정으로, 자격 증명은 비밀 참조로 주입한다.\n- **배경 트래픽 생성**: 서비스가 스스로 센서 저장과 조회를 수행한다. 요청 완료 속도와\n  요청 시작 계획을 분리하고 동시 실행 상한을 둔다. 상한에 도달하면 무한 대기열이나\n  뒤늦은 몰아 보내기를 만들지 않고 실행하지 못한 요청을 별도로 기록한다. 같은 부하\n  설정을 정상·결함·복원 구간에 사용하며 일부 이상치 데이터도 유지한다.\n- **현실적인 결함 재현**: 풀 설정 회귀는 실제 연결 설정을 변경한 실행 정의로,\n  조회 증폭과 세션 정리 결함은 정상 이미지와 코드가 다른 불변 이미지로 재현한다.\n  트랜잭션 락은 같은 데이터베이스에 연결하는 별도 정비 작업이 소유한다.\n  기본 이미지는 정상 경로를 사용하며 결함 이미지 선택은 명시적이다.\n  기존 장애 플래그와 직접 주입 API는 호환용으로 유지하지만 새 시나리오의\n  원인 입증이나 복원 성공 근거로 대체하지 않는다\n  ([ADR infra/0007](0007-demo-symptom-alarm-and-deployment-fault-injection.md)).\n- **배포된 코드 상태 노출**: 배포된 리비전 식별자를 실행 환경에 명시해 에이전트가 어떤 코드가 실행 중인지 저장소와 대조할 수 있게 한다.\n- **관측과 수명 관리**: 요청 시작·완료·실패·진행 중 작업, SQL 호출 수와 소요 시간,\n  연결 획득·반환과 실제 유효 풀 설정을 관측한다. SQL 매개변수나 자격 증명은 기록하지\n  않는다. 지표는 요청 완료와 독립적으로 주기 방출하며 서비스 종료 시 부하·관측 작업과\n  소유한 연결을 정리한다. 정비 작업은 실행 식별자와 유한한 유지 한도를 갖고, 정상 종료·\n  실패·종료 신호에서 자기 트랜잭션을 롤백하고 연결을 닫는다.\n- **트레이싱은 선택적 구성**: 트레이싱 수집기를 사이드카로 붙일 수 있게 두되 기본 활성화하지 않는다. RCA의 자동 증거 수집 경로가 트레이스를 사용하지 않기 때문이다([ADR tools/0003](../tools/0003-trace-analysis.md)).\n\n### 스택 간 순환 참조 회피\n\n데이터베이스 보안 그룹이 서비스 보안 그룹을 참조하고 서비스가 데이터베이스를\n참조하면 스택 간 순환이 생긴다. 데이터베이스 인바운드를 VPC 대역 전체로 열어 보안\n그룹 상호 참조를 제거한다. 이는 개발 환경에서만 허용되는 완화이며, 같은 VPC의 다른\n서비스가 데이터베이스에 접근할 수 있다는 대가를 감수한다."
+    },
+    {
+      "contractId": "R1",
+      "adrBasis": "데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.",
+      "status": "PROVEN",
+      "implementation": "사설 서브넷·공인 IP 없음·VPC CIDR DB 접근, 생성 비밀의 username/password 참조. Docker는 소스·가상환경만 복사한다.",
+      "evidence": "packages/infra/lib/stacks/rds-stack.ts:23; packages/infra/lib/stacks/healthcare-service-stack.ts:138; packages/healthcare-sensor-app/Dockerfile:22",
+      "tests": "원 검토의 T1,T6",
+      "requirement": "데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R2",
+      "adrBasis": "서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.",
+      "status": "PROVEN",
+      "implementation": "완료와 분리된 슬롯 계획, active 상한, missed/capacity skipped 계수, 취소 후 gather.",
+      "evidence": "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py:85 (특히 121–144)",
+      "tests": "원 검토의 T1: test_stalled_requests_do_not_stop_offers_or_exceed_concurrency; test_event_loop_delay_skips_missed_deadlines_without_catchup_tasks",
+      "requirement": "서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R3",
+      "adrBasis": "정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.",
+      "status": "PROVEN",
+      "implementation": "r1 빌드 기본; r2 실제 121 SELECT, r3 예외 뒤 세션 잔류; 풀 설정·별도 락 작업; 레거시 플래그/API 별도 유지. verified=false는 UNBUILT 체크아웃 manifest에만 해당한다. 현재 컴파일된 로컬 proof와 이미지 3개는 verified=true이며 소스가 일치한다.",
+      "evidence": "packages/healthcare-sensor-app/Dockerfile:12; demo/build_revision.py:67; demo/revisions/r2/query.py:10; demo/revisions/r3/session.py:23; services/fault.py (후자의 상대 경로는 healthcare 패키지)",
+      "tests": "원 검토의 T1,T7,T9,T10",
+      "requirement": "정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis",
+      "evidenceClarificationSource": "사용자 main의 verified final data 정정 메시지"
+    },
+    {
+      "contractId": "R4",
+      "adrBasis": "요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.",
+      "status": "PROVEN",
+      "implementation": "F1 해소. 요청·SQL·연결·풀 관측/독립 방출을 유지하며 HTTP driver 예외는 안전한500 또는 원래 context 없는 late-error로 처리. 실패 리딩 계수·세션 반환은 유지.",
+      "evidence": "packages/healthcare-sensor-app/src/test_service/middleware/logging.py:17; services/db_observability.py:83; services/symptom_metrics.py:153",
+      "tests": "N1 Healthcare125 PASS; F1 재현 generic500/canary=false",
+      "requirement": "요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R5",
+      "adrBasis": "서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.",
+      "status": "PROVEN",
+      "implementation": "서비스 작업 drain 뒤 소유 세션/관측 풀 정리; 정비는 자기 transaction만 rollback. 정상·취소·SIGTERM·기한 만료는 실측, start/LOCK/rollback 오류는 독립 probe에서 close 확인.",
+      "evidence": "packages/healthcare-sensor-app/src/test_service/main.py:69; adapters/secondary/database_adapter.py:157; maintenance.py:91; demo/local_runner.py:44",
+      "tests": "원 검토의 T1,T7,T8/maintenance_failure_probes,T9",
+      "requirement": "서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R6",
+      "adrBasis": "배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.",
+      "status": "UNVERIFIED",
+      "implementation": "구현·로컬 이미지/소스 식별·같은 부하의3구간 검사는 확인. 세 최신 imageID/기록된 source fingerprint가 현재 실측과 일치한다. 실제 AWS 배포 자원의 이미지와3구간 관측은 미검증(U1 runtime); 새 ADR 상태 선행조건으로 요구하지 않음. 선택적 HEALTHCARE_IMAGE_DIGEST/TOML imageDigest가 real loader→bin→stack의 repository@sha256로 연결되며 잘못된 pin은 거부한다. 현재인프라48시험으로 확인.",
+      "evidence": "revision/manifest.py:source_manifest (healthcare src/test_service); scripts/run_realistic_demo.py:immutable_baseline_image,baseline_source_manifests; review-fixed-images.json; packages/infra/config/loader.ts:143; packages/infra/bin/infra.ts:64; packages/infra/lib/stacks/healthcare-service-stack.ts:75–87,122",
+      "tests": "N1/N5 current-source proof; N5 docker image inspect3/3 및 fingerprint 대조; recheck-03 infra-pin:48 PASS/2 suites",
+      "requirement": "배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    }
+  ],
+  "findings": [
+    {
+      "sourceId": "U1",
+      "category": "Unverified risk",
+      "perspective": "sufficiency",
+      "confidence": "high",
+      "summary": "실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다.",
+      "whyItMatters": "로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다.",
+      "expectedBehavior": "실제 AWS 결과를 주장할 때 해당 실행의 이미지·부하·알람·복원 관측이 연결되어야 한다.",
+      "observedBehavior": "Healthcare AWS 배포 E2E는 수행하지 않았다. 별도 평가용 AWS 자원과 로컬 PostgreSQL 자원은 정리 후 부재 확인을 마쳤다.",
+      "requestedChange": "현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다.",
+      "code": "packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore",
+      "evidence": "compiled proof SHA83aac573…와 review-fixed-images.json은 로컬 자료; AWS not-run — main-verification.json; 정리 결과: tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json",
+      "test": "AWS normal→fault→restore 알람·복원 E2E",
+      "testResult": "NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.",
+      "contractIds": [
+        "R6"
+      ],
+      "adrQuote": "원본 계약의 실제 배포·증상·회복 관측 의무"
+    }
+  ],
+  "adrFullBody": "# ADR 0004: Healthcare 데모 서비스와 데이터베이스 배포 — RCA 검증 환경\n\nDate: 2026-04-22\nUpdated: 2026-09-10\n\n## Status\n\nProposed\n\n## Context\n\nRCA 에이전트의 정확도는 실제 클라우드 환경에서 장애 시나리오를 재현해야 검증할 수\n있다. Healthcare Sensor App은 이를 위한 데모 서비스로, 관계형 데이터베이스를 사용하는\n실제 서비스의 장애 패턴을 재현한다.\n\n## Decision Drivers\n\n- 센서 데이터가 영속 저장소에 쌓이고 정상 상태 메트릭이 축적되어야 RCA 에이전트가 이상을 판정할 수 있다. baseline이 없으면 모든 값이 정상으로도 이상으로도 보인다.\n- 커넥션 누수, 슬로우 쿼리, 자원 부하를 개별적으로 활성화할 수 있어야 한다.\n- 데모 서비스는 외부에서 접근할 수 없어야 한다. 의도적으로 장애를 주입하는 환경이므로 노출되면 안 된다.\n- 데모 목적에 비해 상시 비용이 과하지 않아야 한다.\n- 주입한 장애는 플레이북 실행이 되돌릴 수 있는 상태여야 한다. 복구 대상이 없으면 실행 경로를 검증할 수 없다([ADR agent/0017](../agent/0017-playbook-execution-agent.md)).\n\n## Decision\n\n관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.\n\n### Requirement contract\n\n- 데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.\n- 서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.\n- 정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.\n- 요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.\n- 서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.\n- 배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.\n\n### 데이터베이스\n\n- **네트워크 격리**: 사설 서브넷에 두고 VPC 내부에서만 데이터베이스 포트 접근을 허용한다.\n- **자격 증명**: 비밀 관리 서비스가 생성·보관하고 서비스는 참조로만 주입받는다. 자격 증명이 배포 구성이나 이미지에 들어가면 안 된다.\n- **비용 최적화**: 데모 규모에 맞는 최소 인스턴스 등급과 스토리지를 사용한다. 자동 스케일링이 필요한 규모가 아니다.\n- **개발 환경 수준 보호**: 삭제 보호를 두지 않는다. 데모 환경은 재생성이 정상 운영이며, 삭제 보호는 반복 검증을 방해한다.\n\n### Healthcare 서비스\n\n- **DB 연결 구성**: 접속 대상은 환경 설정으로, 자격 증명은 비밀 참조로 주입한다.\n- **배경 트래픽 생성**: 서비스가 스스로 센서 저장과 조회를 수행한다. 요청 완료 속도와\n  요청 시작 계획을 분리하고 동시 실행 상한을 둔다. 상한에 도달하면 무한 대기열이나\n  뒤늦은 몰아 보내기를 만들지 않고 실행하지 못한 요청을 별도로 기록한다. 같은 부하\n  설정을 정상·결함·복원 구간에 사용하며 일부 이상치 데이터도 유지한다.\n- **현실적인 결함 재현**: 풀 설정 회귀는 실제 연결 설정을 변경한 실행 정의로,\n  조회 증폭과 세션 정리 결함은 정상 이미지와 코드가 다른 불변 이미지로 재현한다.\n  트랜잭션 락은 같은 데이터베이스에 연결하는 별도 정비 작업이 소유한다.\n  기본 이미지는 정상 경로를 사용하며 결함 이미지 선택은 명시적이다.\n  기존 장애 플래그와 직접 주입 API는 호환용으로 유지하지만 새 시나리오의\n  원인 입증이나 복원 성공 근거로 대체하지 않는다\n  ([ADR infra/0007](0007-demo-symptom-alarm-and-deployment-fault-injection.md)).\n- **배포된 코드 상태 노출**: 배포된 리비전 식별자를 실행 환경에 명시해 에이전트가 어떤 코드가 실행 중인지 저장소와 대조할 수 있게 한다.\n- **관측과 수명 관리**: 요청 시작·완료·실패·진행 중 작업, SQL 호출 수와 소요 시간,\n  연결 획득·반환과 실제 유효 풀 설정을 관측한다. SQL 매개변수나 자격 증명은 기록하지\n  않는다. 지표는 요청 완료와 독립적으로 주기 방출하며 서비스 종료 시 부하·관측 작업과\n  소유한 연결을 정리한다. 정비 작업은 실행 식별자와 유한한 유지 한도를 갖고, 정상 종료·\n  실패·종료 신호에서 자기 트랜잭션을 롤백하고 연결을 닫는다.\n- **트레이싱은 선택적 구성**: 트레이싱 수집기를 사이드카로 붙일 수 있게 두되 기본 활성화하지 않는다. RCA의 자동 증거 수집 경로가 트레이스를 사용하지 않기 때문이다([ADR tools/0003](../tools/0003-trace-analysis.md)).\n\n### 스택 간 순환 참조 회피\n\n데이터베이스 보안 그룹이 서비스 보안 그룹을 참조하고 서비스가 데이터베이스를\n참조하면 스택 간 순환이 생긴다. 데이터베이스 인바운드를 VPC 대역 전체로 열어 보안\n그룹 상호 참조를 제거한다. 이는 개발 환경에서만 허용되는 완화이며, 같은 VPC의 다른\n서비스가 데이터베이스에 접근할 수 있다는 대가를 감수한다.\n\n## 대안 검토\n\n| 대안 | 장점 | 단점 및 미채택 이유 |\n|------|------|---------------------|\n| 서버리스 데이터베이스(자동 스케일링) | 부하에 따라 용량이 조절되고 유휴 비용이 낮다. | 데모 목적에 비해 비용이 과하고, 자동 스케일링이 커넥션 고갈 장애를 흡수해 재현하려는 증상 자체를 약화시킨다. |\n| 컨테이너 내 데이터베이스 | 별도 스택이 없고 비용이 거의 없다. | 컨테이너 재기동마다 데이터와 메트릭 baseline이 사라져 이상 판정 기준이 축적되지 않고, 관리형 데이터베이스 메트릭이 없어 증거 경로가 성립하지 않는다. |\n| 외부 부하 생성기로 트래픽 주입 | 부하 패턴을 정밀하게 제어할 수 있다. | 생성기가 데모의 추가 실패 지점이 되고 실행마다 baseline이 달라져 이상 판정 기준이 흔들린다. |\n| 최소 등급 관리형 데이터베이스 + 앱 내장 배경 트래픽 | baseline이 자동 축적되고 관리형 메트릭이 증거로 쓰이며 비용이 최소다. | 상시 비용이 발생하고, 부하 패턴 제어가 앱 구성에 묶인다. |\n\n## Consequences\n\n### Positive\n\n- RCA 에이전트가 실제 클라우드 환경의 메트릭·로그로 분석을 수행한다\n- 배경 트래픽으로 정상 baseline이 자동 축적되어 장애 주입 시 이상 패턴이 명확히 드러난다\n- 최소 등급 구성으로 상시 비용을 억제한다\n- 실제 설정과 이미지 변경이 실행 정의에 남아 배포 기반 원인 추적이 가능하다\n- 완료되지 않은 요청과 처리량 감소를 구별하고 같은 부하로 복원 효과를 검증할 수 있다\n\n### Negative\n\n- 데이터베이스 상시 실행 비용이 발생한다\n- VPC 대역 전체 인바운드 허용은 같은 VPC 내 다른 서비스의 데이터베이스 접근을 차단하지 못한다 (개발 환경에서만 허용)\n- 삭제 보호가 없어 실수로 스택을 파괴하면 축적된 baseline이 사라진다\n- 정상·결함 이미지와 부하·계측 경로를 함께 유지해야 한다\n\n### Risks\n\n- 서비스 재배포 시 데이터베이스 연결 실패로 배포가 롤백될 수 있다. 데이터베이스가 완전히 가동된 뒤 서비스를 배포한다.\n- 자격 증명이 자동 생성되므로 스택 재생성 시 값이 바뀐다. 재생성 후에는 참조하는 모든 서비스가 새 비밀을 읽어야 한다.\n\n## Related\n\n- [ADR infra/0001: 알람 수신 아키텍처](0001-alarm-ingestion-sns-sqs-fargate.md) — 데모 서비스 알람이 에이전트에 전달되는 경로\n- [ADR infra/0002: 증거 저장](0002-evidence-storage.md) — 공유 저장소\n- [ADR infra/0007: 데모 증상 알람과 배포 기반 장애 주입](0007-demo-symptom-alarm-and-deployment-fault-injection.md) — 장애 플래그를 배포로 활성화하는 시나리오\n- [ADR agent/0017: 플레이북 실행 에이전트](../agent/0017-playbook-execution-agent.md) — 이 서비스의 리셋이 실행 대상이 되는 경로\n",
+  "adrDecisionFullText": "관계형 데이터베이스와 Healthcare 서비스를 독립 스택으로 배포한다.\n\n### Requirement contract\n\n- 데이터베이스와 서비스는 사설 네트워크에서 동작하고 자격 증명은 비밀 참조로 주입한다. 배포 구성과 이미지에 자격 증명을 포함하지 않는다.\n- 서비스는 제한된 동시 실행 수와 완료 속도에 독립적인 요청 시작 계획을 사용한다. 상한 때문에 실행하지 못한 요청은 별도 기록하고 무한 대기열이나 몰아 보내기를 만들지 않는다.\n- 정상 이미지가 기본이며, 실제 설정 변경·불변 결함 이미지·소유 정비 작업으로 네 시나리오를 재현한다. 기존 장애 플래그와 직접 주입 경로는 호환용으로 보존한다.\n- 요청 상태, SQL 횟수·시간, 연결 수명과 유효 풀 설정을 관측하되 SQL 매개변수와 자격 증명을 기록하지 않는다. 지표 방출은 요청 완료에 의존하지 않는다.\n- 서비스와 정비 작업의 종료·실패·종료 신호는 소유한 작업과 연결을 정리한다. 정비 트랜잭션은 유한한 유지 한도를 가지며 자기 트랜잭션만 롤백한다.\n- 배포된 이미지와 소스 리비전을 식별할 수 있어야 하며 정상·결함·복원은 같은 부하 조건으로 검증한다.\n\n### 데이터베이스\n\n- **네트워크 격리**: 사설 서브넷에 두고 VPC 내부에서만 데이터베이스 포트 접근을 허용한다.\n- **자격 증명**: 비밀 관리 서비스가 생성·보관하고 서비스는 참조로만 주입받는다. 자격 증명이 배포 구성이나 이미지에 들어가면 안 된다.\n- **비용 최적화**: 데모 규모에 맞는 최소 인스턴스 등급과 스토리지를 사용한다. 자동 스케일링이 필요한 규모가 아니다.\n- **개발 환경 수준 보호**: 삭제 보호를 두지 않는다. 데모 환경은 재생성이 정상 운영이며, 삭제 보호는 반복 검증을 방해한다.\n\n### Healthcare 서비스\n\n- **DB 연결 구성**: 접속 대상은 환경 설정으로, 자격 증명은 비밀 참조로 주입한다.\n- **배경 트래픽 생성**: 서비스가 스스로 센서 저장과 조회를 수행한다. 요청 완료 속도와\n  요청 시작 계획을 분리하고 동시 실행 상한을 둔다. 상한에 도달하면 무한 대기열이나\n  뒤늦은 몰아 보내기를 만들지 않고 실행하지 못한 요청을 별도로 기록한다. 같은 부하\n  설정을 정상·결함·복원 구간에 사용하며 일부 이상치 데이터도 유지한다.\n- **현실적인 결함 재현**: 풀 설정 회귀는 실제 연결 설정을 변경한 실행 정의로,\n  조회 증폭과 세션 정리 결함은 정상 이미지와 코드가 다른 불변 이미지로 재현한다.\n  트랜잭션 락은 같은 데이터베이스에 연결하는 별도 정비 작업이 소유한다.\n  기본 이미지는 정상 경로를 사용하며 결함 이미지 선택은 명시적이다.\n  기존 장애 플래그와 직접 주입 API는 호환용으로 유지하지만 새 시나리오의\n  원인 입증이나 복원 성공 근거로 대체하지 않는다\n  ([ADR infra/0007](0007-demo-symptom-alarm-and-deployment-fault-injection.md)).\n- **배포된 코드 상태 노출**: 배포된 리비전 식별자를 실행 환경에 명시해 에이전트가 어떤 코드가 실행 중인지 저장소와 대조할 수 있게 한다.\n- **관측과 수명 관리**: 요청 시작·완료·실패·진행 중 작업, SQL 호출 수와 소요 시간,\n  연결 획득·반환과 실제 유효 풀 설정을 관측한다. SQL 매개변수나 자격 증명은 기록하지\n  않는다. 지표는 요청 완료와 독립적으로 주기 방출하며 서비스 종료 시 부하·관측 작업과\n  소유한 연결을 정리한다. 정비 작업은 실행 식별자와 유한한 유지 한도를 갖고, 정상 종료·\n  실패·종료 신호에서 자기 트랜잭션을 롤백하고 연결을 닫는다.\n- **트레이싱은 선택적 구성**: 트레이싱 수집기를 사이드카로 붙일 수 있게 두되 기본 활성화하지 않는다. RCA의 자동 증거 수집 경로가 트레이스를 사용하지 않기 때문이다([ADR tools/0003](../tools/0003-trace-analysis.md)).\n\n### 스택 간 순환 참조 회피\n\n데이터베이스 보안 그룹이 서비스 보안 그룹을 참조하고 서비스가 데이터베이스를\n참조하면 스택 간 순환이 생긴다. 데이터베이스 인바운드를 VPC 대역 전체로 열어 보안\n그룹 상호 참조를 제거한다. 이는 개발 환경에서만 허용되는 완화이며, 같은 VPC의 다른\n서비스가 데이터베이스에 접근할 수 있다는 대가를 감수한다.",
+  "mappingEntry": {
+    "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
+    "status": "Proposed",
+    "summary": "Healthcare를 제한된 요청 시작 부하와 독립 관측, 정상·결함 이미지 및 소유 정비 작업으로 재현 가능한 사설 검증 환경으로 운영한다."
+  },
+  "sourceFingerprints": {
+    "packages/agent/src/rca_agent/eval_adapter.py": "d8fbc3e82feff0e4fcfeb4103f97305f3dbc3f744c37167cdee3846b368800ed",
+    "packages/headless-codex/src/headless_codex/eval_adapter.py": "86b6539a6b4ef1c92838d68d4377ae1d50d714fffddf0924935af56babd91159",
+    "packages/healthcare-sensor-app/AGENTS.md": "f4965c2a995c2b5f002b9cc1ba7c5e0f8ce98bae3c9c5913826c43a2d785ce0b",
+    "packages/healthcare-sensor-app/Dockerfile": "6c1933f140dd23a512eab96b83549602bfbd631b9e54a0dae44fba5635507cbe",
+    "packages/healthcare-sensor-app/demo/local_runner.py": "fe98cf5525e717aa9e689aabd6c7273fc00b7ca106556e211e7efc58668c81c8",
+    "packages/healthcare-sensor-app/demo/local_worker.py": "c33682cbdcfa1386f927988f45e5a79722ef865741a7395376cb0671b199ed81",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py": "5d7e5603d821d251be847e12348716bc1d4da24109cff79ae6c52401f463f8f7",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "8c8bd0f75dccfe304070989279f0582d2f8f9eff96c3832d3a8b4cc1a3b8befa",
+    "packages/healthcare-sensor-app/src/test_service/config/settings.py": "0154b7426ae8961aabc3f8de6befbd7146233d5939344eb28e52497bff6ac627",
+    "packages/healthcare-sensor-app/src/test_service/di/app_container.py": "1cc0df7fd7fb5cf985b38e7e6a4d9263952a35c42a4b833b962e451f61320b7c",
+    "packages/healthcare-sensor-app/src/test_service/main.py": "7ed8b1c5aefe95799bf7f681e25f9be9a5cf906f123bb219bffafec92dc5c95a",
+    "packages/healthcare-sensor-app/src/test_service/maintenance.py": "b785eca035ab70be4906390a797d599265868e4ae21ecb0764135ecc10e130d7",
+    "packages/healthcare-sensor-app/src/test_service/middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+    "packages/healthcare-sensor-app/src/test_service/ports/interfaces/database.py": "162b0332735a6248a017f28359782ab5039903a868ddebaa6520c281fdd712c9",
+    "packages/healthcare-sensor-app/src/test_service/services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+    "packages/healthcare-sensor-app/src/test_service/services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+    "packages/healthcare-sensor-app/src/test_service/services/symptom_metrics.py": "0ed7b65ab71703b8af2cc6dc0bac5eb15f7356484fc27d0a598cf9fd14ed1e17",
+    "packages/healthcare-sensor-app/src/test_service/services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+    "packages/healthcare-sensor-app/tests/test_bounded_observability.py": "d603b010631239a0fa78b69ac706f7a63ace096b51bd5d960cb2228f6dfe8811",
+    "packages/healthcare-sensor-app/tests/test_bounded_workload.py": "6c91b0b100c6b9e0e4d90c38278abab48b1834218f3a65fba6aeb694d33ed8d9",
+    "packages/healthcare-sensor-app/tests/test_http_exception_logging.py": "5f0f482485e14b37a8e6cf7362f11f3f71a2f16d3d541b128e09f0e567f0c512",
+    "packages/healthcare-sensor-app/tests/test_local_runner_process_cleanup.py": "7ef9267ee9c445fe205c37632b16d9108d6f16fc0ef201817a5ad3060799b7e8",
+    "packages/healthcare-sensor-app/tests/test_observability_lifespan.py": "7080376bfc54355960b499f92e39ef6374fdfad57b6ec6d4752ee953b75a0d5d",
+    "packages/healthcare-sensor-app/tests/test_real_mechanisms.py": "eb2799d0bed521fb7f3fa8901b8263825a9d820be91ea57bf3e25265bd0113a9",
+    "packages/healthcare-sensor-app/tests/test_workload_settings.py": "fd859596b298fb458823e20c5d70502852240c259c98bfac1412a029b60af449",
+    "packages/infra/bin/infra.ts": "a6905568a934c47256c2c05f92622ddc7d72c1cfdf3196ca4a56474bd334b4e7",
+    "packages/infra/config/loader.ts": "be2ca513b43f1f1c3ecec379624313961be26d10d637285e349a5a1bb70e8ac4",
+    "packages/infra/lib/stacks/healthcare-service-stack.ts": "6197c9a38aa3c85b7921f579229fe18266dd69a0bf83bdfa23639f6f42dbee78",
+    "packages/infra/lib/stacks/rds-stack.ts": "16f71f5a3c9e21aead4839ed390b02cd21eb1b161be11f910adcb946a04b7a43",
+    "packages/infra/test/healthcare-service-stack.test.ts": "7a48e721cbf925cb6dedb5dc436a301d6ee52db7ade267bdea73514d1ca61842",
+    "scripts/run_deployed_e2e.py": "2d25c6a4fe08522eb84bd729da12afb1c7fdcd172eadf8f397fb34a3cf9f8bf8",
+    "scripts/run_realistic_demo.py": "74b73b5cc6401a916b342d68dde91afd29c6788b7357ce542add3f0686f96685",
+    "tests/harness/approve-cli.mjs": "0983a6d321d5f6f4d7a3259796b182f324d2ae6dfbc299512b2ee1ca3b5eca49",
+    "tests/harness/evaluator.mjs": "ccb6eb20470c3014b373e14e4525c8ca818555377978dbcf6b8c8feb1f259e79",
+    "tests/harness/model-cli.mjs": "88c892ed4799d2632147f8a30f74be1a8aa3436db90d9222d6d6a9107e62369f"
+  },
+  "suppliedLatestProof": {
+    "path": "tests/fixtures/observations/realistic-local-20260910/proof-review-fixed-01.json.txt",
+    "sha256": "83aac573c02bd6eb9596ced5e0797460018704b62b955905b68b15707d1b4f2b",
+    "evidenceLevel": "actual-local-PostgreSQL; not AWS E2E"
+  },
+  "findingHistory": {
+    "N1": "고정 정비 명령으로 제한하고 기존 실행 복원 유지. necessity-review-final.md 독립 PASS.",
+    "N2": "선택적 private ingest wrapper 정리 제안이며 변경하지 않았다. 코드 차단 항목이 아니다.",
+    "F1": "HTTP 전체 응답 수명의 canary 비노출과 오류·취소·세션 반환 경계 검증으로 해소.",
+    "F2": "journal+stderr OSError/ValueError에서도 원본 복원·소유 작업 정리·원래 오류 보존. 마지막 독립 재검토 PASS.",
+    "F3": "투영 helper의 목적·시간·필드·출처 JSDoc과 projection11 검증으로 해소.",
+    "F4": "eval의 missing metadata는 not provided; 제공 값과 0/{} 보존, production defaults 유지. 113/201 및 독립 prompt 재현 PASS.",
+    "U3": "주입 후 monotonic 경과 149초 거부/150초 허용과 cleanup으로 코드 의무 해소. AWS 실행 주장은 없음."
+  },
+  "browser": {
+    "status": "NOT_OPENED",
+    "reason": "사용자가 전달한 이전 자동 승인 검토가 local file:// 열기를 거부했고 HTTP·shell·다른 브라우저 우회도 금지했다.",
+    "openHelperExecuted": false,
+    "visualInspection": "NOT_PERFORMED",
+    "staticSvgValidation": "See static-validation.json; browser visual inspection NOT_PERFORMED"
+  },
+  "notes": "작성 전용 최종 모델·정리 문맥 갱신. 열린 코드 발견사항 없음. INCONCLUSIVE/Proposed와 closed coverage21PROVEN/5UNVERIFIED 유지. coverage의 실행 설명은 Curie 코드 종료 시점 스냅샷이며 이후 최종 모델 결과는 별도 문맥에서 갱신했다. 부모 index/model summary는 main 담당.",
+  "codeReviewVerdict": "PASS",
+  "modelQualityState": "COMPLETED_FAILED",
+  "mainFinalDataSource": "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/main-final-data.txt",
+  "codeClosureSource": "sufficiency-residual-final-recheck.md",
+  "coverageSource": "sufficiency-closed-coverage.json",
+  "resolvedFindings": [
+    {
+      "sourceId": "F1",
+      "category": "Spec violation",
+      "perspective": "sufficiency",
+      "summary": "F1 — HTTP 예외 경로가 SQL 값이 포함된 드라이버 오류를 그대로 기록한다 (원본 검토; 최종 갱신 대기)",
+      "confidence": "high",
+      "adrQuote": "infra/0004 R4, infra/0007 R7 — “SQL 매개변수와 자격 증명은 기록하지 않는다.”",
+      "code": "`packages/healthcare-sensor-app/src/test_service/middleware/logging.py:29`: `logger.exception(\"Request failed\", extra=extra)`; 이어지는 `raise`로 최종 서버 오류 처리까지 원래 예외가 전달된다. `telemetry.py:9`의 JSON formatter는 exc_info를 제거하지 않는다. 새 DB adapter의 `hide_parameters=True`는 driver DETAIL 문자열을 삭제하지 않는다.",
+      "evidence": "`packages/healthcare-sensor-app/src/test_service/middleware/logging.py:29`: `logger.exception(\"Request failed\", extra=extra)`; 이어지는 `raise`로 최종 서버 오류 처리까지 원래 예외가 전달된다. `telemetry.py:9`의 JSON formatter는 exc_info를 제거하지 않는다. 새 DB adapter의 `hide_parameters=True`는 driver DETAIL 문자열을 삭제하지 않는다.",
+      "test": "`T8`의 `log_counterexample()` — 실제 LoggingMiddleware.dispatch에 합성 DBAPIError를 전달한다. SQLAlchemy 오류에 hide_parameters=True를 주고, driver DETAIL에 무해한 `CANARY_SQL_PARAMETER`를 넣었다. DB/AWS 호출 없음.",
+      "testResult": "FAIL (계약); 재현 실행은 정상 종료. `sufficiency-log-repro.json`: canary_in_log=true, parameters_hidden_banner=true. 실제 PostgreSQL에서 개인정보를 사용한 테스트라는 뜻이 아니다. / 갱신: 수정·테스트 완료 main 통보. 최종 독립 재검토 대기.",
+      "whyItMatters": "SQL hook과 서비스 로그만 검사하면 HTTP로 들어온 DB 실패가 비노출 경계를 우회한다. 로그를 RCA 증거로 사용하는 흐름으로 값이 퍼질 수 있다.",
+      "expectedBehavior": "HTTP DB 실패도 요청 식별자/오류 종류/안전한 상태만 기록하고 바인드 값·원문 driver DETAIL·자격 증명은 남기지 않는다.",
+      "observedBehavior": "값 숨김 배너와 동시에 driver DETAIL의 canary가 exc_info에 기록됐다.",
+      "requestedChange": "미들웨어와 최종 ASGI 오류 경계에서 안전한 오류 응답·종류만 내보내고 원문 예외가 재기록되지 않게 처리한다. SQL hook만 고치면 부족하다.",
+      "editTargets": "`packages/healthcare-sensor-app/src/test_service/middleware/logging.py:dispatch`, 필요한 `main.py:create_app`의 예외 처리 배선, HTTP 로그 회귀 테스트.",
+      "completionCriteria": "HTTP 요청으로 드라이버 DETAIL/바인드 값 canary가 있는 실패를 발생시켜 앱·서버 로그 모두 비노출을 확인하고, 오류 HTTP 상태·요청 계수·세션 반환은 유지한다.",
+      "fix": "main과 Curie의 최종 결과를 반영한 뒤 해당 계약의 상태를 확정한다.",
+      "contractIds": [
+        "R4"
+      ],
+      "remediationUpdate": "수정·테스트 완료 main 통보. 최종 독립 재검토 대기.",
+      "originalFindingMarkdown": "#### F1 [Spec violation] HTTP 예외 경로가 SQL 값이 포함된 드라이버 오류를 그대로 기록한다\n- perspective: sufficiency; severity: High; confidence: high; weight: now; impact: localized fix / data confidentiality.\n- basis: infra/0004 R4, infra/0007 R7 — “SQL 매개변수와 자격 증명은 기록하지 않는다.”\n- evidence: `packages/healthcare-sensor-app/src/test_service/middleware/logging.py:29`: `logger.exception(\"Request failed\", extra=extra)`; 이어지는 `raise`로 최종 서버 오류 처리까지 원래 예외가 전달된다. `telemetry.py:9`의 JSON formatter는 exc_info를 제거하지 않는다. 새 DB adapter의 `hide_parameters=True`는 driver DETAIL 문자열을 삭제하지 않는다.\n- test: `T8`의 `log_counterexample()` — 실제 LoggingMiddleware.dispatch에 합성 DBAPIError를 전달한다. SQLAlchemy 오류에 hide_parameters=True를 주고, driver DETAIL에 무해한 `CANARY_SQL_PARAMETER`를 넣었다. DB/AWS 호출 없음.\n- testResult: FAIL (계약); 재현 실행은 정상 종료. `sufficiency-log-repro.json`: canary_in_log=true, parameters_hidden_banner=true. 실제 PostgreSQL에서 개인정보를 사용한 테스트라는 뜻이 아니다.\n- whyItMatters: SQL hook과 서비스 로그만 검사하면 HTTP로 들어온 DB 실패가 비노출 경계를 우회한다. 로그를 RCA 증거로 사용하는 흐름으로 값이 퍼질 수 있다.\n- expectedBehavior: HTTP DB 실패도 요청 식별자/오류 종류/안전한 상태만 기록하고 바인드 값·원문 driver DETAIL·자격 증명은 남기지 않는다.\n- observedBehavior: 값 숨김 배너와 동시에 driver DETAIL의 canary가 exc_info에 기록됐다.\n- requestedChange / fix: 미들웨어와 최종 ASGI 오류 경계에서 안전한 오류 응답·종류만 내보내고 원문 예외가 재기록되지 않게 처리한다. SQL hook만 고치면 부족하다.\n- editTargets: `packages/healthcare-sensor-app/src/test_service/middleware/logging.py:dispatch`, 필요한 `main.py:create_app`의 예외 처리 배선, HTTP 로그 회귀 테스트.\n- completionCriteria: HTTP 요청으로 드라이버 DETAIL/바인드 값 canary가 있는 실패를 발생시켜 앱·서버 로그 모두 비노출을 확인하고, 오류 HTTP 상태·요청 계수·세션 반환은 유지한다.\n- route: 구현 코드 수정. ADR 계약을 약화하는 sync 대상이 아니다.\n\n",
+      "closure": "해소 — Curie 최종 코드 재검토 및 main 합성",
+      "closureSource": "sufficiency-residual-final-recheck.md"
+    }
+  ],
+  "modelRun": {
+    "runId": "realistic-final-20260910T025818Z-a57123",
+    "inputDigest": "8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+    "inputDigestUnchanged": true,
+    "status": "COMPLETED",
+    "finished": 8,
+    "strandsRunning": 0,
+    "finalResultReceived": true,
+    "passed": 0,
+    "failed": 8,
+    "source": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json",
+    "dimensionsPassed": {
+      "rootCauseIdentified": 4,
+      "evidenceLinked": 7,
+      "artifactsComplete": 8,
+      "remediationSafe": 7,
+      "competingCausesRejected": 0
+    },
+    "modelSelfConfirmed": 8,
+    "selfConfirmationIsReviewerTruth": false
+  },
+  "finalModelContext": {
+    "summary": "최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.",
+    "classificationAndCitationLimits": "두 엔진의 락 사례는 기대 유형 unsupported 대신 slow-query로 분류됐다. Headless의 세션 정리·정비 락·풀 설정 사례에는 확정 원인에 필요한 인용이 각각 누락됐다. Headless 세션 정리 사례의 step-1은 안전성 정적 검사에 걸렸지만, main 검토에서는 메모리상의 소유 집합 제거와 rollback 표현에 따른 오탐 가능성을 남겼다. 실제로 위험한 작업을 실행했다는 증거로 해석하지 않는다.",
+    "qualitativePrecisionLimit": "Strands의 세션 정리 설명은 예외 위치를 commit 이후로 서술했다. main이 대조한 probe의 SQL 오류는 commit 이전에 발생하므로 이 설명에는 사건 순서의 정밀도 한계가 있다. 이는 제공된 정성 검토 결과이며 새로운 코드 결함 판정을 추가하지 않는다.",
+    "headlessMissingRootCitations": [
+      {
+        "scenario": "exception-session-cleanup",
+        "missingRootEvidence": [
+          "obs-04"
+        ]
+      },
+      {
+        "scenario": "maintenance-transaction-lock",
+        "missingRootEvidence": [
+          "obs-03"
+        ]
+      },
+      {
+        "scenario": "pool-config-regression",
+        "missingRootEvidence": [
+          "obs-06"
+        ]
+      }
+    ],
+    "unsafeStepInterpretation": "Static flag only; possible false positive in memory-owned-set removal/rollback wording; no executed dangerous action claimed.",
+    "baselineChanged": false,
+    "approvedNewFixture": false,
+    "source": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json"
+  },
+  "cleanupContext": {
+    "summary": "평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다.",
+    "finalAwsAllAbsent": true,
+    "stoppedRunAllAbsent": [
+      true,
+      true
+    ],
+    "deletedByMain": {
+      "dynamodbTables": 4,
+      "s3Buckets": 1,
+      "vectorBuckets": 1,
+      "vectorIndexes": 8
+    },
+    "indexDeletionAuthority": "사용자 main",
+    "finalAbsenceCheckSource": "tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json",
+    "stoppedAbsenceCheckSources": [
+      "tests/results/model/realistic-20260910T022808Z-fa3ab0/cleanup-verification.json",
+      "tests/results/model/realistic-20260910T023723Z-6308b4/cleanup-verification.json"
+    ],
+    "localSource": "docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json",
+    "remainingLocalProofSchemas": 0,
+    "localContainerRemoved": true,
+    "localAnonymousVolumesRemoved": true,
+    "awsDeploymentE2e": "NOT_RUN"
+  },
+  "finalModelCleanupAuthority": "사용자 main FINAL MODEL/cleanup 통보와 보존된 final-report.json, 최종/중단 두 회차 cleanup-verification.json, local-cleanup.json을 적용했다. 전체 INCONCLUSIVE/Proposed와 closed coverage를 유지한다. 모델0PASS/8FAIL, 기준선 미변경·새 fixture 미승인, 자원 정리 완료. 안전성 정적 검출의 오탐 가능성과 commit 서술 정밀도 한계는 main 제공 판단이다.",
+  "finalModelCleanupSourceHashes": {
+    "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json": "561acf618f3208914bce72266036aacdbfd758b10f8d824c6f9a5bcd517385ae",
+    "tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json": "2d925a5ba4feffb7f129df856981ffd54c89a65a4ac95e6b23086f05c17bb0d2",
+    "docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json": "51a7a18e0c16f36d36d1ec227ba7af04de94c7bcf8aef02d9b4ebd891cd0e75a",
+    "tests/results/model/realistic-20260910T022808Z-fa3ab0/cleanup-verification.json": "bd29d613e3608ec412d59eb13a2ef9263ce7b20db7f2d9b49d5b49b20156e5ed",
+    "tests/results/model/realistic-20260910T023723Z-6308b4/cleanup-verification.json": "0b8f7c27cc90221184d2fc623e80f0a9853bfc3d1549328eb7b353b810993f68"
+  }
+}

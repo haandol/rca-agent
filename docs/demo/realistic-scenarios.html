@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>현실적 RCA 시나리오 — 입력과 검증 경계</title>
+<style>
+  :root { color-scheme: light; font: 17px/1.65 system-ui, sans-serif; color: #172b3a; background: #f5f7fa; }
+  body { max-width: 1050px; margin: auto; padding: 32px 24px 70px; }
+  h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.2; }
+  h2 { margin-top: 2rem; font-size: 1.4rem; }
+  .notice { background: #fff3d4; border-left: 5px solid #b77300; padding: 16px 22px; }
+  article { background: white; border: 1px solid #d5dfe8; border-radius: 10px; padding: 18px 24px; margin: 20px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .94rem; }
+  th, td { text-align: left; vertical-align: top; padding: 12px; border-bottom: 1px solid #d5dfe8; }
+  th { background: #eaf0f5; }
+  .scroll { overflow-x: auto; }
+  code, pre { font: .87rem/1.5 ui-monospace, monospace; }
+  pre { background: #102a43; color: #eaf0f5; padding: 18px; overflow: auto; border-radius: 6px; }
+  a { color: #005aa6; }
+  svg { width: 100%; min-width: 650px; height: auto; }
+  .muted { color: #486581; }
+</style>
+<body>
+<p class="muted">RCA Agent · 2026-09-10 · 운영자·검토자용</p>
+<h1>증상에서 원인을 구별하는 네 시나리오</h1>
+<p class="notice"><strong>현재 상태: 로컬 PostgreSQL 실측 반영, AWS 알람 보정 대기.</strong>
+핵심 관측은 main/DB 작업자의 실제 두 번째 실행과 소스 해시에 연결했다.
+알람 외곽 입력은 합성 예시이고, 정상 기준·사고 구간의 실제 UTC 시각을 사용한다. 모델에 복원 결과를 전달하지 않는다.
+실패한 첫 실행과 초기 합성 초안도 보존했다. AWS 배포 성공·실모델 통과·기준선 승인은 없다.</p>
+
+<article>
+<h2>1. 무엇을 구별하는가</h2>
+<p>RCA는 근본원인분석이다. 연결을 얻지 못했다는 증상만으로는 누수인지,
+작아진 풀인지, 락 때문인지 알 수 없다. 연결 <em>풀</em>은 요청이 함께 쓰고
+반환하는 연결 묶음이고, 트랜잭션의 <em>락</em>은 다른 작업의 접근을 제한하는 잠금이다.</p>
+<div class="scroll"><table>
+<thead><tr><th>카탈로그 ID / 분류</th><th>구별하는 증거</th><th>복원 확인</th></tr></thead>
+<tbody>
+<tr><td><code>pool-config-regression</code><br><code>unsupported</code></td>
+<td>작아진 유효 풀 설정, 획득 대기, 요청 뒤 연결 반환, DB 전체 연결 상한, 같은 시작 부하</td>
+<td>원래 설정으로 복귀한 뒤 같은 부하에서 저장·대기 회복</td></tr>
+<tr><td><code>query-amplification</code><br><code>slow-query</code></td>
+<td>같은 결과 행을 읽는 SQL 횟수, 개별·전체 시간, 일괄 조회와 행별 조회 코드 차이</td>
+<td>원래 이미지에서 같은 응답 내용·조회 횟수·시간 회복</td></tr>
+<tr><td><code>maintenance-transaction-lock</code><br><code>unsupported</code></td>
+<td>차단자·대기자, 잠금 모드·SQL·트랜잭션 시각, 해당 실행의 작업 소유권</td>
+<td>소유 정비 트랜잭션만 롤백한 뒤 저장 재개</td></tr>
+<tr><td><code>exception-session-cleanup</code><br><code>db-leak</code></td>
+<td>예외 요청 종료 뒤에도 남은 연결, 정리 코드 차이, 이후 정상 요청의 풀 대기</td>
+<td>정상 이미지 복귀·결함 태스크 종료 후 같은 예외 입력의 연결 반환</td></tr>
+</tbody></table></div>
+<p><code>unsupported</code>는 기존 주입 유형에 속하지 않는 원인이라는 뜻이다.
+풀 설정과 락을 누수로 바꾸지 않는다. 각 사례는 별도 관측으로 반박할 수 있는
+경쟁 원인 두 개도 요구한다. 데이터가 없다는 이유만으로 원인을 기각하지 않는다.</p>
+</article>
+
+<article>
+<h2>2. 세 종류의 검증을 따로 기록한다</h2>
+<p>아래는 의존성 없는 정적 SVG 흐름도다. 이어지는 Mermaid 원문으로 같은 관계를 재사용할 수 있다.</p>
+<div class="scroll">
+<svg viewBox="0 0 970 285" role="img" aria-labelledby="flow-title flow-desc">
+<title id="flow-title">입력과 검증 경계</title>
+<desc id="flow-desc">로컬 DB 실측은 관측 검토를 거쳐 제공 관측 모델 평가의 입력이 된다.
+평가자는 모델의 실제 결과를 채점한다. 별도의 AWS 배포 경로는 제공 관측을 주입하지 않는다.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#486581"/></marker></defs>
+<g fill="#edf6fd" stroke="#486581" stroke-width="1.4">
+<rect x="10" y="30" width="200" height="65" rx="8"/>
+<rect x="260" y="30" width="170" height="65" rx="8"/>
+<rect x="480" y="30" width="220" height="65" rx="8"/>
+<rect x="750" y="30" width="200" height="65" rx="8"/>
+<rect x="100" y="180" width="260" height="65" rx="8" fill="#f4f0fc"/>
+<rect x="480" y="180" width="360" height="65" rx="8" fill="#f4f0fc"/>
+</g>
+<g font-family="system-ui,sans-serif" font-size="17" text-anchor="middle" fill="#172b3a">
+<text x="110" y="58">로컬 DB 실측</text><text x="110" y="81">정상 → 결함 → 복원</text>
+<text x="345" y="68">정상·사고 관측 선택</text>
+<text x="590" y="58">제공 관측 모델 평가</text><text x="590" y="81">두 엔진 실제 산출물</text>
+<text x="850" y="58">동일 구조·안전성 채점</text><text x="850" y="81">별도 검토 후 승인</text>
+<text x="230" y="207">AWS 배포 제어</text><text x="230" y="230">소유 변경·원상복원</text>
+<text x="660" y="207">증상 알람 → 신규 세션 → 실제 증거 탐색</text><text x="660" y="230">시나리오 observations 주입 없음</text>
+</g>
+<g stroke="#486581" stroke-width="2" marker-end="url(#arrow)">
+<path d="M210 62H255"/><path d="M430 62H475"/><path d="M700 62H745"/><path d="M360 212H475"/>
+</g></svg></div>
+<details><summary>Mermaid 원문</summary><pre>flowchart LR
+  L["로컬 DB: 정상 → 결함 → 복원"] --> R["정상·사고 관측 선택"]
+  R --> M["제공 관측 모델 평가: 두 엔진"]
+  M --> G["동일 구조·안전성 채점 → 검토 후 승인"]
+  A["AWS 배포 제어: 소유 변경·원상복원"] --> D["증상 알람 → 신규 세션 → 실제 증거 탐색"]
+</pre></details>
+<p>로컬 DB 재현은 실제 쿼리와 연결 수명을 확인한다. 제공 관측 모델 평가는 주어진 증거의
+해석·인용을 확인한다. 배포 E2E(처음부터 끝까지의 검증)는 알람 전달·신규 세션·실제 증거 탐색과
+원상복원을 확인한다. 한 계층의 통과로 다른 계층을 통과했다고 기록하지 않는다.</p>
+</article>
+
+<article>
+<h2>3. 알람 시각과 평가 세션 시각</h2>
+<p>알람에 리전, 네임스페이스, 차원(지표의 리소스 좌표), 통계, 기간, 임계치,
+평가 조건이 있으면 두 어댑터가 전달한다. 제공되지 않은 조건은 원본 메타데이터에 추가하지 않는다.
+운영 기본값은 유지하며 모델 평가에서는 없는 리전·통계·주기·시각을
+<code>not provided</code>로 표시한다. 숫자 0과 제공된 원본 값은 보존한다.</p>
+<p>Strands는 반복 평가가 과거 세션과 충돌하지 않도록 새 실행 시각을 사용한다.
+원본 알람 시각은 별도 메타데이터로 남고, 제공된 관측 구간도 각 관측에 명시한다. 원본에 없는 구간은 null과 누락 사유를 유지한다.
+새 세션의 생성 시각을 사고 관측 시각으로 해석하지 않는다. 락의 분석 마감은 차단 쓰기의 종료 시각이며, 그 뒤의 해제·복원 요청은 제공하지 않는다.</p>
+</article>
+
+<article>
+<h2>4. 승인 전 남아 있는 일</h2>
+<ol>
+<li>B의 최종 UTC 측정과 중립 capture ID를 사용하고 원본·복원 결과는 운영자 자료로 보존한다.</li>
+<li>지속 부하로 AWS 조회 알람 임계치를 보정한다. 기본 500ms는 이번 로컬 조회 실측보다 높았다.</li>
+<li>배포 제어가 준비된 사례에만 <code>deployed-e2e</code>를 선언한다.</li>
+<li>새 입력으로 두 엔진의 실제 결과를 모두 수집하고 안전한 복구 절차까지 검토한다.</li>
+<li>별도의 승인 절차로 fixture와 기준선을 갱신한다. 통과·검토 전에는 승인하지 않는다.</li>
+</ol>
+<p>원래 네 입력과 정규화 결과는 <code>tests/fixtures/historical/original-four/</code>에
+보존했다. 기존 실패 결과와 <code>tests/baseline/</code>은 그대로다.
+현재 fixture 부재·digest 불일치에 따른 게이트 실패는 숨기거나 합성 결과로 메우지 않는다.</p>
+<p><a href="../../tests/fixtures/observations/realistic-local-20260910/README.md">로컬 원본과 실측 요약</a> · <a href="scenario-evidence-handoff.md">관측 ID별 측정 인계</a> ·
+<a href="../../tests/README.md">하네스 사용 문서</a></p>
+</article>
+</body>
+</html>

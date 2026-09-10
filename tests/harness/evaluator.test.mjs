@@ -19,8 +19,16 @@ import {
   validateScenario,
 } from './evaluator.mjs';
 
-const scenariosDirectory = path.join(REPOSITORY_ROOT, 'tests/scenarios');
-const fixturesDirectory = path.join(REPOSITORY_ROOT, 'tests/fixtures/results');
+// Historical snapshots exercise the unchanged evaluator; active catalog contracts
+// live in realistic-scenarios.test.mjs. The baseline assertion below stays strict.
+const scenariosDirectory = path.join(
+  REPOSITORY_ROOT,
+  'tests/fixtures/historical/original-four/scenarios',
+);
+const fixturesDirectory = path.join(
+  REPOSITORY_ROOT,
+  'tests/fixtures/historical/original-four/results',
+);
 const baselinePath = path.join(
   REPOSITORY_ROOT,
   'tests/baseline/rca-evaluation.json',

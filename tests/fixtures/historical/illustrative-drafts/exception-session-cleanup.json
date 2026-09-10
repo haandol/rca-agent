@@ -1,0 +1,85 @@
+{
+  "id": "exception-session-cleanup",
+  "category": "code-change",
+  "executionModes": ["model-eval"],
+  "provenance": {
+    "kind": "synthetic-illustrative",
+    "status": "draft-awaiting-local-measurements",
+    "awsMeasured": false,
+    "calibration": "pending-real-runner",
+    "evidenceHandoff": "docs/demo/scenario-evidence-handoff.md"
+  },
+  "alarm": {
+    "name": "Illustrative-Healthcare-VitalIngestFailures",
+    "metric": "VitalIngestFailures",
+    "stateReason": "Illustrative source window 2026-09-10T00:03:00Z/2026-09-10T00:06:00Z; symptom samples are included below; evaluation threshold pending measurement.",
+    "stateChangeTime": "2026-09-10T00:06:00Z",
+    "namespace": "Illustrative/Healthcare",
+    "dimensions": {
+      "Service": "healthcare-sensor"
+    }
+  },
+  "observations": [
+    {
+      "id": "obs-01",
+      "source": "illustrative-application-metrics",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"exceptionRequests\":\"Count\",\"normalRequests\":\"Count\",\"normalFailures\":\"Count\",\"poolTimeouts\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"exceptionRequests\":15,\"normalRequests\":1785,\"normalFailures\":0,\"poolTimeouts\":0,\"exceptionType\":\"ValueError\"},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"exceptionRequests\":15,\"normalRequests\":1785,\"normalFailures\":1750,\"poolTimeouts\":1750,\"exceptionType\":\"ValueError\"},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"exceptionRequests\":15,\"normalRequests\":1785,\"normalFailures\":0,\"poolTimeouts\":0,\"exceptionType\":\"ValueError\"}]}"
+    },
+    {
+      "id": "obs-02",
+      "source": "illustrative-pool-events",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"checkedOut\":\"Count\",\"checkouts\":\"Count\",\"checkins\":\"Count\"},\"records\":[{\"timestamp\":\"2026-09-10T00:01:00Z\",\"requestId\":\"r-101\",\"events\":[\"checkout=c-101\",\"ValueError\",\"rollback\",\"checkin=c-101\",\"end\"],\"checkedOutAfterRequestEnd\":0},{\"timestamp\":\"2026-09-10T00:03:01Z\",\"requestId\":\"r-201\",\"events\":[\"checkout=c-201\",\"ValueError\",\"end\"],\"checkedOutAfterRequestEnd\":1},{\"timestamp\":\"2026-09-10T00:03:02Z\",\"requestId\":\"r-202\",\"events\":[\"checkout=c-202\",\"ValueError\",\"end\"],\"checkedOutAfterRequestEnd\":2},{\"timestamp\":\"2026-09-10T00:04:00Z\",\"requestId\":\"r-215\",\"events\":[\"checkout=c-215\",\"ValueError\",\"end\"],\"checkedOutAfterAllRequestsEnd\":15,\"checkouts\":15,\"checkins\":0},{\"timestamp\":\"2026-09-10T00:07:00Z\",\"requestId\":\"r-301\",\"events\":[\"checkout=c-301\",\"ValueError\",\"rollback\",\"checkin=c-301\",\"end\"],\"checkedOutAfterRequestEnd\":0}]}"
+    },
+    {
+      "id": "obs-03",
+      "source": "illustrative-source-diff",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"line\":\"source-line-number\",\"text\":\"code\",\"sha256\":\"content-digest\"},\"records\":[{\"timestamp\":null,\"sourceKind\":\"working-tree-source-snapshot-not-deployed\",\"before\":{\"path\":\"packages/healthcare-sensor-app/src/test_service/revision/session.py\",\"sha256\":\"07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6\",\"lines\":[{\"line\":3,\"text\":\"import asyncio\"},{\"line\":4,\"text\":\"from collections.abc import AsyncIterator\"},{\"line\":5,\"text\":\"from contextlib import asynccontextmanager\"},{\"line\":7,\"text\":\"from sqlalchemy.ext.asyncio import AsyncSession\"},{\"line\":10,\"text\":\"async def close_session(session: AsyncSession) -> None:\"},{\"line\":12,\"text\":\"    cleanup = asyncio.create_task(session.close())\"},{\"line\":13,\"text\":\"    try:\"},{\"line\":14,\"text\":\"        await asyncio.shield(cleanup)\"},{\"line\":15,\"text\":\"    except asyncio.CancelledError:\"},{\"line\":16,\"text\":\"        await cleanup\"},{\"line\":17,\"text\":\"        raise\"},{\"line\":20,\"text\":\"@asynccontextmanager\"},{\"line\":21,\"text\":\"async def session_scope(factory, owned: set[AsyncSession]) -> AsyncIterator[AsyncSession]:\"},{\"line\":23,\"text\":\"    session = factory()\"},{\"line\":24,\"text\":\"    owned.add(session)\"},{\"line\":25,\"text\":\"    try:\"},{\"line\":26,\"text\":\"        yield session\"},{\"line\":27,\"text\":\"        await session.commit()\"},{\"line\":28,\"text\":\"    finally:\"},{\"line\":30,\"text\":\"        await close_session(session)\"},{\"line\":31,\"text\":\"        owned.discard(session)\"}]},\"after\":{\"path\":\"packages/healthcare-sensor-app/demo/revisions/r3/session.py\",\"sha256\":\"823400d86ff5ffe2fa715ed8827fa31b80fe48de2080ad3dbd2274bf3544ac18\",\"lines\":[{\"line\":3,\"text\":\"import asyncio\"},{\"line\":4,\"text\":\"from collections.abc import AsyncIterator\"},{\"line\":5,\"text\":\"from contextlib import asynccontextmanager\"},{\"line\":7,\"text\":\"from sqlalchemy.ext.asyncio import AsyncSession\"},{\"line\":10,\"text\":\"async def close_session(session: AsyncSession) -> None:\"},{\"line\":12,\"text\":\"    cleanup = asyncio.create_task(session.close())\"},{\"line\":13,\"text\":\"    try:\"},{\"line\":14,\"text\":\"        await asyncio.shield(cleanup)\"},{\"line\":15,\"text\":\"    except asyncio.CancelledError:\"},{\"line\":16,\"text\":\"        await cleanup\"},{\"line\":17,\"text\":\"        raise\"},{\"line\":20,\"text\":\"@asynccontextmanager\"},{\"line\":21,\"text\":\"async def session_scope(factory, owned: set[AsyncSession]) -> AsyncIterator[AsyncSession]:\"},{\"line\":23,\"text\":\"    session = factory()\"},{\"line\":24,\"text\":\"    owned.add(session)\"},{\"line\":25,\"text\":\"    try:\"},{\"line\":28,\"text\":\"        await session.connection()\"},{\"line\":29,\"text\":\"    except BaseException:\"},{\"line\":30,\"text\":\"        await close_session(session)\"},{\"line\":31,\"text\":\"        owned.discard(session)\"},{\"line\":32,\"text\":\"        raise\"},{\"line\":33,\"text\":\"    yield session\"},{\"line\":34,\"text\":\"    await session.commit()\"},{\"line\":36,\"text\":\"    await close_session(session)\"},{\"line\":37,\"text\":\"    owned.discard(session)\"}]}}]}"
+    },
+    {
+      "id": "obs-04",
+      "source": "illustrative-runtime-record",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"poolSize\":\"Count\",\"maxOverflow\":\"Count\",\"poolAcquireP95\":\"Milliseconds\",\"maxConnections\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"image\":\"illustrative:rev-a\",\"poolSize\":5,\"maxOverflow\":10,\"maxConnections\":100,\"poolAcquireP95\":5,\"activeProcesses\":[\"api-a\"],\"terminatedProcesses\":[]},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"image\":\"illustrative:rev-c\",\"poolSize\":5,\"maxOverflow\":10,\"maxConnections\":100,\"poolAcquireP95\":1000,\"activeProcesses\":[\"api-c\"],\"terminatedProcesses\":[\"api-a\"]},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"image\":\"illustrative:rev-a\",\"poolSize\":5,\"maxOverflow\":10,\"maxConnections\":100,\"poolAcquireP95\":6,\"activeProcesses\":[\"api-a2\"],\"terminatedProcesses\":[\"api-c\"]}]}"
+    },
+    {
+      "id": "obs-05",
+      "source": "illustrative-load-generator",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"plannedStarts\":\"Count\",\"started\":\"Count\",\"completed\":\"Count\",\"notStarted\":\"Count\",\"startRate\":\"requests/second\",\"maxConcurrency\":\"Count\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"startRate\":10,\"maxConcurrency\":30,\"plannedStarts\":1800,\"started\":1800,\"completed\":1800,\"notStarted\":0}]}"
+    },
+    {
+      "id": "obs-06",
+      "source": "illustrative-postgresql-samples",
+      "summary": "{\"provenance\":\"synthetic-illustrative-not-measured\",\"window\":{\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:09:00Z\"},\"resource\":{\"environment\":\"illustrative-local\",\"service\":\"healthcare-sensor\",\"database\":\"healthcare\",\"table\":\"sensor_readings\",\"runId\":\"illustration-001\"},\"units\":{\"samples\":\"Count\",\"blockedBackends\":\"Count\",\"statementTime\":\"Milliseconds\"},\"records\":[{\"phase\":\"baseline\",\"start\":\"2026-09-10T00:00:00Z\",\"end\":\"2026-09-10T00:03:00Z\",\"samples\":180,\"blockedBackends\":0,\"waitEventTypeCounts\":{\"Client\":160,\"IO\":20},\"sql\":\"SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname = current_database()\"},{\"phase\":\"changed\",\"start\":\"2026-09-10T00:03:00Z\",\"end\":\"2026-09-10T00:06:00Z\",\"samples\":180,\"blockedBackends\":0,\"waitEventTypeCounts\":{\"Client\":150,\"IO\":30},\"sql\":\"SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname = current_database()\"},{\"phase\":\"restored\",\"start\":\"2026-09-10T00:06:00Z\",\"end\":\"2026-09-10T00:09:00Z\",\"samples\":180,\"blockedBackends\":0,\"waitEventTypeCounts\":{\"Client\":160,\"IO\":20},\"sql\":\"SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname = current_database()\"}]}"
+    }
+  ],
+  "expectation": {
+    "requireConfirmedRootCause": true,
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["db-leak"],
+    "requiredRootCauseEvidenceIds": ["obs-01", "obs-02", "obs-03", "obs-04"],
+    "requiredEvidenceIds": [
+      "obs-01",
+      "obs-02",
+      "obs-03",
+      "obs-04",
+      "obs-05",
+      "obs-06"
+    ],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "competingCauses": [
+      {
+        "id": "traffic-surge",
+        "requiredEvidenceIds": ["obs-05"]
+      },
+      {
+        "id": "maintenance-lock",
+        "requiredEvidenceIds": ["obs-06"]
+      }
+    ]
+  }
+}

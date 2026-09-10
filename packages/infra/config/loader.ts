@@ -3,6 +3,11 @@ import * as fs from 'fs';
 import * as toml from 'toml';
 import { z } from 'zod/v4';
 
+const ImageDigestSchema = z
+  .string()
+  .length(71)
+  .regex(/^sha256:[a-f0-9]{64}$/, 'Expected sha256:<64 lowercase hex digits>');
+
 const ConfigSchema = z.object({
   app: z
     .object({
@@ -24,7 +29,26 @@ const ConfigSchema = z.object({
   // 조용히 그 값으로 되돌아가는데, 가변 태그를 기본값으로 두면 되돌아가는 대상이
   // "언젠가 푸시된 이미지"가 되어 배포된 코드를 태그로 식별할 수 없게 된다.
   agent: z.object({ imageTag: z.string().optional() }),
-  healthcare: z.object({ imageTag: z.string().optional() }),
+  healthcare: z.object({
+    imageTag: z.string().optional(),
+    imageDigest: ImageDigestSchema.optional(),
+    queryLatencyThresholdMs: z.number().positive().default(500),
+    environment: z
+      .object({
+        TRAFFIC_ENABLED: z.enum(['true', 'false']).optional(),
+        TRAFFIC_INTERVAL_SECONDS: z.string().optional(),
+        TRAFFIC_MAX_CONCURRENCY: z.string().optional(),
+        TRAFFIC_QUERY_LIMIT: z.string().optional(),
+        TRAFFIC_PATIENT_ID: z.string().optional(),
+        TRAFFIC_SEED: z.string().optional(),
+        DB_POOL_TIMEOUT_SECONDS: z.string().optional(),
+        DB_STATEMENT_TIMEOUT_MS: z.string().optional(),
+        DB_OBSERVABILITY_ENABLED: z.enum(['true', 'false']).optional(),
+        DB_OBSERVABILITY_INTERVAL_SECONDS: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+  }),
   headlessCodex: z.object({ imageTag: z.string().optional() }),
   execution: z.object({ imageTag: z.string().optional() }),
   storage: z
@@ -60,7 +84,11 @@ type IConfig = Omit<
   'agent' | 'healthcare' | 'headlessCodex' | 'execution'
 > & {
   readonly agent: IServiceImage;
-  readonly healthcare: IServiceImage;
+  readonly healthcare: IServiceImage & {
+    readonly imageDigest?: string;
+    readonly queryLatencyThresholdMs: number;
+    readonly environment?: IRawConfig['healthcare']['environment'];
+  };
   readonly headlessCodex: IServiceImage;
   readonly execution: IServiceImage;
 };
@@ -107,6 +135,23 @@ function imageTagFor(service: keyof typeof IMAGE_TAG_ENV_KEYS): string {
   return resolved;
 }
 
+/**
+ * Resolve the optional Healthcare pin, preferring the environment over TOML.
+ * An explicitly empty or malformed override fails instead of falling back to a
+ * mutable tag. The image tag remains the DEPLOYED_REVISION label, not source proof.
+ */
+function healthcareImageDigest(): string | undefined {
+  const resolved =
+    process.env.HEALTHCARE_IMAGE_DIGEST ?? parsed.healthcare.imageDigest;
+  const result = ImageDigestSchema.optional().safeParse(resolved);
+  if (!result.success) {
+    throw new Error(
+      `Invalid HEALTHCARE_IMAGE_DIGEST / healthcare.imageDigest: ${result.error.message}`,
+    );
+  }
+  return result.data;
+}
+
 export const Config: IConfig = {
   ...parsed,
   app: {
@@ -114,7 +159,11 @@ export const Config: IConfig = {
     ns: `${parsed.app.ns}${parsed.app.stage}`,
   },
   agent: { ...parsed.agent, imageTag: imageTagFor('agent') },
-  healthcare: { ...parsed.healthcare, imageTag: imageTagFor('healthcare') },
+  healthcare: {
+    ...parsed.healthcare,
+    imageTag: imageTagFor('healthcare'),
+    imageDigest: healthcareImageDigest(),
+  },
   headlessCodex: {
     ...parsed.headlessCodex,
     imageTag: imageTagFor('headlessCodex'),

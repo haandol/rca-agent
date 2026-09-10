@@ -1,0 +1,109 @@
+{
+  "source": "tests/fixtures/observations/realistic-local-20260910/proof-review-fixed-01.json.txt",
+  "sha256": "83aac573c02bd6eb9596ced5e0797460018704b62b955905b68b15707d1b4f2b",
+  "audience": "operator-only; never pass this file or complete proof to a model",
+  "scenarios": {
+    "exception-session-cleanup": {
+      "captures": {
+        "capture-1001": [
+          "/phases/9/baseline_write",
+          "/phases/9/probes",
+          "/phases/9/subsequent_write",
+          "/phases/10/baseline_write",
+          "/phases/10/probes",
+          "/phases/10/subsequent_write"
+        ],
+        "capture-1002": ["/phases/9/probes", "/phases/10/probes"],
+        "capture-1003": ["/phases/9/source/files", "/phases/10/source/files"],
+        "capture-1004": [
+          "/phases/9/source",
+          "/phases/9/events",
+          "/phases/10/source",
+          "/phases/10/events"
+        ],
+        "capture-1005": [
+          "/phases/9/events",
+          "/phases/9/probes",
+          "/phases/10/events",
+          "/phases/10/probes"
+        ],
+        "capture-1006": ["/phases/9/snapshot", "/phases/10/snapshot"]
+      },
+      "incidentCutoff": "2026-09-10T02:53:49.620350+00:00"
+    },
+    "maintenance-transaction-lock": {
+      "captures": {
+        "capture-2001": [
+          "/phases/6/write",
+          "/phases/7/baseline_write",
+          "/phases/7/blocked_write"
+        ],
+        "capture-2002": [
+          "/phases/6/write",
+          "/phases/7/maintenance",
+          "/phases/7/snapshot"
+        ],
+        "capture-2003": ["/phases/6/source", "/phases/7/source"],
+        "capture-2004": [
+          "/phases/6/write",
+          "/phases/7/baseline_write",
+          "/phases/7/blocked_write"
+        ],
+        "capture-2005": [
+          "/phases/6/write",
+          "/phases/7/baseline_write",
+          "/phases/7/blocked_write"
+        ],
+        "capture-2006": ["/phases/6/events", "/phases/7/events"]
+      },
+      "incidentCutoff": "2026-09-10T02:53:47.131083+00:00"
+    },
+    "pool-config-regression": {
+      "captures": {
+        "capture-3001": ["/phases/3/writes", "/phases/4/writes"],
+        "capture-3002": [
+          "/phases/3/events",
+          "/phases/3/source",
+          "/phases/4/events",
+          "/phases/4/source"
+        ],
+        "capture-3003": ["/phases/3/writes", "/phases/4/writes"],
+        "capture-3004": ["/phases/3/writes", "/phases/4/writes"],
+        "capture-3005": [
+          "/phases/3/concurrency",
+          "/phases/3/batch_rows",
+          "/phases/3/writes",
+          "/phases/4/concurrency",
+          "/phases/4/batch_rows",
+          "/phases/4/writes"
+        ],
+        "capture-3006": [
+          "/phases/3/snapshot_during_writes",
+          "/phases/4/snapshot_during_writes"
+        ]
+      },
+      "incidentCutoff": "2026-09-10T02:53:44.269224+00:00"
+    },
+    "query-amplification": {
+      "captures": {
+        "capture-4001": [
+          "/phases/0/query_input",
+          "/phases/0/queries",
+          "/phases/1/query_input",
+          "/phases/1/queries"
+        ],
+        "capture-4002": ["/phases/0/source/files", "/phases/1/source/files"],
+        "capture-4003": ["/phases/0/queries", "/phases/1/queries"],
+        "capture-4004": ["/phases/0/source", "/phases/1/source"],
+        "capture-4005": [
+          "/phases/0/events",
+          "/phases/0/queries",
+          "/phases/1/events",
+          "/phases/1/queries"
+        ],
+        "capture-4006": ["/phases/0/queries", "/phases/1/queries"]
+      },
+      "incidentCutoff": "2026-09-10T02:53:42.161419+00:00"
+    }
+  }
+}

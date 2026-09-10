@@ -1,0 +1,3 @@
+NOT_OPENED /Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/infra-0004/adr-impl-review-report.html
+정책 차단: 이전 자동 승인 검토가 local file:// 열기를 거부했고 사용자가 HTTP·shell·다른 브라우저 우회를 금지했다.
+open helper 미실행. 브라우저/스크린샷/시각 레이아웃 검사 미수행. 정적 SVG XML 및 내부 앵커만 검사했다.

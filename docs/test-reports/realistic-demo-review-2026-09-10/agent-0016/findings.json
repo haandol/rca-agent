@@ -1,0 +1,725 @@
+{
+  "language": "ko",
+  "reviewMode": "full",
+  "title": "실제 관측으로 두 RCA 엔진을 평가하는 경계 검토",
+  "adr": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+  "status": "Proposed",
+  "verdict": "INCONCLUSIVE",
+  "artifactState": "FINAL_SYNTHESIS_RECEIVED",
+  "mainUpdates": {
+    "source": "사용자 main FINAL MODEL/cleanup 통보와 보존된 final-report.json, 최종/중단 두 회차 cleanup-verification.json, local-cleanup.json을 적용했다. 전체 INCONCLUSIVE/Proposed와 closed coverage를 유지한다. 모델0PASS/8FAIL, 기준선 미변경·새 fixture 미승인, 자원 정리 완료. 안전성 정적 검출의 오탐 가능성과 commit 서술 정밀도 한계는 main 제공 판단이다.",
+    "f4": {
+      "applied": true,
+      "strandsTargetedPassed": 113,
+      "headlessTargetedPassed": 201,
+      "behavior": "eval의 missing region/statistic/period/time은 not provided; production defaults unchanged",
+      "testPlan": "/private/tmp/rca-realistic-review/f4-test-plan.md"
+    },
+    "verification": {
+      "unitPassed": 1771,
+      "packages": {
+        "agent": 740,
+        "headless": 824,
+        "healthcare": 125,
+        "infra": 82
+      },
+      "rootPassed": 136,
+      "rootFailed": 1,
+      "rootFailure": "old approved-baseline digest mismatch",
+      "format": "PASS",
+      "lint": "PASS",
+      "build": "PASS",
+      "typecheck": "PASS"
+    },
+    "model": {
+      "runId": "realistic-final-20260910T025818Z-a57123",
+      "inputDigest": "8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+      "inputDigestUnchanged": true,
+      "status": "COMPLETED",
+      "finished": 8,
+      "strandsRunning": 0,
+      "finalResultReceived": true,
+      "passed": 0,
+      "failed": 8,
+      "source": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json",
+      "dimensionsPassed": {
+        "rootCauseIdentified": 4,
+        "evidenceLinked": 7,
+        "artifactsComplete": 8,
+        "remediationSafe": 7,
+        "competingCausesRejected": 0
+      },
+      "modelSelfConfirmed": 8,
+      "selfConfirmationIsReviewerTruth": false
+    },
+    "images": {
+      "count": 3,
+      "matchesLatestProof": true,
+      "record": "docs/test-reports/realistic-demo-evidence-2026-09-10/review-fixed-images.json"
+    },
+    "infraIntegration": {
+      "status": "IMPLEMENTED",
+      "change": "optional healthcare imageDigest; legacy imageTag default preserved",
+      "reason": "CLI baseline requires a digest-pinned image",
+      "finalTestsReceived": true,
+      "infraTestsPassed": 82
+    },
+    "curieFinalRecheck": "PASS — all code findings closed",
+    "awsDeployment": "NOT_RUN",
+    "f2Residual": {
+      "status": "CLOSED_BY_INDEPENDENT_RECHECK",
+      "pythonPassed": 56,
+      "nodePassed": 4,
+      "ruff": "PASS",
+      "originalStorageErrorPreserved": true
+    }
+  },
+  "atAGlance": {
+    "impact": "독립 코드 재검토는 PASS이며 F1/F2/F3/F4와 관측시간 U3를 해소했다. 현재 로컬 proof·이미지의 출처가 일치한다.",
+    "action": "최종 모델 평가 0 PASS/8 FAIL과 새 fixture 미승인을 기록했다. 평가용 AWS·로컬 자원은 정리와 부재 확인을 마쳤으며 기존 기준선과 Proposed를 유지한다.",
+    "risk": "실제 Healthcare AWS 알람·배포 복원은 미검증이다. 모델 자체 확정 8/8을 정답으로 취급하지 않으며 안전성 정적 검출은 실제 위험 작업 실행을 뜻하지 않는다. AWS를 새 상태 승격 선행조건으로 추가하지 않는다."
+  },
+  "relatedAdrComparisons": [
+    {
+      "adr": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
+      "title": "ADR 0007: 데모 시나리오 — 실제 결함·증상 관측·원상복원",
+      "similarity": "관측의 원본·시간을 보존하고 실제 결함·복원 증거와 합성 입력을 구별한다.",
+      "difference": "agent/0016의 model-eval은 제공 관측의 해석·인용을 평가하며 infra/0007의 실제 배포 알람·회복 검증을 대신하지 않는다.",
+      "reviewImpact": "같은 원본을 읽어도 모델 품질, 로컬 DB 메커니즘, AWS 증거 탐색의 결과를 서로 다른 증거 수준으로 기록한다.",
+      "evidence": "비교한 두 ADR의 전체 Decision 및 Requirement contract"
+    }
+  ],
+  "diagramRequirements": [
+    {
+      "id": "V1",
+      "question": "동일 요청에서 생긴 네 원인을 구별할 관측만 모델에 제공하는가?",
+      "diagramType": "flowchart",
+      "section": "실제 결함 관측에서 사고 입력을 만든다",
+      "reason": "관측과 정답의 경계가 핵심이므로 데이터 흐름도를 사용한다.",
+      "evidence": "sufficiency-review.md의 원본 수직 기능 및 계약 근거; tests/harness/scenario-capture-boundary.mjs:207; packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py"
+    },
+    {
+      "id": "V2",
+      "question": "없는 알람 정보를 만들어내지 않고 두 엔진의 실제 결과가 모두 모여야 승인되는가?",
+      "diagramType": "flowchart",
+      "section": "제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다",
+      "reason": "부재 유지와 전체 승인 경계를 함께 보여주기 위해 데이터 흐름도를 사용한다.",
+      "evidence": "sufficiency-review.md의 원본 수직 기능 및 계약 근거; packages/agent/src/rca_agent/eval_adapter.py"
+    },
+    {
+      "id": "V3",
+      "question": "deployed-e2e를 선언한 실행이 실제 소유 자원과 서비스 회복으로 끝나는가?",
+      "diagramType": "flowchart",
+      "section": "배포 검증을 실제 복원 증거로 제한한다",
+      "reason": "두 복원 대상과 최종 증상 검사의 관계를 설명하기 위해 분기 구조도를 사용한다.",
+      "evidence": "sufficiency-review.md의 원본 수직 기능 및 계약 근거; scripts/run_realistic_demo.py:131"
+    }
+  ],
+  "reviewHike": {
+    "context": {
+      "intent": "두 분석 엔진을 같은 관측·원인·반증·안전성 계약으로 비교하며 일반 CI와 실모델·배포 검증을 분리한다.",
+      "preconditions": "사설 서비스 또는 전용 로컬 PostgreSQL, 소유 실행 ID, 불변 소스와 같은 부하 조건을 전제로 한다.",
+      "contracts": "네 평가 계층, 공용 분석 경로, 관측의 부재·출처, 엔진 공통 기준과 두 엔진 전수 결과의 명시 승인 경계를 보존한다.",
+      "scopeAndRisk": "전체 ADR 본문과 원래 호출 경로를 검토했다. 독립 코드 재검토는 PASS이며 열린 코드 발견사항은 없다. 남은 미검증 행은 실제 AWS 실행과 모델 품질·승인의 증거 한계이므로 전체 판정은 INCONCLUSIVE다."
+    },
+    "hills": [
+      {
+        "title": "실제 결함 관측에서 사고 입력을 만든다",
+        "reviewQuestion": "동일 요청에서 생긴 네 원인을 구별할 관측만 모델에 제공하는가?",
+        "sliceType": "logical-capability",
+        "sliceName": "실제 결함 관측에서 사고 입력을 만든다",
+        "contractIds": [
+          "R1",
+          "R2"
+        ],
+        "claim": "모델 입력은 실제 PostgreSQL의 정상·결함 구간에서 선택하며 원인 정답은 평가자 측에 둔다.",
+        "workedExample": "원본 검토는 중립 obs/capture 식별자와 4개 source snippet의 hash·줄 일치를 확인했다.",
+        "counterexample": "미래 복원 결과나 정리 성공을 입력에 넣으면 사고 시점에 알 수 없던 정보를 원인 근거로 쓰게 된다.",
+        "assessment": "현재 canonical 관측은 SHA-256 83aac573…의 컴파일된 로컬 proof를 가리킨다. 실제 proof와 이미지 3개는 verified=true이며 소스가 일치한다. 복원·정답의 입력 혼입 거부 시험도 통과했다.",
+        "container": {
+          "responsibility": "원본 시각·단위·리소스와 코드 차이가 있는 사고 입력을 만든다.",
+          "interactions": "원본 보존과 모델 투영을 분리하고 동일 원본의 normal과 fault를 선택한다.",
+          "outcome": "실제 원인 관측과 평가 기대값의 혼입을 막는 경계를 읽을 수 있다."
+        },
+        "components": [
+          {
+            "name": "사고 전후 관측의 선택",
+            "responsibility": "모델 입력에서 미래 복원 정보와 평가자의 정답을 제외한다.",
+            "implementation": "같은 원본의 normal과 fault만 pair로 구성하고 원본 포인터 매핑을 따로 둔다. 관측 식별자는 중립적인 obs/capture 값이다.",
+            "verification": "원본 T10 15 PASS, T12 projection 함수 문서 보완 후 11 PASS. 입력 변경 불변성은 catalog 회귀로 검사했다.",
+            "codeEvidence": [
+              {
+                "kind": "excerpt",
+                "location": "tests/harness/scenario-capture-boundary.mjs:207",
+                "content": "export function projectIncidentCaptures(scenarioId, proof, snippets = {}) {\n  const caseName = CASES[scenarioId];\n  assert.ok(caseName, 'unknown catalog id');\n  const baseline = phaseData(proof, caseName, 'normal');\n  const incident = phaseData(proof, caseName, 'fault');\n  const pair = [baseline, incident];\n  const resource = { runId: proof.run_id, schema: proof.schema };\n  const operatorMapping = {};",
+                "explanation": "모델로 들어갈 두 구간을 직접 선택하는 연속 코드다. 복원·cleanup 구간을 pair에 추가하지 않는다.",
+                "tests": "원본 T10 15 PASS, T12 projection 함수 문서 보완 후 11 PASS. 입력 변경 불변성은 catalog 회귀로 검사했다."
+              }
+            ],
+            "id": "C1"
+          },
+          {
+            "name": "같은 입력과 세션 수명",
+            "responsibility": "저장·조회가 같은 요청 조건과 세션 정리 경계를 사용한다.",
+            "implementation": "데이터 접근부는 session_context로 요청 본문의 예외를 정리 경로에 전달한다. 빌드 리비전 r2는 실제 행별 SQL을, r3는 예외 경로 반환 누락을 선택한다.",
+            "verification": "현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다.",
+            "codeEvidence": [
+              {
+                "kind": "diff",
+                "location": "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py",
+                "content": "@@ -6,14 +6,17 @@ from test_service.adapters.secondary.sensor_repository.models import SensorReadi\n from test_service.ports.dto.sensor import SensorReadingEntity\n from test_service.ports.interfaces.database import DatabasePort\n from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort\n+from test_service.revision.query import fetch_patient_rows\n \n \n class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):\n     def __init__(self, database: DatabasePort) -> None:\n+        \"\"\"Use the database port's lifetime contract rather than owning a separate pool.\"\"\"\n         self._database = database\n \n     async def save_batch(self, readings: list[SensorReadingEntity]) -> list[SensorReadingEntity]:\n-        async for session in self._database.session():\n+        \"\"\"Persist a batch in one scope so flush errors reach the compiled cleanup path.\"\"\"\n+        async with self._database.session_context() as session:\n             rows = []\n             for r in readings:\n                 row = SensorReadingRow(",
+                "explanation": "generator 순회에서 context manager로 바꾼 실제 diff다. 세션의 종료 책임이 요청 본문 실패와 연결된다.",
+                "tests": "현재 compiled proof83aac573…의 실제 SQL 1/121/1과 같은 응답 hash; main PostgreSQL2 PASS, Healthcare125 PASS. 독립 검토는 보존 증거를 재검사했다."
+              }
+            ],
+            "id": "C2"
+          }
+        ],
+        "id": "H1",
+        "diagramIds": [
+          "V1"
+        ]
+      },
+      {
+        "title": "제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다",
+        "reviewQuestion": "없는 알람 정보를 만들어내지 않고 두 엔진의 실제 결과가 모두 모여야 승인되는가?",
+        "sliceType": "logical-capability",
+        "sliceName": "제공된 메타데이터와 같은 기준으로 두 엔진을 평가한다",
+        "contractIds": [
+          "D0",
+          "R3",
+          "R4",
+          "R6",
+          "R7"
+        ],
+        "claim": "평가 어댑터는 제공된 메타데이터의 값과 부재를 공용 최종 프롬프트까지 유지하며 운영 기본값은 보존한다.",
+        "workedExample": "region이 없는 현재 네 입력에는 not provided가 표시된다. region만 ap-northeast-2로 주고 ARN을 생략한 입력은 그 리전을 유지한다.",
+        "counterexample": "누락·null·공백은 not provided로 표현하지만 제공된 0이나 빈 차원 집합은 지우지 않는다. 새 세션 시각을 사고의 원본 시각으로 제시하지 않는다.",
+        "assessment": "F4 관련 시험과 독립 prompt 재현은 통과했다. 최종 실모델 결과 8개는 모두 필수 평가에 실패했고 경쟁 원인 기각은 0/8이다. 기준선 변경이나 새 fixture 승인은 없다.",
+        "container": {
+          "responsibility": "두 엔진의 원인·반증·산출물·안전성 기준을 같은 규칙으로 검사한다.",
+          "interactions": "입력 어댑터, 공용 프롬프트, 실제 분석, 정규화 결과와 공통 평가가 이어지고 전수 결과 뒤에 검토·승인이 온다.",
+          "outcome": "오프라인 통과나 한 엔진의 부분 결과만으로 새 모델 품질을 승인하지 않는다."
+        },
+        "components": [
+          {
+            "name": "원본 알람 메타데이터의 전달",
+            "responsibility": "평가 어댑터가 제공 값과 부재를 공용 분석 경계로 옮긴다.",
+            "implementation": "제공된 Region/AlarmArn/Trigger와 명시적 eval source view를 전달한다. 없는 region/statistic/period/time은 최종 프롬프트에서 not provided로 표시하고 운영 기본값을 유지한다.",
+            "verification": "Strands113/Headless201 PASS 및 Curie의 실제 최종 prompt 재현 PASS. 현재 네 입력·minimal·region-only·null/blank·0/{} 경계를 확인했다.",
+            "codeEvidence": [
+              {
+                "kind": "diff",
+                "location": "packages/agent/src/rca_agent/eval_adapter.py",
+                "content": "@@ -128,9 +153,32 @@ def _alarm_envelope(scenario: dict[str, Any], *, state_change_time: str) -> dict\n         \"NewStateReason\": state_reason,\n         \"StateChangeTime\": state_change_time,\n     }\n-    metric = alarm.get(\"metric\")\n-    if metric:\n-        envelope[\"Trigger\"] = {\"MetricName\": metric, \"Namespace\": \"\", \"Dimensions\": []}\n+    for source, target in ((\"region\", \"Region\"), (\"arn\", \"AlarmArn\")):\n+        if source in alarm and alarm[source] is not None:\n+            envelope[target] = alarm[source]\n+    trigger = {\n+        target: alarm[source]\n+        for source, target in (\n+            (\"metric\", \"MetricName\"),\n+            (\"namespace\", \"Namespace\"),\n+            (\"statistic\", \"Statistic\"),\n+            (\"period\", \"Period\"),\n+            (\"threshold\", \"Threshold\"),\n+            (\"comparisonOperator\", \"ComparisonOperator\"),\n+            (\"evaluationPeriods\", \"EvaluationPeriods\"),\n+            (\"datapointsToAlarm\", \"DatapointsToAlarm\"),\n+            (\"treatMissingData\", \"TreatMissingData\"),\n+        )\n+        if source in alarm and alarm[source] is not None\n+    }\n+    if alarm.get(\"dimensions\") is not None:\n+        trigger[\"Dimensions\"] = [{\"name\": name, \"value\": value} for name, value in alarm[\"dimensions\"].items()]\n+    if trigger:\n+        envelope[\"Trigger\"] = trigger\n+    if _supports_model_eval(scenario):\n+        # An explicit source view prevents production defaults and the fresh\n+        # session timestamp from being presented as incident observations.\n+        envelope[\"EvalSourceMetadata\"] = {**metadata, \"metric\": alarm.get(\"metric\")}\n     return envelope",
+                "explanation": "현재 실제 diff는 어댑터 경계의 변경 증거다. 기존 좁은 테스트의 통과를 최종 프롬프트 비노출 보장으로 확대하지 않는다.",
+                "tests": "Strands113/Headless201 PASS 및 Curie의 실제 최종 prompt 재현 PASS. 현재 네 입력·minimal·region-only·null/blank·0/{} 경계를 확인했다."
+              }
+            ],
+            "id": "C1"
+          }
+        ],
+        "id": "H2",
+        "diagramIds": [
+          "V2"
+        ]
+      },
+      {
+        "title": "배포 검증을 실제 복원 증거로 제한한다",
+        "reviewQuestion": "deployed-e2e를 선언한 실행이 실제 소유 자원과 서비스 회복으로 끝나는가?",
+        "sliceType": "logical-capability",
+        "sliceName": "배포 검증을 실제 복원 증거로 제한한다",
+        "contractIds": [
+          "R5"
+        ],
+        "claim": "현재 네 사례는 model-eval만 선언하며 배포 E2E 성공을 선언하지 않는다.",
+        "workedExample": "F2 저장·진단 동시 오류의 원래 반례가 원본 서비스 복귀와 소유 작업 정리로 끝난다. Python56·Node4는 성공 표시와 소유권의 경계도 확인한다.",
+        "counterexample": "reset 응답이나 준비된 관측만으로 실제 배포와 서비스 회복을 통과시킬 수 없다.",
+        "assessment": "코드 복원 경로는 검증됐지만 실제 AWS 태스크 종료·서비스 증상 회복은 수행하지 않았다. R5의 미검증 상태는 이 실행 증거 한계를 표시한다.",
+        "container": {
+          "responsibility": "실행 가능한 제어와 실제 복원 관측이 있는 배포 사례만 허용한다.",
+          "interactions": "소유 원본 기록에서 서비스와 정비 작업의 복원을 각각 시도하고 후속 증상을 확인한다.",
+          "outcome": "제공 관측 평가와 실제 증거 탐색의 검증 범위를 분리한다."
+        },
+        "components": [
+          {
+            "name": "고정 정비 명령과 기존 실행 복원",
+            "responsibility": "소유된 정비 모듈만 시작하고 과거 journal의 임의 프로그램 실행을 거부한다.",
+            "implementation": "명령은 MAINTENANCE_COMMAND에서 만들고 run ID·유한 유지 시간·schema를 검사한다. 기존 journal의 복원은 launch 검증과 분리된다.",
+            "verification": "necessity-review-final.md: 독립 N1 반례 재검사 PASS, Python 40 PASS, 관련 Node 15 PASS. 실제 AWS 호출 없음.",
+            "codeEvidence": [
+              {
+                "kind": "excerpt",
+                "location": "scripts/run_realistic_demo.py:131",
+                "content": "def maintenance_command(options):\n    \"\"\"Build only the bounded maintenance module command, including for old journals.\"\"\"\n    if (\n        \"maintenance_command\" in options\n        and options[\"maintenance_command\"] != MAINTENANCE_COMMAND\n    ):\n        raise RuntimeError(\n            \"journal records an unsupported maintenance command; restore only\"\n        )\n    run_id = options[\"run_id\"]\n    hold_seconds = options[\"hold_seconds\"]\n    schema = options.get(\"maintenance_schema\", \"public\")\n    if not isinstance(run_id, str) or not re.fullmatch(r\"[A-Za-z0-9_-]{1,48}\", run_id):\n        raise ValueError(\"RunId must be 1..48 letters, digits, underscores or hyphens\")\n    if type(hold_seconds) not in (int, float) or not 0 < hold_seconds <= 7200:\n        raise ValueError(\"hold-seconds must be finite, positive and <=7200\")\n    if not isinstance(schema, str) or not re.fullmatch(\n        r\"[a-z_][a-z0-9_]{0,62}\", schema\n    ):\n        raise ValueError(\"maintenance-schema must be a safe PostgreSQL identifier\")\n    return [\n        part.format(run_id=run_id, hold_seconds=hold_seconds, schema=schema)\n        for part in MAINTENANCE_COMMAND\n    ]",
+                "explanation": "N1 해소를 확인한 고정 명령 경계다. 임의 command를 포맷하여 실행하는 기존 선택 기능이 없다.",
+                "tests": "necessity-review-final.md: 독립 N1 반례 재검사 PASS, Python 40 PASS, 관련 Node 15 PASS. 실제 AWS 호출 없음."
+              }
+            ],
+            "id": "C1"
+          },
+          {
+            "name": "기록·진단 출력 실패와 복원 제어의 분리",
+            "responsibility": "복원 중 저장 오류와 stderr 출력 오류를 메모리에 남기고 정리를 계속한다. 신규 변경의 사전 기록 실패는 원래 저장 오류를 다시 던진다.",
+            "implementation": "복원 중 저장 오류와 stderr 출력 오류를 메모리에 남기고 정리를 계속한다. 신규 변경의 사전 기록 실패는 원래 저장 오류를 다시 던진다.",
+            "verification": "Curie recheck-03: Python56 PASS/Node4 PASS, 원래 반례의 OSError와 실제 닫힌 stream ValueError 모두 원본:1 복원 PASS.",
+            "codeEvidence": [
+              {
+                "kind": "excerpt",
+                "location": "scripts/run_realistic_demo.py:337",
+                "content": "    def record(self, kind, data, *, recovery=False):\n        \"\"\"Keep new intents strict while neither storage nor diagnostic I/O blocks cleanup.\"\"\"\n        try:\n            return self.journal.append(kind, data)\n        except RECOVERABLE_ERRORS as error:\n            failure = {\n                \"step\": \"journal\",\n                \"event\": kind,\n                \"error\": f\"journal append failed: {type(error).__name__}\",\n            }\n            self.journal_errors.append(failure)\n            # Do not expose event payloads or arbitrary filesystem exception text.\n            try:\n                print(\n                    json.dumps(failure | {\"recoveryVerified\": False}), file=sys.stderr\n                )\n            except (OSError, ValueError) as diagnostic_error:\n                # The returned in-memory evidence survives even a closed/full stderr.\n                failure[\"diagnosticErrorType\"] = type(diagnostic_error).__name__\n            if not recovery:\n                raise\n            return None",
+                "explanation": "F2의 마지막 잔여 반례를 닫은 실제 코드다. 기록 오류를 먼저 보존하고 진단 출력 실패를 따로 격리한다.",
+                "tests": "Curie recheck-03: Python56 PASS/Node4 PASS, 원래 반례의 OSError와 실제 닫힌 stream ValueError 모두 원본:1 복원 PASS."
+              }
+            ],
+            "id": "C2"
+          }
+        ],
+        "id": "H3",
+        "diagramIds": [
+          "V3"
+        ]
+      }
+    ]
+  },
+  "reviewDiagnostics": {
+    "contractCompleteness": {
+      "status": "CLEAR",
+      "assessment": "26개 원본 계약을 모두 기록했고 코드 위반 0개다. 21 PROVEN/5 UNVERIFIED는 세 보고서 합계다.",
+      "evidence": "sufficiency-residual-final-recheck.md; sufficiency-closed-coverage.json"
+    },
+    "testSufficiency": {
+      "status": "UNVERIFIED",
+      "assessment": "독립 코드 재검토는 PASS다. 최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.",
+      "evidence": "평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다. 출처: tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json"
+    },
+    "necessity": {
+      "status": "CLEAR",
+      "assessment": "N1 독립 해소, N2 선택적·변경 없음. 열린 필수 코드 수정 없음.",
+      "evidence": "necessity-review-final.md; sufficiency-residual-final-recheck.md"
+    }
+  },
+  "report": "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/implementation-review.md",
+  "scope": [
+    "docs/execution-live-e2e-runbook.md",
+    "packages/agent/src/rca_agent/eval_adapter.py",
+    "packages/agent/src/rca_agent/ports/dto/models.py",
+    "packages/agent/src/rca_agent/prompts/scoping.py",
+    "packages/agent/src/rca_agent/services/scoping.py",
+    "packages/agent/tests/test_eval_alarm_metadata.py",
+    "packages/headless-codex/prompts/rca-user.md",
+    "packages/headless-codex/src/headless_codex/eval_adapter.py",
+    "packages/headless-codex/src/headless_codex/ports/dto/models.py",
+    "packages/headless-codex/src/headless_codex/services/prompt_builder.py",
+    "packages/headless-codex/tests/test_eval_alarm_metadata.py",
+    "packages/healthcare-sensor-app/demo/local_runner.py",
+    "packages/healthcare-sensor-app/demo/local_worker.py",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py",
+    "packages/healthcare-sensor-app/src/test_service/main.py",
+    "packages/infra/lib/stacks/healthcare-service-stack.ts",
+    "packages/infra/lib/stacks/rds-stack.ts",
+    "scripts/run_deployed_e2e.py",
+    "scripts/run_realistic_demo.py",
+    "tests/fixtures/historical/",
+    "tests/fixtures/observations/",
+    "tests/fixtures/results/README.md",
+    "tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json",
+    "tests/fixtures/results/headless-codex/deployment-query-regression.json",
+    "tests/fixtures/results/headless-codex/iam-policy-access-denied.json",
+    "tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json",
+    "tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json",
+    "tests/fixtures/results/strands/deployment-query-regression.json",
+    "tests/fixtures/results/strands/iam-policy-access-denied.json",
+    "tests/fixtures/results/strands/rds-connection-pool-exhaustion.json",
+    "tests/harness/approve-cli.mjs",
+    "tests/harness/deployed-e2e-driver.test.mjs",
+    "tests/harness/evaluator.mjs",
+    "tests/harness/evaluator.test.mjs",
+    "tests/harness/model-and-approval.test.mjs",
+    "tests/harness/model-cli.mjs",
+    "tests/harness/realistic-demo-script.test.mjs",
+    "tests/harness/realistic-scenarios.test.mjs",
+    "tests/harness/realistic_demo_cases.py",
+    "tests/harness/scenario-capture-boundary.mjs",
+    "tests/scenarios",
+    "tests/scenarios/deployed-connection-leak-vital-ingest.json",
+    "tests/scenarios/deployment-query-regression.json",
+    "tests/scenarios/exception-session-cleanup.json",
+    "tests/scenarios/iam-policy-access-denied.json",
+    "tests/scenarios/maintenance-transaction-lock.json",
+    "tests/scenarios/pool-config-regression.json",
+    "tests/scenarios/query-amplification.json",
+    "tests/scenarios/rds-connection-pool-exhaustion.json"
+  ],
+  "changeScope": [
+    "docs/execution-live-e2e-runbook.md",
+    "packages/agent/src/rca_agent/eval_adapter.py",
+    "packages/agent/src/rca_agent/ports/dto/models.py",
+    "packages/agent/src/rca_agent/prompts/scoping.py",
+    "packages/agent/src/rca_agent/services/scoping.py",
+    "packages/agent/tests/test_eval_alarm_metadata.py",
+    "packages/headless-codex/prompts/rca-user.md",
+    "packages/headless-codex/src/headless_codex/eval_adapter.py",
+    "packages/headless-codex/src/headless_codex/ports/dto/models.py",
+    "packages/headless-codex/src/headless_codex/services/prompt_builder.py",
+    "packages/headless-codex/tests/test_eval_alarm_metadata.py",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py",
+    "scripts/run_deployed_e2e.py",
+    "scripts/run_realistic_demo.py",
+    "tests/fixtures/historical/",
+    "tests/fixtures/observations/",
+    "tests/fixtures/results/README.md",
+    "tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json",
+    "tests/fixtures/results/headless-codex/deployment-query-regression.json",
+    "tests/fixtures/results/headless-codex/iam-policy-access-denied.json",
+    "tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json",
+    "tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json",
+    "tests/fixtures/results/strands/deployment-query-regression.json",
+    "tests/fixtures/results/strands/iam-policy-access-denied.json",
+    "tests/fixtures/results/strands/rds-connection-pool-exhaustion.json",
+    "tests/harness/deployed-e2e-driver.test.mjs",
+    "tests/harness/evaluator.test.mjs",
+    "tests/harness/model-and-approval.test.mjs",
+    "tests/harness/realistic-demo-script.test.mjs",
+    "tests/harness/realistic-scenarios.test.mjs",
+    "tests/harness/realistic_demo_cases.py",
+    "tests/harness/scenario-capture-boundary.mjs",
+    "tests/scenarios/deployed-connection-leak-vital-ingest.json",
+    "tests/scenarios/deployment-query-regression.json",
+    "tests/scenarios/exception-session-cleanup.json",
+    "tests/scenarios/iam-policy-access-denied.json",
+    "tests/scenarios/maintenance-transaction-lock.json",
+    "tests/scenarios/pool-config-regression.json",
+    "tests/scenarios/query-amplification.json",
+    "tests/scenarios/rds-connection-pool-exhaustion.json"
+  ],
+  "changeScopeBasis": "원본 change-scope.txt의 해당 기능 경로 및 main이 통보한 후속 F1/F4/U3 변경. 혼합 작업 트리의 기존 효율 수정 전체를 새 데모 변경으로 귀속하지 않는다.",
+  "conventions": "AGENTS.md; docs/agent-protocol.md; 사용자 지정 writing-only 소유 범위",
+  "implementationChoices": [
+    {
+      "choice": "로컬 latency 후보29.73166643641889ms, 초기 AWS500ms",
+      "evidence": "demo/local_runner.py:194; healthcare-service-stack.ts:314",
+      "intentFit": "측정과 환경별 calibration(R6)을 분리",
+      "whyItMatters": "서로 다른 지표 집계이며 전자를 AWS 보장값으로 쓰지 않는다."
+    },
+    {
+      "choice": "alarm envelope는 illustrative, 현재 observation은 baseline+incident만",
+      "evidence": "scenario-capture-boundary.mjs:phaseData,projectIncidentCaptures; tests/scenarios/*.json",
+      "intentFit": "원인 답안·미래 복원을 input에 누설하지 않는 경계(A16 R2/R4)",
+      "whyItMatters": "source hash와 원본 capture 참조로 현재 입력을 추적한다."
+    },
+    {
+      "choice": "eval source view의 None은 운영 경로, dict는 제공값 전용 평가 경로",
+      "evidence": "양 DTO/eval_adapter와 공용 scoping/prompt_builder",
+      "intentFit": "제공되지 않은 사고 metadata를 런타임 기본값으로 채우지 않는다.",
+      "whyItMatters": "누락값은 not provided지만 실제 0/{}는 보존하고 운영 프롬프트 호환성을 유지한다."
+    }
+  ],
+  "contractCoverage": [
+    {
+      "contractId": "D0",
+      "adrBasis": "Decision",
+      "status": "UNVERIFIED",
+      "implementation": "네 계층/공용 분석 경로/오프라인 enforcement는 구현·검사됨. 현행 fixture 승인digest gate는 FAIL, 최종8model 결과와 검토·승인은 아직 완료되지 않음(U2). 실제E2E 품질은 별도runtime미검증(U1).",
+      "evidence": "tests/harness/model-cli.mjs:runModelEvaluation; evaluator.mjs:evaluateResults/createBaseline; 양 eval_adapter의 공용 runner/pipeline 호출",
+      "tests": "N2 Strands113/Headless201 PASS; catalog gates41/42; 최종model8/AWS NOT RUN by reviewer",
+      "requirement": "RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네 계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis",
+      "decisionObligationsFullText": "RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네\n계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.\n\n1. **오프라인 단위·계약 테스트**는 모든 변경에서 실행한다. 외부 서비스의 가용성과\n   무관하게 상태 전이, 시간 제한, 세션 격리, 프롬프트 구성,\n   읽기 전용 도구 노출, 산출물 저장과 감시, 실패 복구를 재현 가능하게 검증한다.\n   두 엔진의 분석 상태 집합과 허용 전이, 신뢰도 재분류, 증거 실패 확정 금지,\n   검증 루프·재생성 상한, 완료 전 가설 종결을 같은 계약으로 검사한다.\n2. **fixture 구조 회귀**는 장애 입력, 관측 증거, 허용 가능한 구조화 장애 유형,\n   필수 산출물 조건을 엔진 중립적인 시나리오 계약으로 정의한다. 일반 CI에서는\n   검토된 엔진별 정규화 결과 스냅샷을 같은 평가 차원으로 재평가하고, 프롬프트,\n   평가 정책, 결과 스냅샷의 digest가 바뀌면 명시적 재승인을 요구한다.\n3. **실모델 계약 평가(`model-eval`)**는 실제 모델과 필요한 AWS 조회 API를 사용해\n   두 엔진의 구조화 RCA 계약을 검증한다. 명시적 실행에서만 동작하고 일반 CI 필수\n   게이트에서는 제외한다. 시나리오가 제공한 `observations`와 관측 식별자를 초기\n   컨텍스트에 넣으므로, 이 결과는 모델이 주어진 증거를 해석하고 인용하는 품질을\n   측정할 뿐 실제 증거 소스에서 관측을 찾아내는 능력을 입증하지 않는다.\n   Headless Codex 평가는 배포 태스크와 로컬 평가가 모델 ID\n   `global.openai.gpt-5.6-sol`, reasoning effort `high`, Bedrock Runtime provider를\n   모두 동일하게 사용할 때만 시작한다. 평가 보고서에는 세 값과 일치 여부를 기록해\n   다른 implicit model, effort, provider로 얻은 결과가 배포 품질 증거로 승인되지\n   않게 한다.\n   각 엔진은 **시나리오 하나를 입력받아 정규화 결과 하나를 표준 출력으로 내는\n   실행 가능한 어댑터**를 제공한다. 하네스는 엔진 내부를 알지 못하고 이 계약만\n   요구하므로, 엔진의 평상시 구동 방식이 이벤트 소비든 단일 호출이든 무관하게\n   같은 평가에 참여한다. 어댑터는 `executionModes`에 `model-eval`이 없는\n   시나리오를 거부하고, 자체적으로 RCA를 수행하지 않으며 공용 분석 경로의 결과를\n   공통 스키마로 옮기는 번역 계층으로만 존재한다.\n   이벤트 소비로만 구동되는 엔진에는 평가 전용 진입점이 필요하다. 이때 평가\n   진입점은 운영 경로가 사용하는 것과 같은 분석 파이프라인을 호출해야 하며,\n   평가용으로 분리된 별도 분석 경로를 두지 않는다. 두 경로가 갈라지면 평가\n   결과가 운영 동작을 대변하지 못한다.\n\n   **실행 단위는 엔진별로 나눌 수 있지만 승인 단위는 두 엔진 전체다.** 한 엔진의\n   회차가 실모델 호출로 수십 분을 쓰므로, 다른 엔진의 실패나 환경 설정 오류 때문에\n   이미 통과한 회차를 버리고 처음부터 다시 돌리는 것은 평가의 실행 가능성을 떨어뜨린다.\n   따라서 하네스는 엔진을 지정한 실행을 허용하고 결과를 같은 회차 디렉터리에\n   누적한다. 그러나 기준선 승인은 **선언된 모든 엔진의 모든 시나리오 결과가 모였을\n   때만** 성립한다 — 기준선의 목적이 두 엔진을 같은 품질 계약으로 비교하는 것이므로,\n   한 엔진만으로 승인하면 비교 근거가 없는 값이 기준선의 이름을 갖는다. 부분 실행은\n   진단과 부분 확인의 수단이고, 승인의 근거가 되지 않는다.\n\n4. **배포 E2E(`deployed-e2e`)**는 실제 장애 주입, CloudWatch 증상 알람,\n   SNS에서 공용 SQS로의 단일 전달, 배포 엔진 중 하나의 신규 세션, 실제 증거 탐색,\n   산출물 저장을 함께 검증한다. 동일 알람 계보에는 엔진 중립 세션이 정확히 하나만\n   존재해야 하고, 세션의 `engine` 값은 실제 승자와 일치해야 한다. 이 경로는\n   시나리오의 `observations`를 엔진에 제공하지 않는다.\n   배포 가능한 시나리오만 `deployed-e2e`를 선언할 수 있고, 주입부터 정리까지\n   호출자가 소유한 하나의 실행 ID로 계보를 묶는다. 과거 세션은 현재 실행의\n   증거로 재사용하지 않는다.\n5. **Headless Codex 공유 원칙**을 적용한다. Headless Codex를 위한 독립된 루트\n   하네스를 만들지 않으며, 모노레포의 공통 실행 명령과 시나리오 계약을\n   공유한다. Codex 프로세스의 작업 디렉터리, 홈 디렉터리, MCP 설정, 산출물\n   디렉터리는 실행마다 격리되어 이전 실행 상태가 평가 결과에 영향을 주지\n   못하게 한다.\n6. **변경 게이트**를 구분한다. 코드와 정적 프롬프트 계약은 오프라인 테스트의\n   필수 게이트이고, 공통 시나리오 평가는 검토된 결과 스냅샷과 입력 digest의\n   무검토 변경을 막는다. 프롬프트 변경 후 실제 모델 품질은 `model-eval`의 구조화\n   결과와 사람이 읽는 보고서를 함께 검토해 새 스냅샷과 digest 기준선을 승인하는\n   절차로 확인한다. 네트워크, 자격 증명, 모델\n   변동으로 실패할 수 있는 실모델 평가와 배포 E2E는 일반 CI와 분리한다.\n7. **시나리오 합격 정책**을 엔진 공통으로 적용한다. 자연어 표현의 특정 단어를\n   필수 조건으로 삼지 않는다. schema v2의 구조화 장애 유형, 확정 판정에 직접\n   연결된 관측 식별자, 필수 산출물, 플레이북 구조와 안전성을 필수 평가 차원으로\n   삼는다.\n   **시나리오는 자신이 기대하는 장애 유형을 관측만으로 판별할 수 있게 구성한다.**\n   장애 유형 어휘는 주입 가능한 유형의 집합이고 그 밖의 원인은 지원하지 않음으로\n   분류되므로, 지원하지 않음을 기대하는 시나리오는 **주입 유형에 해당하지 않는다는\n   근거를 관측으로 제공해야 한다**. 근거 없이 기대하면 모델은 증상이 비슷한 주입\n   유형으로 분류하고, 평가는 모델의 오류가 아니라 시나리오의 미명시를 실패로\n   기록한다. 이 실패는 프롬프트를 고쳐도 사라지지 않는다 — 판별 근거가 입력에 없기\n   때문이다. 같은 이유로 경쟁 원인의 반증 관측도 시나리오가 제공해야 하며, 제공하지\n   않은 원인을 기각하도록 요구하지 않는다.\n   복구 안전성은 **제안의 안전성**을 측정하며 실행 성공 여부와 구분한다. 분석은\n   실행하지 않고 플레이북 절차를 제안하는 데서 끝나므로([ADR 0017](0017-playbook-execution-agent.md)),\n   평가가 측정하는 것은 그 절차가 되돌릴 수 없는 조치를 요구하는지, 대상과 관측\n   기준이 확정 원인과 정합한지다. 절차가 파괴적 조치를 담고 있으면 안전하지 않다.\n   이 판정 규칙은 엔진마다 같아야 한다. 한 엔진은 항상 안전으로 보고하고 다른 엔진은\n   상태로 판정하면 같은 차원의 점수가 비교 불가능해진다.\n   평가는 어떤 실행도 수행하지 않는다. 실행은 사용자 승인을 요구하므로 평가 경로에\n   실행을 포함하면 반복 실행마다 대상 서비스 상태가 바뀌어 후속 실행의 증거가\n   오염된다. 실제 실행과 회고 품질은 운영 경로에서 검증한다.\n   `model-eval`의 증거 연결은 시나리오가 정의한 **관측 식별자를 산출물에 명시적으로\n   인용**했는지로 측정한다. 따라서 이 모드에서만 관측 식별자를 엔진에 전달하고,\n   그 식별자를 증거마다 함께 기록하도록 요구한다. 식별자를 전달하지 않거나 인용을\n   요구하지 않으면 어떤 관측이 결론에 쓰였는지 판정할 수 없다. 배포 E2E에는 이\n   식별자를 주입하지 않으며 실제 증거 탐색 결과로 별도 판정한다.\n   시나리오가 경쟁 원인을 정의하면 각 원인별 `causeId`, validation의 `rejected`\n   판정, 관측 식별자를 정규화 결과에 요구한다. 원인별 반증 식별자 집합은 서로\n   겹치지 않아야 하며, 하나의 rejected 레코드는 하나의 경쟁 원인에만 사용한다.\n   관련 식별자가 다른 산출물에 존재하거나 한 레코드에 여러 원인의 식별자를 모았다는\n   이유만으로는 기각으로 인정하지 않는다.\n   안전성은 결과의 자체 선언만 신뢰하지 않고 사전조건, 승인 주체,\n   롤백 조건, 사후 검증 계획이 모두 있는지 확인한다. 어느 엔진이든 필수 차원을\n   충족하지 못하면 필수 게이트를 실패한다.\n   `rootCause`, remediation summary, rationale 같은 자연어는 사람이 검토하는\n   설명으로 보존하지만 부분 문자열 점수나 동의어 목록으로 필수 gate를 만들지 않는다.\n   기준선은 점수가 아니라 평가 입력 파일 집합과 digest를 저장한다.\n\n8. **Headless Codex 회귀 프로브**를 필수 오프라인 게이트로 둔다. 최소한 다음\n   위반을 거부해야 한다.\n   - 0.8 미만 신뢰도의 CONFIRMED 선언\n   - 필수 증거가 비었거나 수집 실패인 가설의 확정\n   - 1부터 연속하지 않는 validation 번호와 네 번째 validation\n   - 이전 가설을 덮어써 기존 판정을 무효화하는 재생성\n   - PENDING 또는 NEEDS_INVESTIGATION 가설을 남긴 완료\n   - 리포트와 실행 스냅샷의 절차 값·집합·순서 불일치\n   - Headless Codex 세션의 단계 축약 또는 불법 상태 전이\n\n### Requirement contract\n\n- 공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락,\n  예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로\n  비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.\n- 에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를\n  보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을\n  정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.\n- 알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용\n  파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.\n- 합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다.\n  실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된\n  관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.\n- 실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다.\n  복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로\n  확인하며 reset 응답만으로 통과하지 않는다.\n- 원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을\n  커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성\n  기준은 양쪽 엔진에 동일하게 적용한다.\n- 교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한\n  두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나\n  모델 결과를 만들어 채워 승인하지 않는다.\n\n```mermaid\nflowchart LR\n    CHANGE[\"코드·프롬프트 변경\"] --> ROOT[\"모노레포 공통 하네스\"]\n    ROOT --> OFFLINE[\"오프라인 단위·계약 테스트\"]\n    ROOT --> SCENARIO[\"엔진 중립 시나리오 평가\"]\n    SCENARIO --> STRANDS[\"Strands 평가\"]\n    SCENARIO --> CODEX[\"Headless Codex 평가\"]\n    ROOT -. 명시적 실행 .-> MODEL[\"제공된 관측·실모델 계약 평가\"]\n    ROOT -. 명시적 실행 .-> E2E[\"실제 장애·전달·증거 탐색 E2E\"]\n    OFFLINE --> GATE[\"필수 변경 게이트\"]\n    STRANDS --> GATE\n    CODEX --> GATE\n    MODEL --> SIGNAL[\"별도 품질 신호\"]\n    E2E --> SIGNAL\n```"
+    },
+    {
+      "contractId": "R1",
+      "adrBasis": "공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.",
+      "status": "PROVEN",
+      "implementation": "네 scenario가 최신 현재-source PostgreSQL baseline/incident를 사용한다. 같은 입력의 restore 검증은 원본에 유지하되 모델 input에는 넣지 않는다.",
+      "evidence": "tests/harness/scenario-capture-boundary.mjs:207; packages/healthcare-sensor-app/demo/local_worker.py; proof-review-fixed-01 15phases",
+      "tests": "N1/N4/N5, canonical source hash83aac573…",
+      "requirement": "공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락, 예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로 비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R2",
+      "adrBasis": "에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.",
+      "status": "PROVEN",
+      "implementation": "중립 obs/capture ID, UTC/단위/run/schema와 current-source snippets를 유지. expectation/미래cleanup은 projection 밖. source metadata는 실제 최종prompt까지 보존.",
+      "evidence": "tests/harness/scenario-capture-boundary.mjs:37,207; 양 eval_adapter→DTO→prompt source-view 경로",
+      "tests": "N2 canonical projection·metadata tests; N3 finalprompt probes; N5 source/snippet 대조",
+      "requirement": "에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를 보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을 정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R3",
+      "adrBasis": "알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.",
+      "status": "PROVEN",
+      "implementation": "F4 해소. eval 전용source view에서 없는/null/blank metadata는not provided; 제공된region은ARN 없이도 유지. numeric0/{} 유지. Strands의 새session시각은 모델의 원본시각으로 제시하지 않음. 운영기본값은별도호환 유지.",
+      "evidence": "packages/agent/src/rca_agent/eval_adapter.py:181; ports/dto/models.py:101; services/scoping.py:124; packages/headless-codex/src/headless_codex/eval_adapter.py:317; services/prompt_builder.py:67",
+      "tests": "N2 113+201 PASS; N3 current4+minimal/region-only 양엔진 PASS; N5 production3사례/engine before-after 동등",
+      "requirement": "알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용 파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R4",
+      "adrBasis": "합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.",
+      "status": "PROVEN",
+      "implementation": "새관측은localPG로 명시, alarm은illustrative. model-eval만sourceview/observation을 전달하며 production/deployed 옵트아웃 유지. 배포E2E 성공은 주장하지 않음.",
+      "evidence": "tests/scenarios/*.json:provenance; 양eval_adapter mode checks; scripts/run_deployed_e2e.py:run",
+      "tests": "N2 opt-out·projection·metadata PASS; AWS NOT RUN",
+      "requirement": "합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다. 실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된 관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R5",
+      "adrBasis": "실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.",
+      "status": "UNVERIFIED",
+      "implementation": "active 사례는 model-eval만 선언하며 미검증 deployed-e2e 선언을 하지 않음. CLI의 사전원본/소유task 복원과 F2 오류경로 검사는 통과했다. 실제AWS task/증상복원만 U1 runtime으로 미검증이며 추가배포를 ADR상태선행조건으로 만들지 않는다.",
+      "evidence": "tests/scenarios/*.json:executionModes; scripts/run_realistic_demo.py:restore,status",
+      "tests": "보존된 CLI lifecycle + 최종 Python56/Node4 PASS; 실제AWS runtime NOT RUN",
+      "requirement": "실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다. 복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로 확인하며 reset 응답만으로 통과하지 않는다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R6",
+      "adrBasis": "원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.",
+      "status": "PROVEN",
+      "implementation": "허용 5종 유지. pool/lock=unsupported, query=slow-query, exception=db-leak. 0.8 확정/0.3 기각/0.9 종료, 깊이3·검증3·재생성2 유지. 경쟁 원인별 분리된 증거와 안전성 기준은 공통 evaluator.",
+      "evidence": "tests/harness/evaluator.mjs:10,75,351; packages/agent/src/rca_agent/config/settings.py:24; packages/headless-codex/src/headless_codex/services/analysis_contract.py:10",
+      "tests": "원 검토의 T2,T3,T4,T5,T10; 정책 파일 git diff 없음",
+      "requirement": "원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을 커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성 기준은 양쪽 엔진에 동일하게 적용한다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    },
+    {
+      "contractId": "R7",
+      "adrBasis": "교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.",
+      "status": "PROVEN",
+      "implementation": "교체된입력/원본결과와 실패이력 보존. 현재결과fixture는미승인/부재, baseline미변경. 두엔진전수결과의검토전에는새baseline을 만들지 않고 현재digest변경을차단함.",
+      "evidence": "tests/fixtures/historical; tests/fixtures/results/README.md; tests/harness/evaluator.mjs:createBaseline",
+      "tests": "N2 archive/hash/approval-policy PASS; 승인digest assertion FAIL; 승인 실행 없음",
+      "requirement": "교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나 모델 결과를 만들어 채워 승인하지 않는다.",
+      "reviewSnapshot": "Curie closed coverage + explicit main synthesis"
+    }
+  ],
+  "findings": [
+    {
+      "sourceId": "U1",
+      "category": "Unverified risk",
+      "perspective": "sufficiency",
+      "confidence": "high",
+      "summary": "실제 AWS 알람과 배포 복원의 실행 증거는 미검증이다.",
+      "whyItMatters": "로컬 PostgreSQL과 이미지 검증은 AWS 알람 전이·전달·서비스 회복을 직접 관측한 결과가 아니다.",
+      "expectedBehavior": "실제 AWS 결과를 주장할 때 해당 실행의 이미지·부하·알람·복원 관측이 연결되어야 한다.",
+      "observedBehavior": "Healthcare AWS 배포 E2E는 수행하지 않았다. 별도 평가용 AWS 자원과 로컬 PostgreSQL 자원은 정리 후 부재 확인을 마쳤다.",
+      "requestedChange": "현재 실행 증거의 한계로 기록한다. 새 코드 수정이나 상태 승격 선행조건을 추가하지 않는다.",
+      "code": "packages/infra/lib/stacks/healthcare-service-stack.ts; scripts/run_realistic_demo.py:status/restore",
+      "evidence": "compiled proof SHA83aac573…와 review-fixed-images.json은 로컬 자료; AWS not-run — main-verification.json; 정리 결과: tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json; docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json",
+      "test": "AWS normal→fault→restore 알람·복원 E2E",
+      "testResult": "NOT RUN — 이번 실행에서 AWS 배포/E2E를 수행하지 않았다. 초기 500ms 충족 주장 없음.",
+      "contractIds": [
+        "R5"
+      ],
+      "adrQuote": "원본 계약의 실제 배포·증상·회복 관측 의무"
+    },
+    {
+      "sourceId": "U2",
+      "category": "Unverified risk",
+      "perspective": "sufficiency",
+      "confidence": "high",
+      "summary": "최종 모델 평가 8개가 모두 실패했고 새 기준선은 미승인이다.",
+      "whyItMatters": "오프라인 코드 시험 통과는 새 관측에 대한 두 모델의 원인·반증·안전성 품질을 증명하지 않는다.",
+      "expectedBehavior": "같은 digest의 모든 엔진·시나리오 실제 결과와 읽을 수 있는 보고서를 검토한 뒤 승인한다.",
+      "observedBehavior": "정규화 결과 8개가 완료됐고 필수 평가는0 PASS/8 FAIL이다. 입력 digest는 유지됐으며 기존 기준선과 승인되지 않은 새 fixture 상태를 보존한다.",
+      "requestedChange": "최종 실패 결과를 그대로 보존하고 모델 자체 확정, 정적 안전성 검출과 실제 실행 사실을 구분해 읽는다. 이 문서에서 코드 종료 판정이나 승인 정책을 바꾸지 않는다.",
+      "code": "tests/harness/model-cli.mjs; tests/harness/evaluator.mjs:createBaseline; tests/harness/approve-cli.mjs",
+      "evidence": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json; 동일 입력 digest 유지; 사용자 main 최종 품질 검토",
+      "test": "최종 두 엔진×4개 사례의 실모델 회차; 루트 승인 digest 검사",
+      "testResult": "COMPLETED — normalized8, 0 PASS/8 FAIL; competingCausesRejected0/8. Root136 PASS/1 old-baseline digest FAIL; 기준선 변경·새 fixture 승인 없음.",
+      "contractIds": [
+        "D0",
+        "R7"
+      ],
+      "adrQuote": "새 입력을 사용한 두 엔진 전수 결과가 통과하고 검토된 뒤에만 새 기준선 승인"
+    }
+  ],
+  "adrFullBody": "# ADR 0016: RCA 평가 테스트 하네스\n\nDate: 2026-07-21\nUpdated: 2026-09-10\n\n## Status\n\nProposed\n\n## Context\n\nRCA 시스템의 운영 경로는 동일한 CloudWatch 알람을 Strands 기반 파이프라인과\nHeadless Codex 중 한 엔진만 분석한다. 두 실행 엔진은 오케스트레이션 방식이 다르지만\n프롬프트, MCP 도구 계약, 중간 산출물, 최종 보고서라는 공통 품질 기준을 충족해야 하므로\n평가 경로에서는 같은 시나리오를 각각 실행해 비교한다.\n\n현재 테스트는 개별 함수와 일부 프롬프트 조립을 확인하지만, 프롬프트 변경이 RCA\n단계나 산출물 계약을 깨뜨리는지, 두 엔진이 동일 장애 시나리오에서 동등한 핵심\n원인을 도출하는지, Headless Codex가 공유 하네스의 격리 조건을 지키는지는\n결정적으로 검증하지 못한다. 실 AWS와 모델 호출에만 의존하는 검증은 비용과\n비결정성 때문에 일반 개발 주기와 CI의 필수 게이트로 사용할 수 없다.\n\n## Decision Drivers\n\n- 일반 CI는 AWS 자격 증명과 유료 모델 호출 없이 반복 가능하게 실행되어야 한다.\n- 프롬프트, MCP 도구, 산출물, DTO 경계의 변경은 결과 품질 저하 전에 계약 위반으로 탐지되어야 한다.\n- Strands와 Headless Codex는 구현·모델 차이를 유지하면서도 동일한 장애 시나리오의 핵심 기대값으로 비교 가능해야 한다.\n- 실 AWS와 모델의 통합 품질을 검증할 경로는 유지하되 일반 CI의 속도와 안정성을 저해하지 않아야 한다.\n- 프롬프트 변경은 정량화된 시나리오 회귀 결과 없이 배포되지 않아야 한다.\n\n## Decision\n\nRCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네\n계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.\n\n1. **오프라인 단위·계약 테스트**는 모든 변경에서 실행한다. 외부 서비스의 가용성과\n   무관하게 상태 전이, 시간 제한, 세션 격리, 프롬프트 구성,\n   읽기 전용 도구 노출, 산출물 저장과 감시, 실패 복구를 재현 가능하게 검증한다.\n   두 엔진의 분석 상태 집합과 허용 전이, 신뢰도 재분류, 증거 실패 확정 금지,\n   검증 루프·재생성 상한, 완료 전 가설 종결을 같은 계약으로 검사한다.\n2. **fixture 구조 회귀**는 장애 입력, 관측 증거, 허용 가능한 구조화 장애 유형,\n   필수 산출물 조건을 엔진 중립적인 시나리오 계약으로 정의한다. 일반 CI에서는\n   검토된 엔진별 정규화 결과 스냅샷을 같은 평가 차원으로 재평가하고, 프롬프트,\n   평가 정책, 결과 스냅샷의 digest가 바뀌면 명시적 재승인을 요구한다.\n3. **실모델 계약 평가(`model-eval`)**는 실제 모델과 필요한 AWS 조회 API를 사용해\n   두 엔진의 구조화 RCA 계약을 검증한다. 명시적 실행에서만 동작하고 일반 CI 필수\n   게이트에서는 제외한다. 시나리오가 제공한 `observations`와 관측 식별자를 초기\n   컨텍스트에 넣으므로, 이 결과는 모델이 주어진 증거를 해석하고 인용하는 품질을\n   측정할 뿐 실제 증거 소스에서 관측을 찾아내는 능력을 입증하지 않는다.\n   Headless Codex 평가는 배포 태스크와 로컬 평가가 모델 ID\n   `global.openai.gpt-5.6-sol`, reasoning effort `high`, Bedrock Runtime provider를\n   모두 동일하게 사용할 때만 시작한다. 평가 보고서에는 세 값과 일치 여부를 기록해\n   다른 implicit model, effort, provider로 얻은 결과가 배포 품질 증거로 승인되지\n   않게 한다.\n   각 엔진은 **시나리오 하나를 입력받아 정규화 결과 하나를 표준 출력으로 내는\n   실행 가능한 어댑터**를 제공한다. 하네스는 엔진 내부를 알지 못하고 이 계약만\n   요구하므로, 엔진의 평상시 구동 방식이 이벤트 소비든 단일 호출이든 무관하게\n   같은 평가에 참여한다. 어댑터는 `executionModes`에 `model-eval`이 없는\n   시나리오를 거부하고, 자체적으로 RCA를 수행하지 않으며 공용 분석 경로의 결과를\n   공통 스키마로 옮기는 번역 계층으로만 존재한다.\n   이벤트 소비로만 구동되는 엔진에는 평가 전용 진입점이 필요하다. 이때 평가\n   진입점은 운영 경로가 사용하는 것과 같은 분석 파이프라인을 호출해야 하며,\n   평가용으로 분리된 별도 분석 경로를 두지 않는다. 두 경로가 갈라지면 평가\n   결과가 운영 동작을 대변하지 못한다.\n\n   **실행 단위는 엔진별로 나눌 수 있지만 승인 단위는 두 엔진 전체다.** 한 엔진의\n   회차가 실모델 호출로 수십 분을 쓰므로, 다른 엔진의 실패나 환경 설정 오류 때문에\n   이미 통과한 회차를 버리고 처음부터 다시 돌리는 것은 평가의 실행 가능성을 떨어뜨린다.\n   따라서 하네스는 엔진을 지정한 실행을 허용하고 결과를 같은 회차 디렉터리에\n   누적한다. 그러나 기준선 승인은 **선언된 모든 엔진의 모든 시나리오 결과가 모였을\n   때만** 성립한다 — 기준선의 목적이 두 엔진을 같은 품질 계약으로 비교하는 것이므로,\n   한 엔진만으로 승인하면 비교 근거가 없는 값이 기준선의 이름을 갖는다. 부분 실행은\n   진단과 부분 확인의 수단이고, 승인의 근거가 되지 않는다.\n\n4. **배포 E2E(`deployed-e2e`)**는 실제 장애 주입, CloudWatch 증상 알람,\n   SNS에서 공용 SQS로의 단일 전달, 배포 엔진 중 하나의 신규 세션, 실제 증거 탐색,\n   산출물 저장을 함께 검증한다. 동일 알람 계보에는 엔진 중립 세션이 정확히 하나만\n   존재해야 하고, 세션의 `engine` 값은 실제 승자와 일치해야 한다. 이 경로는\n   시나리오의 `observations`를 엔진에 제공하지 않는다.\n   배포 가능한 시나리오만 `deployed-e2e`를 선언할 수 있고, 주입부터 정리까지\n   호출자가 소유한 하나의 실행 ID로 계보를 묶는다. 과거 세션은 현재 실행의\n   증거로 재사용하지 않는다.\n5. **Headless Codex 공유 원칙**을 적용한다. Headless Codex를 위한 독립된 루트\n   하네스를 만들지 않으며, 모노레포의 공통 실행 명령과 시나리오 계약을\n   공유한다. Codex 프로세스의 작업 디렉터리, 홈 디렉터리, MCP 설정, 산출물\n   디렉터리는 실행마다 격리되어 이전 실행 상태가 평가 결과에 영향을 주지\n   못하게 한다.\n6. **변경 게이트**를 구분한다. 코드와 정적 프롬프트 계약은 오프라인 테스트의\n   필수 게이트이고, 공통 시나리오 평가는 검토된 결과 스냅샷과 입력 digest의\n   무검토 변경을 막는다. 프롬프트 변경 후 실제 모델 품질은 `model-eval`의 구조화\n   결과와 사람이 읽는 보고서를 함께 검토해 새 스냅샷과 digest 기준선을 승인하는\n   절차로 확인한다. 네트워크, 자격 증명, 모델\n   변동으로 실패할 수 있는 실모델 평가와 배포 E2E는 일반 CI와 분리한다.\n7. **시나리오 합격 정책**을 엔진 공통으로 적용한다. 자연어 표현의 특정 단어를\n   필수 조건으로 삼지 않는다. schema v2의 구조화 장애 유형, 확정 판정에 직접\n   연결된 관측 식별자, 필수 산출물, 플레이북 구조와 안전성을 필수 평가 차원으로\n   삼는다.\n   **시나리오는 자신이 기대하는 장애 유형을 관측만으로 판별할 수 있게 구성한다.**\n   장애 유형 어휘는 주입 가능한 유형의 집합이고 그 밖의 원인은 지원하지 않음으로\n   분류되므로, 지원하지 않음을 기대하는 시나리오는 **주입 유형에 해당하지 않는다는\n   근거를 관측으로 제공해야 한다**. 근거 없이 기대하면 모델은 증상이 비슷한 주입\n   유형으로 분류하고, 평가는 모델의 오류가 아니라 시나리오의 미명시를 실패로\n   기록한다. 이 실패는 프롬프트를 고쳐도 사라지지 않는다 — 판별 근거가 입력에 없기\n   때문이다. 같은 이유로 경쟁 원인의 반증 관측도 시나리오가 제공해야 하며, 제공하지\n   않은 원인을 기각하도록 요구하지 않는다.\n   복구 안전성은 **제안의 안전성**을 측정하며 실행 성공 여부와 구분한다. 분석은\n   실행하지 않고 플레이북 절차를 제안하는 데서 끝나므로([ADR 0017](0017-playbook-execution-agent.md)),\n   평가가 측정하는 것은 그 절차가 되돌릴 수 없는 조치를 요구하는지, 대상과 관측\n   기준이 확정 원인과 정합한지다. 절차가 파괴적 조치를 담고 있으면 안전하지 않다.\n   이 판정 규칙은 엔진마다 같아야 한다. 한 엔진은 항상 안전으로 보고하고 다른 엔진은\n   상태로 판정하면 같은 차원의 점수가 비교 불가능해진다.\n   평가는 어떤 실행도 수행하지 않는다. 실행은 사용자 승인을 요구하므로 평가 경로에\n   실행을 포함하면 반복 실행마다 대상 서비스 상태가 바뀌어 후속 실행의 증거가\n   오염된다. 실제 실행과 회고 품질은 운영 경로에서 검증한다.\n   `model-eval`의 증거 연결은 시나리오가 정의한 **관측 식별자를 산출물에 명시적으로\n   인용**했는지로 측정한다. 따라서 이 모드에서만 관측 식별자를 엔진에 전달하고,\n   그 식별자를 증거마다 함께 기록하도록 요구한다. 식별자를 전달하지 않거나 인용을\n   요구하지 않으면 어떤 관측이 결론에 쓰였는지 판정할 수 없다. 배포 E2E에는 이\n   식별자를 주입하지 않으며 실제 증거 탐색 결과로 별도 판정한다.\n   시나리오가 경쟁 원인을 정의하면 각 원인별 `causeId`, validation의 `rejected`\n   판정, 관측 식별자를 정규화 결과에 요구한다. 원인별 반증 식별자 집합은 서로\n   겹치지 않아야 하며, 하나의 rejected 레코드는 하나의 경쟁 원인에만 사용한다.\n   관련 식별자가 다른 산출물에 존재하거나 한 레코드에 여러 원인의 식별자를 모았다는\n   이유만으로는 기각으로 인정하지 않는다.\n   안전성은 결과의 자체 선언만 신뢰하지 않고 사전조건, 승인 주체,\n   롤백 조건, 사후 검증 계획이 모두 있는지 확인한다. 어느 엔진이든 필수 차원을\n   충족하지 못하면 필수 게이트를 실패한다.\n   `rootCause`, remediation summary, rationale 같은 자연어는 사람이 검토하는\n   설명으로 보존하지만 부분 문자열 점수나 동의어 목록으로 필수 gate를 만들지 않는다.\n   기준선은 점수가 아니라 평가 입력 파일 집합과 digest를 저장한다.\n\n8. **Headless Codex 회귀 프로브**를 필수 오프라인 게이트로 둔다. 최소한 다음\n   위반을 거부해야 한다.\n   - 0.8 미만 신뢰도의 CONFIRMED 선언\n   - 필수 증거가 비었거나 수집 실패인 가설의 확정\n   - 1부터 연속하지 않는 validation 번호와 네 번째 validation\n   - 이전 가설을 덮어써 기존 판정을 무효화하는 재생성\n   - PENDING 또는 NEEDS_INVESTIGATION 가설을 남긴 완료\n   - 리포트와 실행 스냅샷의 절차 값·집합·순서 불일치\n   - Headless Codex 세션의 단계 축약 또는 불법 상태 전이\n\n### Requirement contract\n\n- 공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락,\n  예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로\n  비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.\n- 에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를\n  보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을\n  정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.\n- 알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용\n  파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.\n- 합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다.\n  실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된\n  관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.\n- 실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다.\n  복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로\n  확인하며 reset 응답만으로 통과하지 않는다.\n- 원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을\n  커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성\n  기준은 양쪽 엔진에 동일하게 적용한다.\n- 교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한\n  두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나\n  모델 결과를 만들어 채워 승인하지 않는다.\n\n```mermaid\nflowchart LR\n    CHANGE[\"코드·프롬프트 변경\"] --> ROOT[\"모노레포 공통 하네스\"]\n    ROOT --> OFFLINE[\"오프라인 단위·계약 테스트\"]\n    ROOT --> SCENARIO[\"엔진 중립 시나리오 평가\"]\n    SCENARIO --> STRANDS[\"Strands 평가\"]\n    SCENARIO --> CODEX[\"Headless Codex 평가\"]\n    ROOT -. 명시적 실행 .-> MODEL[\"제공된 관측·실모델 계약 평가\"]\n    ROOT -. 명시적 실행 .-> E2E[\"실제 장애·전달·증거 탐색 E2E\"]\n    OFFLINE --> GATE[\"필수 변경 게이트\"]\n    STRANDS --> GATE\n    CODEX --> GATE\n    MODEL --> SIGNAL[\"별도 품질 신호\"]\n    E2E --> SIGNAL\n```\n\n## 대안 검토\n\n| 대안                                                | Decision Drivers 대비 장점                                                              | Decision Drivers 대비 단점 및 미채택 이유                                                                                                                               |\n| --------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| 패키지별 단위 테스트만 확장                         | 자격 증명 없이 빠르고 결정적으로 실행되며 계약 위반의 원인 추적이 쉽다.                 | 엔진 중립 시나리오와 의미 기준선이 없어 두 엔진 비교와 프롬프트 품질 게이트를 충족하지 못한다.                                                                          |\n| AWS·실모델 E2E를 주 검증 수단으로 사용              | 실제 도구 연결과 모델의 RCA 의미 품질을 가장 직접적으로 평가한다.                       | 비용, 지연, 자격 증명, 비결정성 때문에 일반 CI의 반복 가능성과 필수 게이트 안정성을 충족하지 못한다.                                                                    |\n| 로컬 계약 테스트와 외부 관리형 시나리오 평가를 결합 | 로컬에서 정적 계약을 빠르게 검증하면서 중앙 평가 실행과 결과 대시보드를 확보할 수 있다. | 공통 시나리오와 실행 결과가 저장소 밖 서비스 정책에 종속되어 Headless Codex의 격리·MCP·산출물 계약을 같은 방식으로 재현하기 어렵고, 개발자의 로컬 회귀 재현성이 낮아진다. |\n\n이벤트 소비 엔진을 실모델 계약 평가에 참여시키는 방법에 대한 대안:\n\n| 대안                                                  | 장점                                                                 | 단점 및 미채택 이유                                                                                                     |\n| ----------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |\n| 평가 시 실제 이벤트 큐에 시나리오를 주입              | 운영 경로를 그대로 통과하므로 전달 계층까지 검증된다.                | 상시 실행 중인 소비자와 경합하고, 평가 실행이 어느 결과를 만들었는지 특정하기 어렵다. 평가가 운영 큐 상태를 오염시킨다. |\n| 엔진 결과를 저장소에서 사후 조회해 정규화             | 새 진입점이 필요 없고 이미 남은 결과를 재사용한다.                   | 평가가 실행을 소유하지 않아 어떤 코드 버전이 그 결과를 냈는지 보증할 수 없고, 시나리오를 반복 실행할 수 없다.           |\n| 평가 전용 진입점이 운영과 같은 파이프라인을 직접 호출 | 실행을 평가가 소유하므로 반복 가능하고, 분석 경로가 운영과 동일하다. | 진입점을 하나 더 유지해야 하고, 이벤트 전달 계층은 이 경로로 검증되지 않는다.                                           |\n\n평가에서 복구 안전성을 측정하는 방법에 대한 대안:\n\n| 대안                                    | 장점                                                                                 | 단점 및 미채택 이유                                                                                                                                                                                                                   |\n| --------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| 평가가 승인을 대행해 실제 실행까지 수행 | 실행과 회고 경로까지 배포 E2E로 검증된다.                                            | 평가가 실제 서비스에 쓰기를 수행한다. 시나리오를 반복 실행할 때마다 대상 서비스 상태가 바뀌어 후속 실행의 증거가 오염되고, 평가 실패가 서비스 장애로 번질 수 있다. 승인 게이트를 평가가 우회하는 것 자체가 안전 경계의 예외를 만든다. |\n| 실행하지 않았음을 그대로 안전으로 판정  | 규칙이 단순하고 엔진 간 판정이 같아진다.                                             | 절차의 내용을 보지 않으므로 파괴적 조치를 담은 플레이북도 안전으로 통과한다. 플레이북이 실행 근거가 된 이상 절차 내용이 곧 안전 신호다.                                                                                               |\n| 제안된 절차의 내용을 정적으로 판정      | 실행 없이 절차의 파괴성과 대상·관측 기준 정합성을 측정하고, 엔진 간 판정이 같아진다. | 절차가 실제로 이슈를 해소하는지는 이 계층에서 측정되지 않으므로 운영 경로에서 따로 확인해야 한다.                                                                                                                                     |\n\n증거 커버리지를 측정하는 방법에 대한 대안:\n\n| 대안                                               | 장점                                                                          | 단점 및 미채택 이유                                                                                                                              |\n| -------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |\n| 관측 요약의 핵심 용어가 산출물에 나타나는지로 측정 | 프롬프트를 바꾸지 않아도 되고 표현 다양성을 허용한다.                         | 어떤 관측이 실제로 결론에 쓰였는지 구별하지 못한다. 무관한 서술이 용어를 우연히 포함하면 인용으로 집계되어 커버리지가 과대평가된다.              |\n| 도구 호출 이력으로 어떤 증거를 조회했는지 추적     | 모델의 자기 보고에 의존하지 않는다.                                           | 조회와 결론 사용은 다르다. 조회했지만 기각한 증거와 결론의 근거를 구별할 수 없고, 엔진마다 도구 호출 기록 방식이 달라 중립 계약을 만들기 어렵다. |\n| 관측 식별자를 전달하고 증거마다 인용을 요구        | 어떤 관측이 결론의 근거인지 명시적으로 판정된다. 증거 추적성 자체가 올라간다. | 프롬프트 계약이 늘고, 평가에서만 쓰이는 컨텍스트가 생긴다. 모델이 인용을 누락하면 실제보다 낮게 평가된다.                                        |\n\n## Consequences\n\n### Positive\n\n- AWS나 모델 없이 대부분의 회귀를 로컬과 CI에서 빠르게 재현할 수 있다.\n- 두 엔진이 구현 세부가 아닌 동일한 RCA 품질 계약으로 비교된다.\n- 프롬프트, skill, MCP, 산출물 형식의 드리프트가 조기에 탐지된다.\n- Headless Codex의 실행 간 상태 누출이 공통 하네스의 필수 계약으로 관리된다.\n- 두 엔진의 내부 오케스트레이션 차이가 상태·판정·승인 계약 차이로 번지지 않는다.\n- 실모델 평가와 배포 E2E를 유지하면서도 일반 CI의 비용과 비결정성을 제한할 수 있다.\n- 두 엔진이 구동 방식이 달라도 동일한 어댑터 계약으로 같은 평가에 참여한다.\n- 평가가 실행을 소유하므로 같은 시나리오를 반복 실행해 결과를 비교할 수 있다.\n- 한 엔진의 실패나 환경 오류가 이미 통과한 다른 엔진의 회차를 폐기시키지 않는다.\n\n### Negative\n\n- 공통 시나리오 계약과 엔진별 결과 정규화 규칙을 함께 유지해야 한다.\n- 상태머신과 완료 게이트가 바뀌면 두 엔진의 계약 테스트를 함께 갱신해야 한다.\n- 구조화 장애 유형과 판정별 증거 연결 규칙을 두 엔진에서 같은 방식으로 유지해야 한다.\n- 오프라인 검증만으로 실제 AWS 또는 모델의 모든 동작 차이를 재현하지는 못한다.\n- 엔진마다 평가 진입점을 유지해야 하고, 운영 진입점과 함께 갱신해야 한다.\n- 평가 진입점은 이벤트 전달 계층을 우회하므로 큐·구독·재전달 동작은 이 경로로\n  검증되지 않는다.\n- 엔진별 실행이 서로 다른 시점의 코드로 얻은 결과를 한 회차에 섞을 수 있다. 승인\n  시점의 digest가 이를 잡지만, 부분 실행 사이에 계약 입력을 바꾸면 승인이 거부된다.\n\n### Risks\n\n- 시나리오 계약이 구현 결과에 과도하게 맞춰지면 실제 RCA 품질 저하를 놓칠 수 있다.\n  장애 유형과 판정별 필수 증거를 기준으로 평가하고 자연어 키워드 일치는 사용하지 않는다.\n- 실모델 평가와 배포 E2E가 선택 사항이라는 이유로 장기간 실행되지 않을 수 있다.\n  프롬프트 또는 도구 계약 변경 시 관련 결과를 별도 릴리스 신호로 기록한다.\n- 두 엔진의 정규화 규칙이 서로 다른 해석을 적용하면 비교가 왜곡될 수 있다. 공통\n  평가 결과의 필수 의미와 실패 조건을 엔진 중립 계약으로 유지한다.\n- 평가 진입점이 운영 파이프라인과 갈라지면 평가 결과가 운영 동작을 대변하지\n  못한다. 평가 진입점은 분석 로직을 자체 구현하지 않고 운영과 같은 파이프라인을\n  호출하며, 이 호출 관계를 계약 테스트로 고정한다.\n- 평가 실행이 운영과 같은 저장소·알림 대상을 사용하면 운영 상태를 오염시킬 수\n  있다. 평가 실행은 자신이 만든 결과만 조회하고, 부작용 대상은 실행 환경 설정으로\n  분리한다.\n\n## Implementation Notes\n\n실모델 계약 평가에서 확인된 사항:\n\n- 이벤트 소비 엔진의 완료 판정은 메시지 확인 여부와 다르다. 알림 발행 대상이\n  구성되지 않은 평가 환경에서는 분석이 끝나도 메시지를 확인하지 않으므로,\n  어댑터는 저장된 세션 상태를 완료 판정의 권위로 삼는다.\n- 증거 인용 목록은 알림 payload가 아니라 보고서 본문에 남는다. 어댑터는 세션이\n  기록한 보고서 키로 자기 실행의 보고서만 읽어 증거 커버리지를 계산한다. 조회에\n  실패하면 증거 목록이 비어 점수에 드러난다.\n- 알람 식별자가 알람명과 상태 변경 시각으로 결정되므로, 같은 시나리오를 반복\n  실행하려면 실행 시각을 알람에 반영해야 한다. 그러지 않으면 이전 세션과 충돌해\n  중복으로 처리된다.\n- 첫 실모델 실행은 증거 수집 타임아웃으로 근본원인이 미확정으로 끝났고, 평가\n  하네스가 이를 필수 게이트 실패로 판정했다. 어댑터와 채점 정책이 미확정 결과를\n  통과시키지 않는다는 것이 확인되었다.\n\n## Related\n\n- [ADR agent/0011: Headless Codex 프롬프트 주도 RCA](0011-cc-headless-prompt-driven-rca.md)\n- [ADR agent/0015: Hexagonal Architecture](0015-hexagonal-architecture.md)\n- [ADR agent/0017: 플레이북 실행 에이전트](0017-playbook-execution-agent.md) — 평가가 측정하지 않는 실제 실행 경로\n",
+  "adrDecisionFullText": "RCA 검증을 **오프라인 계약, fixture 구조 회귀, 실모델 계약 평가, 배포 E2E**의 네\n계층으로 구성하고, 모노레포 루트 하네스가 계층별 실행 정책을 통제한다.\n\n1. **오프라인 단위·계약 테스트**는 모든 변경에서 실행한다. 외부 서비스의 가용성과\n   무관하게 상태 전이, 시간 제한, 세션 격리, 프롬프트 구성,\n   읽기 전용 도구 노출, 산출물 저장과 감시, 실패 복구를 재현 가능하게 검증한다.\n   두 엔진의 분석 상태 집합과 허용 전이, 신뢰도 재분류, 증거 실패 확정 금지,\n   검증 루프·재생성 상한, 완료 전 가설 종결을 같은 계약으로 검사한다.\n2. **fixture 구조 회귀**는 장애 입력, 관측 증거, 허용 가능한 구조화 장애 유형,\n   필수 산출물 조건을 엔진 중립적인 시나리오 계약으로 정의한다. 일반 CI에서는\n   검토된 엔진별 정규화 결과 스냅샷을 같은 평가 차원으로 재평가하고, 프롬프트,\n   평가 정책, 결과 스냅샷의 digest가 바뀌면 명시적 재승인을 요구한다.\n3. **실모델 계약 평가(`model-eval`)**는 실제 모델과 필요한 AWS 조회 API를 사용해\n   두 엔진의 구조화 RCA 계약을 검증한다. 명시적 실행에서만 동작하고 일반 CI 필수\n   게이트에서는 제외한다. 시나리오가 제공한 `observations`와 관측 식별자를 초기\n   컨텍스트에 넣으므로, 이 결과는 모델이 주어진 증거를 해석하고 인용하는 품질을\n   측정할 뿐 실제 증거 소스에서 관측을 찾아내는 능력을 입증하지 않는다.\n   Headless Codex 평가는 배포 태스크와 로컬 평가가 모델 ID\n   `global.openai.gpt-5.6-sol`, reasoning effort `high`, Bedrock Runtime provider를\n   모두 동일하게 사용할 때만 시작한다. 평가 보고서에는 세 값과 일치 여부를 기록해\n   다른 implicit model, effort, provider로 얻은 결과가 배포 품질 증거로 승인되지\n   않게 한다.\n   각 엔진은 **시나리오 하나를 입력받아 정규화 결과 하나를 표준 출력으로 내는\n   실행 가능한 어댑터**를 제공한다. 하네스는 엔진 내부를 알지 못하고 이 계약만\n   요구하므로, 엔진의 평상시 구동 방식이 이벤트 소비든 단일 호출이든 무관하게\n   같은 평가에 참여한다. 어댑터는 `executionModes`에 `model-eval`이 없는\n   시나리오를 거부하고, 자체적으로 RCA를 수행하지 않으며 공용 분석 경로의 결과를\n   공통 스키마로 옮기는 번역 계층으로만 존재한다.\n   이벤트 소비로만 구동되는 엔진에는 평가 전용 진입점이 필요하다. 이때 평가\n   진입점은 운영 경로가 사용하는 것과 같은 분석 파이프라인을 호출해야 하며,\n   평가용으로 분리된 별도 분석 경로를 두지 않는다. 두 경로가 갈라지면 평가\n   결과가 운영 동작을 대변하지 못한다.\n\n   **실행 단위는 엔진별로 나눌 수 있지만 승인 단위는 두 엔진 전체다.** 한 엔진의\n   회차가 실모델 호출로 수십 분을 쓰므로, 다른 엔진의 실패나 환경 설정 오류 때문에\n   이미 통과한 회차를 버리고 처음부터 다시 돌리는 것은 평가의 실행 가능성을 떨어뜨린다.\n   따라서 하네스는 엔진을 지정한 실행을 허용하고 결과를 같은 회차 디렉터리에\n   누적한다. 그러나 기준선 승인은 **선언된 모든 엔진의 모든 시나리오 결과가 모였을\n   때만** 성립한다 — 기준선의 목적이 두 엔진을 같은 품질 계약으로 비교하는 것이므로,\n   한 엔진만으로 승인하면 비교 근거가 없는 값이 기준선의 이름을 갖는다. 부분 실행은\n   진단과 부분 확인의 수단이고, 승인의 근거가 되지 않는다.\n\n4. **배포 E2E(`deployed-e2e`)**는 실제 장애 주입, CloudWatch 증상 알람,\n   SNS에서 공용 SQS로의 단일 전달, 배포 엔진 중 하나의 신규 세션, 실제 증거 탐색,\n   산출물 저장을 함께 검증한다. 동일 알람 계보에는 엔진 중립 세션이 정확히 하나만\n   존재해야 하고, 세션의 `engine` 값은 실제 승자와 일치해야 한다. 이 경로는\n   시나리오의 `observations`를 엔진에 제공하지 않는다.\n   배포 가능한 시나리오만 `deployed-e2e`를 선언할 수 있고, 주입부터 정리까지\n   호출자가 소유한 하나의 실행 ID로 계보를 묶는다. 과거 세션은 현재 실행의\n   증거로 재사용하지 않는다.\n5. **Headless Codex 공유 원칙**을 적용한다. Headless Codex를 위한 독립된 루트\n   하네스를 만들지 않으며, 모노레포의 공통 실행 명령과 시나리오 계약을\n   공유한다. Codex 프로세스의 작업 디렉터리, 홈 디렉터리, MCP 설정, 산출물\n   디렉터리는 실행마다 격리되어 이전 실행 상태가 평가 결과에 영향을 주지\n   못하게 한다.\n6. **변경 게이트**를 구분한다. 코드와 정적 프롬프트 계약은 오프라인 테스트의\n   필수 게이트이고, 공통 시나리오 평가는 검토된 결과 스냅샷과 입력 digest의\n   무검토 변경을 막는다. 프롬프트 변경 후 실제 모델 품질은 `model-eval`의 구조화\n   결과와 사람이 읽는 보고서를 함께 검토해 새 스냅샷과 digest 기준선을 승인하는\n   절차로 확인한다. 네트워크, 자격 증명, 모델\n   변동으로 실패할 수 있는 실모델 평가와 배포 E2E는 일반 CI와 분리한다.\n7. **시나리오 합격 정책**을 엔진 공통으로 적용한다. 자연어 표현의 특정 단어를\n   필수 조건으로 삼지 않는다. schema v2의 구조화 장애 유형, 확정 판정에 직접\n   연결된 관측 식별자, 필수 산출물, 플레이북 구조와 안전성을 필수 평가 차원으로\n   삼는다.\n   **시나리오는 자신이 기대하는 장애 유형을 관측만으로 판별할 수 있게 구성한다.**\n   장애 유형 어휘는 주입 가능한 유형의 집합이고 그 밖의 원인은 지원하지 않음으로\n   분류되므로, 지원하지 않음을 기대하는 시나리오는 **주입 유형에 해당하지 않는다는\n   근거를 관측으로 제공해야 한다**. 근거 없이 기대하면 모델은 증상이 비슷한 주입\n   유형으로 분류하고, 평가는 모델의 오류가 아니라 시나리오의 미명시를 실패로\n   기록한다. 이 실패는 프롬프트를 고쳐도 사라지지 않는다 — 판별 근거가 입력에 없기\n   때문이다. 같은 이유로 경쟁 원인의 반증 관측도 시나리오가 제공해야 하며, 제공하지\n   않은 원인을 기각하도록 요구하지 않는다.\n   복구 안전성은 **제안의 안전성**을 측정하며 실행 성공 여부와 구분한다. 분석은\n   실행하지 않고 플레이북 절차를 제안하는 데서 끝나므로([ADR 0017](0017-playbook-execution-agent.md)),\n   평가가 측정하는 것은 그 절차가 되돌릴 수 없는 조치를 요구하는지, 대상과 관측\n   기준이 확정 원인과 정합한지다. 절차가 파괴적 조치를 담고 있으면 안전하지 않다.\n   이 판정 규칙은 엔진마다 같아야 한다. 한 엔진은 항상 안전으로 보고하고 다른 엔진은\n   상태로 판정하면 같은 차원의 점수가 비교 불가능해진다.\n   평가는 어떤 실행도 수행하지 않는다. 실행은 사용자 승인을 요구하므로 평가 경로에\n   실행을 포함하면 반복 실행마다 대상 서비스 상태가 바뀌어 후속 실행의 증거가\n   오염된다. 실제 실행과 회고 품질은 운영 경로에서 검증한다.\n   `model-eval`의 증거 연결은 시나리오가 정의한 **관측 식별자를 산출물에 명시적으로\n   인용**했는지로 측정한다. 따라서 이 모드에서만 관측 식별자를 엔진에 전달하고,\n   그 식별자를 증거마다 함께 기록하도록 요구한다. 식별자를 전달하지 않거나 인용을\n   요구하지 않으면 어떤 관측이 결론에 쓰였는지 판정할 수 없다. 배포 E2E에는 이\n   식별자를 주입하지 않으며 실제 증거 탐색 결과로 별도 판정한다.\n   시나리오가 경쟁 원인을 정의하면 각 원인별 `causeId`, validation의 `rejected`\n   판정, 관측 식별자를 정규화 결과에 요구한다. 원인별 반증 식별자 집합은 서로\n   겹치지 않아야 하며, 하나의 rejected 레코드는 하나의 경쟁 원인에만 사용한다.\n   관련 식별자가 다른 산출물에 존재하거나 한 레코드에 여러 원인의 식별자를 모았다는\n   이유만으로는 기각으로 인정하지 않는다.\n   안전성은 결과의 자체 선언만 신뢰하지 않고 사전조건, 승인 주체,\n   롤백 조건, 사후 검증 계획이 모두 있는지 확인한다. 어느 엔진이든 필수 차원을\n   충족하지 못하면 필수 게이트를 실패한다.\n   `rootCause`, remediation summary, rationale 같은 자연어는 사람이 검토하는\n   설명으로 보존하지만 부분 문자열 점수나 동의어 목록으로 필수 gate를 만들지 않는다.\n   기준선은 점수가 아니라 평가 입력 파일 집합과 digest를 저장한다.\n\n8. **Headless Codex 회귀 프로브**를 필수 오프라인 게이트로 둔다. 최소한 다음\n   위반을 거부해야 한다.\n   - 0.8 미만 신뢰도의 CONFIRMED 선언\n   - 필수 증거가 비었거나 수집 실패인 가설의 확정\n   - 1부터 연속하지 않는 validation 번호와 네 번째 validation\n   - 이전 가설을 덮어써 기존 판정을 무효화하는 재생성\n   - PENDING 또는 NEEDS_INVESTIGATION 가설을 남긴 완료\n   - 리포트와 실행 스냅샷의 절차 값·집합·순서 불일치\n   - Headless Codex 세션의 단계 축약 또는 불법 상태 전이\n\n### Requirement contract\n\n- 공통 시나리오는 실제 풀 설정 회귀, 업무 SQL 조회 증폭, 정비 트랜잭션의 락,\n  예외 경로의 세션 반환 누락을 다룬다. 정상→결함→복원 구간은 같은 요청 조건으로\n  비교하며, 코드·설정·SQL·연결 수명으로 원인을 구별할 수 있어야 한다.\n- 에이전트에 제공하는 관측은 시간 구간, 단위, 리소스 좌표, 로그와 변경 전후 차이를\n  보존한다. 관측 식별자는 중립적인 참조이며 정답 유형이나 장애 활성화 플래그 이름을\n  정답의 대용물로 사용하지 않는다. 정답과 필수 증거 목록은 평가자의 계약에만 둔다.\n- 알람의 리전·네임스페이스·차원·평가 조건이 제공되면 평가 어댑터는 이를 공용\n  파이프라인에 전달한다. 메타데이터가 없으면 만들어 채우지 않는다.\n- 합성 관측은 합성임을 명시하고 실제 AWS 수집 결과로 보고하지 않는다.\n  실제 데이터베이스의 재현 결과와 배포 E2E 결과도 구별한다. 배포 E2E는 준비된\n  관측을 주입하지 않고 실제 증상·증거·원상복원을 검증한다.\n- 실행 가능한 배포 제어와 복원 경로가 있는 사례만 `deployed-e2e`를 선언한다.\n  복원은 원래 설정·이미지의 복귀, 소유 정비 작업 종료와 서비스 증상의 회복으로\n  확인하며 reset 응답만으로 통과하지 않는다.\n- 원인 분류의 기존 허용 집합과 신뢰도·탐색 한도는 유지한다. 풀 설정이나 락을\n  커넥션 누수로 강제 분류하지 않는다. 각 사례의 필수 원인·반증 증거와 안전성\n  기준은 양쪽 엔진에 동일하게 적용한다.\n- 교체된 입력과 기존 평가 결과는 이력으로 보존한다. 새 기준선은 새 입력을 사용한\n  두 엔진 전수 결과가 통과하고 검토된 뒤에만 승인한다. 기존 실패를 숨기거나\n  모델 결과를 만들어 채워 승인하지 않는다.\n\n```mermaid\nflowchart LR\n    CHANGE[\"코드·프롬프트 변경\"] --> ROOT[\"모노레포 공통 하네스\"]\n    ROOT --> OFFLINE[\"오프라인 단위·계약 테스트\"]\n    ROOT --> SCENARIO[\"엔진 중립 시나리오 평가\"]\n    SCENARIO --> STRANDS[\"Strands 평가\"]\n    SCENARIO --> CODEX[\"Headless Codex 평가\"]\n    ROOT -. 명시적 실행 .-> MODEL[\"제공된 관측·실모델 계약 평가\"]\n    ROOT -. 명시적 실행 .-> E2E[\"실제 장애·전달·증거 탐색 E2E\"]\n    OFFLINE --> GATE[\"필수 변경 게이트\"]\n    STRANDS --> GATE\n    CODEX --> GATE\n    MODEL --> SIGNAL[\"별도 품질 신호\"]\n    E2E --> SIGNAL\n```",
+  "mappingEntry": {
+    "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
+    "status": "Proposed",
+    "summary": "네 평가 계층이 두 엔진의 공통 분석 계약과 현실적 원본 관측·원상복원 시나리오를 검증하며 합성·로컬 DB·배포 증거를 구분한다."
+  },
+  "sourceFingerprints": {
+    "docs/execution-live-e2e-runbook.md": "ddc67aa5e225e9ebe29c7c2fe5b9200df3546317833172ea4c1273c090ebe4e0",
+    "packages/agent/src/rca_agent/eval_adapter.py": "d8fbc3e82feff0e4fcfeb4103f97305f3dbc3f744c37167cdee3846b368800ed",
+    "packages/agent/src/rca_agent/ports/dto/models.py": "d711c992e878cd92ca26445d051297607c91bf3c17a4bbbd181cb20806785004",
+    "packages/agent/src/rca_agent/prompts/scoping.py": "8cd1221a32d68d8636eb5cde4bffb48ebb6c8ed6720812021d86df9aac019224",
+    "packages/agent/src/rca_agent/services/scoping.py": "311baaf2888b68d324a523e4c40ef24953cad097adc7a7d84a34688861ff293f",
+    "packages/agent/tests/test_eval_alarm_metadata.py": "67c942715935c011add8d2f493351415e9f0f1740e76eabd6613dba5d2b7baeb",
+    "packages/headless-codex/prompts/rca-user.md": "af7fe02234c414f62faa8f56c168141ff127eeeef44eabebede2cd0fa4006265",
+    "packages/headless-codex/src/headless_codex/eval_adapter.py": "86b6539a6b4ef1c92838d68d4377ae1d50d714fffddf0924935af56babd91159",
+    "packages/headless-codex/src/headless_codex/ports/dto/models.py": "5c3cc32dd70a6c9e686ba05367a7598de5b29579a6a45362aba8af2eba68438a",
+    "packages/headless-codex/src/headless_codex/services/prompt_builder.py": "4bd14d8657ab72063866f273ac0b7b7928a26e0cd5b9726b5fdb6a0d8f47c6c9",
+    "packages/headless-codex/tests/test_eval_alarm_metadata.py": "73165900ce19601a6ee0edf3696a9b6459645988e37350063afc97053aae20d3",
+    "packages/healthcare-sensor-app/demo/local_runner.py": "fe98cf5525e717aa9e689aabd6c7273fc00b7ca106556e211e7efc58668c81c8",
+    "packages/healthcare-sensor-app/demo/local_worker.py": "c33682cbdcfa1386f927988f45e5a79722ef865741a7395376cb0671b199ed81",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py": "5d7e5603d821d251be847e12348716bc1d4da24109cff79ae6c52401f463f8f7",
+    "packages/healthcare-sensor-app/src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "8c8bd0f75dccfe304070989279f0582d2f8f9eff96c3832d3a8b4cc1a3b8befa",
+    "packages/healthcare-sensor-app/src/test_service/main.py": "7ed8b1c5aefe95799bf7f681e25f9be9a5cf906f123bb219bffafec92dc5c95a",
+    "packages/infra/lib/stacks/healthcare-service-stack.ts": "6197c9a38aa3c85b7921f579229fe18266dd69a0bf83bdfa23639f6f42dbee78",
+    "packages/infra/lib/stacks/rds-stack.ts": "16f71f5a3c9e21aead4839ed390b02cd21eb1b161be11f910adcb946a04b7a43",
+    "scripts/run_deployed_e2e.py": "2d25c6a4fe08522eb84bd729da12afb1c7fdcd172eadf8f397fb34a3cf9f8bf8",
+    "scripts/run_realistic_demo.py": "74b73b5cc6401a916b342d68dde91afd29c6788b7357ce542add3f0686f96685",
+    "tests/fixtures/results/README.md": "f67d2c50683e3a9718c9c0a4b284a26e83b30e16c73ddffba0931111f1141d52",
+    "tests/harness/approve-cli.mjs": "0983a6d321d5f6f4d7a3259796b182f324d2ae6dfbc299512b2ee1ca3b5eca49",
+    "tests/harness/deployed-e2e-driver.test.mjs": "b4fb7a9ffdf78a94795e2bbb64b8a053aa451884a5db95a1ffc0cfcf5a5d3807",
+    "tests/harness/evaluator.mjs": "ccb6eb20470c3014b373e14e4525c8ca818555377978dbcf6b8c8feb1f259e79",
+    "tests/harness/evaluator.test.mjs": "9a4d337c46ad1eff5ca8f2f969f528afd83aed6c077138e2b2d94d5bc7990ad3",
+    "tests/harness/model-and-approval.test.mjs": "49f7487878b04e9868789d764c88bb88f55bf244594a05e945c762dd8a84c7d6",
+    "tests/harness/model-cli.mjs": "88c892ed4799d2632147f8a30f74be1a8aa3436db90d9222d6d6a9107e62369f",
+    "tests/harness/realistic-demo-script.test.mjs": "edc9cfcc4d16c9e25d676bcb5d854fc871ed9145ec6f3f83dc8bc7699e2be8bf",
+    "tests/harness/realistic-scenarios.test.mjs": "ab15b3761788e0a6ab24696711d8371745d1fd96eaaae43abe862466baaddbba",
+    "tests/harness/realistic_demo_cases.py": "ce935a5d425f567eb4983a7e02549d71dcc31d3136b95c9f0b4f621b51f0ed9c",
+    "tests/harness/scenario-capture-boundary.mjs": "52c6f18d60c7264e757e38610808956b605441a0f67db70290c3034dc59c788c",
+    "tests/scenarios/exception-session-cleanup.json": "90dba7c1c822017648fed8d911897dc0c3881ae0ead701395a8d1e1f41e69b5c",
+    "tests/scenarios/maintenance-transaction-lock.json": "6237ee51da6dffb1909ac0bd6e7e7cded3b7ad87501095b1554d5aff277a67cb",
+    "tests/scenarios/pool-config-regression.json": "a36450e3b1875eacefff37cee067c2a0cf8b8926571ddafb42a176f9942cfa49",
+    "tests/scenarios/query-amplification.json": "ef0e15254a22a3b245bd2358d5491e87a4fca5d6bbaa6412296004ed91380774"
+  },
+  "suppliedLatestProof": {
+    "path": "tests/fixtures/observations/realistic-local-20260910/proof-review-fixed-01.json.txt",
+    "sha256": "83aac573c02bd6eb9596ced5e0797460018704b62b955905b68b15707d1b4f2b",
+    "evidenceLevel": "actual-local-PostgreSQL; not AWS E2E"
+  },
+  "findingHistory": {
+    "N1": "고정 정비 명령으로 제한하고 기존 실행 복원 유지. necessity-review-final.md 독립 PASS.",
+    "N2": "선택적 private ingest wrapper 정리 제안이며 변경하지 않았다. 코드 차단 항목이 아니다.",
+    "F1": "HTTP 전체 응답 수명의 canary 비노출과 오류·취소·세션 반환 경계 검증으로 해소.",
+    "F2": "journal+stderr OSError/ValueError에서도 원본 복원·소유 작업 정리·원래 오류 보존. 마지막 독립 재검토 PASS.",
+    "F3": "투영 helper의 목적·시간·필드·출처 JSDoc과 projection11 검증으로 해소.",
+    "F4": "eval의 missing metadata는 not provided; 제공 값과 0/{} 보존, production defaults 유지. 113/201 및 독립 prompt 재현 PASS.",
+    "U3": "주입 후 monotonic 경과 149초 거부/150초 허용과 cleanup으로 코드 의무 해소. AWS 실행 주장은 없음."
+  },
+  "browser": {
+    "status": "NOT_OPENED",
+    "reason": "사용자가 전달한 이전 자동 승인 검토가 local file:// 열기를 거부했고 HTTP·shell·다른 브라우저 우회도 금지했다.",
+    "openHelperExecuted": false,
+    "visualInspection": "NOT_PERFORMED",
+    "staticSvgValidation": "See static-validation.json; browser visual inspection NOT_PERFORMED"
+  },
+  "notes": "작성 전용 최종 모델·정리 문맥 갱신. 열린 코드 발견사항 없음. INCONCLUSIVE/Proposed와 closed coverage21PROVEN/5UNVERIFIED 유지. coverage의 실행 설명은 Curie 코드 종료 시점 스냅샷이며 이후 최종 모델 결과는 별도 문맥에서 갱신했다. 부모 index/model summary는 main 담당.",
+  "codeReviewVerdict": "PASS",
+  "modelQualityState": "COMPLETED_FAILED",
+  "mainFinalDataSource": "/Users/dongkyl/git/rca-agent/docs/test-reports/realistic-demo-review-2026-09-10/agent-0016/main-final-data.txt",
+  "codeClosureSource": "sufficiency-residual-final-recheck.md",
+  "coverageSource": "sufficiency-closed-coverage.json",
+  "resolvedFindings": [
+    {
+      "sourceId": "F4",
+      "category": "Spec violation",
+      "perspective": "sufficiency",
+      "summary": "F4 — 제공하지 않은 AWS 리전이 양 엔진의 실제 프롬프트에서 관측 사실로 표시된다 (원본 검토; 최종 갱신 대기)",
+      "confidence": "high",
+      "adrQuote": "agent/0016 R3 — “메타데이터가 없으면 만들어 채우지 않는다.” 기존 DTO 기본값의 존재 자체가 아니라 평가 입력에서 공용 분석 모델로 넘어가는 **표시 경계**의 위반이다.",
+      "code": "Headless `ports/dto/models.py:12`: `region: str = \"us-east-1\"`; `_alarm_for`는 region이 없으면 이 기본값을 그대로 둔다. `services/prompt_builder.py:57`: `\"{region}\": alarm.region`; `prompts/rca-user.md:8`: `- **리전**: {region}`. 현재 네 catalog 입력을 실제 `build_prompt(..., role=\"rca\"/\"report\")`에 통과시키면 모두 `- **리전**: us-east-1`이다.",
+      "evidence": "Headless `ports/dto/models.py:12`: `region: str = \"us-east-1\"`; `_alarm_for`는 region이 없으면 이 기본값을 그대로 둔다. `services/prompt_builder.py:57`: `\"{region}\": alarm.region`; `prompts/rca-user.md:8`: `- **리전**: {region}`. 현재 네 catalog 입력을 실제 `build_prompt(..., role=\"rca\"/\"report\")`에 통과시키면 모두 `- **리전**: us-east-1`이다.",
+      "test": "T11 `sufficiency-alarm-prompt-repro.py headless` 및 `... strands`. 실제 catalog는 읽기만 했다. 별도의 메모리 입력으로 metadata 없음 및 region=ap-northeast-2/ARN 없음도 확인했다. 프롬프트 조립까지만 실행했고 모델·AWS는 호출하지 않았다.",
+      "testResult": "FAIL (계약). `sufficiency-headless-alarm-prompt-repro.json`, `sufficiency-strands-alarm-prompt-repro.json`: 네 입력 supplied_region=null → parsed/prompt region=us-east-1. Strands의 region-only 예제는 supplied=ap-northeast-2인데 region 상세는 us-east-1이다. 양쪽 minimal input은 통계/주기가 없는데도 Average/300초를 표시한다. 현재 catalog에는 statistic/period가 제공되므로 그 두 값의 현재 catalog drift를 주장하지 않는다. / 갱신: 수정 반영 및 Strands 113/Headless 201 targeted PASS main 통보. 평가의 누락 정보는 not provided, 운영 기본값 유지. 최종 Curie 재검토 대기.",
+      "whyItMatters": "로컬 관측에는 AWS 리소스 좌표가 없다. 그런데 알람 상세가 특정 리전을 관측된 사실처럼 제시하여 잘못된 조회·복원 대상의 근거가 될 수 있다. 실제 모델 출력의 특정 행동이 오직 이 문제 때문이라고 인과를 단정하지 않는다.",
+      "expectedBehavior": "model-eval에서 없는 source region/statistic/period는 제공되지 않음으로 표시하고, 제공한 region은 ARN 없이도 공용 모델 경계에서 일관되게 보존한다. 모델 provider/runtime의 실행 리전과 사고 리소스의 관측 리전을 구분한다.",
+      "observedBehavior": "source metadata JSON에는 없는 값이 별도 Alarm Details 항목에서 조용히 추가된다. 기존 테스트는 envelope/state_reason 또는 DTO 기본값 일치를 검사하여 이 경계를 놓쳤다.",
+      "requestedChange": "활성 모델 실행 중에는 아무 입력도 바꾸지 않는다. 이후 평가 경로의 제공 여부를 공용 프롬프트까지 보존하고, Strands parser의 Region/ARN 처리와 양쪽 프롬프트의 fallback 표시를 수정한다. 누락 좌표를 scenario에 만들어 넣어 해결하지 않는다.",
+      "editTargets": "`packages/agent/src/rca_agent/ports/dto/models.py:AlarmPayload.from_cloudwatch_sns`, `services/scoping.py:_build_user_prompt`, 필요한 eval adapter 배선; `packages/headless-codex/src/headless_codex/eval_adapter.py:_alarm_for`, `ports/dto/models.py:AlarmContext`, `services/prompt_builder.py:build_prompt`; 양 `tests/test_eval_alarm_metadata.py`.",
+      "completionCriteria": "region/ARN 없음, region만 있음, null/빈 optional 값, 누락 statistic/period를 양 엔진 최종 prompt에서 검사. 현재 네 catalog에서 없는 AWS 좌표를 출력하지 않고 제공 메타데이터와 상세가 충돌하지 않아야 한다. 실행 중 회차/입력 digest는 보존하고 변경 뒤 별도 회차로 재평가한다.",
+      "fix": "main과 Curie의 최종 결과를 반영한 뒤 해당 계약의 상태를 확정한다.",
+      "contractIds": [
+        "R3"
+      ],
+      "remediationUpdate": "수정 반영 및 Strands 113/Headless 201 targeted PASS main 통보. 평가의 누락 정보는 not provided, 운영 기본값 유지. 최종 Curie 재검토 대기.",
+      "originalFindingMarkdown": "#### F4 [Spec violation] 제공하지 않은 AWS 리전이 양 엔진의 실제 프롬프트에서 관측 사실로 표시된다\n- perspective: sufficiency; severity: High; confidence: high; weight: now; impact: source provenance / recovery target correctness.\n- basis: agent/0016 R3 — “메타데이터가 없으면 만들어 채우지 않는다.” 기존 DTO 기본값의 존재 자체가 아니라 평가 입력에서 공용 분석 모델로 넘어가는 **표시 경계**의 위반이다.\n- evidence: Headless `ports/dto/models.py:12`: `region: str = \"us-east-1\"`; `_alarm_for`는 region이 없으면 이 기본값을 그대로 둔다. `services/prompt_builder.py:57`: `\"{region}\": alarm.region`; `prompts/rca-user.md:8`: `- **리전**: {region}`. 현재 네 catalog 입력을 실제 `build_prompt(..., role=\"rca\"/\"report\")`에 통과시키면 모두 `- **리전**: us-east-1`이다.\n- evidence (Strands): `ports/dto/models.py:111`: `region = \"us-east-1\"`; parser는 AlarmArn이 있을 때만 이를 바꾸며 raw Region을 읽지 않는다. `services/scoping.py:113`: `region=alarm.region`이 `prompts/scoping.py:42`의 `- **Region**: {region}`에 들어간다. 현재 네 catalog의 scoping prompt 모두 같은 가짜 리전이 표시된다.\n- test: T11 `sufficiency-alarm-prompt-repro.py headless` 및 `... strands`. 실제 catalog는 읽기만 했다. 별도의 메모리 입력으로 metadata 없음 및 region=ap-northeast-2/ARN 없음도 확인했다. 프롬프트 조립까지만 실행했고 모델·AWS는 호출하지 않았다.\n- testResult: FAIL (계약). `sufficiency-headless-alarm-prompt-repro.json`, `sufficiency-strands-alarm-prompt-repro.json`: 네 입력 supplied_region=null → parsed/prompt region=us-east-1. Strands의 region-only 예제는 supplied=ap-northeast-2인데 region 상세는 us-east-1이다. 양쪽 minimal input은 통계/주기가 없는데도 Average/300초를 표시한다. 현재 catalog에는 statistic/period가 제공되므로 그 두 값의 현재 catalog drift를 주장하지 않는다.\n- whyItMatters: 로컬 관측에는 AWS 리소스 좌표가 없다. 그런데 알람 상세가 특정 리전을 관측된 사실처럼 제시하여 잘못된 조회·복원 대상의 근거가 될 수 있다. 실제 모델 출력의 특정 행동이 오직 이 문제 때문이라고 인과를 단정하지 않는다.\n- expectedBehavior: model-eval에서 없는 source region/statistic/period는 제공되지 않음으로 표시하고, 제공한 region은 ARN 없이도 공용 모델 경계에서 일관되게 보존한다. 모델 provider/runtime의 실행 리전과 사고 리소스의 관측 리전을 구분한다.\n- observedBehavior: source metadata JSON에는 없는 값이 별도 Alarm Details 항목에서 조용히 추가된다. 기존 테스트는 envelope/state_reason 또는 DTO 기본값 일치를 검사하여 이 경계를 놓쳤다.\n- requestedChange / fix: 활성 모델 실행 중에는 아무 입력도 바꾸지 않는다. 이후 평가 경로의 제공 여부를 공용 프롬프트까지 보존하고, Strands parser의 Region/ARN 처리와 양쪽 프롬프트의 fallback 표시를 수정한다. 누락 좌표를 scenario에 만들어 넣어 해결하지 않는다.\n- editTargets: `packages/agent/src/rca_agent/ports/dto/models.py:AlarmPayload.from_cloudwatch_sns`, `services/scoping.py:_build_user_prompt`, 필요한 eval adapter 배선; `packages/headless-codex/src/headless_codex/eval_adapter.py:_alarm_for`, `ports/dto/models.py:AlarmContext`, `services/prompt_builder.py:build_prompt`; 양 `tests/test_eval_alarm_metadata.py`.\n- completionCriteria: region/ARN 없음, region만 있음, null/빈 optional 값, 누락 statistic/period를 양 엔진 최종 prompt에서 검사. 현재 네 catalog에서 없는 AWS 좌표를 출력하지 않고 제공 메타데이터와 상세가 충돌하지 않아야 한다. 실행 중 회차/입력 digest는 보존하고 변경 뒤 별도 회차로 재평가한다.\n- route: 구현 코드와 최종 프롬프트 경계 테스트. R3를 기존 기본값에 맞춰 완화하는 ADR sync 대상이 아니다.\n\n",
+      "closure": "해소 — Curie 최종 코드 재검토 및 main 합성",
+      "closureSource": "sufficiency-residual-final-recheck.md"
+    }
+  ],
+  "modelRun": {
+    "runId": "realistic-final-20260910T025818Z-a57123",
+    "inputDigest": "8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc",
+    "inputDigestUnchanged": true,
+    "status": "COMPLETED",
+    "finished": 8,
+    "strandsRunning": 0,
+    "finalResultReceived": true,
+    "passed": 0,
+    "failed": 8,
+    "source": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json",
+    "dimensionsPassed": {
+      "rootCauseIdentified": 4,
+      "evidenceLinked": 7,
+      "artifactsComplete": 8,
+      "remediationSafe": 7,
+      "competingCausesRejected": 0
+    },
+    "modelSelfConfirmed": 8,
+    "selfConfirmationIsReviewerTruth": false
+  },
+  "finalModelContext": {
+    "summary": "최종 실모델 회차 realistic-final-20260910T025818Z-a57123은 정규화 결과 8개를 모두 남겼고 평가는 0 PASS/8 FAIL이다. 입력 digest는 8dc813d320341b5347ed5f299a5c52217a5c84a7d02863e8be79e2672e860cfc로 유지됐다. 산출물 완비 8/8, 증거 연결 7/8, 제안 안전성 정적 검사 7/8, 원인 식별 4/8이며 경쟁 원인 기각은 모두 false(0/8)다. 모델의 자체 확정 8/8은 모델이 내린 표시이며 검토자의 정답 판정이 아니다. 기존 기준선은 그대로이고 승인된 새 fixture는 없다.",
+    "classificationAndCitationLimits": "두 엔진의 락 사례는 기대 유형 unsupported 대신 slow-query로 분류됐다. Headless의 세션 정리·정비 락·풀 설정 사례에는 확정 원인에 필요한 인용이 각각 누락됐다. Headless 세션 정리 사례의 step-1은 안전성 정적 검사에 걸렸지만, main 검토에서는 메모리상의 소유 집합 제거와 rollback 표현에 따른 오탐 가능성을 남겼다. 실제로 위험한 작업을 실행했다는 증거로 해석하지 않는다.",
+    "qualitativePrecisionLimit": "Strands의 세션 정리 설명은 예외 위치를 commit 이후로 서술했다. main이 대조한 probe의 SQL 오류는 commit 이전에 발생하므로 이 설명에는 사건 순서의 정밀도 한계가 있다. 이는 제공된 정성 검토 결과이며 새로운 코드 결함 판정을 추가하지 않는다.",
+    "headlessMissingRootCitations": [
+      {
+        "scenario": "exception-session-cleanup",
+        "missingRootEvidence": [
+          "obs-04"
+        ]
+      },
+      {
+        "scenario": "maintenance-transaction-lock",
+        "missingRootEvidence": [
+          "obs-03"
+        ]
+      },
+      {
+        "scenario": "pool-config-regression",
+        "missingRootEvidence": [
+          "obs-06"
+        ]
+      }
+    ],
+    "unsafeStepInterpretation": "Static flag only; possible false positive in memory-owned-set removal/rollback wording; no executed dangerous action claimed.",
+    "baselineChanged": false,
+    "approvedNewFixture": false,
+    "source": "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json"
+  },
+  "cleanupContext": {
+    "summary": "평가용 자원 정리는 완료됐다. 최종 AWS 회차의 DynamoDB 테이블 4개, S3 버킷 1개, 벡터 버킷 1개와 인덱스 8개 삭제가 main에 의해 확인됐고, cleanup-verification.json의 자원 부재 검사는 allAbsent=true다. 중단한 이전 두 회차도 각각 allAbsent=true다. 로컬 PostgreSQL은 잔여 proof schema 0개를 확인한 뒤 소유 컨테이너와 익명 볼륨을 제거했다. 이 정리 결과는 평가용 자원의 종료 증거이며 Healthcare AWS 배포 E2E나 500ms 알람 관계의 성공을 의미하지 않는다.",
+    "finalAwsAllAbsent": true,
+    "stoppedRunAllAbsent": [
+      true,
+      true
+    ],
+    "deletedByMain": {
+      "dynamodbTables": 4,
+      "s3Buckets": 1,
+      "vectorBuckets": 1,
+      "vectorIndexes": 8
+    },
+    "indexDeletionAuthority": "사용자 main",
+    "finalAbsenceCheckSource": "tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json",
+    "stoppedAbsenceCheckSources": [
+      "tests/results/model/realistic-20260910T022808Z-fa3ab0/cleanup-verification.json",
+      "tests/results/model/realistic-20260910T023723Z-6308b4/cleanup-verification.json"
+    ],
+    "localSource": "docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json",
+    "remainingLocalProofSchemas": 0,
+    "localContainerRemoved": true,
+    "localAnonymousVolumesRemoved": true,
+    "awsDeploymentE2e": "NOT_RUN"
+  },
+  "finalModelCleanupAuthority": "사용자 main FINAL MODEL/cleanup 통보와 보존된 final-report.json, 최종/중단 두 회차 cleanup-verification.json, local-cleanup.json을 적용했다. 전체 INCONCLUSIVE/Proposed와 closed coverage를 유지한다. 모델0PASS/8FAIL, 기준선 미변경·새 fixture 미승인, 자원 정리 완료. 안전성 정적 검출의 오탐 가능성과 commit 서술 정밀도 한계는 main 제공 판단이다.",
+  "finalModelCleanupSourceHashes": {
+    "tests/results/model/realistic-final-20260910T025818Z-a57123/final-report.json": "561acf618f3208914bce72266036aacdbfd758b10f8d824c6f9a5bcd517385ae",
+    "tests/results/model/realistic-final-20260910T025818Z-a57123/cleanup-verification.json": "2d925a5ba4feffb7f129df856981ffd54c89a65a4ac95e6b23086f05c17bb0d2",
+    "docs/test-reports/realistic-demo-evidence-2026-09-10/local-cleanup.json": "51a7a18e0c16f36d36d1ec227ba7af04de94c7bcf8aef02d9b4ebd891cd0e75a",
+    "tests/results/model/realistic-20260910T022808Z-fa3ab0/cleanup-verification.json": "bd29d613e3608ec412d59eb13a2ef9263ce7b20db7f2d9b49d5b49b20156e5ed",
+    "tests/results/model/realistic-20260910T023723Z-6308b4/cleanup-verification.json": "0b8f7c27cc90221184d2fc623e80f0a9853bfc3d1549328eb7b353b810993f68"
+  }
+}

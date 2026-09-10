@@ -1,0 +1,202 @@
+$ nx run-many -t test
+
+ NX   Running target test for 4 projects:
+
+- healthcare-sensor-app
+- @org/headless-codex
+- agent
+- infra
+
+
+
+> nx run infra:test
+
+> pnpm jest
+
+(node:98059) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98084) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98390) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98387) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98392) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98393) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98388) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98389) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1mTest Suites: [22m[1m[32m7 passed[39m[22m, 7 total
+[1mTests:       [22m[1m[32m44 passed[39m[22m, 44 total
+[1mSnapshots:   [22m0 total
+[1mTime:[22m        [1m[33m23.715 s[39m[22m
+[2mRan all test suites[22m[2m.[22m
+
+> nx run healthcare-sensor-app:test
+
+(node:99198) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99199) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync pytest[22m
+============================= test session starts ==============================
+platform darwin -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/dongkyl/git/rca-agent/packages/healthcare-sensor-app
+configfile: pyproject.toml
+testpaths: tests
+plugins: asyncio-1.4.0, anyio-4.14.2
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 120 items
+
+tests/test_bounded_observability.py ..........                           [  8%]
+tests/test_bounded_workload.py ..........                                [ 16%]
+tests/test_deployed_leak_path.py ........                                [ 23%]
+tests/test_fault_resets.py .................x                            [ 38%]
+tests/test_local_runner_process_cleanup.py ...                           [ 40%]
+tests/test_observability_lifespan.py ........                            [ 47%]
+tests/test_real_mechanisms.py ...........s                               [ 57%]
+tests/test_sensors.py .....                                              [ 61%]
+tests/test_slow_query_integration.py s                                   [ 62%]
+tests/test_symptom_metrics.py ...........                                [ 71%]
+tests/test_traffic_generator.py .                                        [ 72%]
+tests/test_workload_settings.py .................................        [100%]
+
+================== 117 passed, 2 skipped, 1 xfailed in 3.63s ===================
+
+> nx run agent:test
+
+(node:98058) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98079) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync pytest[22m
+============================= test session starts ==============================
+platform darwin -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/dongkyl/git/rca-agent/packages/agent
+configfile: pyproject.toml
+testpaths: tests
+plugins: asyncio-1.4.0, anyio-4.14.2
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 722 items
+
+tests/test_agent_factory.py ................                             [  2%]
+tests/test_agent_main.py .......                                         [  3%]
+tests/test_aws_sdk_timeouts.py ........                                  [  4%]
+tests/test_beam_global_exhaustion.py .....                               [  4%]
+tests/test_branching.py .........                                        [  6%]
+tests/test_destructive_actions.py ...................................... [ 11%]
+.................................                                        [ 16%]
+tests/test_eval_adapter.py ............................................. [ 22%]
+.....                                                                    [ 22%]
+tests/test_eval_adapter_pipeline_contract.py ....................        [ 25%]
+tests/test_eval_alarm_metadata.py ............                           [ 27%]
+tests/test_eval_container.py .                                           [ 27%]
+tests/test_evidence.py ......................................            [ 32%]
+tests/test_h01_redelivery_integration.py .                               [ 32%]
+tests/test_h03_validated_fault_type_integration.py .                     [ 33%]
+tests/test_harness_prompt_dto_contracts.py ..........................    [ 36%]
+tests/test_harness_s3_vectors_contracts.py .............                 [ 38%]
+tests/test_harness_timeout_and_isolation.py ...............              [ 40%]
+tests/test_harness_tool_safety.py ...........                            [ 42%]
+tests/test_harness_validation_contracts.py ...............               [ 44%]
+tests/test_hypothesis.py .................                               [ 46%]
+tests/test_main.py .....................................                 [ 51%]
+tests/test_models.py .............                                       [ 53%]
+tests/test_notification.py ........                                      [ 54%]
+tests/test_planning_runtime_context.py .....                             [ 55%]
+tests/test_playbook_gen.py ............................................. [ 61%]
+.........                                                                [ 62%]
+tests/test_prioritization.py .....                                       [ 63%]
+tests/test_report.py ................                                    [ 65%]
+tests/test_review_gate.py .......                                        [ 66%]
+tests/test_scoping.py ................                                   [ 68%]
+tests/test_session_store.py ............................................ [ 74%]
+..........................................                               [ 80%]
+tests/test_sns_notification_adapter.py ..                                [ 81%]
+tests/test_state_machine.py .........................................    [ 86%]
+tests/test_strands_audit_fixes.py ..........................             [ 90%]
+tests/test_termination.py ........                                       [ 91%]
+tests/test_trace_store.py ........................................       [ 96%]
+tests/test_validation.py ......................                          [100%]
+
+============================= 722 passed in 30.27s =============================
+
+> nx run @org/headless-codex:test
+
+(node:98057) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:98082) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m$ uv --cache-dir /tmp/rca-agent-uv-cache run --no-sync pytest tests/[22m
+============================= test session starts ==============================
+platform darwin -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/dongkyl/git/rca-agent/packages/headless-codex
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.14.2
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 799 items
+
+tests/test_alarm_parser.py ....                                          [  0%]
+tests/test_artifact_shape.py ........................................... [  5%]
+.................                                                        [  8%]
+tests/test_artifact_validation.py ...................................    [ 12%]
+tests/test_artifact_watcher.py ....................                      [ 14%]
+tests/test_codex_harness_contract.py .......                             [ 15%]
+tests/test_codex_runner.py .........................                     [ 18%]
+tests/test_command_gate.py .........................................     [ 24%]
+tests/test_destructive_actions.py ...................................... [ 28%]
+................                                                         [ 30%]
+tests/test_eval_adapter.py ............................................. [ 36%]
+..                                                                       [ 36%]
+tests/test_eval_alarm_metadata.py ...............                        [ 38%]
+tests/test_eval_citation_fields.py .....................                 [ 41%]
+tests/test_evidence_store.py .....                                       [ 41%]
+tests/test_execution_context.py .........                                [ 42%]
+tests/test_execution_evidence.py ............                            [ 44%]
+tests/test_execution_harness_contracts.py ..............                 [ 46%]
+tests/test_execution_mcp_server.py ...............................       [ 50%]
+tests/test_execution_outcome.py .............................            [ 53%]
+tests/test_execution_pipeline.py ................................        [ 57%]
+tests/test_execution_request.py ..........................               [ 60%]
+tests/test_execution_runner.py ..                                        [ 61%]
+tests/test_execution_store.py ...............................            [ 65%]
+tests/test_gate_prompt_alignment.py .................................... [ 69%]
+                                                                         [ 69%]
+tests/test_main.py ..                                                    [ 69%]
+tests/test_mcp_server.py ............................................... [ 75%]
+................                                                         [ 77%]
+tests/test_operator_fencing.py .....                                     [ 78%]
+tests/test_pipeline.py ................................................. [ 84%]
+                                                                         [ 84%]
+tests/test_pipeline_redelivery.py ..                                     [ 84%]
+tests/test_playbook_merge.py .............                               [ 86%]
+tests/test_playbook_store.py ........................                    [ 89%]
+tests/test_prompt_builder.py ......                                      [ 90%]
+tests/test_prompt_contracts.py ..................................        [ 94%]
+tests/test_rca_planning_context.py .                                     [ 94%]
+tests/test_report_store.py ....                                          [ 94%]
+tests/test_session_store.py ...................................          [ 99%]
+tests/test_settings.py .....                                             [100%]
+
+============================= 799 passed in 37.37s =============================
+
+
+
+ NX   Successfully ran target test for 4 projects
+
+
+  Run duration:      41.2s
+  Cache:             0/4 hit (0%)
+  Critical path:     41.2s (1 task)
+  Recoverable time:  31ms (0% of the run)
+
+  Recommendations:
+    - Drastically reduce your run duration by sharing a cache across your team and CI → https://nx.dev/ci/features/remote-cache?utm_source=nx-cli&utm_medium=cli&utm_campaign=performance-report&utm_content=remote-cache.
+    - Speed up or split the longest tasks on the critical path:
+        @org/headless-codex:test    41.2s

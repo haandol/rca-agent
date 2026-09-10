@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RCA 데모 시나리오 현실화 검토안</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f5f8;color:#172638;font:16px/1.8 system-ui,sans-serif}
+main{max-width:1000px;margin:auto;padding:42px 30px 70px;background:white}h1{font-size:30px;line-height:1.4}
+h2{font-size:23px;margin-top:38px;padding-top:20px;border-top:1px solid #d6dfe8}h3{font-size:19px;margin-top:28px}
+a{color:#155e9b}.note{color:#57697a;font-size:14px}.scroll{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:12px;text-align:left;vertical-align:top;border-bottom:1px solid #d6dfe8}th{background:#edf3f8}
+pre,code{font:13px/1.6 ui-monospace,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#f5f7fa;padding:14px}
+details{border:1px solid #d6dfe8;padding:12px 16px;margin:18px 0;border-radius:6px}summary{cursor:pointer;font-weight:600}
+figure{margin:22px 0;padding:16px;border:1px solid #d6dfe8;background:#f8fafc;overflow:auto}.mermaid{text-align:center}.mermaid svg{max-width:100%;height:auto}
+figcaption{font-size:14px;color:#57697a}@media(max-width:650px){main{padding:26px 17px}h1{font-size:26px}th,td{min-width:130px}}
+</style></head><body><main>
+<p class="note">검토안 · 현재 서비스나 평가 시나리오에 적용하지 않음</p>
+<h1>정답을 알려주는 주입에서 실제 장애 조사로</h1>
+<p><strong>풀 설정 회귀와 실제 N+1 조회를 우선 구현하고, 트랜잭션 락과 예외 경로의 연결 누수를 확장 후보로 두는 것을 권합니다.</strong>
+기존 PostgreSQL·Healthcare 서비스·CloudWatch를 활용할 수 있습니다. 새 클라우드 서비스가 반드시 필요한 구성은 아닙니다.</p>
+<p>아래 내용은 코드 기반 구현 가능성 검토입니다. 새 장애를 실제로 재현한 결과가 아니며,
+새 임계치·부하량·발현 시간은 정상 → 결함 → 복원 실험으로 확인해야 합니다.
+진행 중인 기존 모델 평가의 입력과 정답 기준은 변경하지 않았습니다.</p>
+
+<h2>제안하는 네 가지 사례</h2>
+<div class="scroll"><table><thead><tr><th>시나리오</th><th>사용자가 보는 증상</th><th>조사해야 할 원인</th><th>복구 완료 조건</th></tr></thead><tbody>
+<tr><td>풀 설정 회귀</td><td>배포 후 바이탈 저장 대기·실패 증가</td><td>같은 부하에서 애플리케이션의 DB 연결 풀만 작아짐</td><td>원래 설정을 복원한 뒤 같은 부하에서 대기·실패 감소</td></tr>
+<tr><td>N+1 조회 회귀</td><td>환자 바이탈 조회가 느려짐</td><td>한 번에 가져오던 데이터를 행마다 별도 SQL로 재조회</td><td>정상 이미지로 롤백한 뒤 같은 응답 데이터와 SQL 횟수·지연 회복</td></tr>
+<tr><td>끝나지 않은 정비 트랜잭션</td><td>조회는 되는데 저장이 막힘</td><td>정비 작업이 INSERT와 충돌하는 락을 유지</td><td>소유한 작업을 롤백하고 락 해제·저장 재개 확인</td></tr>
+<tr><td>예외·취소 경로의 세션 반환 누락</td><td>일부 요청 실패 이후 연결이 누적되어 저장도 실패</td><td>코드 변경으로 정상 경로에만 세션 정리가 남음</td><td>정상 이미지 복원 후 같은 예외·취소 입력에서도 연결 반환 확인</td></tr>
+</tbody></table></div>
+
+<h3>풀 설정 회귀</h3>
+<p>현재 DB 풀 설정은 실제 SQLAlchemy 엔진에 연결되어 있어 가장 먼저 시도할 수 있습니다.
+정상 이미지와 요청 조건을 유지한 채 풀 크기·초과 연결 설정을 잘못 축소한 배포를 만듭니다.
+단순히 설정을 작게 바꾸는 것만으로 장애가 보장되는 것은 아니므로, 정상 설정에서는 처리 가능한 제한된 동시 부하를 먼저 정합니다.</p>
+<p>증거에는 배포 전후의 유효 설정, 연결 획득 대기 시간, 사용 중 연결, 반환 기록과 timeout 로그를 넣습니다.
+RDS 전체 연결 상한과 애플리케이션 풀의 상한을 구별해야 합니다.
+요청 급증·연결 누수·느린 SQL과 구별할 수 있는 관측을 함께 수집합니다.</p>
+
+<h3>N+1 조회 회귀</h3>
+<p>N+1은 한 번의 조회로 끝낼 작업에 데이터 수 N만큼 추가 조회가 붙는 형태입니다.
+현재 환자 조회는 한 SELECT로 결과를 가져옵니다. 결함 리비전에서 ID 목록을 읽은 뒤
+각 ID의 상세를 다시 읽도록 하여 반환 결과는 같지만 SQL 횟수가 늘어나는 회귀를 만들 수 있습니다.</p>
+<p>현재 지연 주입은 HTTP 처리 전 대기 또는 별도 연결의 <code>pg_sleep</code>입니다.
+새 사례에는 실제 업무 SQL의 개수·시간과 환자 조회의 지연을 계측해야 합니다.
+저장 실패 알람에 억지로 연결하지 않고 조회 지연을 증상으로 사용합니다.</p>
+
+<h3>정비 트랜잭션의 락</h3>
+<p>제한된 정비 작업이 테이블에 SHARE 락을 보유한 채 트랜잭션을 끝내지 않는 사례입니다.
+일반 SELECT와 INSERT가 다르게 영향을 받으므로 조회 가능·저장 지연의 차이를 조사할 수 있습니다.
+단순히 기존 행 하나를 잠그는 방식은 현재 새 UUID를 INSERT하는 저장 경로의 적절한 재현이 아닙니다.</p>
+<p>차단자와 대기자의 프로세스 ID, 트랜잭션 시작 시각, SQL, 락 보유·대기 관계가 필요합니다.
+풀 대기가 뒤늦게 생기면 원인이 아니라 락 정체의 결과일 수 있습니다.
+소유 연결의 롤백·종료와 최대 유지 시간을 정리 경로에 포함해야 하므로 우선 평가용 사례로 준비하기 적합합니다.</p>
+
+<h3>예외·취소 시 연결 반환 누락</h3>
+<p>정상 코드와 결함 코드의 실제 차이가 있어야 합니다. 성공 시에는 정리되지만 예외나 요청 취소 시
+정리되지 않는 경로를 조사하게 합니다. 현재 정상 경로의 <code>finally: close()</code>가 결함이라는 뜻은 아닙니다.</p>
+<p>요청 ID와 연결 획득·반환을 연결해, 요청이 끝난 뒤에도 남아 있는 연결을 보여줍니다.
+가비지 컬렉션이 곧 연결을 회수해 버린다면 반복 가능한 누수 사례로 채택하지 않습니다.
+기존 fault reset이 새 결함의 자원을 관리한다고 가정하지 않고, 정상 이미지 롤백과 이전 태스크 종료를 검증합니다.</p>
+
+<h2>관측 데이터도 바꿔야 합니다</h2>
+<p>현재 평가 데이터에는 “이 플래그가 누수를 켰다”, “이 변경은 무관하다”처럼 분석 결론을 미리 써 준 문장이 있습니다.
+새 시나리오는 다음 자료를 주고 에이전트가 관계를 판단하게 만드는 편이 좋습니다.</p>
+<ul>
+<li>시간 구간·단위·리소스 좌표가 있는 실제 또는 명시적인 합성 지표 시계열</li>
+<li>요청 ID가 포함된 로그와 SQL 패턴별 실행 횟수·시간</li>
+<li>배포 시각, 이미지·리비전 식별자, 변경 전후 설정 또는 코드 차이</li>
+<li>반증에 필요한 독립적인 관측과, 원인으로 단정할 수 없는 무관한 변경</li>
+</ul>
+<p>관측 ID도 <code>fault-flag-enabled-in-revision</code>처럼 정답을 암시하기보다
+<code>cw-01</code>, <code>log-02</code>, <code>change-01</code>처럼 참조용으로 사용합니다.
+정답과 판정 기준은 평가자에게 남기고 에이전트 입력에 섞지 않습니다.
+합성 관측을 실제 AWS에서 수집한 결과로 표시하지 않습니다.</p>
+
+<h2>같은 조건에서 정상·결함·복원을 비교합니다</h2>
+<figure><pre class="mermaid">
+flowchart TD
+  A["같은 입력과 제한된 요청 시작률"] --> B["정상 구성의 기준 측정"]
+  B --> C["설정 회귀 또는 결함 이미지"]
+  C --> D["서비스 증상 알람"]
+  D --> E["지표 · 로그 · 변경 이력 · 코드"]
+  E --> F["원인과 경쟁 가설 검증"]
+  F --> G["사용자 승인"]
+  G --> H["원래 설정 또는 이미지로 복원"]
+  H --> I["같은 입력에서 증상 회복 확인"]
+</pre><figcaption>복원 API의 성공 응답이 아니라 서비스 처리와 증상 지표의 회복을 완료 조건으로 둡니다.</figcaption></figure>
+<p>현재 배경 트래픽은 작업을 순차 실행한 뒤 쉬므로, 장애로 작업이 느려지면 시작되는 요청 수도 줄어듭니다.
+현실적인 비교에는 요청 시작률과 동시 실행 상한을 구분하고, 처리 완료·실패·대기·버린 요청을 각각 관측하는 부하 생성이 필요합니다.
+지표 방출도 요청 완료에만 의존하지 않아야 멈춘 요청을 정상처럼 보이지 않게 할 수 있습니다.</p>
+
+<h2>현재 필요한 결정</h2>
+<p><strong>모델 평가 데이터만 현실화할지, 실제 장애 재현·복구 데모까지 포함할지 선택이 필요합니다.</strong>
+전자는 관측·정답 계약을 새로 작성하고 두 모델을 다시 평가하는 작업입니다.
+후자는 서비스 계측, 제한된 부하, 결함 리비전, 증상 알람과 원상복원 경로까지 구현하고 실제 재현을 검증해야 합니다.</p>
+<p>실제 데모까지 포함한다면 풀 설정 회귀와 N+1을 먼저 완성하는 순서를 권합니다.
+정확한 부하량·지연 임계치·유지 시간은 측정 뒤 고정하며, 아직 측정하지 않은 숫자를 실측값으로 넣지 않습니다.
+기각 기준이나 실패 결과를 조용히 바꾸는 방식으로 현재 실패한 평가 회차를 승인하지 않습니다.</p>
+
+<details><summary>코드·결정 소유자와 검토 근거</summary>
+<pre>packages/healthcare-sensor-app/src/test_service/
+  services/traffic_generator.py
+  services/symptom_metrics.py
+  services/sensor.py
+  services/fault.py
+  adapters/secondary/database_adapter.py
+  adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py
+  middleware/fault_flag.py
+scripts/inject_deployment_fault.py
+scripts/run_deployed_e2e.py
+packages/infra/lib/stacks/healthcare-service-stack.ts</pre>
+<p><a href="../adr/infra/0004-rds-healthcare-deployment.md">infra/0004</a>는 데모 서비스 구성,
+<a href="../adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md">infra/0007</a>은 주입·증상·복구,
+<a href="../adr/agent/0016-rca-evaluation-test-harness.md">agent/0016</a>은 평가 계약을 소유합니다.
+실제 장애 방식이나 합격 기준이 바뀌는 내용은 해당 ADR에서 확인한 뒤 구현합니다.</p>
+<p>기술 검토 범위는 PostgreSQL의 테이블 락 관계와 트랜잭션 종료 시 해제,
+SQLAlchemy의 풀 설정과 연결 반환, 현재 저장소의 설정·호출 경로입니다.
+배포 가능한 시나리오로 채택하기 전에는 실제 데이터베이스에서 같은 동작과 복원을 확인해야 합니다.</p>
+</details>
+</main><script type="module">
+const nodes=[...document.querySelectorAll('.mermaid')];
+for(const node of nodes){const d=document.createElement('details'),s=document.createElement('summary'),p=document.createElement('pre');s.textContent='Mermaid 원문';p.textContent=node.textContent.trim();d.append(s,p);node.closest('figure').after(d)}
+try{const{default:mermaid}=await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'neutral',fontFamily:'system-ui,sans-serif'});await mermaid.run({nodes})}catch{nodes[0].before(Object.assign(document.createElement('p'),{textContent:'인터넷 연결이 없으면 Mermaid 원문으로 흐름을 확인할 수 있습니다.'}))}
+</script></body></html>

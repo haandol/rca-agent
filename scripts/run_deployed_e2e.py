@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,7 @@ DEFAULT_FAULT_SCRIPT = Path(__file__).with_name("inject_deployment_fault.py")
 PARAMETER_GROUP_RUN_TAG = "RCA_TEST_RUN_ID"
 PARAMETER_GROUP_PROVENANCE_TAG = "RCA_TEST_PROVENANCE"
 PARAMETER_GROUP_PROVENANCE = "inject_deployment_fault.py:db-leak"
+MIN_OBSERVATION_SECONDS = 150
 INITIAL_CLEAN_CHECKS = (
     "faultFlagsClear",
     "serviceStable",
@@ -326,7 +329,13 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def run() -> int:
+def run(*, observation_clock: Callable[[], float] = time.monotonic) -> int:
+    """Run owned fault validation and always restore after a mutation.
+
+    A successful validation child must remain active for the full post-fault
+    observation window. Pre-fault red-herring delay never counts toward it.
+    The isolated clock argument permits deterministic duration-boundary tests.
+    """
     args = parse_args()
     fault_runner = FaultCommandRunner(args)
     initial_status = fault_runner.invoke("status")
@@ -410,14 +419,30 @@ def run() -> int:
             env=child_environment,
             start_new_session=True,
         )
+        observation_started_at = utc_now()
+        observation_started = observation_clock()
         validation_code = validation_child.wait()
+        observation_seconds = observation_clock() - observation_started
+        observation_sufficient = (
+            math.isfinite(observation_seconds)
+            and observation_seconds >= MIN_OBSERVATION_SECONDS
+        )
         manifest["validation"] = {
+            "startedAt": observation_started_at,
             "completedAt": utc_now(),
             "exitCode": validation_code,
+            "observationSeconds": observation_seconds,
+            "minimumObservationSeconds": MIN_OBSERVATION_SECONDS,
+            "observationWindowSufficient": observation_sufficient,
         }
         write_manifest(args.manifest, manifest)
         if validation_code != 0:
             outcome_code = validation_code
+        elif not observation_sufficient:
+            raise DriverError(
+                "validation ended before the required 150-second post-fault "
+                "observation window; pre-fault delay does not count"
+            )
     except RunInterrupted as error:
         outcome_code = 128 + error.signum
         manifest["interrupted"] = {

@@ -1,0 +1,8 @@
+DRAFT PREFLIGHT ONLY; main final data not received
+- contractCoverage[1].adrBasis must exactly match R1's ADR source row
+- contractCoverage[2].adrBasis must exactly match R2's ADR source row
+- contractCoverage[3].adrBasis must exactly match R3's ADR source row
+- contractCoverage[4].adrBasis must exactly match R4's ADR source row
+- contractCoverage[5].adrBasis must exactly match R5's ADR source row
+- contractCoverage[6].adrBasis must exactly match R6's ADR source row
+- contractCoverage[7].adrBasis must exactly match R7's ADR source row

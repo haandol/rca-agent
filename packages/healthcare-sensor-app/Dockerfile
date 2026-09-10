@@ -7,6 +7,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src/ src/
+COPY demo/build_revision.py demo/build_revision.py
+COPY demo/revisions/ demo/revisions/
+ARG SOURCE_REVISION=r1
+RUN python demo/build_revision.py --revision "$SOURCE_REVISION" --destination src --in-place
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim

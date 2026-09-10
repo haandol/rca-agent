@@ -1,0 +1,290 @@
+{
+  "query-amplification": {
+    "baseline": {
+      "path": "packages/healthcare-sensor-app/src/test_service/revision/query.py",
+      "sha256": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+      "lines": [
+        {
+          "line": 3,
+          "text": "from sqlalchemy.ext.asyncio import AsyncSession"
+        },
+        {
+          "line": 4,
+          "text": "from sqlalchemy.sql import Select"
+        },
+        {
+          "line": 6,
+          "text": "from test_service.adapters.secondary.sensor_repository.models import SensorReadingRow"
+        },
+        {
+          "line": 9,
+          "text": "async def fetch_patient_rows(session: AsyncSession, stmt: Select) -> list[SensorReadingRow]:"
+        },
+        {
+          "line": 11,
+          "text": "    return list((await session.execute(stmt)).scalars().all())"
+        }
+      ]
+    },
+    "incident": {
+      "path": "packages/healthcare-sensor-app/demo/revisions/r2/query.py",
+      "sha256": "95f43d2f56a286990a5c0779e6fd5d786a33b2ee6d1dc379a94b79d63a075c8c",
+      "lines": [
+        {
+          "line": 3,
+          "text": "from sqlalchemy import select"
+        },
+        {
+          "line": 4,
+          "text": "from sqlalchemy.ext.asyncio import AsyncSession"
+        },
+        {
+          "line": 5,
+          "text": "from sqlalchemy.sql import Select"
+        },
+        {
+          "line": 7,
+          "text": "from test_service.adapters.secondary.sensor_repository.models import SensorReadingRow"
+        },
+        {
+          "line": 10,
+          "text": "async def fetch_patient_rows(session: AsyncSession, stmt: Select) -> list[SensorReadingRow]:"
+        },
+        {
+          "line": 12,
+          "text": "    ids = (await session.execute(stmt.with_only_columns(SensorReadingRow.id))).scalars().all()"
+        },
+        {
+          "line": 13,
+          "text": "    rows = []"
+        },
+        {
+          "line": 14,
+          "text": "    for reading_id in ids:"
+        },
+        {
+          "line": 16,
+          "text": "        row = ("
+        },
+        {
+          "line": 17,
+          "text": "            await session.execute(select(SensorReadingRow).where(SensorReadingRow.id == reading_id))"
+        },
+        {
+          "line": 18,
+          "text": "        ).scalar_one_or_none()"
+        },
+        {
+          "line": 19,
+          "text": "        if row is not None:"
+        },
+        {
+          "line": 20,
+          "text": "            rows.append(row)"
+        },
+        {
+          "line": 21,
+          "text": "    return rows"
+        }
+      ]
+    }
+  },
+  "exception-session-cleanup": {
+    "baseline": {
+      "path": "packages/healthcare-sensor-app/src/test_service/revision/session.py",
+      "sha256": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+      "lines": [
+        {
+          "line": 3,
+          "text": "import asyncio"
+        },
+        {
+          "line": 4,
+          "text": "from collections.abc import AsyncIterator"
+        },
+        {
+          "line": 5,
+          "text": "from contextlib import asynccontextmanager"
+        },
+        {
+          "line": 7,
+          "text": "from sqlalchemy.ext.asyncio import AsyncSession"
+        },
+        {
+          "line": 10,
+          "text": "async def close_session(session: AsyncSession) -> None:"
+        },
+        {
+          "line": 12,
+          "text": "    cleanup = asyncio.create_task(session.close())"
+        },
+        {
+          "line": 13,
+          "text": "    try:"
+        },
+        {
+          "line": 14,
+          "text": "        await asyncio.shield(cleanup)"
+        },
+        {
+          "line": 15,
+          "text": "    except asyncio.CancelledError:"
+        },
+        {
+          "line": 16,
+          "text": "        await cleanup"
+        },
+        {
+          "line": 17,
+          "text": "        raise"
+        },
+        {
+          "line": 20,
+          "text": "@asynccontextmanager"
+        },
+        {
+          "line": 21,
+          "text": "async def session_scope(factory, owned: set[AsyncSession]) -> AsyncIterator[AsyncSession]:"
+        },
+        {
+          "line": 23,
+          "text": "    session = factory()"
+        },
+        {
+          "line": 24,
+          "text": "    owned.add(session)"
+        },
+        {
+          "line": 25,
+          "text": "    try:"
+        },
+        {
+          "line": 26,
+          "text": "        yield session"
+        },
+        {
+          "line": 27,
+          "text": "        await session.commit()"
+        },
+        {
+          "line": 28,
+          "text": "    finally:"
+        },
+        {
+          "line": 30,
+          "text": "        await close_session(session)"
+        },
+        {
+          "line": 31,
+          "text": "        owned.discard(session)"
+        }
+      ]
+    },
+    "incident": {
+      "path": "packages/healthcare-sensor-app/demo/revisions/r3/session.py",
+      "sha256": "823400d86ff5ffe2fa715ed8827fa31b80fe48de2080ad3dbd2274bf3544ac18",
+      "lines": [
+        {
+          "line": 3,
+          "text": "import asyncio"
+        },
+        {
+          "line": 4,
+          "text": "from collections.abc import AsyncIterator"
+        },
+        {
+          "line": 5,
+          "text": "from contextlib import asynccontextmanager"
+        },
+        {
+          "line": 7,
+          "text": "from sqlalchemy.ext.asyncio import AsyncSession"
+        },
+        {
+          "line": 10,
+          "text": "async def close_session(session: AsyncSession) -> None:"
+        },
+        {
+          "line": 12,
+          "text": "    cleanup = asyncio.create_task(session.close())"
+        },
+        {
+          "line": 13,
+          "text": "    try:"
+        },
+        {
+          "line": 14,
+          "text": "        await asyncio.shield(cleanup)"
+        },
+        {
+          "line": 15,
+          "text": "    except asyncio.CancelledError:"
+        },
+        {
+          "line": 16,
+          "text": "        await cleanup"
+        },
+        {
+          "line": 17,
+          "text": "        raise"
+        },
+        {
+          "line": 20,
+          "text": "@asynccontextmanager"
+        },
+        {
+          "line": 21,
+          "text": "async def session_scope(factory, owned: set[AsyncSession]) -> AsyncIterator[AsyncSession]:"
+        },
+        {
+          "line": 23,
+          "text": "    session = factory()"
+        },
+        {
+          "line": 24,
+          "text": "    owned.add(session)"
+        },
+        {
+          "line": 25,
+          "text": "    try:"
+        },
+        {
+          "line": 28,
+          "text": "        await session.connection()"
+        },
+        {
+          "line": 29,
+          "text": "    except BaseException:"
+        },
+        {
+          "line": 30,
+          "text": "        await close_session(session)"
+        },
+        {
+          "line": 31,
+          "text": "        owned.discard(session)"
+        },
+        {
+          "line": 32,
+          "text": "        raise"
+        },
+        {
+          "line": 33,
+          "text": "    yield session"
+        },
+        {
+          "line": 34,
+          "text": "    await session.commit()"
+        },
+        {
+          "line": 36,
+          "text": "    await close_session(session)"
+        },
+        {
+          "line": 37,
+          "text": "    owned.discard(session)"
+        }
+      ]
+    }
+  }
+}
