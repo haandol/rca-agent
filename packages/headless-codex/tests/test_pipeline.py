@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
@@ -695,17 +696,57 @@ def test_confirmed_completion_publishes_a_report_with_its_playbook(monkeypatch, 
     assert completed["confirmed"] is True
 
 
-class TestPlaybookSearchFirstMerge:
-    """같은 유형의 기존 플레이북이 있으면 그것을 보강한다.
+@pytest.fixture
+def recurrent_lock_plans():
+    """Minimal reproduction of custlock-20260910T111921Z-c4f0's live PLAYBOOK.
 
-    새 식별자로 분기하면 같은 증상의 플레이북이 여럿이 되어 회고가 쌓아 온 검증된 절차가
-    다음 실행의 근거가 되지 못한다.
+    traces.json generated three steps, while playbooks.json prepended the
+    prior run's step-owner-evidence-1. Keep both real run/PID bindings here;
+    this fixture does not depend on the external rehearsal files.
     """
+    return {
+        "previous": [
+            {
+                "step_id": "step-owner-evidence-1",
+                "intent": "Connect the prior lock owner to its infrastructure owner",
+                "action": "Inspect PID 14839, application_name healthcare-maint-custlock-20260910T095822Z-4d79",
+                "success_criteria": "The owner and rollback path are observed",
+            }
+        ],
+        "generated": [
+            {
+                "step_id": "step-owner-lock-verification-20260910",
+                "intent": "Verify the current lock owner before any action",
+                "action": "Inspect run custlock-20260910T111921Z-c4f0, PID 18571, and blocking_pids=[18571]",
+                "success_criteria": "The current RUNNING standalone task, run ID and lock owner all match",
+            },
+            {
+                "step_id": "step-stop-confirmed-maintenance-owner-20260910",
+                "intent": "Request rollback and connection close from the verified owner",
+                "action": "After user approval, stop only the standalone task verified in the preceding step",
+                "success_criteria": "Observe transaction_rollback and connection_close for that run and backend PID",
+            },
+            {
+                "step_id": "step-post-lock-health-observation-20260910",
+                "intent": "Verify recovery with fresh evidence",
+                "action": "Observe VitalIngestFailures and actual successful INSERT requests after the action",
+                "success_criteria": "Two complete 60-second intervals have zero failures and successful requests",
+            },
+        ],
+    }
 
-    def _run(self, container, monkeypatch, tmp_path) -> bool:
+
+class TestPlaybookSearchFirstMerge:
+    """기존 식별자와 지식은 보강하되 이번 실행 계획은 생성된 목록 그대로 게시한다."""
+
+    def _run(self, container, monkeypatch, tmp_path, *, execution_steps=None, confirmed=True) -> bool:
         class ConfirmedReportWriter:
             def run(self, prompt, *, execution_token, cancel_checker, **kwargs):
-                _write_confirmed_report_artifacts(artifact_dir_for_token(execution_token))
+                artifact_dir = artifact_dir_for_token(execution_token)
+                if confirmed:
+                    _write_confirmed_report_artifacts(artifact_dir, execution_steps=execution_steps)
+                else:
+                    _write_required_report_artifacts(artifact_dir, _valid_report(), execution_steps=execution_steps)
                 return CodexResult(True, "complete", "{}")
 
         container.codex_runner = ConfirmedReportWriter()
@@ -759,23 +800,148 @@ class TestPlaybookSearchFirstMerge:
         # the same final search-first playbook.
         assert container.session_store.mark_completed.call_args.kwargs["playbook"]["playbook_id"] == "pb-existing"
 
-    def test_merge_never_drops_accumulated_steps(self, monkeypatch, tmp_path):
+    def test_new_generation_replaces_accumulated_steps(self, monkeypatch, tmp_path):
         container = _container(None)
         container.playbook_store.search_similar = Mock(return_value=[self._hit()])
         container.playbook_store.load_detail = Mock(return_value=self._existing())
 
-        self._run(container, monkeypatch, tmp_path)
+        assert self._run(container, monkeypatch, tmp_path) is True
         saved = self._saved(container)
 
-        step_ids = [step["step_id"] for step in saved["execution_steps"]]
-        assert "step-legacy" in step_ids
-        # 회고가 교정한 인자가 살아남아야 한다 — 여기가 퇴행하는 지점이었다.
-        legacy = next(step for step in saved["execution_steps"] if step["step_id"] == "step-legacy")
-        assert legacy["action"] == "회고가 교정한 인자로 서비스를 갱신한다"
-        # 기존 절차는 유지되고 새 절차는 뒤에 붙는다. 순서를 재배치하면 과거 실행 증거가
-        # 가리키는 절차를 찾을 수 없다.
-        assert step_ids[0] == "step-legacy"
-        assert len(step_ids) > 1
+        assert saved["execution_steps"] == [_STEP]
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            "different_ids",
+            "already_polluted",
+            "same_ids_new_bindings",
+            "same_ids_removed_binding",
+            "reordered",
+            "removed",
+            "empty",
+            "unconfirmed_empty",
+            "unchanged",
+        ],
+    )
+    def test_current_plan_is_published_exactly(self, monkeypatch, tmp_path, recurrent_lock_plans, case):
+        generated = deepcopy(recurrent_lock_plans["generated"])
+        existing = self._existing()
+        existing["execution_steps"] = deepcopy(recurrent_lock_plans["previous"])
+        if case == "already_polluted":
+            existing["execution_steps"].extend(deepcopy(generated))
+        elif case == "same_ids_new_bindings":
+            existing["execution_steps"] = json.loads(
+                json.dumps(generated).replace("18571", "14839").replace("111921Z-c4f0", "095822Z-4d79")
+            )
+        elif case == "same_ids_removed_binding":
+            existing["execution_steps"] = deepcopy(generated)
+            existing["execution_steps"][0]["bindings"] = {
+                "backend_pid": 14839,
+                "run_id": "custlock-20260910T095822Z-4d79",
+            }
+        elif case == "reordered":
+            existing["execution_steps"] = deepcopy(generated[::-1])
+        elif case == "removed":
+            existing["execution_steps"] = deepcopy(generated)
+            generated = generated[:2]
+        elif case in {"empty", "unconfirmed_empty"}:
+            generated = []
+        elif case == "unchanged":
+            existing["execution_steps"] = deepcopy(generated)
+        existing["runbook_url"] = "https://runbook.example/db-lock"
+        historical_snapshot = deepcopy(existing)
+        generated_snapshot = deepcopy(generated)
+        container = _container(None)
+        container.playbook_store.search_similar.return_value = [self._hit()]
+        container.playbook_store.load_detail.return_value = existing
+
+        with capture_logs() as logs:
+            assert (
+                self._run(
+                    container,
+                    monkeypatch,
+                    tmp_path,
+                    execution_steps=generated,
+                    confirmed=case != "unconfirmed_empty",
+                )
+                is True
+            )
+
+        saved = self._saved(container)
+        completed = container.session_store.mark_completed.call_args.kwargs
+        notified = container.report_store.send_notification.call_args.kwargs
+        # Exercise validation, merge, report rendering, completion handoff and
+        # index/notification publication, including the approval-facing session.
+        assert saved["playbook_id"] == "pb-existing"
+        assert saved["execution_steps"] == generated_snapshot
+        assert saved["verification_status"] == ("VERIFIED" if case == "unchanged" else "DRAFT")
+        assert saved["runbook_url"] == existing["runbook_url"]
+        assert saved["escalation_criteria"] == "metric remains high"
+        assert completed["playbook"] == saved
+        assert completed["completion_notification"]["playbook"] == saved
+        assert notified["playbook"] == saved
+        report = container.report_store.save_report.call_args.args[1]
+        headings = [f"### {index}. {step['step_id']}" for index, step in enumerate(generated, 1)]
+        assert [line for line in report.splitlines() if line.startswith("### ")] == headings
+        for step in generated:
+            assert step["action"] in report
+            assert step["success_criteria"] in report
+        assert "14839" not in report
+        assert "095822Z-4d79" not in report
+        assert existing == historical_snapshot
+        assert generated == generated_snapshot
+        merge_log = next(entry for entry in logs if entry["event"] == "playbook_merged_into_existing")
+        assert merge_log["previous_execution_steps"] == len(existing["execution_steps"])
+        assert merge_log["current_execution_steps"] == len(generated)
+        assert merge_log["procedures_unchanged"] is (case == "unchanged")
+
+    @pytest.mark.parametrize("status", ["VERIFIED", "DRAFT", "unknown", None])
+    def test_identical_generation_preserves_only_recorded_verification(
+        self, monkeypatch, tmp_path, recurrent_lock_plans, status
+    ):
+        generated = recurrent_lock_plans["generated"]
+        existing = self._existing()
+        existing["execution_steps"] = deepcopy(generated)
+        existing["verification_status"] = status
+        container = _container(None)
+        container.playbook_store.search_similar.return_value = [self._hit()]
+        container.playbook_store.load_detail.return_value = existing
+
+        assert self._run(container, monkeypatch, tmp_path, execution_steps=generated) is True
+        saved = self._saved(container)
+        assert saved["execution_steps"] == generated
+        assert saved["verification_status"] == ("VERIFIED" if status == "VERIFIED" else "DRAFT")
+
+    @pytest.mark.parametrize("failure", ["search", "missing_detail", "detail_error", "next_candidate"])
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_lookup_fallback_never_restores_prior_steps(
+        self, monkeypatch, tmp_path, recurrent_lock_plans, failure, empty
+    ):
+        generated = [] if empty else recurrent_lock_plans["generated"]
+        container = _container(None)
+        existing = self._existing()
+        existing["execution_steps"] = recurrent_lock_plans["previous"]
+        container.playbook_store.search_similar.return_value = [self._hit()]
+        container.playbook_store.load_detail.return_value = existing
+        if failure == "search":
+            container.playbook_store.search_similar.side_effect = RuntimeError("search unavailable")
+        elif failure == "missing_detail":
+            container.playbook_store.load_detail.return_value = None
+        elif failure == "detail_error":
+            container.playbook_store.load_detail.side_effect = RuntimeError("detail unavailable")
+        else:
+            container.playbook_store.search_similar.return_value = [self._hit("unreadable"), self._hit()]
+            container.playbook_store.load_detail.side_effect = [RuntimeError("detail unavailable"), existing]
+
+        assert self._run(container, monkeypatch, tmp_path, execution_steps=generated) is True
+
+        saved = self._saved(container)
+        assert saved["execution_steps"] == generated
+        assert saved["verification_status"] == "DRAFT"
+        assert saved["playbook_id"] == ("pb-existing" if failure == "next_candidate" else "playbook-1")
+        assert container.session_store.mark_completed.call_args.kwargs["playbook"] == saved
+        assert container.report_store.send_notification.call_args.kwargs["playbook"] == saved
 
     def test_analysis_may_enrich_a_field_the_existing_playbook_already_had(self, monkeypatch, tmp_path):
         container = _container(None)

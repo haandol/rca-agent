@@ -52,6 +52,11 @@ rollback/close **요청** 계약을 제어 메타데이터와 연결한다. 이�
 계약만으로 잠금 해제·복구를 주장하지 않는다. 조회 실패·누락·불일치는 제어 정보의 한계로
 기록한다. **소유권/롤백 정보가 없어도 인과 증거가 충분하면 원인 확정을 허용하고 수동 계획으로
 인계한다.** 제어 정보를 얻기 위해 원인 확정을 강제하거나 기존 판단 신뢰도를 변경하지 않는다.
+소유자 로그에 `operation_contract.completion_event`가 제공되면 선언의 `event`,
+`identity_keys`, `rollback_success_field`, `rollback_success_value`, `release_reason_field`,
+`emitted_after_connection_close`를 이름과 값 그대로 해당 가설 `evidence_summary`와 최종 RCA
+응답에 보존한다. 이는 향후 완료 로그를 판별하는 계약이며 이미 관측된 완료 사실이 아니다.
+선언의 기대값과 실제 관측값을 구분하고, 제공되지 않은 이벤트 별칭이나 필드명을 만들지 않는다.
 조회 결과와 연결 근거·한계를 validation의 해당 가설 `evidence_summary`와 최종 RCA 응답에
 보존해 Report에 전달한다. 승인·조작 직전 재확인과 실행 후 검증은 기존 실행 워커의 책임이다.
 

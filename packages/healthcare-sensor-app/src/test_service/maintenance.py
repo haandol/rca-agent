@@ -22,6 +22,9 @@ from test_service.revision.manifest import source_manifest
 from test_service.services.runtime_identity import runtime_identity
 
 MAX_HOLD_SECONDS = 7200
+RELEASE_EVENT = "maintenance_released"
+ROLLBACK_COMPLETE_FIELD = "rollback_complete"
+RELEASE_REASON_FIELD = "release_reason"
 
 
 def native_dsn(database_url: str) -> str:
@@ -60,6 +63,7 @@ async def hold_lock(
     started = False
     lock_acquired = False
     pid = conn.get_server_pid()
+    identity = {"run_id": run_id, "backend_pid": pid}
     release_reason = "error"
     try:
         await transaction.start()
@@ -79,8 +83,7 @@ async def hold_lock(
         emit(
             {
                 "event": "maintenance_lock_acquired",
-                "run_id": run_id,
-                "backend_pid": pid,
+                **identity,
                 "hold_seconds": hold_seconds,
                 "max_hold_seconds": MAX_HOLD_SECONDS,
                 "acquired_at": acquired_at.isoformat(),
@@ -92,6 +95,14 @@ async def hold_lock(
                     "row_changing_dml": False,
                     "cleanup_order": ["transaction_rollback", "connection_close"],
                     "close_on_rollback_error": True,
+                    "completion_event": {
+                        "event": RELEASE_EVENT,
+                        "identity_keys": list(identity),
+                        "rollback_success_field": ROLLBACK_COMPLETE_FIELD,
+                        "rollback_success_value": True,
+                        "release_reason_field": RELEASE_REASON_FIELD,
+                        "emitted_after_connection_close": True,
+                    },
                 },
             }
         )
@@ -123,12 +134,11 @@ async def hold_lock(
             raise
         emit(
             {
-                "event": "maintenance_released",
-                "run_id": run_id,
-                "backend_pid": pid,
-                "release_reason": release_reason,
+                "event": RELEASE_EVENT,
+                **identity,
+                RELEASE_REASON_FIELD: release_reason,
                 "released_at": datetime.now(UTC).isoformat(),
-                "rollback_complete": started,
+                ROLLBACK_COMPLETE_FIELD: started,
                 "lock_acquired": lock_acquired,
             }
         )

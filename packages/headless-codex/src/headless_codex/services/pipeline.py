@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
 from threading import Event
@@ -522,11 +523,11 @@ class PipelineOrchestrator:
         metric_name: str,
         log: structlog.stdlib.BoundLogger,
     ) -> dict:
-        """같은 유형의 기존 플레이북이 있으면 그것을 보강한다.
+        """기존 식별자와 비실행 지식은 보강하고 실행 계획은 이번 생성 결과로 교체한다.
 
-        새 식별자로 분기하면 같은 증상의 플레이북이 여럿이 되어 어느 것이 최신인지 알 수
-        없고, 회고가 쌓아 온 검증된 절차가 다음 실행의 근거가 되지 못한다. 그래서 충분히
-        닮은 플레이북을 찾으면 그 식별자를 유지한 채 병합한다.
+        새 RCA의 실행 단계는 이번 사고에 대한 완전한 계획이다. 회고의 부분 교정처럼
+        병합하면 이전 사고의 대상과 순서가 섞이므로 빈 목록도 그대로 받아들인다.
+        검증 상태는 실행 단계 전체가 정확히 같을 때만 유지한다.
 
         검색·병합 실패는 분석을 중단시키지 않는다. 플레이북은 미래를 위한 자산이고 이번
         RCA 의 결과물은 리포트이므로, 자산 축적 실패가 결과 전달을 막아서는 안 된다.
@@ -558,7 +559,13 @@ class PipelineOrchestrator:
                 log.info("playbook_merge_skipped_no_detail", playbook_id=hit.playbook_id)
                 continue
 
-            merged, diff = merge_playbook_update(existing, playbook)
+            # Only knowledge fields use retrospective's additive merge. Neither
+            # old nor generated execution steps may enter its patch semantics.
+            merged, diff = merge_playbook_update(
+                {**existing, "execution_steps": []},
+                {**playbook, "execution_steps": []},
+            )
+            merged["execution_steps"] = deepcopy(playbook["execution_steps"])
             merged["playbook_id"] = hit.playbook_id
             merged["stage"] = playbook.get("stage", "PLAYBOOK")
             procedures_unchanged = merged.get("execution_steps") == existing.get("execution_steps")
@@ -572,9 +579,8 @@ class PipelineOrchestrator:
                 playbook_id=hit.playbook_id,
                 similarity=round(hit.similarity, 3),
                 changed_fields=len(diff.changed_fields),
-                corrected_steps=len(diff.corrected_steps),
-                added_steps=len(diff.added_steps),
-                preserved_steps=len(diff.preserved_steps),
+                previous_execution_steps=len(existing.get("execution_steps") or []),
+                current_execution_steps=len(merged["execution_steps"]),
                 procedures_unchanged=procedures_unchanged,
             )
             return merged

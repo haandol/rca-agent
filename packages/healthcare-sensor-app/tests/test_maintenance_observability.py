@@ -57,9 +57,28 @@ def assert_operation_contract(acquired):
         "row_changing_dml": False,
         "cleanup_order": ["transaction_rollback", "connection_close"],
         "close_on_rollback_error": True,
+        "completion_event": {
+            "event": "maintenance_released",
+            "identity_keys": ["run_id", "backend_pid"],
+            "rollback_success_field": "rollback_complete",
+            "rollback_success_value": True,
+            "release_reason_field": "release_reason",
+            "emitted_after_connection_close": True,
+        },
     }
     assert "rollback_complete" not in acquired
     assert "release_reason" not in acquired
+
+
+def assert_completion_matches_contract(acquired, released):
+    """Catch schema drift by matching the declared fields to an actual successful cleanup."""
+    assert_operation_contract(acquired)
+    contract = acquired["operation_contract"]["completion_event"]
+    assert released["event"] == contract["event"]
+    for key in contract["identity_keys"]:
+        assert released[key] == acquired[key]
+    assert released[contract["rollback_success_field"]] is contract["rollback_success_value"]
+    assert contract["release_reason_field"] in released
 
 
 @pytest.mark.parametrize("exit_path", ["stop", "expiry", "cancel", "error"])
@@ -108,6 +127,7 @@ async def test_contract_matches_sql_and_cleanup_on_each_exit(backend, exit_path)
                 await task
 
     acquired, released = records
+    assert_completion_matches_contract(acquired, released)
     assert acquired["locks"] == backend.locks
     assert "signal_stop_contract" not in acquired  # Direct callers install no handlers.
     assert acquired["max_hold_seconds"] == 7200
@@ -208,6 +228,43 @@ async def test_cancellation_during_rollback_waits_for_connection_close(backend):
     assert [r["event"] for r in records] == ["maintenance_lock_acquired"]
 
 
+async def test_completion_is_emitted_only_after_connection_close_returns(backend):
+    """Prevent premature completion evidence: rollback alone must not publish release."""
+    closing = asyncio.Event()
+    finish_close = asyncio.Event()
+    records = []
+
+    async def close(*, timeout):
+        """Keep close pending so the test can distinguish invocation from completion."""
+        closing.set()
+        await finish_close.wait()
+
+    backend.conn.close.side_effect = close
+    stop = asyncio.Event()
+    stop.set()
+    task = asyncio.create_task(
+        maintenance.hold_lock(
+            "postgresql://unused@localhost/unused",
+            run_id="owned_test",
+            hold_seconds=30,
+            stop_event=stop,
+            emit=records.append,
+        )
+    )
+    try:
+        await asyncio.wait_for(closing.wait(), 2)
+        backend.transaction.rollback.assert_awaited_once()
+        assert [r["event"] for r in records] == ["maintenance_lock_acquired"]
+        assert_operation_contract(records[0])
+        assert not task.done()
+    finally:
+        finish_close.set()
+        await asyncio.wait_for(task, 2)
+    acquired, released = records
+    assert_completion_matches_contract(acquired, released)
+    assert backend.cleanup.mock_calls == [call.rollback(), call.close(timeout=5)]
+
+
 @pytest.fixture
 async def owned_postgres():
     """Use only an explicitly supplied, nondefault local test DB and a new schema."""
@@ -268,7 +325,7 @@ async def test_real_postgres_non_signal_cleanup_preserves_rows(owned_postgres, e
         else:
             await asyncio.wait_for(task, 5)
         acquired, released = records
-        assert_operation_contract(acquired)
+        assert_completion_matches_contract(acquired, released)
         assert released["rollback_complete"] is True
         expected_reason = {"expiry": "hold_expired", "cancel": "cancelled", "error": "error"}[exit_path]
         assert released["release_reason"] == expected_reason
@@ -353,6 +410,7 @@ async def test_real_postgres_cli_signal_contract_and_write_recovery(owned_postgr
         stdout, stderr = await asyncio.wait_for(process.communicate(), 10)
         assert process.returncode == 0, stderr.decode()
         (released,) = [json.loads(line) for line in stdout.splitlines()]
+        assert_completion_matches_contract(acquired, released)
         assert released["event"] == "maintenance_released"
         assert released["run_id"] == run_id and released["backend_pid"] == owner
         assert released["release_reason"] == ("sigterm" if signum == signal.SIGTERM else "sigint")

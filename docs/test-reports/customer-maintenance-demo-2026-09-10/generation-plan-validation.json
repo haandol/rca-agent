@@ -1,0 +1,14 @@
+{
+  "verifiedAt": "2026-09-10T11:56:43.191564+00:00",
+  "customerReady": false,
+  "tests": {
+    "headless": 1280,
+    "healthcare": 168,
+    "healthcareSkippedExisting": 7,
+    "healthcareXfailedExisting": 1
+  },
+  "contract": "Fresh Headless RCA execution_steps replace the prior list exactly, including empty; retrospective partial updates and immutable approved snapshots are unchanged.",
+  "realCounterexample": "Prior PID14839/run095822 must not appear in generated current PID18571/run111921 plan; four stored steps become exactly the three generated steps.",
+  "completionEvidence": "Runtime operation_contract declares the exact maintenance_released event and identity/rollback field names; expected completion is not treated as an observed recovery.",
+  "knownSeparateFinding": "Strands legacy empty update preserves previous execution_steps by existing contract. This selected Headless demo fix does not certify or change that separate path."
+}

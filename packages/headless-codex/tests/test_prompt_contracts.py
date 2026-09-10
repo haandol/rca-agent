@@ -302,6 +302,32 @@ def test_report_runtime_guidance_covers_every_gate_requirement():
         )
 
 
+@pytest.mark.parametrize("role", ["rca", "report"])
+def test_compiled_roles_preserve_provided_completion_contract(role):
+    # The declaration must reach each production role on its own, without
+    # hardcoding the producer's event name or relying on the other role's prompt.
+    guidance = build_prompt(AlarmContext(alarm_name="CompletionContract"), role=role)
+    for field in (
+        "operation_contract.completion_event",
+        "`event`",
+        "identity_keys",
+        "rollback_success_field",
+        "rollback_success_value",
+        "release_reason_field",
+        "emitted_after_connection_close",
+    ):
+        assert field in guidance
+    assert "기대값과 실제 관측값을 구분" in guidance
+    assert "이벤트 별칭이나 필드명을 만들지 않는다" in guidance
+    if role == "rca":
+        assert "이름과 값 그대로 해당 가설 `evidence_summary`와 최종 RCA" in guidance
+        assert "이미 관측된 완료 사실이 아니다" in guidance
+    else:
+        assert "`success_criteria`에 제공된" in guidance
+        assert "이미 관측되었다고 쓰지 않는다" in guidance
+        assert "정확한 완료 이벤트나 필드명을 추측하지 않는다" in guidance
+
+
 def test_report_contract_separates_current_and_historical_evidence_windows():
     guidance = (SKILLS_DIR / "reporting" / "SKILL.md").read_text()
     agent = (AGENTS_DIR / "report-specialist.md").read_text()
