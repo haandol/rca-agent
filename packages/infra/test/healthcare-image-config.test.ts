@@ -4,6 +4,7 @@ import * as path from 'path';
 
 const TOML_DIGEST = `sha256:${'ab'.repeat(32)}`;
 const ENV_DIGEST = `sha256:${'cd'.repeat(32)}`;
+const CONFIG_PATH = path.resolve(__dirname, '..', '.toml');
 const originalEnv = process.env;
 let outdir: string;
 
@@ -26,7 +27,7 @@ beforeEach(() => {
 
 afterEach(() => {
   process.env = originalEnv;
-  jest.dontMock('toml');
+  jest.dontMock('fs');
   jest.resetModules();
   fs.rmSync(outdir, { recursive: true, force: true });
 });
@@ -64,11 +65,39 @@ name = "infra-test-sessions"
 [tracing]
 enabled = false
 `;
-  jest.doMock('toml', () => {
-    const actual = jest.requireActual<typeof import('toml')>('toml');
-    return { ...actual, parse: () => actual.parse(source) };
+  jest.doMock('fs', () => {
+    const actual = jest.requireActual<typeof import('fs')>('fs');
+    return {
+      ...actual,
+      readFileSync: (...args: Parameters<typeof fs.readFileSync>) => {
+        const [file, options] = args;
+        if (file !== CONFIG_PATH) return actual.readFileSync(...args);
+        const encoding =
+          typeof options === 'string' ? options : options?.encoding;
+        const bytes = Buffer.from(source, 'utf8');
+        return encoding ? bytes.toString(encoding) : bytes;
+      },
+    };
   });
 }
+
+test('non-config reads retain real filesystem content and missing-file errors', () => {
+  const otherConfig = path.join(outdir, '.toml');
+  fs.writeFileSync(otherConfig, 'real non-target content');
+  configureToml();
+  jest.isolateModules(() => {
+    const fixtureFs: typeof fs = require('fs');
+    expect(fixtureFs.readFileSync(otherConfig, 'utf8')).toBe(
+      'real non-target content',
+    );
+    expect(fixtureFs.readFileSync(otherConfig)).toEqual(
+      Buffer.from('real non-target content'),
+    );
+    expect(() =>
+      fixtureFs.readFileSync(path.join(outdir, 'missing.toml'), 'utf8'),
+    ).toThrow('ENOENT');
+  });
+});
 
 /** Load configuration afresh so each case exercises module-time validation. */
 function loadConfig(): typeof import('../config/loader').Config {
