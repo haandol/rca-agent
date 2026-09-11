@@ -30,7 +30,12 @@ from headless_codex.services.execution_evidence import (
     redact,
     redact_arguments,
 )
-from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution, step_execution_blocker
+from headless_codex.services.execution_outcome import (
+    assemble_evidence,
+    judge_resolution,
+    metric_wait_blocks_success,
+    step_execution_blocker,
+)
 from headless_codex.services.execution_state import ExecutionState
 from headless_codex.services.execution_workspace import (
     APPROVED_STEP_IDS_ENV,
@@ -493,14 +498,7 @@ def wait_for_post_action_metrics(
 
 def _metric_wait_blocks_success(records: list[dict], step_id: str | None = None) -> bool:
     waits = [r for r in records if r.get("type") == "metric_wait" and (step_id is None or r.get("step_id") == step_id)]
-    steps = {r.get("step_id") for r in waits}
-    return any(
-        not any(
-            r.get("phase") == "terminal" and r.get("status") == "HEALTHY" for r in waits if r.get("step_id") == step
-        )
-        or any(r.get("phase") == "terminal" and r.get("status") != "HEALTHY" for r in waits if r.get("step_id") == step)
-        for step in steps
-    )
+    return metric_wait_blocks_success(waits)
 
 
 def _outcome_evidence(records: list[dict]) -> ExecutionEvidence:

@@ -240,6 +240,136 @@ def test_a_verification_only_step_succeeds_after_a_read_only_cli_attempt(workspa
     assert records[2]["resolved"] is True
 
 
+@pytest.mark.parametrize(
+    ("receipts", "step_blocked", "resolution_blocked"),
+    [
+        pytest.param([], False, False, id="no-wait"),
+        pytest.param([{"phase": "started"}], True, True, id="pending"),
+        pytest.param([{"phase": "terminal", "status": "HEALTHY"}], False, False, id="healthy"),
+        pytest.param([{"phase": "terminal", "status": "UNHEALTHY"}], True, True, id="failed"),
+        pytest.param(
+            [{"phase": "terminal", "status": "HEALTHY"}, {"phase": "terminal", "status": "UNHEALTHY"}],
+            True,
+            True,
+            id="healthy-then-failed",
+        ),
+        pytest.param(
+            [{"phase": "terminal", "status": "UNHEALTHY"}, {"phase": "terminal", "status": "HEALTHY"}],
+            True,
+            True,
+            id="failure-stays-blocking",
+        ),
+        pytest.param(
+            [{"phase": "terminal", "status": "HEALTHY"}, {"phase": "started"}],
+            False,
+            False,
+            id="terminal-before-start",
+        ),
+        pytest.param(
+            [{"phase": "terminal", "status": "HEALTHY"}, {"phase": "poll", "status": "UNHEALTHY"}],
+            False,
+            False,
+            id="only-terminal-status-decides",
+        ),
+        pytest.param([{"phase": "terminal"}], True, True, id="missing-terminal-status"),
+        pytest.param([{"phase": "terminal", "status": True}], True, True, id="nonstring-terminal-status"),
+        pytest.param([{"status": "HEALTHY"}], True, True, id="missing-phase"),
+        pytest.param(
+            [{"step_id": "other", "phase": "started"}],
+            False,
+            True,
+            id="step-filter-does-not-hide-pending-global-wait",
+        ),
+        pytest.param(
+            [{"phase": "terminal", "status": "HEALTHY"}, {"step_id": "other", "phase": "started"}],
+            False,
+            True,
+            id="one-healthy-step-does-not-clear-another",
+        ),
+        pytest.param(
+            [{"step_id": None, "phase": "terminal", "status": "HEALTHY"}],
+            False,
+            False,
+            id="legacy-null-step-healthy",
+        ),
+        pytest.param([{"step_id": None}], False, True, id="legacy-null-step-pending"),
+        pytest.param(
+            [{"step_id": float("nan"), "phase": "terminal", "status": "HEALTHY"}],
+            False,
+            True,
+            id="legacy-nonreflexive-step",
+        ),
+        pytest.param(
+            [{"type": "diagnostic", "phase": "terminal", "status": "UNHEALTHY"}],
+            False,
+            False,
+            id="non-wait-record-ignored",
+        ),
+    ],
+)
+def test_metric_wait_policy_matches_step_recording_resolution_recording_and_final_judge(
+    workspace, spawned, receipts, step_blocked, resolution_blocked
+):
+    execution_mcp_server.run_playbook_command("step-1", "aws cloudwatch describe-alarms")
+    execution_mcp_server.record_step_outcome(
+        "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
+    )
+    records = [{"type": "metric_wait", "step_id": "step-1", **receipt} for receipt in receipts]
+    for record in records:
+        execution_mcp_server._append_record(record)
+    step_result = json.loads(
+        execution_mcp_server.record_step_outcome(
+            "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
+        )
+    )
+    resolution_result = json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))
+    error = {"ok": False, "error": "fixed metric wait is failed, incomplete or unobservable"}
+    assert step_result == (error if step_blocked else {"ok": True})
+    assert resolution_result == (error if resolution_blocked else {"ok": True})
+
+    # Keep all other completion prerequisites valid so only the wait policy decides.
+    evidence = assemble_evidence(
+        [r for r in workspace.read_records() if r.get("type") != "metric_wait"],
+        execution_id="exec-1",
+        rca_id="rca-1",
+        engine="headless-codex",
+        playbook={"execution_steps": [{"step_id": "step-1", "success_criteria": "DatabaseConnections 20 이하"}]},
+    )
+    evidence.resolution_confirmed = True
+    evidence.resolution_observation = "Recovered"
+    # The judge also accepts legacy records already loaded into the evidence object.
+    evidence.metric_wait_records = [r for r in records if r["type"] == "metric_wait"]
+    verdict = judge_resolution(evidence, agent_succeeded=True)
+    assert verdict.state is (ExecutionState.UNRESOLVED if resolution_blocked else ExecutionState.RESOLVED)
+    assert verdict.reason == ("fixed metric wait did not confirm healthy bins" if resolution_blocked else "Recovered")
+
+
+def test_malformed_wait_identity_still_raises_even_after_a_failed_terminal(workspace, spawned):
+    execution_mcp_server.run_playbook_command("step-1", "aws cloudwatch describe-alarms")
+    execution_mcp_server.record_step_outcome(
+        "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
+    )
+    evidence = assemble_evidence(
+        workspace.read_records(),
+        execution_id="exec-1",
+        rca_id="rca-1",
+        engine="headless-codex",
+        playbook={"execution_steps": [{"step_id": "step-1", "success_criteria": "DatabaseConnections 20 이하"}]},
+    )
+    receipts = [
+        {"type": "metric_wait", "step_id": "step-1", "phase": "terminal", "status": "UNHEALTHY"},
+        {"type": "metric_wait", "step_id": []},
+    ]
+    for receipt in receipts:
+        execution_mcp_server._append_record(receipt)
+    with pytest.raises(TypeError, match="unhashable"):
+        execution_mcp_server.record_resolution("Recovered", resolved=True)
+    evidence.resolution_confirmed, evidence.resolution_observation = True, "Recovered"
+    evidence.metric_wait_records = receipts
+    with pytest.raises(TypeError, match="unhashable"):
+        judge_resolution(evidence, agent_succeeded=True)
+
+
 def test_long_approved_criterion_survives_public_recording_replay_and_final_judgment(workspace, spawned, monkeypatch):
     criterion = (
         " \n" + "The recorded observation must satisfy this approved requirement. " * 90 + "\nTAIL: failures = 0 "

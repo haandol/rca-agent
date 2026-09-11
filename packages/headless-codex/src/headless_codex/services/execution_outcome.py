@@ -54,6 +54,26 @@ def step_execution_blocker(step: StepEvidence) -> str | None:
     return None
 
 
+def metric_wait_blocks_success(waits: list[dict]) -> bool:
+    """Require a terminal for each selected wait step and keep any terminal failure.
+
+    Receipt order does not change the result. Consume every record so malformed
+    legacy identities still raise instead of being hidden by an earlier failure.
+    """
+    terminal_seen: dict[object, bool] = {}
+    failed = False
+    for record in waits:
+        step_id = record.get("step_id")
+        terminal_seen.setdefault(step_id, False)
+        # A non-reflexive legacy ID (NaN) matched no records in the previous
+        # equality-based scans, so it must remain a wait without a terminal.
+        if step_id == step_id and record.get("phase") == "terminal":
+            terminal_seen[step_id] = True
+            if record.get("status") != "HEALTHY":
+                failed = True
+    return failed or not all(terminal_seen.values())
+
+
 def _steps_blocker(evidence: ExecutionEvidence) -> str | None:
     if not evidence.steps:
         return "execution has no approved steps"
@@ -299,11 +319,8 @@ def judge_resolution(evidence: ExecutionEvidence, *, agent_succeeded: bool) -> R
                 "latest resolution record is unconfirmed or unobservable",
             )
 
-    waits = evidence.metric_wait_records
-    for step_id in {r.get("step_id") for r in waits}:
-        terminal = [r for r in waits if r.get("step_id") == step_id and r.get("phase") == "terminal"]
-        if not terminal or any(r.get("status") != "HEALTHY" for r in terminal):
-            return ResolutionVerdict(ExecutionState.UNRESOLVED, "fixed metric wait did not confirm healthy bins")
+    if metric_wait_blocks_success(evidence.metric_wait_records):
+        return ResolutionVerdict(ExecutionState.UNRESOLVED, "fixed metric wait did not confirm healthy bins")
 
     if not evidence.resolution_observation.strip():
         return ResolutionVerdict(
