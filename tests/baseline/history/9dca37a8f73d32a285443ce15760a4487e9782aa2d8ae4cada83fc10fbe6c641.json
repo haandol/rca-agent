@@ -1,8 +1,6 @@
 {
-  "schemaVersion": 3,
-  "status": "pending",
-  "updatedAt": "2026-09-11T01:34:30.046Z",
-  "approvedAt": null,
+  "schemaVersion": 2,
+  "approvedAt": "2026-08-31T06:21:55.399Z",
   "engines": ["headless-codex", "strands"],
   "contractInputs": [
     "tests/harness/evaluator.mjs",
@@ -20,7 +18,7 @@
     "packages/agent/src/rca_agent/services/destructive_actions.py",
     "packages/headless-codex/src/headless_codex/services/destructive_actions.py"
   ],
-  "inputDigest": "sha256:e8045992dcb5633394ec7d81241ac0d7aec530b0972ffdf4dae30cbf2ce01664",
+  "inputDigest": "sha256:a8fd8357506019d0d7af6bd2de268466205e7595bc201ac25c2aeb69f07cb5dd",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/eval_adapter.py",
@@ -62,10 +60,8 @@
     "packages/headless-codex/harness/skills/hypothesis-validation/SKILL.md",
     "packages/headless-codex/harness/skills/progress-reporting/SKILL.md",
     "packages/headless-codex/harness/skills/reporting/SKILL.md",
-    "packages/headless-codex/prompts/rca-specialist.md",
     "packages/headless-codex/prompts/rca-system.md",
     "packages/headless-codex/prompts/rca-user.md",
-    "packages/headless-codex/prompts/report-specialist.md",
     "packages/headless-codex/prompts/sections/README.md",
     "packages/headless-codex/prompts/sections/artifacts/hypotheses.md",
     "packages/headless-codex/prompts/sections/artifacts/playbook.md",
@@ -74,9 +70,6 @@
     "packages/headless-codex/prompts/sections/core/artifacts-overview.md",
     "packages/headless-codex/prompts/sections/core/pipeline-overview.md",
     "packages/headless-codex/prompts/sections/core/principles.md",
-    "packages/headless-codex/prompts/sections/core/specialist.md",
-    "packages/headless-codex/prompts/sections/roles/rca.md",
-    "packages/headless-codex/prompts/sections/roles/report.md",
     "packages/headless-codex/prompts/sections/stages/1-rca-agent.md",
     "packages/headless-codex/prompts/sections/stages/2-report-agent.md",
     "packages/headless-codex/src/headless_codex/adapters/secondary/codex/codex_harness.py",
@@ -85,11 +78,18 @@
     "packages/headless-codex/src/headless_codex/mcp_server.py",
     "packages/headless-codex/src/headless_codex/services/destructive_actions.py",
     "packages/headless-codex/src/headless_codex/services/prompt_builder.py",
-    "tests/fixtures/results/README.md",
+    "tests/fixtures/results/headless-codex/deployed-connection-leak-vital-ingest.json",
+    "tests/fixtures/results/headless-codex/deployment-query-regression.json",
+    "tests/fixtures/results/headless-codex/iam-policy-access-denied.json",
+    "tests/fixtures/results/headless-codex/rds-connection-pool-exhaustion.json",
+    "tests/fixtures/results/strands/deployed-connection-leak-vital-ingest.json",
+    "tests/fixtures/results/strands/deployment-query-regression.json",
+    "tests/fixtures/results/strands/iam-policy-access-denied.json",
+    "tests/fixtures/results/strands/rds-connection-pool-exhaustion.json",
     "tests/harness/evaluator.mjs",
-    "tests/scenarios/exception-session-cleanup.json",
-    "tests/scenarios/maintenance-transaction-lock.json",
-    "tests/scenarios/pool-config-regression.json",
-    "tests/scenarios/query-amplification.json"
+    "tests/scenarios/deployed-connection-leak-vital-ingest.json",
+    "tests/scenarios/deployment-query-regression.json",
+    "tests/scenarios/iam-policy-access-denied.json",
+    "tests/scenarios/rds-connection-pool-exhaustion.json"
   ]
 }

@@ -63,7 +63,7 @@
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
           "status": "Proposed",
-          "summary": "네 평가 계층이 두 엔진의 공통 분석 계약과 현실적 원본 관측·원상복원 시나리오를 검증하며 합성·로컬 DB·배포 증거를 구분한다."
+          "summary": "네 평가 계층이 두 엔진의 공통 계약과 원본 관측을 검증한다. 현재 입력 지문 갱신은 pending으로 기록하고 과거 승인 원본을 보존하며, 두 엔진 전수 결과의 명시적 승인만 approved가 된다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",

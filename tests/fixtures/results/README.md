@@ -5,4 +5,6 @@ Do not generate them from expectations or use fake-engine output as model eviden
 The previous snapshots are in `../historical/original-four/results/`.
 The default offline evaluation must fail until both engines have actual reviewed
 results and a separately authorized baseline approval. This migration does not
-modify `tests/baseline/`.
+approve model quality. `eval:sync-inputs` may record the current input fingerprint
+as `pending` and archive the previous baseline unchanged. Only reviewed passing
+results for every engine/scenario can become an `approved` baseline.

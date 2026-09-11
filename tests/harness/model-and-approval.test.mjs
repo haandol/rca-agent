@@ -262,7 +262,9 @@ test('approval writes a baseline only to the explicit destination', async () => 
     baseline,
   );
   assert.equal(baseline.approvedAt, '2026-07-21T00:00:00.000Z');
-  assert.equal(baseline.schemaVersion, 2);
+  assert.equal(baseline.schemaVersion, 3);
+  assert.equal(baseline.status, 'approved');
+  assert.equal(baseline.updatedAt, baseline.approvedAt);
   assert.deepEqual(Object.keys(baseline).sort(), [
     'approvedAt',
     'contractInputs',
@@ -270,6 +272,8 @@ test('approval writes a baseline only to the explicit destination', async () => 
     'inputDigest',
     'inputFiles',
     'schemaVersion',
+    'status',
+    'updatedAt',
   ]);
 });
 

@@ -53,6 +53,21 @@ export async function writeTextFileAtomically(filePath, content) {
   await rename(temporaryPath, filePath);
 }
 
+export function serializeBaseline(baseline) {
+  const expandedEngines = `  "engines": ${JSON.stringify(
+    baseline.engines,
+    null,
+    2,
+  ).replaceAll('\n', '\n  ')},`;
+  const compactEngines = `  "engines": [${baseline.engines
+    .map((engine) => JSON.stringify(engine))
+    .join(', ')}],`;
+  return `${JSON.stringify(baseline, null, 2).replace(
+    expandedEngines,
+    compactEngines,
+  )}\n`;
+}
+
 export function resolveFrom(root, candidate, fallback) {
   return path.resolve(root, candidate ?? fallback);
 }

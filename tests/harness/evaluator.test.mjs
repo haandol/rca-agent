@@ -19,8 +19,8 @@ import {
   validateScenario,
 } from './evaluator.mjs';
 
-// Historical snapshots exercise the unchanged evaluator; active catalog contracts
-// live in realistic-scenarios.test.mjs. The baseline assertion below stays strict.
+// Historical snapshots exercise the evaluator. Current input identity is checked
+// separately; old results never establish approval for the active catalog.
 const scenariosDirectory = path.join(
   REPOSITORY_ROOT,
   'tests/fixtures/historical/original-four/scenarios',
@@ -528,11 +528,10 @@ test('digest drift blocks an otherwise passing result set', async () => {
   );
 });
 
-test('fixtures and approved baseline pass structural and digest gates', async () => {
-  const [scenarios, results, baseline, digest] = await Promise.all([
+test('historical fixtures pass their structural contract without claiming current approval', async () => {
+  const [scenarios, results, digest] = await Promise.all([
     loadScenarios(scenariosDirectory),
     loadResults(fixturesDirectory),
-    loadBaseline(),
     computeInputDigest(),
   ]);
 
@@ -558,16 +557,21 @@ test('fixtures and approved baseline pass structural and digest gates', async ()
     ),
   );
 
-  const baselineReport = await evaluateResults({
-    scenarios,
-    results,
-    baseline,
-    digest,
-  });
+  assert.equal(mandatoryReport.baselineStatus, null);
+});
 
-  assert.equal(baselineReport.passed, true, baselineReport.failures.join('\n'));
-  assert.equal(baselineReport.digestMatches, true);
-  assert.deepEqual(baselineReport.failures, []);
+test('the recorded input baseline matches the current code and scenario contract', async () => {
+  const [baseline, digest] = await Promise.all([
+    loadBaseline(),
+    computeInputDigest(),
+  ]);
+  validateBaseline(baseline);
+  assert.equal(
+    digest.digest,
+    baseline.inputDigest,
+    'review the current contract and run eval:sync-inputs; this does not approve model results',
+  );
+  assert.deepEqual(digest.inputFiles, baseline.inputFiles);
 });
 
 test('both engines receive the same observation citation instruction', async () => {

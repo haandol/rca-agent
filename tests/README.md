@@ -3,11 +3,12 @@
 루트 하네스는 오프라인 계약 테스트, fixture 구조 회귀, 실모델 계약 평가를
 분리한다. 실제 배포 이벤트 전달과 증거 탐색은 별도의 배포 E2E로 검증한다.
 
-## 현실적 시나리오 카탈로그 — 로컬 실측 반영, 알람 보정 대기
+## 현실적 시나리오 카탈로그
 
-현재 `tests/scenarios/`는 HTTP 오류 로그 보호까지 반영한 서비스의 실제 로컬
-PostgreSQL 재현 결과(`proof-review-fixed-01`)와 측정 소스 해시를 사용한다.
-**알람 외곽 입력은 합성 예시이며 AWS에서 수집한 알람이 아니다.**
+현재 `tests/scenarios/`의 정비 잠금 사례는 실제 AWS 알람·소유 태스크·로그
+관측을 사용한다. 나머지 세 사례는 HTTP 오류 로그 보호까지 반영한 서비스의
+로컬 PostgreSQL 재현 결과(`proof-review-fixed-01`)와 측정 소스 해시를 사용하며,
+이 세 사례의 알람 외곽 입력은 합성 예시다.
 [원본과 실측 요약](fixtures/observations/realistic-local-20260910/README.md)에
 정상·장애·복원과 과거 실패 실행을 보존했다. 모델에는 실제 UTC 기준의 정상·사고
 관측만 제공하고 복원 후 정보는 제외한다. 초기 합성 관측도
@@ -38,8 +39,10 @@ Milliseconds, Average, 60초×2 평가다. 배포 기본 튜닝 값 500ms는 검
 [`fixtures/historical/original-four/`](fixtures/historical/original-four/)에 바이트
 그대로 보존했다. `tests/results/model/efficiency-20260909T145305Z-b05412`의 기존
 실패·부분 결과는 수정하지 않았다. 새 모델 결과 fixture는 없다.
-`tests/baseline/`도 수정하지 않았다. **현재 `eval:offline`은 결과 부재로 실패하고,
-기존 기준선 digest 검사는 변경 승인을 요구하며 실패한다.** 테스트용 fake engine이나
+현재 입력 기준선은 새 코드·시나리오의 지문을 기록하고 `pending`으로 표시한다.
+과거 승인 기준선 원본은 `tests/baseline/history/`에 보존한다.
+**입력 일치 검사는 현재 코드 기준으로 통과할 수 있지만, `eval:offline`은
+모델 승인 대기와 결과 부재를 실패로 보고한다.** 테스트용 fake engine이나
 메모리 내 구조 검증용 객체는 실제 모델 결과·승인 자료가 아니다.
 
 네 입력은 `model-eval`만 선언한다. 배포 제어와 복원 경로를 검증한 뒤 해당 사례에만
@@ -74,8 +77,21 @@ pnpm setup:test
 pnpm verify
 ```
 
-`pnpm verify`는 패키지 테스트, 프롬프트·도구 계약, 공통 RCA 시나리오와
-승인된 입력 digest 기준선을 외부 AWS·모델 호출 없이 검사한다.
+`pnpm verify`는 패키지 테스트, 프롬프트·도구 계약, 현재 입력 지문, 과거 fixture의
+구조 회귀와 승인된 모델 결과를 외부 AWS·모델 호출 없이 검사한다.
+과거 시나리오·결과는 서로 짝지어 검사하고, 현재 입력 지문 검사는 별도로 수행한다.
+`eval:offline`도 여전히 필수이므로 모델 승인 대기 상태에서는 전체 검증이 실패한다.
+
+코드·시나리오의 변경 내용을 검토한 뒤 현재 입력 지문만 갱신하려면:
+
+```bash
+pnpm eval:sync-inputs
+```
+
+이 명령은 모델을 호출하거나 결과를 만들지 않는다. 입력이 달라졌으면 이전 기준선의
+원본을 이력에 저장하고, 현재 기준선을 `schemaVersion: 3`, `status: pending`,
+`approvedAt: null`로 기록한다. 입력이 같으면 시각과 승인 상태도 바꾸지 않는다.
+따라서 이미 승인된 같은 입력을 재기록해 승인을 불필요하게 무효화하지 않는다.
 
 ## 실모델 계약 평가
 
@@ -191,10 +207,11 @@ JSON이 표준 입력으로 전달된다.
 ## 기준선 승인
 
 검토한 실모델 결과가 구조 게이트를 통과한 경우에만 기준선을 명시적으로
-갱신한다.
+승인한다. 현재 카탈로그의 검토된 정규화 결과를 `tests/fixtures/results/`에
+보존한 뒤 그 결과로 승인해야 일반 CI도 같은 결과와 입력 지문을 검사한다.
 
 ```bash
-pnpm eval:approve --results tests/results/model/<run-id>/results
+pnpm eval:approve --results tests/fixtures/results
 ```
 
 승인은 **선언된 모든 엔진의 모든 시나리오 결과**를 요구한다. 한 엔진만 담긴 결과
@@ -203,7 +220,10 @@ pnpm eval:approve --results tests/results/model/<run-id>/results
 값이 기준선의 이름을 갖는다. 엔진을 나눠 실행했다면 같은 결과 디렉터리에 나머지 엔진을
 이어 실행한 뒤 승인한다.
 
-프롬프트, skill, MCP 또는 시나리오 입력이 변경되면 digest 게이트가 실패한다.
+승인 명령은 기준선을 `approved`로 기록하고 실제 승인 시각을 저장한다.
+이전 schema v2 승인 기록도 계속 읽을 수 있다.
+프롬프트, skill, MCP 또는 시나리오 입력이 변경되면 입력 일치 검사가 실패한다.
 평가 정책과 정규화 결과 fixture도 digest 입력이다. 기준선은 의미 점수를 저장하지
 않으며, 변경 결과를 검토하지 않은 상태에서 fixture만으로 digest를 갱신하지 않는다.
-부분 실행 사이에 계약 입력을 바꾸면 승인 시점의 digest가 달라져 거부된다.
+입력 변경 후 `eval:sync-inputs`로 현재 계약을 기록해도 모델 승인 상태는
+`pending`이다. 전수 결과의 검토·승인 전에는 모델 평가 게이트를 통과하지 못한다.

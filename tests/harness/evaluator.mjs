@@ -433,12 +433,15 @@ export async function loadScenarios(
   return scenarios;
 }
 
-export async function loadResults(resultsDirectory) {
+export async function loadResults(
+  resultsDirectory,
+  { allowEmpty = false } = {},
+) {
   const files = (await collectFiles(resultsDirectory))
     .filter((file) => path.extname(file) === '.json')
     .sort();
   assert.ok(
-    files.length > 0,
+    allowEmpty || files.length > 0,
     `no result JSON files found in ${resultsDirectory}`,
   );
 
@@ -562,7 +565,10 @@ export async function computeInputDigest({
 }
 
 export function validateBaseline(baseline) {
-  assert.equal(baseline.schemaVersion, 2, 'baseline.schemaVersion must be 2');
+  assert.ok(
+    [2, 3].includes(baseline.schemaVersion),
+    'baseline.schemaVersion must be 2 or 3',
+  );
   assert.deepEqual(
     Object.keys(baseline).sort(),
     [
@@ -572,10 +578,26 @@ export function validateBaseline(baseline) {
       'inputDigest',
       'inputFiles',
       'schemaVersion',
+      ...(baseline.schemaVersion === 3 ? ['status', 'updatedAt'] : []),
     ],
     'baseline must contain only approval metadata and digest contract fields',
   );
-  assertString(baseline.approvedAt, 'baseline.approvedAt');
+  if (baseline.schemaVersion === 3) {
+    assert.ok(
+      ['pending', 'approved'].includes(baseline.status),
+      'baseline.status must be pending or approved',
+    );
+    assertString(baseline.updatedAt, 'baseline.updatedAt');
+  }
+  if (baseline.status === 'pending') {
+    assert.equal(
+      baseline.approvedAt,
+      null,
+      'pending input baseline must not claim model approval',
+    );
+  } else {
+    assertString(baseline.approvedAt, 'baseline.approvedAt');
+  }
   assert.deepEqual(
     baseline.engines,
     EXPECTED_ENGINES,
@@ -616,6 +638,11 @@ export async function evaluateResults({
 
   if (baseline) {
     validateBaseline(baseline);
+    if (baseline.status === 'pending') {
+      failures.push(
+        'model evaluation approval is pending; the current input contract is recorded but reviewed results for all engines and scenarios are still required',
+      );
+    }
   }
   const declaredEngines = baseline?.engines ?? EXPECTED_ENGINES;
   const engines = requestedEngines
@@ -673,6 +700,7 @@ export async function evaluateResults({
     passed: failures.length === 0,
     inputDigest: digest.digest,
     baselineInputDigest: baseline?.inputDigest ?? null,
+    baselineStatus: baseline ? (baseline.status ?? 'approved') : null,
     digestMatches,
     // What this report covered, so a passing partial round is never mistaken for
     // one that measured every engine.
@@ -717,11 +745,31 @@ export function createBaseline({
   );
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
+    status: 'approved',
+    updatedAt: approvedAt,
     approvedAt,
     engines: EXPECTED_ENGINES,
     contractInputs: DEFAULT_CONTRACT_INPUTS,
     inputDigest: digest.digest,
     inputFiles: digest.inputFiles,
   };
+}
+
+export function createPendingBaseline({
+  digest,
+  updatedAt = new Date().toISOString(),
+}) {
+  const baseline = {
+    schemaVersion: 3,
+    status: 'pending',
+    updatedAt,
+    approvedAt: null,
+    engines: EXPECTED_ENGINES,
+    contractInputs: DEFAULT_CONTRACT_INPUTS,
+    inputDigest: digest.digest,
+    inputFiles: digest.inputFiles,
+  };
+  validateBaseline(baseline);
+  return baseline;
 }

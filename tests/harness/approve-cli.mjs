@@ -12,23 +12,9 @@ import {
   isMain,
   parseCliOptions,
   resolveFrom,
+  serializeBaseline,
   writeTextFileAtomically,
 } from './cli-utils.mjs';
-
-function serializeBaseline(baseline) {
-  const expandedEngines = `  "engines": ${JSON.stringify(
-    baseline.engines,
-    null,
-    2,
-  ).replaceAll('\n', '\n  ')},`;
-  const compactEngines = `  "engines": [${baseline.engines
-    .map((engine) => JSON.stringify(engine))
-    .join(', ')}],`;
-  return `${JSON.stringify(baseline, null, 2).replace(
-    expandedEngines,
-    compactEngines,
-  )}\n`;
-}
 
 export async function approveBaseline({
   repositoryRoot = REPOSITORY_ROOT,

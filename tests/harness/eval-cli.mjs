@@ -30,7 +30,9 @@ export async function runEvaluation({
   }
   const [scenarios, results, baseline, digest] = await Promise.all([
     loadScenarios(scenariosDirectory),
-    loadResults(resultsDirectory),
+    // Missing results are a failed evaluation, never an empty passing set.
+    // Return the report so input identity and pending approval remain visible.
+    loadResults(resultsDirectory, { allowEmpty: true }),
     readJsonFile(baselinePath, 'baseline'),
     computeInputDigest({ repositoryRoot, scenariosDirectory }),
   ]);
