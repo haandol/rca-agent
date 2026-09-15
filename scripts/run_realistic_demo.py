@@ -583,6 +583,10 @@ class Demo:
                 logGroupName=options["awslogs-group"],
                 logStreamNames=[stream],
                 startTime=created,
+                endTime=int(
+                    datetime.fromisoformat(task.get("startedAt", task["createdAt"])).timestamp()
+                    * 1000
+                ) + 10 * 60 * 1000,
                 filterPattern='{ $.event = "source_manifest" }',
             ).get("events", [])
             if not events:
