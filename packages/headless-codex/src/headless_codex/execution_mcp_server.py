@@ -19,9 +19,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastmcp import FastMCP
-from pydantic import StrictBool
+from pydantic import StrictBool, StrictInt
 
 from headless_codex.services.command_gate import evaluate_command
+from headless_codex.services.execution_contract import (
+    approved_wait,
+    authorize_command,
+    command_digest,
+    command_identity,
+    order_error,
+    same_request,
+    validate_steps,
+)
 from headless_codex.services.execution_evidence import (
     ExecutionEvidence,
     FailureClass,
@@ -38,11 +47,10 @@ from headless_codex.services.execution_outcome import (
 )
 from headless_codex.services.execution_state import ExecutionState
 from headless_codex.services.execution_workspace import (
-    APPROVED_STEP_IDS_ENV,
-    APPROVED_SUCCESS_CRITERIA_ENV,
     EXECUTION_ID_ENV,
     EXECUTION_TOKEN_ENV,
     evidence_path_for_token,
+    observation_context_path_for_token,
 )
 from headless_codex.services.post_action_metrics import (
     ObservationBudget,
@@ -107,28 +115,34 @@ def _read_records() -> list[dict] | None:
 
 
 def _approved_step_ids() -> tuple[str, ...]:
+    """Derive identities from the same snapshot that authorizes concrete commands."""
     try:
-        parsed = json.loads(os.environ.get(APPROVED_STEP_IDS_ENV, ""))
-    except json.JSONDecodeError:
+        return tuple(step["step_id"] for step in _approved_playbook()["execution_steps"])
+    except (OSError, ValueError, TypeError, KeyError):
         return ()
-    if not isinstance(parsed, list):
-        return ()
-    normalized = (value.strip() for value in parsed if isinstance(value, str) and value.strip())
-    return tuple(dict.fromkeys(normalized))
+
+
+def _approved_playbook() -> dict:
+    """Read the worker's digest-verified snapshot; never reconstruct authority from model input."""
+    context = json.loads(observation_context_path_for_token(os.environ.get(EXECUTION_TOKEN_ENV, "")).read_text())
+    playbook = context["playbook"]
+    return {**playbook, "execution_steps": validate_steps(playbook)}
+
+
+def _reject_approval(error: str, step_id: str, command: str = "") -> str:
+    """Preserve a scope/order refusal so a later positive narrative cannot erase it."""
+    _append_record(
+        {"type": "approval_rejection", "step_id": step_id, "command": redact(command), "error": redact(error)}
+    )
+    return json.dumps({"ok": False, "blocked": True, "error": error, "reason": error}, ensure_ascii=False)
 
 
 def _approved_success_criteria() -> dict[str, str]:
+    """Use the immutable snapshot criterion, not an independently supplied model value."""
     try:
-        parsed = json.loads(os.environ.get(APPROVED_SUCCESS_CRITERIA_ENV, ""))
-    except json.JSONDecodeError:
+        return {step["step_id"]: step["success_criteria"] for step in _approved_playbook()["execution_steps"]}
+    except (OSError, ValueError, TypeError, KeyError):
         return {}
-    if not isinstance(parsed, dict):
-        return {}
-    return {
-        step_id.strip(): criterion
-        for step_id, criterion in parsed.items()
-        if isinstance(step_id, str) and step_id.strip() and isinstance(criterion, str) and criterion.strip()
-    }
 
 
 def _validate_step_id(step_id: str) -> str | None:
@@ -170,7 +184,14 @@ def _classify_exit(stderr: str, returncode: int) -> FailureClass:
     return FailureClass.UNKNOWN
 
 
-def _run_command(step_id: str, command: str, intent: str = "", *, budget: ObservationBudget | None = None) -> str:
+def _run_command(
+    step_id: str,
+    command: str,
+    intent: str = "",
+    *,
+    budget: ObservationBudget | None = None,
+    command_index: int | None = None,
+) -> str:
     """플레이북 절차의 한 명령을 실행한다. 파괴적·판정 불가 명령은 거부된다.
 
     Args:
@@ -191,6 +212,10 @@ def _run_command(step_id: str, command: str, intent: str = "", *, budget: Observ
         "step_id": step_id.strip(),
         "intent": redact(intent),
         "command": safe_command,
+        "command_digest": command_digest(command),
+        "command_identity": command_identity(command),
+        "command_index": command_index,
+        "internal_observation": budget is not None,
         "arguments": redact_arguments({"service": verdict.service, "operation": verdict.operation}),
     }
 
@@ -220,14 +245,25 @@ def _run_command(step_id: str, command: str, intent: str = "", *, budget: Observ
             ensure_ascii=False,
         )
 
+    if budget is None:
+        try:
+            _observation_control()
+        except ObservationStoppedError as exc:
+            return _reject_approval(str(exc), step_id, command)
     started_at = _now_iso()
+    if budget is None and not _append_record({**attempt_metadata, "type": "command_started", "started_at": started_at}):
+        return json.dumps({"ok": False, "error": "cannot persist command start before execution"})
+    command_timeout = _COMMAND_TIMEOUT_SECONDS
     try:
         if budget is None:
+            command_timeout = min(_COMMAND_TIMEOUT_SECONDS, _observation_control() - time.time())
+            if command_timeout <= 0:
+                raise ObservationStoppedError("execution deadline exhausted before command start")
             completed = subprocess.run(  # noqa: S603 - argv comes from the gate, never a shell string
                 list(verdict.argv),
                 capture_output=True,
                 text=True,
-                timeout=_COMMAND_TIMEOUT_SECONDS,
+                timeout=command_timeout,
                 check=False,
             )
         else:
@@ -248,11 +284,11 @@ def _run_command(step_id: str, command: str, intent: str = "", *, budget: Observ
                 "succeeded": False,
                 "exit_status": "timeout",
                 "failure_class": str(FailureClass.TIMEOUT),
-                "error_output": f"command exceeded {_COMMAND_TIMEOUT_SECONDS}s",
+                "error_output": f"command exceeded {command_timeout}s",
             }
         )
         return json.dumps(
-            {"ok": False, "error": f"command timed out after {_COMMAND_TIMEOUT_SECONDS}s"},
+            {"ok": False, "error": f"command timed out after {command_timeout}s"},
             ensure_ascii=False,
         )
     except OSError as exc:
@@ -361,8 +397,26 @@ def _run_observation_process(argv: tuple[str, ...], budget: ObservationBudget) -
 
 @mcp.tool()
 def run_playbook_command(step_id: str, command: str, intent: str = "") -> str:
-    """Execute one approved-step AWS CLI command through the server gate and audit."""
-    return _run_command(step_id, command, intent)
+    """Serialize exact approved commands and persist write starts before spawning a child."""
+    try:
+        steps = validate_steps(_approved_playbook())
+        if step_id not in [step["step_id"] for step in steps]:
+            raise ValueError("step_id is not declared in the approved playbook")
+        path = _evidence_file()
+        if path is None:
+            raise ValueError("missing execution context")
+        with (path.parent / "execution-operation.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return json.dumps({"ok": False, "error": "an execution operation is already running"})
+            records = _read_records()
+            if records is None:
+                raise ValueError("missing execution evidence")
+            index = authorize_command(steps, step_id, command, records)
+            return _run_command(step_id, command, intent, command_index=index)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return _reject_approval(str(exc), step_id, command)
 
 
 def _observation_control() -> float:
@@ -396,7 +450,7 @@ def wait_for_post_action_metrics(
     metrics: dict,
     failure_alarm_name: str,
     region: str,
-    max_wait_seconds: int = 300,
+    max_wait_seconds: StrictInt = 300,
     latency_alarm_name: str = "",
     completed_work_evidence: dict | None = None,
 ) -> str:
@@ -404,7 +458,7 @@ def wait_for_post_action_metrics(
 
     Pass approved verification/prior action IDs and observed metrics: attempts, failures,
     optional approved latency, each with namespace, metric_name, dimensions (Name-to-Value mapping).
-    First discover their coordinates and required simple alarms through run_playbook_command.
+    Discovery must already be a preceding approved commands step through run_playbook_command.
     The server binds actual StopTask ended_at, alarm thresholds and execution scope.
     Repeating this request replays its terminal receipt; changing it cannot rebase bins.
     Optional completed_work_evidence references an actual observed producer accounting descriptor
@@ -412,7 +466,10 @@ def wait_for_post_action_metrics(
     """
     from headless_codex.services.execution_workspace import observation_context_path_for_token
 
+    request = None
+    approved_request = None
     try:
+        steps = validate_steps(_approved_playbook())
         for candidate in (step_id, action_step_id):
             if error := _validate_step_id(candidate):
                 raise ValueError(error)
@@ -426,11 +483,15 @@ def wait_for_post_action_metrics(
             max_wait_seconds,
             completed_work_evidence,
         )
+        step = next((s for s in steps if s["step_id"] == step_id), {})
+        approved_request = approved_wait(step) if "metric_wait" in step else None
+        if approved_request is None or not same_request(approved_request, request):
+            return _reject_approval("metric_wait arguments do not exactly match the approved snapshot", step_id)
         path = _evidence_file()
         if path is None:
             raise ValueError("missing execution context")
         # Nonblocking process lock also excludes a second MCP process in the same workspace.
-        with (path.parent / "metric-wait.lock").open("a") as lock:
+        with (path.parent / "execution-operation.lock").open("a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -440,12 +501,14 @@ def wait_for_post_action_metrics(
                 raise ValueError("missing execution evidence")
             previous = [r for r in records if r.get("type") == "metric_wait" and r.get("step_id") == step_id]
             started = next((r for r in previous if r.get("phase") == "started"), None)
+            terminal = next((r for r in previous if r.get("phase") == "terminal"), None)
+            if terminal:
+                if not same_request(terminal.get("binding", {}).get("request", {}), request):
+                    return _reject_approval("terminal wait request differs from approved arguments", step_id)
+                return json.dumps(terminal, ensure_ascii=False)
             if started:
                 if started["binding"]["request"] != request:
                     raise ValueError("verification request is immutable; different anchor or arguments rejected")
-                terminal = next((r for r in previous if r.get("phase") == "terminal"), None)
-                if terminal:
-                    return json.dumps(terminal, ensure_ascii=False)
                 # Crash/disconnect cannot create a fresh budget or reuse a partial result as healthy.
                 receipt = {
                     "type": "metric_wait",
@@ -459,6 +522,8 @@ def wait_for_post_action_metrics(
                 }
                 _append_record(receipt)
                 return json.dumps(receipt, ensure_ascii=False)
+            if error := order_error(steps, step_id, records):
+                return _reject_approval(error, step_id)
             context = json.loads(
                 observation_context_path_for_token(os.environ.get(EXECUTION_TOKEN_ENV, "")).read_text()
             )
@@ -493,6 +558,19 @@ def wait_for_post_action_metrics(
             )
             return json.dumps(result, ensure_ascii=False)
     except (OSError, ValueError, TypeError, KeyError, ObservationStoppedError) as exc:
+        if request is not None and approved_request is not None and same_request(request, approved_request):
+            receipt = {
+                "type": "metric_wait",
+                "phase": "terminal",
+                "step_id": step_id,
+                "observed_at": _now_iso(),
+                "ok": False,
+                "status": "UNOBSERVABLE",
+                "error": str(exc),
+                "binding": {"request": request},
+            }
+            _append_record(receipt)
+            return json.dumps(receipt, ensure_ascii=False)
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
 
@@ -503,17 +581,12 @@ def _metric_wait_blocks_success(records: list[dict], step_id: str | None = None)
 
 def _outcome_evidence(records: list[dict]) -> ExecutionEvidence:
     """Replay the approved steps for recording guards using the final judge's contract."""
-    criteria = _approved_success_criteria()
     return assemble_evidence(
         records,
         execution_id=os.environ.get(EXECUTION_ID_ENV, ""),
         rca_id="",
         engine="headless-codex",
-        playbook={
-            "execution_steps": [
-                {"step_id": step_id, "success_criteria": criteria.get(step_id, "")} for step_id in _approved_step_ids()
-            ]
-        },
+        playbook=_approved_playbook(),
     )
 
 
@@ -560,7 +633,8 @@ def record_step_outcome(
     if criteria_met and _metric_wait_blocks_success(records, normalized_step_id):
         return json.dumps({"ok": False, "error": "fixed metric wait is failed, incomplete or unobservable"})
     has_attempt = any(
-        record.get("type") == "attempt" and record.get("step_id") == normalized_step_id for record in records
+        record.get("type") in {"attempt", "metric_wait"} and record.get("step_id") == normalized_step_id
+        for record in records
     )
     if not has_attempt:
         return json.dumps(
@@ -644,7 +718,9 @@ def record_resolution(observation: str, resolved: StrictBool, unobservable_reaso
             return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
         if _metric_wait_blocks_success(records):
             return json.dumps({"ok": False, "error": "fixed metric wait is failed, incomplete or unobservable"})
-        attempted_step_ids = {record.get("step_id") for record in records if record.get("type") == "attempt"}
+        attempted_step_ids = {
+            record.get("step_id") for record in records if record.get("type") in {"attempt", "metric_wait"}
+        }
         outcome_step_ids = {record.get("step_id") for record in records if record.get("type") == "step_outcome"}
         missing_attempt_step_ids = [step_id for step_id in approved_step_ids if step_id not in attempted_step_ids]
         missing_outcome_step_ids = [step_id for step_id in approved_step_ids if step_id not in outcome_step_ids]

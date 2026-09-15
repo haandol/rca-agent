@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
     const result = await ddb.send(
       new QueryCommand({
         TableName: config.dynamodbTableName,
+        ConsistentRead: true,
         KeyConditionExpression: 'PK = :pk',
         ExpressionAttributeValues: { ':pk': rcaPk(id) },
         ExclusiveStartKey: startKey,
@@ -63,12 +64,14 @@ export default defineEventHandler(async (event) => {
     durationMs: (source.duration_ms as number) ?? null,
     error: (source.error as string) || null,
     outputSummary: (source.output_summary as string) || '',
+    // Identifies the exact full object inspected, including command order and bytes.
+    playbookDigest: sha256Hex(serializePlaybookSnapshot(playbook)),
     playbook_id: readText(playbook.playbook_id),
     failure_type: readText(playbook.failure_type),
     symptom_pattern: readText(playbook.symptom_pattern),
     severity_criteria: readText(playbook.severity_criteria),
     verification_steps: readStringList(playbook.verification_steps),
-    execution_steps: validation.valid ? validation.steps : [],
+    execution_steps: readableExecutionSteps(playbook),
     executable: validation.valid,
     validationError: validation.reason,
     temporary_mitigation: readText(playbook.temporary_mitigation),

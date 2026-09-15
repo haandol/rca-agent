@@ -81,6 +81,10 @@ def _playbook() -> dict:
             "intent": "restore the connection pool",
             "action": "restart the healthcare service",
             "success_criteria": "DatabaseConnections returns below 30",
+            "commands": [
+                "aws ecs update-service --cluster current --service healthcare "
+                "--force-new-deployment --region us-east-1"
+            ],
         }
     ]
     return artifact
@@ -154,6 +158,7 @@ def test_shape_check_does_not_demand_cross_artifact_agreement() -> None:
             "intent": "verify",
             "action": "read the metric again",
             "success_criteria": "value stays below 30",
+            "commands": ["aws cloudwatch describe-alarms --alarm-names db-alarm --region us-east-1"],
         }
     )
 

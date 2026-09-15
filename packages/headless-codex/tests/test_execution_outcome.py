@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from headless_codex.services.execution_contract import command_digest
 from headless_codex.services.execution_evidence import FailureClass
 from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution
 from headless_codex.services.execution_state import (
@@ -17,12 +18,14 @@ PLAYBOOK = {
     "execution_steps": [
         {
             "step_id": "step-1",
+            "commands": ["aws ecs update-service"],
             "intent": "커넥션 풀 회수",
             "action": "api 서비스를 강제 재배포",
             "success_criteria": "DatabaseConnections 가 20 이하로 복귀",
         },
         {
             "step_id": "step-2",
+            "commands": ["aws cloudwatch get-metric-data"],
             "intent": "증상 지표 확인",
             "action": "VitalIngestFailure 지표 조회",
             "success_criteria": "VitalIngestFailure 가 0",
@@ -32,7 +35,12 @@ PLAYBOOK = {
 
 
 def _records(*records: dict) -> list[dict]:
-    return list(records)
+    return [
+        {"command_index": 0, "command_digest": command_digest(record.get("command", "")), "exit_status": "0", **record}
+        if record.get("type") == "attempt"
+        else record
+        for record in records
+    ]
 
 
 def _resolved_records() -> list[dict]:
@@ -57,13 +65,13 @@ def _resolved_records() -> list[dict]:
     )
 
 
-def _assemble(records: list[dict]):
+def _assemble(records: list[dict], playbook=None):
     return assemble_evidence(
-        records,
+        _records(*records),
         execution_id="exec-1",
         rca_id="rca-1",
         engine="headless-codex",
-        playbook=PLAYBOOK,
+        playbook=playbook or PLAYBOOK,
     )
 
 
@@ -148,7 +156,15 @@ def test_failed_read_followed_by_successful_retry_and_revalidation_can_resolve()
         "failure_class": "THROTTLED",
     }
     negative = {**records[1], "criteria_met": False, "observation": "Read was throttled"}
-    evidence = _assemble([failure, negative, *records])
+    plan = {
+        **PLAYBOOK,
+        "execution_steps": [
+            {**PLAYBOOK["execution_steps"][0], "commands": [failure["command"]]},
+            PLAYBOOK["execution_steps"][1],
+        ],
+    }
+    records[0]["command_digest"] = command_digest(failure["command"])
+    evidence = _assemble([failure, negative, *records], plan)
 
     assert len(evidence.step("step-1").attempts) == 2
     assert evidence.step("step-1").attempts[0].failure_class is FailureClass.THROTTLED

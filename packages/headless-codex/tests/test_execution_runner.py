@@ -103,7 +103,7 @@ def test_execution_and_retrospective_use_separate_role_configs(monkeypatch, tmp_
 
     execution_servers = calls[0]["config"]["mcp_servers"]
     retrospective_servers = calls[1]["config"]["mcp_servers"]
-    assert set(execution_servers) == {"cloudwatch", "playbook-execution"}
+    assert set(execution_servers) == {"playbook-execution"}
     assert execution_servers["playbook-execution"]["enabled_tools"] == [
         "run_playbook_command",
         "wait_for_post_action_metrics",

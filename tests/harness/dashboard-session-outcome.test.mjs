@@ -124,6 +124,9 @@ test('a retrospective revision decides how many steps are approvable', () => {
     step_id: stepId,
     action: `run ${stepId}`,
     success_criteria: `${stepId} succeeds`,
+    commands: [
+      'aws ecs describe-services --cluster demo --services healthcare --region us-east-1',
+    ],
   });
   const session = {
     SK: 'strands#SESSION',

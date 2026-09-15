@@ -77,12 +77,25 @@ PLAYBOOK = {
     "execution_steps": [
         {
             "step_id": "action",
+            "commands": [
+                f"aws ecs stop-task --task {TASK} --cluster demo --region {REGION}",
+                LOG_COMMAND,
+                f"aws cloudwatch list-metrics --namespace Offline/Writes --region {REGION}",
+                f"aws cloudwatch describe-alarms --alarm-names {ALARM['AlarmName']} --region {REGION}",
+            ],
             "intent": "Release the approved owner",
             "action": f"Stop only {TASK}",
             "success_criteria": "Approved owner stopped and rollback_complete=true",
         },
         {
             "step_id": "verify",
+            "metric_wait": {
+                "action_step_id": "action",
+                "metrics": METRICS,
+                "failure_alarm_name": ALARM["AlarmName"],
+                "region": REGION,
+                "max_wait_seconds": 12,
+            },
             "intent": "Observe recovery",
             "action": "Observe completed writes and the exact failure alarm",
             "success_criteria": "WriteErrors Sum=0, completed writes and offline-write-errors OK in two full bins",
@@ -278,16 +291,16 @@ class Journey:
         )
         assert stop["ok"] is (self.mode != "failed-stop")
         # Observe the exact owner release separately from metric arithmetic.
-        assert json.loads(commands.run_playbook_command("verify", LOG_COMMAND))["ok"]
+        assert json.loads(commands.run_playbook_command("action", LOG_COMMAND))["ok"]
         if self.mode == "blocked-chain":
             before = len(self.spawned)
-            denied = json.loads(commands.run_playbook_command("verify", LOG_COMMAND + " && aws ecs stop-task"))
+            denied = json.loads(commands.run_playbook_command("action", LOG_COMMAND + " && aws ecs stop-task"))
             assert denied["blocked"] and len(self.spawned) == before
         for command in (
             f"aws cloudwatch list-metrics --namespace Offline/Writes --region {REGION}",
             f"aws cloudwatch describe-alarms --alarm-names {ALARM['AlarmName']} --region {REGION}",
         ):
-            assert json.loads(commands.run_playbook_command("verify", command))["ok"]
+            assert json.loads(commands.run_playbook_command("action", command))["ok"]
         self.now = START + 121
         self.heartbeat()
         if self.mode != "failed-stop":

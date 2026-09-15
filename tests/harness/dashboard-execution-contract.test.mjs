@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -16,6 +17,56 @@ const APPROVAL_MODULE = 'packages/dashboard/server/utils/executionApproval.ts';
 
 async function importRepositoryModule(relativePath) {
   return import(pathToFileURL(path.join(REPOSITORY_ROOT, relativePath)).href);
+}
+
+// Compile the actual display components without booting Nuxt or contacting AWS.
+// Resolve Vue from Nuxt's dependencies, so this works with pnpm's isolated layout.
+async function renderRecoveryPlan(props) {
+  const dashboardRequire = createRequire(
+    path.join(REPOSITORY_ROOT, 'packages/dashboard/package.json'),
+  );
+  const nuxtRequire = createRequire(
+    dashboardRequire.resolve('nuxt/package.json'),
+  );
+  const { parse, compileScript } = nuxtRequire('vue/compiler-sfc');
+  const { createSSRApp, computed } = nuxtRequire('vue');
+  const { renderToString } = nuxtRequire('vue/server-renderer');
+  const { transpileModule, ModuleKind, ScriptTarget } =
+    dashboardRequire('typescript');
+
+  async function component(name) {
+    const filename = `packages/dashboard/app/components/${name}.vue`;
+    const { descriptor } = parse(await readRepositoryFile(filename), {
+      filename,
+    });
+    const compiled = compileScript(descriptor, {
+      id: name,
+      inlineTemplate: true,
+      templateOptions: { ssr: true },
+    });
+    const { outputText } = transpileModule(compiled.content, {
+      compilerOptions: {
+        module: ModuleKind.CommonJS,
+        target: ScriptTarget.ES2022,
+      },
+    });
+    const module = { exports: {} };
+    new Function('require', 'module', 'exports', 'computed', outputText)(
+      nuxtRequire,
+      module,
+      module.exports,
+      computed,
+    );
+    return module.exports.default;
+  }
+
+  const [plan, metrics] = await Promise.all([
+    component('RecoveryPlanSteps'),
+    component('MetricWaitDetails'),
+  ]);
+  const app = createSSRApp(plan, props);
+  app.component('MetricWaitDetails', metrics);
+  return renderToString(app);
 }
 
 // Recovery is no longer something analysis reports on. It is a separate
@@ -52,6 +103,168 @@ test('the dashboard cannot publish an approval that the worker would reject', as
   assert.match(source, /EXECUTION_QUEUE_URL/);
 });
 
+test('approval rejects a missing or stale inspected digest before snapshot/reservation/publication', async () => {
+  const source = await readRepositoryFile(
+    'packages/dashboard/server/api/executions.post.ts',
+  );
+  const dashboardRequire = createRequire(
+    path.join(REPOSITORY_ROOT, 'packages/dashboard/package.json'),
+  );
+  const { transpileModule, ModuleKind, ScriptTarget } =
+    dashboardRequire('typescript');
+  const code = transpileModule(source, {
+    compilerOptions: {
+      module: ModuleKind.CommonJS,
+      target: ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const approval = await importRepositoryModule(APPROVAL_MODULE);
+  const playbooks = await importRepositoryModule(PLAYBOOK_MODULE);
+  const keys = await importRepositoryModule(
+    'packages/dashboard/server/utils/keys.ts',
+  );
+  const book = {
+    playbook_id: 'fixed-book',
+    execution_steps: [
+      {
+        step_id: 'stop',
+        action: 'Stop observed owner',
+        success_criteria: 'stop acknowledged',
+        commands: [
+          'aws ecs stop-task --cluster demo --task owner --region us-east-1',
+        ],
+      },
+    ],
+  };
+  const expected = approval.sha256Hex(approval.serializePlaybookSnapshot(book));
+  async function run(expectedPlaybookDigest, currentBook = book) {
+    const events = [];
+    const body = {
+      rcaId: 'fixture',
+      engine: 'headless-codex',
+      approvalId: '12345678-1234-4234-8234-123456789012',
+      expectedPlaybookDigest,
+    };
+    const globals = {
+      ...keys,
+      ...approval,
+      ...playbooks,
+      defineEventHandler: (handler) => handler,
+      readBody: async () => body,
+      createError: (value) =>
+        Object.assign(new Error(value.statusMessage), value),
+      useRuntimeConfig: () => ({
+        executionQueueUrl: 'fixture-queue',
+        dynamodbTableName: 'fixture-table',
+        s3ReportBucket: 'fixture-bucket',
+      }),
+      useDynamoDB: () => ({
+        send: async (command) => {
+          events.push({ type: command.constructor.name, input: command.input });
+          if (command.constructor.name === 'QueryCommand')
+            return {
+              Items: [
+                {
+                  PK: 'RCA#fixture',
+                  SK: 'headless-codex#SESSION',
+                  engine: 'headless-codex',
+                  state: 'COMPLETED',
+                  confirmed: true,
+                  report_s3_key: 'fixture-report.md',
+                  playbook_id: 'fixed-book',
+                  playbook: currentBook,
+                },
+              ],
+            };
+          return {};
+        },
+      }),
+      useS3: () => ({
+        send: async (command) => {
+          events.push({ type: command.constructor.name, input: command.input });
+          if (
+            command.constructor.name === 'HeadObjectCommand' &&
+            command.input.Key.startsWith('approvals/')
+          ) {
+            throw Object.assign(new Error('missing'), {
+              name: 'NotFound',
+              $metadata: { httpStatusCode: 404 },
+            });
+          }
+          return {};
+        },
+      }),
+      useSqs: () => ({
+        send: async (command) => {
+          events.push({ type: command.constructor.name, input: command.input });
+          return {};
+        },
+      }),
+    };
+    const module = { exports: {} };
+    new Function('require', 'module', 'exports', ...Object.keys(globals), code)(
+      dashboardRequire,
+      module,
+      module.exports,
+      ...Object.values(globals),
+    );
+    try {
+      return { response: await module.exports.default({}), events };
+    } catch (error) {
+      return { error, events };
+    }
+  }
+  for (const value of [undefined, '', 'invalid', 123]) {
+    const result = await run(value);
+    assert.equal(result.error?.statusCode, 400);
+    assert.deepEqual(
+      result.events,
+      [],
+      'a missing inspected version causes no AWS calls',
+    );
+  }
+  const changed = structuredClone(book);
+  changed.execution_steps[0].commands[0] =
+    changed.execution_steps[0].commands[0].replace(
+      '--task owner',
+      '--task other',
+    );
+  const stale = await run(expected, changed);
+  assert.equal(stale.error?.statusCode, 409);
+  assert.ok(
+    stale.events.every((event) =>
+      ['QueryCommand', 'HeadObjectCommand'].includes(event.type),
+    ),
+  );
+  assert.ok(
+    stale.events.every((event) => !event.input.Key?.startsWith('approvals/')),
+    'stale approval never touches its snapshot',
+  );
+
+  const accepted = await run(expected);
+  assert.equal(accepted.error, undefined);
+  const kinds = accepted.events.map((event) => event.type);
+  assert.ok(
+    kinds.indexOf('PutObjectCommand') < kinds.indexOf('TransactWriteCommand'),
+  );
+  assert.ok(
+    kinds.indexOf('TransactWriteCommand') < kinds.indexOf('SendMessageCommand'),
+  );
+  const stored = accepted.events.find(
+    (event) => event.type === 'PutObjectCommand',
+  );
+  assert.deepEqual(
+    stored.input.Body,
+    approval.serializePlaybookSnapshot(book),
+    'the exact inspected command bytes are stored',
+  );
+  const published = JSON.parse(
+    accepted.events.find((event) => event.type === 'SendMessageCommand').input
+      .MessageBody,
+  );
+  assert.equal(published.playbook_digest, expected);
+});
+
 test('an approval carries a stable identifier so a resubmit cannot double-execute', async () => {
   const [source, page] = await Promise.all([
     readRepositoryFile('packages/dashboard/server/api/executions.post.ts'),
@@ -69,9 +282,10 @@ test('an approval carries a stable identifier so a resubmit cannot double-execut
   // A failed publish retries the same reservation and snapshot.
   assert.match(page, /pendingApprovalId\.value \?\?= crypto\.randomUUID\(\)/);
   assert.match(page, /approvalId: pendingApprovalId\.value/);
+  const submit = page.slice(page.indexOf('async function approveExecution()'));
   assert.ok(
-    page.indexOf('pendingApprovalId.value = null') >
-      page.indexOf("await $fetch('/api/executions'"),
+    submit.indexOf('pendingApprovalId.value = null') >
+      submit.indexOf("await $fetch('/api/executions'"),
     'the client clears the UUID only after the approval request succeeds',
   );
 });
@@ -204,6 +418,9 @@ test('executable playbooks require complete uniquely identified steps', async ()
     step_id: 'restart-service',
     action: 'Restart the affected service',
     success_criteria: 'Healthy task count returns to target',
+    commands: [
+      'aws ecs update-service --cluster demo --service healthcare --force-new-deployment --region us-east-1',
+    ],
   };
 
   assert.equal(
@@ -240,6 +457,140 @@ test('executable playbooks require complete uniquely identified steps', async ()
     0,
     'readiness cannot offer an unconfirmed procedure that approval rejects',
   );
+});
+
+test('runbooks reject prose-only history and preserve it for read-only inspection', async () => {
+  const { validateExecutablePlaybook, readableExecutionSteps } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const legacy = {
+    execution_steps: [
+      {
+        step_id: 'legacy',
+        action: 'Restart service',
+        success_criteria: 'healthy',
+      },
+    ],
+  };
+  assert.equal(validateExecutablePlaybook(legacy).valid, false);
+  assert.equal(readableExecutionSteps(legacy)[0].action, 'Restart service');
+  assert.deepEqual(readableExecutionSteps(legacy)[0].commands, []);
+});
+
+test('runbooks require fixed command coordinates and bounded approved metric waits', async () => {
+  const { validateExecutablePlaybook } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const action = {
+    step_id: 'stop',
+    action: 'Stop confirmed owner',
+    success_criteria: 'stop acknowledged',
+    commands: [
+      'aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1',
+      'aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1',
+      'aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1',
+    ],
+  };
+  const metric = (name) => ({
+    namespace: 'Healthcare/Sensor',
+    metric_name: name,
+    dimensions: { ServiceName: 'healthcare' },
+  });
+  const wait = {
+    step_id: 'verify',
+    action: 'Observe recovery',
+    success_criteria: 'Failures zero with traffic and IngestFailures OK',
+    metric_wait: {
+      action_step_id: 'stop',
+      region: 'us-east-1',
+      failure_alarm_name: 'IngestFailures',
+      max_wait_seconds: 300,
+      metrics: { attempts: metric('Attempts'), failures: metric('Failures') },
+    },
+  };
+  assert.equal(
+    validateExecutablePlaybook({ execution_steps: [action, wait] }).valid,
+    true,
+  );
+  for (const commands of [
+    [],
+    ['aws ecs stop-task --task <target> --region us-east-1'],
+    ['aws ecs stop-task --task owner'],
+    ['aws ecs stop-task --task ${TARGET} --region us-east-1'],
+  ]) {
+    assert.equal(
+      validateExecutablePlaybook({ execution_steps: [{ ...action, commands }] })
+        .valid,
+      false,
+    );
+  }
+  for (const metric_wait of [
+    { ...wait.metric_wait, max_wait_seconds: 301 },
+    { ...wait.metric_wait, action_step_id: 'missing' },
+    { ...wait.metric_wait, region: '' },
+    { ...wait.metric_wait, metrics: { attempts: metric('Attempts') } },
+  ]) {
+    assert.equal(
+      validateExecutablePlaybook({
+        execution_steps: [action, { ...wait, metric_wait }],
+      }).valid,
+      false,
+    );
+  }
+  assert.equal(
+    validateExecutablePlaybook({ execution_steps: [wait, action] }).valid,
+    false,
+  );
+  assert.equal(
+    validateExecutablePlaybook({
+      execution_steps: [action, { ...wait, commands: action.commands }],
+    }).valid,
+    false,
+  );
+});
+
+test('shared runbook fixtures reject ambiguous approvals and preserve exact command identity', async (t) => {
+  const { validateExecutablePlaybook, readableExecutionSteps } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const { serializePlaybookSnapshot, sha256Hex } =
+    await importRepositoryModule(APPROVAL_MODULE);
+  const { cases } = JSON.parse(
+    await readRepositoryFile('tests/fixtures/runbook-contract.json'),
+  );
+  for (const fixture of cases) {
+    await t.test(fixture.name, () => {
+      const playbook = { execution_steps: fixture.steps };
+      const before = JSON.stringify(playbook);
+      const digest = sha256Hex(serializePlaybookSnapshot(playbook));
+      const result = validateExecutablePlaybook(playbook);
+      assert.equal(result.valid, fixture.valid, result.reason);
+      assert.equal(
+        JSON.stringify(playbook),
+        before,
+        'validation must not rewrite approval inputs',
+      );
+      assert.equal(sha256Hex(serializePlaybookSnapshot(playbook)), digest);
+      if (!fixture.valid) {
+        assert.deepEqual(
+          result.steps,
+          [],
+          'invalid input never contributes executable readiness',
+        );
+        assert.ok(result.reason);
+      } else {
+        assert.deepEqual(result.steps, fixture.steps);
+        const displayed = readableExecutionSteps(playbook);
+        for (let i = 0; i < fixture.steps.length; i++) {
+          assert.deepEqual(
+            displayed[i].commands,
+            fixture.steps[i].commands ?? [],
+          );
+          assert.deepEqual(
+            displayed[i].metric_wait,
+            fixture.steps[i].metric_wait ?? null,
+          );
+        }
+      }
+    });
+  }
 });
 
 test('approval snapshots are deterministic and reservation retries require an exact match', async () => {
@@ -340,7 +691,7 @@ test('a person deciding to approve can tell a proven procedure from a draft', as
   assert.match(reportPage, /verification_status === 'VERIFIED'/);
   assert.match(
     reportPage,
-    /검증된 절차/,
+    /플레이북 검증됨/,
     'the verified state must be named in words rather than printed as the enum',
   );
   assert.match(
@@ -442,24 +793,22 @@ test('an unconfirmed resolution is never presented as resolved', async () => {
   // the analysis and execution lifecycles into one outcome word, so its rule
   // lives in the shared vocabulary and is asserted by executing it below.
   //
-  // The palette carries no red, so what marks a break is `mark-broken` — a rule
-  // under the word — rather than a colour. That is the whole reason this asserts
-  // a distinction rather than a specific class: the requirement is that the two
-  // states are told apart and that neither failure is dressed as success, not
-  // that either wears a particular hue.
+  // The operations theme has semantic error/success colors and visible labels.
+  // Execute the mapping so unrelated class strings cannot satisfy the assertion.
   const reportTone = reportPage.match(
     /function executionTone\(state: string\): string \{[\s\S]*?\n\}/,
   );
   assert.ok(reportTone, 'report page maps execution state to a tone');
+  const tone = new Function(
+    `return (${reportTone[0].replace('(state: string): string', '(state)')});`,
+  )();
+  assert.equal(tone('UNRESOLVED'), 'text-error');
+  assert.equal(tone('FAILED'), 'text-error');
+  assert.equal(tone('RESOLVED'), 'text-success');
   assert.match(
-    reportTone[0],
-    /'UNRESOLVED' \|\| state === 'FAILED'\)[\s\S]*?mark-broken/,
-    'report page marks unresolved and failed as broken',
-  );
-  assert.doesNotMatch(
-    reportTone[0],
-    /state === 'RESOLVED'\)[\s\S]*?mark-broken/,
-    'report page does not mark a resolved execution as broken',
+    reportPage,
+    /\{\{\s*execution\.stateLabel\s*\}\}/,
+    'color is accompanied by the recorded outcome label',
   );
 
   // The list derives its single word from the shared module, so it must not
@@ -556,7 +905,8 @@ test('the report page gates approval on a confirmed procedure', async () => {
   // A person approves the procedure while reading the analysis that produced it,
   // so the steps are rendered here rather than on a separate page.
   assert.match(source, /executionSteps/);
-  assert.match(source, /step\.success_criteria/);
+  assert.match(source, /<RecoveryPlanSteps[\s\S]*?:steps="executionSteps"/);
+  assert.match(source, /:executable="playbook\.executable === true"/);
   assert.match(source, /verification_status/);
 
   // Approval requires a completed analysis, steps to run, and nothing already
@@ -566,12 +916,357 @@ test('the report page gates approval on a confirmed procedure', async () => {
   assert.match(source, /session\.value\?\.state === 'COMPLETED'/);
   assert.match(source, /session\.value\?\.confirmed === true/);
   assert.match(source, /executionSteps\.value\.length > 0/);
+  assert.match(source, /playbook\.value\?\.executable === true/);
+  assert.match(source, /hasFixedDefinitions\.value &&/);
   assert.match(source, /!inFlight\.value/);
   assert.match(source, /:disabled="!canApprove"/);
 
   // Writing starts only after an explicit confirmation.
-  assert.match(source, /approvalModal\?\.showModal\(\)/);
-  assert.match(source, /되돌릴 수 없는 조치는 서버가 거부/);
+  assert.match(source, /@click="openApproval\(\)"/);
+  assert.match(source, /approvalModal\.value\?\.showModal\(\)/);
+  assert.match(source, /:disabled="approving \|\| !canApprove"/);
+  assert.match(
+    source,
+    /async function approveExecution\(\) \{\s*if \(!canApprove\.value\)/,
+  );
+});
+
+test('report execution polling is visible, nonoverlapping, terminal-aware and leaves the reviewed playbook untouched', async () => {
+  const page = await readRepositoryFile(
+    'packages/dashboard/app/pages/report/[id].vue',
+  );
+  const source = page.slice(
+    page.indexOf('let executionPollTimer:'),
+    page.indexOf('useHead('),
+  );
+  assert.doesNotMatch(source, /refreshPlaybook/);
+  const dashboardRequire = createRequire(
+    path.join(REPOSITORY_ROOT, 'packages/dashboard/package.json'),
+  );
+  const { transpileModule, ScriptTarget } = dashboardRequire('typescript');
+  const code = transpileModule(source, {
+    compilerOptions: { target: ScriptTarget.ES2022 },
+  }).outputText;
+  let mounted, unmounted, tick, visible, cleared, removed;
+  const inFlight = { value: true };
+  let historyReads = 0;
+  let sessionReads = 0;
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const document = {
+    visibilityState: 'visible',
+    addEventListener: (_event, callback) => {
+      visible = callback;
+    },
+    removeEventListener: (_event, callback) => {
+      removed = callback;
+    },
+  };
+  const window = {
+    setInterval: (callback, delay) => {
+      tick = callback;
+      assert.equal(delay, 5000);
+      return 17;
+    },
+    clearInterval: (id) => {
+      cleared = id;
+    },
+  };
+  new Function(
+    'document',
+    'window',
+    'inFlight',
+    'refreshExecutions',
+    'refreshSession',
+    'onMounted',
+    'onBeforeUnmount',
+    code,
+  )(
+    document,
+    window,
+    inFlight,
+    async () => {
+      historyReads++;
+      await pending;
+    },
+    async () => {
+      sessionReads++;
+    },
+    (callback) => {
+      mounted = callback;
+    },
+    (callback) => {
+      unmounted = callback;
+    },
+  );
+  mounted();
+  const first = tick();
+  await tick();
+  assert.equal(historyReads, 1, 'a slow request is not duplicated');
+  release();
+  await first;
+  assert.equal(sessionReads, 1);
+  inFlight.value = false;
+  await tick();
+  assert.equal(historyReads, 1, 'terminal execution stops polling');
+  inFlight.value = true;
+  document.visibilityState = 'hidden';
+  await tick();
+  assert.equal(historyReads, 1, 'hidden pages do not poll');
+  document.visibilityState = 'visible';
+  await visible();
+  assert.equal(historyReads, 2);
+  assert.equal(sessionReads, 2);
+  unmounted();
+  assert.equal(cleared, 17);
+  assert.equal(removed, visible);
+});
+
+test('approval binds the inspected digest and retains its UUID only for the same snapshot retry', async () => {
+  const page = await readRepositoryFile(
+    'packages/dashboard/app/pages/report/[id].vue',
+  );
+  const api = await readRepositoryFile(
+    'packages/dashboard/server/api/playbooks/[id].get.ts',
+  );
+  assert.match(
+    api,
+    /playbookDigest: sha256Hex\(serializePlaybookSnapshot\(playbook\)\)/,
+  );
+  const dashboardRequire = createRequire(
+    path.join(REPOSITORY_ROOT, 'packages/dashboard/package.json'),
+  );
+  const nuxtRequire = createRequire(
+    dashboardRequire.resolve('nuxt/package.json'),
+  );
+  const { ref, computed } = nuxtRequire('vue');
+  const { transpileModule, ScriptTarget } = dashboardRequire('typescript');
+  const source = page.slice(
+    page.indexOf('const executions ='),
+    page.indexOf('function executionTone('),
+  );
+  assert.ok(source.includes('async function approveExecution()'));
+  const code = transpileModule(source, {
+    compilerOptions: { target: ScriptTarget.ES2022 },
+  }).outputText;
+  const session = ref({
+    engine: 'headless-codex',
+    state: 'COMPLETED',
+    confirmed: true,
+  });
+  const playbook = ref({
+    executable: true,
+    playbookDigest: 'a'.repeat(64),
+    execution_steps: [
+      {
+        step_id: 'stop',
+        action: 'stop owner',
+        success_criteria: 'stopped',
+        commands: [
+          'aws ecs stop-task --cluster demo --task owner --region us-east-1',
+        ],
+      },
+    ],
+  });
+  const history = ref({ executions: [] });
+  const requests = [];
+  let fail = true;
+  const submit = async (_path, request) => {
+    requests.push(structuredClone(request.body));
+    if (fail) throw { data: { statusMessage: 'retry the identical request' } };
+  };
+  const controller = new Function(
+    'computed',
+    'ref',
+    'session',
+    'playbook',
+    'executionHistory',
+    '$fetch',
+    'refreshExecutions',
+    'refreshPlaybook',
+    'id',
+    `${code}\nreturn { canApprove, openApproval, approveExecution, reloadPlanForReview, approvalModal, approvalError };`,
+  )(
+    computed,
+    ref,
+    session,
+    playbook,
+    history,
+    submit,
+    async () => {},
+    async () => {},
+    'rca-fixture',
+  );
+  controller.approvalModal.value = { showModal() {}, close() {} };
+  assert.equal(controller.canApprove.value, true);
+  controller.openApproval();
+  playbook.value.playbookDigest = 'b'.repeat(64);
+  await controller.approveExecution();
+  assert.equal(
+    requests.length,
+    0,
+    'a changed displayed snapshot cannot be silently approved',
+  );
+  assert.match(controller.approvalError.value, /변경/);
+  controller.openApproval();
+  await controller.approveExecution();
+  await controller.approveExecution();
+  assert.equal(requests.length, 2);
+  assert.equal(
+    requests[0].approvalId,
+    requests[1].approvalId,
+    'transport retries keep one reservation',
+  );
+  assert.equal(requests[0].expectedPlaybookDigest, 'b'.repeat(64));
+  await controller.reloadPlanForReview();
+  playbook.value.playbookDigest = 'c'.repeat(64);
+  controller.openApproval();
+  fail = false;
+  await controller.approveExecution();
+  assert.notEqual(
+    requests[2].approvalId,
+    requests[0].approvalId,
+    'a newly reviewed version starts a new approval',
+  );
+  assert.equal(requests[2].expectedPlaybookDigest, 'c'.repeat(64));
+  playbook.value.executable = false;
+  assert.equal(controller.canApprove.value, false);
+  playbook.value.executable = true;
+  playbook.value.execution_steps[0].commands = [];
+  assert.equal(
+    controller.canApprove.value,
+    false,
+    'legacy prose stays read-only even with an old server',
+  );
+});
+
+test('legacy recovery plans retain their prose and criteria without pretending commands exist', async () => {
+  const html = await renderRecoveryPlan({
+    steps: [
+      {
+        step_id: 'legacy-1',
+        action: '이전 작업 원문 <script>alert(1)</script>',
+        intent: '연결된 세션 확인',
+        success_criteria: '실패 지표가 0인지 확인',
+      },
+    ],
+    executable: false,
+    validationError: '명령이 없는 과거 계획입니다',
+  });
+  for (const text of [
+    '이전 작업 원문',
+    '연결된 세션 확인',
+    '실패 지표가 0인지 확인',
+    '성공 판정 기준',
+    '명령 미생성 · 새 분석 필요',
+  ]) {
+    assert.ok(html.includes(text), `legacy display preserves ${text}`);
+  }
+  assert.doesNotMatch(html, /사전 확정 런북|<script>|<pre/);
+  assert.match(html, /&lt;script&gt;/, 'model text is escaped');
+  assert.doesNotMatch(
+    html,
+    /원인 미확정|근본원인이 확정되지 않아/,
+    'missing commands do not imply an unconfirmed cause',
+  );
+});
+
+test('fixed runbooks render ordered commands and the exact post-action observation coordinates', async () => {
+  const commands = [
+    'aws ecs describe-tasks --region us-east-1 --cluster demo --tasks task-1',
+    'aws ecs stop-task --region us-east-1 --cluster demo --task task-1',
+  ];
+  const metric_wait = {
+    action_step_id: 'action-1',
+    region: 'us-east-1',
+    failure_alarm_name: 'demo-failure',
+    max_wait_seconds: 240,
+    metrics: {
+      attempts: {
+        namespace: 'Demo/Sensor',
+        metric_name: 'Attempts',
+        dimensions: { ServiceName: 'demo-service' },
+      },
+      failures: {
+        namespace: 'Demo/Sensor',
+        metric_name: 'Failures',
+        dimensions: { ServiceName: 'demo-service' },
+      },
+    },
+  };
+  const html = await renderRecoveryPlan({
+    steps: [
+      {
+        step_id: 'action-1',
+        action: '대상 작업 중단',
+        success_criteria: '대상 작업 중단 확인',
+        commands,
+      },
+      {
+        step_id: 'observe-1',
+        action: '조치 후 검증',
+        success_criteria: '고정 구간 실패 없음',
+        metric_wait,
+      },
+    ],
+    executable: true,
+  });
+  assert.match(html, /사전 확정 런북 · 승인 전 검토/);
+  assert.ok(html.includes(commands[0]) && html.includes(commands[1]));
+  assert.ok(
+    html.indexOf(commands[0]) < html.indexOf(commands[1]),
+    'command order remains unchanged',
+  );
+  assert.equal(
+    (html.match(/<pre /g) || []).length,
+    3,
+    'two command blocks plus the full observation JSON',
+  );
+  for (const value of [
+    '조치 후 고정 구간 관측',
+    'action-1',
+    'us-east-1',
+    'demo-failure',
+    '240초',
+    'Demo/Sensor',
+    'Attempts',
+    'Failures',
+    'ServiceName',
+    'demo-service',
+    '고정 관측 설정 JSON 전체',
+  ]) {
+    assert.ok(html.includes(value), `observation display includes ${value}`);
+  }
+  assert.doesNotMatch(html, /명령 미생성/);
+});
+
+test('a partially defined runbook remains visibly unapprovable without hiding either kind of step', async () => {
+  const html = await renderRecoveryPlan({
+    steps: [
+      {
+        step_id: 'old',
+        action: '기존 자연어 계획',
+        success_criteria: '기존 기준',
+      },
+      {
+        step_id: 'fixed',
+        action: '알람 조회',
+        success_criteria: '알람 확인',
+        commands: [
+          'aws cloudwatch describe-alarms --region us-east-1 --alarm-names demo',
+        ],
+      },
+    ],
+    executable: false,
+    validationError: 'old 단계에 고정 실행 정의가 없습니다',
+  });
+  assert.match(html, /실행 정의 확인 필요 · 승인 불가/);
+  assert.match(html, /기존 자연어 계획/);
+  assert.match(html, /aws cloudwatch describe-alarms/);
+  assert.match(html, /old 단계에 고정 실행 정의가 없습니다/);
+  assert.doesNotMatch(html, /사전 확정 런북/);
 });
 
 test('the retrospective view returns all four things its update must be read against', async () => {

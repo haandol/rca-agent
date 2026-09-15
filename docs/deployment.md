@@ -84,7 +84,7 @@ docker build -t headless-codex .
 실행 워커는 **분석 워커와 같은 컨테이너 이미지를 다른 진입점으로** 실행합니다: `python -m headless_codex.execution_main`. 하나의 하네스를 두 진입점으로 나눈 구성이라 이미지를 따로 빌드하지 않습니다.
 
 - 실행 요청 큐를 Long Polling으로 구독합니다. 대시보드의 `POST /api/executions`가 발행한 승인 요청만 소비하며, 이벤트 구독이 없어 승인 없이 시작될 경로가 없습니다.
-- 실행 근거는 리포트에 담긴 플레이북의 `execution_steps`(`step_id`, `intent`, `action`, `success_criteria`)입니다. `action`은 자연어 서술이고, 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 옵니다.
+- 실행 근거는 리포트에 담긴 현재 사고의 런북입니다. `execution_steps`는 작업 설명과 성공 기준 외에 승인 전에 확정한 `commands` 또는 `metric_wait`를 보유합니다. 대상·리전·명령·순서 변경에는 새 승인이 필요합니다. 명령 없는 과거 기록은 열람만 가능하며 새 실행 승인 대상이 아닙니다.
 - 해결이 관측으로 확정된 실행(`RESOLVED`)에 한해 회고가 이어서 실행되며, 플레이북 절차를 교정합니다.
 - 배포 시 `EXECUTION_QUEUE_URL`, `EXECUTION_TIMEOUT_SECONDS`(기본 3600) 환경변수가 스택에서 주입됩니다.
 

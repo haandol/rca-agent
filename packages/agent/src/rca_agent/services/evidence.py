@@ -51,6 +51,7 @@ class EvidenceCollectionResult(BaseModel):
 
 
 class EvidenceCollectionSummary(BaseModel):
+    full_evidence_map: dict[str, str] = Field(default_factory=dict)
     evidence_map: dict[str, str] = Field(default_factory=dict)
     failed_ids: set[str] = Field(default_factory=set)
 
@@ -222,6 +223,7 @@ def run_evidence_collection(
     if existing_evidence_map:
         lookup_map.update(existing_evidence_map)
     new_evidence_map: dict[str, str] = {}
+    full_evidence_map: dict[str, str] = {}
     failed_ids: set[str] = set()
     source = all_hypotheses if all_hypotheses else hypotheses
     hypotheses_by_id = {h.hypothesis_id: h for h in source}
@@ -242,6 +244,8 @@ def run_evidence_collection(
 
         lookup_map[h.hypothesis_id] = result.summary
         new_evidence_map[h.hypothesis_id] = result.summary
+        if not result.failed:
+            full_evidence_map[h.hypothesis_id] = result.full_evidence
 
         if result.failed:
             failed_ids.add(h.hypothesis_id)
@@ -266,7 +270,11 @@ def run_evidence_collection(
                         s3_client=s3_client,
                     )
 
-    return EvidenceCollectionSummary(evidence_map=new_evidence_map, failed_ids=failed_ids)
+    return EvidenceCollectionSummary(
+        evidence_map=new_evidence_map,
+        full_evidence_map=full_evidence_map,
+        failed_ids=failed_ids,
+    )
 
 
 def _save_single_evidence_to_s3(

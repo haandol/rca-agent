@@ -49,17 +49,26 @@ them. They are not reading material; they are what runs.
 - **`step_id` is a stable identifier.** Execution evidence points at the step that \
 failed and the retrospective corrects that step, so never reuse an identifier for a \
 different step.
-- **Write `action` in natural language and name the resource it operates on.** Do not \
-pin a command string: the resource identifier and region are decided from the alarm \
-context at execution time, and a hard-coded command cannot be reused for the same \
-failure on a different resource.
-- **`success_criteria` must be observable.** State which metric returns to which range \
-rather than "restored to normal". Without it the execution agent cannot confirm that \
-the issue was resolved, and an unconfirmed execution is never recorded as resolved.
-- **A verification-only step still needs an execution attempt.** Describe a safe, \
-read-only AWS CLI observation in `action` without hard-coding the command. During \
-approved execution it must call `run_playbook_command` at least once; a direct \
-CloudWatch MCP query is not attempt evidence.
+- **`action` is a human-readable description; `commands` is the ordered list of complete \
+AWS CLI commands.** Fix every target and region argument from current incident evidence \
+before approval. No placeholders, shell variables, command substitution, omitted target \
+arguments, or commands invented at execution time. A changed command requires new approval.
+- **Each step has exactly one operation:** nonempty `commands: list[str]` OR \
+`metric_wait: dict` with `commands: []`. `metric_wait` uses the existing \
+wait_for_post_action_metrics arguments without step_id: action_step_id (a prior action), \
+metrics, failure_alarm_name, region, max_wait_seconds (1–300, default 300), optional \
+latency_alarm_name and completed_work_evidence. metrics requires attempts and failures, \
+optional latency; each has namespace, metric_name, dimensions (observed Name-to-Value map). \
+All metrics share namespace/dimensions. Supply latency and its alarm together. The server \
+binds the actual action completion time to the first two complete 60-second bins; do not \
+invent timestamps, intervals, or coordinates. Include prerequisite discovery CLI commands \
+(list-metrics and describe-alarms) as fixed commands before the metric_wait step.
+- **`success_criteria` must be observable.** Name actual metrics, thresholds and alarms. \
+For writes, require evidence of completed writes, not merely attempts minus failures, \
+STOPPED task status, alarm OK, passive expiry, or missing observations.
+- Never copy commands or targets from a historical playbook. If current evidence does \
+not establish a complete safe plan, return an empty execution_steps list and explain \
+missing evidence/manual escalation in the non-executable knowledge fields.
 - **Never include an irreversible action** — deleting resources, data, snapshots, or \
 backups, terminating instances, revoking credentials, or account/organization-level \
 changes. The execution layer refuses these, which leaves the step a manual action. \
@@ -116,26 +125,27 @@ severity criteria, escalation criteria, or related metrics \
 that are NOT already in the existing playbook, merge them.
 - If the existing playbook is already comprehensive and the new RCA adds nothing new, \
 set needs_update to false.
-- Do NOT remove existing content — only add or refine. Return each field with the \
-merged content; a field left empty keeps its existing value.
+- Do NOT remove existing non-execution knowledge — only add or refine. Return each field with the \
+merged knowledge; empty knowledge fields keep their existing values. The execution plan is fully replaced.
 - Preserve the existing playbook's structure and language style.
 {CONTROL_PROVENANCE_RULES}
 - In `failure_type` and `symptom_pattern`, describe the pattern qualitatively \
 without specific numbers, thresholds, percentages, or timestamps.
-- **`execution_steps`**: return the full merged list when you change it, and reuse the \
-existing `step_id` for a step you are correcting — evidence from past executions points \
-at those identifiers. Leave the list empty to keep the recorded steps as they are. Every \
-step needs a resource-naming `action` and an observable `success_criteria`, and no step \
-may contain an irreversible action. A verification-only step must describe a safe, \
-read-only AWS CLI observation and must still call `run_playbook_command` at least once \
-during execution; a direct CloudWatch MCP query is not attempt evidence. Leave the list \
-empty when the new RCA's root cause is unconfirmed.
+- **`execution_steps`** is the full current-incident runbook, including an empty list. \
+Replace historical commands/targets completely; never inherit them. Every step requires \
+commands XOR metric_wait under the same approval contract as new generation. Fixed \
+commands include observed targets and region; metric_wait fixes the existing tool arguments \
+without step_id. Empty means no executable plan. Only non-execution knowledge is merged. \
+Return needs_update=true when the current plan changes, including when it becomes empty. \
+An unconfirmed RCA must return an empty plan. Never correct commands during execution; \
+changed commands or metric_wait arguments require a new runbook and approval.
+
 """
 
 PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE = """\
 Compare the existing playbook with the new RCA findings and decide whether to update.
 
-## Existing Playbook
+## Historical Playbook (knowledge only; commands/targets are not current evidence)
 - **Failure Type**: {existing_failure_type}
 - **Symptom Pattern**: {existing_symptom_pattern}
 - **Severity Criteria**: {existing_severity_criteria}

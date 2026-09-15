@@ -4,6 +4,7 @@ from time import perf_counter
 from unittest.mock import MagicMock, patch
 
 import pytest
+from boto3.dynamodb.types import TypeSerializer
 
 from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import (
     S3VectorsPlaybookStore,
@@ -235,13 +236,16 @@ class TestTryUpdateExisting:
         assert result.tags == existing.tags
         assert result.rca_id == "rca-1"
 
-    def test_returns_none_when_no_update_needed(self):
+    def test_preserves_existing_knowledge_when_no_update_needed(self):
         update_output = PlaybookUpdateOutput(needs_update=False)
         agent = _make_mock_agent(update_output)
 
         result = _try_update_existing(_make_existing(), _make_report(), agent)
 
-        assert result is None
+        assert result is not None
+        assert result.playbook_id == "existing-1"
+        assert result.verification_steps == _make_existing().verification_steps
+        assert result.rca_id == "rca-1"
 
     def test_returns_none_on_failure(self):
         agent = MagicMock(side_effect=RuntimeError("fail"))
@@ -344,7 +348,7 @@ class TestRunPlaybookGeneration:
         assert playbook.related_metrics == ["CPUUtilization"]
         assert playbook.rca_id == "rca-1"
 
-    def test_creates_new_when_existing_needs_no_update(self):
+    def test_reuses_existing_when_existing_needs_no_update(self):
         hit = _make_hit()
         no_update = PlaybookUpdateOutput(needs_update=False)
         new_output = PlaybookOutput(
@@ -370,7 +374,8 @@ class TestRunPlaybookGeneration:
 
         playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
 
-        assert playbook.failure_type == "New playbook"
+        assert playbook.playbook_id == hit.playbook_id
+        assert playbook.failure_type == _make_existing().failure_type
 
     def test_fallback_on_failure(self):
         agent = MagicMock(side_effect=RuntimeError("fail"))
@@ -759,6 +764,10 @@ class TestExecutionStepContract:
             "intent": "워커 풀 회수",
             "action": "web-service 를 강제 재배포한다",
             "success_criteria": "MemoryUtilization 이 60% 이하로 복귀",
+            "commands": [
+                "aws ecs update-service --cluster current --service web-service "
+                "--force-new-deployment --region us-east-1"
+            ],
         }
         step.update(overrides)
         return step
@@ -794,7 +803,7 @@ class TestExecutionStepContract:
             confirmed=True,
         )
 
-        assert [step.step_id for step in steps] == ["step-2"]
+        assert steps == []
 
     def test_a_step_without_an_action_is_dropped(self):
         steps = build_execution_steps(
@@ -814,16 +823,15 @@ class TestExecutionStepContract:
             confirmed=True,
         )
 
-        assert len(steps) == 1
-        assert steps[0].intent == "워커 풀 회수"
+        assert steps == []
 
-    def test_a_missing_step_id_gets_a_positional_one(self):
+    def test_a_missing_step_id_rejects_the_plan(self):
         steps = build_execution_steps(
             [ExecutionStepOutput(**self._step(step_id=""))],
             confirmed=True,
         )
 
-        assert [step.step_id for step in steps] == ["step-1"]
+        assert steps == []
 
     def test_a_generated_playbook_is_always_an_unverified_draft(self):
         """실행되지 않은 절차는 검증되지 않았다. 분석은 이 값을 바꾸지 않는다."""
@@ -836,7 +844,7 @@ class TestExecutionStepContract:
         assert playbook.verification_status is PlaybookVerificationStatus.DRAFT
         assert [step.step_id for step in playbook.execution_steps] == ["step-1"]
 
-    def test_an_update_that_omits_steps_keeps_the_recorded_ones(self):
+    def test_an_update_that_omits_steps_removes_historical_execution(self):
         existing = Playbook(
             playbook_id="p-1",
             failure_type="Memory leak",
@@ -848,8 +856,7 @@ class TestExecutionStepContract:
         updated = _try_update_existing(existing, _make_report(), agent)
 
         assert updated is not None
-        assert [step.step_id for step in updated.execution_steps] == ["step-1"]
-        assert updated.execution_steps[0].action == "web-service 를 강제 재배포한다"
+        assert updated.execution_steps == []
 
     def test_an_unconfirmed_update_never_restores_recorded_steps(self):
         existing = Playbook(
@@ -880,7 +887,7 @@ class TestExecutionStepContract:
                     "metadata": {
                         "M": {
                             "playbook_id": {"S": "p-1"},
-                            "execution_steps": {"L": [{"M": {k: {"S": v} for k, v in self._step().items()}}]},
+                            "execution_steps": {"L": [TypeSerializer().serialize(self._step())]},
                         }
                     },
                 },
@@ -896,7 +903,7 @@ class TestExecutionStepContract:
         assert [step.step_id for step in detail.execution_steps] == ["step-1"]
         assert detail.execution_steps[0].success_criteria == "MemoryUtilization 이 60% 이하로 복귀"
 
-    def test_an_update_without_step_changes_does_not_demote_a_verified_playbook(self):
+    def test_an_empty_current_plan_demotes_a_verified_historical_playbook(self):
         existing = Playbook(
             playbook_id="p-1",
             failure_type="Memory leak",
@@ -909,7 +916,7 @@ class TestExecutionStepContract:
         updated = _try_update_existing(existing, _make_report(), agent)
 
         assert updated is not None
-        assert updated.verification_status is PlaybookVerificationStatus.VERIFIED
+        assert updated.verification_status is PlaybookVerificationStatus.DRAFT
 
     def test_an_update_with_changed_steps_demotes_a_verified_playbook(self):
         existing = Playbook(
@@ -922,10 +929,12 @@ class TestExecutionStepContract:
         changed_step = ExecutionStepOutput(**self._step(action="web-service 를 롤링 재시작한다"))
         agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, execution_steps=[changed_step]))
 
-        updated = _try_update_existing(existing, _make_report(), agent)
+        current_steps = build_execution_steps([changed_step], confirmed=True)
+        updated = _try_update_existing(existing, _make_report(), agent, current_steps=current_steps)
 
         assert updated is not None
         assert updated.execution_steps[0].action == "web-service 를 롤링 재시작한다"
+        assert updated.execution_steps[0] is not current_steps[0]
         assert updated.verification_status is PlaybookVerificationStatus.DRAFT
 
     def test_an_update_with_identical_steps_preserves_verified_status(self):
@@ -939,7 +948,9 @@ class TestExecutionStepContract:
         same_step = ExecutionStepOutput(**self._step())
         agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, execution_steps=[same_step]))
 
-        updated = _try_update_existing(existing, _make_report(), agent)
+        updated = _try_update_existing(
+            existing, _make_report(), agent, current_steps=build_execution_steps([same_step], confirmed=True)
+        )
 
         assert updated is not None
         assert updated.execution_steps == existing.execution_steps
@@ -1034,3 +1045,129 @@ class TestExecutionStepContract:
 
         assert detail is not None
         assert detail.execution_steps == []
+
+
+def test_generation_and_enrichment_receive_current_alarm_metrics_and_late_evidence():
+    from rca_agent.services.playbook_gen import _build_update_prompt, _build_user_prompt
+
+    report = _make_report()
+    owner = "arn:aws:ecs:us-east-1:123456789012:task/current/observed-owner"
+    report.evidence_list = ["source log: " + "observed details " * 80 + owner]
+    scoping = _make_scoping()
+    scoping.raw_alarm.region = "us-east-1"
+    scoping.raw_alarm.trigger.dimensions = {"ServiceName": "current-service"}
+    old = Playbook(playbook_id="old", failure_type="lock", symptom_pattern="blocked writes")
+    for prompt in (_build_user_prompt(report, scoping), _build_update_prompt(old, report, scoping)):
+        assert owner in prompt
+        assert '"ServiceName": "current-service"' in prompt
+        assert '"namespace": "AWS/ECS"' in prompt
+        assert '"region": "us-east-1"' in prompt
+
+
+@pytest.mark.parametrize("current_plan", ["empty", "invalid", "new-owner", "same-owner"])
+@pytest.mark.parametrize("merge_plan", ["stale-owner", "empty"])
+@pytest.mark.parametrize("needs_update", [True, False])
+def test_generation_merge_uses_only_validated_current_plan(current_plan, merge_plan, needs_update):
+    from tests.test_runbook_contract import command_step, wait_step
+
+    old_steps = [command_step(), wait_step()]
+    existing = _make_existing(
+        execution_steps=[ExecutionStep(**step) for step in old_steps],
+        verification_status=PlaybookVerificationStatus.VERIFIED,
+    )
+    snapshot = existing.model_dump()
+    current = [ExecutionStepOutput(**step) for step in [command_step(), wait_step()]]
+    if current_plan == "empty":
+        current = []
+    elif current_plan == "invalid":
+        current[1].metric_wait["action_step_id"] = "missing"
+    elif current_plan == "new-owner":
+        current[0].commands = [current[0].commands[0].replace("incident-owner", "current-owner")]
+    draft_output = PlaybookOutput(failure_type="lock", symptom_pattern="blocked writes", execution_steps=current)
+    merge_output = PlaybookUpdateOutput(
+        needs_update=needs_update,
+        temporary_mitigation="Enriched knowledge",
+        execution_steps=[ExecutionStepOutput(**step) for step in old_steps] if merge_plan == "stale-owner" else [],
+    )
+    agent = MagicMock(
+        side_effect=[MagicMock(structured_output=draft_output), MagicMock(structured_output=merge_output)]
+    )
+    store = _playbook_store([_make_hit()], detail=existing)
+
+    result = run_playbook_generation(_make_report(), agent, playbook_store=store)
+
+    assert [call.kwargs["structured_output_model"] for call in agent.call_args_list] == [
+        PlaybookOutput,
+        PlaybookUpdateOutput,
+    ]
+    store.load_detail.assert_called_once()
+    assert result.playbook_id == existing.playbook_id
+    assert result.temporary_mitigation == ("Enriched knowledge" if needs_update else existing.temporary_mitigation)
+    if not needs_update:
+        assert result.model_dump(exclude={"execution_steps", "verification_status", "rca_id"}) == existing.model_dump(
+            exclude={"execution_steps", "verification_status", "rca_id"}
+        )
+    expected = [] if current_plan in {"empty", "invalid"} else [ExecutionStep(**step.model_dump()) for step in current]
+    assert result.execution_steps == expected
+    expected_status = (
+        PlaybookVerificationStatus.VERIFIED if current_plan == "same-owner" else PlaybookVerificationStatus.DRAFT
+    )
+    assert result.verification_status is expected_status
+    if result.execution_steps:
+        result.execution_steps[1].metric_wait["metrics"]["failures"]["dimensions"]["Service"] = "mutated"
+        assert current[1].metric_wait["metrics"]["failures"]["dimensions"]["Service"] == "current-service"
+    assert existing.model_dump() == snapshot
+
+
+@pytest.mark.parametrize("failure", ["search", "detail", "update"])
+def test_existing_lookup_failure_keeps_new_validated_draft(failure):
+    from tests.test_runbook_contract import command_step, wait_step
+
+    steps = [ExecutionStepOutput(**step) for step in [command_step(), wait_step()]]
+    draft = PlaybookOutput(failure_type="current type", symptom_pattern="current pattern", execution_steps=steps)
+    agent = MagicMock(side_effect=[MagicMock(structured_output=draft), RuntimeError("update unavailable")])
+    store = _playbook_store([_make_hit()])
+    if failure == "search":
+        store.search_similar.side_effect = RuntimeError("search unavailable")
+    elif failure == "detail":
+        store.load_detail.side_effect = RuntimeError("detail unavailable")
+
+    result = run_playbook_generation(_make_report(), agent, playbook_store=store)
+
+    assert result.playbook_id != "existing-1"
+    assert result.failure_type == "current type"
+    assert result.execution_steps == [ExecutionStep(**step.model_dump()) for step in steps]
+    assert result.verification_status is PlaybookVerificationStatus.DRAFT
+
+
+@pytest.mark.parametrize("source_time", ["2025-04-03T01:02:03Z", None, ""])
+def test_eval_generation_and_merge_prompts_use_only_source_incident_time(source_time):
+    from datetime import UTC, datetime
+
+    from rca_agent.services.playbook_gen import _build_update_prompt, _build_user_prompt
+
+    scoping = _make_scoping()
+    scoping.raw_alarm.state_change_time = datetime(2026, 9, 15, 12, 34, 56, tzinfo=UTC)
+    scoping.raw_alarm.eval_source_metadata = {"stateChangeTime": source_time} if source_time is not None else {}
+    before = scoping.model_dump()
+    for prompt in (
+        _build_user_prompt(_make_report(), scoping),
+        _build_update_prompt(_make_existing(), _make_report(), scoping),
+    ):
+        assert "2026-09-15T12:34:56" not in prompt
+        if source_time:
+            assert source_time in prompt
+        else:
+            assert f'"state_change_time": {json.dumps(source_time)}' in prompt
+        assert '"namespace": "AWS/ECS"' in prompt
+    assert scoping.model_dump() == before
+
+
+def test_production_generation_prompt_preserves_real_alarm_time():
+    from datetime import UTC, datetime
+
+    from rca_agent.services.playbook_gen import _build_user_prompt
+
+    scoping = _make_scoping()
+    scoping.raw_alarm.state_change_time = datetime(2025, 4, 3, 1, 2, 3, tzinfo=UTC)
+    assert "2025-04-03T01:02:03Z" in _build_user_prompt(_make_report(), scoping)

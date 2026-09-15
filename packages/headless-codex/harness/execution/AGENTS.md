@@ -9,8 +9,9 @@
 ## 실행 근거는 플레이북이다
 
 전달된 `execution_steps`가 이번 실행의 전부다. 절차에 없는 조치를 스스로 추가하지
-않고, 절차에 있는 단계를 임의로 건너뛰지 않는다. 절차의 `action`은 자연어이므로
-대상 리소스 식별자와 리전은 전달된 알람 컨텍스트에서 결정한다.
+않고, 절차에 있는 단계를 임의로 건너뛰지 않는다. 각 단계는 승인된 완성 문자열 `commands` 또는 고정 인자 `metric_wait`를 가진다.
+대상·리전·순서는 승인 스냅샷 그대로 사용한다. 명령을 만들거나 인자를 교정하려면 재승인이 필요하다.
+서버는 단계·명령 순서를 검사하고 성공한 쓰기는 재실행하지 않는다.
 
 ## 안전 경계는 서버가 지킨다
 
@@ -42,7 +43,7 @@
 승인 기준이 조치 후 첫 두 60초 구간을 요구하면 런타임 프롬프트의
 `wait_for_post_action_metrics(step_id, action_step_id, metrics, failure_alarm_name,
 region, max_wait_seconds=300, latency_alarm_name='', completed_work_evidence=None)` 지침을 따른다.
-승인된 현재 검증 step_id에서 `run_playbook_command`로 `aws cloudwatch list-metrics`와
+승인된 현재 검증 step_id의 metric_wait에 앞선 별도 commands 단계에서 `run_playbook_command`로 `aws cloudwatch list-metrics`와
 `aws cloudwatch describe-alarms`를 먼저 실행해 실제 좌표와 알람 메타데이터를 기록한다.
 metrics는 필수 attempts/failures 각각의 namespace, metric_name, dimensions 매핑이다.
 같은 namespace·dimensions·region의 승인된 현재 서비스만 사용한다. failures 지표와
@@ -68,9 +69,9 @@ successful_writes는 서버가 완료된 쓰기 집계 의미를 실제 증거�
 집계 의미를 발견한 뒤에만 전달한다. 소스 인용은 실제 명령 증거나 승인 문맥을 참조한다.
 입력은 record_index와 json_pointer만 가진 참조다. record_index는 실제 현재 실행
 명령 증거의 인덱스 또는 'approved_context'이며 json_pointer는 해당 JSON의 관측한
-descriptor 위치다. 참조를 확인할 수 없으면 생략한다.
+descriptor 위치다. 승인된 참조를 확인할 수 없으면 관측 부족으로 남긴다. 승인 인자를 추가·삭제하지 않는다.
 descriptor·소스·인용·증거·집계 수를 만들거나 이름만 보고 쓰기 의미를 추측하지 않는다.
-증거가 없으면 이 입력을 생략하고 모델이 실제 쓰기 작업의 성공을 별도로 확인한다.
+승인에 이 입력이 없으면 모델이 실제 쓰기 작업의 성공을 별도로 승인된 관측 명령으로 확인한다.
 산술 차이만으로 쓰기를 증명하지 않는다. 실제 관측에서 operation=ingest는 쓰기이고
 operation=patient_vitals는 읽기임을 확인한 경우 그 구분을 따른다. 이 예시 이름을
 고정 식별자로 사용하지 않는다. 쿼리 읽기 성공은 쓰기 성공이 아니다.
@@ -102,3 +103,7 @@ criteria_met=false, resolved=false로 남긴다.
 - 수행하지 않은 명령을 수행했다고 기록 금지
 - 관측하지 않은 결과를 관측했다고 기록 금지
 - 분석 리포트 수정 금지 — 실행은 분석 결과를 변경하지 않는다
+
+모든 호출은 승인 commands 문자열 또는 metric_wait 인자와 정확히 같아야 한다.
+CloudWatch MCP 직접 조회는 제공되지 않는다. 필수 명령 전체의 성공과 성공 기준 관측이 필요하다.
+새 조회·페이지 토큰·대상 변경이 필요하면 재승인 사유를 기록하고 임의 명령을 만들지 않는다.

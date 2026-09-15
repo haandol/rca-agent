@@ -4,10 +4,12 @@ import json
 import time
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from threading import Event, Thread
 
 import structlog
+from boto3.dynamodb.types import TypeSerializer
 
 from headless_codex.config.settings import DYNAMODB_TABLE_NAME, ENGINE, SESSION_TTL_DAYS
 from headless_codex.services.analysis_contract import generation_round_for_filename
@@ -57,14 +59,6 @@ _PLAYBOOK_LIST_FIELDS = (
 _EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 
 
-def _safe_metadata_string(value, *, max_length: int) -> str:
-    if value is None:
-        return ""
-    if not isinstance(value, (str, int, float, bool)):
-        return ""
-    return str(value)[:max_length]
-
-
 def _build_execution_steps_metadata(steps: object) -> list[dict] | None:
     """Keep the steps a person approves so the dashboard can show them."""
     if not isinstance(steps, list) or not steps:
@@ -73,14 +67,13 @@ def _build_execution_steps_metadata(steps: object) -> list[dict] | None:
     for step in steps:
         if not isinstance(step, dict):
             continue
-        rendered.append(
-            {
-                "M": {
-                    field: {"S": _safe_metadata_string(step.get(field), max_length=500)}
-                    for field in _EXECUTION_STEP_FIELDS
-                }
-            }
-        )
+        # Approval data must round-trip exactly, including nested metric coordinates
+        # and long CLI JSON arguments. Truncation changes what the user approves.
+        fields = {field: step.get(field, "") for field in _EXECUTION_STEP_FIELDS}
+        fields["commands"] = step.get("commands", [])
+        fields["metric_wait"] = step.get("metric_wait")
+        value = json.loads(json.dumps(fields), parse_float=Decimal)
+        rendered.append(TypeSerializer().serialize(value))
     return rendered or None
 
 
@@ -95,8 +88,8 @@ def _build_playbook_metadata(artifact: dict) -> dict:
         if isinstance(v, list) and v:
             meta[k] = {"L": [{"S": str(i)} for i in v]}
     steps = _build_execution_steps_metadata(artifact.get("execution_steps"))
-    if steps:
-        meta["execution_steps"] = {"L": steps}
+    if isinstance(artifact.get("execution_steps"), list):
+        meta["execution_steps"] = {"L": steps or []}
     return meta
 
 

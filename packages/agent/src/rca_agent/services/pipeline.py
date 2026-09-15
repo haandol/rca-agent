@@ -149,6 +149,7 @@ class ValidationLoopState:
     rejected_descriptions: list[str] = field(default_factory=list)
     rejection_feedback: dict[str, str] = field(default_factory=dict)
     evidence_map: dict[str, str] = field(default_factory=dict)
+    full_evidence_map: dict[str, str] = field(default_factory=dict)
     evidence_failed_ids: set[str] = field(default_factory=set)
     timeline: list[str] = field(default_factory=list)
     loop_count: int = 0
@@ -507,7 +508,7 @@ class PipelineOrchestrator:
             run,
             alarm=alarm,
             hypothesis_path=[best_hypothesis.description] if best_hypothesis else [],
-            evidence_texts=[e for e in state.evidence_map.values() if e],
+            evidence_texts=[e for e in (state.evidence_map | state.full_evidence_map).values() if e],
             rejected_descriptions=state.rejected_descriptions,
             timeline=state.timeline,
         )
@@ -799,6 +800,7 @@ class PipelineOrchestrator:
                     ),
                 )
                 state.evidence_map.update(ev_summary.evidence_map)
+                state.full_evidence_map.update(ev_summary.full_evidence_map)
                 state.evidence_failed_ids.update(ev_summary.failed_ids)
             s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
             s.metadata = {

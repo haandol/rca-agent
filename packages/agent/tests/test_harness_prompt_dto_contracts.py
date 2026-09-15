@@ -255,8 +255,9 @@ def test_evidence_prompt_forbids_judgment_and_requires_bounded_tool_use():
 
 
 @pytest.mark.parametrize("prompt", [PLAYBOOK_SYSTEM_PROMPT, PLAYBOOK_UPDATE_SYSTEM_PROMPT])
-def test_playbook_prompts_require_attempt_evidence_for_verification_only_steps(prompt):
-    assert "verification-only step" in prompt
-    assert "safe, read-only AWS CLI" in prompt
-    assert "`run_playbook_command` at least once" in prompt
-    assert "direct CloudWatch MCP query is not attempt evidence" in prompt
+def test_playbook_prompts_fix_operations_before_approval(prompt):
+    assert "commands" in prompt
+    assert "metric_wait" in prompt
+    assert "region" in prompt
+    assert "approval" in prompt
+    assert "execution time" not in prompt or "invented at execution time" in prompt

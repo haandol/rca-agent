@@ -11,6 +11,7 @@ import pytest
 from headless_codex import execution_mcp_server as server
 from headless_codex.services import execution_workspace as wm
 from headless_codex.services.command_gate import GateVerdict, evaluate_command
+from headless_codex.services.execution_contract import command_digest
 from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution
 from headless_codex.services.execution_state import ExecutionState
 from headless_codex.services.post_action_metrics import (
@@ -62,6 +63,8 @@ def attempt(command, stdout, step_id="verify", **extra):
         "execution_id": "exec-1",
         "step_id": step_id,
         "command": command,
+        "command_digest": command_digest(command),
+        "command_index": 0,
         "stdout": json.dumps(stdout),
         "succeeded": True,
         "exit_status": "0",
@@ -117,7 +120,13 @@ def data():
             f"aws cloudwatch describe-alarms --alarm-names observed-errors --region {REGION}", {"MetricAlarms": [alarm]}
         ),
     ]
+    records[1]["step_id"] = records[2]["step_id"] = "precheck"
+    records[2]["command_index"] = 1
+    steps[0]["commands"] = [r["command"] for r in records[1:]]
+    steps[1]["commands"] = [records[0]["command"]]
+    steps[3]["commands"] = ["aws ecs describe-clusters --region us-east-1"]
     request = normalize_request("verify", "action", metrics, "observed-errors", "", REGION, 300)
+    steps[2]["metric_wait"] = {k: v for k, v in request.items() if k != "step_id"}
     bound = {**bind_request(request, records, context, "exec-1", evaluate_command), "request": request}
     return {
         "metrics": metrics,
@@ -364,9 +373,16 @@ def add_latency(data, approved=True):
             {"MetricAlarms": [alarm]},
         )
     )
+    data["records"][-1]["step_id"] = "precheck"
+    data["records"][-1]["command_index"] = 2
+    data["context"]["playbook"]["execution_steps"][0]["commands"].append(data["records"][-1]["command"])
     if approved:
         data["context"]["playbook"]["execution_steps"][2]["success_criteria"] += " ObservedReadLatency observed-latency"
     request = normalize_request("verify", "action", data["metrics"], "observed-errors", "observed-latency", REGION, 300)
+    if approved:
+        data["context"]["playbook"]["execution_steps"][2]["metric_wait"] = {
+            k: v for k, v in request.items() if k != "step_id"
+        }
     data["bound"] = {
         **bind_request(request, data["records"], data["context"], "exec-1", evaluate_command),
         "request": request,
@@ -374,7 +390,7 @@ def add_latency(data, approved=True):
 
 
 def test_unapproved_latency_rejected(data):
-    with pytest.raises(ValueError, match="optional latency"):
+    with pytest.raises(ValueError, match="exactly match"):
         add_latency(data, approved=False)
 
 
@@ -416,7 +432,13 @@ def test_completed_write_descriptor_binds_actual_source_counts(data):
             {"events": [{"message": json.dumps({"accounting": descriptor})}]},
         )
     )
+    data["records"][-1]["step_id"] = "precheck"
+    data["records"][-1]["command_index"] = 2
+    data["context"]["playbook"]["execution_steps"][0]["commands"].append(data["records"][-1]["command"])
     data["request"]["completed_work_evidence"] = {"record_index": 3, "json_pointer": "/events/0/message/accounting"}
+    data["context"]["playbook"]["execution_steps"][2]["metric_wait"]["completed_work_evidence"] = data["request"][
+        "completed_work_evidence"
+    ]
     bound = bind_request(data["request"], data["records"], data["context"], "exec-1", evaluate_command)
     data["bound"] = {**bound, "request": data["request"]}
     result, _, _ = run(data)
@@ -440,7 +462,7 @@ def mcp_workspace(data, monkeypatch, tmp_path):
         wm.APPROVED_SUCCESS_CRITERIA_ENV, json.dumps({s["step_id"]: s["success_criteria"] for s in steps})
     )
     workspace.write_observation_context(**data["context"])
-    for record in data["records"]:
+    for record in [*data["records"][1:], data["records"][0]]:
         server._append_record(record)
     clock, calls = Clock(), []
     monkeypatch.setattr(server.time, "time", clock.time)
@@ -469,6 +491,87 @@ def invoke(data, **overrides):
     return json.loads(server.wait_for_post_action_metrics(**{**args, **overrides}))
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("action_step_id", "precheck"),
+        ("failure_alarm_name", "another-alarm"),
+        ("region", "us-west-2"),
+        ("max_wait_seconds", 299),
+        ("completed_work_evidence", {"record_index": "approved_context", "json_pointer": "/new"}),
+    ],
+)
+def test_changed_approved_wait_argument_is_rejected_before_any_cloudwatch_read(data, mcp_workspace, field, value):
+    workspace, _, calls = mcp_workspace
+    reply = invoke(data, **{field: value})
+    assert not reply["ok"]
+    assert "exactly match" in reply["error"]
+    assert calls == []
+    assert workspace.read_records()[-1]["type"] == "approval_rejection"
+
+
+@pytest.mark.parametrize(
+    "coordinate,value",
+    [("metric_name", "Other"), ("namespace", "Other/Namespace"), ("dimensions", {"Service": "other"})],
+)
+def test_changed_wait_metric_coordinate_is_rejected_before_binding(data, mcp_workspace, coordinate, value):
+    _, _, calls = mcp_workspace
+    metrics = copy.deepcopy(data["metrics"])
+    for metric in metrics.values():
+        if coordinate == "metric_name":
+            metric[coordinate] += value
+        else:
+            metric[coordinate] = value
+    assert not invoke(data, metrics=metrics)["ok"]
+    assert calls == []
+
+
+def test_general_command_tool_cannot_execute_a_waiters_generated_read(data, mcp_workspace):
+    workspace, _, calls = mcp_workspace
+    assert invoke(data)["ok"]
+    generated = next(r["command"] for r in workspace.read_records() if r.get("internal_observation"))
+    reply = json.loads(server.run_playbook_command("verify", generated))
+    assert not reply["ok"] and "exactly match" in reply["error"]
+    assert len(calls) == 3
+
+
+def test_missing_approved_discovery_produces_sticky_unobservable_receipt_without_running_reads(data, mcp_workspace):
+    workspace, _, calls = mcp_workspace
+    # A completed but truncated discovery is an attempt, never binding authority.
+    records = workspace.read_records()
+    for record in records:
+        if record.get("step_id") == "precheck":
+            record["stdout_truncated"] = True
+    workspace.evidence_path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    first = invoke(data)
+    assert first["status"] == "UNOBSERVABLE"
+    assert "discovery" in first["error"]
+    assert invoke(data)["status"] == "UNOBSERVABLE"
+    assert calls == []
+    assert len([r for r in workspace.read_records() if r.get("phase") == "terminal"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["300", 300.0, True])
+async def test_mcp_does_not_coerce_wait_duration_before_approval_comparison(data, mcp_workspace, value):
+    from fastmcp.exceptions import ValidationError
+
+    _, _, calls = mcp_workspace
+    with pytest.raises(ValidationError):
+        await server.mcp.call_tool(
+            "wait_for_post_action_metrics",
+            {
+                "step_id": "verify",
+                "action_step_id": "action",
+                "metrics": data["metrics"],
+                "failure_alarm_name": "observed-errors",
+                "region": REGION,
+                "max_wait_seconds": value,
+            },
+        )
+    assert calls == []
+
+
 def test_mcp_persist_first_and_repeat_terminal_no_reset(data, mcp_workspace):
     workspace, _, calls = mcp_workspace
     first = invoke(data)
@@ -486,7 +589,7 @@ def test_mcp_persist_first_and_repeat_terminal_no_reset(data, mcp_workspace):
         playbook=data["context"]["playbook"],
     )
     assert len(evidence.to_dict()["metric_wait_records"]) == 5
-    assert len(evidence.step("verify").attempts) == 5
+    assert len(evidence.step("verify").attempts) == 3
 
 
 def test_interrupted_wait_never_restarts(data, mcp_workspace):

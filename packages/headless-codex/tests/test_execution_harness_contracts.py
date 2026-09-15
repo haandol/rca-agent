@@ -26,7 +26,7 @@ EXECUTION_OPERATOR_GUIDANCE = (EXECUTION_DIR / "agents" / "execution-operator.md
 
 def test_analysis_orchestrator_has_no_tools_and_direct_workers_hold_only_their_tools():
     assert "mcp_servers" not in ANALYSIS_CONFIG
-    assert set(EXECUTION_CONFIG["mcp_servers"]) == {"cloudwatch", "playbook-execution"}
+    assert set(EXECUTION_CONFIG["mcp_servers"]) == {"playbook-execution"}
     assert set(RETROSPECTIVE_CONFIG["mcp_servers"]) == {"playbook-retrospective"}
 
 
@@ -45,7 +45,7 @@ def test_analysis_and_execution_capabilities_are_disjoint():
 def test_execution_operator_has_only_server_gated_execution_tools():
     servers = EXECUTION_OPERATOR_CONFIG["mcp_servers"]
 
-    assert set(servers) == {"cloudwatch", "playbook-execution"}
+    assert set(servers) == {"playbook-execution"}
     assert servers["playbook-execution"]["enabled_tools"] == [
         "run_playbook_command",
         "wait_for_post_action_metrics",
@@ -197,14 +197,14 @@ def test_execution_prompt_requires_attempt_evidence_for_verification_only_steps(
         assert "읽기 전용 AWS CLI" in guidance
         assert "`run_playbook_command`" in guidance
         assert "CloudWatch MCP" in guidance
-        assert "attempt 증거가 아니" in guidance
+        assert "CloudWatch MCP 직접 조회는 제공되지 않는다" in guidance
         assert "missing_attempt_step_ids" in guidance
         assert "missing_outcome_step_ids" in guidance
         assert "`record_resolution`" in guidance and "다시 호출" in guidance
 
     assert render_observation_wait_guidance() in prompt
-    assert "현재 검증 step_id에서 list-metrics와" in prompt
-    assert "describe-alarms를 먼저 기록하고 `wait_for_post_action_metrics`를 호출" in prompt
+    assert "최초 list-metrics와 describe-alarms는 별도 선행" in prompt
+    assert "commands 단계에 승인되어 있어야" in prompt
 
 
 @pytest.mark.parametrize("guidance", [EXECUTION_GUIDANCE, EXECUTION_OPERATOR_GUIDANCE], ids=["root", "operator"])

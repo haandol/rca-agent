@@ -267,6 +267,8 @@ class StepEvidence:
     resolved: bool | None = None
     manual_action_required: bool = False
     outcomes: list[dict] = field(default_factory=list)
+    contract_error: str | None = None
+    is_metric_wait: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -298,6 +300,7 @@ class StepEvidence:
             "manual_action_required": self.manual_action_required,
             "resolved": self.resolved,
             "outcomes": self.outcomes,
+            "contract_error": self.contract_error,
         }
 
 
@@ -318,6 +321,8 @@ class ExecutionEvidence:
     error_reason: str = ""
     resolution_records: list[dict] = field(default_factory=list)
     metric_wait_records: list[dict] = field(default_factory=list)
+    approval_rejections: list[dict] = field(default_factory=list)
+    command_starts: list[dict] = field(default_factory=list)
 
     def step(self, step_id: str) -> StepEvidence:
         for existing in self.steps:
@@ -361,6 +366,10 @@ class ExecutionEvidence:
                 payload[name] = moment
         if self.metric_wait_records:
             payload["metric_wait_records"] = self.metric_wait_records
+        if self.approval_rejections:
+            payload["approval_rejections"] = self.approval_rejections
+        if self.command_starts:
+            payload["command_starts"] = self.command_starts
         return payload
 
     def summary(self) -> dict:

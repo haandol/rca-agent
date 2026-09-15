@@ -237,6 +237,7 @@ class TestProcessAlarmFullPipeline:
         notification_success=True,
         report_s3_key="reports/rca-1.md",
         precollected_evidence=None,
+        full_evidence_map=None,
     ):
         """Helper that patches all pipeline functions and runs process_alarm."""
         sr = _scoping()
@@ -296,6 +297,7 @@ class TestProcessAlarmFullPipeline:
             MagicMock(),
             EvidenceCollectionSummary(
                 evidence_map={"h-1": "metrics evidence", "h-2": "logs evidence"},
+                full_evidence_map=full_evidence_map or {},
                 failed_ids=set(),
             ),
             vr,
@@ -361,6 +363,16 @@ class TestProcessAlarmFullPipeline:
         assert mocks["check_termination"].called
         assert mocks["run_report_generation"].called
         assert mocks["run_playbook_generation"].called
+        assert mocks["_result"] is True
+
+    def test_live_evidence_coordinates_after_500_chars_reach_report_generation(self):
+        owner = "arn:aws:ecs:us-east-1:123456789012:task/current/observed-owner"
+        full = "source facts " * 100 + owner + " namespace=Observed/App dimension=Service:current"
+        mocks = self._run(full_evidence_map={"h-1": full})
+        report_evidence = mocks["run_report_generation"].call_args.args[4]
+        assert full in report_evidence
+        assert "logs evidence" in report_evidence
+        assert "metrics evidence" not in report_evidence
         assert mocks["_result"] is True
 
     def test_precollected_evidence_is_the_validation_map_and_skips_live_collection(self):

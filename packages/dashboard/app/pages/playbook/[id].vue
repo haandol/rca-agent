@@ -26,6 +26,73 @@ const isVerified = computed(
 );
 const executionSteps = computed(() => playbook.value?.execution_steps ?? []);
 
+// Knowledge is reusable across incidents; the selected incident's plan follows it.
+const knowledgeSections = computed(() => {
+  const book = playbook.value;
+  if (!book) return [];
+  return [
+    {
+      id: 'metrics',
+      title: '관측 메트릭',
+      description: '장애를 식별할 때 함께 확인할 지표',
+      items: book.related_metrics,
+      ordered: false,
+    },
+    {
+      id: 'symptoms',
+      title: '증상과 장애 유형',
+      description: '이 플레이북을 적용할 상황',
+      items: [book.symptom_pattern],
+      ordered: false,
+    },
+    {
+      id: 'severity',
+      title: '심각도 판단',
+      description: '영향과 대응 우선순위를 판단하는 기준',
+      items: [book.severity_criteria],
+      ordered: false,
+    },
+    {
+      id: 'verification',
+      title: '검증 절차',
+      description: '상태를 확인하기 위한 점검',
+      items: book.verification_steps,
+      ordered: true,
+    },
+    {
+      id: 'mitigation',
+      title: '임시 완화',
+      description: '진행 중인 영향을 줄이는 대응 지식',
+      items: [book.temporary_mitigation],
+      ordered: false,
+    },
+    {
+      id: 'remediation',
+      title: '영구 대책',
+      description: '원인을 제거하기 위한 대응 지식',
+      items: [book.permanent_remediation],
+      ordered: false,
+    },
+    {
+      id: 'prevention',
+      title: '재발 방지',
+      description: '반복 발생을 줄이기 위한 개선 사항',
+      items: book.prevention_measures,
+      ordered: false,
+    },
+    {
+      id: 'escalation',
+      title: '에스컬레이션',
+      description: '다른 담당자나 팀에 대응을 요청할 조건',
+      items: [book.escalation_criteria],
+      ordered: false,
+    },
+  ].map((section) => ({
+    ...section,
+    items: section.items.filter((item) => item.trim()),
+  }));
+});
+
 const reportLink = computed(() =>
   engine ? `/report/${id}?engine=${engine}` : `/report/${id}`,
 );
@@ -40,26 +107,31 @@ useHead({
     <header class="mb-7">
       <NuxtLink
         :to="reportLink"
-        class="mb-4 inline-flex items-center gap-1.5 text-[11px] text-base-content/52 hover:text-primary"
+        class="mb-4 inline-flex items-center gap-1.5 text-[11px] text-base-content/85 hover:text-primary"
       >
         <span aria-hidden="true">←</span> 보고서로
       </NuxtLink>
 
       <p class="page-eyebrow">Remediation Playbook</p>
       <h1 class="page-title">이 장애 유형에 대한 플레이북</h1>
+      <p class="page-description">
+        장애를 알아보고, 검증하고, 대응할 때 참고하는 지식입니다. 이번 사고의
+        복구 계획은 지식 뒤에 별도로 표시합니다.
+      </p>
       <div
-        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/70"
+        class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[12px] text-base-content/85"
       >
         <span
           v-if="playbook"
-          :class="isVerified ? 'text-primary font-medium' : ''"
+          class="status-chip"
+          :class="isVerified ? 'text-success' : 'text-warning'"
           :title="
             isVerified
-              ? '이 절차는 실행으로 이슈를 해소하고 회고를 거쳤습니다'
-              : '실행과 회고를 거치기 전의 플레이북은 초안입니다'
+              ? '플레이북에 기록된 상태: VERIFIED'
+              : '플레이북에 검증 완료 상태가 기록되지 않았습니다'
           "
         >
-          {{ isVerified ? '검증된 절차' : '초안' }}
+          {{ isVerified ? '플레이북 검증됨' : '플레이북 초안' }}
         </span>
         <span v-if="session">{{ session.alarmName }}</span>
         <span class="font-mono">{{ session?.engine }}</span>
@@ -68,17 +140,21 @@ useHead({
 
     <div
       v-if="status === 'pending'"
-      class="py-20 text-center text-[13px] text-base-content/65"
+      class="py-20 text-center text-[13px] text-base-content/85"
     >
       <span class="loading loading-spinner loading-sm" />
       <p class="mt-3">플레이북을 읽고 있습니다</p>
     </div>
 
     <div v-else-if="error" class="py-20 text-center">
-      <p class="font-serif text-[17px]">플레이북이 없습니다</p>
-      <p class="text-[12px] text-base-content/68 mt-2">
-        RCA가 완료된 세션에서만 생성됩니다.
+      <p class="text-[17px] font-semibold">
+        {{
+          error.statusCode === 404
+            ? '이 세션의 플레이북을 찾을 수 없습니다'
+            : '플레이북을 불러오지 못했습니다'
+        }}
       </p>
+      <p class="detail-body mt-2">보고서에서 분석 상태를 확인하세요.</p>
     </div>
 
     <div v-else-if="playbook && playbook.spanStatus === 'FAILED'" class="py-8">
@@ -102,144 +178,74 @@ useHead({
         이전 실행의 회고가 이 절차를 교정했습니다 — 무엇이 왜 바뀌었는지 →
       </NuxtLink>
 
-      <!-- The procedure leads: it is what the execution agent acts on. -->
-      <section class="ops-panel mb-5 p-5 sm:p-6">
-        <div class="flex items-baseline gap-3 mb-1">
-          <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
-            실행 절차
-          </h2>
-          <span class="text-[11px] text-base-content/62">
-            승인 시 이 순서대로 수행됩니다
-          </span>
-        </div>
-        <p
-          v-if="!executionSteps.length"
-          class="font-serif text-[15px] text-base-content/72 mt-5"
+      <nav class="section-nav mb-5" aria-label="플레이북 섹션 이동">
+        <a
+          v-for="section in knowledgeSections"
+          :key="section.id"
+          :href="`#${section.id}`"
+          >{{ section.title }}</a
         >
-          근본원인이 확정되지 않아 실행할 절차가 없습니다.
-        </p>
-        <ol v-else class="mt-5 divide-y divide-base-content/[0.07]">
-          <li
-            v-for="(step, index) in executionSteps"
-            :key="step.step_id"
-            class="step-row"
-          >
-            <span class="step-ord" aria-hidden="true">{{
-              String(index + 1).padStart(2, '0')
-            }}</span>
-            <p v-if="step.intent" class="text-[14px] leading-snug">
-              {{ step.intent }}
-            </p>
-            <p
-              v-if="step.action"
-              class="font-serif text-[13.5px] text-base-content/74 mt-1.5"
-            >
-              {{ step.action }}
-            </p>
-            <p
-              v-if="step.success_criteria"
-              class="text-[12px] text-primary mt-1.5"
-            >
-              성공 판정 · {{ step.success_criteria }}
-            </p>
-          </li>
-        </ol>
-        <NuxtLink
-          :to="reportLink"
-          class="inline-block text-[12.5px] text-primary hover:underline underline-offset-2 mt-6"
-        >
-          보고서에서 검토하고 승인 →
-        </NuxtLink>
-      </section>
+        <a href="#incident-plan">이번 사고의 복구 계획</a>
+      </nav>
 
-      <!-- What this playbook recognises, and what to do about it -->
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <section v-if="playbook.symptom_pattern" class="ops-panel p-5">
-          <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
-            이런 증상일 때
-          </h2>
-          <div class="prose-field" v-html="md(playbook.symptom_pattern)" />
+      <div class="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
+        <section
+          v-for="section in knowledgeSections"
+          :id="section.id"
+          :key="section.id"
+          class="ops-panel detail-section min-w-0 p-5 sm:p-6"
+        >
+          <h2 class="detail-section-title">{{ section.title }}</h2>
+          <p class="detail-label mt-1 mb-4">{{ section.description }}</p>
           <p
-            v-if="playbook.failure_type"
-            class="text-[12px] text-base-content/68 mt-3"
+            v-if="section.id === 'symptoms' && playbook.failure_type"
+            class="mb-4 text-[13px] text-info break-words"
           >
-            유형 · {{ playbook.failure_type }}
+            장애 유형 · {{ playbook.failure_type }}
+          </p>
+          <template v-if="section.items.length">
+            <ol v-if="section.ordered" class="knowledge-list list-decimal">
+              <li v-for="(item, i) in section.items" :key="i">
+                <div class="prose-field" v-html="md(item)" />
+              </li>
+            </ol>
+            <ul
+              v-else-if="section.items.length > 1"
+              class="knowledge-list list-disc"
+            >
+              <li v-for="(item, i) in section.items" :key="i">
+                <div class="prose-field" v-html="md(item)" />
+              </li>
+            </ul>
+            <div v-else class="prose-field" v-html="md(section.items[0])" />
+          </template>
+          <p v-else class="detail-empty">
+            이 항목은 플레이북에 기록되어 있지 않습니다.
           </p>
         </section>
-
-        <section v-if="playbook.severity_criteria" class="ops-panel p-5">
-          <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
-            심각도 판단
-          </h2>
-          <div class="prose-field" v-html="md(playbook.severity_criteria)" />
-        </section>
-
-        <section v-if="playbook.temporary_mitigation" class="ops-panel p-5">
-          <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
-            우선 멈추려면
-          </h2>
-          <div class="prose-field" v-html="md(playbook.temporary_mitigation)" />
-        </section>
-
-        <section v-if="playbook.permanent_remediation" class="ops-panel p-5">
-          <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
-            다시 안 나게 하려면
-          </h2>
-          <div
-            class="prose-field"
-            v-html="md(playbook.permanent_remediation)"
-          />
-        </section>
-
-        <section v-if="playbook.escalation_criteria" class="ops-panel p-5">
-          <h2 class="label-sm font-semibold uppercase tracking-[0.1em] mb-2.5">
-            사람을 불러야 할 때
-          </h2>
-          <div class="prose-field" v-html="md(playbook.escalation_criteria)" />
-        </section>
-
-        <section
-          v-if="playbook.verification_steps?.length"
-          class="ops-panel p-5"
-        >
-          <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
-            확인 절차
-          </h2>
-          <div
-            v-for="(step, i) in playbook.verification_steps"
-            :key="i"
-            class="prose-field [&:not(:last-child)]:mb-2"
-            v-html="md(step)"
-          />
-        </section>
-
-        <section
-          v-if="playbook.prevention_measures?.length"
-          class="ops-panel p-5"
-        >
-          <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
-            재발 방지
-          </h2>
-          <div
-            v-for="(m, i) in playbook.prevention_measures"
-            :key="i"
-            class="prose-field [&:not(:last-child)]:mb-2"
-            v-html="md(m)"
-          />
-        </section>
-
-        <section v-if="playbook.related_metrics?.length" class="ops-panel p-5">
-          <h2 class="label-sm uppercase tracking-[0.1em] font-semibold mb-2.5">
-            함께 볼 메트릭
-          </h2>
-          <div
-            v-for="(m, i) in playbook.related_metrics"
-            :key="i"
-            class="prose-field [&:not(:last-child)]:mb-1.5"
-            v-html="md(m)"
-          />
-        </section>
       </div>
+
+      <section
+        id="incident-plan"
+        class="ops-panel detail-section mt-7 border-t-[3px] border-t-warning p-5 sm:p-6"
+      >
+        <h2 class="detail-section-title">이번 사고의 복구 계획</h2>
+        <p class="detail-body mt-2 mb-5">
+          위 지식을 바탕으로 이번 사고에 작성된 계획입니다. 작업 대상과 근거는
+          연결된 보고서에서 검토하세요.
+        </p>
+        <RecoveryPlanSteps
+          :steps="executionSteps"
+          :validation-error="playbook.validationError"
+          :executable="playbook.executable === true"
+        />
+        <NuxtLink
+          :to="`${reportLink}#recovery-plan`"
+          class="btn btn-outline btn-sm mt-6"
+        >
+          보고서에서 계획과 승인 가능 여부 확인 →
+        </NuxtLink>
+      </section>
 
       <div
         v-if="playbook.tags?.length"
@@ -249,22 +255,10 @@ useHead({
         <span
           v-for="tag in playbook.tags"
           :key="tag"
-          class="font-mono text-[11px] text-base-content/70"
+          class="font-mono text-[11px] text-base-content/85"
         >
           {{ tag }}
         </span>
-      </div>
-
-      <div
-        v-if="
-          !playbook.failure_type && !playbook.symptom_pattern && !playbook.error
-        "
-        class="py-16 text-center"
-      >
-        <p class="font-serif text-[17px]">플레이북 내용이 비어 있습니다</p>
-        <p class="text-[12px] text-base-content/68 mt-2">
-          메타데이터 기록 기능 배포 전에 실행된 세션일 수 있습니다.
-        </p>
       </div>
     </template>
   </div>

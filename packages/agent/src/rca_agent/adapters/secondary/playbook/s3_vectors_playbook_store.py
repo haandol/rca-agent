@@ -84,6 +84,8 @@ def _as_execution_steps(raw) -> list[ExecutionStep]:
                 intent=_as_text(entry.get("intent")),
                 action=_as_text(entry.get("action")),
                 success_criteria=_as_text(entry.get("success_criteria")),
+                commands=_as_text_list(entry.get("commands")),
+                metric_wait=entry.get("metric_wait") if isinstance(entry.get("metric_wait"), dict) else None,
             )
         )
     return steps

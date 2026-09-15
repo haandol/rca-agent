@@ -34,7 +34,8 @@ def render_observation_wait_guidance() -> str:
     """Describe the execution-only fixed-window receipt without granting planner authority."""
     waiter = evaluate_command("aws cloudwatch wait alarm-exists --state-value OK")
     waiter_guidance = (
-        "기존 CloudWatch waiter도 run_playbook_command로 사용할 수 있지만 실제 알람 이름과 리전을 "
+        "기존 CloudWatch waiter도 승인 commands에 포함된 경우에만 run_playbook_command로 실행하며 "
+        "실제 알람 이름과 리전을 "
         "명시한다. 이미 OK이면 즉시 끝날 수 있다. waiter 성공은 조치 후 두 구간의 완료나 복구 증거가 아니다."
         if waiter.allowed
         else f"현재 command gate는 CloudWatch waiter를 거부한다: {waiter.reason}. 거부를 우회하지 않는다."
@@ -45,7 +46,9 @@ def render_observation_wait_guidance() -> str:
             "승인 실행 워커에는 `wait_for_post_action_metrics(step_id, action_step_id, metrics, "
             "failure_alarm_name, region, max_wait_seconds=300, latency_alarm_name='', "
             "completed_work_evidence=None)`가 있다. "
-            "분석/Report에는 이 실행 도구가 없다. 승인된 현재 검증 step_id와 그보다 앞선 승인 조치 "
+            "분석/Report에는 이 실행 도구가 없다. 검증 단계는 commands 대신 metric_wait에 인자를 "
+            "승인 전에 고정한다. 실행자는 인자를 교정하지 않는다. "
+            "승인된 현재 검증 step_id와 그보다 앞선 승인 조치 "
             "action_step_id를 전달한다. 임의 시각이나 셸 명령을 받는 도구가 아니다.",
             "앵커는 같은 실행 범위에서 action_step_id의 실제 ECS StopTask가 처음 성공한 서버 기록 "
             "ended_at이다. 실패한 조치·읽기 전용 명령·다른 실행·미승인 절차는 앵커가 될 수 없다. "
@@ -53,7 +56,7 @@ def render_observation_wait_guidance() -> str:
             "epoch는 ended_at의 UTC 초이며 정확한 분 경계에 끝나도 반드시 다음 분부터 두 구간이다. "
             "후속 조회·조치 재시도로 시각을 "
             "옮기거나 더 늦은 정상 구간을 고르지 않는다.",
-            "먼저 현재 검증 step_id의 `run_playbook_command`로 `aws cloudwatch list-metrics`와 "
+            "먼저 별도 선행 commands 단계에 승인된 `run_playbook_command`로 `aws cloudwatch list-metrics`와 "
             "`aws cloudwatch describe-alarms`를 실행해 실제 이름·좌표·임계값을 서버 증거에 남긴다. "
             "metrics는 필수 attempts/failures 역할별 namespace, metric_name, dimensions(이름→값 매핑)를 "
             "담는 dict다. 지표는 승인된 현재 서비스의 같은 namespace·dimensions·region이어야 한다. "
@@ -73,9 +76,11 @@ def render_observation_wait_guidance() -> str:
             "생산자/소스/관측에서 완료된 쓰기 시도와 실패의 집계 의미를 먼저 발견해야 한다. 이 입력은 "
             "record_index와 json_pointer만 가진 참조다. record_index는 실제 현재 실행 명령 증거의 "
             "인덱스 또는 'approved_context'이며 json_pointer는 해당 JSON 안에서 관측한 descriptor 위치다. "
-            "참조를 확인할 수 없으면 생략한다. 소스 인용은 "
+            "승인 전 참조를 확인할 수 없으면 계획에서 생략한다. 승인 후 확인에 실패하면 관측 부족으로 남긴다. "
+            "소스 인용은 "
             "실제 명령 증거나 승인 문맥을 참조해야 한다. 이름만 보고 의미를 추측하거나 descriptor·소스·"
-            "인용·증거·집계 수를 만들어내지 않는다. 증거가 없으면 이 입력을 생략하고 모델이 실제 쓰기 "
+            "인용·증거·집계 수를 만들어내지 않는다. 승인 전 증거가 없으면 이 입력을 계획에서 생략하고 "
+            "모델이 승인된 관측 명령으로 실제 쓰기 "
             "작업의 성공을 별도 관측한다. 산술 차이만으로 쓰기를 증명하지 않는다. 관측된 서비스에서 "
             "operation=ingest가 쓰기이고 operation=patient_vitals가 읽기임을 확인한 경우 그 구분을 따른다. "
             "이 이름들은 발견을 대체하는 고정 식별자가 아니다. 쿼리 읽기 성공은 쓰기 성공이 아니다.",

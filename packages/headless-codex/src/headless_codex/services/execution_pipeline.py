@@ -18,6 +18,7 @@ from headless_codex.ports.interfaces.execution_store import (
     ExecutionClaimLostError,
     ExecutionTarget,
 )
+from headless_codex.services.execution_contract import validate_steps
 from headless_codex.services.execution_evidence import ExecutionEvidence, redact
 from headless_codex.services.execution_outcome import assemble_evidence, judge_resolution
 from headless_codex.services.execution_prompt import (
@@ -138,46 +139,19 @@ class ExecutionOrchestrator:
                 )
                 return True
 
-            steps = target.playbook.get("execution_steps")
-            if not isinstance(steps, list) or not steps:
-                reason = "approved playbook declares no execution steps"
-                log.info("execution_has_no_steps")
+            try:
+                steps = validate_steps(target.playbook)
+            except (ValueError, TypeError, KeyError) as exc:
                 store.update_state(
                     execution_id,
                     rca_id=request.rca_id,
                     state=ExecutionState.FAILED,
                     claim_token=claim_token,
-                    error_reason=reason,
+                    error_reason=str(exc),
                 )
                 return True
-            approved_step_ids: list[str] = []
-            approved_success_criteria: dict[str, str] = {}
-            for step in steps:
-                step_id = step.get("step_id") if isinstance(step, dict) else None
-                if not isinstance(step_id, str) or not step_id.strip() or step_id.strip() in approved_step_ids:
-                    reason = "approved playbook has invalid or duplicate execution step IDs"
-                    store.update_state(
-                        execution_id,
-                        rca_id=request.rca_id,
-                        state=ExecutionState.FAILED,
-                        claim_token=claim_token,
-                        error_reason=reason,
-                    )
-                    return True
-                success_criteria = step.get("success_criteria")
-                if not isinstance(success_criteria, str) or not success_criteria.strip():
-                    reason = "approved playbook has a missing or invalid success criterion"
-                    store.update_state(
-                        execution_id,
-                        rca_id=request.rca_id,
-                        state=ExecutionState.FAILED,
-                        claim_token=claim_token,
-                        error_reason=reason,
-                    )
-                    return True
-                normalized_step_id = step_id.strip()
-                approved_step_ids.append(normalized_step_id)
-                approved_success_criteria[normalized_step_id] = success_criteria
+            approved_step_ids = [step["step_id"] for step in steps]
+            approved_success_criteria = {step["step_id"]: step["success_criteria"] for step in steps}
 
             workspace.write_observation_context(
                 playbook=target.playbook,

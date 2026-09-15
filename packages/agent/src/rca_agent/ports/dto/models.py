@@ -331,20 +331,18 @@ class RcaReport(BaseModel):
 
 
 class ExecutionStep(BaseModel):
-    """실행 에이전트가 수행할 한 단계.
+    """승인 전에 고정한 이번 사고의 명령 또는 사후 관측 연산.
 
-    ``action`` 은 자연어다. 명령 문자열을 고정하지 않는 이유는 대상 리소스 식별자와
-    리전이 실행 시점의 알람 컨텍스트에서 결정되기 때문이며, 절차에 박아 넣으면 같은
-    유형의 다른 리소스 장애에 재사용할 수 없다.
-
-    ``step_id`` 는 안정적이어야 한다. 실행 증거가 어느 단계에서 실패했는지 지목하고
-    회고가 그 단계를 교정하기 때문이다.
+    명령 없는 과거 레코드는 읽을 수 있지만 새 실행 계획으로 추정하지 않는다.
     """
 
     step_id: str
     intent: str = ""
     action: str = ""
     success_criteria: str = ""
+
+    commands: list[str] = Field(default_factory=list)
+    metric_wait: dict | None = None
 
 
 class Playbook(BaseModel):

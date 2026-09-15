@@ -241,14 +241,13 @@ def test_playbook_span_carries_the_execution_steps_a_person_will_approve(monkeyp
     steps = metadata["execution_steps"]["L"]
     assert len(steps) == 1
     step = steps[0]["M"]
-    assert set(step) == {"step_id", "intent", "action", "success_criteria"}
+    assert set(step) == {"step_id", "intent", "action", "success_criteria", "commands", "metric_wait"}
     assert step["step_id"] == {"S": "step-1"}
-    assert step["success_criteria"] == {"S": "x" * 500}
+    assert step["success_criteria"] == {"S": "x" * 600}
 
 
-def test_playbook_span_omits_execution_steps_when_there_are_none(monkeypatch):
-    # An unconfirmed RCA declares no steps, and an empty list in the trace would
-    # read as "steps existed but were dropped".
+def test_playbook_span_preserves_empty_current_execution_steps(monkeypatch):
+    # An empty current plan must survive so consumers cannot restore historical steps.
     monkeypatch.setattr(artifact_watcher, "DYNAMODB_TABLE_NAME", "sessions")
     ddb = Mock()
 
@@ -261,4 +260,4 @@ def test_playbook_span_omits_execution_steps_when_there_are_none(monkeypatch):
     )
 
     metadata = ddb.transact_write_items.call_args.kwargs["TransactItems"][1]["Put"]["Item"]["metadata"]["M"]
-    assert "execution_steps" not in metadata
+    assert metadata["execution_steps"] == {"L": []}

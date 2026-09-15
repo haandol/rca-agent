@@ -13,6 +13,7 @@ from headless_codex.services.analysis_contract import (
     validate_analysis_completion,
 )
 from headless_codex.services.fault_taxonomy import FaultType
+from headless_codex.services.runbook_contract import render_step_operation, validate_runbook
 
 _ISO_TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
@@ -180,6 +181,11 @@ def _validate_playbook_shape(artifact: dict, *, allow_verified: bool = False) ->
         if step["step_id"] in step_ids:
             raise ArtifactValidationError("playbook.json execution step IDs must be unique")
         step_ids.append(step["step_id"])
+    try:
+        validate_runbook(artifact["execution_steps"])
+    except ValueError as exc:
+        raise ArtifactValidationError(str(exc)) from exc
+
     return step_ids
 
 
@@ -254,20 +260,60 @@ def _render_root_cause(analysis: AnalysisResult) -> str:
 
 def _render_playbook(playbook: dict, *, confirmed: bool) -> str:
     steps = playbook["execution_steps"]
+    lines = [
+        "### 유형별 대응 지식",
+        "",
+        "장애 유형에 재사용하는 판단·대응 지식이다. 실행 승인 대상은 아래 이번 사고의 런북이다.",
+        "",
+        f"- **플레이북 ID**: {playbook['playbook_id']}",
+        "",
+    ]
+    for label, field in (
+        ("장애 유형", "failure_type"),
+        ("증상 패턴", "symptom_pattern"),
+        ("관련 메트릭", "related_metrics"),
+        ("심각도 판단 기준", "severity_criteria"),
+        ("확인 절차 (유형별 검증 지식)", "verification_steps"),
+        ("임시 조치", "temporary_mitigation"),
+        ("영구 조치", "permanent_remediation"),
+        ("에스컬레이션 기준 (담당자에게 대응을 넘길 조건)", "escalation_criteria"),
+        ("예방 조치", "prevention_measures"),
+        ("태그", "tags"),
+    ):
+        value = playbook.get(field)
+        if value:
+            lines.extend([f"**{label}**", ""])
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                lines.append("- " + str(item).replace("\n", "\n  "))
+            lines.append("")
+    lines.extend(["### 이번 사고의 런북", ""])
     if not confirmed:
-        return (
+        lines.append(
             "확정된 근본 원인이 없어 실행 절차를 만들지 않았다. 이 리포트의 조치 항목은 "
             "추가 조사와 사람의 판단을 위한 권고이며 실행 대상이 아니다."
         )
+        return "\n".join(lines)
     if not steps:
-        return (
+        lines.append(
             "플레이북 생성 결과에 실행 절차가 없다. 분석 결과는 유효하지만 승인할 절차가 없으므로 실행 대상이 아니다."
         )
+        return "\n".join(lines)
 
-    lines = [
-        "이 플레이북은 **초안(DRAFT)**이며 아직 실행으로 검증되지 않았다.",
-        "",
-    ]
+    lines.extend(
+        [
+            f"분석 완료 시점의 런북 검증 상태: **{playbook['verification_status']}**.",
+            (
+                "초안(DRAFT)은 아직 실행으로 검증되지 않은 절차다."
+                if playbook["verification_status"] == "DRAFT"
+                else "검증됨(VERIFIED)은 기존과 동일한 절차에 보존된 검증 상태이며, 이번 사고의 해결을 뜻하지 않는다."
+            ),
+            "이 보고서는 분석 완료 시점의 기록이며 이후 회고로 변경되지 않는다.",
+            "",
+            "명령·대상·리전·순서·성공 기준은 승인 전에 고정한다. 변경하려면 새 승인이 필요하다.",
+            "",
+        ]
+    )
     for index, step in enumerate(steps, start=1):
         lines.extend(
             [
@@ -279,6 +325,7 @@ def _render_playbook(playbook: dict, *, confirmed: bool) -> str:
                 "",
             ]
         )
+        lines.extend(render_step_operation(step))
     return "\n".join(lines).rstrip()
 
 

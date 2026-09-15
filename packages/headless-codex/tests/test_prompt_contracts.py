@@ -368,14 +368,16 @@ def test_playbook_guidance_defines_the_execution_step_contract():
 
     for field in _EXECUTION_STEP_FIELDS:
         assert field in playbook
-    assert "명령 문자열을 박아 넣지 않는다" in playbook
+    assert "완성된 AWS CLI 명령 목록" in playbook
+    assert "metric_wait" in playbook
+    assert "승인 전에 고정" in playbook
     assert "되돌릴 수 없는 조치를 담지 않는다" in playbook
 
 
 def test_playbook_guidance_names_every_required_field_as_mandatory():
     playbook = (PROMPTS_DIR / "sections" / "artifacts" / "playbook.md").read_text()
 
-    assert "모든 키는 필수" in playbook
+    assert "설명 문자열과 지식 필드는 필수" in playbook
     for field in ("severity_criteria", "escalation_criteria", "symptom_pattern"):
         assert field in playbook
 

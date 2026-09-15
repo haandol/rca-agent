@@ -1,4 +1,6 @@
 import json
+import re
+from copy import deepcopy
 
 import pytest
 
@@ -7,6 +9,7 @@ from headless_codex.services.artifact_validation import (
     _PLAYBOOK_STRING_FIELDS,
     _REPORT_SECTIONS,
     ArtifactValidationError,
+    _render_playbook,
     render_completion_report,
     validate_completion_artifacts,
     validate_validation_artifacts,
@@ -244,6 +247,9 @@ def _execution_step(step_id: str) -> dict:
         "intent": f"{step_id} intent",
         "action": f"restart the healthcare service for {step_id}",
         "success_criteria": "DatabaseConnections returns below 30",
+        "commands": [
+            "aws ecs update-service --cluster current --service healthcare --force-new-deployment --region us-east-1"
+        ],
     }
 
 
@@ -499,6 +505,81 @@ def test_completion_rejects_a_playbook_claiming_verification(confirmed_run):
 
     with pytest.raises(ArtifactValidationError, match="verification_status must be DRAFT"):
         validate_completion_artifacts(confirmed_run)
+
+
+@pytest.mark.parametrize("status", ["DRAFT", "VERIFIED"])
+def test_final_report_renders_preserved_status_without_rewriting_source(confirmed_run, status):
+    original = _report(["step-1"])
+    (confirmed_run / "report.md").write_text(original)
+    playbook = _playbook(verification_status=status)
+    before = deepcopy(playbook)
+
+    rendered = render_completion_report(confirmed_run, playbook)
+
+    assert f"분석 완료 시점의 런북 검증 상태: **{status}**" in rendered
+    assert ("초안(DRAFT)" in rendered) is (status == "DRAFT")
+    assert (confirmed_run / "report.md").read_text() == original
+    assert playbook == before
+
+
+@pytest.mark.parametrize("with_steps", [True, False])
+def test_completion_report_separates_all_knowledge_from_current_runbook(confirmed_run, with_steps):
+    from test_runbook_contract import command_step, wait_step
+
+    playbook = _playbook(
+        steps=[command_step(), wait_step()] if with_steps else [],
+        failure_type="Blocked writes",
+        symptom_pattern="Writes fail with lock waits",
+        severity_criteria="Critical after 10 minutes",
+        related_metrics=["FailedWrites", "WriteAttempts"],
+        verification_steps=["1. Inspect owner\n### 2. observe", "2. Check stop-owner evidence"],
+        temporary_mitigation="Temporary knowledge",
+        permanent_remediation="Permanent knowledge",
+        escalation_criteria="Escalate to service owner",
+        prevention_measures=["Alert on blocked writes"],
+        tags=["database"],
+    )
+    (confirmed_run / "report.md").write_text(_report([]))
+    before = deepcopy(playbook)
+
+    rendered = render_completion_report(confirmed_run, playbook)
+    knowledge, runtime = rendered.split("### 이번 사고의 런북", 1)
+
+    for field in (
+        "failure_type",
+        "symptom_pattern",
+        "severity_criteria",
+        "related_metrics",
+        "verification_steps",
+        "temporary_mitigation",
+        "permanent_remediation",
+        "escalation_criteria",
+        "prevention_measures",
+        "tags",
+    ):
+        value = playbook[field]
+        for item in value if isinstance(value, list) else [value]:
+            assert item.replace("\n", "\n  ") in knowledge
+    headings = re.findall(r"^### \d+\. ([^\n]+)$", rendered, re.M)
+    assert headings == [step["step_id"] for step in playbook["execution_steps"]]
+    if with_steps:
+        from headless_codex.services.runbook_contract import render_step_operation
+
+        for step in playbook["execution_steps"]:
+            assert "\n".join(render_step_operation(step)) in runtime
+            assert step["success_criteria"] in runtime
+    else:
+        assert "승인할 절차가 없으므로 실행 대상이 아니다" in runtime
+    assert playbook == before
+
+
+def test_unconfirmed_report_retains_knowledge_and_explicit_execution_reason():
+    playbook = _playbook(steps=[], verification_steps=["Check blocked writes"], related_metrics=["FailedWrites"])
+    rendered = _render_playbook(playbook, confirmed=False)
+    assert "Check blocked writes" in rendered
+    assert "FailedWrites" in rendered
+    assert "확정된 근본 원인이 없어 실행 절차를 만들지 않았다" in rendered
+    assert "실행 대상이 아니다" in rendered
 
 
 def test_completion_artifacts_carry_no_remediation_result(confirmed_run):

@@ -22,12 +22,14 @@ export default defineEventHandler(async (event) => {
     rcaId?: string;
     engine?: string;
     approvalId?: string;
+    expectedPlaybookDigest?: string;
   }>(event);
 
   const rcaId = typeof body?.rcaId === 'string' ? body.rcaId.trim() : '';
   const engine = typeof body?.engine === 'string' ? body.engine.trim() : '';
   const approvalId =
     typeof body?.approvalId === 'string' ? body.approvalId.trim() : '';
+  const expectedPlaybookDigest = body?.expectedPlaybookDigest;
 
   if (!rcaId) {
     throw createError({ statusCode: 400, statusMessage: 'Missing rcaId' });
@@ -42,6 +44,15 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'approvalId must be a UUID',
+    });
+  }
+  if (
+    typeof expectedPlaybookDigest !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(expectedPlaybookDigest)
+  ) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: '검토한 런북의 expectedPlaybookDigest가 필요합니다.',
     });
   }
 
@@ -105,6 +116,13 @@ export default defineEventHandler(async (event) => {
 
   const snapshotBytes = serializePlaybookSnapshot(resolved.playbook);
   const playbookDigest = sha256Hex(snapshotBytes);
+  if (expectedPlaybookDigest !== playbookDigest) {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        '검토한 후 런북 내용이 변경되었습니다. 최신 런북을 불러와 다시 검토하세요.',
+    });
+  }
   const executionId = approvalId;
   const approvedPlaybookS3Key = `approvals/${rcaId}/${executionId}/playbook.json`;
 
@@ -170,6 +188,7 @@ async function readPartition(
     const result = await ddb.send(
       new QueryCommand({
         TableName: tableName,
+        ConsistentRead: true,
         KeyConditionExpression: 'PK = :pk',
         ExpressionAttributeValues: { ':pk': partitionKey },
         ExclusiveStartKey: startKey,

@@ -22,6 +22,13 @@ are absent or stale, discover them using your existing read-only tools and repor
 `TaskARN`, `Cluster`, `Family`, `Revision`, and maintenance source_manifest evidence \
 to connect the current blocker with its owning task and the task's lifecycle behavior. An alarm \
 description alone does not establish that relationship, an available control, or a cause.
+- Preserve complete observed control coordinates and their source citations in the evidence fields: \
+account/region, task/cluster ARN, owner run/journal identity and rollback lifecycle evidence. \
+For recovery metrics preserve namespace, metric_name, all dimensions, unit/statistic, alarm names \
+and thresholds, plus the producer/source evidence distinguishing completed writes from attempts \
+and reads. Query missing coordinates with available read-only tools; report unavailable values \
+without guessing. The downstream runbook must fix commands before approval and cannot discover \
+or correct missing targets during execution. Keep these details outside combined_summary too.
 - For deploy/change history: look up recent deployments, configuration changes, and API calls \
 via CloudTrail that may correlate with the anomaly start time.
 - For code changes: if a suspicious deployment is identified via CloudTrail, use GitHub tools \

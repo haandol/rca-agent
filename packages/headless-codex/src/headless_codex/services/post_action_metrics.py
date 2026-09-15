@@ -96,6 +96,8 @@ def normalize_request(
 
     if type(max_wait_seconds) is not int or not 1 <= max_wait_seconds <= 300:
         raise ValueError("max_wait_seconds must be between 1 and 300")
+    if not isinstance(latency_alarm_name, str):
+        raise ValueError("latency_alarm_name must be a string")
     if not isinstance(metrics, dict) or set(metrics) not in (
         {"attempts", "failures"},
         {"attempts", "failures", "latency"},
@@ -188,11 +190,21 @@ def metric_matches(metadata: dict, metric: dict) -> bool:
 
 def bind_request(request: dict, records: list[dict], context: dict, execution_id: str, gate: Callable) -> dict:
     """Bind to approved order and intact server observations from this execution only."""
-    steps = context.get("playbook", {}).get("execution_steps", [])
+    from headless_codex.services.execution_contract import (
+        approved_wait,
+        command_records,
+        same_request,
+        validate_steps,
+    )
+
+    steps = validate_steps(context.get("playbook", {}))
     ids = [s.get("step_id") for s in steps if isinstance(s, dict)]
     step, action = request["step_id"], request["action_step_id"]
     if step not in ids or action not in ids or ids.index(action) >= ids.index(step):
         raise ValueError("approved prior action and current verification step required")
+    approved = steps[ids.index(step)]
+    if "metric_wait" not in approved or not same_request(approved_wait(approved), request):
+        raise ValueError("metric_wait arguments must exactly match the approved snapshot")
     criterion = steps[ids.index(step)].get("success_criteria", "")
     failure = request["metrics"]["failures"]
     if failure["metric_name"] not in criterion or request["failure_alarm_name"] not in criterion:
@@ -213,6 +225,11 @@ def bind_request(request: dict, records: list[dict], context: dict, execution_id
             or record.get("succeeded") is not True
             or str(record.get("exit_status")) != "0"
             or record.get("blocked")
+        ):
+            continue
+        declared = steps[ids.index(record["step_id"])]
+        if "commands" not in declared or not any(
+            record in command_records(declared, records, i) for i in range(len(declared["commands"]))
         ):
             continue
         verdict = gate(record.get("command", ""))

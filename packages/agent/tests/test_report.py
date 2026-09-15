@@ -2,9 +2,12 @@ from threading import Event
 from time import perf_counter
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from rca_agent.adapters.secondary.report.s3_report_store import (
     S3ReportStore,
     _render_markdown,
+    _step_mismatch,
 )
 from rca_agent.ports.dto.models import (
     AlarmPayload,
@@ -13,6 +16,7 @@ from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     Playbook,
+    PlaybookVerificationStatus,
     RcaReport,
     ScopingResult,
 )
@@ -325,6 +329,83 @@ class TestReportCarriesItsPlaybook:
         # 없는 절차를 있는 것처럼 읽히게 하지 않는다.
         assert "플레이북 생성이 실패해" in body
         assert "초안" not in body
+
+
+@pytest.mark.parametrize("with_steps", [True, False])
+def test_report_preserves_all_knowledge_separate_from_runtime_steps(with_steps):
+    from tests.test_runbook_contract import command_step, wait_step
+
+    playbook = _make_playbook(
+        *([ExecutionStep(**step) for step in [command_step(), wait_step()]] if with_steps else [])
+    )
+    playbook.severity_criteria = "Critical after 10 minutes"
+    playbook.related_metrics = ["FailedWrites", "WriteAttempts"]
+    playbook.verification_steps = ["1. Inspect owner\n### 2. wait", "2. Check stop evidence"]
+    playbook.temporary_mitigation = "Temporary knowledge"
+    playbook.permanent_remediation = "Permanent knowledge"
+    playbook.escalation_criteria = "Escalate to service owner"
+    playbook.prevention_measures = ["Alert on blocked writes"]
+    playbook.tags = ["database"]
+    report = TestReportCarriesItsPlaybook()._report()
+
+    md = _render_markdown(report, playbook)
+    knowledge, runtime = md.split("### 이번 사고의 런북", 1)
+
+    for field in (
+        "failure_type",
+        "symptom_pattern",
+        "severity_criteria",
+        "related_metrics",
+        "verification_steps",
+        "temporary_mitigation",
+        "permanent_remediation",
+        "escalation_criteria",
+        "prevention_measures",
+        "tags",
+    ):
+        value = getattr(playbook, field)
+        for item in value if isinstance(value, list) else [value]:
+            assert item.replace("\n", "\n  ") in knowledge
+    assert _step_mismatch(md, playbook) == ""
+    if with_steps:
+        assert "### 1. stop-owner" in runtime
+        assert "### 2. observe" in runtime
+    else:
+        assert "실행 대상이 아니다" in runtime
+
+
+def test_report_status_is_a_snapshot_of_final_analysis_value():
+    playbook = _make_playbook(_make_step())
+    report = TestReportCarriesItsPlaybook()._report()
+    draft_report = _render_markdown(report, playbook)
+    playbook.verification_status = PlaybookVerificationStatus.VERIFIED
+    verified_report = _render_markdown(report, playbook)
+
+    assert "**DRAFT**" in draft_report
+    assert "**VERIFIED**" not in draft_report
+    assert "**VERIFIED**" in verified_report
+    assert "초안(DRAFT)" not in verified_report
+
+
+@pytest.mark.parametrize("corruption", ["missing", "reordered", "extra", "operation"])
+def test_step_mismatch_uses_runtime_headings_and_operations_in_their_own_step(corruption):
+    from tests.test_runbook_contract import command_step, wait_step
+
+    playbook = _make_playbook(*[ExecutionStep(**step) for step in [command_step(), wait_step()]])
+    playbook.verification_steps = ["wait before stop", "### 1. stop\n### 2. wait"]
+    md = _render_markdown(TestReportCarriesItsPlaybook()._report(), playbook)
+    assert _step_mismatch(md, playbook) == ""
+    if corruption == "missing":
+        md = md.replace("\n### 1. stop-owner\n", "\n")
+    elif corruption == "reordered":
+        md = md.replace("\n### 1. stop-owner\n", "\n### 1. observe\n").replace(
+            "\n### 2. observe\n", "\n### 2. stop-owner\n"
+        )
+    elif corruption == "extra":
+        md += "\n### 3. extra\n"
+    else:
+        md = md.replace("incident-owner", "wrong-owner")
+    assert _step_mismatch(md, playbook)
 
 
 def test_claimed_reports_use_isolated_attempt_keys():

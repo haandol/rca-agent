@@ -10,6 +10,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from headless_codex.services.execution_contract import (
+    authorize_command,
+    command_digest,
+    step_contract_error,
+    validate_steps,
+)
 from headless_codex.services.execution_evidence import (
     BLOCKED_CLASSES,
     CommandAttempt,
@@ -38,11 +44,13 @@ def step_execution_blocker(step: StepEvidence) -> str | None:
     Failed reads may be retried; a recorded policy block or manual requirement
     cannot be cleared by a model's later positive assertion.
     """
+    if step.contract_error:
+        return f"step {step.step_id}: {step.contract_error}"
     if any(attempt.blocked is not False or attempt.failure_class in BLOCKED_CLASSES for attempt in step.attempts):
         return f"step {step.step_id} has a blocked attempt and requires manual action"
     if step.manual_action_required is not False:
         return f"step {step.step_id} still requires manual action"
-    if not any(
+    if not step.is_metric_wait and not any(
         attempt.succeeded is True
         and attempt.blocked is False
         # Legacy server records may omit exit status; an explicit nonzero exit
@@ -77,7 +85,7 @@ def metric_wait_blocks_success(waits: list[dict]) -> bool:
 def _steps_blocker(evidence: ExecutionEvidence) -> str | None:
     if not evidence.steps:
         return "execution has no approved steps"
-    skipped = [step.step_id for step in evidence.steps if not step.attempts]
+    skipped = [step.step_id for step in evidence.steps if not step.attempts and not step.is_metric_wait]
     if skipped:
         return f"steps were not attempted: {', '.join(skipped)}"
     for step in evidence.steps:
@@ -199,6 +207,13 @@ def assemble_evidence(
     )
 
     declared_steps = playbook.get("execution_steps")
+    contract_error = None
+    try:
+        approved_steps = validate_steps(playbook)
+        declared_steps = approved_steps
+    except (ValueError, TypeError, KeyError) as exc:
+        approved_steps = []
+        contract_error = str(exc)
     declared_step_ids: set[str] = set()
     if isinstance(declared_steps, list):
         for step in declared_steps:
@@ -214,11 +229,38 @@ def assemble_evidence(
             # This is the approved contract used for exact comparison, not a UI preview.
             criterion = step.get("success_criteria")
             tracked.success_criteria = criterion if isinstance(criterion, str) else ""
+            tracked.is_metric_wait = "metric_wait" in step
+            tracked.contract_error = contract_error or step_contract_error(step, [])
 
     attempt_counts: dict[str, int] = {}
     criteria_mismatches: set[str] = set()
+    replayed: list[dict] = []
+    journal: list[dict] = []
     for record in records:
+        # Independently replay order/identity when assembling persisted evidence.
+        if record.get("type") == "attempt" and not record.get("internal_observation") and approved_steps:
+            try:
+                step = next(s for s in approved_steps if s["step_id"] == record.get("step_id"))
+                index = record["command_index"]
+                if type(index) is not int or index < 0:
+                    raise ValueError("command index must be a nonnegative integer")
+                command = step["commands"][index]
+                if record.get("command_digest") != command_digest(command):
+                    raise ValueError("command digest differs from the approved snapshot")
+                if authorize_command(approved_steps, step["step_id"], command, replayed) != index:
+                    raise ValueError("command position differs from the approved order")
+            except (ValueError, TypeError, KeyError, IndexError, StopIteration):
+                contract_error = "execution evidence violates the approved command identity or order"
+        if record.get("type") != "command_started":
+            replayed.append(record)
+        journal.append(record)
+        for step in approved_steps:
+            evidence.step(step["step_id"]).contract_error = contract_error or step_contract_error(step, journal)
         record_type = record.get("type")
+        if record_type == "approval_rejection":
+            evidence.approval_rejections.append(json.loads(redact(json.dumps(record, ensure_ascii=False))))
+        elif record_type == "command_started":
+            evidence.command_starts.append(json.loads(redact(json.dumps(record, ensure_ascii=False))))
         step_id = _as_str(record.get("step_id"), limit=None)
         if step_id and step_id not in declared_step_ids:
             continue

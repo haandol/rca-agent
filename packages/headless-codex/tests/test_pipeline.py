@@ -252,6 +252,9 @@ _STEP = {
     "intent": "누수 커넥션을 해소한다",
     "action": "healthcare 서비스를 재시작한다",
     "success_criteria": "DatabaseConnections가 30 미만으로 복귀한다",
+    "commands": [
+        "aws ecs update-service --cluster current --service healthcare --force-new-deployment --region us-east-1"
+    ],
 }
 
 
@@ -741,18 +744,21 @@ def recurrent_lock_plans():
                 "intent": "Verify the current lock owner before any action",
                 "action": "Inspect run custlock-20260910T111921Z-c4f0, PID 18571, and blocking_pids=[18571]",
                 "success_criteria": "The current RUNNING standalone task, run ID and lock owner all match",
+                "commands": ["aws ecs describe-tasks --cluster current --tasks current-owner --region us-east-1"],
             },
             {
                 "step_id": "step-stop-confirmed-maintenance-owner-20260910",
                 "intent": "Request rollback and connection close from the verified owner",
                 "action": "After user approval, stop only the standalone task verified in the preceding step",
                 "success_criteria": "Observe transaction_rollback and connection_close for that run and backend PID",
+                "commands": ["aws ecs stop-task --cluster current --task current-owner --region us-east-1"],
             },
             {
                 "step_id": "step-post-lock-health-observation-20260910",
                 "intent": "Verify recovery with fresh evidence",
                 "action": "Observe VitalIngestFailures and actual successful INSERT requests after the action",
                 "success_criteria": "Two complete 60-second intervals have zero failures and successful requests",
+                "commands": ["aws cloudwatch describe-alarms --alarm-names VitalIngestFailures --region us-east-1"],
             },
         ],
     }
@@ -905,7 +911,12 @@ class TestPlaybookSearchFirstMerge:
         assert notified["playbook"] == saved
         report = container.report_store.save_report.call_args.args[1]
         headings = [f"### {index}. {step['step_id']}" for index, step in enumerate(generated, 1)]
-        assert [line for line in report.splitlines() if line.startswith("### ")] == headings
+        knowledge, runbook = report.split("### 이번 사고의 런북", 1)
+        assert "### 유형별 대응 지식" in knowledge
+        assert saved["escalation_criteria"] in knowledge
+        assert [line for line in runbook.splitlines() if line.startswith("### ")] == headings
+        if generated:
+            assert f"**{saved['verification_status']}**" in runbook
         for step in generated:
             assert step["action"] in report
             assert step["success_criteria"] in report

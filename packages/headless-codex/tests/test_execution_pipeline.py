@@ -20,6 +20,7 @@ from headless_codex.ports.interfaces.execution_store import (
     ExecutionTargetUnavailableError,
 )
 from headless_codex.services import execution_workspace
+from headless_codex.services.execution_contract import command_digest
 from headless_codex.services.execution_evidence import capture_command_output
 from headless_codex.services.execution_pipeline import ExecutionOrchestrator
 from headless_codex.services.execution_state import ExecutionState
@@ -27,6 +28,7 @@ from headless_codex.services.execution_state import ExecutionState
 RCA_ID = "rca-1"
 ENGINE = "headless-codex"
 CLAIM_TOKEN = "claim-token"
+APPROVED_COMMAND = "aws ecs update-service --cluster demo --service api --force-new-deployment --region us-east-1"
 PLAYBOOK = {
     "playbook_id": "pb-1",
     "failure_type": "DB 커넥션 누수",
@@ -38,6 +40,7 @@ PLAYBOOK = {
     "execution_steps": [
         {
             "step_id": "step-1",
+            "commands": [APPROVED_COMMAND],
             "intent": "커넥션 회수",
             "action": "api 서비스를 강제 재배포",
             "success_criteria": "DatabaseConnections 20 이하",
@@ -71,7 +74,15 @@ def _target(playbook: dict | None = None) -> ExecutionTarget:
 
 def _resolved_records() -> list[dict]:
     return [
-        {"type": "attempt", "step_id": "step-1", "command": "aws ecs update-service", "succeeded": True},
+        {
+            "type": "attempt",
+            "step_id": "step-1",
+            "command": APPROVED_COMMAND,
+            "command_digest": command_digest(APPROVED_COMMAND),
+            "command_index": 0,
+            "succeeded": True,
+            "exit_status": "0",
+        },
         {
             "type": "step_outcome",
             "step_id": "step-1",
@@ -352,7 +363,7 @@ def test_evidence_is_preserved_when_the_execution_fails():
             {
                 "type": "attempt",
                 "step_id": "step-1",
-                "command": "aws ecs update-service",
+                "command": APPROVED_COMMAND,
                 "succeeded": False,
                 "failure_class": "INVALID_ARGUMENT",
                 "error_output": "ValidationError",
@@ -408,7 +419,15 @@ def test_a_blocked_step_is_recorded_and_the_execution_still_finishes():
 def test_an_unobserved_result_does_not_become_a_resolved_execution():
     runner = RecordingRunner(
         records=[
-            {"type": "attempt", "step_id": "step-1", "command": "aws ecs update-service", "succeeded": True},
+            {
+                "type": "attempt",
+                "step_id": "step-1",
+                "command": APPROVED_COMMAND,
+                "command_digest": command_digest(APPROVED_COMMAND),
+                "command_index": 0,
+                "succeeded": True,
+                "exit_status": "0",
+            },
         ]
     )
     container = _container(runner)
@@ -665,6 +684,7 @@ def test_an_added_execution_step_keeps_the_revision_a_draft():
                 "execution_steps": [
                     {
                         "step_id": "step-2",
+                        "commands": ["aws cloudwatch describe-alarms --region us-east-1"],
                         "intent": "회복 확인",
                         "action": "오류 지표를 조회",
                         "success_criteria": "오류 지표가 0",
@@ -750,7 +770,15 @@ def test_an_unresolved_execution_never_promotes_the_playbook():
     # 이슈를 해소하지 못한 실행의 절차는 올바름이 입증되지 않았다.
     runner = RecordingRunner(
         records=[
-            {"type": "attempt", "step_id": "step-1", "command": "aws ecs update-service", "succeeded": True},
+            {
+                "type": "attempt",
+                "step_id": "step-1",
+                "command": APPROVED_COMMAND,
+                "command_digest": command_digest(APPROVED_COMMAND),
+                "command_index": 0,
+                "succeeded": True,
+                "exit_status": "0",
+            },
             {
                 "type": "step_outcome",
                 "step_id": "step-1",

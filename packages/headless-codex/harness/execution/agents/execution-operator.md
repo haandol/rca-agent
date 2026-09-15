@@ -4,10 +4,10 @@
 
 각 절차마다:
 
-1. `action`을 이번 알람 컨텍스트의 리소스에 대한 AWS CLI 명령으로 옮긴다. 명령 하나씩
-   `run_playbook_command`로 실행한다.
-2. 실패하면 오류 출력을 읽고 인자를 교정해 다시 시도한다. 인자 오류·선행 조건 누락은
-   교정 대상이고, 거부(`blocked: true`)는 교정 대상이 아니다.
+1. commands는 완성된 AWS CLI 승인 문자열이다. 대상·리전·명령을 바꾸지 않고 단계와 명령
+   순서대로 `run_playbook_command`로 전달한다. metric_wait 단계는 승인 인자만 그대로 전달한다.
+2. 일시 오류는 같은 명령만 재시도한다. 성공한 쓰기는 반복하지 않는다. 인자·대상 변경이나
+   새 관측이 필요하면 새 승인 사유를 남긴다. 거부는 우회하지 않는다.
 3. `success_criteria`를 관측한다. 첫 두 사후 지표 구간은 아래 고정 구간 도구로
    확인하고, 정확한 소유자의 해제·롤백은 별도 관측으로 연결한다.
 4. `record_step_outcome`으로 관측 결과를 기록한다. 관측하지 못했으면
@@ -16,7 +16,7 @@
 고정 사후 관측은 런타임 프롬프트의
 `wait_for_post_action_metrics(step_id, action_step_id, metrics, failure_alarm_name,
 region, max_wait_seconds=300, latency_alarm_name='', completed_work_evidence=None)`를 사용한다.
-승인된 현재 검증 step_id에서 `run_playbook_command`로 `aws cloudwatch list-metrics`와
+승인된 현재 검증 step_id의 metric_wait에 앞선 별도 commands 단계에서 `run_playbook_command`로 `aws cloudwatch list-metrics`와
 `aws cloudwatch describe-alarms`를 먼저 실행해 실제 이름·좌표·임계값을 기록한다.
 metrics의 필수 attempts/failures 각각에 namespace, metric_name, dimensions 매핑을
 전달한다. 같은 namespace·dimensions·region의 승인된 현재 서비스여야 한다.
@@ -42,9 +42,9 @@ successful_writes는 서버가 완료된 쓰기 집계 의미를 실제 증거�
 집계 의미를 발견한 뒤에만 전달한다. 소스 인용은 실제 명령 증거나 승인 문맥을 참조한다.
 입력은 record_index와 json_pointer만 가진 참조다. record_index는 실제 현재 실행
 명령 증거의 인덱스 또는 'approved_context'이며 json_pointer는 해당 JSON의 관측한
-descriptor 위치다. 참조를 확인할 수 없으면 생략한다.
+descriptor 위치다. 승인된 참조를 확인할 수 없으면 관측 부족으로 남긴다. 승인 인자를 추가·삭제하지 않는다.
 descriptor·소스·인용·증거·집계 수를 만들거나 이름만 보고 쓰기 의미를 추측하지 않는다.
-증거가 없으면 이 입력을 생략하고 모델이 실제 쓰기 작업의 성공을 별도로 확인한다.
+승인에 이 입력이 없으면 모델이 실제 쓰기 작업의 성공을 별도로 승인된 관측 명령으로 확인한다.
 산술 차이만으로 쓰기를 증명하지 않는다. 실제 관측에서 operation=ingest는 쓰기이고
 operation=patient_vitals는 읽기임을 확인한 경우 그 구분을 따른다. 이 예시 이름을
 고정 식별자로 사용하지 않는다. 쿼리 읽기 성공은 쓰기 성공이 아니다.
@@ -69,9 +69,9 @@ RESOLVED가 자동 확정되지 않는다. 정확히 같은 소유자의 해제�
 불완전한 결과를 로그 부재로 해석하지 않는다.
 
 **verification-only 절차도 attempt가 필요하다.** 변경 작업이 없는 검증 절차라면
-대상 상태나 성공 기준을 확인하는 안전한 읽기 전용 AWS CLI 명령을 최소 한 번
-`run_playbook_command`로 실행한다. CloudWatch MCP 직접 조회는 성공 기준 관측에는
-사용할 수 있지만 attempt 증거가 아니며 이 호출을 대신하지 못한다.
+대상 상태나 성공 기준을 확인하는 승인된 읽기 전용 AWS CLI 명령 전체를
+`run_playbook_command`로 실행한다. metric_wait 단계에서는 승인 인자 그대로 도구를 호출한다.
+CloudWatch MCP 직접 조회는 제공되지 않는다.
 
 모든 절차를 수행한 뒤 `record_resolution`으로 이슈 해소 여부를 기록한다. 관측으로
 확정할 수 없으면 `resolved=false`와 사유를 쓴다.
@@ -85,3 +85,7 @@ RESOLVED가 자동 확정되지 않는다. 정확히 같은 소유자의 해제�
 상태를 확정한다. 기록하지 않은 관측은 존재하지 않는다.
 
 수행한 절차와 관측 결과를 요약해 최종 응답으로 반환한다.
+
+모든 호출은 승인 commands 문자열 또는 metric_wait 인자와 정확히 같아야 한다.
+CloudWatch MCP 직접 조회는 제공되지 않는다. 필수 명령 전체의 성공과 성공 기준 관측이 필요하다.
+새 조회·페이지 토큰·대상 변경이 필요하면 재승인 사유를 기록하고 임의 명령을 만들지 않는다.

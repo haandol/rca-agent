@@ -85,7 +85,7 @@ def test_fixed_wait_guidance_binds_approved_steps_to_server_action_time_and_immu
 def test_fixed_wait_guidance_requires_recorded_discovery_and_actual_alarm_contract():
     guidance = execution_capabilities.render_observation_wait_guidance()
     for contract in (
-        "현재 검증 step_id의 `run_playbook_command`",
+        "별도 선행 commands 단계에 승인된 `run_playbook_command`",
         "`aws cloudwatch list-metrics`",
         "`aws cloudwatch describe-alarms`",
         "필수 attempts/failures",

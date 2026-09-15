@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from rca_agent.config.settings import (
     ENGINE,
@@ -14,6 +15,7 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import Playbook, RcaReport, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.report_store import ReportStorePort
+from rca_agent.services.runbook_contract import render_step_operation
 from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
 from rca_agent.utils.retry import retry_with_backoff
 
@@ -168,16 +170,43 @@ class S3ReportStore(ReportStorePort):
 
 
 _PLAYBOOK_SECTION = "## 대응 플레이북"
+_RUNBOOK_SECTION = "### 이번 사고의 런북"
+
+
+def _render_playbook_knowledge(playbook: Playbook) -> list[str]:
+    lines = [
+        "### 유형별 대응 지식",
+        "",
+        "장애 유형에 재사용하는 판단·대응 지식이다. 실행 승인 대상은 아래 이번 사고의 런북이다.",
+        "",
+        f"- **플레이북 ID**: {playbook.playbook_id}",
+        "",
+    ]
+    for label, value in (
+        ("장애 유형", playbook.failure_type),
+        ("증상 패턴", playbook.symptom_pattern),
+        ("관련 메트릭", playbook.related_metrics),
+        ("심각도 판단 기준", playbook.severity_criteria),
+        ("확인 절차 (유형별 검증 지식)", playbook.verification_steps),
+        ("임시 조치", playbook.temporary_mitigation),
+        ("영구 조치", playbook.permanent_remediation),
+        ("에스컬레이션 기준 (담당자에게 대응을 넘길 조건)", playbook.escalation_criteria),
+        ("예방 조치", playbook.prevention_measures),
+        ("태그", playbook.tags),
+    ):
+        if value:
+            lines.extend([f"**{label}**", ""])
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                # Indent continuation lines so numbered knowledge never becomes
+                # a runtime heading or a new report section.
+                lines.append("- " + item.replace("\n", "\n  "))
+            lines.append("")
+    return lines
 
 
 def _render_playbook_section(playbook: Playbook | None) -> list[str]:
-    """Render the procedure a person reads before approving it.
-
-    A draft label is fixed into the body because analysis has never run any of
-    these steps. The status shown on the approval screen is the playbook's current
-    value, not this label — a prior retrospective may have promoted the procedure
-    since, and the body is fixed at analysis time.
-    """
+    """Snapshot reusable knowledge and the final analysis runbook for this report."""
     lines = [_PLAYBOOK_SECTION, ""]
     if playbook is None:
         lines.extend(
@@ -188,10 +217,13 @@ def _render_playbook_section(playbook: Playbook | None) -> list[str]:
             ]
         )
         return lines
+    lines.extend(_render_playbook_knowledge(playbook))
+    lines.extend([_RUNBOOK_SECTION, ""])
     if not playbook.execution_steps:
         lines.extend(
             [
-                "확정된 근본 원인이 없어 실행 절차를 만들지 않았다. 추측 절차가 승인 버튼 뒤에 "
+                "근본 원인이 미확정이거나 실행에 필요한 근거가 부족해 실행 절차를 만들지 않았다. "
+                "추측 절차가 승인 버튼 뒤에 "
                 "놓이면 사람이 검증된 절차로 오인하기 때문이다. 이 리포트의 조치 항목은 사람이 "
                 "판단해 수행할 권고이며 실행 대상이 아니다.",
                 "",
@@ -201,10 +233,15 @@ def _render_playbook_section(playbook: Playbook | None) -> list[str]:
 
     lines.extend(
         [
-            "이 플레이북은 **초안(DRAFT)**이며 아직 실행으로 검증되지 않았다. 실행과 회고를 "
-            "거친 뒤에야 검증된 절차가 된다.",
+            f"분석 완료 시점의 런북 검증 상태: **{playbook.verification_status.value}**.",
+            (
+                "초안(DRAFT)은 아직 실행으로 검증되지 않은 절차다."
+                if playbook.verification_status.value == "DRAFT"
+                else "검증됨(VERIFIED)은 기존과 동일한 절차에 보존된 검증 상태이며, 이번 사고의 해결을 뜻하지 않는다."
+            ),
+            "이 보고서는 분석 완료 시점의 기록이며 이후 회고로 변경되지 않는다.",
             "",
-            "각 절차의 작업은 자연어다. 대상 리소스 식별자와 리전은 실행 시점의 알람 컨텍스트에서 결정된다.",
+            "명령·대상·리전·순서·성공 기준은 승인 전에 고정한다. 변경하려면 새 승인이 필요하다.",
             "",
         ]
     )
@@ -215,6 +252,7 @@ def _render_playbook_section(playbook: Playbook | None) -> list[str]:
         lines.append(f"- **수행할 작업**: {step.action}")
         lines.append(f"- **성공 판정 기준**: {step.success_criteria}")
         lines.append("")
+        lines.extend(render_step_operation(step.model_dump()))
 
     if playbook.permanent_remediation:
         lines.extend(
@@ -230,26 +268,28 @@ def _render_playbook_section(playbook: Playbook | None) -> list[str]:
 def _step_mismatch(body: str, playbook: Playbook | None) -> str:
     """Return why the narrative and the structure disagree, or an empty string.
 
-    Checks identifiers and their order, not prose: the narrative is free to
-    describe a step differently, but it must describe the same steps in the same
-    sequence the execution agent will follow.
+    Check the ordered identifiers and the exact structured operation values.
     """
     step_ids = [step.step_id for step in playbook.execution_steps] if playbook else []
     if not step_ids:
         return ""
 
-    section = body.split(_PLAYBOOK_SECTION, 1)
-    if len(section) == 1:
+    section = re.search(rf"^{re.escape(_PLAYBOOK_SECTION)}\n(.*?)(?=^## |\Z)", body, re.M | re.S)
+    if section is None:
         return "report has no playbook section to approve"
-    rendered = section[1]
-
-    missing = [step_id for step_id in step_ids if step_id not in rendered]
-    if missing:
-        return f"playbook steps missing from the report narrative: {', '.join(missing)}"
-
-    positions = [rendered.index(step_id) for step_id in step_ids]
-    if positions != sorted(positions):
-        return "playbook steps appear in a different order in the report narrative"
+    runbook = re.search(rf"^{re.escape(_RUNBOOK_SECTION)}\n(.*)", section[1], re.M | re.S)
+    if runbook is None:
+        return "report has no current runbook section to approve"
+    rendered = runbook[1]
+    headings = list(re.finditer(r"^### (\d+)\. ([^\n]+)\n", rendered, re.M))
+    if [(int(h[1]), h[2]) for h in headings] != list(enumerate(step_ids, 1)):
+        return "playbook step headings missing, added or reordered in the report narrative"
+    for index, step in enumerate(playbook.execution_steps):
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(rendered)
+        step_body = rendered[headings[index].end() : end]
+        operation = "\n".join(render_step_operation(step.model_dump()))
+        if operation not in step_body:
+            return f"playbook operation missing or changed in report: {step.step_id}"
     return ""
 
 

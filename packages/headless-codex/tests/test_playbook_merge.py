@@ -1,3 +1,7 @@
+from copy import deepcopy
+
+import pytest
+
 from headless_codex.services.playbook_merge import merge_playbook_update, promote_to_verified
 
 EXISTING = {
@@ -77,8 +81,11 @@ def test_correcting_a_step_keeps_its_identifier_and_position():
 
 
 def test_a_new_step_is_appended_after_the_existing_ones():
+    existing = deepcopy(EXISTING)
+    for step in existing["execution_steps"]:
+        step["commands"] = ["aws ecs list-tasks --region us-east-1"]
     merged, diff = merge_playbook_update(
-        EXISTING,
+        existing,
         {
             "execution_steps": [
                 {
@@ -86,6 +93,7 @@ def test_a_new_step_is_appended_after_the_existing_ones():
                     "intent": "커넥션 상한 확인",
                     "action": "RDS max_connections 파라미터 조회",
                     "success_criteria": "max_connections 가 200 이상",
+                    "commands": ["aws rds describe-db-parameters --db-parameter-group-name db --region us-east-1"],
                 }
             ]
         },
@@ -162,3 +170,60 @@ def test_promoting_an_already_verified_playbook_is_a_no_op():
     verified = {**EXISTING, "verification_status": "VERIFIED"}
 
     assert promote_to_verified(verified) == verified
+
+
+@pytest.mark.parametrize("reference", ["missing", "observe", "later"])
+@pytest.mark.parametrize("add_wait", [False, True])
+def test_operation_merge_rejects_invalid_references_and_preserves_snapshot(reference, add_wait):
+    from test_runbook_contract import command_step, wait_step
+
+    original = {"execution_steps": [command_step()] + ([] if add_wait else [wait_step()])}
+    snapshot = deepcopy(original)
+    wait = wait_step()
+    wait["metric_wait"]["action_step_id"] = reference
+    update = {"execution_steps": [wait, {**command_step(), "step_id": "later"}]}
+    with pytest.raises(ValueError, match="prior aws ecs stop-task"):
+        merge_playbook_update(original, update)
+    assert original == snapshot
+
+
+def test_correcting_action_to_read_only_rejects_its_preserved_wait():
+    from test_runbook_contract import command_step, wait_step
+
+    original = {"execution_steps": [command_step(), wait_step()]}
+    snapshot = deepcopy(original)
+    with pytest.raises(ValueError, match="prior aws ecs stop-task"):
+        merge_playbook_update(
+            original,
+            {"execution_steps": [{"step_id": "stop-owner", "commands": ["aws ecs list-tasks --region us-east-1"]}]},
+        )
+    assert original == snapshot
+
+
+def test_merge_checks_preserved_order_even_when_update_lists_action_first():
+    from test_runbook_contract import command_step, wait_step
+
+    original = {"execution_steps": [{**command_step(), "step_id": "observe"}, command_step()]}
+    snapshot = deepcopy(original)
+    with pytest.raises(ValueError, match="prior aws ecs stop-task"):
+        merge_playbook_update(original, {"execution_steps": [command_step(), wait_step()]})
+    assert original == snapshot
+
+
+def test_appended_wait_can_reference_preserved_action_with_exact_config():
+    from test_runbook_contract import command_step, wait_step
+
+    original = {"execution_steps": [command_step()]}
+    update = {"execution_steps": [wait_step()]}
+    before = deepcopy(update)
+    merged, diff = merge_playbook_update(original, update)
+    assert merged["execution_steps"] == [command_step(), wait_step()]
+    assert diff.added_steps == ["observe"]
+    assert update == before
+
+
+def test_new_operation_requires_complete_legacy_plan():
+    from test_runbook_contract import command_step
+
+    with pytest.raises(ValueError, match="commands XOR metric_wait"):
+        merge_playbook_update(EXISTING, {"execution_steps": [command_step()]})

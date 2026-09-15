@@ -410,6 +410,10 @@ class TestRunEvidenceCollection:
         assert isinstance(summary, EvidenceCollectionSummary)
         assert "h-1" in summary.evidence_map
         assert "h-2" in summary.evidence_map
+        assert summary.full_evidence_map == {
+            "h-1": "Full evidence for h-1",
+            "h-2": "Full evidence for h-2",
+        }
         assert len(summary.failed_ids) == 0
         assert mock_collect.call_count == 2
 

@@ -18,10 +18,11 @@ from headless_codex.services.execution_workspace import (
     EXECUTION_TOKEN_ENV,
     retrospective_path_for_token,
 )
+from headless_codex.services.runbook_contract import validate_step_operation
 
 mcp = FastMCP("playbook-retrospective")
 
-_EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
+_EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria", "commands", "metric_wait")
 
 
 def _target_path() -> Path | None:
@@ -59,7 +60,8 @@ def save_playbook_update(update_json: str, rationale: str) -> str:
     """실행 증거에서 도출한 플레이북 갱신안을 저장한다.
 
     바꿀 필드와 절차만 담는다. 담지 않은 것은 기존 값이 유지되므로 전체를 다시 쓰지
-    않아도 되며, 반대로 어떤 필드를 비워도 그 필드가 지워지지는 않는다.
+    않아도 된다. 비실행 지식의 빈 값은 기존 내용을 보존한다. 명령이나 관측 연산을
+    교정할 때는 새 연산 전체를 담으며 반대쪽 연산은 함께 제거된다. 새 승인이 필요하다.
 
     Args:
         update_json: 갱신안 JSON 객체. `execution_steps` 에는 교정할 절차만 담고
@@ -91,6 +93,11 @@ def save_playbook_update(update_json: str, rationale: str) -> str:
                     },
                     ensure_ascii=False,
                 )
+            if "commands" in step or "metric_wait" in step:
+                try:
+                    validate_step_operation(step)
+                except ValueError as exc:
+                    return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
             unknown = set(step) - set(_EXECUTION_STEP_FIELDS)
             if unknown:
                 return json.dumps(

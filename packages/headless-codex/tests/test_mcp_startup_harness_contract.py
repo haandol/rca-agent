@@ -20,7 +20,7 @@ REQUIRED_SERVERS = {
     ANALYSIS_REPORT_PROFILE: {"rca-progress"},
     MODEL_EVAL_RCA_PROFILE: {"rca-progress"},
     MODEL_EVAL_REPORT_PROFILE: {"rca-progress"},
-    EXECUTION_PROFILE: {"cloudwatch", "playbook-execution"},
+    EXECUTION_PROFILE: {"playbook-execution"},
     RETROSPECTIVE_PROFILE: {"playbook-retrospective"},
 }
 UV_ENV_NAMES = {"UV_CACHE_DIR", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_OFFLINE"}
@@ -70,7 +70,6 @@ def _render(tmp_path, profile):
         (
             EXECUTION_PROFILE,
             {
-                "cloudwatch": CW_TOOLS,
                 "playbook-execution": [
                     "run_playbook_command",
                     "wait_for_post_action_metrics",
@@ -124,7 +123,6 @@ def test_initial_catalog_waits_for_servers_and_essential_startup_failures_are_fa
     [
         (ANALYSIS_RCA_PROFILE, "cloudwatch"),
         (ANALYSIS_RCA_PROFILE, "cloudtrail"),
-        (EXECUTION_PROFILE, "cloudwatch"),
     ],
 )
 def test_uvx_receives_existing_image_cache_settings_without_new_credentials(
@@ -179,7 +177,7 @@ def test_execution_mcp_forwards_the_existing_aws_cli_environment_names(tmp_path)
     """AWS CLI inherits the MCP process environment, so its AWS allowlist must match CloudWatch."""
     _, config = _render(tmp_path, EXECUTION_PROFILE)
     execution = config["mcp_servers"]["playbook-execution"]
-    cloudwatch = config["mcp_servers"]["cloudwatch"]
+    assert "cloudwatch" not in config["mcp_servers"]
     playbook_names = {
         "PLAYBOOK_EXECUTION_TOKEN",
         "PLAYBOOK_EXECUTION_ID",
@@ -188,7 +186,6 @@ def test_execution_mcp_forwards_the_existing_aws_cli_environment_names(tmp_path)
     }
     names = execution["env_vars"]
     assert len(names) == len(set(names))
-    assert set(cloudwatch["env_vars"]) - UV_ENV_NAMES == AWS_ENV_NAMES
     assert set(names) == playbook_names | AWS_ENV_NAMES
     assert (AWS_ENV_NAMES | UV_ENV_NAMES).isdisjoint(execution["env"])
 

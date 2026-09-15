@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
+
+from headless_codex.services.runbook_contract import validate_runbook, validate_step_operation
 
 _EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 
@@ -64,8 +67,8 @@ def _meaningful(value: object) -> bool:
 
 
 def _merge_step(existing: dict, update: dict) -> tuple[dict, dict | None]:
-    """한 절차를 교정한다. 갱신이 비운 필드는 기존 값을 유지한다."""
-    merged = dict(existing)
+    """설명 누락은 보존하되 명령/관측 연산의 교정은 그 연산 전체를 교체한다."""
+    merged = deepcopy(existing)
     changes: dict[str, dict[str, str]] = {}
     for name in _EXECUTION_STEP_FIELDS:
         if name == "step_id":
@@ -78,6 +81,17 @@ def _merge_step(existing: dict, update: dict) -> tuple[dict, dict | None]:
             continue
         merged[name] = new_value
         changes[name] = {"before": str(old_value), "after": str(new_value)}
+    if "commands" in update or "metric_wait" in update:
+        validate_step_operation(update)
+        operation = {
+            "commands": deepcopy(update.get("commands", [])),
+            "metric_wait": deepcopy(update.get("metric_wait")),
+        }
+        for name, value in operation.items():
+            before = existing.get(name, [] if name == "commands" else None)
+            if value != before:
+                merged[name] = value
+                changes[name] = {"before": str(before), "after": str(value)}
     if not changes:
         return merged, None
     return merged, {"step_id": existing.get("step_id", ""), "changes": changes}
@@ -146,9 +160,16 @@ def merge_playbook_update(existing: dict, update: object) -> tuple[dict, Playboo
         # 새 절차도 실행 근거가 되므로 관측 기준 없이는 받지 않는다.
         if not _meaningful(added.get("action")) or not _meaningful(added.get("success_criteria")):
             continue
+        validate_step_operation(update_step)
+        added["commands"] = deepcopy(update_step.get("commands", []))
+        added["metric_wait"] = deepcopy(update_step.get("metric_wait"))
         merged_steps.append(added)
         diff.added_steps.append(step_id)
 
+    if diff.added_steps or any(
+        {"commands", "metric_wait"} & correction["changes"].keys() for correction in diff.corrected_steps
+    ):
+        validate_runbook(merged_steps)
     merged["execution_steps"] = merged_steps
     return merged, diff
 

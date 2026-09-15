@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import time
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import Mock
@@ -24,6 +26,7 @@ def workspace(monkeypatch, tmp_path):
     token = uuid.uuid4().hex
     monkeypatch.setattr(execution_workspace, "_WORKSPACE_ROOT", tmp_path / "executions")
     monkeypatch.setenv(EXECUTION_TOKEN_ENV, token)
+    monkeypatch.setattr(execution_mcp_server, "_observation_control", lambda: time.time() + 1000)
     monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps(["step-1"]))
     monkeypatch.setenv(
         APPROVED_SUCCESS_CRITERIA_ENV,
@@ -31,8 +34,47 @@ def workspace(monkeypatch, tmp_path):
     )
     created = ExecutionWorkspace(execution_id="exec-1", token=token)
     created.prepare()
+    _approve_command(created, "step-1", "aws rds describe-db-instances")
+    read_all_records = created.read_records
+    # These gate/output tests inspect completed events. Dedicated approval tests inspect
+    # the complete write-ahead journal, including crash and concurrent-call scenarios.
+    monkeypatch.setattr(
+        ExecutionWorkspace,
+        "read_records",
+        lambda self: [r for r in read_all_records() if r.get("type") != "command_started"],
+    )
     yield created
     created.cleanup()
+
+
+def _approve_command(workspace, step_id, command):
+    """Publish explicit synthetic approval for tests of the downstream gate/output behavior."""
+    ids = json.loads(os.environ[APPROVED_STEP_IDS_ENV])
+    criteria = json.loads(os.environ[APPROVED_SUCCESS_CRITERIA_ENV])
+    path = execution_workspace.observation_context_path_for_token(workspace.token)
+    previous = json.loads(path.read_text())["playbook"]["execution_steps"] if path.exists() else []
+    commands = {step["step_id"]: step["commands"] for step in previous}
+    commands[step_id] = [command]
+    workspace.write_observation_context(
+        playbook={
+            "execution_steps": [
+                {
+                    "step_id": sid,
+                    "success_criteria": criteria[sid],
+                    "commands": commands.get(sid, ["aws rds describe-db-instances"]),
+                }
+                for sid in ids
+            ]
+        },
+        alarm_name="",
+        alarm_data={},
+    )
+
+
+def _run_approved(workspace, step_id, command, intent=""):
+    """Keep policy and output regression tests scoped to a command already approved by their fixture."""
+    _approve_command(workspace, step_id, command)
+    return execution_mcp_server.run_playbook_command(step_id, command, intent)
 
 
 @pytest.fixture
@@ -55,7 +97,7 @@ def spawned(monkeypatch):
     ],
 )
 def test_a_refused_command_is_never_spawned(workspace, spawned, command):
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", command))
+    result = json.loads(_run_approved(workspace, "step-1", command))
 
     assert result["ok"] is False
     assert result["blocked"] is True
@@ -63,7 +105,7 @@ def test_a_refused_command_is_never_spawned(workspace, spawned, command):
 
 
 def test_a_refusal_is_recorded_in_the_evidence_with_its_reason(workspace, spawned):
-    execution_mcp_server.run_playbook_command("step-1", "aws ecs delete-service --service api")
+    _run_approved(workspace, "step-1", "aws ecs delete-service --service api")
 
     records = workspace.read_records()
 
@@ -73,7 +115,7 @@ def test_a_refusal_is_recorded_in_the_evidence_with_its_reason(workspace, spawne
 
 
 def test_an_undecidable_refusal_is_distinguished_from_a_destructive_one(workspace, spawned):
-    execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-services | grep api")
+    _run_approved(workspace, "step-1", "aws ecs describe-services | grep api")
 
     records = workspace.read_records()
 
@@ -81,16 +123,14 @@ def test_an_undecidable_refusal_is_distinguished_from_a_destructive_one(workspac
 
 
 def test_a_refusal_tells_the_agent_not_to_retry_or_work_around_it(workspace, spawned):
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs delete-service --service api"))
+    result = json.loads(_run_approved(workspace, "step-1", "aws ecs delete-service --service api"))
 
     assert "manual action" in result["guidance"]
     assert "Do not retry" in result["guidance"]
 
 
 def test_an_allowed_command_runs_as_argv_not_as_a_shell_string(workspace, spawned):
-    execution_mcp_server.run_playbook_command(
-        "step-1", "aws ecs update-service --cluster demo --service api --force-new-deployment"
-    )
+    _run_approved(workspace, "step-1", "aws ecs update-service --cluster demo --service api --force-new-deployment")
 
     argv = spawned.call_args.args[0]
 
@@ -110,7 +150,7 @@ def test_waiter_uses_existing_command_timeout_and_cannot_alone_resolve(workspace
     """A successful waiter remains one attempt and cannot replace fresh outcome observations."""
     monkeypatch.setattr(execution_mcp_server, "_COMMAND_TIMEOUT_SECONDS", 17)
     command = "aws cloudwatch wait alarm-exists --alarm-names observed --state-value OK --region us-east-1"
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", command))
+    result = json.loads(_run_approved(workspace, "step-1", command))
     assert result["ok"]
     assert spawned.call_count == 1
     assert spawned.call_args.args[0] == command.split()
@@ -125,9 +165,7 @@ def test_waiter_timeout_keeps_existing_timeout_evidence(workspace, spawned, monk
     monkeypatch.setattr(execution_mcp_server, "_COMMAND_TIMEOUT_SECONDS", 17)
     spawned.side_effect = subprocess.TimeoutExpired(cmd="aws cloudwatch wait", timeout=17)
     result = json.loads(
-        execution_mcp_server.run_playbook_command(
-            "step-1", "aws cloudwatch wait alarm-exists --alarm-names observed --state-value OK"
-        )
+        _run_approved(workspace, "step-1", "aws cloudwatch wait alarm-exists --alarm-names observed --state-value OK")
     )
     assert not result["ok"]
     assert spawned.call_count == 1
@@ -136,29 +174,27 @@ def test_waiter_timeout_keeps_existing_timeout_evidence(workspace, spawned, monk
 
 
 def test_a_command_without_a_step_id_is_rejected(workspace, spawned):
-    result = json.loads(execution_mcp_server.run_playbook_command("", "aws ecs describe-services"))
+    result = json.loads(_run_approved(workspace, "", "aws ecs describe-services"))
 
     assert result["ok"] is False
     spawned.assert_not_called()
 
 
 def test_an_undeclared_step_id_cannot_run_or_record_an_outcome(workspace, spawned):
-    command = json.loads(
-        execution_mcp_server.run_playbook_command("step-unknown", "aws ecs update-service --service api")
-    )
+    command = json.loads(_run_approved(workspace, "step-unknown", "aws ecs update-service --service api"))
     outcome = json.loads(
         execution_mcp_server.record_step_outcome("step-unknown", "healthy", "healthy", criteria_met=True)
     )
 
     assert command["ok"] is False
     assert outcome["ok"] is False
-    assert workspace.read_records() == []
+    assert [r["type"] for r in workspace.read_records()] == ["approval_rejection"]
     spawned.assert_not_called()
 
 
 def test_credentials_in_a_recorded_command_are_redacted(workspace, spawned):
-    execution_mcp_server.run_playbook_command(
-        "step-1", "aws rds modify-db-instance --db-instance-identifier demo --master-user-password hunter2"
+    _run_approved(
+        workspace, "step-1", "aws rds modify-db-instance --db-instance-identifier demo --master-user-password hunter2"
     )
 
     records = workspace.read_records()
@@ -180,7 +216,7 @@ def test_a_failing_command_is_classified_for_the_retrospective(workspace, monkey
         ),
     )
 
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs update-service --service api"))
+    result = json.loads(_run_approved(workspace, "step-1", "aws ecs update-service --service api"))
 
     assert result["ok"] is False
     assert result["failure_class"] == "PERMISSION_DENIED"
@@ -206,14 +242,15 @@ def test_failure_classification_separates_procedure_defects_from_transient_error
         Mock(return_value=subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=stderr)),
     )
 
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs update-service --service api"))
+    result = json.loads(_run_approved(workspace, "step-1", "aws ecs update-service --service api"))
 
     assert result["failure_class"] == expected
 
 
 def test_a_verification_only_step_succeeds_after_a_read_only_cli_attempt(workspace, spawned):
     attempt = json.loads(
-        execution_mcp_server.run_playbook_command(
+        _run_approved(
+            workspace,
             "step-1",
             "aws cloudwatch describe-alarms --alarm-names VitalIngestFailure",
             "verify ingest recovery",
@@ -310,7 +347,7 @@ def test_a_verification_only_step_succeeds_after_a_read_only_cli_attempt(workspa
 def test_metric_wait_policy_matches_step_recording_resolution_recording_and_final_judge(
     workspace, spawned, receipts, step_blocked, resolution_blocked
 ):
-    execution_mcp_server.run_playbook_command("step-1", "aws cloudwatch describe-alarms")
+    _run_approved(workspace, "step-1", "aws cloudwatch describe-alarms")
     execution_mcp_server.record_step_outcome(
         "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
     )
@@ -333,7 +370,7 @@ def test_metric_wait_policy_matches_step_recording_resolution_recording_and_fina
         execution_id="exec-1",
         rca_id="rca-1",
         engine="headless-codex",
-        playbook={"execution_steps": [{"step_id": "step-1", "success_criteria": "DatabaseConnections 20 이하"}]},
+        playbook=execution_mcp_server._approved_playbook(),
     )
     evidence.resolution_confirmed = True
     evidence.resolution_observation = "Recovered"
@@ -345,7 +382,7 @@ def test_metric_wait_policy_matches_step_recording_resolution_recording_and_fina
 
 
 def test_malformed_wait_identity_still_raises_even_after_a_failed_terminal(workspace, spawned):
-    execution_mcp_server.run_playbook_command("step-1", "aws cloudwatch describe-alarms")
+    _run_approved(workspace, "step-1", "aws cloudwatch describe-alarms")
     execution_mcp_server.record_step_outcome(
         "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
     )
@@ -354,7 +391,7 @@ def test_malformed_wait_identity_still_raises_even_after_a_failed_terminal(works
         execution_id="exec-1",
         rca_id="rca-1",
         engine="headless-codex",
-        playbook={"execution_steps": [{"step_id": "step-1", "success_criteria": "DatabaseConnections 20 이하"}]},
+        playbook=execution_mcp_server._approved_playbook(),
     )
     receipts = [
         {"type": "metric_wait", "step_id": "step-1", "phase": "terminal", "status": "UNHEALTHY"},
@@ -376,7 +413,7 @@ def test_long_approved_criterion_survives_public_recording_replay_and_final_judg
     )
     assert len(criterion) > 4000
     monkeypatch.setenv(APPROVED_SUCCESS_CRITERIA_ENV, json.dumps({"step-1": criterion}))
-    execution_mcp_server.run_playbook_command("step-1", "aws cloudwatch describe-alarms")
+    _run_approved(workspace, "step-1", "aws cloudwatch describe-alarms")
     before = workspace.read_records()
     for incorrect in (criterion[:4000], criterion.replace("TAIL: failures = 0", "TAIL: failures <= 10")):
         rejected = json.loads(
@@ -396,7 +433,7 @@ def test_long_approved_criterion_survives_public_recording_replay_and_final_judg
         execution_id="exec-1",
         rca_id="rca-1",
         engine="headless-codex",
-        playbook={"execution_steps": [{"step_id": "step-1", "success_criteria": criterion}]},
+        playbook=execution_mcp_server._approved_playbook(),
     )
     assert evidence.step("step-1").success_criteria == criterion
     assert evidence.to_dict()["steps"][0]["success_criteria"] == criterion
@@ -411,7 +448,14 @@ def test_long_step_ids_with_shared_prefix_remain_distinct_required_identities(wo
     playbook = {
         "playbook_id": playbook_id,
         "execution_steps": [
-            {"step_id": identifier, "success_criteria": criterion} for identifier, criterion in criteria.items()
+            {
+                "step_id": identifier,
+                "success_criteria": criterion,
+                "commands": [
+                    "aws cloudwatch describe-alarms" if identifier == first else "aws cloudwatch get-metric-data"
+                ],
+            }
+            for identifier, criterion in criteria.items()
         ],
     }
     monkeypatch.setenv(APPROVED_STEP_IDS_ENV, json.dumps([first, second]))
@@ -422,7 +466,7 @@ def test_long_step_ids_with_shared_prefix_remain_distinct_required_identities(wo
             records, execution_id="exec-1", rca_id="rca-1", engine="headless-codex", playbook=playbook
         )
 
-    assert json.loads(execution_mcp_server.run_playbook_command(first, "aws cloudwatch describe-alarms"))["ok"]
+    assert json.loads(_run_approved(workspace, first, "aws cloudwatch describe-alarms"))["ok"]
     outcome = json.loads(
         execution_mcp_server.record_step_outcome(first, criteria[first], "Observed first criterion", criteria_met=True)
     )
@@ -441,7 +485,7 @@ def test_long_step_ids_with_shared_prefix_remain_distinct_required_identities(wo
     assert [len(step.attempts) for step in incomplete.steps] == [1, 0]
     assert judge_resolution(incomplete, agent_succeeded=True).state is ExecutionState.UNRESOLVED
 
-    assert json.loads(execution_mcp_server.run_playbook_command(second, "aws cloudwatch get-metric-data"))["ok"]
+    assert json.loads(_run_approved(workspace, second, "aws cloudwatch get-metric-data"))["ok"]
     assert json.loads(
         execution_mcp_server.record_step_outcome(
             second, criteria[second], "Observed second criterion", criteria_met=True
@@ -473,7 +517,7 @@ def test_positive_recording_refuses_execution_contradictions(workspace, spawned,
         if contradiction == "blocked"
         else "aws ecs stop-task --cluster demo --task owner"
     )
-    execution_mcp_server.run_playbook_command("step-1", command)
+    _run_approved(workspace, "step-1", command)
     if recording == "resolution":
         # Replay a previously accepted contradictory record, bypassing the public step guard.
         execution_mcp_server._append_record(
@@ -511,7 +555,7 @@ def test_failed_read_can_be_retried_and_revalidated_without_poisoning_the_step(w
         subprocess.CompletedProcess(args=[], returncode=0, stdout='{"healthy":true}', stderr=""),
     ]
     command = "aws rds describe-db-instances"
-    assert not json.loads(execution_mcp_server.run_playbook_command("step-1", command))["ok"]
+    assert not json.loads(_run_approved(workspace, "step-1", command))["ok"]
     assert not json.loads(
         execution_mcp_server.record_step_outcome(
             "step-1", "DatabaseConnections 20 이하", "Model claims success", criteria_met=True
@@ -522,7 +566,7 @@ def test_failed_read_can_be_retried_and_revalidated_without_poisoning_the_step(w
             "step-1", "DatabaseConnections 20 이하", "Read throttled", criteria_met=False, failure_class="THROTTLED"
         )
     )["ok"]
-    assert json.loads(execution_mcp_server.run_playbook_command("step-1", command))["ok"]
+    assert json.loads(_run_approved(workspace, "step-1", command))["ok"]
     assert json.loads(
         execution_mcp_server.record_step_outcome(
             "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
@@ -541,7 +585,7 @@ def test_failed_read_can_be_retried_and_revalidated_without_poisoning_the_step(w
 @pytest.mark.parametrize("flag", ["criteria_met", "manual_action_required", "resolved"])
 @pytest.mark.parametrize("value", ["false", "true", 0, 1, None])
 def test_public_recording_requires_real_booleans(workspace, spawned, flag, value):
-    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    _run_approved(workspace, "step-1", "aws rds describe-db-instances")
     if flag == "resolved":
         execution_mcp_server.record_step_outcome(
             "step-1", "DatabaseConnections 20 이하", "DatabaseConnections 12", criteria_met=True
@@ -588,7 +632,7 @@ async def test_mcp_validation_does_not_coerce_nonboolean_flags_before_recording(
 
 @pytest.mark.parametrize("criteria_met", [False, "true"])
 def test_resolution_rechecks_replayed_outcome_flags(workspace, spawned, criteria_met):
-    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    _run_approved(workspace, "step-1", "aws rds describe-db-instances")
     execution_mcp_server._append_record(
         {
             "type": "step_outcome",
@@ -614,12 +658,12 @@ def test_resolution_rejects_outcome_replayed_before_attempt(workspace, spawned):
             "criteria_met": True,
         }
     )
-    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    _run_approved(workspace, "step-1", "aws rds describe-db-instances")
     assert not json.loads(execution_mcp_server.record_resolution("Recovered", resolved=True))["ok"]
 
 
 def test_positive_outcomes_require_nonblank_observations_and_no_unobservable_claim(workspace, spawned):
-    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    _run_approved(workspace, "step-1", "aws rds describe-db-instances")
     assert not json.loads(
         execution_mcp_server.record_step_outcome("step-1", "DatabaseConnections 20 이하", " ", criteria_met=True)
     )["ok"]
@@ -666,14 +710,15 @@ def test_resolved_true_reports_every_approved_step_missing_attempt_or_outcome(
             }
         ),
     )
-    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    _run_approved(workspace, "step-1", "aws rds describe-db-instances")
     execution_mcp_server.record_step_outcome(
         "step-1",
         "DatabaseConnections 20 이하",
         "DatabaseConnections 12",
         criteria_met=True,
     )
-    execution_mcp_server.run_playbook_command(
+    _run_approved(
+        workspace,
         "step-3",
         "aws cloudwatch describe-alarms --alarm-names VitalIngestFailure",
     )
@@ -681,13 +726,13 @@ def test_resolved_true_reports_every_approved_step_missing_attempt_or_outcome(
     result = json.loads(execution_mcp_server.record_resolution("증상 지표 정상", resolved=True))
 
     assert result["ok"] is False
-    assert result["missing_attempt_step_ids"] == ["step-2"]
+    assert result["missing_attempt_step_ids"] == ["step-2", "step-3"]
     assert result["missing_outcome_step_ids"] == ["step-2", "step-3"]
     assert not any(record["type"] == "resolution" for record in workspace.read_records())
 
 
 def test_a_step_outcome_must_use_the_exact_approved_success_criteria(workspace, spawned):
-    execution_mcp_server.run_playbook_command("step-1", "aws rds describe-db-instances")
+    _run_approved(workspace, "step-1", "aws rds describe-db-instances")
 
     result = json.loads(
         execution_mcp_server.record_step_outcome(
@@ -799,7 +844,7 @@ def test_command_output_tail_and_actual_server_boundaries_survive_assembly(works
 
     spawned.side_effect = complete
     before = datetime.now(UTC)
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-tasks --tasks target"))
+    result = json.loads(_run_approved(workspace, "step-1", "aws ecs describe-tasks --tasks target"))
     after = datetime.now(UTC)
     record = workspace.read_records()[0]
     assert before <= datetime.fromisoformat(record["started_at"]) <= inside_run[0]
@@ -834,7 +879,7 @@ def test_output_cap_and_omission_counts_survive_assembly(workspace, spawned):
         stdout="x" * 21_000,
         stderr="y" * 22_000,
     )
-    result = json.loads(execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-tasks"))
+    result = json.loads(_run_approved(workspace, "step-1", "aws ecs describe-tasks"))
     evidence = assemble_evidence(
         workspace.read_records(),
         execution_id="exec-1",
@@ -870,9 +915,7 @@ def test_server_retention_redacts_large_structured_output_and_intent(workspace, 
     spawned.return_value = subprocess.CompletedProcess(
         args=[], returncode=0, stdout=stdout, stderr="Authorization: Bearer CANARY-stderr"
     )
-    result = execution_mcp_server.run_playbook_command(
-        "step-1", "aws ecs describe-tasks", intent="inspect password=CANARY-intent"
-    )
+    result = _run_approved(workspace, "step-1", "aws ecs describe-tasks", intent="inspect password=CANARY-intent")
     assert "CANARY" not in result
     assert "CANARY" not in json.dumps(workspace.read_records())
     captured = json.loads(workspace.read_records()[0]["stdout"])
@@ -893,7 +936,7 @@ def test_failed_command_attempts_have_server_times_and_redacted_partial_output(w
     else:
         spawned.side_effect = OSError("failed with password=CANARY-spawn")
     before = datetime.now(UTC)
-    result = execution_mcp_server.run_playbook_command("step-1", "aws ecs describe-tasks")
+    result = _run_approved(workspace, "step-1", "aws ecs describe-tasks")
     after = datetime.now(UTC)
     record = workspace.read_records()[0]
     assert record["exit_status"] == failure
@@ -908,7 +951,7 @@ def test_failed_command_attempts_have_server_times_and_redacted_partial_output(w
 
 def test_blocked_commands_have_record_time_but_no_fabricated_subprocess_times(workspace, spawned):
     """A gate refusal is recorded without pretending that a subprocess ran."""
-    execution_mcp_server.run_playbook_command("step-1", "aws ecs delete-service --service api")
+    _run_approved(workspace, "step-1", "aws ecs delete-service --service api")
     record = workspace.read_records()[0]
     assert datetime.fromisoformat(record["recorded_at"]).tzinfo is not None
     assert "started_at" not in record

@@ -1,0 +1,2934 @@
+{
+  "description": "Fixed approval inputs; valid=false includes worker runtime preconditions, not just generator completeness. Commands must remain byte-for-byte unchanged.",
+  "cases": [
+    {
+      "name": "fixed-command",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "equals-options",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster=demo --task=owner --region=us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "minimal-equals-region-read",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": ["aws cloudwatch describe-alarms --region=us-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "quoted-argument",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --reason \"observed owner rollback\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "quoted-json",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws lambda update-function-configuration --function-name example --environment '{\"Variables\":{\"MODE\":\"normal\"}}' --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "command-null-wait",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ],
+          "metric_wait": null
+        }
+      ]
+    },
+    {
+      "name": "wait-explicit-empty-commands",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-commands-omitted",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-defaults",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-null-accounting",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "completed_work_evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-approved-accounting",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "completed_work_evidence": {
+              "record_index": "approved_context",
+              "json_pointer": "/evidence"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "missing-cluster",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": ["aws ecs stop-task --task owner --region us-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "missing-target",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": ["aws ecs stop-task --cluster demo --region us-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "missing-region",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": ["aws ecs stop-task --cluster demo --task owner"]
+        }
+      ]
+    },
+    {
+      "name": "dangling-region",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": ["aws ecs stop-task --cluster demo --task owner --region"]
+        }
+      ]
+    },
+    {
+      "name": "duplicate-region",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --region us-west-2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duplicate-region-mixed",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --region=us-west-2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duplicate-target",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --task other"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duplicate-target-equals",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --task=other"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "opposing-flags",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs update-service --cluster demo --service svc --force-new-deployment --no-force-new-deployment --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unterminated-quote",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --reason \"unfinished"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shell-separator",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1; echo bad"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pipeline",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 | cat"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "substitution",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --reason \"$(id)\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "environment-placeholder",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task $OWNER --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "angle-placeholder",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task <OWNER> --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tbd-placeholder",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task TBD --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "external-file",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --reason file://reason.txt"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "external-binary-file",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --reason=fileb://reason.txt"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "profile-override",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --profile other"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "endpoint-override",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --endpoint-url https://example.invalid"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cli-input-override",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1 --cli-input-json '{\"task\":\"other\"}'"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing-lambda-name",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws lambda update-function-configuration --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing-cloudwatch-required",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws cloudwatch get-metric-statistics --namespace App --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unknown-operation",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": ["aws ecs nonexistent-operation --region us-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "legacy-prose",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "blank-step-id",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": " ",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "untrimmed-step-id",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": " stop ",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duplicate-step-id",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unknown-step-key",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ],
+          "unapproved_commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "null-commands",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": null
+        }
+      ]
+    },
+    {
+      "name": "wait-null-commands",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": null,
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "both-operations",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "null-wait-no-commands",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [],
+          "metric_wait": null
+        }
+      ]
+    },
+    {
+      "name": "string-wait",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": "{\"action_step_id\": \"stop\", \"region\": \"us-east-1\", \"failure_alarm_name\": \"IngestFailures\", \"metrics\": {\"attempts\": {\"namespace\": \"Observed/App\", \"metric_name\": \"Attempts\", \"dimensions\": {\"ServiceName\": \"demo\"}}, \"failures\": {\"namespace\": \"Observed/App\", \"metric_name\": \"Failures\", \"dimensions\": {\"ServiceName\": \"demo\"}}}}"
+        }
+      ]
+    },
+    {
+      "name": "wait-unknown-key",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "unexpected": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-owned-step-id",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "step_id": "other"
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-future-action",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "later",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-self-action",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "verify",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-refers-to-wait",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_id": "verify2",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "verify",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-refers-to-read",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs describe-tasks --cluster demo --tasks owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-other-region",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-west-2",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-null-duration",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "max_wait_seconds": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-boolean-duration",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "max_wait_seconds": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-unbounded-duration",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "max_wait_seconds": 301
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-fractional-duration",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "max_wait_seconds": 1.5
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-string-metrics",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": "{\"attempts\": {\"namespace\": \"Observed/App\", \"metric_name\": \"Attempts\", \"dimensions\": {\"ServiceName\": \"demo\"}}, \"failures\": {\"namespace\": \"Observed/App\", \"metric_name\": \"Failures\", \"dimensions\": {\"ServiceName\": \"demo\"}}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-placeholder-alarm",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "${ALARM}",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-placeholder-region",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "REGION",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-latency-without-metric",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "latency_alarm_name": "LatencyAlarm"
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-accounting-unknown-key",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "completed_work_evidence": {
+              "record_index": 1,
+              "json_pointer": "/evidence",
+              "count": 100
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-accounting-bool-index",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "completed_work_evidence": {
+              "record_index": true,
+              "json_pointer": "/evidence"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-accounting-missing-pointer",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "completed_work_evidence": {
+              "record_index": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-criterion-omits-alarm",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-duplicate-metric-name",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-different-namespace",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Other/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-different-dimensions",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "other"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-empty-dimensions",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {}
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-coordinate-control-character",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failure\ns 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failure\ns",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-coordinate-too-long",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-coordinate-placeholder",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "TBD",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-unknown-metric-key",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                },
+                "statistic": "Sum"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-short-task-id",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-task-region-mismatch",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-west-2:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-missing-discovery",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-filtered-discovery",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1 --query Metrics",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1 --query Metrics"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-filtered-action",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1 --query task.taskArn"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-equals-region",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region=us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region=us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region=us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-null-latency-without-latency-metric",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "latency_alarm_name": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-duration-boundary-1",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "max_wait_seconds": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-duration-boundary-300",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "max_wait_seconds": 300
+          }
+        }
+      ]
+    },
+    {
+      "name": "wait-with-approved-latency",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "discover",
+          "action": "Discover exact observation coordinates",
+          "success_criteria": "metric and alarm coordinates recorded",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Observed/App --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures LatencyAlarm --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "stop",
+          "action": "Stop observed owner",
+          "success_criteria": "stop acknowledged",
+          "commands": [
+            "aws ecs stop-task --cluster demo --task arn:aws:ecs:us-east-1:123456789012:task/demo/owner --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "verify",
+          "action": "Observe recovery",
+          "success_criteria": "Failures 0 and IngestFailures OK and Latency normal with LatencyAlarm OK",
+          "commands": [],
+          "metric_wait": {
+            "action_step_id": "stop",
+            "region": "us-east-1",
+            "failure_alarm_name": "IngestFailures",
+            "metrics": {
+              "attempts": {
+                "namespace": "Observed/App",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "failures": {
+                "namespace": "Observed/App",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              },
+              "latency": {
+                "namespace": "Observed/App",
+                "metric_name": "Latency",
+                "dimensions": {
+                  "ServiceName": "demo"
+                }
+              }
+            },
+            "latency_alarm_name": "LatencyAlarm"
+          }
+        }
+      ]
+    },
+    {
+      "name": "quoted-cloudwatch-jsonpath-filter",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "inspect-log",
+          "action": "Inspect released maintenance events",
+          "success_criteria": "maintenance_released event is recorded",
+          "commands": [
+            "aws logs filter-log-events --log-group-name /demo/service --filter-pattern '{ $.event = \"maintenance_released\" }' --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "filter-environment-variable",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "inspect-log",
+          "action": "Inspect released maintenance events",
+          "success_criteria": "maintenance_released event is recorded",
+          "commands": [
+            "aws logs filter-log-events --log-group-name /demo/service --filter-pattern '{ $.event = \"$EVENT\" }' --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "filter-braced-variable",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "inspect-log",
+          "action": "Inspect released maintenance events",
+          "success_criteria": "maintenance_released event is recorded",
+          "commands": [
+            "aws logs filter-log-events --log-group-name /demo/service --filter-pattern '{ $.event = \"${EVENT}\" }' --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "filter-command-substitution",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "inspect-log",
+          "action": "Inspect released maintenance events",
+          "success_criteria": "maintenance_released event is recorded",
+          "commands": [
+            "aws logs filter-log-events --log-group-name /demo/service --filter-pattern '{ $.event = \"$(echo released)\" }' --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unquoted-jsonpath",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "inspect-log",
+          "action": "Inspect released maintenance events",
+          "success_criteria": "maintenance_released event is recorded",
+          "commands": [
+            "aws logs filter-log-events --log-group-name /demo/service --filter-pattern $.event --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ascii-tab-separated",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "inspect",
+          "action": "Read alarms",
+          "success_criteria": "alarm state recorded",
+          "commands": ["aws\tcloudwatch\tdescribe-alarms\t--region\tus-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "unicode-option-separator",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "inspect",
+          "action": "Read alarms",
+          "success_criteria": "alarm state recorded",
+          "commands": ["aws cloudwatch describe-alarms --region us-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "control-option-separator",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "inspect",
+          "action": "Read alarms",
+          "success_criteria": "alarm state recorded",
+          "commands": ["aws cloudwatch describe-alarms --region\u000bus-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "rds-failover-supported",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "restore",
+          "action": "Perform the approved recovery",
+          "success_criteria": "resource is healthy",
+          "commands": [
+            "aws rds failover-db-cluster --db-cluster-identifier cluster-a --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rds-failover-requires-cluster",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "restore",
+          "action": "Perform the approved recovery",
+          "success_criteria": "resource is healthy",
+          "commands": ["aws rds failover-db-cluster --region us-east-1"]
+        }
+      ]
+    },
+    {
+      "name": "redshift-pause-supported",
+      "valid": true,
+      "steps": [
+        {
+          "step_id": "restore",
+          "action": "Perform the approved recovery",
+          "success_criteria": "resource is healthy",
+          "commands": [
+            "aws redshift pause-cluster --cluster-identifier cluster-a --region us-east-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "redshift-pause-requires-cluster",
+      "valid": false,
+      "steps": [
+        {
+          "step_id": "restore",
+          "action": "Perform the approved recovery",
+          "success_criteria": "resource is healthy",
+          "commands": ["aws redshift pause-cluster --region us-east-1"]
+        }
+      ]
+    }
+  ]
+}
