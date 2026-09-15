@@ -1118,6 +1118,7 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
   /**
    * Retry search publication from the applied immutable snapshot, not a fresh proposal.
    * Write its revision-specific vector before conditionally publishing the matching head.
+   * Reuse the captured state's condition and values to fence concurrent state changes.
    */
   async function publish(disposition: Row): Promise<void> {
     const id = disposition.playbook_id;
@@ -1212,6 +1213,7 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
         ],
       }),
     );
+    const stateCondition = condition(state);
     await ddb.send(
       new TransactWriteCommand({
         TransactItems: [
@@ -1243,9 +1245,9 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
               TableName: table,
               Key: { PK: LIBRARY_STATE, SK: id },
               UpdateExpression: 'SET publication_status = :published',
-              ...condition(state),
+              ...stateCondition,
               ExpressionAttributeValues: {
-                ...condition(state).ExpressionAttributeValues,
+                ...stateCondition.ExpressionAttributeValues,
                 ':published': 'PUBLISHED',
               },
             },

@@ -140,30 +140,24 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
         rca_id: str,
         *,
         metric_name: str = "",
-        publication_id: str = "",
-        baseline_playbook: dict | None = None,
-        source_engine: str = "",
-        publication_result: dict | None = None,
     ) -> bool:
-        """Stage immutable content before vector writes; matched proposals never replace public knowledge."""
-        if not publication_id and matched_comparison(playbook):
+        """Publish completed analysis through an immutable stage, vector write, then finalization.
+
+        Matched proposals leave public knowledge unchanged. Publication failures
+        return False so the completion handoff can retry the same analysis revision.
+        """
+        if matched_comparison(playbook):
             return True
         if not self._enabled:
             return False
-        revision = f"retrospective:{publication_id}" if publication_id else f"analysis:{rca_id}"
+        revision = f"analysis:{rca_id}"
         try:
-            if publication_id and baseline_playbook is None:
-                raise ValueError("retrospective requires its exact baseline")
-            if publication_id:
-                baseline_playbook = self._library.retrospective_baseline(baseline_playbook, rca_id)
             head = self._library.stage(
                 playbook,
                 rca_id,
                 revision,
                 metric_name=metric_name,
-                engine=source_engine or ENGINE,
-                baseline=baseline_playbook,
-                publication_result=publication_result,
+                engine=ENGINE,
             )
             if head["publication_status"] == "PUBLISHED":
                 return True
@@ -186,16 +180,12 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                 "engine": head["engine"],
                 "verification_status": playbook.get("verification_status", "DRAFT"),
             }
-            if publication_id:
-                metadata["publication_id"] = publication_id
             self._s3v.put_vectors(
                 vectorBucketName=S3_VECTOR_BUCKET_NAME,
                 indexName=S3_VECTOR_PLAYBOOK_INDEX,
                 vectors=[{"key": head["vector_key"], "data": {"float32": vector}, "metadata": metadata}],
             )
-            # A retrospective's original revision must commit before library visibility.
-            if not publication_id:
-                self._finalize(head)
+            self._finalize(head)
             return True
         except Exception:
             logger.exception("Playbook publication failed: %s", playbook.get("playbook_id"))

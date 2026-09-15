@@ -367,6 +367,7 @@ def test_wire_fixture_and_cross_engine_helper_parity():
 
 @pytest.mark.parametrize("prior_revision", [False, True])
 def test_legacy_retrospective_baseline_race_is_atomic(storage, prior_revision):
+    """Reject a concurrent legacy revision at staging without creating a public head or vector."""
     ddb, vectors, store = storage
     value = document()
     source(ddb, value)
@@ -393,9 +394,15 @@ def test_legacy_retrospective_baseline_race_is_atomic(storage, prior_revision):
         return transaction(**kwargs)
 
     ddb.transact_write_items = race
-    assert not store._publish(
-        dict(value, verification_status="VERIFIED"), "rca-1", publication_id="exec-new", baseline_playbook=baseline
-    )
+    baseline = store._library.retrospective_baseline(baseline, "rca-1")
+    with pytest.raises(ddb.exceptions.TransactionCanceledException):
+        store._library.stage(
+            dict(value, verification_status="VERIFIED"),
+            "rca-1",
+            "retrospective:exec-new",
+            engine=ENGINE,
+            baseline=baseline,
+        )
     assert store._library.head("pb-1") is None
     vectors.put_vectors.assert_not_called()
 
@@ -421,6 +428,7 @@ def test_legacy_strands_session_key_preserves_owner_without_engine_attribute(sto
 
 
 def test_retrospective_accepts_dashboard_json_order_but_compares_entire_domain(storage):
+    """Stage an equivalent dashboard baseline while keeping the published head unchanged."""
     ddb, _, store = storage
     value = document()
     source(ddb, value)
@@ -440,7 +448,12 @@ def test_retrospective_accepts_dashboard_json_order_but_compares_entire_domain(s
     ddb.put_item(TableName="sessions", Item=_pack({**current, "PK": "PLAYBOOK#pb-1", "SK": current["revision"]}))
     baseline = {**baseline, "library_revision": "proposal:p-1", "source_engine": ENGINE, "source_rca_id": "rca-1"}
     revised = dict(baseline, verification_status="VERIFIED")
-    assert store._publish(revised, "rca-1", publication_id="exec-1", baseline_playbook=baseline)
+    baseline = store._library.retrospective_baseline(baseline, "rca-1")
+    pending = store._library.stage(revised, "rca-1", "retrospective:exec-1", engine=ENGINE, baseline=baseline)
+    assert pending["publication_status"] == "PENDING"
+    assert pending["playbook_json"] == encoded(revised)
+    assert pending["baseline_playbook_json"] == current["playbook_json"]
+    assert store._library.head("pb-1") == current
 
 
 def test_canonical_reader_preserves_cross_engine_source_identity(storage):
@@ -500,8 +513,9 @@ def commit_new_incident_retrospective(ddb, revised):
 
 
 def test_applied_proposal_invalidates_new_incident_retrospective_baseline(storage):
+    """Reject the incident's stale approved baseline after a human proposal replaces public knowledge."""
     ddb, vectors, _ = storage
-    store, old, target, revised = matched_incident(storage)
+    store, old, target, _ = matched_incident(storage)
     newer = dict(
         old,
         revision="proposal:human-change",
@@ -509,7 +523,8 @@ def test_applied_proposal_invalidates_new_incident_retrospective_baseline(storag
         playbook_json=json.dumps(dict(json.loads(old["playbook_json"]), temporary_mitigation="human change")),
     )
     ddb.put_item(TableName="sessions", Item=_pack(newer))
-    assert not store._publish(revised, "rca-2", publication_id="exec-new", baseline_playbook=target)
+    with pytest.raises(ValueError, match="approved public baseline is no longer current"):
+        store._library.retrospective_baseline(target, "rca-2")
     assert store._library.head("pb-1") == newer
     assert vectors.put_vectors.call_count == 1  # Only the original analysis publication.
 
