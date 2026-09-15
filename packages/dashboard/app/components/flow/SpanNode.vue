@@ -2,18 +2,30 @@
 import { Handle, Position } from '@vue-flow/core';
 import type { NodeData } from '~/composables/useTraceGraph';
 
-defineProps<{ data: NodeData }>();
+defineProps<{ data: NodeData; selected?: boolean }>();
 
 /**
- * A pipeline step. Only failure and still-running earn a colour — a completed
- * step is the expected case, and colouring every one leaves nothing for the two
- * that need finding.
+ * State is carried by text and a semantic rail; selection has its own outline.
  */
 const statusClass: Record<string, string> = {
-  COMPLETED: 'border-base-content/15 bg-base-100',
-  FAILED: 'border-base-content/70 bg-base-200',
-  RUNNING: 'border-primary/55 bg-primary/[0.06]',
-  TIMED_OUT: 'border-base-content/12 bg-base-200',
+  COMPLETED: 'span-node--success',
+  FAILED: 'span-node--error',
+  RUNNING: 'span-node--running',
+  TIMED_OUT: 'span-node--error',
+};
+
+const statusLabel: Record<string, string> = {
+  COMPLETED: '완료',
+  FAILED: '실패',
+  RUNNING: '진행 중',
+  TIMED_OUT: '시간 초과',
+};
+
+const statusIcon: Record<string, string> = {
+  COMPLETED: '✓',
+  FAILED: '×',
+  RUNNING: '●',
+  TIMED_OUT: '!',
 };
 
 function formatDuration(ms: number | null | undefined): string {
@@ -26,37 +38,98 @@ function formatDuration(ms: number | null | undefined): string {
 
 <template>
   <div
-    class="rounded-box border px-3.5 py-2 w-[152px] cursor-pointer transition-colors hover:border-base-content/35"
-    :class="statusClass[data.status] || 'border-base-content/15 bg-base-100'"
+    class="span-node"
+    :class="[statusClass[data.status], { 'is-selected': selected }]"
+    :title="data.label"
   >
-    <div class="flex items-center gap-1.5">
-      <span
-        v-if="data.status === 'RUNNING'"
-        class="size-[6px] rounded-full bg-primary shrink-0 animate-ember"
-      />
-      <!-- The glyph is the only thing marking a failed span, and the palette has
-           no red to reinforce it, so it carries a label rather than aria-hidden.
-           Hidden, a screen reader heard this node exactly as a completed one. -->
-      <span
-        v-else-if="data.status === 'FAILED'"
-        class="text-[11px] leading-none shrink-0"
-        role="img"
-        aria-label="실패"
-        >✕</span
-      >
-      <span
-        class="text-[11.5px] font-medium truncate"
-        :class="data.status === 'FAILED' ? 'mark-broken' : ''"
-        >{{ data.label }}</span
-      >
+    <div class="span-node__meta">
+      <span class="span-node__status">
+        <span aria-hidden="true" class="span-node__icon">{{
+          statusIcon[data.status] || '·'
+        }}</span>
+        {{ statusLabel[data.status] || data.status }}
+      </span>
+      <span v-if="data.durationMs != null" class="span-node__duration">
+        {{ formatDuration(data.durationMs) }}
+      </span>
     </div>
-    <div
-      v-if="data.durationMs"
-      class="font-mono text-[10px] text-base-content/62 mt-1 tabular-nums"
-    >
-      {{ formatDuration(data.durationMs) }}
-    </div>
+    <div class="span-node__label">{{ data.label }}</div>
   </div>
   <Handle type="target" :position="Position.Top" />
   <Handle type="source" :position="Position.Bottom" />
 </template>
+
+<style scoped>
+.span-node {
+  --node-tone: color-mix(in srgb, var(--color-base-content) 45%, transparent);
+  box-sizing: border-box;
+  width: 200px;
+  height: 88px;
+  padding: 12px 14px;
+  border: 1px solid
+    color-mix(in srgb, var(--node-tone) 55%, var(--color-base-100));
+  border-left: 4px solid var(--node-tone);
+  border-radius: 8px;
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  cursor: pointer;
+  transition:
+    outline-color 150ms,
+    background-color 150ms;
+}
+.span-node--success {
+  --node-tone: var(--color-success);
+}
+.span-node--error {
+  --node-tone: var(--color-error);
+}
+.span-node--running {
+  --node-tone: var(--color-info);
+}
+.span-node--error,
+.span-node--running {
+  background: color-mix(in srgb, var(--node-tone) 8%, var(--color-base-100));
+}
+.span-node:hover {
+  background: var(--color-base-300);
+}
+.span-node.is-selected {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+.span-node__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.span-node__status {
+  font-size: 11px;
+  font-weight: 650;
+}
+.span-node__icon {
+  color: var(--node-tone);
+  margin-right: 3px;
+}
+.span-node__duration {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.span-node__label {
+  margin-top: 7px;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .span-node {
+    transition: none;
+  }
+}
+</style>

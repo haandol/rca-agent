@@ -1,0 +1,78 @@
+.rca-graph {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid
+    color-mix(in srgb, var(--color-base-content) 18%, transparent);
+  border-radius: 8px;
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+}
+.rca-graph__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--color-base-100);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-base-content) 12%, transparent);
+}
+.rca-graph__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  background: var(--color-base-100);
+  border-top: 1px solid
+    color-mix(in srgb, var(--color-base-content) 12%, transparent);
+  font-size: 12px;
+}
+.rca-graph__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rca-graph__legend i {
+  font-style: normal;
+  font-weight: 700;
+}
+.rca-graph__legend .graph-line {
+  width: 22px;
+  border-top: 2px solid currentColor;
+}
+.rca-graph__legend .graph-line--loop {
+  border-top-style: dashed;
+}
+.rca-graph .vue-flow {
+  background: var(--color-base-200);
+}
+/* Vue Flow nodes opt into pointer events. Keep closed dialog graphs out of
+   layout so their invisible nodes cannot intercept the page underneath. */
+dialog:not([open]) .rca-graph {
+  display: none;
+}
+.rca-graph .vue-flow__node:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 5px;
+  border-radius: 8px;
+}
+.rca-graph .vue-flow__handle {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--color-base-100);
+  background: color-mix(
+    in srgb,
+    var(--color-base-content) 55%,
+    var(--color-base-100)
+  );
+}
+@media (prefers-reduced-motion: reduce) {
+  .rca-graph *,
+  .rca-graph *::before,
+  .rca-graph *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre';
-import type { Node, Edge } from '@vue-flow/core';
+import { MarkerType, type Node, type Edge } from '@vue-flow/core';
 
 interface SpanItem {
   spanId: string;
@@ -58,6 +58,7 @@ export interface NodeData {
 const SPAN_LABEL: Record<string, string> = {
   SCOPING: '스코핑',
   HYPOTHESIS_GENERATION: '가설 생성',
+  VALIDATION_LOOP: '가설 검증 과정',
   PLAYBOOK: '플레이북',
   REPORT: '보고서',
   NOTIFICATION: '알림',
@@ -66,6 +67,7 @@ const SPAN_LABEL: Record<string, string> = {
 const PIPELINE_STAGE_ORDER = [
   'SCOPING',
   'HYPOTHESIS_GENERATION',
+  'VALIDATION_LOOP',
   'PLAYBOOK',
   'REPORT',
   'NOTIFICATION',
@@ -75,9 +77,8 @@ const SPAN_ORDER = new Map<string, number>(
   PIPELINE_STAGE_ORDER.map((spanType, index) => [spanType, index]),
 );
 
-// Internal loop steps — hide from the graph
+// Keep the validation process visible; individual loop operations stay in its detail.
 const HIDDEN_SPAN_TYPES = new Set([
-  'VALIDATION_LOOP',
   'PRIORITIZATION',
   'EVIDENCE_COLLECTION',
   'VALIDATION',
@@ -210,12 +211,18 @@ export function buildTraceGraph(
   // by half the difference and the edges no longer meet the boxes they connect.
   const sizeOf = (type: string | undefined) =>
     type === 'hypoNode'
-      ? { width: 212, height: 82 }
-      : { width: 152, height: 48 };
+      ? { width: 260, height: 112 }
+      : { width: 200, height: 88 };
 
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 64, nodesep: 36 });
+  g.setGraph({
+    rankdir: 'TB',
+    ranksep: 48,
+    nodesep: 40,
+    marginx: 24,
+    marginy: 24,
+  });
 
   for (const node of nodes) {
     g.setNode(node.id, sizeOf(node.type));
@@ -234,5 +241,17 @@ export function buildTraceGraph(
     }
   }
 
-  return { nodes, edges };
+  return {
+    nodes,
+    edges: edges.map((edge) => ({
+      ...edge,
+      markerEnd: MarkerType.ArrowClosed,
+      style: {
+        stroke:
+          'color-mix(in srgb, var(--color-base-content) 48%, var(--color-base-100))',
+        strokeWidth: 1.75,
+        ...edge.style,
+      },
+    })),
+  };
 }

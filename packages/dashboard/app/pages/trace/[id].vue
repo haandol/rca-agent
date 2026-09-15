@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { VueFlow } from '@vue-flow/core';
-import '@vue-flow/core/dist/style.css';
-import '@vue-flow/core/dist/theme-default.css';
 import { buildTraceGraph, type NodeData } from '~/composables/useTraceGraph';
-import SpanNode from '~/components/flow/SpanNode.vue';
-import HypoNode from '~/components/flow/HypoNode.vue';
 import { renderMarkdown as md } from '~/utils/markdown';
+import { isTerminalState } from '~/utils/sessionState';
 
 const route = useRoute();
 const id = route.params.id as string;
@@ -15,9 +11,25 @@ const {
   data: trace,
   status,
   error,
+  refresh: refreshTrace,
 } = useFetch(`/api/traces/${id}`, {
   query: engine ? { engine } : undefined,
 });
+
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  refreshTimer = setInterval(() => {
+    const state = trace.value?.session?.state;
+    if (
+      document.visibilityState === 'visible' &&
+      (!state || !isTerminalState(state)) &&
+      status.value !== 'pending'
+    ) {
+      void refreshTrace();
+    }
+  }, 5000);
+});
+onBeforeUnmount(() => clearInterval(refreshTimer));
 
 const fullEvidence = ref<string | null>(null);
 const fullEvidenceLoading = ref(false);
@@ -46,6 +58,12 @@ const HYPO_STATUS_LABEL: Record<string, string> = {
 };
 
 const stateModalRef = ref<HTMLDialogElement | null>(null);
+const stateGraphMounted = ref(false);
+
+function openStateGraph() {
+  stateModalRef.value?.showModal();
+  stateGraphMounted.value = true;
+}
 
 /**
  * What the search tried, sorted by what became of it.
@@ -119,8 +137,8 @@ function formatDuration(ms: number | null | undefined): string {
   return `${Math.round(ms / 60_000)}분`;
 }
 
-/** The graph is the same facts drawn as a shape; it opens on request. */
-const showGraph = ref(false);
+/** Keep the pipeline visible on arrival; the operator can collapse it. */
+const showGraph = ref(true);
 
 const selectedHypothesis = ref<string>('');
 
@@ -164,7 +182,7 @@ useHead({
         <button
           v-if="trace?.session"
           class="text-base-content/68 hover:text-primary"
-          @click="stateModalRef?.showModal()"
+          @click="openStateGraph"
         >
           상태 전이 보기
         </button>
@@ -172,7 +190,7 @@ useHead({
     </header>
 
     <div
-      v-if="status === 'pending'"
+      v-if="status === 'pending' && !trace"
       class="py-20 text-center text-[13px] text-base-content/65"
     >
       <span class="loading loading-spinner loading-sm" />
@@ -232,8 +250,92 @@ useHead({
         </ul>
       </section>
 
+      <!-- Pipeline overview comes before the hypothesis evidence list. -->
+      <section class="ops-panel mt-5 p-4 sm:p-5">
+        <button
+          class="flex w-full items-center gap-3 text-left min-h-9 rounded-md focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-4"
+          :aria-expanded="showGraph"
+          aria-controls="pipeline-graph"
+          @click="showGraph = !showGraph"
+        >
+          <span
+            class="inline-flex size-8 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary text-lg"
+            aria-hidden="true"
+            >{{ showGraph ? '−' : '+' }}</span
+          >
+          <span class="flex-1">
+            <span class="block text-base font-semibold">파이프라인 그래프</span>
+            <span class="block mt-1 text-xs text-base-content/75"
+              >분석 단계와 가설의 연결 · 노드 선택으로 상세 확인</span
+            >
+          </span>
+          <span class="text-xs text-primary font-semibold">{{
+            showGraph ? '접기' : '펼치기'
+          }}</span>
+        </button>
+
+        <div
+          v-if="showGraph"
+          id="pipeline-graph"
+          class="mt-4 flex flex-col gap-4"
+        >
+          <!-- Vue Flow numbers its instances from a module-level counter, so the
+               server and the browser assign different ids and hydration reports a
+               mismatch on every graph. Nothing here needs server rendering — the
+               graph is mounted only in the browser. -->
+          <ClientOnly>
+            <TraceGraph
+              :nodes="graph.nodes"
+              :edges="graph.edges"
+              :current-state="trace.session?.state"
+              @node-click="onNodeClick"
+            />
+          </ClientOnly>
+
+          <aside
+            class="w-full rounded-lg border border-base-content/15 bg-base-200/50 p-4"
+          >
+            <template v-if="selectedNode">
+              <h3 class="text-base font-semibold leading-snug">
+                {{ selectedNode.title || selectedNode.label }}
+              </h3>
+              <div
+                class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-2 text-[12px] text-base-content/70"
+              >
+                <span
+                  v-if="selectedNode.status"
+                  :class="statusTone(selectedNode.status)"
+                >
+                  {{
+                    HYPO_STATUS_LABEL[selectedNode.status] ||
+                    selectedNode.status
+                  }}
+                </span>
+                <span v-if="selectedNode.durationMs" class="font-mono">
+                  {{ formatDuration(selectedNode.durationMs) }}
+                </span>
+              </div>
+
+              <div
+                v-if="selectedNode.detail"
+                class="prose-field mt-4"
+                v-html="md(selectedNode.detail)"
+              />
+              <div
+                v-if="selectedNode.error"
+                class="prose-field mt-4 border-l-2 border-error pl-4"
+                v-html="md(selectedNode.error)"
+              />
+            </template>
+            <p v-else class="text-sm text-base-content/80">
+              노드를 선택하면 그 단계의 입출력이 표시됩니다.
+            </p>
+          </aside>
+        </div>
+      </section>
+
       <!-- The hypotheses, as a list with the verdict as the organising fact -->
-      <section v-if="hypotheses.length" class="ops-panel p-5">
+      <section v-if="hypotheses.length" class="ops-panel mt-5 p-5">
         <div class="flex items-baseline gap-3 mb-5">
           <h2 class="label-sm uppercase tracking-[0.1em] font-semibold">
             세워진 가설
@@ -327,89 +429,6 @@ useHead({
         기록된 가설이 없습니다. 이 엔진은 가설을 개별 항목으로 남기지 않거나,
         분석이 가설 생성 전에 멈췄습니다.
       </p>
-
-      <!-- The same facts as a shape, for anyone who reads structure faster -->
-      <section class="ops-panel mt-5 p-5">
-        <button
-          class="flex items-baseline gap-2 text-[13px] text-base-content/72 hover:text-primary transition-colors"
-          :aria-expanded="showGraph"
-          @click="showGraph = !showGraph"
-        >
-          <span class="font-mono text-[11px]">{{ showGraph ? '−' : '+' }}</span>
-          파이프라인 그래프
-          <span class="text-[11px] text-base-content/62">
-            스팬과 가설의 연결 구조
-          </span>
-        </button>
-
-        <div v-if="showGraph" class="mt-6 flex flex-col lg:flex-row gap-5">
-          <!-- Vue Flow numbers its instances from a module-level counter, so the
-               server and the browser assign different ids and hydration reports a
-               mismatch on every graph. Nothing here needs server rendering — the
-               graph only exists once someone opens it. -->
-          <ClientOnly>
-            <div
-              class="sheet-ruled flex-1 overflow-hidden"
-              style="height: 540px"
-            >
-              <VueFlow
-                :nodes="graph.nodes"
-                :edges="graph.edges"
-                :default-viewport="{ zoom: 0.85, x: 40, y: 20 }"
-                fit-view-on-init
-                :min-zoom="0.3"
-                :max-zoom="2"
-                @node-click="onNodeClick"
-              >
-                <template #node-spanNode="props">
-                  <SpanNode v-bind="props" />
-                </template>
-                <template #node-hypoNode="props">
-                  <HypoNode v-bind="props" />
-                </template>
-              </VueFlow>
-            </div>
-          </ClientOnly>
-
-          <aside class="w-full lg:w-[280px] shrink-0">
-            <template v-if="selectedNode">
-              <h3 class="font-serif text-[16px] leading-snug">
-                {{ selectedNode.title || selectedNode.label }}
-              </h3>
-              <div
-                class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-2 text-[12px] text-base-content/70"
-              >
-                <span
-                  v-if="selectedNode.status"
-                  :class="statusTone(selectedNode.status)"
-                >
-                  {{
-                    HYPO_STATUS_LABEL[selectedNode.status] ||
-                    selectedNode.status
-                  }}
-                </span>
-                <span v-if="selectedNode.durationMs" class="font-mono">
-                  {{ formatDuration(selectedNode.durationMs) }}
-                </span>
-              </div>
-
-              <div
-                v-if="selectedNode.detail"
-                class="prose-field mt-4"
-                v-html="md(selectedNode.detail)"
-              />
-              <div
-                v-if="selectedNode.error"
-                class="prose-field mt-4"
-                v-html="md(selectedNode.error)"
-              />
-            </template>
-            <p v-else class="text-[12.5px] text-base-content/65">
-              노드를 선택하면 그 단계의 입출력이 표시됩니다.
-            </p>
-          </aside>
-        </div>
-      </section>
     </template>
 
     <!-- Full evidence -->
@@ -446,7 +465,7 @@ useHead({
              module counter that server and browser number differently. -->
         <ClientOnly>
           <StateGraph
-            v-if="trace?.session"
+            v-if="trace?.session && stateGraphMounted"
             :current-state="trace.session.state"
             :engine="trace.session.engine"
           />
