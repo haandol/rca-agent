@@ -1,4 +1,5 @@
 import json
+import time
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -73,12 +74,27 @@ def _container(runner):
         path = artifact_dir / "playbook.json"
         return json.loads(path.read_text()) if path.is_file() else None
 
+    def _archive_comparison(playbook, rca_id, engine):
+        """Emulate the original/state boundary without hiding full inputs in the completion fixture."""
+        result = deepcopy(playbook)
+        original = result["comparison"]
+        result["comparison"] = {
+            "status": original["status"],
+            "selected_playbook_id": original["selected_playbook_id"],
+            "original_sk": f"{engine}#PLAYBOOK_COMPARISON#{original['comparison_id']}",
+            "original_expires_at": int(time.time()) + 60 * 86400,
+        }
+        if "proposal" in original:
+            result["comparison"]["proposal"] = {key: original["proposal"][key] for key in ("proposal_id", "state")}
+        return result
+
     playbook_store = SimpleNamespace(
         load_playbook=Mock(side_effect=_load_playbook),
         save_to_s3_vectors=Mock(return_value=True),
         # 기본값은 축적된 플레이북이 없는 첫 분석이다.
         search_similar=Mock(return_value=[]),
         load_detail=Mock(return_value=None),
+        archive_comparison=Mock(side_effect=_archive_comparison),
     )
     return SimpleNamespace(
         session_store=store,
@@ -764,8 +780,8 @@ def recurrent_lock_plans():
     }
 
 
-class TestPlaybookSearchFirstMerge:
-    """기존 식별자와 지식은 보강하되 이번 실행 계획은 생성된 목록 그대로 게시한다."""
+class TestPlaybookComparison:
+    """Keep public knowledge and incident runbooks separate through completed-session persistence."""
 
     def _run(self, container, monkeypatch, tmp_path, *, execution_steps=None, confirmed=True) -> bool:
         class ConfirmedReportWriter:
@@ -776,6 +792,23 @@ class TestPlaybookSearchFirstMerge:
                 else:
                     _write_required_report_artifacts(artifact_dir, _valid_report(), execution_steps=execution_steps)
                 return CodexResult(True, "complete", "{}")
+
+            def compare_playbooks(self, payload, **kwargs):
+                selected = payload["candidates"][0]["playbook_id"]
+                return {
+                    "candidates": [
+                        {
+                            "playbook_id": item["playbook_id"],
+                            "applicable": item["playbook_id"] == selected,
+                            "rationale": "Current observations match this published mechanism.",
+                        }
+                        for item in payload["candidates"]
+                    ],
+                    "selected_playbook_id": selected,
+                    "knowledge_update": {"escalation_criteria": "metric remains high"},
+                    "rationale": "The current observation supports an escalation clarification.",
+                    "evidence": [payload["evidence"][0]["ref"]],
+                }
 
         container.codex_runner = ConfirmedReportWriter()
         _patch_runtime(monkeypatch, tmp_path)
@@ -798,8 +831,14 @@ class TestPlaybookSearchFirstMerge:
         )
 
     def _existing(self) -> dict:
+        from test_artifact_validation import _playbook
+
         return {
+            **_playbook(),
             "playbook_id": "pb-existing",
+            "library_revision": "legacy",
+            "source_engine": "strands",
+            "source_rca_id": "rca-old",
             "failure_type": "DB connection leak",
             "symptom_pattern": "커넥션 수 상승",
             "verification_status": "VERIFIED",
@@ -884,7 +923,7 @@ class TestPlaybookSearchFirstMerge:
         container.playbook_store.search_similar.return_value = [self._hit()]
         container.playbook_store.load_detail.return_value = existing
 
-        with capture_logs() as logs:
+        with capture_logs():
             assert (
                 self._run(
                     container,
@@ -905,13 +944,14 @@ class TestPlaybookSearchFirstMerge:
         assert saved["execution_steps"] == generated_snapshot
         assert saved["verification_status"] == ("VERIFIED" if case == "unchanged" else "DRAFT")
         assert saved["runbook_url"] == existing["runbook_url"]
-        assert saved["escalation_criteria"] == "metric remains high"
+        assert saved["escalation_criteria"] == existing["escalation_criteria"]
         assert completed["playbook"] == saved
         assert completed["completion_notification"]["playbook"] == saved
         assert notified["playbook"] == saved
         report = container.report_store.save_report.call_args.args[1]
         headings = [f"### {index}. {step['step_id']}" for index, step in enumerate(generated, 1)]
         knowledge, runbook = report.split("### 이번 사고의 런북", 1)
+        runbook = runbook.split("## 유사 플레이북 비교", 1)[0]
         assert "### 유형별 대응 지식" in knowledge
         assert saved["escalation_criteria"] in knowledge
         assert [line for line in runbook.splitlines() if line.startswith("### ")] == headings
@@ -920,14 +960,14 @@ class TestPlaybookSearchFirstMerge:
         for step in generated:
             assert step["action"] in report
             assert step["success_criteria"] in report
-        assert "14839" not in report
-        assert "095822Z-4d79" not in report
+        # Historical references remain auditable, but never become the current execution plan.
+        assert "14839" not in runbook
+        assert "095822Z-4d79" not in runbook
         assert existing == historical_snapshot
         assert generated == generated_snapshot
-        merge_log = next(entry for entry in logs if entry["event"] == "playbook_merged_into_existing")
-        assert merge_log["previous_execution_steps"] == len(existing["execution_steps"])
-        assert merge_log["current_execution_steps"] == len(generated)
-        assert merge_log["procedures_unchanged"] is (case == "unchanged")
+        assert saved["comparison"]["selected_playbook_id"] == "pb-existing"
+        archived = container.playbook_store.archive_comparison.call_args.args[0]
+        assert archived["comparison"]["proposal"]["after"]["execution_steps"] == existing["execution_steps"]
 
     @pytest.mark.parametrize("status", ["VERIFIED", "DRAFT", "unknown", None])
     def test_identical_generation_preserves_only_recorded_verification(
@@ -976,16 +1016,18 @@ class TestPlaybookSearchFirstMerge:
         assert container.session_store.mark_completed.call_args.kwargs["playbook"] == saved
         assert container.report_store.send_notification.call_args.kwargs["playbook"] == saved
 
-    def test_analysis_may_enrich_a_field_the_existing_playbook_already_had(self, monkeypatch, tmp_path):
+    def test_analysis_proposes_a_change_without_replacing_existing_knowledge(self, monkeypatch, tmp_path):
         container = _container(None)
         container.playbook_store.search_similar = Mock(return_value=[self._hit()])
         container.playbook_store.load_detail = Mock(return_value=self._existing())
 
         self._run(container, monkeypatch, tmp_path)
 
-        # 병합은 삭제만 금지한다. 새 분석이 값을 제공하면 그것이 보강이고, 값을 비워
-        # 반환했을 때만 기존 값이 유지된다.
-        assert self._saved(container)["escalation_criteria"] == "metric remains high"
+        saved = self._saved(container)
+        assert saved["escalation_criteria"] == self._existing()["escalation_criteria"]
+        archived = container.playbook_store.archive_comparison.call_args.args[0]
+        assert archived["comparison"]["proposal"]["after"]["escalation_criteria"] == "metric remains high"
+        assert saved["comparison"]["proposal"]["state"] == "PENDING"
 
     def test_merge_keeps_fields_the_new_analysis_never_mentioned(self, monkeypatch, tmp_path):
         container = _container(None)

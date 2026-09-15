@@ -106,32 +106,35 @@ def test_rejects_incomplete_wait_or_changed_action_reference(change):
 
 
 def test_new_plan_round_trips_through_strands_dto_store_and_report():
-    from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import _as_execution_steps
     from rca_agent.adapters.secondary.report.s3_report_store import _render_playbook_section
     from rca_agent.adapters.secondary.trace.dynamodb_trace_store import _deserialize_metadata, _serialize_metadata
-    from rca_agent.ports.dto.models import Playbook
+    from rca_agent.ports.dto.models import ExecutionStep, Playbook
     from rca_agent.services.playbook_gen import ExecutionStepOutput, build_execution_steps
 
     steps = build_execution_steps([ExecutionStepOutput(**s) for s in [command_step(), wait_step()]], confirmed=True)
     metadata = {"execution_steps": [s.model_dump() for s in steps]}
     decoded = _deserialize_metadata(_serialize_metadata(metadata))
-    restored = _as_execution_steps(decoded["execution_steps"])
-    assert restored == steps
-    report = "\n".join(
-        _render_playbook_section(
-            Playbook(
-                playbook_id="pb",
-                failure_type="lock",
-                symptom_pattern="blocked writes",
-                execution_steps=restored,
-            )
-        )
+    # The published-detail adapter now reconstructs the public DTO directly.
+    restored = Playbook.model_validate(
+        {"playbook_id": "pb", "failure_type": "lock", "symptom_pattern": "blocked writes", **decoded}
     )
+    assert restored.execution_steps == steps
+    report = "\n".join(_render_playbook_section(restored))
     assert command_step()["commands"][0] in report
     assert json.dumps(wait_step()["metric_wait"], ensure_ascii=False, indent=2) in report
-    legacy = _as_execution_steps([{k: v for k, v in command_step().items() if k != "commands"}])
+    legacy = [ExecutionStep.model_validate({k: v for k, v in command_step().items() if k != "commands"})]
     assert legacy[0].commands == []
     assert build_execution_steps([ExecutionStepOutput(**legacy[0].model_dump())], confirmed=True) == []
+
+
+def test_trace_metadata_preserves_null_and_literal_none_as_distinct_values():
+    from rca_agent.adapters.secondary.trace.dynamodb_trace_store import _deserialize_metadata, _serialize_metadata
+
+    metadata = {"optional_operation": None, "source_text": "None", "values": [None, False, 0.0000001]}
+    encoded = _serialize_metadata(metadata)
+    assert encoded["optional_operation"] == {"NULL": True}
+    assert encoded["source_text"] == {"S": "None"}
+    assert _deserialize_metadata(encoded) == metadata
 
 
 @pytest.mark.parametrize(

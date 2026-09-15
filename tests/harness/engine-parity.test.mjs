@@ -269,18 +269,21 @@ test('neither engine can mark a playbook verified during analysis', async () => 
 // the executable procedure creates an unproven revision that must return to
 // DRAFT. Each engine enforces this independently, so keep both branches aligned.
 test('both engines preserve verification only while procedures are unchanged', async () => {
-  const [agentGeneration, agentStore, ccMerge, ccPipeline] = await Promise.all([
-    readRepositoryFile('packages/agent/src/rca_agent/services/playbook_gen.py'),
-    readRepositoryFile(
-      'packages/agent/src/rca_agent/adapters/secondary/playbook/s3_vectors_playbook_store.py',
-    ),
-    readRepositoryFile(
-      'packages/headless-codex/src/headless_codex/services/playbook_merge.py',
-    ),
-    readRepositoryFile(
-      'packages/headless-codex/src/headless_codex/services/pipeline.py',
-    ),
-  ]);
+  const [agentGeneration, agentStore, ccMerge, ccComparison] =
+    await Promise.all([
+      readRepositoryFile(
+        'packages/agent/src/rca_agent/services/playbook_gen.py',
+      ),
+      readRepositoryFile(
+        'packages/agent/src/rca_agent/adapters/secondary/playbook/s3_vectors_playbook_store.py',
+      ),
+      readRepositoryFile(
+        'packages/headless-codex/src/headless_codex/services/playbook_merge.py',
+      ),
+      readRepositoryFile(
+        'packages/headless-codex/src/headless_codex/services/playbook_comparison.py',
+      ),
+    ]);
 
   // A model-supplied status would make LLM output the authority on whether a
   // procedure has been proven, so the merge must drop the field outright.
@@ -299,24 +302,20 @@ test('both engines preserve verification only while procedures are unchanged', a
     'the Strands merge must preserve unchanged procedures and draft changed ones',
   );
 
-  // Headless Codex applies the same comparison after its additive merge.
+  // Headless compares the exact current runbook with the historical procedure,
+  // independently of whether the knowledge proposal is accepted.
   assert.match(
-    ccPipeline,
-    /procedures_unchanged = merged\.get\("execution_steps"\) == existing\.get\("execution_steps"\)/,
-    'the CC merge must compare the resulting procedure with the recorded one',
-  );
-  assert.match(
-    ccPipeline,
-    /normalize_verification_status\(existing\.get\(VERIFICATION_STATUS_FIELD\)\)\s*if procedures_unchanged\s*else PLAYBOOK_DRAFT/,
-    'the CC merge must preserve unchanged procedures and draft changed ones',
+    ccComparison,
+    /normalize_verification_status\(existing\.get\("verification_status"\)\)\s*if existing\.get\("execution_steps"\) == playbook\["execution_steps"\]\s*else "DRAFT"/,
+    'the comparison preserves unchanged procedures and drafts changed ones',
   );
 
   // Reloading a recorded playbook is the other place a promotion disappears:
   // a status the loader does not reconstruct comes back as the default draft.
   assert.match(
     agentStore,
-    /verification_status=_as_verification_status\(/,
-    'the Strands loader must reconstruct the recorded verification status',
+    /Playbook\.model_validate\(detail\)/,
+    'the Strands loader validates the entire recorded document without dropping verification status',
   );
 
   // Promotion remains a named retrospective operation. Analysis can only retain

@@ -691,7 +691,7 @@ test('a person deciding to approve can tell a proven procedure from a draft', as
   assert.match(reportPage, /verification_status === 'VERIFIED'/);
   assert.match(
     reportPage,
-    /플레이북 검증됨/,
+    /런북 검증됨/,
     'the verified state must be named in words rather than printed as the enum',
   );
   assert.match(
@@ -722,7 +722,14 @@ test('execution history is scoped to the report engine', async () => {
     /execution\.engine === engine/,
     'history excludes attempts belonging to the other analysis engine',
   );
-  assert.match(reportPage, /query: \{ engine \}/);
+  assert.match(
+    reportPage,
+    /useFetch\(`\/api\/executions\/\$\{id\}`,\s*\{\s*query: computed\(\(\) => \(\{ engine: resolvedEngine\.value \}\)\)/,
+  );
+  assert.match(
+    reportPage,
+    /const resolvedEngine = computed\([\s\S]*?session\.value\?\.engine/,
+  );
   assert.match(
     sessionApi,
     /execution\.engine === engine/,
@@ -922,12 +929,16 @@ test('the report page gates approval on a confirmed procedure', async () => {
   assert.match(source, /:disabled="!canApprove"/);
 
   // Writing starts only after an explicit confirmation.
-  assert.match(source, /@click="openApproval\(\)"/);
-  assert.match(source, /approvalModal\.value\?\.showModal\(\)/);
-  assert.match(source, /:disabled="approving \|\| !canApprove"/);
   assert.match(
     source,
-    /async function approveExecution\(\) \{\s*if \(!canApprove\.value\)/,
+    /openDetail\(executionSteps\.length \? 'runbook' : 'knowledge'\)/,
+  );
+  assert.match(source, /<DetailDialog/);
+  assert.match(source, /v-model="reviewed"/);
+  assert.match(source, /:disabled="approving \|\| !canApprove \|\| !reviewed"/);
+  assert.match(
+    source,
+    /async function approveExecution\(\) \{\s*if \(!canApprove\.value \|\| !reviewed\.value\)/,
   );
 });
 
@@ -1086,8 +1097,14 @@ test('approval binds the inspected digest and retains its UUID only for the same
     '$fetch',
     'refreshExecutions',
     'refreshPlaybook',
+    'refreshSession',
+    'report',
+    'error',
+    'sessionError',
+    'executionError',
+    'playbookError',
     'id',
-    `${code}\nreturn { canApprove, openApproval, approveExecution, reloadPlanForReview, approvalModal, approvalError };`,
+    `${code}\nreturn { canApprove, reviewed, reviewedDigest, approveExecution, reloadPlanForReview, approvalError };`,
   )(
     computed,
     ref,
@@ -1097,11 +1114,24 @@ test('approval binds the inspected digest and retains its UUID only for the same
     submit,
     async () => {},
     async () => {},
+    async () => {},
+    ref({ markdown: 'fixture report' }),
+    ref(null),
+    ref(null),
+    ref(null),
+    ref(null),
     'rca-fixture',
   );
-  controller.approvalModal.value = { showModal() {}, close() {} };
+  // The modal displays the complete plan; its review checkbox records this
+  // snapshot. Closing/reopening and rendering are exercised by browser tests.
+  function markReviewed() {
+    controller.reviewedDigest.value = playbook.value.playbookDigest;
+    controller.reviewed.value = true;
+  }
   assert.equal(controller.canApprove.value, true);
-  controller.openApproval();
+  await controller.approveExecution();
+  assert.equal(requests.length, 0, 'an unchecked plan cannot be approved');
+  markReviewed();
   playbook.value.playbookDigest = 'b'.repeat(64);
   await controller.approveExecution();
   assert.equal(
@@ -1110,7 +1140,7 @@ test('approval binds the inspected digest and retains its UUID only for the same
     'a changed displayed snapshot cannot be silently approved',
   );
   assert.match(controller.approvalError.value, /변경/);
-  controller.openApproval();
+  markReviewed();
   await controller.approveExecution();
   await controller.approveExecution();
   assert.equal(requests.length, 2);
@@ -1122,7 +1152,7 @@ test('approval binds the inspected digest and retains its UUID only for the same
   assert.equal(requests[0].expectedPlaybookDigest, 'b'.repeat(64));
   await controller.reloadPlanForReview();
   playbook.value.playbookDigest = 'c'.repeat(64);
-  controller.openApproval();
+  markReviewed();
   fail = false;
   await controller.approveExecution();
   assert.notEqual(

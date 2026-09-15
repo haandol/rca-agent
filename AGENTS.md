@@ -10,7 +10,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | [`packages/infra`](./packages/infra/AGENTS.md) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/headless-codex`](./packages/headless-codex/AGENTS.md) | Codex on Bedrock Runtime headless — 분석 워커(RCA → Report 전문 서브 에이전트, 읽기 전용)와 실행 워커(사용자 승인 기반 플레이북 실행 + 회고) | Python, Codex CLI, ECS Fargate |
 | [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/AGENTS.md) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
-| [`packages/dashboard`](./packages/dashboard/AGENTS.md) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
+| [`packages/dashboard`](./packages/dashboard/AGENTS.md) | RCA 대시보드 — 플레이북 라이브러리·변경 제안 검토, 보고서 요약과 상세 모달, 실행 승인·증거 조회 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
 
 ## Architecture at a Glance
 

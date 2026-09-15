@@ -5,6 +5,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+class PlaybookArchiveUnavailable(RuntimeError):  # noqa: N818 - shared port name
+    """An immutable comparison original could not be persisted; callers must retain a thin failure state."""
+
+
+class PlaybookSearchUnavailable(RuntimeError):  # noqa: N818 - shared port name
+    """Search infrastructure failed; callers must record SEARCH_FAILED, not no candidates."""
+
+
 @dataclass(frozen=True)
 class PlaybookMatch:
     """벡터 인덱스가 돌려준 플레이북 후보.
@@ -20,6 +28,9 @@ class PlaybookMatch:
     tags: list[str] = field(default_factory=list)
     rca_id: str = ""
     publication_id: str = ""
+    unavailable_reason: str = ""
+    engine: str = ""
+    library_revision: str = ""
     # 절차가 실행으로 입증되었는지는 상세를 로드하지 않고도 보여야 한다. 값이 없는
     # 레코드는 초안으로 읽는다 — 미검증 절차가 검증됨으로 보이면 안 된다.
     verification_status: str = "DRAFT"
@@ -53,4 +64,20 @@ class PlaybookStorePort(ABC):
         *,
         metric_name: str = "",
         publication_id: str = "",
-    ) -> bool: ...
+        baseline_playbook: dict | None = None,
+        source_engine: str = "",
+        publication_result: dict | None = None,
+    ) -> bool:
+        """Stage retrospective vectors with their public baseline; commit visibility separately."""
+
+    def finalize_publication(self, playbook_id: str, rca_id: str, *, publication_id: str) -> bool:
+        """Finalize only after the original retrospective revision committed."""
+        raise NotImplementedError
+
+    def recover_publication(self, rca_id: str, *, publication_id: str, source_engine: str) -> bool:
+        """Retry a committed publication on queue redelivery without rerunning execution."""
+        raise NotImplementedError
+
+    def archive_comparison(self, playbook: dict, rca_id: str, engine: str) -> dict:
+        """Archive full inputs before completion and return only their immutable reference in comparison."""
+        raise PlaybookArchiveUnavailable("comparison archive is not supported")

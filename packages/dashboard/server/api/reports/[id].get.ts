@@ -1,6 +1,7 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 
+/** Read the analysis-time object without rewriting it with current execution state. */
 async function fetchReport(
   bucket: string,
   key: string,
@@ -37,12 +38,14 @@ export default defineEventHandler(async (event) => {
   for (const engine of engines) {
     let reportKey = '';
     let completed = false;
+    let summaryAuthority: Record<string, unknown> = {};
     for (const sessionKey of sessionSkCandidates(engine)) {
       const sessionResult = await ddb.send(
         new GetCommand({
           TableName: config.dynamodbTableName,
           Key: { PK: rcaPk(id), SK: sessionKey },
-          ProjectionExpression: 'report_s3_key, engine, #st',
+          ProjectionExpression:
+            'report_s3_key, engine, #st, root_cause, confirmed, confidence_score',
           ExpressionAttributeNames: { '#st': 'state' },
         }),
       );
@@ -51,6 +54,7 @@ export default defineEventHandler(async (event) => {
       if (sessionResult.Item?.state !== 'COMPLETED') continue;
       completed = true;
       completedSessionFound = true;
+      summaryAuthority = sessionResult.Item ?? {};
       reportKey =
         typeof sessionResult.Item?.report_s3_key === 'string'
           ? sessionResult.Item.report_s3_key
@@ -67,7 +71,13 @@ export default defineEventHandler(async (event) => {
       attempts.push(key);
       try {
         const markdown = await fetchReport(config.s3ReportBucket, key, s3);
-        return { rcaId: id, engine, markdown };
+        return {
+          rcaId: id,
+          engine,
+          markdown,
+          displayMarkdown: reportDisplayMarkdown(markdown),
+          summary: readReportSummary(markdown, summaryAuthority),
+        };
       } catch (err: any) {
         if (err.name !== 'NoSuchKey') {
           throw err;
@@ -82,7 +92,13 @@ export default defineEventHandler(async (event) => {
     attempts.push(legacyKey);
     try {
       const markdown = await fetchReport(config.s3ReportBucket, legacyKey, s3);
-      return { rcaId: id, engine: 'legacy', markdown };
+      return {
+        rcaId: id,
+        engine: 'legacy',
+        markdown,
+        displayMarkdown: reportDisplayMarkdown(markdown),
+        summary: readReportSummary(markdown),
+      };
     } catch (err: any) {
       if (err.name !== 'NoSuchKey') {
         throw err;

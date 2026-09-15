@@ -74,7 +74,7 @@ for Korean headings.
 - Workspace maximum width: 1440px
 - Main padding: 24–32px desktop, 16px mobile
 - Primary grid: four metric cards, then a full-width incident queue
-- Detail pages may use a 2:1 content/rail split
+- Report summaries use compact panels; detailed content stays within one switching dialog
 - Mobile: navigation becomes a top strip and incident rows stack vertically
 
 The sidebar establishes product identity and keeps the screen from reading like a
@@ -126,15 +126,40 @@ information, not the primary row structure.
 
 ### Approval surface
 
-Approval is the only high-consequence write action. Use warning emphasis while a
-decision is pending, state exactly how many steps will run, and keep the server-side
-gate explanation beside the control.
+Runbook approval authorizes commands against the incident's operational targets.
+Use warning emphasis while a decision is pending, state exactly how many steps
+will run, and keep the server-side gate explanation beside the control.
+
+Knowledge proposal apply/reject controls use a separate labeled surface. They
+change reusable knowledge, while runbook approval authorizes the incident's fixed
+commands. Never combine their confirmation or success states.
 
 ### Report and evidence panels
 
-Root cause, causal chain, timeline, execution plan, evidence, and execution history are
-separate bordered panels. Long generated Markdown uses a readable 72–80 character
-measure inside the panel.
+Within the selected modal view, causal chain, timeline, execution plan, evidence
+and execution history use separate bordered panels. Unselected content stays hidden.
+Long generated Markdown uses a readable 72–80 character measure inside the panel.
+
+The report starts with incident, impact, cause, a compact recorded 5 Whys chain,
+next action, runbook readiness and generation references. Missing historical values
+are shown as missing. Each short chain step opens its full evidence in the same
+dialog; parsing failure offers the original report without inventing a chain. Details open
+in one native dialog; changing the selected detail replaces content within that
+dialog. Runbook review and approval remain inside it. Closing restores the
+operator's focus and page scroll. Each data source has its own loading, failure
+and retry surface.
+
+Generation references list only recorded actual uses, with role, source reference,
+RCA, engine and applicable revision. Open frozen reused knowledge, current incident
+inputs and every observation matching a used citation in the same modal. Considered
+search candidates are not generation references. When an older record lacks an
+actual-use list, label its preserved baseline as a comparison record. Keep knowledge
+update before/after, rationale and apply/reject controls in this reference panel.
+
+The playbook library has its own sidebar destination. Its rows show type,
+symptom, tags, update time and the linked runbook's verification state. Detail
+opens in a dialog; pending publication and unavailable originals remain visibly
+distinct from usable published knowledge.
 
 ### Graphs
 
@@ -167,7 +192,7 @@ Do:
 - keep timestamps and identifiers monospaced
 - use compact panels and clear column alignment
 - show the root-cause summary in the queue
-- keep report, trace, playbook, and retrospective pages inside the same app shell
+- keep report summaries and the library inside the app shell, with report details in one switching dialog
 
 Don't:
 

@@ -185,6 +185,7 @@ def test_all_agent_system_prompts_preserve_korean_language_contract(prompt):
                 "existing_escalation_criteria",
                 "existing_prevention_measures",
                 "existing_related_metrics",
+                "existing_tags",
                 "root_cause",
                 "severity",
                 "evidence_highlights",

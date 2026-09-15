@@ -50,7 +50,7 @@ from rca_agent.services.hypothesis import (
     run_hypothesis_generation,
 )
 from rca_agent.services.notification import build_notification
-from rca_agent.services.playbook_gen import run_playbook_generation
+from rca_agent.services.playbook_gen import archive_incident_comparison, run_playbook_generation
 from rca_agent.services.prioritization import run_prioritization
 from rca_agent.services.report import run_report_generation
 from rca_agent.services.review_gate import ReviewGateResult, run_review_gate
@@ -1256,7 +1256,7 @@ class PipelineOrchestrator:
         # 플레이북은 확정된 리포트를 입력으로 만든다 — 조치 방안과 조치 항목이 절차의
         # 재료이므로 순서를 뒤집으면 플레이북이 그 재료를 잃는다. 리포트 본문의 절차
         # 섹션은 그래서 모델이 쓰지 않고 이 플레이북에서 렌더링된다.
-        playbook, playbook_span_id = self._run_playbook(
+        playbook, playbook_span_id, report_playbook = self._run_playbook(
             rca_report,
             scoping_result,
             run,
@@ -1265,7 +1265,7 @@ class PipelineOrchestrator:
 
         report_s3_key = c.report_store.save(
             rca_report,
-            playbook=playbook,
+            playbook=report_playbook,
             claim_token=run.claim_token,
             attempt=run.attempt,
         )
@@ -1344,7 +1344,8 @@ class PipelineOrchestrator:
         rca_report,
         scoping_result,
         run: RunContext,
-    ) -> tuple[Playbook | None, str | None]:
+    ) -> tuple[Playbook | None, str | None, Playbook | None]:
+        """Archive full comparison before tracing; return thin state and a separate report-only copy."""
         c = self._container
         trace = run.trace
         playbook_span = trace.start_span(
@@ -1358,6 +1359,7 @@ class PipelineOrchestrator:
                 playbook_store=c.playbook_store,
                 scoping_result=scoping_result,
             )
+            report_playbook, playbook = archive_incident_comparison(playbook, store=c.playbook_store, rca_id=run.rca_id)
             trace.end_span(
                 playbook_span,
                 output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),
@@ -1377,6 +1379,7 @@ class PipelineOrchestrator:
                     "related_metrics": playbook.related_metrics,
                     "tags": playbook.tags,
                     "verification_status": playbook.verification_status.value,
+                    "comparison": playbook.comparison,
                 },
             )
             logger.info(
@@ -1384,7 +1387,7 @@ class PipelineOrchestrator:
                 playbook.playbook_id,
                 playbook.failure_type,
             )
-            return playbook, playbook_span.span_id
+            return playbook, playbook_span.span_id, report_playbook
         except (SessionCancelledError, SideEffectLeaseUnavailableError):
             raise
         except Exception:
@@ -1397,4 +1400,4 @@ class PipelineOrchestrator:
                 status=SpanStatus.FAILED,
                 error="Playbook generation failed",
             )
-            return None, None
+            return None, None, None

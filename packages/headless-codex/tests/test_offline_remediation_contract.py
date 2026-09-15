@@ -139,6 +139,8 @@ class Journey:
         self.events, self.spawned, self.records = [], [], []
         self.retrospectives = 0
         self.vector_success = True
+        self.finalization_failures = 0
+        self.library_published = False
         self.work = None
         self.s3 = MemoryS3(self)
         self.store = DynamoDbExecutionStore(ddb)
@@ -146,7 +148,11 @@ class Journey:
             execution_store=self.store,
             evidence_store=S3EvidenceStore(self.s3),
             execution_runner=self,
-            playbook_store=SimpleNamespace(save_to_s3_vectors=self.publish_vectors),
+            playbook_store=SimpleNamespace(
+                save_to_s3_vectors=self.publish_vectors,
+                finalize_publication=self.finalize_publication,
+                recover_publication=self.recover_publication,
+            ),
         )
         self.approval = {
             "execution_id": EXECUTION,
@@ -334,17 +340,62 @@ class Journey:
             assert json.loads(retrospective.save_playbook_update(json.dumps(self.update), RATIONALE))["ok"]
         return CodexResult(success=True, result="scripted offline retrospective", raw_output="")
 
-    def publish_vectors(self, playbook, rca_id, *, metric_name, publication_id):
+    def publish_vectors(
+        self, playbook, rca_id, *, metric_name, publication_id, baseline_playbook, source_engine, publication_result
+    ):
+        """Keep the approved baseline and attestation fixed while staging vector transport."""
         assert rca_id == RCA and publication_id == EXECUTION
+        assert source_engine == ENGINE
+        assert baseline_playbook == PLAYBOOK
         assert self.work.path.is_dir()
         assert json.loads(self.s3.objects[PREFIX + "retrospective-diff.json"])["rationale"] == RATIONALE
+        assert publication_result["summary"] == RATIONALE[:500]
+        assert publication_result["playbook_snapshot_s3_key"] == SNAPSHOT
+        assert publication_result["diff_s3_key"] == PREFIX + "retrospective-diff.json"
+        assert publication_result["status"] == ("UPDATED" if self.update else "NO_CHANGE")
         staged = self.get(STAGE)
         assert staged["publication_status"]["S"] == "PENDING"
         assert json.loads(staged["playbook"]["S"]) == playbook
         assert json.loads(self.get(REVISION)["playbook"]["S"]) == self.current
+        assert not self.library_published
         self.events.append("vectors")
         self.vector_playbook = copy.deepcopy(playbook)
+        self.publication_result = copy.deepcopy(publication_result)
         return self.vector_success
+
+    def finalize_publication(self, playbook_id, rca_id, *, publication_id):
+        """Reject early visibility: the real original revision commit must already have succeeded."""
+        assert playbook_id == PLAYBOOK["playbook_id"] and rca_id == RCA and publication_id == EXECUTION
+        assert self.vector_success and "vectors" in self.events
+        committed = self.get(REVISION)
+        assert committed["publication_status"]["S"] == "PUBLISHED"
+        assert committed["revised_by_execution_id"]["S"] == EXECUTION
+        assert json.loads(committed["playbook"]["S"]) == self.vector_playbook
+        assert not self.get(STAGE), "the real commit must consume its preparation record before finalization"
+        assert json.loads(self.s3.objects[PREFIX + "retrospective-diff.json"])["rationale"] == RATIONALE
+        if self.finalization_failures:
+            self.finalization_failures -= 1
+            return False
+        if not self.library_published:
+            self.events.append("library-finalized")
+            self.library_published = True
+        return True
+
+    def recover_publication(self, rca_id, *, publication_id, source_engine):
+        """Terminal redelivery may finish publication, but cannot repeat execution or the model."""
+        assert rca_id == RCA and publication_id == EXECUTION and source_engine == ENGINE
+        committed = self.get(REVISION)
+        if committed.get("revised_by_execution_id", {}).get("S") != EXECUTION or self.library_published:
+            return True
+        if not self.finalize_publication(PLAYBOOK["playbook_id"], rca_id, publication_id=publication_id):
+            return False
+        execution = self.get(f"EXEC#{EXECUTION}")
+        assert execution["execution_state"]["S"] == "RESOLVED"
+        assert execution["retrospective_status"]["S"] == "RUNNING"
+        self.store.record_retrospective(
+            EXECUTION, rca_id=rca_id, claim_token=execution["claim_token"]["S"], **self.publication_result
+        )
+        return True
 
     def process(self):
         assert ExecutionOrchestrator(self.container).process_message(json.dumps(self.approval))
@@ -420,7 +471,13 @@ def test_confirmed_recovery_preserves_approval_and_attestation_before_publicatio
     assert diff["rationale"] == RATIONALE and len(diff["rationale"]) > 500
     assert diff["proposed_update"] == update and diff["update"] == update
     assert bool(diff["corrected_steps"]) is (verification == "DRAFT")
-    assert journey.events == [PREFIX + "evidence.json", PREFIX + "retrospective-diff.json", "vectors"]
+    assert journey.events == [
+        PREFIX + "evidence.json",
+        PREFIX + "retrospective-diff.json",
+        "vectors",
+        "library-finalized",
+    ]
+    assert journey.library_published
     published = journey.get(REVISION)
     assert published["publication_status"]["S"] == "PUBLISHED"
     assert published["revised_by_execution_id"]["S"] == EXECUTION
@@ -431,6 +488,38 @@ def test_confirmed_recovery_preserves_approval_and_attestation_before_publicatio
     before = (len(journey.spawned), journey.retrospectives, list(journey.events))
     journey.process()  # Redelivered approval cannot run commands or publish twice.
     assert (len(journey.spawned), journey.retrospectives, journey.events) == before
+
+
+def test_committed_publication_redelivery_retains_attestation_without_repeating_work(journey):
+    """Exercise bounded finalization and terminal recovery across the real execution store."""
+    journey.finalization_failures = 4
+    approved = journey.s3.objects[SNAPSHOT]
+    assert not ExecutionOrchestrator(journey.container).process_message(json.dumps(journey.approval))
+    item = journey.get(f"EXEC#{EXECUTION}")
+    assert item["execution_state"]["S"] == "RESOLVED"
+    assert item["retrospective_status"]["S"] == "RUNNING"
+    assert journey.finalization_failures == 1
+    assert not journey.library_published and not journey.get(STAGE)
+    assert journey.get(REVISION)["revised_by_execution_id"]["S"] == EXECUTION
+    assert not journey.work.path.exists()
+    journey.assert_durable_records("RESOLVED")
+    evidence = journey.s3.objects[PREFIX + "evidence.json"]
+    attestation = journey.s3.objects[PREFIX + "retrospective-diff.json"]
+    before = (len(journey.spawned), journey.retrospectives, list(journey.events))
+
+    assert not ExecutionOrchestrator(journey.container).process_message(json.dumps(journey.approval))
+    assert (len(journey.spawned), journey.retrospectives, journey.events) == before
+    item = journey.process()
+    assert item["execution_state"]["S"] == "RESOLVED"
+    assert item["retrospective_status"]["S"] == "NO_CHANGE"
+    assert item["retrospective_diff_s3_key"]["S"] == PREFIX + "retrospective-diff.json"
+    assert journey.library_published
+    assert (len(journey.spawned), journey.retrospectives) == before[:2]
+    assert journey.events == [*before[2], "library-finalized"]
+    assert journey.s3.objects[SNAPSHOT] == approved
+    assert journey.s3.objects[PREFIX + "evidence.json"] == evidence
+    assert journey.s3.objects[PREFIX + "retrospective-diff.json"] == attestation
+    assert json.loads(attestation)["rationale"] == RATIONALE
 
 
 @pytest.mark.parametrize(

@@ -13,8 +13,10 @@
     "format:check": "prettier --check \"app/**/*.{ts,vue}\" \"server/**/*.ts\" nuxt.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1096.0",
     "@aws-sdk/client-dynamodb": "^3.1096.0",
     "@aws-sdk/client-s3": "^3.1096.0",
+    "@aws-sdk/client-s3vectors": "^3.1096.0",
     "@aws-sdk/client-sqs": "^3.1097.0",
     "@aws-sdk/lib-dynamodb": "^3.1096.0",
     "@dagrejs/dagre": "^3.0.0",

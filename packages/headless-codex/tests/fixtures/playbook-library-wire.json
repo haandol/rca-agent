@@ -1,0 +1,14 @@
+{
+  "PK": "PLAYBOOK_LIBRARY",
+  "SK": "pb-1",
+  "playbook_json": "{\"comparison\":{\"candidates\":[],\"query\":\"pool pressure\",\"status\":\"NO_SIMILAR_CANDIDATE\"},\"failure_type\":\"Pool pressure\",\"playbook_id\":\"pb-1\",\"rca_id\":\"rca-1\",\"symptom_pattern\":\"Connections rise\",\"verification_status\":\"DRAFT\"}",
+  "revision": "analysis:rca-1",
+  "source_rca_id": "rca-1",
+  "engine": "strands",
+  "publication_status": "PENDING",
+  "vector_key": "pb-1@analysis:rca-1",
+  "metric_name": "DatabaseConnections",
+  "updated_at": "2026-09-15T00:00:00+00:00",
+  "ttl": 1794614400,
+  "original_created_at": "2026-09-15T00:00:00+00:00"
+}

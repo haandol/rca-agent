@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
 from threading import Event
@@ -13,7 +12,7 @@ import structlog
 from headless_codex.config.settings import (
     ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS,
     ALARM_STALENESS_SECONDS,
-    PLAYBOOK_UPDATE_THRESHOLD,
+    CODEX_TIMEOUT_SECONDS,
     SIDE_EFFECT_LEASE_SECONDS,
 )
 from headless_codex.di.container import Container
@@ -26,20 +25,15 @@ from headless_codex.ports.interfaces.session_store import (
     SessionCancelledError,
     SessionOwnershipCheckError,
 )
+from headless_codex.services.analysis_contract import validate_analysis_completion
 from headless_codex.services.artifact_validation import (
     ArtifactValidationError,
     render_completion_report,
     validate_completion_artifacts,
 )
 from headless_codex.services.execution_context import ExecutionContext
-from headless_codex.services.playbook_merge import (
-    PLAYBOOK_DRAFT,
-    VERIFICATION_STATUS_FIELD,
-    merge_playbook_update,
-    normalize_verification_status,
-)
+from headless_codex.services.playbook_comparison import archive_incident_comparison, compare_incident_playbook
 from headless_codex.services.prompt_builder import build_prompt
-from headless_codex.utils.embed_key import build_embed_key
 
 logger = structlog.get_logger()
 _ROOT_CAUSE_SECTION = re.compile(
@@ -269,6 +263,7 @@ class PipelineOrchestrator:
         *,
         attempt: int = 1,
     ) -> bool:
+        """Share one deadline across model analysis and comparison, then publish claim-owned validated artifacts."""
         from headless_codex.adapters.secondary.session.dynamodb_session_store import (
             InvalidStateTransitionError,
         )
@@ -276,6 +271,7 @@ class PipelineOrchestrator:
         c = self._c
         store = c.session_store
         start_time = time.time()
+        deadline = time.monotonic() + CODEX_TIMEOUT_SECONDS
         alarm = parse_alarm(alarm_data)
         execution = ExecutionContext.create(rca_id)
         artifact_dir = execution.prepare()
@@ -304,6 +300,7 @@ class PipelineOrchestrator:
                 rca_id=rca_id,
                 claim_token=claim_token,
                 attempt=attempt,
+                deadline=deadline,
             )
             elapsed_seconds = int(time.time() - start_time)
 
@@ -347,12 +344,26 @@ class PipelineOrchestrator:
                 return False
 
             root_cause_line = artifacts.root_cause
-            final_playbook = self._merge_into_existing(
+            final_playbook = compare_incident_playbook(
                 artifacts.playbook,
-                alarm.metric_name or "",
-                log,
+                store=c.playbook_store,
+                runner=c.codex_runner,
+                metric_name=alarm.metric_name or "",
+                artifact_dir=artifact_dir,
+                analysis=validate_analysis_completion(artifact_dir).effective_state_view(),
+                execution_token=execution.token,
+                deadline=deadline,
+                cancel_checker=_should_cancel,
+                rca_id=rca_id,
             )
-            final_report = render_completion_report(artifact_dir, final_playbook)
+            if ownership_check_failed.is_set() or _should_cancel():
+                log.info("session_terminated_during_comparison")
+                return False
+            report_playbook, final_playbook = archive_incident_comparison(
+                final_playbook, store=c.playbook_store, rca_id=rca_id
+            )
+            final_report = render_completion_report(artifact_dir, report_playbook)
+            elapsed_seconds = int(time.time() - start_time)
             completion_notification = {
                 "rca_id": rca_id,
                 "alarm_name": alarm.alarm_name,
@@ -450,6 +461,7 @@ class PipelineOrchestrator:
         log: structlog.stdlib.BoundLogger,
         handoff: CompletionHandoff | None = None,
     ) -> bool:
+        """Retry pending publication and notification from the durable handoff, preserving its full playbook."""
         if handoff is None:
             handoff = self._c.session_store.get_completion_handoff(rca_id)
         if handoff is None:
@@ -516,73 +528,3 @@ class PipelineOrchestrator:
             log.error("completion_notification_status_commit_failed")
             return False
         return True
-
-    def _merge_into_existing(
-        self,
-        playbook: dict,
-        metric_name: str,
-        log: structlog.stdlib.BoundLogger,
-    ) -> dict:
-        """기존 식별자와 비실행 지식은 보강하고 실행 계획은 이번 생성 결과로 교체한다.
-
-        새 RCA의 실행 단계는 이번 사고에 대한 완전한 계획이다. 회고의 부분 교정처럼
-        병합하면 이전 사고의 대상과 순서가 섞이므로 빈 목록도 그대로 받아들인다.
-        검증 상태는 실행 단계 전체가 정확히 같을 때만 유지한다.
-
-        검색·병합 실패는 분석을 중단시키지 않는다. 플레이북은 미래를 위한 자산이고 이번
-        RCA 의 결과물은 리포트이므로, 자산 축적 실패가 결과 전달을 막아서는 안 된다.
-        """
-        store = self._c.playbook_store
-        query = build_embed_key(
-            failure_type=str(playbook.get("failure_type", "")),
-            symptom=str(playbook.get("symptom_pattern", "")),
-            metric_name=metric_name,
-        )
-        if not query:
-            return playbook
-
-        try:
-            hits = store.search_similar(query, threshold=PLAYBOOK_UPDATE_THRESHOLD)
-        except Exception:
-            log.exception("playbook_search_failed")
-            return playbook
-
-        for hit in hits:
-            try:
-                existing = store.load_detail(hit)
-            except Exception:
-                log.exception("playbook_detail_load_failed", playbook_id=hit.playbook_id)
-                continue
-            if existing is None:
-                # 기존 절차를 보지 못한 상태의 "보강"은 같은 식별자로 과거 내용을 덮어써
-                # 축적을 되돌린다. 그 후보는 건너뛰고 신규 생성으로 떨어지는 편이 안전하다.
-                log.info("playbook_merge_skipped_no_detail", playbook_id=hit.playbook_id)
-                continue
-
-            # Only knowledge fields use retrospective's additive merge. Neither
-            # old nor generated execution steps may enter its patch semantics.
-            merged, diff = merge_playbook_update(
-                {**existing, "execution_steps": []},
-                {**playbook, "execution_steps": []},
-            )
-            merged["execution_steps"] = deepcopy(playbook["execution_steps"])
-            merged["playbook_id"] = hit.playbook_id
-            merged["stage"] = playbook.get("stage", "PLAYBOOK")
-            procedures_unchanged = merged.get("execution_steps") == existing.get("execution_steps")
-            merged[VERIFICATION_STATUS_FIELD] = (
-                normalize_verification_status(existing.get(VERIFICATION_STATUS_FIELD))
-                if procedures_unchanged
-                else PLAYBOOK_DRAFT
-            )
-            log.info(
-                "playbook_merged_into_existing",
-                playbook_id=hit.playbook_id,
-                similarity=round(hit.similarity, 3),
-                changed_fields=len(diff.changed_fields),
-                previous_execution_steps=len(existing.get("execution_steps") or []),
-                current_execution_steps=len(merged["execution_steps"]),
-                procedures_unchanged=procedures_unchanged,
-            )
-            return merged
-
-        return playbook

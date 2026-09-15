@@ -50,6 +50,19 @@ export default defineEventHandler(async (event) => {
 
   const resolved = resolveCurrentPlaybook(items, session, engine);
   if (!resolved) {
+    if (
+      items.some(
+        (item) =>
+          item.SK === `${engine}#PLAYBOOK_REVISION` &&
+          item.playbook_id === session.playbook_id,
+      )
+    ) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          '현재 회고 개정본을 읽을 수 없습니다. 이전 런북으로 실행을 승인할 수 없습니다.',
+      });
+    }
     throw createError({ statusCode: 404, statusMessage: 'Playbook not found' });
   }
 

@@ -19,4 +19,18 @@ class CodexRunnerPort(ABC):
         rca_id: str | None = None,
         claim_token: str | None = None,
         attempt: int | None = None,
-    ) -> CodexResult: ...
+        deadline: float | None = None,
+    ) -> CodexResult:
+        """Carry caller-owned identity, cancellation and a shared deadline across profile execution."""
+        ...
+
+    def compare_playbooks(
+        self,
+        payload: dict,
+        *,
+        execution_token: str,
+        deadline: float,
+        cancel_checker: Callable[[], bool] | None = None,
+    ) -> dict:
+        """Return a validated judgment without writing analysis artifacts."""
+        raise NotImplementedError("This runner does not support playbook comparison")

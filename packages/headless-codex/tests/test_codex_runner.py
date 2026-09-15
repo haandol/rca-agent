@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -438,3 +439,96 @@ def test_unverifiable_analysis_stops_before_report(monkeypatch, analysis_artifac
     assert len(calls) == 1
     assert "effective state could not be verified" in result.result
     assert json.loads(result.raw_output)["rca"]["total_bytes"] == len("raw RCA trace")
+
+
+def _comparison_payload_and_judgment():
+    payload = {
+        "current_playbook": {"failure_type": "lock", "execution_steps": [{"commands": ["current target"]}]},
+        "analysis": {"root_cause_confirmed": True},
+        "evidence": [
+            {"ref": "validation-1.json#/confirmed/0/evidence_summary/0", "value": "Actual current lock owner"}
+        ],
+        "candidates": [
+            {
+                "playbook_id": "historical",
+                "revision": "revision-3",
+                "playbook": {"temporary_mitigation": "Historical owner check", "execution_steps": ["old target"]},
+            }
+        ],
+    }
+    judgment = {
+        "candidates": [{"playbook_id": "historical", "applicable": True, "rationale": "Same observed owner mechanism"}],
+        "selected_playbook_id": "historical",
+        "knowledge_update": {},
+        "rationale": "Published knowledge already covers the current observation",
+        "evidence": [payload["evidence"][0]["ref"]],
+    }
+    return payload, judgment
+
+
+def test_comparison_is_an_isolated_model_call_without_artifact_writers(monkeypatch, analysis_artifacts):
+    payload, judgment = _comparison_payload_and_judgment()
+    calls = _capture_processes(monkeypatch, [{"result": json.dumps(judgment)}])
+    monkeypatch.setenv("RCA_EXECUTION_TOKEN", "parent-token")
+    before = {path.name: path.read_bytes() for path in analysis_artifacts.iterdir()}
+    deadline = time.monotonic() + 20
+
+    result = CodexSubprocessRunner().compare_playbooks(
+        payload, execution_token=EXECUTION_TOKEN, deadline=deadline, cancel_checker=lambda: False
+    )
+
+    assert result == judgment
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["config"]["model"] == "global.openai.gpt-5.6-sol"
+    assert call["config"]["model_provider"] == "amazon-bedrock-runtime"
+    assert call["config"]["sandbox_mode"] == "read-only"
+    assert not call["config"].get("mcp_servers")
+    assert all(value is False for value in call["config"]["features"].values())
+    assert not call["agent_configs"]
+    assert "RCA_EXECUTION_TOKEN" not in call["env"]
+    assert "RCA_CLAIM_TOKEN" not in call["env"]
+    assert "Historical owner check" in call["process"].input
+    assert "Actual current lock owner" in call["process"].input
+    assert 0 < call["process"].timeout <= 20
+    assert {path.name: path.read_bytes() for path in analysis_artifacts.iterdir()} == before
+
+
+@pytest.mark.parametrize("failure", ["provider", "invalid_json", "fabricated_evidence", "expired", "cancelled"])
+def test_comparison_failures_never_rerun_report_or_write_artifacts(monkeypatch, analysis_artifacts, failure):
+    payload, judgment = _comparison_payload_and_judgment()
+    process = {"result": json.dumps(judgment)}
+    if failure == "provider":
+        process["returncode"] = 2
+    elif failure == "invalid_json":
+        process["result"] = "I updated the old report"
+    elif failure == "fabricated_evidence":
+        judgment["evidence"] = ["invented"]
+        process["result"] = json.dumps(judgment)
+    calls = _capture_processes(monkeypatch, [process])
+    before = {path.name: path.read_bytes() for path in analysis_artifacts.iterdir()}
+    with pytest.raises((ValueError, RuntimeError)):
+        CodexSubprocessRunner().compare_playbooks(
+            payload,
+            execution_token=EXECUTION_TOKEN,
+            deadline=time.monotonic() + (-1 if failure == "expired" else 20),
+            cancel_checker=lambda: failure == "cancelled",
+        )
+    assert len(calls) == (0 if failure in {"expired", "cancelled"} else 1)
+    assert {path.name: path.read_bytes() for path in analysis_artifacts.iterdir()} == before
+
+
+def test_comparison_rechecks_cancellation_after_model_response(monkeypatch):
+    payload, judgment = _comparison_payload_and_judgment()
+    calls = _capture_processes(monkeypatch, [{"result": json.dumps(judgment)}])
+    cancelled = iter([False, True])
+    # Avoid racing this deterministic boundary test with the background polling thread.
+    monkeypatch.setattr(codex_subprocess_runner, "_watch_cancel", lambda *args: None)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        CodexSubprocessRunner().compare_playbooks(
+            payload,
+            execution_token=EXECUTION_TOKEN,
+            deadline=time.monotonic() + 20,
+            cancel_checker=lambda: next(cancelled),
+        )
+    assert len(calls) == 1

@@ -1035,13 +1035,14 @@ class TestProcessAlarmFullPipeline:
         )
 
         with patch(f"{_P}.run_playbook_generation", return_value=playbook):
-            generated, span_id = orchestrator._run_playbook(
+            generated, span_id, report_playbook = orchestrator._run_playbook(
                 report,
                 _scoping(),
                 _run_context(claim_token="claim-1"),
             )
 
         assert generated == playbook
+        assert report_playbook == playbook
         assert span_id is not None
         container.session_store.acquire_side_effect_lease.assert_not_called()
         container.playbook_store.save.assert_not_called()

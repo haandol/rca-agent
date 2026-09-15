@@ -44,13 +44,17 @@ logger = structlog.get_logger()
 _MISSING_EVIDENCE_RETROSPECTIVE_REASON = "durable execution evidence is unavailable; retrospective was not started"
 
 
+class PlaybookPublicationPendingError(RuntimeError):
+    """The original retrospective committed; its durable publication must be retried."""
+
+
 class ExecutionOrchestrator:
     def __init__(self, container: ExecutionContainer, shutdown_event: Event | None = None):
         self._c = container
         self._shutdown_event = shutdown_event or Event()
 
     def process_message(self, message_body: str) -> bool:
-        """실행 요청 하나를 처리한다. True 면 큐에서 지운다."""
+        """Acknowledge completed work; terminal redelivery retries publication without repeating execution."""
         try:
             request = parse_execution_request(message_body)
         except InvalidExecutionRequestError as exc:
@@ -81,8 +85,9 @@ class ExecutionOrchestrator:
             claim_seconds=EXECUTION_CLAIM_SECONDS,
         )
         if claim.disposition is ExecutionClaimDisposition.TERMINAL_DUPLICATE:
-            log.info("execution_terminal_duplicate_acknowledged")
-            return True
+            return self._c.playbook_store.recover_publication(
+                request.rca_id, publication_id=execution_id, source_engine=request.engine
+            )
         if claim.disposition is ExecutionClaimDisposition.REJECTED:
             log.error("execution_reservation_rejected")
             return True
@@ -242,7 +247,7 @@ class ExecutionOrchestrator:
             )
 
             if enters_retrospective(verdict.state) and evidence_key:
-                self._retrospect(
+                retrospective = self._retrospect(
                     execution_id,
                     request,
                     target,
@@ -252,6 +257,8 @@ class ExecutionOrchestrator:
                     request.approved_playbook_s3_key,
                     log,
                 )
+                if retrospective is False:
+                    return False
             return True
         except ExecutionClaimLostError:
             # 다른 워커가 같은 실행을 이어받았다. 이 워커의 쓰기는 더 이상 유효하지 않다.
@@ -401,8 +408,8 @@ class ExecutionOrchestrator:
         workspace: ExecutionWorkspace,
         snapshot_key: str,
         log: structlog.stdlib.BoundLogger,
-    ) -> None:
-        """해결된 실행 직후의 회고. 실패해도 실행 결과를 되돌리지 않는다."""
+    ) -> bool | None:
+        """Keep resolved execution intact; return False only for durable publication redelivery."""
         store = self._c.execution_store
         if not store.claim_retrospective(execution_id, rca_id=request.rca_id, claim_token=claim_token):
             log.info("retrospective_already_claimed")
@@ -464,9 +471,17 @@ class ExecutionOrchestrator:
             )
             if not diff_key:
                 raise RuntimeError("retrospective attestation did not persist")
+            publication_result = {
+                "status": "NO_CHANGE" if diff.is_empty else "UPDATED",
+                "summary": saved["rationale"][:500],
+                "playbook_snapshot_s3_key": snapshot_key,
+                "diff_s3_key": diff_key,
+            }
             if diff.is_empty:
                 phase = "publish_playbook"
-                self._publish_playbook(request, target, promote_to_verified(merged), execution_id)
+                self._publish_playbook(
+                    request, target, promote_to_verified(merged), execution_id, publication_result=publication_result
+                )
                 phase = "record_result"
                 store.record_retrospective(
                     execution_id,
@@ -485,7 +500,7 @@ class ExecutionOrchestrator:
             else:
                 published = promote_to_verified(merged)
             phase = "publish_playbook"
-            self._publish_playbook(request, target, published, execution_id)
+            self._publish_playbook(request, target, published, execution_id, publication_result=publication_result)
             phase = "record_result"
             store.record_retrospective(
                 execution_id,
@@ -511,12 +526,14 @@ class ExecutionOrchestrator:
                     execution_id,
                     rca_id=request.rca_id,
                     claim_token=claim_token,
-                    status="FAILED",
+                    status="RUNNING" if isinstance(exc, PlaybookPublicationPendingError) else "FAILED",
                     summary=f"{phase}: {error_type}: {detail}"[:500],
                     playbook_snapshot_s3_key=snapshot_key,
                 )
             except Exception:
                 log.exception("retrospective_record_failed")
+            if isinstance(exc, PlaybookPublicationPendingError):
+                return False
 
     def _publish_playbook(
         self,
@@ -524,20 +541,23 @@ class ExecutionOrchestrator:
         target: ExecutionTarget,
         playbook: dict,
         execution_id: str,
+        *,
+        publication_result: dict | None = None,
     ) -> None:
         """회고를 통과한 플레이북을 개정본과 검색 인덱스 양쪽에 반영한다.
 
-        DynamoDB 준비본이 먼저 내구성 있게 저장되고, 벡터 게시 뒤 정식 개정본으로
-        확정된다. 벡터의 게시 식별자와 정식 개정본이 일치하기 전에는 검색 어댑터가
-        VERIFIED 를 노출하지 않는다.
+        불변 벡터는 정확한 기준 개정본을 조건으로 준비한다. 기존 회고 개정본을
+        커밋한 뒤 라이브러리를 확정하므로 부분 성공을 VERIFIED로 노출하지 않는다.
         """
         try:
-            self._c.execution_store.save_playbook_revision(
+            staged = self._c.execution_store.save_playbook_revision(
                 request.rca_id,
                 request.engine,
                 playbook,
                 execution_id=execution_id,
             )
+            if staged is False:
+                raise RuntimeError("playbook revision staging returned failure")
         except Exception as exc:
             raise RuntimeError("playbook revision staging failed") from exc
 
@@ -547,6 +567,9 @@ class ExecutionOrchestrator:
                 request.rca_id,
                 metric_name=target.metric_name,
                 publication_id=execution_id,
+                baseline_playbook=target.playbook,
+                source_engine=request.engine,
+                publication_result=publication_result,
             )
         except Exception as exc:
             raise RuntimeError("playbook vector publication failed") from exc
@@ -554,11 +577,23 @@ class ExecutionOrchestrator:
             raise RuntimeError("playbook vector publication did not persist the update")
 
         try:
-            self._c.execution_store.publish_playbook_revision(
+            committed = self._c.execution_store.publish_playbook_revision(
                 request.rca_id,
                 request.engine,
                 playbook,
                 execution_id=execution_id,
             )
+            if committed is False:
+                raise RuntimeError("playbook revision commit returned failure")
         except Exception as exc:
             raise RuntimeError("playbook revision commit failed") from exc
+
+        # SDK retries handle individual requests; these attempts also cover transaction races.
+        for _ in range(3):
+            if self._c.playbook_store.finalize_publication(
+                playbook["playbook_id"], request.rca_id, publication_id=execution_id
+            ):
+                return
+        raise PlaybookPublicationPendingError(
+            "committed retrospective is awaiting library publication; retry on redelivery"
+        )

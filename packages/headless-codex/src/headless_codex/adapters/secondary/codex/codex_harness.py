@@ -21,6 +21,7 @@ MODEL_EVAL_RCA_PROFILE = "model-eval-rca"
 MODEL_EVAL_REPORT_PROFILE = "model-eval-report"
 EXECUTION_PROFILE = "execution"
 RETROSPECTIVE_PROFILE = "retrospective"
+COMPARISON_PROFILE = "comparison"
 
 _PROFILE_CONFIG = {
     ANALYSIS_PROFILE: Path("analysis/config.toml"),
@@ -31,6 +32,7 @@ _PROFILE_CONFIG = {
     MODEL_EVAL_REPORT_PROFILE: Path("analysis/model-eval-report.config.toml"),
     EXECUTION_PROFILE: Path("execution/config.toml"),
     RETROSPECTIVE_PROFILE: Path("retrospective/config.toml"),
+    COMPARISON_PROFILE: Path("comparison/config.toml"),
 }
 _PROFILE_AGENTS = {
     ANALYSIS_PROFILE: ("rca-specialist.toml", "report-specialist.toml"),
@@ -59,6 +61,7 @@ def runtime_home_root() -> Path:
 
 
 def prepare_codex_home(home: Path, profile: str, extra_env: dict[str, str] | None = None) -> Path:
+    """Render only the selected profile's resources into the run's isolated Codex home."""
     validate_codex_model_contract()
     relative_config = _PROFILE_CONFIG.get(profile)
     if relative_config is None:
@@ -109,11 +112,13 @@ def prepare_codex_home(home: Path, profile: str, extra_env: dict[str, str] | Non
             content = f"developer_instructions = {json.dumps(instructions, ensure_ascii=False)}\n"
             content += render(agent_config)
             (agent_destination / agent_config.name).write_text(content)
-    shutil.copytree(HARNESS_ROOT / "skills", home / "skills")
+    if profile != COMPARISON_PROFILE:
+        shutil.copytree(HARNESS_ROOT / "skills", home / "skills")
     return config_path
 
 
 def prepare_workspace(workspace: Path, profile: str) -> None:
+    """Install role-specific guidance so comparison cannot inherit analysis or execution instructions."""
     if profile in {ANALYSIS_PROFILE, MODEL_EVAL_PROFILE}:
         guidance = HARNESS_ROOT / "analysis" / "AGENTS.md"
     elif profile in {ANALYSIS_RCA_PROFILE, MODEL_EVAL_RCA_PROFILE}:
@@ -124,6 +129,8 @@ def prepare_workspace(workspace: Path, profile: str) -> None:
         guidance = HARNESS_ROOT / "execution" / "AGENTS.md"
     elif profile == RETROSPECTIVE_PROFILE:
         guidance = HARNESS_ROOT / "retrospective" / "agents" / "retrospective-analyst.md"
+    elif profile == COMPARISON_PROFILE:
+        guidance = HARNESS_ROOT / "comparison" / "AGENTS.md"
     else:
         raise ValueError(f"Unknown Codex harness profile: {profile}")
     shutil.copy2(guidance, workspace / "AGENTS.md")

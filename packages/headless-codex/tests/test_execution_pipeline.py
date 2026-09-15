@@ -178,7 +178,11 @@ def _container(runner, *, target=None, claim=None, retrospective_claimed=True):
     return SimpleNamespace(
         execution_store=execution_store,
         evidence_store=evidence_store,
-        playbook_store=SimpleNamespace(save_to_s3_vectors=Mock(return_value=True)),
+        playbook_store=SimpleNamespace(
+            save_to_s3_vectors=Mock(return_value=True),
+            finalize_publication=Mock(return_value=True),
+            recover_publication=Mock(return_value=True),
+        ),
         execution_runner=runner,
     )
 
@@ -946,3 +950,41 @@ def test_fixed_wait_journal_survives_evidence_publication_and_workspace_cleanup(
     assert persisted["metric_wait_records"] == waits
     assert persisted["final_state"] == "UNRESOLVED"
     assert not runner.retrospective_prompts
+
+
+@pytest.mark.parametrize("failure", ["commit", "finalize"])
+def test_library_finalization_failure_is_nonblocking_and_follows_revision_commit(failure):
+    runner = RecordingRunner(retrospective={"update": {}, "rationale": "observed unchanged procedure"})
+    container = _container(runner)
+    order = []
+    container.playbook_store.save_to_s3_vectors.side_effect = lambda *args, **kwargs: order.append("vector") or True
+    container.execution_store.publish_playbook_revision.side_effect = lambda *args, **kwargs: (
+        order.append("commit") or (failure != "commit")
+    )
+    container.playbook_store.finalize_publication.side_effect = lambda *args, **kwargs: (
+        order.append("finalize") or False
+    )
+    assert ExecutionOrchestrator(container).process_message(APPROVAL) is (failure == "commit")
+    assert _states(container)[-1] is ExecutionState.RESOLVED
+    assert container.execution_store.record_retrospective.call_args.kwargs["status"] == (
+        "FAILED" if failure == "commit" else "RUNNING"
+    )
+    assert order == (
+        ["vector", "commit"] if failure == "commit" else ["vector", "commit", "finalize", "finalize", "finalize"]
+    )
+    kwargs = container.playbook_store.save_to_s3_vectors.call_args.kwargs
+    assert kwargs["baseline_playbook"] == PLAYBOOK
+    assert kwargs["source_engine"] == ENGINE
+
+
+def test_terminal_redelivery_recovers_publication_without_rerunning_execution_or_model():
+    runner = RecordingRunner()
+    container = _container(runner, claim=ExecutionClaim(ExecutionClaimDisposition.TERMINAL_DUPLICATE))
+    container.playbook_store.recover_publication.side_effect = [False, True]
+    orchestrator = ExecutionOrchestrator(container)
+    assert not orchestrator.process_message(APPROVAL)
+    assert orchestrator.process_message(APPROVAL)
+    assert runner.retrospective_prompts == []
+    container.execution_store.load_target.assert_not_called()
+    container.execution_store.claim_retrospective.assert_not_called()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()

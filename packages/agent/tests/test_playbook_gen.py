@@ -1,14 +1,10 @@
 import json
 import time
 from time import perf_counter
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-from boto3.dynamodb.types import TypeSerializer
 
-from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import (
-    S3VectorsPlaybookStore,
-)
 from rca_agent.config.settings import PLAYBOOK_UPDATE_THRESHOLD
 from rca_agent.ports.dto.models import (
     AlarmPayload,
@@ -66,6 +62,17 @@ def _make_mock_agent(output) -> MagicMock:
     agent = MagicMock()
     agent.return_value = mock_result
     return agent
+
+
+def _make_appraisal(**overrides) -> PlaybookUpdateOutput:
+    fields = {
+        "applicable": True,
+        "needs_update": False,
+        "rationale": "CPU 증가와 메모리 증가가 이 플레이북의 장애 패턴과 일치한다.",
+        "evidence": ["high CPU", "memory growth"],
+    }
+    fields.update(overrides)
+    return PlaybookUpdateOutput(**fields)
 
 
 def _make_hit(**overrides) -> PlaybookMatch:
@@ -175,9 +182,9 @@ class TestSearchExistingPlaybooks:
 
 
 class TestTryUpdateExisting:
-    def test_returns_updated_playbook(self):
+    def test_proposes_knowledge_changes_without_applying_them(self):
         existing = _make_existing()
-        update_output = PlaybookUpdateOutput(
+        update_output = _make_appraisal(
             needs_update=True,
             failure_type="Memory leak (updated)",
             symptom_pattern="CPU spike + memory growth + OOM",
@@ -193,18 +200,25 @@ class TestTryUpdateExisting:
 
         assert result is not None
         assert result.playbook_id == "existing-1"
-        assert result.failure_type == "Memory leak (updated)"
-        assert len(result.verification_steps) == 2
-        assert result.severity_criteria == "Critical if OOM kills exceed 3/min"
-        assert result.escalation_criteria == "Escalate to infra if not resolved in 5 min"
-        assert len(result.related_metrics) == 3
+        assert result.failure_type == existing.failure_type
+        assert result.verification_steps == existing.verification_steps
+        assert result.severity_criteria == existing.severity_criteria
+        assert result.escalation_criteria == existing.escalation_criteria
+        assert result.related_metrics == existing.related_metrics
+        proposal = result.comparison["proposal"]
+        assert proposal["state"] == "PENDING"
+        assert proposal["after"]["failure_type"] == "Memory leak (updated)"
+        assert len(proposal["after"]["verification_steps"]) == 2
+        assert proposal["after"]["severity_criteria"] == "Critical if OOM kills exceed 3/min"
+        assert proposal["after"]["escalation_criteria"] == "Escalate to infra if not resolved in 5 min"
+        assert len(proposal["after"]["related_metrics"]) == 3
 
     def test_presents_existing_detail_to_the_agent(self):
         existing = _make_existing(
             temporary_mitigation="Restart the worker pool",
             verification_steps=["Check memory", "Check OOM kills"],
         )
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=False))
+        agent = _make_mock_agent(_make_appraisal(needs_update=False))
 
         _try_update_existing(existing, _make_report(), agent)
 
@@ -215,7 +229,7 @@ class TestTryUpdateExisting:
 
     def test_keeps_existing_fields_the_agent_left_empty(self):
         existing = _make_existing()
-        update_output = PlaybookUpdateOutput(
+        update_output = _make_appraisal(
             needs_update=True,
             failure_type="Memory leak (updated)",
         )
@@ -224,7 +238,8 @@ class TestTryUpdateExisting:
         result = _try_update_existing(existing, _make_report(), agent)
 
         assert result is not None
-        assert result.failure_type == "Memory leak (updated)"
+        assert result.failure_type == existing.failure_type
+        assert result.comparison["proposal"]["after"]["failure_type"] == "Memory leak (updated)"
         assert result.symptom_pattern == existing.symptom_pattern
         assert result.severity_criteria == existing.severity_criteria
         assert result.verification_steps == existing.verification_steps
@@ -237,7 +252,7 @@ class TestTryUpdateExisting:
         assert result.rca_id == "rca-1"
 
     def test_preserves_existing_knowledge_when_no_update_needed(self):
-        update_output = PlaybookUpdateOutput(needs_update=False)
+        update_output = _make_appraisal(needs_update=False)
         agent = _make_mock_agent(update_output)
 
         result = _try_update_existing(_make_existing(), _make_report(), agent)
@@ -278,9 +293,9 @@ class TestTryUpdateExisting:
 
 
 class TestRunPlaybookGeneration:
-    def test_updates_existing_when_found(self):
+    def test_keeps_existing_knowledge_when_an_update_is_proposed(self):
         hit = _make_hit()
-        update_output = PlaybookUpdateOutput(
+        update_output = _make_appraisal(
             needs_update=True,
             failure_type="Memory leak (updated)",
             symptom_pattern="Updated pattern",
@@ -293,11 +308,12 @@ class TestRunPlaybookGeneration:
         playbook = run_playbook_generation(_make_report(), agent, playbook_store=store)
 
         assert playbook.playbook_id == "existing-1"
-        assert playbook.failure_type == "Memory leak (updated)"
+        assert playbook.failure_type == _make_existing().failure_type
+        assert playbook.comparison["proposal"]["after"]["failure_type"] == "Memory leak (updated)"
 
     def test_merges_recorded_detail_instead_of_overwriting_it(self):
         existing = _make_existing(temporary_mitigation="Restart the worker pool")
-        update_output = PlaybookUpdateOutput(
+        update_output = _make_appraisal(
             needs_update=True,
             failure_type="Memory leak (updated)",
         )
@@ -350,7 +366,7 @@ class TestRunPlaybookGeneration:
 
     def test_reuses_existing_when_existing_needs_no_update(self):
         hit = _make_hit()
-        no_update = PlaybookUpdateOutput(needs_update=False)
+        no_update = _make_appraisal(needs_update=False)
         new_output = PlaybookOutput(
             failure_type="New playbook",
             symptom_pattern="New pattern",
@@ -437,315 +453,80 @@ class TestRunPlaybookGeneration:
         assert kwargs["structured_output_model"] is PlaybookOutput
 
 
+# Storage fixtures exercise real completed source records and canonical transactions.
+from tests.test_playbook_library import completed, hit, publish, source  # noqa: E402
+from tests.test_playbook_library import storage as storage  # noqa: E402
+
 _STORE_MODULE = "rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store"
 
 
 class TestPlaybookStoreSave:
-    def _store(self, client, fake_embedding) -> S3VectorsPlaybookStore:
-        return S3VectorsPlaybookStore(s3_vectors_client=client, embedding=fake_embedding)
-
-    def test_skips_when_not_configured(self, fake_embedding):
-        playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
-
-        with patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", ""):
-            assert not self._store(MagicMock(), fake_embedding).save(playbook)
-
-    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_indexes_with_embed_key(self, fake_embedding):
-        playbook = Playbook(
-            playbook_id="p-1",
-            failure_type="Memory leak",
-            symptom_pattern="CPU spike",
-            rca_id="rca-1",
-            tags=["memory"],
-            verification_steps=["Check memory"],
-        )
-        mock_client = MagicMock()
-
-        result = self._store(mock_client, fake_embedding).save(playbook, scoping_result=_make_scoping())
-
-        assert result is True
-        vector = mock_client.put_vectors.call_args.kwargs["vectors"][0]
-        assert vector["key"] == "p-1"
-        assert vector["data"]["float32"] == [0.1] * 1024
-        assert vector["metadata"]["failure_type"] == "Memory leak"
-        assert vector["metadata"]["tags"] == "memory"
+    def test_indexes_with_embed_key(self, storage):
+        _, vectors, _ = storage
+        value, store = completed(storage)
+        assert publish(store, value, scoping_result=_make_scoping())
+        vector = vectors.put_vectors.call_args.kwargs["vectors"][0]
+        assert vector["key"] == "pb-1@analysis:rca-1"
+        assert vector["data"]["float32"] == [0.1, 0.2]
+        assert vector["metadata"]["failure_type"] == value["failure_type"]
         assert "verification_steps" not in vector["metadata"]
 
-    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_handles_error(self, fake_embedding):
-        playbook = Playbook(playbook_id="p-1", failure_type="t", symptom_pattern="t")
-        mock_client = MagicMock()
-        mock_client.put_vectors.side_effect = RuntimeError("fail")
-
-        assert not self._store(mock_client, fake_embedding).save(playbook)
-
-    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_round_trips_csv_tags_through_search(self, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.return_value = {
-            "vectors": [
-                {
-                    "key": "p-1",
-                    "distance": 0.05,
-                    "metadata": {
-                        "failure_type": "Memory leak",
-                        "symptom_pattern": "CPU spike",
-                        "tags": "memory,oom",
-                    },
-                }
-            ]
-        }
-
-        matches = self._store(mock_client, fake_embedding).search_similar("query", threshold=0.9)
-
-        assert [m.tags for m in matches] == [["memory", "oom"]]
-
-    @patch(f"{_STORE_MODULE}.S3_VECTOR_BUCKET_NAME", "my-bucket")
-    def test_search_carries_rca_id_for_detail_lookup(self, fake_embedding):
-        mock_client = MagicMock()
-        mock_client.query_vectors.return_value = {
-            "vectors": [
-                {
-                    "key": "p-1",
-                    "distance": 0.05,
-                    "metadata": {"failure_type": "Memory leak", "rca_id": "rca-7"},
-                }
-            ]
-        }
-
-        matches = self._store(mock_client, fake_embedding).search_similar("query", threshold=0.9)
-
-        assert [m.rca_id for m in matches] == ["rca-7"]
-
-
-_TRACE_MODULE = "rca_agent.adapters.secondary.trace.dynamodb_trace_store"
-
-
-def _completed_session_item(
-    playbook_id: str = "p-1",
-    *,
-    state: str = "COMPLETED",
-    index_status: str = "PUBLISHED",
-) -> dict:
-    item = {
-        "SK": {"S": "ANALYSIS#SESSION"},
-        "state": {"S": state},
-        "playbook_id": {"S": playbook_id},
-    }
-    if index_status:
-        item["playbook_index_status"] = {"S": index_status}
-    return item
+    def test_round_trips_tags_and_source_identity(self, storage):
+        ddb, vectors, store = storage
+        value, _ = completed(storage)
+        value["tags"] = ["memory", "oom"]
+        source(ddb, value)
+        assert publish(store, value)
+        head = store._library.head("pb-1")
+        vectors.query_vectors.return_value = {"vectors": [hit(head, 0.05)]}
+        matches = store.search_similar("query", threshold=0.9)
+        assert matches[0].tags == ["memory", "oom"]
+        assert matches[0].rca_id == "rca-1"
+        assert matches[0].engine == "strands"
 
 
 class TestPlaybookStoreLoadDetail:
-    def _store(self, dynamodb_client) -> S3VectorsPlaybookStore:
-        return S3VectorsPlaybookStore(dynamodb_client=dynamodb_client)
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_loads_recorded_detail_from_the_playbook_span(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {
-            "Items": [
-                _completed_session_item(),
-                {
-                    "SK": {"S": "strands#SPAN#s-1"},
-                    "span_type": {"S": "PLAYBOOK"},
-                    "metadata": {
-                        "M": {
-                            "playbook_id": {"S": "p-1"},
-                            "failure_type": {"S": "Memory leak"},
-                            "temporary_mitigation": {"S": "Restart the worker pool"},
-                            "verification_steps": {"L": [{"S": "Check memory"}]},
-                            "tags": {"L": [{"S": "memory"}]},
-                        }
-                    },
-                },
-            ]
-        }
-
-        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
-
+    def test_loads_legacy_completed_original_with_source_annotations(self, storage):
+        value, store = completed(storage)
+        detail = store.load_detail(PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9))
         assert detail is not None
-        assert detail.playbook_id == "p-1"
-        assert detail.temporary_mitigation == "Restart the worker pool"
-        assert detail.verification_steps == ["Check memory"]
-        assert detail.rca_id == "rca-7"
-        assert ddb.query.call_args.kwargs["ExpressionAttributeValues"][":pk"] == {"S": "RCA#rca-7"}
+        assert detail.library_revision == "legacy"
+        assert detail.source_engine == "strands"
+        assert detail.source_rca_id == "rca-1"
+        assert detail.failure_type == value["failure_type"]
 
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_returns_none_when_the_record_is_gone(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {"Items": []}
-
-        assert self._store(ddb).load_detail(_make_hit(rca_id="rca-7")) is None
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_returns_none_for_a_different_playbook_in_the_same_rca(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {
-            "Items": [
-                _completed_session_item(),
-                {
-                    "SK": {"S": "strands#SPAN#s-1"},
-                    "span_type": {"S": "PLAYBOOK"},
-                    "metadata": {"M": {"playbook_id": {"S": "other"}}},
-                },
-            ]
-        }
-
-        assert self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7")) is None
-
-    def test_returns_none_without_a_dynamodb_client(self):
-        assert self._store(None).load_detail(_make_hit(rca_id="rca-7")) is None
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_returns_none_when_the_hit_has_no_rca_id(self):
-        ddb = MagicMock()
-
-        assert self._store(ddb).load_detail(_make_hit(rca_id="")) is None
-        ddb.query.assert_not_called()
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_rejects_detail_from_an_incomplete_session(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {
-            "Items": [
-                _completed_session_item(state="REPORT_GENERATION", index_status=""),
-                {
-                    "SK": {"S": "strands#SPAN#s-1"},
-                    "span_type": {"S": "PLAYBOOK"},
-                    "metadata": {"M": {"playbook_id": {"S": "p-1"}}},
-                },
-            ]
-        }
-
-        assert self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7")) is None
+    def test_returns_none_for_missing_or_incomplete_source(self, storage):
+        ddb, _, store = storage
+        match = PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9)
+        assert store.load_detail(match) is None
+        value, store = completed(storage)
+        source(ddb, value, state="REPORT_GENERATION")
+        assert store.load_detail(match) is None
 
 
 class TestLoadDetailPrefersTheRetrospectiveRevision:
-    """보강 대상은 회고 개정본이다.
+    def test_revision_wins_and_malformed_latest_never_falls_back(self, storage):
+        from rca_agent.adapters.secondary.playbook.library import _pack
 
-    분석 원본을 보강 대상으로 삼으면 병합이 모든 필드를 보존해도 결과가 교정 이전으로
-    퇴행한다. 검색과 병합이 정상 동작하므로 실패로 드러나지 않아, 이 우선순위를
-    테스트가 고정한다.
-    """
-
-    def _store(self, dynamodb_client) -> S3VectorsPlaybookStore:
-        return S3VectorsPlaybookStore(dynamodb_client=dynamodb_client)
-
-    def _span_item(self) -> dict:
-        return {
-            "SK": {"S": "strands#SPAN#s-1"},
-            "span_type": {"S": "PLAYBOOK"},
-            "metadata": {
-                "M": {
-                    "playbook_id": {"S": "p-1"},
-                    "failure_type": {"S": "DB connection leak"},
-                    "temporary_mitigation": {"S": "원본 조치"},
-                    "verification_status": {"S": "DRAFT"},
-                    "execution_steps": {
-                        "L": [
-                            {
-                                "M": {
-                                    "step_id": {"S": "step-1"},
-                                    "intent": {"S": "커넥션 회수"},
-                                    "action": {"S": "잘못된 인자로 서비스를 갱신한다"},
-                                    "success_criteria": {"S": "커넥션 수 감소"},
-                                }
-                            }
-                        ]
-                    },
-                }
-            },
+        ddb, _, _ = storage
+        value, store = completed(storage)
+        revised = dict(value, temporary_mitigation="corrected", verification_status="VERIFIED")
+        item = {
+            "PK": "RCA#rca-1",
+            "SK": "strands#PLAYBOOK_REVISION",
+            "playbook_id": "pb-1",
+            "playbook": json.dumps(revised),
+            "publication_status": "PUBLISHED",
+            "revised_by_execution_id": "exec-9",
         }
-
-    def _revision_item(self) -> dict:
-        revised = {
-            "playbook_id": "p-1",
-            "failure_type": "DB connection leak",
-            "temporary_mitigation": "교정된 조치",
-            "verification_status": "VERIFIED",
-            "execution_steps": [
-                {
-                    "step_id": "step-1",
-                    "intent": "커넥션 회수",
-                    "action": "교정된 인자로 서비스를 갱신한다",
-                    "success_criteria": "커넥션 수 감소",
-                },
-                {
-                    "step_id": "step-2",
-                    "intent": "해소 확인",
-                    "action": "커넥션 메트릭을 조회한다",
-                    "success_criteria": "임계치 미만 유지",
-                },
-            ],
-        }
-        return {
-            "SK": {"S": "headless-codex#PLAYBOOK_REVISION"},
-            "playbook_id": {"S": "p-1"},
-            "playbook": {"S": json.dumps(revised, ensure_ascii=False)},
-            "revised_by_execution_id": {"S": "exec-9"},
-        }
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_revision_wins_over_the_analysis_span(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), self._revision_item()]}
-
-        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
-
-        assert detail is not None
-        assert detail.temporary_mitigation == "교정된 조치"
-        # 회고가 붙인 절차와 교정한 인자가 보강의 출발점이어야 한다.
-        assert [step.step_id for step in detail.execution_steps] == ["step-1", "step-2"]
-        assert detail.execution_steps[0].action == "교정된 인자로 서비스를 갱신한다"
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_promotion_survives_the_reload(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), self._revision_item()]}
-
-        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
-
-        assert detail is not None
+        ddb.put_item(TableName="sessions", Item=_pack(item))
+        match = PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9, publication_id="exec-9")
+        detail = store.load_detail(match)
+        assert detail.temporary_mitigation == "corrected"
         assert detail.verification_status is PlaybookVerificationStatus.VERIFIED
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_falls_back_to_the_span_without_a_revision(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item()]}
-
-        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
-
-        assert detail is not None
-        assert detail.temporary_mitigation == "원본 조치"
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_unreadable_revision_falls_back_rather_than_dropping_the_playbook(self):
-        ddb = MagicMock()
-        broken = self._revision_item()
-        broken["playbook"] = {"S": "{not json"}
-        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), broken]}
-
-        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
-
-        # 개정본을 읽지 못한 것이 병합 포기 사유가 되면, 아직 병합 가능한 플레이북이
-        # 버려지고 같은 유형이 새 식별자로 다시 생성된다.
-        assert detail is not None
-        assert detail.temporary_mitigation == "원본 조치"
-
-    @patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table")
-    def test_ignores_a_revision_of_a_different_playbook(self):
-        ddb = MagicMock()
-        other = self._revision_item()
-        other["playbook_id"] = {"S": "p-other"}
-        ddb.query.return_value = {"Items": [_completed_session_item(), self._span_item(), other]}
-
-        detail = self._store(ddb).load_detail(_make_hit(playbook_id="p-1", rca_id="rca-7"))
-
-        assert detail is not None
-        assert detail.temporary_mitigation == "원본 조치"
+        item["playbook"] = "{broken"
+        ddb.put_item(TableName="sessions", Item=_pack(item))
+        assert store.load_detail(match) is None
 
 
 class TestExecutionStepContract:
@@ -851,7 +632,7 @@ class TestExecutionStepContract:
             symptom_pattern="메모리 증가",
             execution_steps=[ExecutionStep(**self._step())],
         )
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, temporary_mitigation="재배포 후 확인"))
+        agent = _make_mock_agent(_make_appraisal(needs_update=True, temporary_mitigation="재배포 후 확인"))
 
         updated = _try_update_existing(existing, _make_report(), agent)
 
@@ -868,7 +649,7 @@ class TestExecutionStepContract:
         )
         report = _make_report()
         report.root_cause_confirmed = False
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True))
+        agent = _make_mock_agent(_make_appraisal(needs_update=True))
 
         updated = _try_update_existing(existing, report, agent)
 
@@ -876,30 +657,15 @@ class TestExecutionStepContract:
         assert updated.execution_steps == []
         assert updated.verification_status is PlaybookVerificationStatus.DRAFT
 
-    def test_the_recorded_steps_survive_a_round_trip_through_the_trace(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {
-            "Items": [
-                _completed_session_item(),
-                {
-                    "SK": {"S": "strands#SPAN#s-1"},
-                    "span_type": {"S": "PLAYBOOK"},
-                    "metadata": {
-                        "M": {
-                            "playbook_id": {"S": "p-1"},
-                            "execution_steps": {"L": [TypeSerializer().serialize(self._step())]},
-                        }
-                    },
-                },
-            ]
-        }
-
-        with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
-            detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
-                _make_hit(playbook_id="p-1", rca_id="rca-7")
-            )
-
-        assert detail is not None
+    def test_the_recorded_steps_survive_a_round_trip_through_storage(self, storage):
+        ddb, _, _ = storage
+        value, store = completed(storage)
+        value["execution_steps"] = [ExecutionStep(**self._step()).model_dump(mode="json")]
+        source(ddb, value)
+        assert publish(store, value)
+        detail = store.load_detail(
+            PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9, library_revision="analysis:rca-1")
+        )
         assert [step.step_id for step in detail.execution_steps] == ["step-1"]
         assert detail.execution_steps[0].success_criteria == "MemoryUtilization 이 60% 이하로 복귀"
 
@@ -911,7 +677,7 @@ class TestExecutionStepContract:
             execution_steps=[ExecutionStep(**self._step())],
             verification_status=PlaybookVerificationStatus.VERIFIED,
         )
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, temporary_mitigation="재배포 후 확인"))
+        agent = _make_mock_agent(_make_appraisal(needs_update=True, temporary_mitigation="재배포 후 확인"))
 
         updated = _try_update_existing(existing, _make_report(), agent)
 
@@ -927,7 +693,7 @@ class TestExecutionStepContract:
             verification_status=PlaybookVerificationStatus.VERIFIED,
         )
         changed_step = ExecutionStepOutput(**self._step(action="web-service 를 롤링 재시작한다"))
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, execution_steps=[changed_step]))
+        agent = _make_mock_agent(_make_appraisal(needs_update=True, execution_steps=[changed_step]))
 
         current_steps = build_execution_steps([changed_step], confirmed=True)
         updated = _try_update_existing(existing, _make_report(), agent, current_steps=current_steps)
@@ -946,7 +712,7 @@ class TestExecutionStepContract:
             verification_status=PlaybookVerificationStatus.VERIFIED,
         )
         same_step = ExecutionStepOutput(**self._step())
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, execution_steps=[same_step]))
+        agent = _make_mock_agent(_make_appraisal(needs_update=True, execution_steps=[same_step]))
 
         updated = _try_update_existing(
             existing, _make_report(), agent, current_steps=build_execution_steps([same_step], confirmed=True)
@@ -959,92 +725,37 @@ class TestExecutionStepContract:
     def test_an_update_to_a_draft_playbook_leaves_it_a_draft(self):
         """분석은 이 값을 올릴 수 없다. 승격은 실행 뒤 회고만 수행한다."""
         existing = Playbook(playbook_id="p-1", failure_type="Memory leak", symptom_pattern="메모리 증가")
-        agent = _make_mock_agent(PlaybookUpdateOutput(needs_update=True, temporary_mitigation="재배포 후 확인"))
+        agent = _make_mock_agent(_make_appraisal(needs_update=True, temporary_mitigation="재배포 후 확인"))
 
         updated = _try_update_existing(existing, _make_report(), agent)
 
         assert updated is not None
         assert updated.verification_status is PlaybookVerificationStatus.DRAFT
 
-    def test_a_verified_status_survives_a_round_trip_through_the_trace(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {
-            "Items": [
-                _completed_session_item(),
-                {
-                    "SK": {"S": "strands#SPAN#s-1"},
-                    "span_type": {"S": "PLAYBOOK"},
-                    "metadata": {
-                        "M": {
-                            "playbook_id": {"S": "p-1"},
-                            "verification_status": {"S": "VERIFIED"},
-                        }
-                    },
-                },
-            ]
-        }
-
-        with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
-            detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
-                _make_hit(playbook_id="p-1", rca_id="rca-7")
-            )
-
-        assert detail is not None
+    def test_a_verified_status_survives_a_round_trip_through_storage(self, storage):
+        ddb, _, _ = storage
+        value, store = completed(storage)
+        value["verification_status"] = "VERIFIED"
+        source(ddb, value)
+        assert publish(store, value)
+        detail = store.load_detail(
+            PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9, library_revision="analysis:rca-1")
+        )
         assert detail.verification_status is PlaybookVerificationStatus.VERIFIED
 
-    def test_an_unreadable_recorded_status_loads_as_a_draft(self):
-        """읽을 수 없는 값이 검증됨으로 되살아나면 미입증 절차가 검증된 것으로 보인다."""
-        for recorded in ({"S": "SOMETHING"}, {"N": "1"}):
-            ddb = MagicMock()
-            ddb.query.return_value = {
-                "Items": [
-                    _completed_session_item(),
-                    {
-                        "SK": {"S": "strands#SPAN#s-1"},
-                        "span_type": {"S": "PLAYBOOK"},
-                        "metadata": {
-                            "M": {
-                                "playbook_id": {"S": "p-1"},
-                                "verification_status": recorded,
-                            }
-                        },
-                    },
-                ]
-            }
+    def test_an_unreadable_recorded_status_is_unavailable(self, storage):
+        ddb, _, _ = storage
+        value, store = completed(storage)
+        value["verification_status"] = "SOMETHING"
+        source(ddb, value)
+        assert store.load_detail(PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9)) is None
 
-            with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
-                detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
-                    _make_hit(playbook_id="p-1", rca_id="rca-7")
-                )
-
-            assert detail is not None
-            assert detail.verification_status is PlaybookVerificationStatus.DRAFT
-
-    def test_a_recorded_step_without_an_identifier_is_dropped_on_load(self):
-        ddb = MagicMock()
-        ddb.query.return_value = {
-            "Items": [
-                _completed_session_item(),
-                {
-                    "SK": {"S": "strands#SPAN#s-1"},
-                    "span_type": {"S": "PLAYBOOK"},
-                    "metadata": {
-                        "M": {
-                            "playbook_id": {"S": "p-1"},
-                            "execution_steps": {"L": [{"M": {"action": {"S": "무언가"}}}]},
-                        }
-                    },
-                },
-            ]
-        }
-
-        with patch(f"{_TRACE_MODULE}.DYNAMODB_TABLE_NAME", "rca-table"):
-            detail = S3VectorsPlaybookStore(dynamodb_client=ddb).load_detail(
-                _make_hit(playbook_id="p-1", rca_id="rca-7")
-            )
-
-        assert detail is not None
-        assert detail.execution_steps == []
+    def test_a_recorded_step_without_an_identifier_is_unavailable(self, storage):
+        ddb, _, _ = storage
+        value, store = completed(storage)
+        value["execution_steps"] = [{"action": "unidentified"}]
+        source(ddb, value)
+        assert store.load_detail(PlaybookMatch(playbook_id="pb-1", rca_id="rca-1", similarity=0.9)) is None
 
 
 def test_generation_and_enrichment_receive_current_alarm_metrics_and_late_evidence():
@@ -1084,7 +795,7 @@ def test_generation_merge_uses_only_validated_current_plan(current_plan, merge_p
     elif current_plan == "new-owner":
         current[0].commands = [current[0].commands[0].replace("incident-owner", "current-owner")]
     draft_output = PlaybookOutput(failure_type="lock", symptom_pattern="blocked writes", execution_steps=current)
-    merge_output = PlaybookUpdateOutput(
+    merge_output = _make_appraisal(
         needs_update=needs_update,
         temporary_mitigation="Enriched knowledge",
         execution_steps=[ExecutionStepOutput(**step) for step in old_steps] if merge_plan == "stale-owner" else [],
@@ -1102,11 +813,12 @@ def test_generation_merge_uses_only_validated_current_plan(current_plan, merge_p
     ]
     store.load_detail.assert_called_once()
     assert result.playbook_id == existing.playbook_id
-    assert result.temporary_mitigation == ("Enriched knowledge" if needs_update else existing.temporary_mitigation)
+    assert result.temporary_mitigation == existing.temporary_mitigation
+    if needs_update:
+        assert result.comparison["proposal"]["after"]["temporary_mitigation"] == "Enriched knowledge"
     if not needs_update:
-        assert result.model_dump(exclude={"execution_steps", "verification_status", "rca_id"}) == existing.model_dump(
-            exclude={"execution_steps", "verification_status", "rca_id"}
-        )
+        incidental = {"execution_steps", "verification_status", "rca_id", "comparison", "source_rca_id"}
+        assert result.model_dump(exclude=incidental) == existing.model_dump(exclude=incidental)
     expected = [] if current_plan in {"empty", "invalid"} else [ExecutionStep(**step.model_dump()) for step in current]
     assert result.execution_steps == expected
     expected_status = (

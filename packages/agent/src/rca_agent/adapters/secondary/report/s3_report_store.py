@@ -15,7 +15,7 @@ from rca_agent.config.settings import (
 from rca_agent.ports.dto.models import Playbook, RcaReport, ReportMatch, ScopingResult
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.report_store import ReportStorePort
-from rca_agent.services.runbook_contract import render_step_operation
+from rca_agent.services.runbook_contract import render_step_operation, validate_runbook
 from rca_agent.utils.embed_key import EMBED_FIELD_MAX, build_embed_key
 from rca_agent.utils.retry import retry_with_backoff
 
@@ -171,6 +171,105 @@ class S3ReportStore(ReportStorePort):
 
 _PLAYBOOK_SECTION = "## 대응 플레이북"
 _RUNBOOK_SECTION = "### 이번 사고의 런북"
+SUMMARY_MARKER = "rca-summary:v1"
+_COMPARISON_LABELS = {
+    "UPDATE_PROPOSED": "변경 제안",
+    "NO_CHANGE": "변경 불필요",
+    "NO_MATCH": "유사 후보 없음",
+    "NO_APPLICABLE_MATCH": "적용 가능한 후보 없음",
+    "SEARCH_FAILED": "검색·비교 실패",
+}
+
+
+def build_report_summary(report: RcaReport, playbook: Playbook | None) -> dict:
+    """One server-owned summary supplies both the human view and the API marker."""
+    approval_eligible = bool(report.root_cause_confirmed and playbook and playbook.execution_steps)
+    if approval_eligible:
+        try:
+            validate_runbook([step.model_dump() for step in playbook.execution_steps])
+        except (ValueError, TypeError):
+            approval_eligible = False
+    comparison = playbook.comparison if playbook else {}
+    proposal = comparison.get("proposal")
+    return {
+        "incident_summary": report.incident_summary or None,
+        "impact_summary": report.impact_summary or None,
+        "severity": report.severity or None,
+        "root_cause": report.root_cause or None,
+        "root_cause_confirmed": report.root_cause_confirmed,
+        "confidence_score": report.confidence_score,
+        "next_action": report.temporary_mitigation or next(iter(report.action_items), None) or None,
+        "runbook_verification_status": playbook.verification_status.value if playbook else None,
+        "runbook_approval_eligible": approval_eligible,
+        "playbook_id": playbook.playbook_id if playbook else None,
+        "selected_playbook_id": comparison.get("selected_playbook_id") or None,
+        "comparison_status": comparison.get("status") or None,
+        "proposal_state": proposal.get("state") if isinstance(proposal, dict) else None,
+    }
+
+
+def _render_summary(report: RcaReport, playbook: Playbook | None) -> list[str]:
+    """Render visible and machine-readable summaries from the same server-owned values."""
+    summary = build_report_summary(report, playbook)
+    # Keep source text from terminating the hidden JSON marker. JSON decoding
+    # restores exact DTO values; display labels below come from the same object.
+    encoded = json.dumps(summary, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    status = summary["comparison_status"]
+    fields = [
+        ("장애", summary["incident_summary"]),
+        ("영향", summary["impact_summary"]),
+        ("심각도", summary["severity"]),
+        ("원인", summary["root_cause"]),
+        ("원인 판정", "확정" if summary["root_cause_confirmed"] else "미확정 — 가장 유력한 후보"),
+        ("신뢰도", f"{summary['confidence_score']:.2f}"),
+        ("다음 조치 (권고)", summary["next_action"]),
+        ("런북 검증 상태 (분석 시점)", summary["runbook_verification_status"]),
+        ("실행 승인 검토 (분석 시점)", "검토 가능" if summary["runbook_approval_eligible"] else "실행 승인 불가"),
+        ("플레이북", summary["playbook_id"]),
+        ("선택한 유사 플레이북", summary["selected_playbook_id"]),
+        ("유사 플레이북 비교", _COMPARISON_LABELS.get(status, status)),
+        ("지식 변경 제안", summary["proposal_state"]),
+    ]
+    lines = ["## 빠른 판단", "", f"<!-- {SUMMARY_MARKER}\n{encoded}\n-->", ""]
+    for label, value in fields:
+        text = str(value) if value is not None else "미제공"
+        lines.append(f"- **{label}**: " + text.replace("\n", "\n  "))
+    lines.extend(
+        [
+            "",
+            "아래 상세에 근거·원문·명령을 모두 보존했다. 요약의 상태는 분석 시점 기록이며, "
+            "실행 승인 시에는 현재 런북 전체를 다시 검토한다. 플레이북 지식 반영과 런북 실행 승인은 별개다.",
+            "",
+        ]
+    )
+    return lines
+
+
+def _render_comparison_section(playbook: Playbook | None) -> list[str]:
+    """Preserve the incident comparison snapshot without presenting pending knowledge as applied."""
+    if playbook is None or not playbook.comparison:
+        return []
+    comparison = playbook.comparison
+    status = comparison.get("status")
+    return [
+        "## 유사 플레이북 비교",
+        "",
+        f"**비교 결과**: {_COMPARISON_LABELS.get(status, status or '미제공')}",
+        "",
+        "### 생성에 사용한 참고 자료",
+        "",
+        "아래 참고 자료는 기존 지식 재사용·현재 RCA의 런북 입력·실제 인용 증거를 구분한다. "
+        "검색 후보 목록은 별도의 감사 기록이며 생성에 사용했다는 뜻이 아니다.",
+        "",
+        "유사도는 검색 관련성이고 원인 확정 확률이 아니다. 아래는 분석 당시 후보별 판단과 비교 사본이다. "
+        "PENDING 제안은 아직 공개 지식에 반영되지 않았다. 변경 전후의 과거 런북은 비교 기준이며, "
+        "실행 검토 대상은 대응 플레이북 섹션의 이번 사고 런북이다.",
+        "",
+        "```json",
+        json.dumps(comparison, ensure_ascii=False, indent=2),
+        "```",
+        "",
+    ]
 
 
 def _render_playbook_knowledge(playbook: Playbook) -> list[str]:
@@ -299,6 +398,7 @@ def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
     lines = [
         f"# RCA Report: {report.rca_id}",
         "",
+        *_render_summary(report, playbook),
         "## Incident Summary",
         report.incident_summary,
         "",
@@ -358,6 +458,7 @@ def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
         lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
     if report.permanent_remediation:
         lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
+    lines.extend(_render_comparison_section(playbook))
     lines.extend(_render_playbook_section(playbook))
     if report.action_items:
         lines.append("## Action Items")

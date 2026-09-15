@@ -1,0 +1,16 @@
+{
+  "PK": "PLAYBOOK_LIBRARY_STATE",
+  "SK": "pb-1",
+  "source_rca_id": "rca-1",
+  "engine": "strands",
+  "revision": "analysis:rca-1",
+  "publication_status": "PENDING",
+  "vector_key": "pb-1@analysis:rca-1",
+  "metric_name": "DatabaseConnections",
+  "updated_at": "2026-09-15T00:00:00+00:00",
+  "failure_type": "Pool pressure",
+  "symptom_pattern": "Connections rise",
+  "tags": [],
+  "verification_status": "DRAFT",
+  "ttl": 1797206400
+}

@@ -1,0 +1,21 @@
+model = "{{CODEX_MODEL}}"
+model_provider = "{{CODEX_MODEL_PROVIDER}}"
+model_reasoning_effort = "{{CODEX_REASONING_EFFORT}}"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+
+[features]
+shell_tool = false
+unified_exec = false
+multi_agent = false
+apps = false
+plugins = false
+memories = false
+
+[model_providers.amazon-bedrock-runtime]
+base_url = "{{BEDROCK_BASE_URL}}"
+
+[model_providers.amazon-bedrock-runtime.auth]
+command = "python"
+args = ["-m", "headless_codex.bedrock_token"]

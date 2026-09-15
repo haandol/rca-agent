@@ -48,6 +48,11 @@ onMounted(applyTheme);
         <span>Incident Queue</span>
       </NuxtLink>
 
+      <NuxtLink to="/playbooks" class="app-nav-link">
+        <span aria-hidden="true" class="text-base">▤</span>
+        <span>플레이북 라이브러리</span>
+      </NuxtLink>
+
       <div class="app-sidebar-foot">
         <div class="flex items-center gap-2 text-[10px] text-base-content/50">
           <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />

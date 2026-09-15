@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -22,6 +24,7 @@ from rca_agent.ports.dto.models import (
 )
 from rca_agent.ports.interfaces.playbook_store import PlaybookStorePort
 from rca_agent.prompts.playbook import (
+    PLAYBOOK_UPDATE_SYSTEM_PROMPT,
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
@@ -60,7 +63,10 @@ class PlaybookOutput(BaseModel):
 
 
 class PlaybookUpdateOutput(BaseModel):
-    needs_update: bool = True
+    applicable: bool
+    needs_update: bool
+    rationale: str = Field(min_length=1)
+    evidence: list[str] = Field(min_length=1)
     failure_type: str = ""
     symptom_pattern: str = ""
     severity_criteria: str = ""
@@ -72,6 +78,69 @@ class PlaybookUpdateOutput(BaseModel):
     prevention_measures: list[str] = Field(default_factory=list)
     related_metrics: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+
+
+_KNOWLEDGE_FIELDS = (
+    "failure_type",
+    "symptom_pattern",
+    "severity_criteria",
+    "verification_steps",
+    "temporary_mitigation",
+    "permanent_remediation",
+    "escalation_criteria",
+    "prevention_measures",
+    "related_metrics",
+    "tags",
+)
+_LIBRARY_ANNOTATIONS = {"comparison", "library_revision", "source_engine", "source_rca_id"}
+
+
+def _historical_snapshot(playbook: Playbook) -> dict:
+    """Freeze the entire historical domain document, including its original runbook."""
+    return playbook.model_dump(mode="json", exclude=_LIBRARY_ANNOTATIONS)
+
+
+def _anchored_evidence(output: PlaybookUpdateOutput, report: RcaReport) -> list[str]:
+    """Accept only supplied evidence entries or bracketed references present in them."""
+    available = {entry.strip() for entry in report.evidence_list if entry.strip()}
+    available.update(reference for entry in report.evidence_list for reference in re.findall(r"\[[^\]\n]+\]", entry))
+    references = list(dict.fromkeys(entry.strip() for entry in output.evidence))
+    if not output.rationale.strip() or not references or any(ref not in available for ref in references):
+        raise ValueError("comparison must cite evidence actually present in this report")
+    return references
+
+
+def _evidence_snapshots(references: list[str], report: RcaReport) -> list[dict]:
+    """Freeze every cited report observation, retaining ambiguous shared citations as separate source entries."""
+    return [
+        {
+            "ref": ref,
+            "value": entry,
+            "source_rca_id": report.rca_id,
+            "source_engine": "strands",
+            "source_path": f"current_report#/evidence_list/{index}",
+        }
+        for ref in references
+        for index, entry in enumerate(report.evidence_list)
+        if ref == entry.strip() or ref in re.findall(r"\[[^\]\n]+\]", entry)
+    ]
+
+
+def _proposed_knowledge(before: dict, output: PlaybookUpdateOutput) -> dict:
+    """Copy proposed knowledge without deleting existing entries or changing the historical runbook."""
+    after = deepcopy(before)
+    if not output.needs_update:
+        return after
+    for field in _KNOWLEDGE_FIELDS:
+        value = getattr(output, field)
+        if isinstance(value, list):
+            # Omitting old list entries cannot delete accumulated knowledge.
+            for entry in value:
+                if entry.strip() and entry not in after[field]:
+                    after[field].append(entry)
+        elif value.strip():
+            after[field] = value
+    return after
 
 
 def build_execution_steps(
@@ -161,7 +230,7 @@ def _build_update_prompt(
     report: RcaReport,
     scoping: ScopingResult | None = None,
 ) -> str:
-    """Carry evidence provenance into merging without dropping late control evidence."""
+    """Carry evidence provenance into comparison without dropping late control evidence."""
     return PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE.format(
         existing_failure_type=existing.failure_type or "N/A",
         alarm_description=render_alarm_description(report),
@@ -174,6 +243,7 @@ def _build_update_prompt(
         existing_escalation_criteria=existing.escalation_criteria or "N/A",
         existing_prevention_measures="\n".join(f"  - {m}" for m in existing.prevention_measures) or "N/A",
         existing_related_metrics="\n".join(f"  - {m}" for m in existing.related_metrics) or "N/A",
+        existing_tags=json.dumps(existing.tags, ensure_ascii=False),
         root_cause=report.root_cause,
         severity=report.severity,
         evidence_highlights="\n".join(f"  - {e}" for e in dict.fromkeys(report.evidence_list)) or "N/A",
@@ -190,8 +260,17 @@ def _invoke_agent(agent: Agent, prompt: str) -> PlaybookOutput:
 
 
 def _invoke_update_agent(agent: Agent, prompt: str) -> PlaybookUpdateOutput:
-    result = agent(prompt, structured_output_model=PlaybookUpdateOutput)
-    return result.structured_output
+    """Apply appraisal rules to the reused agent and reject missing structured judgments."""
+    # The same agent first drafts the current runbook. Give this invocation its
+    # explicit appraisal rules rather than relying on an unused system template.
+    result = agent(
+        PLAYBOOK_UPDATE_SYSTEM_PROMPT + "\n\n" + prompt,
+        structured_output_model=PlaybookUpdateOutput,
+    )
+    output = result.structured_output
+    if not isinstance(output, PlaybookUpdateOutput):
+        raise ValueError("model returned no structured playbook appraisal")
+    return output
 
 
 def search_existing_playbooks(
@@ -200,12 +279,11 @@ def search_existing_playbooks(
     *,
     playbook_store: PlaybookStorePort,
 ) -> list[PlaybookMatch]:
-    """Find playbooks close enough to update instead of creating a duplicate.
+    """Find published candidates whose applicability the model must then appraise.
 
     Searches with this run's own draft rather than with the report, so the query
     and the stored entries come from the same fields. Uses a stricter threshold
-    than plain retrieval: merging into the wrong playbook is worse than writing a
-    new one.
+    than plain retrieval so unrelated knowledge is less likely to be proposed.
     """
     return playbook_store.search_similar(
         _build_embed_key(draft, scoping_result),
@@ -222,7 +300,21 @@ def _try_update_existing(
     similarity: float = 0.0,
     scoping_result: ScopingResult | None = None,
     timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
+    candidate: dict | None = None,
+    query: str = "",
 ) -> Playbook | None:
+    """Appraise published knowledge and attach a proposal without applying it."""
+    if candidate is None:
+        candidate = {
+            "playbook_id": existing.playbook_id,
+            "rca_id": existing.source_rca_id or existing.rca_id,
+            "engine": existing.source_engine,
+            "similarity": similarity,
+            "revision": existing.library_revision,
+            "availability": "AVAILABLE",
+            "applicable": None,
+            "rationale": "",
+        }
     prompt = _build_update_prompt(existing, report, scoping_result)
     logger.info(
         "Checking update for playbook %s (similarity=%.2f)",
@@ -230,53 +322,86 @@ def _try_update_existing(
         similarity,
     )
 
-    output: PlaybookUpdateOutput | None = None
     try:
         output = call_with_timeout(
             lambda: _invoke_update_agent(update_agent, prompt),
             timeout_seconds,
         )
-    except Exception:
+        evidence = _anchored_evidence(output, report)
+    except Exception as exc:
         logger.warning("Playbook update check failed for %s", existing.playbook_id)
+        candidate["rationale"] = f"비교 실패 ({type(exc).__name__}); 적용 여부를 판정하지 못했다."
+        return None
 
-    if output is None:
+    candidate["applicable"] = output.applicable
+    candidate["rationale"] = output.rationale + "\n근거: " + ", ".join(evidence)
+    candidate["evidence"] = _evidence_snapshots(evidence, report)
+    if not output.applicable:
         return None
 
     # The current RCA owns the whole plan, including an empty manual-only plan.
-    execution_steps = [step.model_copy(deep=True) for step in (current_steps or [])]
+    execution_steps = (
+        [step.model_copy(deep=True) for step in (current_steps or [])] if report.root_cause_confirmed else []
+    )
     verification_status = (
         existing.verification_status
         if execution_steps == existing.execution_steps
         else PlaybookVerificationStatus.DRAFT
     )
 
-    if not output.needs_update:
-        logger.info("Reusing playbook %s knowledge with the current runbook", existing.playbook_id)
-        return existing.model_copy(
-            deep=True,
-            update={
-                "execution_steps": execution_steps,
-                "verification_status": verification_status,
-                "rca_id": report.rca_id,
-            },
-        )
-
-    logger.info("Updating playbook %s with new RCA findings", existing.playbook_id)
-    return Playbook(
-        playbook_id=existing.playbook_id,
-        failure_type=output.failure_type or existing.failure_type,
-        symptom_pattern=output.symptom_pattern or existing.symptom_pattern,
-        severity_criteria=output.severity_criteria or existing.severity_criteria,
-        verification_steps=output.verification_steps or existing.verification_steps,
-        execution_steps=execution_steps,
-        temporary_mitigation=output.temporary_mitigation or existing.temporary_mitigation,
-        permanent_remediation=output.permanent_remediation or existing.permanent_remediation,
-        escalation_criteria=output.escalation_criteria or existing.escalation_criteria,
-        prevention_measures=output.prevention_measures or existing.prevention_measures,
-        related_metrics=output.related_metrics or existing.related_metrics,
-        rca_id=report.rca_id,
-        tags=output.tags or existing.tags,
-        verification_status=verification_status,
+    before = _historical_snapshot(existing)
+    after = _proposed_knowledge(before, output)
+    changes = [
+        {"field": field, "before": deepcopy(before[field]), "after": deepcopy(after[field])}
+        for field in _KNOWLEDGE_FIELDS
+        if before[field] != after[field]
+    ]
+    comparison = {
+        "status": "UPDATE_PROPOSED" if changes else "NO_CHANGE",
+        "query": query,
+        "candidates": [deepcopy(candidate)],
+        "selected_playbook_id": existing.playbook_id,
+        "baseline": {
+            "playbook_id": existing.playbook_id,
+            "revision": existing.library_revision,
+            "source_rca_id": existing.source_rca_id or existing.rca_id,
+            "source_engine": existing.source_engine,
+            "playbook": deepcopy(before),
+        },
+        "evidence": deepcopy(candidate["evidence"]),
+        "used_references": [
+            {
+                "role": "knowledge-reuse",
+                "ref": "baseline",
+                "playbook_id": existing.playbook_id,
+                "revision": existing.library_revision,
+                "source_rca_id": existing.source_rca_id or existing.rca_id,
+                "source_engine": existing.source_engine,
+            }
+        ],
+    }
+    if changes:
+        comparison["proposal"] = {
+            "proposal_id": str(uuid.uuid4()),
+            "playbook_id": existing.playbook_id,
+            "base_revision": existing.library_revision,
+            "source_rca_id": existing.source_rca_id or existing.rca_id,
+            "source_engine": existing.source_engine,
+            "before": before,
+            "after": after,
+            "changes": changes,
+            "rationale": output.rationale,
+            "evidence": evidence,
+            "state": "PENDING",
+        }
+    return existing.model_copy(
+        deep=True,
+        update={
+            "execution_steps": execution_steps,
+            "verification_status": verification_status,
+            "rca_id": report.rca_id,
+            "comparison": comparison,
+        },
     )
 
 
@@ -288,12 +413,36 @@ def run_playbook_generation(
     scoping_result: ScopingResult | None = None,
     timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
 ) -> Playbook:
+    """Keep the current incident runbook while comparing published knowledge within one model-call budget."""
     deadline = time.monotonic() + max(0, timeout_seconds)
 
-    # 이번 분석의 초안을 먼저 만든다. 검색 쿼리가 인덱스에 저장된 것과 같은 필드에서
-    # 나와야 하고, 그 필드는 초안이 생긴 뒤에만 존재한다. 병합이 성립하면 이 초안은
-    # 기존 플레이북을 보강하는 입력이 되고, 성립하지 않으면 그대로 신규 플레이북이다.
+    # Search uses the generalized draft fields; the draft also owns the complete
+    # current runbook even when published knowledge is reused.
     draft = _generate_draft(report, agent, deadline, scoping_result)
+    query = _build_embed_key(draft, scoping_result)
+    comparison = {
+        "comparison_id": str(uuid.uuid4()),
+        "status": "NO_MATCH",
+        "query": query,
+        "candidates": [],
+        "selected_playbook_id": "",
+        "inputs": {
+            "current_report": report.model_dump(mode="json"),
+            "current_playbook": _historical_snapshot(draft),
+            "scoping": scoping_result.model_dump(mode="json") if scoping_result else None,
+            "candidate_comparisons": [],
+        },
+        "used_references": [
+            {
+                "role": "current-runbook-input",
+                "ref": "current_report",
+                "source_rca_id": report.rca_id,
+                "source_engine": "strands",
+            }
+        ],
+        "evidence": [],
+    }
+    draft.comparison = comparison
 
     try:
         existing_hits = search_existing_playbooks(
@@ -303,25 +452,84 @@ def run_playbook_generation(
         )
     except Exception:
         logger.warning("Playbook search failed; keeping the current draft")
+        comparison["status"] = "SEARCH_FAILED"
         return draft
 
-    merge_candidates = 0
-    for hit in existing_hits:
-        # Merging without the recorded procedure would overwrite it under the same
-        # id, so a hit we cannot load is left alone rather than half-updated.
+    selected: Playbook | None = None
+    failed = False
+    seen_pointers = set()
+    compared_playbooks = set()
+    for hit in sorted(existing_hits, key=lambda item: item.similarity, reverse=True):
+        candidate = {
+            "playbook_id": hit.playbook_id,
+            "rca_id": hit.rca_id,
+            "engine": getattr(hit, "engine", ""),
+            "similarity": hit.similarity,
+            "revision": getattr(hit, "library_revision", "legacy"),
+            "publication_id": getattr(hit, "publication_id", ""),
+            "availability": "UNAVAILABLE",
+            "applicable": None,
+            "rationale": "",
+        }
+        comparison["candidates"].append(candidate)
+        unavailable_reason = getattr(hit, "unavailable_reason", "")
+        pointer = tuple(candidate[field] for field in ("playbook_id", "revision", "rca_id", "engine", "publication_id"))
+        if pointer in seen_pointers:
+            candidate["rationale"] = (
+                (unavailable_reason + "\n") if isinstance(unavailable_reason, str) and unavailable_reason else ""
+            ) + "동일한 검색 참조가 반복되어 모델 비교에서 제외했다."
+            continue
+        seen_pointers.add(pointer)
+        if isinstance(unavailable_reason, str) and unavailable_reason:
+            candidate["rationale"] = unavailable_reason
+            failed = True
+            continue
+        if hit.playbook_id in compared_playbooks:
+            candidate["rationale"] = "같은 플레이북의 사용 가능한 상세를 이미 비교하여 중복 비교에서 제외했다."
+            continue
+        # Proposals require an actual published baseline, never index metadata alone.
         try:
             existing = playbook_store.load_detail(hit)
-        except Exception:
+        except Exception as exc:
             logger.warning("Playbook detail lookup failed for %s", hit.playbook_id)
+            candidate["rationale"] = f"상세 조회 실패 ({type(exc).__name__}); 비교 대상에서 제외했다."
+            failed = True
             continue
         if existing is None:
             logger.info(
-                "Skipping playbook %s — detail unavailable, cannot merge safely",
+                "Skipping playbook %s — published detail unavailable for comparison",
                 hit.playbook_id,
             )
+            candidate["rationale"] = "게시된 상세를 읽을 수 없어 비교 대상에서 제외했다."
+            failed = True
             continue
-        merge_candidates += 1
+        if existing.playbook_id != hit.playbook_id:
+            candidate["rationale"] = "조회된 상세의 플레이북 식별자가 후보와 달라 비교 대상에서 제외했다."
+            failed = True
+            continue
+        compared_playbooks.add(hit.playbook_id)
+        candidate.update(
+            availability="AVAILABLE",
+            rca_id=existing.source_rca_id or existing.rca_id,
+            engine=existing.source_engine or getattr(hit, "engine", ""),
+            revision=existing.library_revision,
+        )
+        # Library provenance comes from persisted detail/search metadata, not the model.
+        existing = existing.model_copy(
+            deep=True,
+            update={
+                "source_rca_id": candidate["rca_id"],
+                "source_engine": candidate["engine"],
+            },
+        )
         remaining_seconds = max(0.0, deadline - time.monotonic())
+        comparison["inputs"]["candidate_comparisons"].append(
+            {
+                "playbook_id": existing.playbook_id,
+                "playbook": _historical_snapshot(existing),
+                "prompt": _build_update_prompt(existing, report, scoping_result),
+            }
+        )
         updated = _try_update_existing(
             existing,
             report,
@@ -330,14 +538,85 @@ def run_playbook_generation(
             similarity=hit.similarity,
             scoping_result=scoping_result,
             timeout_seconds=remaining_seconds,
+            candidate=candidate,
+            query=query,
         )
-        if updated is not None:
-            return updated
+        if updated is not None and selected is None:
+            selected = updated
+        elif updated is not None:
+            candidate["rationale"] += "\n적용 가능하지만 검색 관련성이 우선인 다른 후보를 선택했다."
+        elif candidate["applicable"] is None:
+            failed = True
+        for item in candidate.get("evidence", []):
+            if item not in comparison["evidence"]:
+                comparison["evidence"].append(deepcopy(item))
 
-    if merge_candidates:
-        logger.info("No usable merge result from %d existing playbooks", merge_candidates)
-
+    comparison["used_references"].extend(
+        {
+            "role": "comparison-evidence",
+            "ref": item["ref"],
+            "source_path": item["source_path"],
+            "source_rca_id": report.rca_id,
+            "source_engine": "strands",
+        }
+        for item in comparison["evidence"]
+    )
+    if selected is not None:
+        selected.comparison["candidates"] = deepcopy(comparison["candidates"])
+        selected.comparison.update(
+            comparison_id=comparison["comparison_id"],
+            inputs=comparison["inputs"],
+            evidence=comparison["evidence"],
+            used_references=selected.comparison["used_references"] + comparison["used_references"],
+        )
+        return selected
+    if existing_hits:
+        comparison["status"] = "SEARCH_FAILED" if failed else "NO_APPLICABLE_MATCH"
     return draft
+
+
+def archive_incident_comparison(
+    playbook: Playbook | None, *, store: PlaybookStorePort, rca_id: str
+) -> tuple[Playbook | None, Playbook | None]:
+    """Archive inputs before state persistence, keeping the full copy only for report rendering.
+
+    A failed archive returns a DRAFT with the same incident commands and SEARCH_FAILED,
+    never the matched asset's verification or an actionable proposal without its baseline.
+    """
+    if playbook is None or not playbook.comparison:
+        return playbook, playbook
+    full = playbook.model_copy(deep=True)
+    full.rca_id = rca_id
+    try:
+        thin = store.archive_comparison(full.model_copy(deep=True), rca_id, "strands")
+        if not isinstance(thin, Playbook):
+            raise ValueError("comparison archive returned no playbook")
+        if thin.model_dump(exclude={"comparison"}) != full.model_dump(exclude={"comparison"}):
+            raise ValueError("comparison archive changed the incident playbook")
+        state = thin.comparison
+        if (
+            not state.get("original_sk")
+            or not state.get("original_expires_at")
+            or set(state) - {"status", "selected_playbook_id", "original_sk", "original_expires_at", "proposal"}
+            or (isinstance(state.get("proposal"), dict) and set(state["proposal"]) - {"proposal_id", "state"})
+        ):
+            raise ValueError("comparison archive did not return a thin original reference")
+        return full, thin
+    except Exception as exc:
+        logger.warning("Comparison archive failed for %s (%s)", rca_id, type(exc).__name__)
+        draft = full.comparison.get("inputs", {}).get("current_playbook")
+        failed = Playbook.model_validate(draft) if isinstance(draft, dict) else full.model_copy(deep=True)
+        failed.execution_steps = [step.model_copy(deep=True) for step in full.execution_steps]
+        failed.verification_status = PlaybookVerificationStatus.DRAFT
+        failed.rca_id = rca_id
+        if failed.playbook_id == full.comparison.get("selected_playbook_id"):
+            failed.playbook_id = str(uuid.uuid4())
+        failed.comparison = {
+            "status": "SEARCH_FAILED",
+            "selected_playbook_id": "",
+            "failure_reason": "비교 원본 보관에 실패하여 제안을 사용할 수 없습니다.",
+        }
+        return failed, failed.model_copy(deep=True)
 
 
 def _generate_draft(

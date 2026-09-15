@@ -91,8 +91,21 @@ export function resolveCurrentPlaybook(
         text(item.playbook_id) === playbookId,
     );
     const revised = asObject(revision?.playbook);
-    if (revision && revised && belongsToPlaybook(revised, playbookId)) {
-      return { playbook: revised, source: 'revision', sourceItem: revision };
+    if (revision) {
+      // A recorded current revision owns the decision even when unreadable.
+      // Falling back here would approve commands superseded by that revision.
+      const published =
+        !('publication_status' in revision) ||
+        revision.publication_status === 'PUBLISHED';
+      const retained =
+        !('ttl' in revision) ||
+        Number(revision.ttl) > Math.floor(Date.now() / 1000);
+      return published &&
+        retained &&
+        revised &&
+        belongsToPlaybook(revised, playbookId)
+        ? { playbook: revised, source: 'revision', sourceItem: revision }
+        : null;
     }
   }
 

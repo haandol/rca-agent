@@ -19,6 +19,7 @@ from headless_codex.adapters.secondary.codex.codex_harness import (
     ANALYSIS_PROFILE,
     ANALYSIS_RCA_PROFILE,
     ANALYSIS_REPORT_PROFILE,
+    COMPARISON_PROFILE,
     MODEL_EVAL_PROFILE,
     MODEL_EVAL_RCA_PROFILE,
     MODEL_EVAL_REPORT_PROFILE,
@@ -88,6 +89,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
         rca_id: str | None = None,
         claim_token: str | None = None,
         attempt: int | None = None,
+        deadline: float | None = None,
     ) -> CodexResult:
         """Run sequential specialists under one deadline and hand off replay-verified judgments."""
         if profile not in {ANALYSIS_PROFILE, MODEL_EVAL_PROFILE}:
@@ -99,9 +101,14 @@ class CodexSubprocessRunner(CodexRunnerPort):
                 rca_id=rca_id,
                 claim_token=claim_token,
                 attempt=attempt,
+                deadline=deadline,
             )
 
-        deadline = time.monotonic() + CODEX_TIMEOUT_SECONDS
+        deadline = (
+            min(deadline, time.monotonic() + CODEX_TIMEOUT_SECONDS)
+            if deadline is not None
+            else (time.monotonic() + CODEX_TIMEOUT_SECONDS)
+        )
         rca_profile = ANALYSIS_RCA_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_RCA_PROFILE
         report_profile = ANALYSIS_REPORT_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_REPORT_PROFILE
         rca_result = self._run_single(
@@ -157,6 +164,36 @@ class CodexSubprocessRunner(CodexRunnerPort):
             cancelled=report_result.cancelled,
         )
 
+    def compare_playbooks(
+        self,
+        payload: dict,
+        *,
+        execution_token: str,
+        deadline: float,
+        cancel_checker: Callable[[], bool] | None = None,
+    ) -> dict:
+        """Run tool-free comparison within the remaining shared deadline and validate its judgment server-side."""
+        from headless_codex.services.playbook_comparison import comparison_prompt, validate_model_comparison
+
+        if cancel_checker and cancel_checker():
+            raise RuntimeError("playbook comparison cancelled")
+        deadline = min(deadline, time.monotonic() + CODEX_TIMEOUT_SECONDS)
+        result = self._run_single(
+            comparison_prompt(payload),
+            execution_token=execution_token,
+            profile=COMPARISON_PROFILE,
+            deadline=deadline,
+            cancel_checker=cancel_checker,
+        )
+        if (
+            not result.success
+            or result.cancelled
+            or time.monotonic() >= deadline
+            or (cancel_checker and cancel_checker())
+        ):
+            raise RuntimeError("playbook comparison model failed or was interrupted")
+        return validate_model_comparison(result.result, payload)
+
     def _run_single(
         self,
         prompt: str,
@@ -169,6 +206,8 @@ class CodexSubprocessRunner(CodexRunnerPort):
         attempt: int | None = None,
         deadline: float | None = None,
     ) -> CodexResult:
+        """Honor the caller's deadline while isolating profile files and subprocess output per run."""
+
         def timed_out() -> CodexResult:
             return CodexResult(
                 success=False,
@@ -186,7 +225,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
         ):
             workspace_path = Path(workspace)
             home_path = Path(home)
-            extra_env = {RUN_TOKEN_ENV: execution_token}
+            extra_env = {} if profile == COMPARISON_PROFILE else {RUN_TOKEN_ENV: execution_token}
             if rca_id:
                 extra_env[RCA_ID_ENV] = rca_id
             if claim_token:
@@ -219,7 +258,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
                         stderr=error_file,
                         text=True,
                         cwd=workspace,
-                        env=codex_environment(home_path, extra_env),
+                        env=self._environment(home_path, extra_env, profile),
                     )
                 except FileNotFoundError:
                     return CodexResult(
@@ -284,3 +323,12 @@ class CodexSubprocessRunner(CodexRunnerPort):
                 result = last_message.read_text().strip() if last_message.is_file() else _last_agent_message(stdout)
 
         return CodexResult(success=True, result=result or stdout.strip(), raw_output=stdout)
+
+    @staticmethod
+    def _environment(home: Path, extra_env: dict, profile: str) -> dict:
+        """Remove analysis ownership tokens so comparison cannot inherit artifact-writing context."""
+        environment = codex_environment(home, extra_env)
+        if profile == COMPARISON_PROFILE:
+            for name in (RUN_TOKEN_ENV, RCA_ID_ENV, CLAIM_TOKEN_ENV, ATTEMPT_ENV):
+                environment.pop(name, None)
+        return environment

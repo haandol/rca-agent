@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -10,6 +10,7 @@ from rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store import (
 )
 from rca_agent.adapters.secondary.report.s3_report_store import S3ReportStore
 from rca_agent.ports.dto.models import AlarmPayload, AlarmTrigger, Playbook, RcaReport, ScopingResult
+from rca_agent.ports.interfaces.playbook_store import PlaybookSearchUnavailable
 from rca_agent.services.playbook_gen import _build_embed_key as _build_playbook_embed_key
 from rca_agent.services.scoping import build_report_query
 
@@ -24,6 +25,35 @@ def embedding():
 
 _REPORT_MODULE = "rca_agent.adapters.secondary.report.s3_report_store"
 _PLAYBOOK_MODULE = "rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store"
+
+
+@pytest.fixture(autouse=True)
+def state_authority_for_vector_wire_tests():
+    """Isolate vector request encoding; source/CAS behavior has real moto parity tests."""
+    library = MagicMock()
+    library.load.side_effect = lambda playbook_id, rca_id, engine, revision, publication_id: {
+        "playbook_id": playbook_id,
+        "source_rca_id": rca_id,
+        "source_engine": "strands",
+        "library_revision": "legacy",
+        "failure_type": "memory",
+        "symptom_pattern": "growth",
+        "verification_status": "DRAFT",
+        "tags": [],
+    }
+    library.stage.side_effect = lambda playbook, rca_id, revision, **kwargs: {
+        "SK": playbook["playbook_id"],
+        "revision": revision,
+        "engine": "strands",
+        "publication_status": "PENDING",
+        "vector_key": f"{playbook['playbook_id']}@{revision}",
+    }
+    with (
+        patch(f"{_PLAYBOOK_MODULE}.DYNAMODB_TABLE_NAME", "sessions"),
+        patch.object(S3VectorsPlaybookStore, "_library", new_callable=PropertyMock, return_value=library),
+    ):
+        yield
+
 
 # Both indexes must honour the same query contract, but they take their cutoff
 # differently: the report index owns its threshold, while playbook callers pass
@@ -40,7 +70,9 @@ _STORE_CASES = [
         id="report",
     ),
     pytest.param(
-        lambda client, embedding: S3VectorsPlaybookStore(s3_vectors_client=client, embedding=embedding),
+        lambda client, embedding: S3VectorsPlaybookStore(
+            s3_vectors_client=client, embedding=embedding, dynamodb_client=MagicMock()
+        ),
         _PLAYBOOK_MODULE,
         lambda store, query: store.search_similar(query, threshold=0.7),
         "S3_VECTOR_PLAYBOOK_INDEX",
@@ -224,7 +256,7 @@ def test_cosine_distance_is_converted_to_similarity(
 def test_search_is_disabled_without_vector_bucket(embedding):
     client = MagicMock()
     report_store = S3ReportStore(s3_vectors_client=client, embedding=embedding)
-    playbook_store = S3VectorsPlaybookStore(s3_vectors_client=client, embedding=embedding)
+    playbook_store = S3VectorsPlaybookStore(s3_vectors_client=client, embedding=embedding, dynamodb_client=MagicMock())
 
     with (
         patch("rca_agent.adapters.secondary.report.s3_report_store.S3_VECTOR_BUCKET_NAME", ""),
@@ -234,7 +266,8 @@ def test_search_is_disabled_without_vector_bucket(embedding):
         ),
     ):
         assert report_store.search_similar("query") == []
-        assert playbook_store.search_similar("query", threshold=0.7) == []
+        with pytest.raises(PlaybookSearchUnavailable):
+            playbook_store.search_similar("query", threshold=0.7)
 
     embedding.embed_query.assert_not_called()
     client.query_vectors.assert_not_called()
@@ -284,7 +317,7 @@ def test_index_writer_and_searcher_render_the_same_embed_text(metric_name, embed
         symptom_pattern=report.incident_summary,
     )
     playbook_written = _document_embed_text(
-        S3VectorsPlaybookStore(s3_vectors_client=MagicMock(), embedding=embedding),
+        S3VectorsPlaybookStore(s3_vectors_client=MagicMock(), embedding=embedding, dynamodb_client=MagicMock()),
         "rca_agent.adapters.secondary.playbook.s3_vectors_playbook_store",
         lambda store: store.save(playbook, scoping_result=scoping),
         embedding,

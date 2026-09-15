@@ -657,6 +657,9 @@ class TraceStore:
 
 
 def _serialize_metadata_value(value) -> dict:
+    """Preserve nested JSON types so absent runbook operations remain null."""
+    if value is None:
+        return {"NULL": True}
     if isinstance(value, str):
         return {"S": value}
     if isinstance(value, bool):
@@ -747,11 +750,14 @@ def _deserialize_hypothesis(item: dict) -> dict:
 
 
 def _deserialize_metadata_value(value: dict):
+    """Restore the exact metadata shape instead of turning nulls into text."""
+    if "NULL" in value:
+        return None
     if "S" in value:
         return value["S"]
     if "N" in value:
         n = value["N"]
-        return int(n) if "." not in n else float(n)
+        return float(n) if "." in n or "e" in n.lower() else int(n)
     if "BOOL" in value:
         return value["BOOL"]
     if "M" in value:

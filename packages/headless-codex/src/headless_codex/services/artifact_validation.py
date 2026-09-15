@@ -330,10 +330,12 @@ def _render_playbook(playbook: dict, *, confirmed: bool) -> str:
 
 
 def _validate_report(base: Path, playbook: dict, analysis: AnalysisResult) -> str:
+    """Validate required detail, then assemble decision sections and summary from server-owned results."""
     try:
         markdown = (base / "report.md").read_text()
     except OSError as exc:
         raise ArtifactValidationError("report.md is missing") from exc
+    _reject_generated_summary(markdown)
     _validate_report_sections(markdown)
     markdown = _replace_section(markdown, "근본 원인", _render_root_cause(analysis))
     markdown = _replace_section(
@@ -342,16 +344,132 @@ def _validate_report(base: Path, playbook: dict, analysis: AnalysisResult) -> st
         _render_playbook(playbook, confirmed=analysis.confirmed),
     )
     _validate_report_sections(markdown)
-    return markdown
+    summary = build_report_summary(base, playbook, analysis)
+    return _render_summary(summary) + markdown + _render_comparison(playbook.get("comparison"))
+
+
+def build_report_summary(base: Path, playbook: dict, analysis: AnalysisResult) -> dict:
+    """Presentation metadata from the same authoritative values used by the detailed report."""
+    scoping = _load_object(base / "scoping.json", "scoping.json")
+    steps = playbook["execution_steps"]
+    comparison = playbook.get("comparison") or {}
+    approval_eligible = analysis.confirmed and bool(steps)
+    if approval_eligible:
+        try:
+            validate_runbook(steps)
+        except (ValueError, TypeError):
+            approval_eligible = False
+    return {
+        "incident_summary": scoping.get("alarm_name"),
+        "impact_summary": scoping.get("impact_scope"),
+        "severity": scoping.get("severity"),
+        "root_cause": _root_cause_summary(analysis),
+        "root_cause_confirmed": analysis.confirmed,
+        "confidence_score": analysis.selected_confidence,
+        "next_action": steps[0]["action"] if steps else "추가 조사와 수동 판단이 필요하다.",
+        "runbook_verification_status": playbook["verification_status"],
+        # This is the analysis-time prerequisite, not a grant of execution permission.
+        "runbook_approval_eligible": approval_eligible,
+        "playbook_id": playbook["playbook_id"],
+        "comparison_status": comparison.get("status"),
+        "selected_playbook_id": comparison.get("selected_playbook_id") or None,
+        "proposal_state": comparison.get("proposal", {}).get("state"),
+    }
+
+
+SUMMARY_MARKER = "rca-summary:v1"
+
+
+_COMPARISON_LABELS = {
+    "UPDATE_PROPOSED": "변경 제안 · 검토 대기",
+    "NO_CHANGE": "변경 불필요",
+    "NO_MATCH": "유사 후보 없음",
+    "NO_APPLICABLE_MATCH": "적용 가능한 후보 없음",
+    "SEARCH_FAILED": "검색·비교 실패",
+}
+
+
+def _reject_generated_summary(markdown: str) -> None:
+    """Reject model-authored summary markers so consumers read only the server's authoritative summary."""
+    if re.search(r"<!--\s*rca-summary:v1\b|^## 빠른 판단\s*$", markdown, re.MULTILINE):
+        raise ArtifactValidationError("report summary marker and quick assessment are server-owned")
+
+
+def _summary_text(value: object) -> str:
+    """Keep the overview short; its unabridged source remains in the detail sections."""
+    text = " ".join(str(value if value is not None else "미제공").split())
+    text = text[:320] + ("…" if len(text) > 320 else "")
+    return text.replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _render_summary(summary: dict) -> str:
+    """Render one server-owned summary for people and machines while escaping comment delimiters."""
+    # Escape HTML delimiters so data cannot close this machine-readable comment.
+    encoded = json.dumps(summary, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    status = "확정" if summary["root_cause_confirmed"] else "미확정"
+    lines = [
+        "## 빠른 판단",
+        "",
+        f"<!-- {SUMMARY_MARKER}\n{encoded}\n-->",
+        "",
+        f"- **장애**: {_summary_text(summary['incident_summary'])}",
+        f"- **영향 범위**: {_summary_text(summary['impact_summary'])}",
+        f"- **심각도**: {_summary_text(summary['severity'])}",
+        f"- **원인**: {_summary_text(summary['root_cause'])}",
+        f"- **판정**: {status} · 신뢰도 {summary['confidence_score']:.2f}",
+        f"- **다음 조치**: {_summary_text(summary['next_action'])}",
+        f"- **런북 검증 상태**: {summary['runbook_verification_status']}",
+        "- **실행 승인**: "
+        + (
+            "승인 검토 가능 · 현재 런북 전체를 확인하고 별도 승인해야 한다."
+            if summary["runbook_approval_eligible"]
+            else "승인 불가 · 확정 원인과 구체적인 실행 절차가 필요하다."
+        ),
+        f"- **유사 플레이북 비교**: {_COMPARISON_LABELS.get(summary['comparison_status'], '미제공')}",
+        "",
+        "아래 상세에 원문 설명·증거·가설 경로·전체 실행 절차를 보존한다. "
+        "이 요약은 분석 완료 시점의 기록이며 현재 실행 상태를 뜻하지 않는다.",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _render_comparison(comparison: object) -> str:
+    """Expose actual generation references and frozen evidence while retaining candidate audit separately."""
+    if not isinstance(comparison, dict):
+        return ""
+    lines = [
+        "",
+        "## 유사 플레이북 비교",
+        "",
+        _COMPARISON_LABELS.get(comparison.get("status"), "미제공"),
+        "",
+        "유사도는 검색 관련성이며 원인 확정 확률이 아니다. "
+        "지식 변경 제안의 반영과 이번 사고 런북의 실행 승인은 별개다.",
+        "",
+    ]
+    if comparison.get("used_references"):
+        lines.extend(["### 생성에 사용한 참고 자료", ""])
+        fixed = {
+            key: comparison[key] for key in ("used_references", "baseline", "evidence", "inputs") if key in comparison
+        }
+        lines.extend("    " + line for line in json.dumps(fixed, ensure_ascii=False, indent=2).splitlines())
+        lines.extend(["", "### 후보 검색·비교 감사 기록", ""])
+    for candidate in comparison.get("candidates", []):
+        # Indented JSON preserves arbitrary source prose without introducing report headings.
+        lines.extend("    " + line for line in json.dumps(candidate, ensure_ascii=False, indent=2).splitlines())
+        lines.append("")
+    proposal = comparison.get("proposal")
+    if isinstance(proposal, dict):
+        lines.extend(["### 검토 대기 중인 지식 변경", "", "아래 내용은 아직 공개 지식에 반영되지 않았다.", ""])
+        display = {key: proposal[key] for key in ("proposal_id", "base_revision", "rationale", "changes", "evidence")}
+        lines.extend("    " + line for line in json.dumps(display, ensure_ascii=False, indent=2).splitlines())
+        lines.append("")
+    return "\n".join(lines)
 
 
 def render_completion_report(base: Path, playbook: dict) -> str:
-    """Render the report again from the final search-first playbook.
-
-    The report specialist writes the candidate playbook. Search-first enrichment
-    may replace it with the accumulated playbook, and the report, completed
-    session, notification, and search index must all use that same final value.
-    """
+    """Render summary and all details from the final incident playbook and pending proposal."""
     _validate_playbook_shape(playbook, allow_verified=True)
     try:
         analysis = validate_analysis_completion(base)
@@ -370,6 +488,7 @@ def validate_artifact_shape(filename: str, content: str) -> None:
     is not knowable yet at save time and stays in the completion gate.
     """
     if filename == "report.md":
+        _reject_generated_summary(content)
         _validate_report_sections(content)
         return
 

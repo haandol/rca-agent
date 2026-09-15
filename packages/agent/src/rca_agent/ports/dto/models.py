@@ -165,6 +165,10 @@ class PlaybookMatch(BaseModel):
     symptom_pattern: str = ""
     tags: list[str] = Field(default_factory=list)
     rca_id: str = ""
+    engine: str = ""
+    library_revision: str = ""
+    publication_id: str = ""
+    unavailable_reason: str = ""
     # A hit has to say whether its procedure was proven by an execution without a
     # second lookup. Absent on records written before the field existed, and an
     # unproven procedure must not read as verified, so the default is a draft.
@@ -361,6 +365,12 @@ class Playbook(BaseModel):
     tags: list[str] = Field(default_factory=list)
     # 분석은 이 값을 바꾸지 않는다. 실행되지 않은 절차는 검증되지 않았다.
     verification_status: PlaybookVerificationStatus = PlaybookVerificationStatus.DRAFT
+    # Comparison belongs to this incident; pending proposals are not public knowledge.
+    comparison: dict = Field(default_factory=dict)
+    # Supplied by the published-detail reader, never by the generation model.
+    library_revision: str = "legacy"
+    source_engine: str = ""
+    source_rca_id: str = ""
 
 
 class AlarmContext(BaseModel):
