@@ -59,6 +59,12 @@ _PLAYBOOK_LIST_FIELDS = (
 _EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria")
 
 
+def _serialize_metadata(value: object) -> dict:
+    """Convert JSON numbers to Decimal before encoding approval metadata."""
+    value = json.loads(json.dumps(value), parse_float=Decimal)
+    return TypeSerializer().serialize(value)
+
+
 def _build_execution_steps_metadata(steps: object) -> list[dict] | None:
     """Keep the steps a person approves so the dashboard can show them."""
     if not isinstance(steps, list) or not steps:
@@ -75,8 +81,7 @@ def _build_execution_steps_metadata(steps: object) -> list[dict] | None:
         for key in ("deployment_wait", "ecs_service_precondition"):
             if key in step:
                 fields[key] = step[key]
-        value = json.loads(json.dumps(fields), parse_float=Decimal)
-        rendered.append(TypeSerializer().serialize(value))
+        rendered.append(_serialize_metadata(fields))
     return rendered or None
 
 
@@ -94,8 +99,7 @@ def _build_playbook_metadata(artifact: dict) -> dict:
     if isinstance(artifact.get("execution_steps"), list):
         meta["execution_steps"] = {"L": steps or []}
     if "rollback_context" in artifact:
-        value = json.loads(json.dumps(artifact["rollback_context"]), parse_float=Decimal)
-        meta["rollback_context"] = TypeSerializer().serialize(value)
+        meta["rollback_context"] = _serialize_metadata(artifact["rollback_context"])
     return meta
 
 

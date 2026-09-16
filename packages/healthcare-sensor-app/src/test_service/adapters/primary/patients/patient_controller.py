@@ -2,8 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 
-from test_service.adapters.primary.schemas import SensorReadingResponse
-from test_service.ports.dto.sensor import SensorReadingEntity
+from test_service.adapters.primary.schemas import SensorReadingResponse, sensor_reading_response
 from test_service.services.sensor import SensorService
 
 
@@ -26,17 +25,4 @@ class PatientController:
         entities = await self._service.get_patient_vitals(
             patient_id, reading_type=reading_type, from_ts=from_ts, to_ts=to_ts, limit=limit
         )
-        return [self._to_response(e) for e in entities]
-
-    @staticmethod
-    def _to_response(e: SensorReadingEntity) -> SensorReadingResponse:
-        return SensorReadingResponse(
-            id=e.id,
-            patient_id=e.patient_id,
-            reading_type=e.reading_type,
-            value=e.value,
-            unit=e.unit,
-            timestamp=e.timestamp,
-            is_abnormal=e.is_abnormal,
-            created_at=e.created_at,
-        )
+        return [sensor_reading_response(e) for e in entities]

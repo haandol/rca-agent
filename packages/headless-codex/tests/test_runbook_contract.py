@@ -208,7 +208,6 @@ def test_retrospective_publishes_changed_operation_as_draft(change):
             "exec",
             SimpleNamespace(rca_id="rca", playbook_digest="a" * 64),
             SimpleNamespace(playbook=original),
-            Mock(),
             "claim",
             SimpleNamespace(token="token", read_retrospective=lambda: saved),
             "snapshot.json",

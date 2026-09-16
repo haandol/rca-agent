@@ -22,6 +22,12 @@ import {
   parseEngine,
 } from './keys';
 import { findSessionForEngine, resolveCurrentPlaybook } from './playbook';
+import {
+  domainPlaybook,
+  publishedPayload,
+  libraryEmbedKey,
+} from '../lib/playbookContent';
+export { domainPlaybook, libraryEmbedKey } from '../lib/playbookContent';
 import type {
   LibraryDetail,
   LibraryItem,
@@ -49,15 +55,6 @@ export interface LibraryDependencies {
   };
   now?: () => number;
 }
-const AUXILIARY = new Set([
-  'comparison',
-  'library_revision',
-  'source_engine',
-  'source_rca_id',
-  'stage',
-  'summary',
-  'output_summary',
-]);
 export const KNOWLEDGE_FIELDS = new Set([
   'failure_type',
   'symptom_pattern',
@@ -71,46 +68,6 @@ export const KNOWLEDGE_FIELDS = new Set([
   'tags',
 ]);
 
-/**
- * Compare the complete historical domain without lookup or presentation fields.
- * Unknown domain fields and the entire runbook remain part of the baseline.
- */
-export function domainPlaybook(value: Row): Row {
-  return Object.fromEntries(
-    Object.entries(value).filter(([key]) => !AUXILIARY.has(key)),
-  );
-}
-/**
- * Check publication identity without request-specific source annotations.
- * Unlike a knowledge baseline, the published payload retains its comparison.
- */
-function publishedPayload(value: Row): Row {
-  return Object.fromEntries(
-    Object.entries(value).filter(
-      ([key]) =>
-        !['library_revision', 'source_engine', 'source_rca_id'].includes(key),
-    ),
-  );
-}
-/**
- * Keep dashboard publication in the Python writers' embedding space.
- * Match their label order, 80-code-point truncation and omission of empty fields.
- */
-export function libraryEmbedKey(book: Row, metricName: string): string {
-  return [
-    ['장애유형', book.failure_type],
-    ['증상', book.symptom_pattern],
-    ['메트릭', metricName],
-  ]
-    .flatMap(([label, value]) => {
-      const text =
-        typeof value === 'string'
-          ? [...value].slice(0, 80).join('').trim()
-          : '';
-      return text ? [`${label}: ${text}`] : [];
-    })
-    .join(' | ');
-}
 /**
  * Read both stored JSON strings and legacy maps without fabricating a document.
  * Malformed JSON, scalars and arrays remain unavailable as null.
