@@ -89,3 +89,12 @@ tests/results/
 
 # AWS Security Agent (scan config + findings reports with vulnerability details)
 .security-agent/
+
+# Local demo ownership journals, browser sessions, and generated validation data.
+# Keep source fixtures under tests/; publish concise reports separately.
+/.demo-journals/
+/.playwright-cli/
+/docs/test-reports/*/
+/packages/dashboard/tests/artifacts/
+/packages/headless-codex/docs/retrospective-s3-*/
+/packages/healthcare-sensor-app/demo/proofs/

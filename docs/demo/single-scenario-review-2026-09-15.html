@@ -1,0 +1,178 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>단일 RCA 데모 가능성 리뷰</title><style>
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f4f6f9;color:#243247;font:16px/1.8 system-ui,-apple-system,sans-serif}main{max-width:1180px;margin:30px auto;padding:32px 40px;background:white;border:1px solid #dbe2eb;border-radius:12px}.draft{display:inline-block;border:1px solid #bb851c;border-radius:5px;background:#fff4d9;color:#805909;padding:3px 12px;font-size:13px;font-weight:650}h1{font-size:28px;line-height:1.4;margin:20px 0}h2{font-size:21px;margin:38px 0 16px;padding-bottom:10px;border-bottom:2px solid #dbe6f3;scroll-margin-top:16px}p,li{overflow-wrap:anywhere}p{max-width:94ch;margin:14px 0}li{margin:8px 0}ul,ol{padding-left:25px}a{color:#225a99;text-underline-offset:3px}nav{display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px 18px;border:1px solid #dbe2eb;border-radius:8px;background:#f6f8fb;margin:24px 0;font-size:13px}code,pre{font-family:ui-monospace,SFMono-Regular,monospace}code{font-size:.88em;background:#edf2f7;padding:2px 4px;border-radius:4px}pre{padding:18px;background:#eef3f8;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}pre code{background:none;padding:0}table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:20px 0;font-size:14px;line-height:1.7}th,td{border:1px solid #dbe2eb;padding:12px 14px;text-align:left;vertical-align:top;min-width:115px}th{background:#edf3fa;color:#183c64}tr:nth-child(even)td{background:#fafbfd}.diagram{overflow-x:auto;margin:20px 0;border:1px solid #dbe2eb;border-radius:8px;padding:14px}.diagram svg{display:block;min-width:950px;width:100%}details{border:1px solid #dbe2eb;padding:12px 16px;border-radius:8px;font-size:14px}summary{cursor:pointer;font-weight:600}strong{color:#13283e}@media(max-width:700px){main{margin:0;padding:22px 16px;border-radius:0;border:0}h1{font-size:24px}table{font-size:13px}th,td{padding:10px}.draft{font-size:12px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+h3{font-size:18px;margin-top:28px;padding-left:12px;border-left:3px solid #bd7a21}.diagram svg{min-width:800px}</style></head><body><main><span class="draft">조건부 적합 · 현재 데모 투입 보류</span><nav aria-label="리뷰 목차"><a href="#section-1">결론</a><a href="#section-2">주요 발견 사항</a><a href="#section-3">권고하는 성공 흐름</a><a href="#section-4">구현·검증 순서 제안</a><a href="#section-5">검증 범위와 출처</a></nav><h1>단일 RCA 시나리오의 원인 확정·조치 가능성 리뷰</h1>
+<p>검토일: 2026-09-15<br>대상: <code>single-scenario-plan-2026-09-15.md</code>와 검토 시점의 서비스·Strands·실행 워커 코드<br>범위: 읽기 전용 검토와 로컬 검증 함수 재현. 계획 원문·구현·ADR은 수정하지 않았고 AWS 장애 주입·배포·명령 실행은 수행하지 않았다.</p>
+<h2 id="section-1">결론</h2>
+<p><strong>시나리오는 유지할 만하다. 현재 계획과 구현 그대로의 데모 투입은 보류해야 한다.</strong></p>
+<p>실제 DB에 없는 컬럼을 저장 쿼리가 참조하는 결함은 오류·스키마·배포 차이를 직접 대조할 수 있고, 정상 이미지로 되돌리는 조치도 명확하다. 이를 구현하고 증거 전달과 배포 후 검증을 보완하면 반복 시연을 검증할 가치가 있다. 아직 성공률을 말할 실측은 없다.</p>
+<p>사용자가 이번에 요구한 목표는 <strong>원인 확정에 이어 에이전트 시스템이 실제 조치하고 회복을 확인하는 것</strong>이다. 기존 계획은 원인 확정까지만 필수이며 자동 조치를 제외하므로, 현재 통과 기준을 충족해도 이 목표가 달성됐다고 할 수 없다.</p>
+<p>Strands는 읽기 전용 분석을 담당하고, 대시보드의 사용자 승인 뒤 별도 실행 워커가 조치하는 기존 경계를 유지해야 한다. Headless Codex 분석 워커를 끄는 것과 승인 실행 워커를 끄는 것은 다르다.</p>
+<h2 id="section-2">주요 발견 사항</h2>
+<p>High는 요청한 원인 확정·조치 데모를 막는 조건, Medium은 반복 성공 판단의 신뢰성을 떨어뜨리는 조건이다. 새 구현이 필요한 항목과 현재 동작의 결함을 구분했다.</p>
+<h3>H1. High — 자동 조치가 통과 조건에서 빠져 있고 배포 후 검증도 연결되지 않는다</h3>
+<p><strong>계획 보완과 실행 계약 확장이 필요하다.</strong></p>
+<p>계획 5절은 자동 실행을 제외하고 준비자의 복원을 허용한다. 이 방식으로 정상화돼도 에이전트가 올바른 명령을 생성·실행했다는 증거는 아니다.</p>
+<p>현재 명령 검증기는 정상 태스크 정의로 되돌리는 <code>ecs update-service</code>를 받아들인다. 그러나 <code>metric_wait</code>는 앞선 <code>ecs stop-task</code> 단계만 참조할 수 있다. <code>ecs wait services-stable</code>도 현재 생성 검증에서 거부된다.</p>
+<p>로컬에서 재현한 결과:</p>
+<table>
+<thead>
+<tr>
+<th>입력</th>
+<th>결과</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>고정 대상·리전을 가진 <code>ecs update-service</code></td>
+<td>런북 검증 통과, 실행 명령 게이트 허용</td>
+<td>명령 형태와 정책 검사 결과다. 실제 AWS 권한·API 성공을 검증한 것은 아니다</td>
+</tr>
+<tr>
+<td>그 조치 뒤 <code>metric_wait</code></td>
+<td>거부: 앞선 StopTask 필요</td>
+<td>기존 정형 관측을 그대로 붙일 수 없다</td>
+</tr>
+<tr>
+<td><code>ecs wait services-stable</code></td>
+<td>거부: 알려진 서비스 작업이 아님</td>
+<td>CLI 대기 명령을 목록에 넣는 것만으로 해결되지 않는다</td>
+</tr>
+</tbody></table>
+<p>일반 조회 명령을 반복해 상태를 살피는 것은 별도 가능성이지만, 그것으로 이번 계획의 배포 후 관측 조건이 자동 충족된다고 볼 수는 없다.</p>
+<p><strong>권고:</strong> 통과 경로를 <code>원인 확정 → 승인 → 정상 리비전으로 UpdateService → 승인한 리비전·이미지로 배포 수렴 확인 → 그 이후 저장 회복 검증 → RESOLVED</code>로 바꾼다. 배포 수렴은 대상 서비스의 실행 태스크들이 승인한 정상 태스크 정의와 이미지로 전환된 상태를 뜻한다.</p>
+<p>지표 구간은 UpdateService의 API 반환 시각이 아니라 <strong>목표 배포가 실제로 수렴한 뒤</strong>를 기준으로 해야 한다. 롤링 배포 중에는 이전·새 태스크가 함께 있을 수 있다. 정상 태스크 일부의 성공이나 이전 구간의 알람 OK를 전체 복구로 읽어서는 안 된다.</p>
+<p>이 관측은 승인된 서비스·정상 리비전·이미지·메트릭·시간 규칙에 제한해야 한다. 모델이 실행 중 새 대상을 찾거나 명령 인자를 바꾸는 예외를 만들지 않는다.</p>
+<p>근거:</p>
+<ul>
+<li>계획 원문 69–78행.</li>
+<li><code>packages/headless-codex/src/headless_codex/services/runbook_contract.py:142</code></li>
+<li><code>packages/headless-codex/src/headless_codex/services/post_action_metrics.py:244</code>, <code>:276</code></li>
+<li>AWS 공식 롤링 배포 문서: <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-type-ecs.html" rel="nofollow noopener noreferrer" target="_blank">https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-type-ecs.html</a></li>
+</ul>
+<h3>H2. High — 결정적 증거의 생성부터 검증 입력까지 아직 연결되지 않는다</h3>
+<p><strong>서비스 관측의 새 구현과 분석 입력 전달 보완이 필요하다. 계획이 지적한 선행 사항을 구체적인 완료 조건으로 바꿔야 한다.</strong></p>
+<p>현재 저장 실패 로그는 주로 <code>error_type=DBAPIError</code> 수준이다. DB 관측은 SQL 지문·시간·연결·락을 기록하지만, 이번 사례에 필요한 실제 컬럼 목록과 SQLSTATE·컬럼 참조 자료를 모두 제공하지 않는다.</p>
+<p>초기 스코핑은 로그 검색을 금지한다. 따라서 가설 생성은 결정적인 컬럼 오류를 보지 못한 채 증상 지표부터 해석할 수 있다. 이후 수집에 성공해도 검증 입력으로 쓰는 요약은 앞 500자로 잘린다. 전체 증거를 보고서에 전달하는 개선은 이미 있지만, 보고서보다 먼저 일어나는 가설 검증의 정보 손실을 해결하지는 않는다.</p>
+<p><strong>권고:</strong></p>
+<ul>
+<li>실제 오류의 SQLSTATE·종류, 매개변수를 제외한 INSERT 식별자와 지문, 실제 컬럼 목록, 태스크·이미지·시각·원본 참조를 수집한다.</li>
+<li>스키마 관측은 실패한 트랜잭션 밖의 읽기 전용 경로에서 수행한다.</li>
+<li>첫 가설과 검증 단계가 이 핵심 사실을 받을 수 있어야 한다. 긴 산문의 뒤에 붙인 뒤 잘리는 구조를 피한다.</li>
+<li>드라이버가 제공하지 않은 필드를 추정하지 않고, 오류 메시지나 SQL 매개변수를 무제한으로 기록하지 않는다.</li>
+<li>수집·전달한 값과 실제 로그·DB 관측이 일치하는지 검사한다. 정답 라벨을 제공하는 것으로 대체하지 않는다.</li>
+</ul>
+<p>이번 컬럼 결함은 아직 구현되지 않았다. 저장 SQL 한 곳에 한정한 변경이 실제 PostgreSQL에 도달하고, 앱 기동·기존 데이터 조회·헬스 상태·트랜잭션 정리가 유지되는지 먼저 실DB로 확인해야 한다. ORM 모델의 필드 이름만 바꾸면 다른 경로까지 영향을 주거나 DB 호출 전에 실패할 수 있다.</p>
+<p>근거:</p>
+<ul>
+<li><code>packages/healthcare-sensor-app/src/test_service/services/sensor.py:48</code></li>
+<li><code>packages/healthcare-sensor-app/src/test_service/services/db_observability.py:75</code></li>
+<li><code>packages/healthcare-sensor-app/src/test_service/adapters/secondary/database_adapter.py:178</code></li>
+<li><code>packages/agent/src/rca_agent/prompts/scoping.py:11</code></li>
+<li><code>packages/agent/src/rca_agent/services/evidence.py:192</code></li>
+<li><code>packages/agent/src/rca_agent/services/pipeline.py:844</code></li>
+</ul>
+<h3>H3. High — 공유 예산 소진과 실패 캐시가 재시도 기회를 없앤다</h3>
+<p><strong>현재 수집 동작의 결함이다. 장애를 더 명확하게 만드는 것만으로 해결되지 않는다.</strong></p>
+<p>한 수집 라운드의 가설들이 같은 마감 시각을 공유한다. 앞 호출이 예산을 소진하면 뒤 가설은 실제로 시작하지 못한 채 실패 처리될 수 있다. 이 실패 표식도 증거 캐시에 들어가며, 다음 라운드는 캐시에 없는 가설만 다시 수집한다.</p>
+<p>로컬 대역으로 가설 3개·공유 예산 50ms·첫 호출 200ms를 재현했을 때, 실제 에이전트 시작은 1회였지만 3개 모두 실패로 기록됐고 동일 가설의 재수집 후보는 0개였다. 직전 라이브의 timeout 이벤트 8개를 독립적인 외부 조회 8회 실패라고 해석해서는 안 된다.</p>
+<p><strong>권고:</strong> 미시작·수집 실패·완료 증거를 구분하고, 총 실행 예산과 탐색 한도 안에서 가설별 호출 기회와 제한된 재수집을 보장한다. 외부 요청의 실제 종료와 남은 예산도 관측한다. 실패 시 확보한 원본은 진단용으로 보존하되, 미완료 수집을 성공한 확정 근거로 승격하지 않는다.</p>
+<p>근거:</p>
+<ul>
+<li><code>packages/agent/src/rca_agent/services/evidence.py:183</code>, <code>:230</code>, <code>:245</code></li>
+<li><code>packages/agent/src/rca_agent/services/pipeline.py:779</code></li>
+<li>직전 실제 실패 기록: <code>docs/test-reports/dashboard-runbook-2026-09-15/live-evidence-timeouts.json</code></li>
+</ul>
+<h3>H4. High — 정상 복구 대상을 에이전트가 입증하며 조회할 경로가 미정이다</h3>
+<p><strong>계획에서 빠진 데이터 전달 계약이다.</strong></p>
+<p>준비자가 정상 태스크 정의를 기록하는 것과 에이전트가 그 기록을 찾아 승인 전 명령에 고정하는 것은 다른 단계다. 계획에는 기록 위치·조회 경로·현재 사고와의 연결 검증이 없다. 현재 런북 생성기는 자체 조회 도구가 없고, 제어 근거가 부족하면 빈 실행 목록을 반환하도록 되어 있다.</p>
+<p><strong>권고:</strong> 정상 기준 관측을 읽기 전용으로 발견할 수 있게 하고 다음 값을 연결한다.</p>
+<ul>
+<li>현재 대상 계정·리전·클러스터·서비스.</li>
+<li>정상 저장이 관측된 태스크 정의 ARN과 실제 이미지 지문.</li>
+<li>그 관측의 시각·실행 식별자·원본 위치.</li>
+<li>장애 배포 이전의 정상 상태라는 근거와 현재 서비스에 적용 가능한 복원 대상이라는 확인.</li>
+</ul>
+<p>단순히 “이전 리비전”, “가장 큰 리비전 번호”, “latest 이미지”를 고르면 안 된다. 정답 원인을 주입하는 대신 실제 정상 배포와 성공 관측을 제공해야 한다. 대상이 불명확하거나 다른 배포가 끼어들면 새 검토를 요구하고 실행하지 않는다.</p>
+<p>근거:</p>
+<ul>
+<li>계획 원문 45행.</li>
+<li><code>packages/agent/src/rca_agent/di/app_container.py:175</code></li>
+<li><code>packages/agent/src/rca_agent/agent_factory.py:204</code></li>
+<li><code>packages/agent/src/rca_agent/prompts/playbook.py:72</code></li>
+</ul>
+<h3>M1. Medium — 원인 확정 3회만으로는 반복 조치 성공을 평가할 수 없다</h3>
+<p>계획의 3회 연속 확정은 초기 점검으로 유용하지만, 승인·조치·배포 대기·회복 판정을 검증하지 않는다. 같은 조건 세 번만으로 “대부분의 경우 성공”이라는 성공률을 추정하기도 어렵다.</p>
+<p><strong>권고하는 데모 채택 기준:</strong></p>
+<ol>
+<li>먼저 3회 연속으로 원인 확정부터 승인 실행·복구 확인까지 전체 흐름을 통과시킨다.</li>
+<li>그 다음 평가할 10회를 미리 정하고, <strong>10회 중 9회 이상 전체 성공</strong>을 제안 기준으로 삼는다. 성공한 실행만 고르거나 실패 후 횟수를 다시 세지 않는다.</li>
+<li>첫 분석·재사용 지식이 있는 분석, 새로운 태스크 정의 식별자, 승인 대기 시간 차이를 포함하되 원인 메커니즘은 같은 컬럼 불일치로 유지한다.</li>
+<li>잘못된 원인 확정, 잘못된 서비스 변경, 승인되지 않은 명령 실행은 0건이어야 한다. 9회가 성공했어도 이런 위반이 있으면 데모 투입을 보류한다.</li>
+<li>원인 확정 시간과 승인 후 실제 복구 시간을 분리해 기록한다. 시연 허용 시간은 이 실측으로 정한다.</li>
+</ol>
+<p>이 숫자는 제안하는 <strong>데모 채택 기준</strong>이며 통계적으로 운영 성공률 90%를 보장한다는 뜻이 아니다. 다른 종류의 장애에 대한 성공률로 확대하지 않는다.</p>
+<h2 id="section-3">권고하는 성공 흐름</h2>
+<div class="diagram"><svg viewBox="0 0 935 465" role="img" aria-label="실제 증거에서 원인 확정과 사용자 승인을 거쳐 실행 워커가 롤백하고 배포와 저장 회복을 확인하는 흐름"><defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="#4e6480"/></marker></defs><path d="M205 67H246" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M445 67H486" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M685 67H726" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M828 109V186" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M730 232H689" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M490 232H449" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M250 232H209" fill="none" stroke="#4e6480" stroke-width="2" marker-end="url(#arrow)"/><path d="M588 274V351M348 274V397H486" fill="none" stroke="#a63e35" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow)"/><text x="599" y="321" fill="#a63e35" font-size="13">실패·증거 부족</text><rect x="10" y="25" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="107.5" y="58" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">실제 오류·스키마</text><text x="107.5" y="84" text-anchor="middle" font-size="13" fill="#4e6480">배포·정상 기준 증거</text><rect x="250" y="25" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="347.5" y="58" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">Strands 원인 확정</text><text x="347.5" y="84" text-anchor="middle" font-size="13" fill="#4e6480">핵심 근거 보존</text><rect x="490" y="25" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="587.5" y="58" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">고정 롤백 런북</text><text x="587.5" y="84" text-anchor="middle" font-size="13" fill="#4e6480">입증된 정상 리비전</text><rect x="730" y="25" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="827.5" y="58" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">사용자 승인</text><text x="827.5" y="84" text-anchor="middle" font-size="13" fill="#4e6480">읽은 내용과 일치</text><rect x="730" y="190" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="827.5" y="223" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">실행 워커의 조치</text><text x="827.5" y="249" text-anchor="middle" font-size="13" fill="#4e6480">UpdateService</text><rect x="490" y="190" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="587.5" y="223" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">배포 수렴 확인</text><text x="587.5" y="249" text-anchor="middle" font-size="13" fill="#4e6480">승인한 리비전·이미지</text><rect x="250" y="190" width="195" height="84" rx="9" fill="#edf3fa" stroke="#4e6480"/><text x="347.5" y="223" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">그 이후 복구 관측</text><text x="347.5" y="249" text-anchor="middle" font-size="13" fill="#4e6480">실제 쓰기·실패 0</text><rect x="10" y="190" width="195" height="84" rx="9" fill="#e7f3ef" stroke="#17634d"/><text x="107.5" y="223" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">RESOLVED</text><text x="107.5" y="249" text-anchor="middle" font-size="13" fill="#4e6480">서버 증거로 판정</text><rect x="490" y="355" width="195" height="84" rx="9" fill="#fff0ef" stroke="#a63e35"/><text x="587.5" y="388" text-anchor="middle" font-size="16" font-weight="650" fill="#243247">실패·미해결 기록</text><text x="587.5" y="414" text-anchor="middle" font-size="13" fill="#4e6480">운영자 정리는 별도</text></svg></div><details><summary>동일 흐름의 Mermaid 원문</summary><pre><code>flowchart LR
+    A[&quot;실제 오류·스키마·배포 증거&quot;] --&gt; B[&quot;Strands: 올바른 원인 확정&quot;]
+    B --&gt; C[&quot;입증된 정상 리비전으로 고정 런북&quot;]
+    C --&gt; D[&quot;사용자 승인&quot;]
+    D --&gt; E[&quot;실행 워커: 서비스 롤백&quot;]
+    E --&gt; F[&quot;승인한 이미지로 배포 수렴 확인&quot;]
+    F --&gt; G[&quot;그 이후 저장 성공·실패 0·알람 OK&quot;]
+    G --&gt; H[&quot;서버가 RESOLVED 판정&quot;]
+    F --&gt;|실패·시간 초과| X[&quot;미해결 기록·운영자 정리&quot;]
+    G --&gt;|증거 부족| X
+</code></pre></details>
+<p>사용자 승인 외에 사람이 원인·SQL·명령을 중간에 대신 채우면 전체 자동 성공으로 세지 않는다. 준비자의 원복은 실패 후 환경 정리이며 실행 워커의 복구 성공과 구분한다.</p>
+<h2 id="section-4">구현·검증 순서 제안</h2>
+<table>
+<thead>
+<tr>
+<th>순서</th>
+<th>먼저 입증할 것</th>
+<th>다음 단계 진입 조건</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>실제 DB의 정상→컬럼 오류→원복</td>
+<td>저장만 실패하고 42703이 실제로 발생, 스키마·조회·세션 정리 유지</td>
+</tr>
+<tr>
+<td>2</td>
+<td>결정적 관측의 생성과 전달</td>
+<td>첫 가설·검증 입력에 오류·컬럼·배포 근거가 보존</td>
+</tr>
+<tr>
+<td>3</td>
+<td>수집 예산·실패 상태 처리</td>
+<td>가설별 실제 시작과 종료, 제한된 재수집, 미완료 확정 금지 확인</td>
+</tr>
+<tr>
+<td>4</td>
+<td>입증된 정상 대상의 런북 생성</td>
+<td>수동 명령 수정 없이 올바른 서비스·정상 리비전·이미지가 고정</td>
+</tr>
+<tr>
+<td>5</td>
+<td>배포 후 복구 검증</td>
+<td>승인 실행으로 정상 이미지 수렴과 사후 저장 회복, RESOLVED 확인</td>
+</tr>
+<tr>
+<td>6</td>
+<td>반복 리허설</td>
+<td>미리 정한 전체 성공률·안전성 기준 충족</td>
+</tr>
+</tbody></table>
+<p>기존 시나리오 정리는 새 계획에 맞춰 수행하되, 활성 목록이 하나라는 사실을 신뢰성 검증으로 대체하지 않는다. 코드·이미지·평가 조건을 고정한 뒤 반복 실행해야 결과를 비교할 수 있다.</p>
+<h2 id="section-5">검증 범위와 출처</h2>
+<ul>
+<li>계획 원문, Healthcare·Strands·실행 워커의 관련 코드를 읽었다. 병행 변경 중인 워킹트리이며, 실제 배포 버전과 동일하다고 가정하지 않았다.</li>
+<li>서로 분리된 읽기 전용 검토로 Healthcare/인프라와 Strands 수집·런북 생성 경로를 확인했다.</li>
+<li>UpdateService/관측 대기/CLI waiter는 현재 Python 검증 함수와 명령 게이트로 재현했다. AWS 명령은 실행하지 않았다.</li>
+<li>수집 예산과 요약 손실은 대역을 이용한 로컬 재현이다. 새 컬럼 결함의 실DB 또는 라이브 Strands 성공 실험은 수행하지 않았다.</li>
+<li>실제 태스크 역할의 UpdateService 권한, 실제 롤백 대상의 유효성, 새 이미지의 런타임 동작은 사전 실측 항목으로 남아 있다.</li>
+<li>AWS 공식 문서에서 롤링 배포의 태스크 교체와 배포 설정을 확인했다: <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-type-ecs.html" rel="nofollow noopener noreferrer" target="_blank">https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-type-ecs.html</a></li>
+</ul>
+<p>문서 검토에서도 원인 확정 이후에 승인·조치·배포 수렴·사후 관측이 각각 필요하다는 순서를 확인했다. 원인 판정만 통과한 사실이 다음 단계의 성공 근거가 되지 않도록 구분했다.</p>
+</main></body></html>
