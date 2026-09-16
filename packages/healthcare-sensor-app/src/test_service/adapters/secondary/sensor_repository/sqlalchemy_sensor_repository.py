@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy import select
@@ -7,6 +8,11 @@ from test_service.ports.dto.sensor import SensorReadingEntity
 from test_service.ports.interfaces.database import DatabasePort
 from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort
 from test_service.revision.query import fetch_patient_rows
+from test_service.revision.write import write_statement, write_values
+from test_service.services.db_observability import operation_context
+from test_service.services.write_diagnostics import log_write_error, write_contract
+
+logger = logging.getLogger(__name__)
 
 
 class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
@@ -15,24 +21,26 @@ class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
         self._database = database
 
     async def save_batch(self, readings: list[SensorReadingEntity]) -> list[SensorReadingEntity]:
-        """Persist a batch in one scope so flush errors reach the compiled cleanup path."""
-        async with self._database.session_context() as session:
-            rows = []
-            for r in readings:
-                row = SensorReadingRow(
-                    id=r.id,
-                    patient_id=r.patient_id,
-                    reading_type=r.reading_type,
-                    value=r.value,
-                    unit=r.unit,
-                    timestamp=r.timestamp,
-                    is_abnormal=r.is_abnormal,
-                    created_at=r.created_at,
-                )
-                session.add(row)
-                rows.append(row)
-            await session.flush()
-            return [self._to_entity(row) for row in rows]
+        """Execute bound INSERTs atomically and publish success only after commit returns."""
+        if not readings:
+            return []
+        with operation_context("ingest"):
+            try:
+                async with self._database.session_context() as session:
+                    await session.execute(write_statement(), [write_values(row) for row in readings])
+            except Exception as exc:
+                log_write_error(exc)
+                raise
+            logger.info(
+                "write_completed",
+                extra={
+                    "event": "write_completed",
+                    **write_contract(),
+                    "count": len(readings),
+                    "completion_semantics": "committed_rows",
+                },
+            )
+        return readings
 
     async def find_by_patient(
         self,
@@ -45,8 +53,7 @@ class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
     ) -> list[SensorReadingEntity]:
         """Apply identical filters and ordering before the build-selected query implementation.
 
-        The context scope receives query errors directly; legacy leak behavior
-        remains explicitly enabled only on this historical patient-read path.
+        The context scope receives query errors directly and always closes.
         """
         stmt = select(SensorReadingRow).where(SensorReadingRow.patient_id == patient_id)
         if reading_type:
@@ -59,7 +66,7 @@ class SqlAlchemySensorReadingRepository(SensorReadingRepositoryPort):
         # plans when several readings have the same timestamp.
         stmt = stmt.order_by(SensorReadingRow.timestamp.desc(), SensorReadingRow.id.desc()).limit(limit)
 
-        async with self._database.session_context(legacy_leak=True) as session:
+        async with self._database.session_context() as session:
             return [self._to_entity(row) for row in await fetch_patient_rows(session, stmt)]
 
     async def find_abnormal(

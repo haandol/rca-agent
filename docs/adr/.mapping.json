@@ -7,8 +7,8 @@
       "adrs": [
         {
           "path": "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
-          "status": "Accepted (2026-04-28)",
-          "summary": "초기 스코핑에서 유사 RCA 보고서를 검색해 가설 생성 컨텍스트로 사용한다."
+          "status": "Proposed",
+          "summary": "900초 신규 작업 예산 안에서 얕은 스코핑과 정상 기준을 검증하며 활성 응답을 시간으로 자르지 않고 부분 핵심 사실을 보존한다."
         },
         {
           "path": "docs/adr/agent/0002-hypothesis-tree-lifecycle.md",
@@ -17,8 +17,8 @@
         },
         {
           "path": "docs/adr/agent/0006-termination-conditions.md",
-          "status": "Accepted (2026-08-31)",
-          "summary": "두 엔진이 공통 확정·깊이 3·검증 3회·재생성 2회 규칙으로 종료하며 시간 예산만 엔진별로 둔다."
+          "status": "Proposed",
+          "summary": "Strands SDK만 60분 전체·900초 단계·1800초 수집 시작 예산과 활성 응답 보호를 적용하고, Headless 분석 60분 및 실행 3600초의 기존 강제 기한은 유지한다."
         },
         {
           "path": "docs/adr/agent/0007-rca-report-generation.md",
@@ -37,8 +37,8 @@
         },
         {
           "path": "docs/adr/agent/0010-model-tier-architecture.md",
-          "status": "Accepted (2026-08-30)",
-          "summary": "Strands는 Sonnet 5의 Planning/Execution 행동 분리를 유지하고, Headless Codex 분석·실행·회고는 Bedrock Global Inference Profile gpt-5.6-sol을 reasoning high로 고정하며 fallback하지 않는다."
+          "status": "Proposed",
+          "summary": "기존 모델과 Planning/Execution thinking 구분을 유지하며 Strands 출력 65536토큰·스트리밍과 비활성 thinking의 명시를 고정한다."
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
@@ -52,8 +52,8 @@
         },
         {
           "path": "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
-          "status": "Accepted (2026-04-24)",
-          "summary": "가설별 증거 수집 컨텍스트를 격리하고 상위 단계에는 요약만 계층적으로 전달한다."
+          "status": "Proposed",
+          "summary": "Strands SDK의 1800초 수집 시작 예산·활성 응답 보호 위에서 핵심 사실·미시작·재수집·늦은 쓰기 차단을 유지하며 Headless의 기존 강제 기한은 보존한다."
         },
         {
           "path": "docs/adr/agent/0015-hexagonal-architecture.md",
@@ -63,12 +63,12 @@
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
           "status": "Proposed",
-          "summary": "네 평가 계층이 두 엔진의 공통 계약과 원본 관측을 검증한다. 현재 입력 지문 갱신은 pending으로 기록하고 과거 승인 원본을 보존하며, 두 엔진 전수 결과의 명시적 승인만 approved가 된다."
+          "summary": "네 평가 계층을 유지하고 단일 데모를 3회 연속 전체 성공 뒤 사전 확정 10회 중 9회 성공·중대 위반 0건으로 채택하며 두 엔진 전수 승인 전 전역 기준선은 pending으로 둔다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "승인된 런북의 명령·대상·순서만 실행하며 변경은 재승인을 요구하고 고정 사후 관측과 파괴적 명령 차단을 서버에서 강제한다."
+          "status": "Proposed",
+          "summary": "승인 고정과 실행 전체 3600초 강제 기한을 유지하며 배포·지표 대기 각 900초와 실행 도구 1200초를 적용한다. Strands 활성 응답 예외는 적용하지 않는다."
         },
         {
           "path": "docs/adr/agent/0018-playbook-retrospective.md",
@@ -121,13 +121,13 @@
       "adrs": [
         {
           "path": "docs/adr/infra/0001-alarm-ingestion-sns-sqs-fargate.md",
-          "status": "Accepted (2026-08-31)",
-          "summary": "SNS와 공용 SQS의 단일 분석 소유권 위에서 두 엔진이 같은 단계 상태머신과 claim fencing을 사용한다."
+          "status": "Proposed",
+          "summary": "SNS·공용 SQS·Fargate 단일 claim 위에서 가시성과 오래된 알람 기준 10800초 및 정당한 장기 처리 중 가시성 갱신·실패 시 안전한 중단을 보장한다."
         },
         {
           "path": "docs/adr/infra/0002-evidence-storage.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "증거·비교 원본과 반영 이력을 보존하고 원본 확정 후 검색 게시의 대기·완료를 관리하며, 게시된 지식만 공개하고 기존 60일·90일 보존 주기를 유지한다."
+          "status": "Proposed",
+          "summary": "비교·반영·검색 게시와 60일·90일 보존 계약을 유지하며, 장애 이전 정상 기준을 허용된 S3 영역에 불변 보존하고 지문·실행·서비스 범위를 읽기 검증한다."
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
@@ -136,8 +136,8 @@
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
-          "status": "Proposed",
-          "summary": "Healthcare를 제한된 요청 시작 부하와 독립 관측, 정상·결함 이미지 및 소유 정비 작업으로 재현 가능한 사설 검증 환경으로 운영한다."
+          "status": "Accepted (2026-09-15)",
+          "summary": "사설 Healthcare 서비스에서 동일 소스의 불변 이미지 두 개로 실제 INSERT 컬럼 불일치 하나만 재현하고 안전한 관측·트랜잭션 정리·동일 부하 복원을 검증한다."
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
@@ -152,7 +152,7 @@
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
           "status": "Proposed",
-          "summary": "실제 풀 설정·조회 증폭·트랜잭션 락·세션 정리 결함을 증상에 연결하고 같은 부하의 정상·결함·원상복원으로 검증한다."
+          "summary": "단일 실제 저장 컬럼 데모의 확정·승인·고정 두 복구 구간을 유지하며 승인된 시작 예산과 활성 모델 응답 보호·각 900초 복구 대기를 적용한다."
         },
         {
           "path": "docs/adr/infra/0008-playbook-execution-stack.md",

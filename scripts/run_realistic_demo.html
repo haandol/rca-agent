@@ -1,144 +1,66 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Realistic Healthcare demos — execution and exact restore</title>
-<style>
-body{font:16px/1.65 system-ui,sans-serif;max-width:1060px;margin:48px auto;padding:0 24px;color:#203044;background:#f7f9fb}h1,h2{line-height:1.2}h2{margin-top:36px}code,pre{font-family:ui-monospace,monospace}pre{padding:18px;background:#162334;color:#e7f3ff;overflow:auto;border-radius:8px;font-size:13px}table{border-collapse:collapse;width:100%;background:white}td,th{padding:12px;border:1px solid #d7e0eb;text-align:left;vertical-align:top}.note{padding:16px;border-left:4px solid #356bad;background:#eaf1fa}a{color:#255f99}.mermaid{background:white;padding:20px}
-</style>
-<h1>Realistic Healthcare demos</h1>
-<p>Prepared tooling; no AWS deployment or mutation was performed during implementation. The command separates requested changes, observed rollout, and verified service recovery. It never claims causal reproduction or model-evaluation success.</p>
-<p><b>Entry point:</b> <code>python3 scripts/run_realistic_demo.py</code>. Requires Python 3.11+, Unix file locks and AWS CLI v2. Use a single shared, durable <code>--journal-root</code> for every operator targeting the service.</p>
-<h2>Four explicit controls</h2>
-<table><tr><th>Scenario</th><th>Plan controls</th><th>What changes / exact restore</th></tr>
-<tr><td>pool-config</td><td><code>--pool-size 1 --max-overflow 0 --pool-timeout 1</code></td><td>Registers a copy with actual DB_POOL_SIZE, DB_MAX_OVERFLOW and DB_POOL_TIMEOUT_SECONDS. Capacity must be lower than baseline. Restore points ECS back to the original task-definition ARN, preserving absent fields.</td></tr>
-<tr><td>query-revision</td><td><code>--image repository@sha256:DIGEST --revision SOURCE_ID</code></td><td>Uses caller-built r2 query image. No runtime fault flag. Restore original task definition and verify original running digest.</td></tr>
-<tr><td>session-revision</td><td><code>--image repository@sha256:DIGEST --revision SOURCE_ID</code></td><td>Uses caller-built r3 session image. Old service tasks must leave before recovery verification. Restore original task definition.</td></tr>
-<tr><td>maintenance-lock</td><td><code>--hold-seconds 7200</code> (finite positive float, at most 7200; default 7200)</td><td>Runs a separate single-container task using the healthy application's observed digest, original network and role/secret references. Command: <code>python -m test_service.maintenance --run-id RUN --hold-seconds SECONDS --schema public</code>. Removes web health check and sidecar dependencies. Stops only tasks whose RunId, journal hash, startedBy and registered task definition all match.</td></tr></table>
-<p>r1 is the app's healthy build default; r2 and r3 are build-time revisions selected with Docker <code>--build-arg SOURCE_REVISION=r2</code> or <code>r3</code>. The app build tool is <code>demo/build_revision.py --revision r2 --destination src --in-place</code>, run in the image build. This orchestrator does not build/push images or rewrite source. <code>--revision</code> records the caller's source/build identifier in DEPLOYED_REVISION; it does not select application code at runtime. Verify image provenance, source manifest, ARM64 compatibility and r1/r2/r3 mapping before use.</p>
-<h2>Commands</h2>
-<p>All commands take the same caller RunId (1–48 letters, digits, underscores or hyphens) and target. Plan freezes controls; subsequent commands read them from the immutable snapshot.</p>
-<pre>JOURNAL_ROOT=/absolute/shared/realistic-demo-evidence
-RUN_ID=demo-20260910-pool-01
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>단일 네이티브 컬럼 오류 데모</title><style>body{font:16px/1.65 system-ui,sans-serif;max-width:1050px;margin:40px auto;padding:0 24px;color:#203044;background:#f7f9fb}h1,h2{line-height:1.3}h2{margin-top:32px}pre{padding:18px;background:#162334;color:#e7f3ff;overflow:auto;border-radius:8px;font-size:13px}table{border-collapse:collapse;width:100%;background:white}td,th{padding:12px;border:1px solid #d7e0eb;text-align:left}a{color:#255f99}.note{padding:16px;background:#eaf1fa;border-left:4px solid #356bad}svg{width:100%;height:auto}code{overflow-wrap:anywhere}</style></head><body><h1>단일 네이티브 컬럼 오류 데모</h1>
+<p>정상 이미지 <code>v1</code>은 <code>sensor_readings.timestamp</code>에 저장한다. 같은 소스에서 INSERT(행 저장 SQL)의 컬럼 참조 한 곳을 <code>sampled_at</code>으로 바꾼 <code>v2</code>는 실제 PostgreSQL 오류 <code>42703</code>을 일으킨다. DB 스키마를 바꾸거나 앱에서 오류 이벤트를 만들어내지 않는다.</p>
+<p class="note">이 문서는 구현된 제어 계약과 모의 테스트 범위를 설명한다. 새 AWS 장애·RCA·승인 실행 성공을 보고하는 자료가 아니다. 활성 카탈로그는 새 실제 PostgreSQL 관측을 사용한다. 알람 외곽 입력은 합성 예시이며 로컬 메트릭 출력은 실제 CloudWatch 조회 결과가 아니다.</p>
+<h2>역할과 실행 순서</h2><svg viewBox="0 0 990 115" role="img" aria-label="정상 관측, S3 검증, 알람 참조 연결, 장애 배포, 별도 사용자 승인과 실행, 환경 정리">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#356bad"/></marker></defs>
+<g fill="white" stroke="#356bad"><rect x="5" y="25" width="145" height="60" rx="8"/><rect x="170" y="25" width="145" height="60" rx="8"/><rect x="335" y="25" width="145" height="60" rx="8"/><rect x="500" y="25" width="145" height="60" rx="8"/><rect x="665" y="25" width="145" height="60" rx="8"/><rect x="830" y="25" width="150" height="60" rx="8"/></g>
+<g stroke="#356bad" marker-end="url(#arrow)"><path d="M150 55H167"/><path d="M315 55H332"/><path d="M480 55H497"/><path d="M645 55H662"/><path d="M810 55H827"/></g>
+<g text-anchor="middle" fill="#203044" font-size="15"><text x="78" y="60">실제 정상 관측</text><text x="243" y="60">S3 저장·지문 검증</text><text x="408" y="60">알람에 참조 연결</text><text x="573" y="60">결함 이미지 배포</text><text x="738" y="50">별도 RCA·사용자 승인</text><text x="738" y="72">실행·해결 확인</text><text x="905" y="60">원본 환경 정리</text></g></svg><details><summary>Mermaid 원문 — 위 SVG와 같은 흐름, 오프라인 열람 가능</summary><pre>flowchart LR
+  A[실제 정상 관측] --> B[S3 저장 및 지문 검증]
+  B --> C[알람에 참조 연결]
+  C --> D[결함 이미지 배포]
+  D --> E[별도 RCA 및 사용자 승인 실행]
+  E --> F[원본 환경 정리]</pre></details>
+<p>runner는 정상 관측과 장애 배포, 실패 시 환경 정리를 담당한다. Strands 분석 워커가 원인을 분석하고 사용자가 대시보드에서 고정된 런북을 승인한다. 실행 워커의 롤백·배포 수렴·실제 저장 회복·서버 <code>RESOLVED</code> 판정은 별도로 확인한다. runner는 실행 승인을 보내지 않으며 <code>scenarioSuccess</code>를 참으로 만들지 않는다.</p>
+<h2>시작 전 조건</h2>
+<p>프로젝트 Agent Python 환경, Unix 파일 잠금, AWS CLI v2가 필요하다. CLI의 ECS 응답 정의는 잠긴 Python SDK와 같은 비압축 모델을 사용한다. 같은 서비스의 모든 운영자는 동일한 지속형 공유 <code>--journal-root</code>를 사용한다. 정상 태스크 정의는 <code>repository@sha256:digest</code>를 직접 참조해야 하며 실행 중인 모든 앱 컨테이너의 지문과 일치해야 한다. 정상·결함 이미지는 부모 작업에서 같은 소스로 빌드·검증해 제공한다.</p>
+<p>정상 태스크마다 검증된 <code>source_manifest</code>, 실제 <code>write_contract</code>·완료된 쓰기의 계수 의미를 담은 <code>write_accounting</code>, 신선한 <code>db_schema_snapshot</code>과 <code>write_completed</code>가 필요하다. 스키마에는 <code>timestamp</code>가 있고 <code>sampled_at</code>은 없어야 한다. 완결된 1분 지표 두 구간 모두 저장 시도가 양수이고 실패가 명시적 0이어야 한다. 누락 지표·0회 시도·다른 태스크 로그로 정상 상태를 추정하지 않는다.</p>
+<h2>한 실행의 명령</h2>
+<p>아래 값은 운영자가 실제 배포와 설정된 증거 버킷에 맞춰 지정한다. SHA-256은 파일 내용을 식별하는 지문이고 ARN은 AWS 리소스의 고유 식별자다.</p>
+<pre>JOURNAL_ROOT=/absolute/shared/demo-journals
+RUN_ID=column-prep-01
+REGION=us-east-1
+CLUSTER=RcaAgentDevHealthcare
+SERVICE=RcaAgentDevHealthcare
+EVIDENCE_BUCKET=YOUR_CONFIGURED_EVIDENCE_BUCKET
+FAULT_IMAGE=YOUR_REPOSITORY@sha256:YOUR_ACTUAL_64_HEX_DIGEST
 
 demo() {
-  python3 scripts/run_realistic_demo.py "$@" \
-    --run-id "$RUN_ID" --region us-east-1 \
-    --cluster RcaAgentDevHealthcare --service RcaAgentDevHealthcare \
+  packages/agent/.venv/bin/python scripts/run_realistic_demo.py "$@" \
+    --run-id "$RUN_ID" --region "$REGION" \
+    --cluster "$CLUSTER" --service "$SERVICE" \
     --journal-root "$JOURNAL_ROOT"
 }
 
-# AWS read-only; baseline must already be stable, private and healthy.
-demo plan --scenario pool-config \
-  --pool-size 1 --max-overflow 0 --pool-timeout 1 \
-  --alarm RcaAgentDev-Healthcare-VitalIngestFailures \
-  --alarm RcaAgentDev-Healthcare-PatientVitalsQueryLatency \
-  --alarm RcaAgentDev-Healthcare-RdsHighConnections
+# AWS는 읽기만 수행하고 로컬에 불변 스냅샷 생성
+demo plan --scenario write-column-regression --revision v2 \
+  --image "$FAULT_IMAGE" --evidence-bucket "$EVIDENCE_BUCKET" \
+  --alarm RcaAgentDev-Healthcare-VitalIngestFailures
 
-# Future authorized operation; these two commands DO mutate AWS.
-demo apply --wait-seconds 600
+# 실제 기준 재확인 → S3 검증 → 알람 설명 연결 → 장애 배포
+demo apply --wait-seconds 900
 demo status
-# Preserve status evidence during the fault; causal evaluation is separate.
-demo restore --wait-seconds 600</pre>
-<p>For an image scenario, choose a new RunId and replace the plan scenario/controls with <code>--scenario query-revision --image "$QUERY_IMAGE_DIGEST_REF" --revision "$QUERY_SOURCE_ID"</code> or the session equivalents. For maintenance use <code>--scenario maintenance-lock --hold-seconds 7200</code>. Every owned maintenance launch uses the fixed command <code>python -m test_service.maintenance --run-id RUN_ID --hold-seconds SECONDS --schema SCHEMA</code> from the pinned healthy image. RunId, finite positive hold duration up to 7200 seconds, and PostgreSQL schema identifier are validated before launch; <code>--maintenance-schema</code> defaults to <code>public</code>. Use a healthy image whose maintenance module supports the coordinated 7200-second bound (older builds capped at 900 seconds). The <code>--maintenance-command-json</code> option has been removed. Apply refuses an existing journal with a different recorded command; restore still discovers and stops its proven owned tasks, including after a lost RunTask response, without launching another task or rewriting the journal snapshot.</p>
-<p><code>--profile NAME</code> is optional. Plan/apply/status return 0 when the command completes; this does not assert scenario success. Restore returns 0 only for verified recovery, 2 while recovery is pending or failed, and 1 on a command-level exception. Argument errors return 2. Read JSON fields, including <code>recoveryVerified</code>, <code>checks</code>, <code>ownershipError</code>, <code>errors</code> and <code>queryLatency</code>. <code>scenarioSuccess</code> stays false because the tool does not perform causal/model evaluation. A zero-wait apply is only a submitted change plus one observation. A timed-out/failed apply runs the same restore poller with a fresh cleanup budget equal to <code>--wait-seconds</code>. Even if cleanup verifies recovery, apply exits 1 and reports <code>operationSucceeded=false</code> with the independent result under <code>cleanup</code>.</p>
-<h2>Immutable original image and r1 source evidence</h2>
-<p>Plan rejects a tag-based original application image before claiming the service or registering a fault revision. Recording a resolved digest next to a mutable task definition is insufficient: restoring that exact definition could otherwise launch different code. The original definition itself must pin the observed digest. Fault images also require digest references.</p>
-<p>Plan reads <code>source_manifest</code> startup events from each current task's exact awslogs stream, using its creation time as the lower bound. Every event must report <code>revision=r1</code>, <code>verified=true</code> and a source-file map matching its fingerprint; fingerprints must agree across baseline tasks. Raw events, task identity and image digest are retained in the snapshot. An environment label such as DEPLOYED_REVISION=r1 is not source proof. Missing/expired logs, an unbuilt source tree (verified=false), r2/r3 or conflicting fingerprints stop plan. The operator needs read access to <code>logs:FilterLogEvents</code> for the task's log group in the target region. This is runtime source evidence, not signed build provenance or approval evidence.</p>
-<p>Apply refuses an older snapshot without this evidence or with a tag-based original image. Restore refuses to launch a tag-based original from an older journal, while still attempting independently owned maintenance cleanup. It does not silently create a replacement definition or move an image tag. Prepare and measure the immutable r1 baseline separately before starting a new run.</p>
-<h2>Bounded restore and failure cleanup</h2>
-<p><code>restore --wait-seconds 600</code> attempts the original task-definition restore and own-job cleanup, then polls until the service is stable, original image digests are running, own jobs have stopped, two fresh complete metric periods are healthy and alarms are OK. The same implementation runs after an apply error, including an apply observation timeout.</p>
-<p><code>restorationState=verified</code> requires <code>recoveryVerified=true</code>. A zero wait performs one cleanup/observation attempt. If verification is unfinished, the result stays <code>restorationState=pending</code> and restore exits 2. An exhausted positive budget additionally sets <code>waitExpired=true</code>. Journal files and the service owner are retained; resume with the same RunId and journal. Update-service/reset acknowledgements never count as recovery.</p>
-<p>The apply and cleanup waits each get their own budget, so a failed apply can take up to both polling budgets plus in-flight AWS calls. Each AWS CLI invocation has a 90-second timeout; the wait value bounds polling, not a hard wall-clock cancellation of an in-flight operation. A transient cleanup/read error is retained in the journal and can be retried during the remaining budget. No approval signature or approved-remediation causality is inferred; this is operator cleanup, separate from approval-execution E2E.</p>
-<h2>Separate baseline setup and calibration</h2>
-<p><b>Normal deployment configuration now supports the required pin.</b> In the existing <code>packages/infra/.toml</code> <code>[healthcare]</code> section, set <code>imageDigest = "sha256:&lt;64 lowercase hex digits&gt;"</code> to the already published healthy r1 ARM64 image manifest digest. Keep <code>imageTag</code> set to its build identifier: it remains the <code>DEPLOYED_REVISION</code> label even when the image is pinned. The resulting application image is <code>&lt;account&gt;.dkr.ecr.&lt;region&gt;.amazonaws.com/&lt;lowercase namespace+stage&gt;/healthcare@sha256:DIGEST</code>. The optional <code>HEALTHCARE_IMAGE_DIGEST</code> environment variable overrides the TOML digest; empty or malformed values fail validation. With neither setting, legacy <code>repository:imageTag</code> behavior remains, which is not accepted by this demo's baseline guard.</p>
-<pre># Configuration example: merge into the existing [healthcare] section.
-# Replace both placeholders with the published healthy build's actual values.
-[healthcare]
-imageTag = "HEALTHY_BUILD_ID"
-imageDigest = "sha256:REPLACE_WITH_64_LOWERCASE_HEX_DIGITS"
 
-# Alternative: keep the digest out of TOML and export it for the CDK command.
-export HEALTHCARE_IMAGE_DIGEST="sha256:REPLACE_WITH_64_LOWERCASE_HEX_DIGITS"
-export HEALTHCARE_IMAGE_TAG="HEALTHY_BUILD_ID"
-
-# Keep the existing agent/headless/execution tags configured in .toml or
-# AGENT_IMAGE_TAG, HEADLESS_CODEX_IMAGE_TAG and EXECUTION_IMAGE_TAG.
-# Every service tag is still required when the CDK app loads.
-
-# Future, separately authorized baseline deployment only; this writes AWS.
-# Use the configured namespace+stage if it differs from RcaAgentDev.
-pnpm --filter infra cdk deploy RcaAgentDevHealthcareServiceStack --exclusively</pre>
-<p>This uses the normal CDK entry point and an existing registry image; no image build, push, tag move or demo-CLI guard change is needed. The command assumes the normal dependency stacks already exist. The digest selects image content, but neither it nor a label alone proves r1: after the separately authorized deployment stabilizes, plan must independently verify each running task's matching ECS image digest and production <code>source_manifest</code> evidence (<code>revision=r1</code>, <code>verified=true</code>, matching source fingerprint). Setting <code>DEPLOYED_REVISION=r1</code> does not select r1 code or satisfy source verification. This preparation procedure is documentation only; no deployment was performed for this integration change.</p>
-<ol>
-<li>Before this demo run, prepare the healthy r1 service with its original application task-definition image pinned to <code>repository@sha256:DIGEST</code>, plus the fixed dataset and chosen traffic/observation profile through the normal deployment process. The pinned digest must exactly match every running application container's ECS imageDigest; for a multi-platform build use the matching platform image manifest digest. A latest, r1 or commit-looking tag is refused even if its current digest is known. This CLI does not prepare or mutate that profile.</li>
-<li>Collect healthy measurements and calibrate the query alarm using Average in milliseconds. Finish calibration before plan; do not tune traffic, query limit, observer interval or alarm settings during the fault/restored comparison. Compare fully stabilized service stages and retain transient rolling-deployment overlap as separate evidence.</li>
-<li>Run plan with repeated <code>--expect-setting</code> assertions for the prepared profile. A mismatch aborts before any cloud mutation. The run's original task definition is this measured, prepared baseline; reverting earlier calibration/setup is a separate operation.</li>
-<li>Apply only the selected cause. The service environment may change only the three pool-cause fields for pool-config, or the image/source identifier for revision scenarios, plus RunId lineage. Every other environment value and absence is preserved. Maintenance uses its own standalone task and leaves the service profile untouched.</li>
-</ol>
-<pre># Append these assertions to the plan command after separately preparing the profile:
---expect-setting TRAFFIC_INTERVAL_SECONDS=5 \
---expect-setting TRAFFIC_QUERY_LIMIT=20 \
---expect-setting TRAFFIC_SEED=42 \
---expect-setting DB_OBSERVABILITY_ENABLED=true \
---expect-setting DB_OBSERVABILITY_INTERVAL_SECONDS=5</pre>
-<p>All scenario/profile arguments are plan-only. Passing them to apply/status/restore is rejected instead of silently replacing the frozen contract. Fault images must be supplied as repository@sha256 references; even a version-looking tag is resolved to a digest by the caller first. No latest tag is accepted.</p>
-<h2>Workload and alarm configuration</h2>
-<p>The new alarm is <b>PatientVitalsQueryDuration / Average / Milliseconds</b>, namespace <code>Healthcare/Sensor</code>, dimension <code>ServiceName=healthcare-sensor-app</code>, one-minute periods, two evaluation periods, greater-than-or-equal comparison, SNS ALARM and OK actions. Missing data stays unknown. Initial threshold <b>500ms is tuning, not a measured result</b>. Snapshot/status evidence preserves the actual statistic and threshold. Existing ingest alarm and connection threshold 12 remain unchanged; service pool defaults remain 5 + 10 and the network stays private.</p>
-<p>Set <code>queryLatencyThresholdMs</code> under <code>[healthcare]</code> in infra configuration. Optional <code>[healthcare.environment]</code> string settings:</p>
-<pre>[healthcare]
-queryLatencyThresholdMs = 500
-
-# Example only — establish and measure healthy traffic before the demo.
-[healthcare.environment]
-TRAFFIC_ENABLED = "true"
-TRAFFIC_INTERVAL_SECONDS = "5"
-TRAFFIC_MAX_CONCURRENCY = "1"
-TRAFFIC_QUERY_LIMIT = "20"
-TRAFFIC_PATIENT_ID = "caller-seeded-patient"
-TRAFFIC_SEED = "42"
-DB_POOL_TIMEOUT_SECONDS = "30"
-DB_STATEMENT_TIMEOUT_MS = "0"
-DB_OBSERVABILITY_ENABLED = "true"
-DB_OBSERVABILITY_INTERVAL_SECONDS = "5"</pre>
-<p>Absent optional settings retain app defaults. These numbers do not guarantee reproduction. Establish identical baseline/fault/restored traffic and dataset, then calibrate with actual evidence. Add repeated <code>--expect-setting KEY=VALUE</code> to plan to reject mismatched baseline controls; this does not change traffic during apply. Fault images must retain the same app defaults as healthy for omitted settings. The job alone disables its background traffic/observer so it only owns the maintenance transaction.</p>
-<h2>Ownership, journal and failure behavior</h2>
-<div class="mermaid">flowchart TD
- B[Read healthy baseline and running image digest] --> P[Persist original snapshot before AWS mutation]
- P --> O[Claim service with caller RunId and journal hash]
- O --> C[Register owned revision or launch owned job]
- C --> E[Capture rollout tasks alarms and metrics]
- C -. failure or handled signal .-> R[Attempt original service restore and owned job stop]
- E --> R
- R --> S[Observe original tasks and image digest; own jobs stopped]
- S --> M[Two full fresh minutes: successful ingest and healthy query latency]
- M --> A[All alarms OK and original settings unchanged]
- A --> D[Release own service tags; retain all evidence]
-</div>
-<details><summary>Mermaid source</summary><pre>flowchart TD
- B[Read healthy baseline and running image digest] --> P[Persist original snapshot before AWS mutation]
- P --> O[Claim service with caller RunId and journal hash]
- O --> C[Register owned revision or launch owned job]
- C --> E[Capture rollout tasks alarms and metrics]
- C -. failure or handled signal .-> R[Attempt original service restore and owned job stop]
- E --> R
- R --> S[Observe original tasks and image digest; own jobs stopped]
- S --> M[Two full fresh minutes: successful ingest and healthy query latency]
- M --> A[All alarms OK and original settings unchanged]
- A --> D[Release own service tags; retain all evidence]</pre></details>
-<p>A task definition is an ECS launch specification; its ARN identifies the exact immutable revision. RunId identifies the caller's demo, not RCA analysis ownership. Each create-only JSON journal event includes a timestamp, previous hash and its own hash. Atomic publication and file fsync protect against partial writes. The first event retains the full task definition, image, settings including absent fields, network, deployment state, tags, running digests and baseline observations. Credential secret values are not resolved, but literal task environment values may be sensitive: keep the journal protected. Files are created mode 0600 and new directories 0700.</p>
-<p>Before service changes, live task-definition/settings and RunId/hash must still match. Unexpected deployment/network/settings or foreign tags cause refusal; the tool never overwrites them. Service restore and owned maintenance cleanup are independent attempts. A lost RunTask response is rediscovered using startedBy and all ownership proofs; restore never launches another task. Registration results are recorded before use; an unacknowledged registration may leave an unused tagged revision, which is retained rather than deleted. Other tasks, database sessions, fault reset APIs, repositories and task definitions are never deleted.</p>
-<p><code>revisionObservation</code> distinguishes the original revision, the owned fault revision, the original seen after apply/restore, and a foreign revision. It retains fresh ECS rollback events and reports whether the original was already selected at the first restore observation. Without an ECS rollback event the return cause stays <code>not-established</code>. Restore does not deploy again when the exact original is already selected; a foreign revision is refused even if its settings look healthy. Observing the original does not by itself verify recovery.</p>
-<p>Restore updates only the original task-definition ARN because other service settings were never changed. External setting drift is refused, not silently reset. After original rollout and digests are observed and own maintenance tasks stop, verification waits for two complete fresh one-minute buckets: positive ingest attempts, zero ingest failures and query Average below the observed threshold. All configured alarms must be OK and alarm configuration unchanged. <code>maintenanceRestoration</code> retains pre-restore stopped tasks and the full task exit reason/status, stoppedAt and container exit codes. <code>approvedRestorationCausedRecovery</code> stays false: neither an expired/already-stopped hold nor a stop API request proves an approved restore caused recovery. Missing metrics, partial rollout, differing digest or uncertain task termination remain unverified. This is operational recovery evidence, not proof that the causal scenario or model analysis was correct.</p>
-<p><b>Journal storage failure:</b> New claims, registrations, service updates and task launches require successfully persisted prechange intents. Once a change has a durable intent, snapshot and matching ownership, failure to save its response or an error/cleanup record does not block independent service restoration and owned-task stopping. Lost RunTask responses are rediscovered using the original intent, registered definition, startedBy and both ownership tags. Validated task ARNs also remain in memory for re-observation if discovery records cannot save. The original image and ownership checks still apply.</p>
-<p>Every failed append is reported to stderr by event name and exception type; returned cleanup includes <code>journalErrors</code>, <code>recoveryVerified=false</code> and <code>restorationState=pending</code>. Apply exits 1 and restore exits 2. A later successful write in the same command cannot erase the evidence gap. Both cleanup branches are attempted, and a positive wait budget still permits retries, but journal failures prevent verified recovery. Recovery result records must save before owner release. If the acknowledgement after a completed untag cannot save, the controller attempts to reclaim its own tags only after checking that no foreign owner or deployment has appeared; reclaim failure remains visible in the result. Repair storage and resume restore with the same RunId and preserved journal to collect fresh evidence.</p>
-<div class="note"><b>Limits:</b> The journal and advisory lock must be shared by all operators. ECS tag/update operations do not provide an atomic compare-and-swap with these ownership checks; coordinate external deployments and never run independent journal roots against the same service concurrently. The local hash chain is tamper-evident against modified records, not WORM storage or protection against privileged deletion/truncation. SIGKILL, host loss, a lost/unreadable original journal or an ambiguous disappeared task require explicit <code>restore</code> with the preserved journal; no recovery guarantee is made without evidence. An append failure during an active command still permits the independent cleanup attempts described above. If RunTask has no acknowledged/discoverable task, the run remains unresolved. AWS eventual consistency or stopped-task retention can require repeated restore or manual evidence review; failures never authorize stopping a foreign task. New runs require a digest-pinned original application definition before any fault. Restoration reuses that exact definition and still checks observed digest equality. Missing registry content cannot be repaired by the tool and remains unverified; no ECR tag rewrite is attempted.</div>
-<h2>Local verification</h2>
-<pre>node --test tests/harness/realistic-demo-script.test.mjs \
+# 부모 운영자가 일반 대시보드 API로 RCA·승인·실행 결과를 별도 확인
+# 성공·실패·중단 여부와 관계없이 같은 RunId로 환경 정리
+demo restore --wait-seconds 2100</pre>
+<p><code>inject_deployment_fault.py</code>와 <code>run_deployed_e2e.py</code>는 같은 명령으로 위임한다. 예전 플래그, red-herring, DB 파라미터 그룹, 정비 잠금 제어는 제공하지 않는다. 준비 3회와 본실행 10회의 독립 RunId를 시작 전에 고정하고 실패·중단을 포함해 기록한다. 같은 RunId의 apply를 재실행해 결과를 덮지 않는다.</p>
+<h2>정상 기준 전송 계약</h2>
+<table><tr><th>필드</th><th>기록하는 내용</th></tr>
+<tr><td>schema_version / run_id / observed_at</td><td>버전 1, 실행 ID, 실제 기준 수집 시각</td></tr>
+<tr><td>scope</td><td>account_id, region, cluster_arn, service_arn, service_name, container_name, log_group, desired_count</td></tr>
+<tr><td>normal / service_settings</td><td>정상 task_definition_arn·image_digest, 기존 SERVICE_SETTINGS 필드의 원래 값</td></tr>
+<tr><td>metrics / metric_observations</td><td>attempts·failures의 namespace·metric_name·dimensions, start·end와 실제 CloudWatch Timestamp/Sum/Unit 배열</td></tr>
+<tr><td>observations</td><td>허용된 실제 logger dict(message), epoch 밀리초 timestamp, event_id, log_group, log_stream</td></tr></table>
+<p><code>baselines/&lt;run_id&gt;/normal.json</code>에 정렬된 키·공백 없는 구분자·UTF-8·NaN 금지 JSON으로 저장한다. <code>IfNoneMatch="*"</code>는 기존 객체 덮어쓰기를 막는다. PUT 응답 유실도 GET으로 받은 실제 바이트의 SHA-256이 같아야 성공으로 처리한다. ETag를 내용 지문으로 대신하지 않는다.</p>
+<pre>{"summary":"Healthcare service symptoms","run_id":"...","service":"서비스 ARN","baseline_ref":{"bucket":"설정 버킷","key":"baselines/.../normal.json","sha256":"..."}}</pre>
+<p>위 참조만 실패 알람의 <code>AlarmDescription</code>에 1024자 이내로 연결한다. 예상 원인을 넣지 않고 알람 임계치·차원·평가 기준·액션은 유지한다. 종료 시 원래 설명을 복원한다. 다른 운영자가 바꾼 설정이나 설명은 덮어쓰지 않는다.</p>
+<h2>중단과 복구</h2>
+<p>서비스 변경 전에 원본 태스크 정의·서비스 설정·알람과 변경 의도를 해시 연결 저널에 생성 전용으로 저장한다. apply 중 실패하면 원래 태스크 정의 복원과 알람 설명 복원을 각각 시도한다. 기록 실패는 복구 성공으로 감추지 않으며, SIGKILL·호스트 종료 후에는 같은 저널로 restore를 실행한다. 검증 대기 중 restore의 종료 코드는 2다. 실제 배포·지표 회복이 확인될 때까지 소유권을 유지한다.</p>
+<p>현재 저널 버전은 2다. 이전 버전 저널은 읽기 전용으로 남으며 해당 버전의 복원 도구로 정리한다. 새 runner로 수정하거나 새 결함 저널로 재사용하지 않는다. 정리가 끝나지 않은 과거 실행은 해당 버전의 복구 도구로 먼저 정리한다. <code>recoveryVerified</code>는 환경 정리 결과로, 승인된 플레이북이 문제를 해결했다는 인과 근거와 구분한다.</p>
+<h2>모의 검증</h2><pre>node --test tests/harness/realistic-demo-script.test.mjs \
   tests/harness/deployment-fault-script.test.mjs \
-  tests/harness/deployed-e2e-driver.test.mjs
-pnpm --filter infra build
-pnpm --filter infra lint
-pnpm --filter infra test --runInBand</pre>
-<p>The deterministic cloud double exercises all four controls, exact restoration, immutable records, dirty/ownership refusal, failed/lost responses, owned-only task stops, independent cleanup, fresh metrics and local serialization. Journal failure cases cover post-update/task/status writes, error logs, restoration/discovery/stop records, late recovery/release records, CLI failure output, persisted-intent rediscovery, retries and foreign-resource guards. These tests are not PostgreSQL proof, image validation, AWS E2E, threshold calibration or model evaluation. Those remain with the coordinating workstream. Existing <code>inject_deployment_fault.py</code> and <code>run_deployed_e2e.py</code> are unchanged.</p>
-<p>Primary documentation checked: <a href="https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html">ECS RunTask</a>, <a href="https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ListTasks.html">ECS ListTasks</a>, <a href="https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_UpdateService.html">ECS UpdateService</a>, and <a href="https://github.com/aws/aws-cdk/blob/main/packages/aws-cdk-lib/aws-cloudwatch/README.md">CDK CloudWatch metric units</a>. Diagram rendering uses the official Mermaid browser module and needs a network connection; all text and source remain readable offline.</p>
-<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';mermaid.initialize({startOnLoad:true,theme:'neutral'});</script>
-</html>
+  tests/harness/deployed-e2e-driver.test.mjs \
+  tests/harness/realistic-scenarios.test.mjs</pre>
+<p><code>tests/scenarios/write-column-regression.json</code>은 <code>20260915-final-observer</code>의 실제 정상·사고 관측을 사용한다. 정상 6행 저장, 장애 구간 0행 추가·42703, 동일 스키마·정상 조회와 헬스를 원본에서 확인했다. 소스 바이트는 기록된 SHA-256과 일치한다. 원본은 <code>tests/scenarios/captures/native-column-20260915/</code>, 초기 합성 입력은 <code>tests/scenarios/history/synthetic/</code>에 보존했다. 과거 네 사례는 <code>tests/scenarios/history/</code>에 보존하며 원본 관측·승인 파일도 그대로 유지한다.</p></body></html>

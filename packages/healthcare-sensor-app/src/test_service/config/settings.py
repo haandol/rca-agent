@@ -10,12 +10,8 @@ class AppSettings:
     otel_exporter_otlp_endpoint: str
     otel_service_name: str
     log_level: str
-    fault_injection_enabled: bool
     db_pool_size: int
     db_max_overflow: int
-    fault_db_leak: bool
-    fault_slow_query_ms: int
-    fault_error_rate: float
     deployed_revision: str
     traffic_enabled: bool = True
     traffic_interval_seconds: float = 5.0
@@ -26,14 +22,12 @@ class AppSettings:
     metric_flush_interval_seconds: float = 30.0
     db_pool_timeout_seconds: float = 30.0
     db_statement_timeout_ms: int = 0
-    db_observability_enabled: bool = False
+    db_observability_enabled: bool = True
     db_observability_interval_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         """Reject tuning that would create busy loops or unbounded/invalid work.
 
-        Existing required fields remain unchanged; new settings have defaults so
-        callers constructing settings directly retain their previous API.
         Pool capacity must stay finite: require a positive base size and
         nonnegative overflow before constructing the database adapter.
         """
@@ -71,18 +65,14 @@ def _build_database_url() -> str:
 
 @lru_cache(1)
 def get_settings() -> AppSettings:
-    """Load bounded workload and observation tuning without changing legacy defaults."""
+    """Load bounded workload and observation tuning with schema observation enabled by default."""
     return AppSettings(
         database_url=_build_database_url(),
         otel_exporter_otlp_endpoint=environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
         otel_service_name=environ.get("OTEL_SERVICE_NAME", "healthcare-sensor-app"),
         log_level=environ.get("LOG_LEVEL", "INFO"),
-        fault_injection_enabled=environ.get("FAULT_INJECTION_ENABLED", "true").lower() == "true",
         db_pool_size=int(environ.get("DB_POOL_SIZE", "5")),
         db_max_overflow=int(environ.get("DB_MAX_OVERFLOW", "10")),
-        fault_db_leak=environ.get("FAULT_DB_LEAK", "false").lower() == "true",
-        fault_slow_query_ms=int(environ.get("FAULT_SLOW_QUERY_MS", "0")),
-        fault_error_rate=float(environ.get("FAULT_ERROR_RATE", "0.0")),
         deployed_revision=environ.get("DEPLOYED_REVISION", "unknown"),
         traffic_enabled=environ.get("TRAFFIC_ENABLED", "true").lower() == "true",
         traffic_interval_seconds=float(environ.get("TRAFFIC_INTERVAL_SECONDS", "5")),
@@ -93,6 +83,6 @@ def get_settings() -> AppSettings:
         metric_flush_interval_seconds=float(environ.get("METRIC_FLUSH_INTERVAL_SECONDS", "30")),
         db_pool_timeout_seconds=float(environ.get("DB_POOL_TIMEOUT_SECONDS", "30")),
         db_statement_timeout_ms=int(environ.get("DB_STATEMENT_TIMEOUT_MS", "0")),
-        db_observability_enabled=environ.get("DB_OBSERVABILITY_ENABLED", "false").lower() == "true",
+        db_observability_enabled=environ.get("DB_OBSERVABILITY_ENABLED", "true").lower() == "true",
         db_observability_interval_seconds=float(environ.get("DB_OBSERVABILITY_INTERVAL_SECONDS", "5")),
     )

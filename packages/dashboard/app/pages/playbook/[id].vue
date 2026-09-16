@@ -236,6 +236,7 @@ useHead({
         </p>
         <RecoveryPlanSteps
           :steps="executionSteps"
+          :rollback-context="playbook.rollback_context"
           :validation-error="playbook.validationError"
           :executable="playbook.executable === true"
         />

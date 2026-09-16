@@ -15,7 +15,7 @@
 
 고정 사후 관측은 런타임 프롬프트의
 `wait_for_post_action_metrics(step_id, action_step_id, metrics, failure_alarm_name,
-region, max_wait_seconds=300, latency_alarm_name='', completed_work_evidence=None)`를 사용한다.
+region, max_wait_seconds=900, latency_alarm_name='', completed_work_evidence=None, deployment_step_id='')`를 사용한다.
 승인된 현재 검증 step_id의 metric_wait에 앞선 별도 commands 단계에서 `run_playbook_command`로 `aws cloudwatch list-metrics`와
 `aws cloudwatch describe-alarms`를 먼저 실행해 실제 이름·좌표·임계값을 기록한다.
 metrics의 필수 attempts/failures 각각에 namespace, metric_name, dimensions 매핑을
@@ -54,7 +54,7 @@ observedAt은 각 명령 결과가 돌아온 뒤의 시각이며 완결 여부�
 이전·진행 중 구간은 제외하고 nonfinite·중복·어긋난 구간을 인정하지 않는다.
 완결된 고정 구간의 비정상은 최종 실패이며 정상까지 계속 기다리거나 덮어쓰지 않는다.
 
-서버는 최대 300초를 남은 기존 실행 예산과 MCP timeout 360초 안에서 취소 가능하게
+서버는 최대 900초를 남은 기존 실행 예산과 MCP timeout 1200초 안에서 취소 가능하게
 기다린다. 취소·claim·명령 timeout 경계를 늘리지 않는다. waiter 조기 OK는 구간 완료나
 복구 판정이 아니며 모델 busy-poll이나 셸 sleep으로 우회하지 않는다. 영수증만으로 전체
 RESOLVED가 자동 확정되지 않는다. 정확히 같은 소유자의 해제·롤백과 모든 승인 기준을
@@ -89,3 +89,15 @@ CloudWatch MCP 직접 조회는 제공되지 않는다.
 모든 호출은 승인 commands 문자열 또는 metric_wait 인자와 정확히 같아야 한다.
 CloudWatch MCP 직접 조회는 제공되지 않는다. 필수 명령 전체의 성공과 성공 기준 관측이 필요하다.
 새 조회·페이지 토큰·대상 변경이 필요하면 재승인 사유를 기록하고 임의 명령을 만들지 않는다.
+
+## 승인 서비스 배포 대기
+
+`ecs_service_precondition`이 있는 명령은 서버가 쓰기 직전에 실제 장애 배포 ID·태스크 정의·
+앱 digest·설정을 재확인한다. 모델의 확인 성공 서술은 쓰기 권한이 아니다.
+`deployment_wait` 단계는 `wait_for_service_deployment(step_id)`로 수행한다. 입력은 승인 사본에서
+서버가 읽으며 대상·명령·기한을 모델이 전달하거나 수정하지 않는다. API 성공을 수렴으로 보지 않는다.
+서버의 HEALTHY 영수증이 실제 앱 태스크의 정상 버전 수렴을 확인한 최초 시각을 보존한다.
+배포 후 metric_wait는 action_step_id를 생략하고 승인 deployment_step_id를 전달한다.
+나머지 지표·알람·완료 증거 인자는 승인 값 그대로다. 수렴 다음 분부터 두 완결된 60초 구간이며
+각 대기는 최대 900초, 기존 실행·도구 한도 안이다. 중단·실패·외부 배포·설정 변경은
+새 승인 사유로 남기고 재호출로 기한을 초기화하지 않는다. StopTask 기존 호출도 계속 지원한다.

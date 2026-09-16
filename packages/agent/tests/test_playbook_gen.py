@@ -4,6 +4,7 @@ from time import perf_counter
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from rca_agent.config.settings import PLAYBOOK_UPDATE_THRESHOLD
 from rca_agent.ports.dto.models import (
@@ -586,13 +587,9 @@ class TestExecutionStepContract:
 
         assert steps == []
 
-    def test_a_step_without_an_action_is_dropped(self):
-        steps = build_execution_steps(
-            [ExecutionStepOutput(**self._step(action=""))],
-            confirmed=True,
-        )
-
-        assert steps == []
+    def test_generated_step_requires_nonblank_action_before_sdk_acceptance(self):
+        with pytest.raises(ValidationError, match="action"):
+            ExecutionStepOutput(**self._step(action=""))
 
     def test_a_duplicate_step_id_is_dropped(self):
         """식별자가 겹치면 증거가 어느 절차를 가리키는지 알 수 없다."""
@@ -606,13 +603,9 @@ class TestExecutionStepContract:
 
         assert steps == []
 
-    def test_a_missing_step_id_rejects_the_plan(self):
-        steps = build_execution_steps(
-            [ExecutionStepOutput(**self._step(step_id=""))],
-            confirmed=True,
-        )
-
-        assert steps == []
+    def test_generated_step_requires_id_before_sdk_acceptance(self):
+        with pytest.raises(ValidationError, match="step_id"):
+            ExecutionStepOutput(**self._step(step_id=""))
 
     def test_a_generated_playbook_is_always_an_unverified_draft(self):
         """실행되지 않은 절차는 검증되지 않았다. 분석은 이 값을 바꾸지 않는다."""
@@ -794,7 +787,10 @@ def test_generation_merge_uses_only_validated_current_plan(current_plan, merge_p
         current[1].metric_wait["action_step_id"] = "missing"
     elif current_plan == "new-owner":
         current[0].commands = [current[0].commands[0].replace("incident-owner", "current-owner")]
-    draft_output = PlaybookOutput(failure_type="lock", symptom_pattern="blocked writes", execution_steps=current)
+    # The invalid branch checks the final defense against an object that bypassed
+    # SDK validation. Real generated responses must pass the model validator first.
+    output_factory = PlaybookOutput.model_construct if current_plan == "invalid" else PlaybookOutput
+    draft_output = output_factory(failure_type="lock", symptom_pattern="blocked writes", execution_steps=current)
     merge_output = _make_appraisal(
         needs_update=needs_update,
         temporary_mitigation="Enriched knowledge",

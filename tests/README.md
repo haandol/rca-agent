@@ -3,51 +3,49 @@
 루트 하네스는 오프라인 계약 테스트, fixture 구조 회귀, 실모델 계약 평가를
 분리한다. 실제 배포 이벤트 전달과 증거 탐색은 별도의 배포 E2E로 검증한다.
 
-## 현실적 시나리오 카탈로그
+## 단일 데모 시나리오
 
-현재 `tests/scenarios/`의 정비 잠금 사례는 실제 AWS 알람·소유 태스크·로그
-관측을 사용한다. 나머지 세 사례는 HTTP 오류 로그 보호까지 반영한 서비스의
-로컬 PostgreSQL 재현 결과(`proof-review-fixed-01`)와 측정 소스 해시를 사용하며,
-이 세 사례의 알람 외곽 입력은 합성 예시다.
-[원본과 실측 요약](fixtures/observations/realistic-local-20260910/README.md)에
-정상·장애·복원과 과거 실패 실행을 보존했다. 모델에는 실제 UTC 기준의 정상·사고
-관측만 제공하고 복원 후 정보는 제외한다. 초기 합성 관측도
-[초안 이력](fixtures/historical/illustrative-drafts/)에 보존했다.
+활성 카탈로그는 `tests/scenarios/write-column-regression.json` 하나다. 정상 `v1`의
+INSERT(행 저장 SQL)는 `timestamp`를 사용하며, 결함 `v2`는 같은 소스에서
+`sampled_at` 참조 한 곳만 바꾼다. 실제 PostgreSQL의 존재하지 않는 컬럼 오류
+SQLSTATE `42703`을 대상으로 한다. 기존 평가 유형에는 컬럼 회귀가 없으므로
+`acceptedRootFaultTypes`는 `unsupported`다. 원인 확정·증거·산출물·안전한 실행
+절차의 기존 기준을 그대로 적용하며 별도 분류기나 임계치를 추가하지 않는다.
 
-| ID | 기대 유형 | 원인과 복원 |
-|---|---|---|
-| `pool-config-regression` | `unsupported` | 실제 풀 설정 축소 → 원래 설정 복원 |
-| `query-amplification` | `slow-query` | 일괄 조회의 행별 재조회 → 원래 이미지 복원 |
-| `maintenance-transaction-lock` | `unsupported` | 소유 정비 트랜잭션의 쓰기 차단 → 해당 작업만 롤백 |
-| `exception-session-cleanup` | `db-leak` | 예외 경로 세션 반환 누락 → 정상 이미지 복귀·결함 태스크 종료 |
+활성 fixture는 헬스케어 작업이 제공한 `20260915-final-observer` 실제 PostgreSQL
+증거를 사용한다. 정상 6행 저장, 장애 구간 0행 추가와 실제 `42703`, 동일한 실제
+스키마 및 정상 조회·헬스가 원본에 기록됐다. 정상·결함 INSERT 소스 바이트의
+SHA-256을 원본 지문과 대조했다. 로컬 EMF(메트릭 형식 로그) 출력은 CloudWatch에서
+조회한 1분 지표 구간이 아니며, 알람 외곽 입력도 여전히 합성 예시다.
 
-중립 관측 ID, 제공된 시각·단위·리소스, 원본 형태의 레코드와 독립적인 경쟁 원인
-반증을 사용한다. 풀 부족·락을 누수로 바꾸어 채점하지 않는다. 모든 사례는 원인
-확정·필수 산출물·안전한 실행 절차를 요구하며 평가기는 변경하지 않았다.
-실측 요청 항목과 관측 대응표는
-[측정 인계](../docs/demo/scenario-evidence-handoff.md)에 있다.
-[브라우저용 설명](../docs/demo/realistic-scenarios.html)은 별도 빌드 없이 열린다.
+원본·소스 바이트·대응표는 `scenarios/captures/native-column-20260915/`에 보존했다.
+`projectWriteColumnCaptures`는 실제 정상·사고 시각 안의 사실만 추출하며 복원 후
+관측과 운영자의 통과 판정은 제외한다. 초기 합성 계약 입력은
+`scenarios/history/synthetic/`에 남긴다. 실제 AWS·RCA·승인 실행 성공을 주장하지
+않으며 전체 코드 통합 후 입력 지문 동기화는 부모 작업에서 수행한다.
 
-공용 조회 증상은 `${ns}-Healthcare-PatientVitalsQueryLatency`, 메트릭
-`PatientVitalsQueryDuration`, `Healthcare/Sensor`, `ServiceName=healthcare-sensor-app`,
-Milliseconds, Average, 60초×2 평가다. 배포 기본 튜닝 값 500ms는 검증된 임계치가
-아니다. 이번 로컬 조회는 정상·결함·복원 모두 개별 500ms 미만이므로 알람 발동을
-주장하지 않고 카탈로그 threshold는 생략한다. `SOURCE_REVISION=r1/r2/r3`는
-빌드할 소스를 선택하며, 관측은 측정된 source manifest의 실제 해시와 연결한다.
+직전 네 사례는 `tests/scenarios/history/`에 바이트 그대로 보존했다.
+`fixtures/observations/`, `fixtures/historical/`, `baseline/history/`와 기존 승인
+자료도 보존한다. 과거 관측 재현·보안 검사는 이력 경로를 명시해 실행한다.
+과거 결과는 새 사례의 모델 평가 통과 근거가 될 수 없다.
 
-원래 네 시나리오와 정규화 fixture는
-[`fixtures/historical/original-four/`](fixtures/historical/original-four/)에 바이트
-그대로 보존했다. `tests/results/model/efficiency-20260909T145305Z-b05412`의 기존
-실패·부분 결과는 수정하지 않았다. 새 모델 결과 fixture는 없다.
-현재 입력 기준선은 새 코드·시나리오의 지문을 기록하고 `pending`으로 표시한다.
-과거 승인 기준선 원본은 `tests/baseline/history/`에 보존한다.
-**입력 일치 검사는 현재 코드 기준으로 통과할 수 있지만, `eval:offline`은
-모델 승인 대기와 결과 부재를 실패로 보고한다.** 테스트용 fake engine이나
-메모리 내 구조 검증용 객체는 실제 모델 결과·승인 자료가 아니다.
+단일 제어는 `scripts/run_realistic_demo.py`의 `plan / apply / status / restore`다.
+`inject_deployment_fault.py`와 `run_deployed_e2e.py`도 같은 CLI로 위임한다.
+이전 플래그·정비 잠금·red-herring 명령은 폐기됐다.
+[실행 안내](../scripts/run_realistic_demo.html)를 따른다. AWS 조작은 운영자가
+담당하며 루트 계약 검사는 AWS CLI를 모의 구현한다.
 
-네 입력은 `model-eval`만 선언한다. 배포 제어와 복원 경로를 검증한 뒤 해당 사례에만
-`deployed-e2e`를 추가한다. 로컬 DB 재현, 제공 관측 실모델 평가, AWS 배포 E2E의
-결과는 각각 기록하며 서로의 성공을 대신하지 않는다.
+각 실행은 새 RunId와 공유 저널 디렉터리를 사용한다. 운영자는 준비 3회와 본실행
+10회의 독립 RunId를 시작 전에 고정하고 실패·중단을 포함해 모두 기록한다.
+정상 기준은 실제 두 완결된 1분 구간의 양수 시도·명시적 0 실패 및 실제 로그로
+검증한다. S3 `baselines/<run_id>/normal.json`을 `IfNoneMatch=*`로 생성하고
+다운로드한 UTF-8 정규 JSON의 SHA-256을 확인한 뒤 알람 설명에 참조를 연결한다.
+알람의 임계치·차원·평가 조건은 유지하고 cleanup에서 원래 설명을 복원한다.
+
+runner는 실행 승인을 보내지 않는다. 사용자 또는 위임받은 부모 운영자가 일반
+대시보드 API로 승인한다. `recoveryVerified`는 환경 정리 결과이며 RCA 확정이나
+`RESOLVED`를 의미하지 않는다. 실제 전체 흐름은 원인 확정 → 고정 런북 → 사용자
+승인 → 실행 워커 롤백 → 배포 수렴 → 실제 저장 회복 → `RESOLVED`를 별도 확인한다.
 
 ## 선택 알람 메타데이터
 

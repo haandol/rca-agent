@@ -6,7 +6,6 @@ from test_service.config import AppSettings, get_settings
 from test_service.di.container import Container
 from test_service.ports.interfaces.database import DatabasePort
 from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort
-from test_service.services.fault import FaultInjectionService
 from test_service.services.health import HealthService
 from test_service.services.sensor import SensorService
 from test_service.services.symptom_metrics import SymptomMetrics
@@ -19,7 +18,6 @@ class AppContainer(Container):
         self._sensor_repository: SensorReadingRepositoryPort | None = None
         self._sensor_service: SensorService | None = None
         self._health_service: HealthService | None = None
-        self._fault_service: FaultInjectionService | None = None
         self._symptom_metrics: SymptomMetrics | None = None
 
     @property
@@ -68,15 +66,9 @@ class AppContainer(Container):
             self._health_service = HealthService(self.database)
         return self._health_service
 
-    @property
-    def fault_service(self) -> FaultInjectionService:
-        if self._fault_service is None:
-            self._fault_service = FaultInjectionService(self.database)
-        return self._fault_service
-
     def create_router(self) -> APIRouter:
+        """Expose health, sensor, patient and alert APIs through shared services, with no fault-control routes."""
         from test_service.adapters.primary.alerts.alert_controller import AlertController
-        from test_service.adapters.primary.fault.fault_controller import FaultController
         from test_service.adapters.primary.health.health_controller import HealthController
         from test_service.adapters.primary.patients.patient_controller import PatientController
         from test_service.adapters.primary.sensors.sensor_controller import SensorController
@@ -86,7 +78,6 @@ class AppContainer(Container):
         router.include_router(SensorController(self.sensor_service).router)
         router.include_router(PatientController(self.sensor_service).router)
         router.include_router(AlertController(self.sensor_service).router)
-        router.include_router(FaultController(self.fault_service, self.settings).router)
         return router
 
     async def cleanup(self) -> None:

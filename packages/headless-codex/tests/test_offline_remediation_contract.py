@@ -40,7 +40,7 @@ TABLE = "offline-remediation"
 RCA = "offline-rca"
 EXECUTION = "offline-execution"
 ENGINE = "headless-codex"
-SNAPSHOT = f"approved/{RCA}/{EXECUTION}/playbook.json"
+SNAPSHOT = f"approvals/{RCA}/{EXECUTION}/playbook.json"
 PREFIX = f"executions/{RCA}/{EXECUTION}/"
 REVISION = f"{ENGINE}#PLAYBOOK_REVISION"
 STAGE = f"{ENGINE}#PLAYBOOK_REVISION_STAGE#{EXECUTION}"
@@ -332,6 +332,10 @@ class Journey:
         return CodexResult(success=self.mode != "runner-failed", result="scripted offline response", raw_output="")
 
     def run_retrospective(self, prompt, **kwargs):
+        from headless_codex.services.retrospective_reader import read_document
+
+        for document in ("evidence", "approved_playbook"):
+            assert read_document(kwargs["execution_token"], kwargs["execution_id"], document)["ok"]
         self.retrospectives += 1
         assert self.get(f"EXEC#{EXECUTION}")["execution_state"]["S"] == "RESOLVED"
         assert PREFIX + "evidence.json" in self.s3.objects
@@ -439,7 +443,14 @@ def journey(monkeypatch, tmp_path):
             AttributeDefinitions=[{"AttributeName": name, "AttributeType": "S"} for name in ("PK", "SK")],
             BillingMode="PAY_PER_REQUEST",
         )
-        yield Journey(monkeypatch, ddb)
+        from headless_codex.config import settings
+        from headless_codex.services import retrospective_reader as reader
+
+        monkeypatch.setattr(settings, "S3_EVIDENCE_BUCKET", "offline-evidence")
+        monkeypatch.setattr(reader, "S3_EVIDENCE_BUCKET", "offline-evidence")
+        local_journey = Journey(monkeypatch, ddb)
+        monkeypatch.setattr(reader, "_s3_client", lambda: local_journey.s3)
+        yield local_journey
 
 
 @pytest.mark.parametrize(

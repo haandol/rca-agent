@@ -12,6 +12,11 @@ class EvalAppContainer(AppContainer):
     """
 
     @property
+    def incident_observer(self):
+        """Historical evaluation observations must retain their original time and source."""
+        return None
+
+    @property
     def scoping_mcp_clients(self):
         return []
 

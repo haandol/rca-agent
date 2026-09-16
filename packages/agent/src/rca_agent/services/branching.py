@@ -13,9 +13,11 @@ from rca_agent.ports.dto.models import (
     Hypothesis,
     HypothesisCategory,
     HypothesisStatus,
+    ScopingResult,
 )
 from rca_agent.prompts.branching import BRANCHING_USER_PROMPT_TEMPLATE
-from rca_agent.utils.timeout import call_with_timeout
+from rca_agent.services.observation_context import render_critical_facts
+from rca_agent.utils.agent_invocation import invoke_agent
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -62,11 +64,6 @@ def _build_user_prompt(parent: Hypothesis, evidence_text: str, rejected_descript
     )
 
 
-def _invoke_agent(agent: Agent, prompt: str) -> BranchingOutput:
-    result = agent(prompt, structured_output_model=BranchingOutput)
-    return result.structured_output
-
-
 def _is_duplicate(child_desc: str, parent: Hypothesis, rejected: list[str]) -> bool:
     child_lower = child_desc.lower().strip()
     if child_lower == parent.description.lower().strip():
@@ -83,6 +80,7 @@ def run_branching(
     timeout_seconds: int = LLM_DEFAULT_TIMEOUT_SECONDS,
     max_depth: int = MAX_BRANCHING_DEPTH,
     existing_children: list[Hypothesis] | None = None,
+    scoping_result: ScopingResult | None = None,
 ) -> BranchingResult:
     if parent.depth >= max_depth:
         logger.warning(
@@ -98,14 +96,13 @@ def run_branching(
         logger.info("Child capacity exhausted for hypothesis %s", parent.hypothesis_id)
         return BranchingResult(tree_id=parent.tree_id, parent_id=parent.hypothesis_id, children=[])
 
-    user_prompt = _build_user_prompt(parent, evidence_text, rejected_descriptions)
+    user_prompt = _build_user_prompt(parent, evidence_text, rejected_descriptions) + render_critical_facts(
+        scoping_result
+    )
     logger.info("Branching hypothesis %s at depth %d", parent.hypothesis_id, parent.depth)
 
     try:
-        output = call_with_timeout(
-            lambda: _invoke_agent(agent, user_prompt),
-            timeout_seconds,
-        )
+        output = invoke_agent(agent, user_prompt, BranchingOutput, timeout_seconds)
     except Exception:
         logger.warning("Branching failed for hypothesis %s", parent.hypothesis_id)
         output = None

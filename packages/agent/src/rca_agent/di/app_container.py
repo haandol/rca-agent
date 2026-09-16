@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from contextlib import ExitStack, contextmanager
+from threading import Lock
 
 import boto3
 
@@ -36,6 +38,8 @@ class AppContainer(Container):
         self._s3_vectors_client = None
         self._sns_client = None
         self._cloudwatch_clients = {}
+        self._logs_clients = {}
+        self._ecs_clients = {}
 
         self._session_store: SessionStorePort | None = None
         self._report_store: ReportStorePort | None = None
@@ -54,6 +58,55 @@ class AppContainer(Container):
         self._playbook_agent = None
         self._scoping_mcp_clients = None
         self._evidence_mcp_clients = None
+        self._agent_baselines = {}
+        self._analysis_lock = Lock()
+
+    def _remember_initial_agent(self, agent) -> None:
+        """Capture empty conversation/session state once without copying model clients or tool connections."""
+        self._agent_baselines[id(agent)] = agent.take_snapshot(preset="session", include=["model_state"])
+
+    @contextmanager
+    def analysis_context(self):
+        """Reset only between claimed incidents, preserving context within an active analysis.
+
+        Check every cached agent and provider before changing any state. Shared
+        MCP clients and model instances stay connected; only completed local
+        conversation state, received records and the prior incident's taint reset.
+        """
+        if not self._analysis_lock.acquire(blocking=False):
+            raise RuntimeError("cannot reset stage context during an active analysis")
+        try:
+            agents = [
+                agent
+                for name in (
+                    "_scoping_agent",
+                    "_hypothesis_agent",
+                    "_prioritization_agent",
+                    "_validation_agent",
+                    "_branching_agent",
+                    "_report_agent",
+                    "_playbook_agent",
+                )
+                if (agent := getattr(self, name)) is not None
+            ]
+            with ExitStack() as locks:
+                for agent in agents:
+                    if not agent._concurrency.try_acquire_lock():
+                        raise RuntimeError("cannot reset an actively invoked stage agent")
+                    locks.callback(agent._concurrency.release_lock)
+                    if any(provider.active for provider in getattr(agent, "_rca_read_tools", [])):
+                        raise RuntimeError("cannot reset an active tool provider")
+                    if id(agent) not in self._agent_baselines:
+                        raise RuntimeError("stage agent has no initial session snapshot")
+                for agent in agents:
+                    agent.load_snapshot(self._agent_baselines[id(agent)])
+                    for provider in getattr(agent, "_rca_read_tools", []):
+                        provider.results = []
+                        provider.receipts = []
+                        provider.termination_uncertain = False
+            yield
+        finally:
+            self._analysis_lock.release()
 
     # ── AWS Clients (lazy) ─────────────────────────────────────────
 
@@ -106,6 +159,29 @@ class AppContainer(Container):
                 kwargs["region_name"] = region_key
             self._cloudwatch_clients[region_key] = boto3.client("cloudwatch", **kwargs)
         return self._cloudwatch_clients[region_key]
+
+    def logs_client_for_region(self, region: str):
+        """Reuse the application's credential provider and bounded read configuration."""
+        if region not in self._logs_clients:
+            self._logs_clients[region] = boto3.client("logs", region_name=region, config=SIDE_EFFECT_AWS_CLIENT_CONFIG)
+        return self._logs_clients[region]
+
+    def ecs_client_for_region(self, region: str):
+        """Observe deployment identity without introducing a second credential chain."""
+        if region not in self._ecs_clients:
+            self._ecs_clients[region] = boto3.client("ecs", region_name=region, config=SIDE_EFFECT_AWS_CLIENT_CONFIG)
+        return self._ecs_clients[region]
+
+    @property
+    def incident_observer(self):
+        from rca_agent.adapters.secondary.evidence.incident_observation import AwsIncidentObservation
+
+        return AwsIncidentObservation(
+            s3_client=self.s3_client,
+            logs_client_for_region=self.logs_client_for_region,
+            ecs_client_for_region=self.ecs_client_for_region,
+            evidence_bucket=S3_EVIDENCE_BUCKET,
+        )
 
     # ── Port implementations (lazy) ────────────────────────────────
 
@@ -204,6 +280,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_scoping_agent
 
             self._scoping_agent = create_scoping_agent(mcp_clients=self.scoping_mcp_clients)
+            self._remember_initial_agent(self._scoping_agent)
         return self._scoping_agent
 
     @property
@@ -212,6 +289,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_hypothesis_generation_agent
 
             self._hypothesis_agent = create_hypothesis_generation_agent()
+            self._remember_initial_agent(self._hypothesis_agent)
         return self._hypothesis_agent
 
     @property
@@ -220,6 +298,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_prioritization_agent
 
             self._prioritization_agent = create_prioritization_agent()
+            self._remember_initial_agent(self._prioritization_agent)
         return self._prioritization_agent
 
     @property
@@ -228,6 +307,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_validation_agent
 
             self._validation_agent = create_validation_agent()
+            self._remember_initial_agent(self._validation_agent)
         return self._validation_agent
 
     @property
@@ -236,6 +316,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_branching_agent
 
             self._branching_agent = create_branching_agent()
+            self._remember_initial_agent(self._branching_agent)
         return self._branching_agent
 
     @property
@@ -244,6 +325,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_report_agent
 
             self._report_agent = create_report_agent()
+            self._remember_initial_agent(self._report_agent)
         return self._report_agent
 
     @property
@@ -252,6 +334,7 @@ class AppContainer(Container):
             from rca_agent.agent_factory import create_playbook_agent
 
             self._playbook_agent = create_playbook_agent()
+            self._remember_initial_agent(self._playbook_agent)
         return self._playbook_agent
 
     def cleanup(self) -> None:

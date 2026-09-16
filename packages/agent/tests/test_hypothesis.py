@@ -227,7 +227,7 @@ class TestRunHypothesisGeneration:
         assert result.tree_id
         assert mock_agent.call_count == 2
 
-    def test_timeout_triggers_retry(self, sample_scoping_result: ScopingResult):
+    def test_exhausted_stage_does_not_restart_retry_budget(self, sample_scoping_result: ScopingResult):
         output = _make_hypothesis_output(3)
         mock_result = MagicMock()
         mock_result.structured_output = output
@@ -246,7 +246,7 @@ class TestRunHypothesisGeneration:
 
         result = run_hypothesis_generation(sample_scoping_result, mock_agent, timeout_seconds=1, max_retries=2)
 
-        assert len(result.hypotheses) == 3
+        assert result.hypotheses == []
 
     def test_timeout_all_attempts_returns_empty(self, sample_scoping_result: ScopingResult):
         def slow_agent(prompt, **kwargs):

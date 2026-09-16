@@ -88,3 +88,67 @@ def judgment():
         }
 
     return entry
+
+
+@pytest.fixture
+def retrospective_sources(monkeypatch, tmp_path):
+    """Real scoped reader with in-memory S3 transport; never an invented read attestation."""
+    import hashlib
+    import io
+    from types import SimpleNamespace
+
+    from headless_codex.config import settings
+    from headless_codex.services import execution_workspace as workspace
+    from headless_codex.services import retrospective_reader as reader
+
+    monkeypatch.setattr(workspace, "_WORKSPACE_ROOT", tmp_path / "retro-workspaces")
+    monkeypatch.setattr(settings, "S3_EVIDENCE_BUCKET", "offline-evidence")
+    monkeypatch.setattr(reader, "S3_EVIDENCE_BUCKET", "offline-evidence")
+    objects = {}
+    client = SimpleNamespace(get_object=lambda **kw: {"Body": io.BytesIO(objects[kw["Key"]])})
+    monkeypatch.setattr(reader, "_s3_client", lambda: client)
+
+    def prepare(rca="rca", execution="exec", evidence=None, playbook=None):
+        work = workspace.ExecutionWorkspace.create(execution)
+        work.prepare()
+        raw = json.dumps(
+            playbook or {"playbook_id": (evidence or {}).get("playbook_id", "pb"), "execution_steps": []}
+        ).encode()
+        ekey = f"executions/{rca}/{execution}/evidence.json"
+        pkey = f"approvals/{rca}/{execution}/playbook.json"
+        objects[ekey] = json.dumps(
+            evidence
+            or {
+                "rca_id": rca,
+                "execution_id": execution,
+                "playbook_id": "pb",
+                "final_state": "RESOLVED",
+                "resolution_confirmed": True,
+            }
+        ).encode()
+        objects[pkey] = raw
+        reader.write_reference(
+            work.token,
+            rca_id=rca,
+            execution_id=execution,
+            evidence_key=ekey,
+            approved_playbook_key=pkey,
+            playbook_digest=hashlib.sha256(raw).hexdigest(),
+            bucket="offline-evidence",
+        )
+        monkeypatch.setenv(workspace.EXECUTION_TOKEN_ENV, work.token)
+        monkeypatch.setenv(workspace.EXECUTION_ID_ENV, execution)
+        return work
+
+    def read_both(work):
+        for doc in ("evidence", "approved_playbook"):
+            assert reader.read_document(work.token, work.execution_id, doc)["ok"]
+
+    return SimpleNamespace(prepare=prepare, read_both=read_both, objects=objects, client=client)
+
+
+@pytest.fixture
+def retrospective_reads(retrospective_sources):
+    work = retrospective_sources.prepare()
+    retrospective_sources.read_both(work)
+    return work

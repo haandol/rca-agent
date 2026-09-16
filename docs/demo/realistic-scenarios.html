@@ -1,123 +1,66 @@
 <!doctype html>
-<html lang="ko">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>현실적 RCA 시나리오 — 입력과 검증 경계</title>
-<style>
-  :root { color-scheme: light; font: 17px/1.65 system-ui, sans-serif; color: #172b3a; background: #f5f7fa; }
-  body { max-width: 1050px; margin: auto; padding: 32px 24px 70px; }
-  h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.2; }
-  h2 { margin-top: 2rem; font-size: 1.4rem; }
-  .notice { background: #fff3d4; border-left: 5px solid #b77300; padding: 16px 22px; }
-  article { background: white; border: 1px solid #d5dfe8; border-radius: 10px; padding: 18px 24px; margin: 20px 0; }
-  table { width: 100%; border-collapse: collapse; font-size: .94rem; }
-  th, td { text-align: left; vertical-align: top; padding: 12px; border-bottom: 1px solid #d5dfe8; }
-  th { background: #eaf0f5; }
-  .scroll { overflow-x: auto; }
-  code, pre { font: .87rem/1.5 ui-monospace, monospace; }
-  pre { background: #102a43; color: #eaf0f5; padding: 18px; overflow: auto; border-radius: 6px; }
-  a { color: #005aa6; }
-  svg { width: 100%; min-width: 650px; height: auto; }
-  .muted { color: #486581; }
-</style>
-<body>
-<p class="muted">RCA Agent · 2026-09-10 · 운영자·검토자용</p>
-<h1>증상에서 원인을 구별하는 네 시나리오</h1>
-<p class="notice"><strong>현재 상태: 로컬 PostgreSQL 실측 반영, AWS 알람 보정 대기.</strong>
-핵심 관측은 main/DB 작업자의 실제 두 번째 실행과 소스 해시에 연결했다.
-알람 외곽 입력은 합성 예시이고, 정상 기준·사고 구간의 실제 UTC 시각을 사용한다. 모델에 복원 결과를 전달하지 않는다.
-실패한 첫 실행과 초기 합성 초안도 보존했다. AWS 배포 성공·실모델 통과·기준선 승인은 없다.</p>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>단일 네이티브 컬럼 오류 데모</title><style>body{font:16px/1.65 system-ui,sans-serif;max-width:1050px;margin:40px auto;padding:0 24px;color:#203044;background:#f7f9fb}h1,h2{line-height:1.3}h2{margin-top:32px}pre{padding:18px;background:#162334;color:#e7f3ff;overflow:auto;border-radius:8px;font-size:13px}table{border-collapse:collapse;width:100%;background:white}td,th{padding:12px;border:1px solid #d7e0eb;text-align:left}a{color:#255f99}.note{padding:16px;background:#eaf1fa;border-left:4px solid #356bad}svg{width:100%;height:auto}code{overflow-wrap:anywhere}</style></head><body><h1>단일 네이티브 컬럼 오류 데모</h1><p><a href="../../scripts/run_realistic_demo.html">루트 실행기 안내</a> · <a href="../../tests/README.md">테스트 카탈로그 계약</a></p>
+<p>정상 이미지 <code>v1</code>은 <code>sensor_readings.timestamp</code>에 저장한다. 같은 소스에서 INSERT(행 저장 SQL)의 컬럼 참조 한 곳을 <code>sampled_at</code>으로 바꾼 <code>v2</code>는 실제 PostgreSQL 오류 <code>42703</code>을 일으킨다. DB 스키마를 바꾸거나 앱에서 오류 이벤트를 만들어내지 않는다.</p>
+<p class="note">이 문서는 구현된 제어 계약과 모의 테스트 범위를 설명한다. 새 AWS 장애·RCA·승인 실행 성공을 보고하는 자료가 아니다. 활성 카탈로그는 새 실제 PostgreSQL 관측을 사용한다. 알람 외곽 입력은 합성 예시이며 로컬 메트릭 출력은 실제 CloudWatch 조회 결과가 아니다.</p>
+<h2>역할과 실행 순서</h2><svg viewBox="0 0 990 115" role="img" aria-label="정상 관측, S3 검증, 알람 참조 연결, 장애 배포, 별도 사용자 승인과 실행, 환경 정리">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#356bad"/></marker></defs>
+<g fill="white" stroke="#356bad"><rect x="5" y="25" width="145" height="60" rx="8"/><rect x="170" y="25" width="145" height="60" rx="8"/><rect x="335" y="25" width="145" height="60" rx="8"/><rect x="500" y="25" width="145" height="60" rx="8"/><rect x="665" y="25" width="145" height="60" rx="8"/><rect x="830" y="25" width="150" height="60" rx="8"/></g>
+<g stroke="#356bad" marker-end="url(#arrow)"><path d="M150 55H167"/><path d="M315 55H332"/><path d="M480 55H497"/><path d="M645 55H662"/><path d="M810 55H827"/></g>
+<g text-anchor="middle" fill="#203044" font-size="15"><text x="78" y="60">실제 정상 관측</text><text x="243" y="60">S3 저장·지문 검증</text><text x="408" y="60">알람에 참조 연결</text><text x="573" y="60">결함 이미지 배포</text><text x="738" y="50">별도 RCA·사용자 승인</text><text x="738" y="72">실행·해결 확인</text><text x="905" y="60">원본 환경 정리</text></g></svg><details><summary>Mermaid 원문 — 위 SVG와 같은 흐름, 오프라인 열람 가능</summary><pre>flowchart LR
+  A[실제 정상 관측] --> B[S3 저장 및 지문 검증]
+  B --> C[알람에 참조 연결]
+  C --> D[결함 이미지 배포]
+  D --> E[별도 RCA 및 사용자 승인 실행]
+  E --> F[원본 환경 정리]</pre></details>
+<p>runner는 정상 관측과 장애 배포, 실패 시 환경 정리를 담당한다. Strands 분석 워커가 원인을 분석하고 사용자가 대시보드에서 고정된 런북을 승인한다. 실행 워커의 롤백·배포 수렴·실제 저장 회복·서버 <code>RESOLVED</code> 판정은 별도로 확인한다. runner는 실행 승인을 보내지 않으며 <code>scenarioSuccess</code>를 참으로 만들지 않는다.</p>
+<h2>시작 전 조건</h2>
+<p>Python 3.11 이상, Unix 파일 잠금, AWS CLI가 필요하다. 같은 서비스의 모든 운영자는 동일한 지속형 공유 <code>--journal-root</code>를 사용한다. 정상 태스크 정의는 <code>repository@sha256:digest</code>를 직접 참조해야 하며 실행 중인 모든 앱 컨테이너의 지문과 일치해야 한다. 정상·결함 이미지는 부모 작업에서 같은 소스로 빌드·검증해 제공한다.</p>
+<p>정상 태스크마다 검증된 <code>source_manifest</code>, 실제 <code>write_contract</code>, 신선한 <code>db_schema_snapshot</code>과 <code>write_completed</code>가 필요하다. 스키마에는 <code>timestamp</code>가 있고 <code>sampled_at</code>은 없어야 한다. 완결된 1분 지표 두 구간 모두 저장 시도가 양수이고 실패가 명시적 0이어야 한다. 누락 지표·0회 시도·다른 태스크 로그로 정상 상태를 추정하지 않는다.</p>
+<h2>한 실행의 명령</h2>
+<p>아래 값은 운영자가 실제 배포와 설정된 증거 버킷에 맞춰 지정한다. SHA-256은 파일 내용을 식별하는 지문이고 ARN은 AWS 리소스의 고유 식별자다.</p>
+<pre>JOURNAL_ROOT=/absolute/shared/demo-journals
+RUN_ID=column-prep-01
+REGION=us-east-1
+CLUSTER=RcaAgentDevHealthcare
+SERVICE=RcaAgentDevHealthcare
+EVIDENCE_BUCKET=YOUR_CONFIGURED_EVIDENCE_BUCKET
+FAULT_IMAGE=YOUR_REPOSITORY@sha256:YOUR_ACTUAL_64_HEX_DIGEST
 
-<article>
-<h2>1. 무엇을 구별하는가</h2>
-<p>RCA는 근본원인분석이다. 연결을 얻지 못했다는 증상만으로는 누수인지,
-작아진 풀인지, 락 때문인지 알 수 없다. 연결 <em>풀</em>은 요청이 함께 쓰고
-반환하는 연결 묶음이고, 트랜잭션의 <em>락</em>은 다른 작업의 접근을 제한하는 잠금이다.</p>
-<div class="scroll"><table>
-<thead><tr><th>카탈로그 ID / 분류</th><th>구별하는 증거</th><th>복원 확인</th></tr></thead>
-<tbody>
-<tr><td><code>pool-config-regression</code><br><code>unsupported</code></td>
-<td>작아진 유효 풀 설정, 획득 대기, 요청 뒤 연결 반환, DB 전체 연결 상한, 같은 시작 부하</td>
-<td>원래 설정으로 복귀한 뒤 같은 부하에서 저장·대기 회복</td></tr>
-<tr><td><code>query-amplification</code><br><code>slow-query</code></td>
-<td>같은 결과 행을 읽는 SQL 횟수, 개별·전체 시간, 일괄 조회와 행별 조회 코드 차이</td>
-<td>원래 이미지에서 같은 응답 내용·조회 횟수·시간 회복</td></tr>
-<tr><td><code>maintenance-transaction-lock</code><br><code>unsupported</code></td>
-<td>차단자·대기자, 잠금 모드·SQL·트랜잭션 시각, 해당 실행의 작업 소유권</td>
-<td>소유 정비 트랜잭션만 롤백한 뒤 저장 재개</td></tr>
-<tr><td><code>exception-session-cleanup</code><br><code>db-leak</code></td>
-<td>예외 요청 종료 뒤에도 남은 연결, 정리 코드 차이, 이후 정상 요청의 풀 대기</td>
-<td>정상 이미지 복귀·결함 태스크 종료 후 같은 예외 입력의 연결 반환</td></tr>
-</tbody></table></div>
-<p><code>unsupported</code>는 기존 주입 유형에 속하지 않는 원인이라는 뜻이다.
-풀 설정과 락을 누수로 바꾸지 않는다. 각 사례는 별도 관측으로 반박할 수 있는
-경쟁 원인 두 개도 요구한다. 데이터가 없다는 이유만으로 원인을 기각하지 않는다.</p>
-</article>
+demo() {
+  python3 scripts/run_realistic_demo.py "$@" \
+    --run-id "$RUN_ID" --region "$REGION" \
+    --cluster "$CLUSTER" --service "$SERVICE" \
+    --journal-root "$JOURNAL_ROOT"
+}
 
-<article>
-<h2>2. 세 종류의 검증을 따로 기록한다</h2>
-<p>아래는 의존성 없는 정적 SVG 흐름도다. 이어지는 Mermaid 원문으로 같은 관계를 재사용할 수 있다.</p>
-<div class="scroll">
-<svg viewBox="0 0 970 285" role="img" aria-labelledby="flow-title flow-desc">
-<title id="flow-title">입력과 검증 경계</title>
-<desc id="flow-desc">로컬 DB 실측은 관측 검토를 거쳐 제공 관측 모델 평가의 입력이 된다.
-평가자는 모델의 실제 결과를 채점한다. 별도의 AWS 배포 경로는 제공 관측을 주입하지 않는다.</desc>
-<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#486581"/></marker></defs>
-<g fill="#edf6fd" stroke="#486581" stroke-width="1.4">
-<rect x="10" y="30" width="200" height="65" rx="8"/>
-<rect x="260" y="30" width="170" height="65" rx="8"/>
-<rect x="480" y="30" width="220" height="65" rx="8"/>
-<rect x="750" y="30" width="200" height="65" rx="8"/>
-<rect x="100" y="180" width="260" height="65" rx="8" fill="#f4f0fc"/>
-<rect x="480" y="180" width="360" height="65" rx="8" fill="#f4f0fc"/>
-</g>
-<g font-family="system-ui,sans-serif" font-size="17" text-anchor="middle" fill="#172b3a">
-<text x="110" y="58">로컬 DB 실측</text><text x="110" y="81">정상 → 결함 → 복원</text>
-<text x="345" y="68">정상·사고 관측 선택</text>
-<text x="590" y="58">제공 관측 모델 평가</text><text x="590" y="81">두 엔진 실제 산출물</text>
-<text x="850" y="58">동일 구조·안전성 채점</text><text x="850" y="81">별도 검토 후 승인</text>
-<text x="230" y="207">AWS 배포 제어</text><text x="230" y="230">소유 변경·원상복원</text>
-<text x="660" y="207">증상 알람 → 신규 세션 → 실제 증거 탐색</text><text x="660" y="230">시나리오 observations 주입 없음</text>
-</g>
-<g stroke="#486581" stroke-width="2" marker-end="url(#arrow)">
-<path d="M210 62H255"/><path d="M430 62H475"/><path d="M700 62H745"/><path d="M360 212H475"/>
-</g></svg></div>
-<details><summary>Mermaid 원문</summary><pre>flowchart LR
-  L["로컬 DB: 정상 → 결함 → 복원"] --> R["정상·사고 관측 선택"]
-  R --> M["제공 관측 모델 평가: 두 엔진"]
-  M --> G["동일 구조·안전성 채점 → 검토 후 승인"]
-  A["AWS 배포 제어: 소유 변경·원상복원"] --> D["증상 알람 → 신규 세션 → 실제 증거 탐색"]
-</pre></details>
-<p>로컬 DB 재현은 실제 쿼리와 연결 수명을 확인한다. 제공 관측 모델 평가는 주어진 증거의
-해석·인용을 확인한다. 배포 E2E(처음부터 끝까지의 검증)는 알람 전달·신규 세션·실제 증거 탐색과
-원상복원을 확인한다. 한 계층의 통과로 다른 계층을 통과했다고 기록하지 않는다.</p>
-</article>
+# AWS는 읽기만 수행하고 로컬에 불변 스냅샷 생성
+demo plan --scenario write-column-regression --revision v2 \
+  --image "$FAULT_IMAGE" --evidence-bucket "$EVIDENCE_BUCKET" \
+  --alarm RcaAgentDev-Healthcare-VitalIngestFailures
 
-<article>
-<h2>3. 알람 시각과 평가 세션 시각</h2>
-<p>알람에 리전, 네임스페이스, 차원(지표의 리소스 좌표), 통계, 기간, 임계치,
-평가 조건이 있으면 두 어댑터가 전달한다. 제공되지 않은 조건은 원본 메타데이터에 추가하지 않는다.
-운영 기본값은 유지하며 모델 평가에서는 없는 리전·통계·주기·시각을
-<code>not provided</code>로 표시한다. 숫자 0과 제공된 원본 값은 보존한다.</p>
-<p>Strands는 반복 평가가 과거 세션과 충돌하지 않도록 새 실행 시각을 사용한다.
-원본 알람 시각은 별도 메타데이터로 남고, 제공된 관측 구간도 각 관측에 명시한다. 원본에 없는 구간은 null과 누락 사유를 유지한다.
-새 세션의 생성 시각을 사고 관측 시각으로 해석하지 않는다. 락의 분석 마감은 차단 쓰기의 종료 시각이며, 그 뒤의 해제·복원 요청은 제공하지 않는다.</p>
-</article>
+# 실제 기준 재확인 → S3 검증 → 알람 설명 연결 → 장애 배포
+demo apply --wait-seconds 600
+demo status
 
-<article>
-<h2>4. 승인 전 남아 있는 일</h2>
-<ol>
-<li>B의 최종 UTC 측정과 중립 capture ID를 사용하고 원본·복원 결과는 운영자 자료로 보존한다.</li>
-<li>지속 부하로 AWS 조회 알람 임계치를 보정한다. 기본 500ms는 이번 로컬 조회 실측보다 높았다.</li>
-<li>배포 제어가 준비된 사례에만 <code>deployed-e2e</code>를 선언한다.</li>
-<li>새 입력으로 두 엔진의 실제 결과를 모두 수집하고 안전한 복구 절차까지 검토한다.</li>
-<li>별도의 승인 절차로 fixture와 기준선을 갱신한다. 통과·검토 전에는 승인하지 않는다.</li>
-</ol>
-<p>원래 네 입력과 정규화 결과는 <code>tests/fixtures/historical/original-four/</code>에
-보존했다. 기존 실패 결과와 <code>tests/baseline/</code>은 그대로다.
-현재 fixture 부재·digest 불일치에 따른 게이트 실패는 숨기거나 합성 결과로 메우지 않는다.</p>
-<p><a href="../../tests/fixtures/observations/realistic-local-20260910/README.md">로컬 원본과 실측 요약</a> · <a href="scenario-evidence-handoff.md">관측 ID별 측정 인계</a> ·
-<a href="../../tests/README.md">하네스 사용 문서</a></p>
-</article>
-</body>
-</html>
+# 부모 운영자가 일반 대시보드 API로 RCA·승인·실행 결과를 별도 확인
+# 성공·실패·중단 여부와 관계없이 같은 RunId로 환경 정리
+demo restore --wait-seconds 600</pre>
+<p><code>inject_deployment_fault.py</code>와 <code>run_deployed_e2e.py</code>는 같은 명령으로 위임한다. 예전 플래그, red-herring, DB 파라미터 그룹, 정비 잠금 제어는 제공하지 않는다. 준비 3회와 본실행 10회의 독립 RunId를 시작 전에 고정하고 실패·중단을 포함해 기록한다. 같은 RunId의 apply를 재실행해 결과를 덮지 않는다.</p>
+<h2>정상 기준 전송 계약</h2>
+<table><tr><th>필드</th><th>기록하는 내용</th></tr>
+<tr><td>schema_version / run_id / observed_at</td><td>버전 1, 실행 ID, 실제 기준 수집 시각</td></tr>
+<tr><td>scope</td><td>account_id, region, cluster_arn, service_arn, service_name, container_name, log_group, desired_count</td></tr>
+<tr><td>normal / service_settings</td><td>정상 task_definition_arn·image_digest, 기존 SERVICE_SETTINGS 필드의 원래 값</td></tr>
+<tr><td>metrics / metric_observations</td><td>attempts·failures의 namespace·metric_name·dimensions, start·end와 실제 CloudWatch Timestamp/Sum/Unit 배열</td></tr>
+<tr><td>observations</td><td>허용된 실제 logger dict(message), epoch 밀리초 timestamp, event_id, log_group, log_stream</td></tr></table>
+<p><code>baselines/&lt;run_id&gt;/normal.json</code>에 정렬된 키·공백 없는 구분자·UTF-8·NaN 금지 JSON으로 저장한다. <code>IfNoneMatch="*"</code>는 기존 객체 덮어쓰기를 막는다. PUT 응답 유실도 GET으로 받은 실제 바이트의 SHA-256이 같아야 성공으로 처리한다. ETag를 내용 지문으로 대신하지 않는다.</p>
+<pre>{"summary":"Healthcare service symptoms","run_id":"...","service":"서비스 ARN","baseline_ref":{"bucket":"설정 버킷","key":"baselines/.../normal.json","sha256":"..."}}</pre>
+<p>위 참조만 실패 알람의 <code>AlarmDescription</code>에 1024자 이내로 연결한다. 예상 원인을 넣지 않고 알람 임계치·차원·평가 기준·액션은 유지한다. 종료 시 원래 설명을 복원한다. 다른 운영자가 바꾼 설정이나 설명은 덮어쓰지 않는다.</p>
+<h2>중단과 복구</h2>
+<p>서비스 변경 전에 원본 태스크 정의·서비스 설정·알람과 변경 의도를 해시 연결 저널에 생성 전용으로 저장한다. apply 중 실패하면 원래 태스크 정의 복원과 알람 설명 복원을 각각 시도한다. 기록 실패는 복구 성공으로 감추지 않으며, SIGKILL·호스트 종료 후에는 같은 저널로 restore를 실행한다. 검증 대기 중 restore의 종료 코드는 2다. 실제 배포·지표 회복이 확인될 때까지 소유권을 유지한다.</p>
+<p>이전 시나리오 저널은 읽기 전용으로 남는다. 새 runner로 수정하거나 새 결함 저널로 재사용하지 않는다. 정리가 끝나지 않은 과거 실행은 해당 버전의 복구 도구로 먼저 정리한다. <code>recoveryVerified</code>는 환경 정리 결과로, 승인된 플레이북이 문제를 해결했다는 인과 근거와 구분한다.</p>
+<h2>모의 검증</h2><pre>node --test tests/harness/realistic-demo-script.test.mjs \
+  tests/harness/deployment-fault-script.test.mjs \
+  tests/harness/deployed-e2e-driver.test.mjs \
+  tests/harness/realistic-scenarios.test.mjs</pre>
+<p><code>tests/scenarios/write-column-regression.json</code>은 <code>20260915-final-observer</code>의 실제 정상·사고 관측을 사용한다. 정상 6행 저장, 장애 구간 0행 추가·42703, 동일 스키마·정상 조회와 헬스를 원본에서 확인했다. 소스 바이트는 기록된 SHA-256과 일치한다. 원본은 <code>tests/scenarios/captures/native-column-20260915/</code>, 초기 합성 입력은 <code>tests/scenarios/history/synthetic/</code>에 보존했다. 과거 네 사례는 <code>tests/scenarios/history/</code>에 보존하며 원본 관측·승인 파일도 그대로 유지한다.</p></body></html>

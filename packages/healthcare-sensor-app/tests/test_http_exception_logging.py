@@ -12,7 +12,6 @@ from unittest.mock import patch
 import pytest
 from fastapi import APIRouter, HTTPException
 from httpx import ASGITransport, AsyncClient
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -56,9 +55,6 @@ async def http_boundary(tmp_path, monkeypatch):
     container._settings = replace(
         get_settings(),
         db_observability_enabled=True,
-        fault_db_leak=False,
-        fault_error_rate=0,
-        fault_slow_query_ms=0,
         traffic_enabled=False,
     )
     database = container.database
@@ -68,7 +64,7 @@ async def http_boundary(tmp_path, monkeypatch):
 
     def instrument(app, settings):
         """Keep the real FastAPI tracing wrappers while preventing network export or global state."""
-        FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+        telemetry.instrument_http(app, provider)
 
     monkeypatch.setattr(main, "container", container)
     monkeypatch.setattr(main, "setup_logging", lambda settings: None)
@@ -88,7 +84,12 @@ def assert_safe_records(caplog, exporter):
     serialized += json.dumps([record.__dict__ for record in caplog.records], default=str)
     serialized += json.dumps(
         [
-            {"status": span.status.description, "events": [dict(event.attributes) for event in span.events]}
+            {
+                "name": span.name,
+                "attributes": dict(span.attributes),
+                "status": span.status.description,
+                "events": [dict(event.attributes) for event in span.events],
+            }
             for span in exporter.get_finished_spans()
         ]
     )
@@ -106,7 +107,7 @@ def assert_safe_records(caplog, exporter):
 async def test_driver_detail_is_contained_after_session_return_and_failure_accounting(
     http_boundary, monkeypatch, caplog, capsys
 ):
-    """A real ORM failure must return 500 without escaping to ASGI, while r1 returns its connection."""
+    """A real ORM failure must return 500 without escaping to ASGI, while the session scope returns its connection."""
     caplog.set_level(logging.WARNING, logger="httpx")
     caplog.set_level(logging.INFO)
     database = http_boundary.database
@@ -285,3 +286,146 @@ async def test_failed_500_send_does_not_chain_the_original_driver_exception():
         await LoggingMiddleware(failing_app)({"type": "http", "method": "GET"}, receive, disconnected_send)
     assert caught.value.__context__ is None
     assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("field", ["timestamp", "value", "reading_type", "missing"])
+async def test_validation_errors_expose_only_safe_detail(http_boundary, caplog, field):
+    """Reject invalid sensor input without echoing body, context or custom text into any evidence."""
+    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.WARNING, logger="httpx")
+    reading = {**READING, "unit": CANARIES[2]}
+    if field == "missing":
+        del reading["value"]
+    else:
+        reading[field] = CANARIES[1]
+    async with AsyncClient(transport=ASGITransport(app=http_boundary.app), base_url="http://test") as client:
+        response = await client.post("/sensors/data", json={"readings": [reading]})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail[0]["loc"] == ["body", "readings", 0, "value" if field == "missing" else field]
+    assert all(set(error) == {"type", "loc", "msg"} for error in detail)
+    evidence = response.text + json.dumps([r.__dict__ for r in caplog.records], default=str)
+    evidence += str(
+        [(dict(s.attributes), s.events, s.status.description) for s in http_boundary.exporter.get_finished_spans()]
+    )
+    assert http_boundary.exporter.get_finished_spans()
+    assert all(canary not in evidence for canary in CANARIES)
+
+
+async def test_custom_validation_context_message_and_location_are_not_echoed(http_boundary, caplog):
+    """A custom validator cannot smuggle patient values through type, location, message or context."""
+    from fastapi.exceptions import RequestValidationError
+
+    async def invalid():
+        """Model an application validator whose error metadata contains sensitive values."""
+        raise RequestValidationError(
+            [
+                {
+                    "type": CANARIES[0],
+                    "loc": ("body", CANARIES[1]),
+                    "msg": CANARIES[2],
+                    "input": CANARIES[0],
+                    "ctx": {"error": ValueError(CANARIES[1])},
+                }
+            ],
+            body=CANARIES[2],
+        )
+
+    http_boundary.app.add_api_route("/invalid", invalid)
+    async with AsyncClient(transport=ASGITransport(app=http_boundary.app), base_url="http://test") as client:
+        response = await client.get("/invalid")
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": [{"type": "value_error", "loc": ["body", "[REDACTED]"], "msg": "Invalid input"}]
+    }
+    evidence = response.text + json.dumps([r.__dict__ for r in caplog.records], default=str)
+    evidence += str(
+        [(dict(s.attributes), s.events, s.status.description) for s in http_boundary.exporter.get_finished_spans()]
+    )
+    assert all(canary not in evidence for canary in CANARIES)
+
+
+def test_real_uvicorn_process_never_logs_raw_patient_urls(tmp_path):
+    """Use Docker's server arguments over real sockets, retaining safe status logs on all paths."""
+    import os
+    import signal
+    import socket
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    import httpx
+
+    package = Path(__file__).resolve().parents[1]
+    command = json.loads(
+        next(
+            line[4:] for line in (package / "Dockerfile").read_text().splitlines() if line.startswith('CMD ["uvicorn"')
+        )
+    )
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        # Only external exporters and the DB-dependent service method are replaced.
+        # Production routing, exception handling, logging and Uvicorn stay real.
+        (tmp_path / "privacy_server.py").write_text("""
+from test_service import telemetry
+telemetry.setup_telemetry = lambda app, settings: None
+from test_service.main import app, container
+async def vitals(*args, **kwargs):
+    if kwargs.get("limit") == 1:
+        raise RuntimeError("CANARY_DRIVER_DETAIL")
+    return []
+container.sensor_service.get_patient_vitals = vitals
+""")
+        command[1] = "privacy_server:app"
+        # Inherit a bound socket to avoid a free-port race; all other server options
+        # come from the deployable Docker command, including access-log policy.
+        command += ["--fd", str(listener.fileno()), "--lifespan", "off"]
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path), str(package / "src")])}
+        with (tmp_path / "server.log").open("w+") as output:
+            process = subprocess.Popen(
+                [sys.executable, "-m", *command],
+                env=env,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                pass_fds=(listener.fileno(),),
+            )
+            try:
+                with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=1) as client:
+                    for _ in range(100):
+                        if process.poll() is not None:
+                            pytest.fail("Uvicorn exited before readiness")
+                        try:
+                            client.get("/missing")
+                            break
+                        except httpx.TransportError:
+                            time.sleep(0.05)
+                    else:
+                        pytest.fail("Uvicorn did not become ready")
+                    for path, status in [
+                        (f"/patients/{CANARIES[0]}/vitals?limit=2", 200),
+                        (f"/patients/{CANARIES[0]}/vitals?limit=1", 500),
+                        (f"/patients/{CANARIES[0]}/vitals?limit={CANARIES[1]}", 422),
+                        (f"/missing/{CANARIES[0]}?unused=1", 404),
+                    ]:
+                        response = client.get(f"{path}&token={CANARIES[2]}")
+                        assert response.status_code == status
+                        assert all(canary not in response.text for canary in CANARIES)
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+            assert process.returncode in (0, -signal.SIGTERM)
+            output.seek(0)
+            logs = output.read()
+        assert "Finished server process" in logs
+        assert all(canary not in logs for canary in CANARIES)
+        records = [json.loads(line) for line in logs.splitlines() if line.startswith("{")]
+        requests = [r for r in records if r["message"] in {"Handled request", "Request failed"}]
+        assert {200, 500, 422, 404} <= {r["status_code"] for r in requests}
+        assert all(r["path"] in {"/patients/{patient_id}/vitals", "<unmatched>"} for r in requests)

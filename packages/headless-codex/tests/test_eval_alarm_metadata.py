@@ -184,12 +184,12 @@ def test_provided_details_and_zero_reach_actual_prompt(role):
 
 
 def test_catalog_prompts_preserve_supplied_metadata_and_mark_only_missing_fields_unknown(monkeypatch):
-    """Read all four sources so observed maintenance metadata survives alongside unknown local fields."""
+    """Preserve the active column scenario's supplied metadata without inventing AWS coordinates."""
     from pathlib import Path
 
     monkeypatch.setenv("AWS_REGION", "eu-west-3")
     paths = sorted((Path(__file__).resolve().parents[3] / "tests/scenarios").glob("*.json"))
-    assert len(paths) == 4
+    assert [path.stem for path in paths] == ["write-column-regression"]
     for path in paths:
         supplied = json.loads(path.read_text())
         original = deepcopy(supplied)

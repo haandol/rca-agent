@@ -1,15 +1,11 @@
 """Offline coverage of trusted metadata, privacy, deadlines and startup identity."""
 
 import asyncio
-import hashlib
 import json
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from test_service import maintenance
-from test_service.revision.manifest import source_manifest
 from test_service.services import runtime_identity as identity
 
 BASE = "http://169.254.170.2/v4/6d7b8c9d-1234-5678-9876-0123456789ab"
@@ -175,37 +171,3 @@ async def test_transport_error_does_not_expose_message(monkeypatch, no_real_meta
     observed = await identity.runtime_identity()
     assert observed["error_type"] == "OSError"
     assert "private-value" not in json.dumps(observed)
-
-
-@pytest.mark.parametrize("in_ecs", [False, True])
-async def test_maintenance_logs_actual_source_and_identity_before_lock(monkeypatch, capsys, in_ecs):
-    """CLI startup uses installed source hashes and continues when metadata is absent."""
-    if in_ecs:
-        metadata_response(monkeypatch, FIELDS)
-    expected_manifest = source_manifest()
-    lock = AsyncMock()
-    monkeypatch.setattr(maintenance, "hold_lock", lock)
-    await maintenance._main(SimpleNamespace(run_id="owned_test", hold_seconds=120, schema="public"))
-    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert records[0] == {"event": "source_manifest", **expected_manifest}
-    assert (
-        records[0]["fingerprint"]
-        == hashlib.sha256(json.dumps(records[0]["files"], sort_keys=True).encode()).hexdigest()
-    )
-    assert "services/runtime_identity.py" in records[0]["files"]
-    assert records[1]["event"] == "ecs_runtime_identity"
-    assert records[1]["status"] == ("available" if in_ecs else "unavailable")
-    lock.assert_awaited_once()
-    assert lock.call_args.kwargs["run_id"] == "owned_test"
-    assert lock.call_args.kwargs["hold_seconds"] == 120
-
-
-async def test_maintenance_rejects_a_corrupt_source_manifest_before_lock(monkeypatch):
-    """The CLI preserves the service's fail-closed installed-source verification boundary."""
-    manifest = MagicMock(side_effect=RuntimeError("Installed source differs from the build manifest"))
-    lock = AsyncMock()
-    monkeypatch.setattr(maintenance, "source_manifest", manifest)
-    monkeypatch.setattr(maintenance, "hold_lock", lock)
-    with pytest.raises(RuntimeError, match="Installed source differs"):
-        await maintenance._main(SimpleNamespace(run_id="owned_test", hold_seconds=120, schema="public"))
-    lock.assert_not_awaited()

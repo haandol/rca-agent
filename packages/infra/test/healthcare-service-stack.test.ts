@@ -18,7 +18,7 @@ type MetricQuery = {
   };
 };
 
-/** Synthesize a private demo service with optional workload tuning and image pin. */
+/** Synthesize a private demo service with optional workload tuning and a required image pin. */
 function synthesize(
   queryLatencyThresholdMs?: number,
   controlledEnvironment?: Readonly<Record<string, string | undefined>>,
@@ -35,7 +35,9 @@ function synthesize(
     dbInstance: database.instance,
     alarmTopic,
     imageTag: 'latest',
-    imageDigest,
+    imageDigest: (arguments.length >= 3
+      ? imageDigest
+      : `sha256:${'b2'.repeat(32)}`) as string,
     tracing: false,
     queryLatencyThresholdMs,
     controlledEnvironment,
@@ -123,7 +125,6 @@ test('healthy workload controls are explicit and cannot select a fault', () => {
     ContainerDefinitions: Match.arrayWith([
       Match.objectLike({
         Environment: Match.arrayWith([
-          { Name: 'FAULT_DB_LEAK', Value: 'false' },
           { Name: 'TRAFFIC_MAX_CONCURRENCY', Value: '4' },
           { Name: 'DB_POOL_TIMEOUT_SECONDS', Value: '5' },
         ]),
@@ -182,10 +183,7 @@ test('only symptom alarms publish state changes to the RCA topic', () => {
   const alarms = Object.values(
     synthesize().findResources('AWS::CloudWatch::Alarm'),
   ) as CfnResource[];
-  const entryAlarmNames = [
-    'RcaAgentDev-Healthcare-VitalIngestFailures',
-    'RcaAgentDev-Healthcare-PatientVitalsQueryLatency',
-  ];
+  const entryAlarmNames = ['RcaAgentDev-Healthcare-VitalIngestFailures'];
   const alarmsWithActions = alarms.filter(
     (alarm) =>
       (alarm.Properties?.AlarmActions as unknown[] | undefined)?.length,
@@ -248,7 +246,7 @@ test('the deployed revision is exposed to the container', () => {
   });
 });
 
-test('opting into a digest changes only the application image', () => {
+test('changing a digest changes only the application image', () => {
   const legacy = synthesize().toJSON();
   const digest = `sha256:${'a1'.repeat(32)}`;
   const pinned = synthesize(undefined, undefined, digest).toJSON();
@@ -257,12 +255,14 @@ test('opting into a digest changes only the application image', () => {
       (resource as { Type: string }).Type === 'AWS::ECS::TaskDefinition',
   ) as { Properties: { ContainerDefinitions: { Image: unknown }[] } };
   const container = task.Properties.ContainerDefinitions[0];
-  expect(JSON.stringify(container.Image)).toContain('/healthcare:latest');
+  expect(JSON.stringify(container.Image)).toContain(
+    `/healthcare@sha256:${'b2'.repeat(32)}`,
+  );
   // Keep every other resource/property identical, including the revision label,
   // roles, network, alarms and workload settings.
   container.Image = JSON.parse(
     JSON.stringify(container.Image).replace(
-      '/healthcare:latest',
+      `/healthcare@sha256:${'b2'.repeat(32)}`,
       `/healthcare@${digest}`,
     ),
   );
@@ -270,6 +270,8 @@ test('opting into a digest changes only the application image', () => {
 });
 
 test.each([
+  undefined,
+  null as unknown as string,
   '',
   'latest',
   `sha256:${'a'.repeat(63)}`,
@@ -348,4 +350,32 @@ test('the container pool is the capacity the threshold was derived from', () => 
       }),
     ]),
   });
+});
+
+test('observation defaults on, can be disabled, and no legacy flags are deployed', () => {
+  for (const enabled of [undefined, 'false']) {
+    const template = synthesize(
+      undefined,
+      enabled ? { DB_OBSERVABILITY_ENABLED: enabled } : undefined,
+    );
+    const tasks = Object.values(
+      template.findResources('AWS::ECS::TaskDefinition'),
+    ) as CfnResource[];
+    const containers = tasks[0].Properties?.ContainerDefinitions as {
+      Name: string;
+      Environment: { Name: string; Value: string }[];
+      HealthCheck: { Command: string[] };
+    }[];
+    const app = containers.find((c) => c.Name === 'healthcare')!;
+    expect(app.Environment.some((e) => e.Name.startsWith('FAULT_'))).toBe(
+      false,
+    );
+    expect(
+      app.Environment.find((e) => e.Name === 'DB_OBSERVABILITY_ENABLED')?.Value,
+    ).toBe(enabled ?? 'true');
+    expect(app.HealthCheck.Command.join(' ')).toContain("body['status']=='ok'");
+    expect(app.HealthCheck.Command.join(' ')).toContain(
+      "body['db_connected'] is True",
+    );
+  }
 });

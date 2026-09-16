@@ -200,13 +200,13 @@ class TestValidateHypothesis:
         assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
         assert judgment.validated_fault_type == FaultType.UNSUPPORTED
 
-    def test_allows_confirmed_when_evidence_failed_but_no_required_evidence(self):
+    def test_incomplete_collection_cannot_confirm_even_without_declared_requirements(self):
         h = _make_hypothesis(required_evidence=[])
         agent = _make_mock_agent(HypothesisStatus.CONFIRMED, 0.9, "Strong evidence")
 
         judgment = validate_hypothesis(h, "Evidence collection timed out or failed.", agent, evidence_failed=True)
 
-        assert judgment.status == HypothesisStatus.CONFIRMED
+        assert judgment.status == HypothesisStatus.NEEDS_INVESTIGATION
         assert judgment.validated_fault_type == FaultType.UNSUPPORTED
 
     def test_no_cap_when_evidence_succeeded(self):

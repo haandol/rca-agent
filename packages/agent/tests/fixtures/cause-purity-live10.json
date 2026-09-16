@@ -1,0 +1,3542 @@
+{
+  "provenance": {
+    "rca_id": "337e278d-f01f-58ab-8142-a87e639dd7b9",
+    "report_path": "docs/test-reports/single-column-implementation/live-dev-10/reports.json",
+    "report_sha256": "41cc32376c255fdb75b6492e0e25cc5a8f1439267c7aaa4d2ddf6fcce3e079f7",
+    "input_scope": "Exact captured incident_observations; report prose and prior judgments excluded from model evidence. Not the full original validation input."
+  },
+  "original_hypothesis_api_record": {
+    "hypothesisId": "d4171dd9-2953-4e8f-9f30-01e880fbe236",
+    "treeId": "9aee8ee1-b060-4713-8fb8-b5b268759cf5",
+    "parentId": null,
+    "depth": 0,
+    "title": "TaskDef 86 배포 시 애플리케이션 코드가 sampled_at 컬럼을 참조하도록 변경되었으나 DB 스키마 마이그레이션이 누락되어 INSER",
+    "description": "01:59:36에 시작된 task-definition revision 78→86 배포 직후 02:00:27부터 sensor_readings 테이블에 대해 sqlstate=42703(undefined column) 오류가 반복 발생하고 있다. 로그의 write_contract 이벤트는 애플리케이션이 sampled_at 컬럼을 포함한 INSERT를 시도함을 보여주지만, 같은 시점의 db_schema_snapshot은 실제 DB에는 timestamp 컬럼만 존재하고 sampled_at은 없음을 보여준다. 즉 애플리케이션 코드(이미지 12e84138...)가 새 컬럼명을 기대하도록 변경되었으나, 이에 대응하는 DB 스키마 변경(컬럼 rename/추가)이 배포 전후로 함께 적용되지 않아 코드-스키마 계약이 어긋났고, 이로 인해 모든 INSERT가 42703 에러로 실패하며 VitalIngestFailures가 0→11→25로 계단형 급증했다. task-definition 86의 애플리케이션 ",
+    "category": "DEPLOYMENT",
+    "confidenceScore": 0.96,
+    "status": "CONFIRMED",
+    "requiredEvidence": [
+      "revision 86에 포함된 애플리케이션 코드/커밋 diff에서 sampled_at 컬럼 참조 추가 여부",
+      "sensor_readings 테이블에 대한 DB 마이그레이션 실행 이력 및 최근 변경 시각",
+      "revision 78 대비 86의 이미지 digest 변경 시점과 db_write_error 최초 발생 시각(02:00:27)의 정합성",
+      "베이스라인(revision 78, 01:57~01:59) 로그에서 동일 write_contract가 timestamp 컬럼을 사용했는지 여부"
+    ],
+    "referencedPlaybookId": null,
+    "evidenceSummary": "가설의 핵심 주장 — \"revision 86 배포 후 애플리케이션 코드가 sampled_at 컬럼을 기대하도록 변경되었으나 DB 스키마는 그대로 timestamp였고, 이로 인해 sqlstate=42703이 반복 발생하며 VitalIngestFailures가 0→11→25로 급증했다\" — 는 다음 근거로 강하게 뒷받침된다:\n(1) CloudTrail: revision 78(이미지 digest 24e87996...)이 09-15 15:54:26Z에 등록되어 baseline과 일치, revision 86(이미지 digest 12e84138...)이 09-16 01:59:32Z에 dongkyl 사용자에 의해 등록되고 01:59:36Z UpdateService로 서비스에 적용됨 — 이미지 digest 변경이 명확히 확인됨.\n(2) 로그: baseline(revision 78) write_contract/db_schema_snapshot 모두 timestamp 컬럼 사용, 정상 write_c",
+    "judgmentReasoning": "가설이 주장하는 인과 메커니즘 — revision 78→86 배포(01:59:36)로 애플리케이션 코드(이미지 12e84138...)가 sensor_readings 테이블에 sampled_at 컬럼을 기대하도록 변경되었으나, 실제 DB 스키마는 여전히 timestamp 컬럼만 존재하여 코드-스키마 계약 불일치가 발생, 이로 인해 모든 INSERT가 sqlstate=42703(undefined column)으로 실패하고 VitalIngestFailures가 0→11→25로 급증했다는 주장 — 은 수집된 증거로 구체적이고 시간적으로 일치하게 뒷받침된다.\n\n1) 배포 타이밍: CloudTrail/ECS 배포 이력상 revision 86(이미지 12e84138...)이 01:59:32Z에 등록, 01:59:36Z에 UpdateService로 적용되어 deployment ecs-svc/9564690679238279890가 시작됨. baseline(revision 78, 이미지 24e87996",
+    "judgmentConfidence": 0.96,
+    "createdAt": "2026-09-16T02:04:14.038854+00:00",
+    "updatedAt": "2026-09-16T02:10:21.048999+00:00",
+    "engine": "strands"
+  },
+  "original_report_root_cause": "01:59:36에 시작된 task-definition revision 78→86 배포 직후 02:00:27부터 sensor_readings 테이블에 대해 sqlstate=42703(undefined column) 오류가 반복 발생하고 있다. 로그의 write_contract 이벤트는 애플리케이션이 sampled_at 컬럼을 포함한 INSERT를 시도함을 보여주지만, 같은 시점의 db_schema_snapshot은 실제 DB에는 timestamp 컬럼만 존재하고 sampled_at은 없음을 보여준다. 즉 애플리케이션 코드(이미지 12e84138...)가 새 컬럼명을 기대하도록 변경되었으나, 이에 대응하는 DB 스키마 변경(컬럼 rename/추가)이 배포 전후로 함께 적용되지 않아 코드-스키마 계약이 어긋났고, 이로 인해 모든 INSERT가 42703 에러로 실패하며 VitalIngestFailures가 0→11→25로 계단형 급증했다. task-definition 86의 애플리케이션 코드 diff와 DB 마이그레이션 이력(있다면)을 대조하면 확정할 수 있다.",
+  "model_evidence": {
+    "critical_facts": [
+      {
+        "source": "cloudwatch_logs",
+        "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719352931540425613505690854204730376884695600594965",
+        "observed_at": "2026-09-16T02:00:27.006986+00:00",
+        "account_id": "395271362395",
+        "region": "us-east-1",
+        "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "run_id": "dev-20260916-10",
+        "sqlstate": "42703",
+        "relation": "sensor_readings",
+        "schema_name": null,
+        "driver_relation": null,
+        "driver_column": null,
+        "columns": [
+          "id",
+          "patient_id",
+          "reading_type",
+          "value",
+          "unit",
+          "sampled_at",
+          "is_abnormal",
+          "created_at"
+        ],
+        "sql_fingerprint": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+        "actual_schema": {},
+        "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+        "image_digest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+        "source_revision": null,
+        "write_accounting": {}
+      },
+      {
+        "source": "cloudwatch_logs",
+        "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719342851603595877664030880060071139825294897446913",
+        "observed_at": "2026-09-16T02:00:26.552659+00:00",
+        "account_id": "395271362395",
+        "region": "us-east-1",
+        "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "run_id": "dev-20260916-10",
+        "sqlstate": null,
+        "relation": null,
+        "schema_name": null,
+        "driver_relation": null,
+        "driver_column": null,
+        "columns": [],
+        "sql_fingerprint": null,
+        "actual_schema": {},
+        "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+        "image_digest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+        "source_revision": "e8ba16659f177418c80555bd001e5757a91c148d4ea329801d50aeff8998b5f3",
+        "write_accounting": {}
+      },
+      {
+        "source": "cloudwatch_logs",
+        "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719342873904341076194654021595789412473656403427330",
+        "observed_at": "2026-09-16T02:00:26.555523+00:00",
+        "account_id": "395271362395",
+        "region": "us-east-1",
+        "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "run_id": "dev-20260916-10",
+        "sqlstate": null,
+        "relation": "sensor_readings",
+        "schema_name": null,
+        "driver_relation": null,
+        "driver_column": null,
+        "columns": [
+          "id",
+          "patient_id",
+          "reading_type",
+          "value",
+          "unit",
+          "sampled_at",
+          "is_abnormal",
+          "created_at"
+        ],
+        "sql_fingerprint": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+        "actual_schema": {},
+        "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+        "image_digest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+        "source_revision": null,
+        "write_accounting": {}
+      },
+      {
+        "source": "cloudwatch_logs",
+        "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719346665031024826400588082667895762695112420098052",
+        "observed_at": "2026-09-16T02:00:26.726508+00:00",
+        "account_id": "395271362395",
+        "region": "us-east-1",
+        "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "run_id": "dev-20260916-10",
+        "sqlstate": null,
+        "relation": null,
+        "schema_name": null,
+        "driver_relation": null,
+        "driver_column": null,
+        "columns": [],
+        "sql_fingerprint": null,
+        "actual_schema": {},
+        "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+        "image_digest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+        "source_revision": null,
+        "write_accounting": {
+          "service_name": "healthcare-sensor-app",
+          "failure_metric": "VitalIngestFailures",
+          "metric_namespace": "Healthcare/Sensor",
+          "success_semantics": "committed_rows",
+          "success_evidence_event": "write_completed",
+          "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+          "attempt_metric": "VitalIngestAttempts",
+          "cancellation_semantics": "excluded_from_completed_counters",
+          "failure_semantics": "failed_rows",
+          "success_count_field": "count"
+        }
+      },
+      {
+        "source": "cloudwatch_logs",
+        "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719352641630738032607590014240392832455996022849547",
+        "observed_at": "2026-09-16T02:00:26.993809+00:00",
+        "account_id": "395271362395",
+        "region": "us-east-1",
+        "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "run_id": "dev-20260916-10",
+        "sqlstate": null,
+        "relation": "public.sensor_readings",
+        "schema_name": "public",
+        "driver_relation": null,
+        "driver_column": null,
+        "columns": [
+          "id",
+          "patient_id",
+          "reading_type",
+          "value",
+          "unit",
+          "timestamp",
+          "is_abnormal",
+          "created_at"
+        ],
+        "sql_fingerprint": null,
+        "actual_schema": {
+          "public.sensor_readings": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+        "image_digest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+        "source_revision": null,
+        "write_accounting": {}
+      }
+    ],
+    "baseline_verified": true,
+    "baseline": {
+      "schema_version": 1,
+      "run_id": "dev-20260916-10",
+      "observed_at": "2026-09-16T01:59:18.251769+00:00",
+      "scope": {
+        "account_id": "395271362395",
+        "region": "us-east-1",
+        "cluster_arn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+        "service_arn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "service_name": "RcaAgentDevHealthcare",
+        "container_name": "healthcare",
+        "log_group": "/ecs/RcaAgentDev/healthcare",
+        "desired_count": 1
+      },
+      "normal": {
+        "task_definition_arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+        "image_digest": "sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd"
+      },
+      "baseline_ref": {
+        "bucket": "rca-agent-dev-evidence",
+        "key": "baselines/dev-20260916-10/normal.json",
+        "sha256": "934c25137b91e779aacd427321a514c6d0ce1e5712b5ae878f43c01faa936e84"
+      },
+      "service_settings": {
+        "desiredCount": 1,
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "assignPublicIp": "DISABLED",
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ]
+          }
+        },
+        "capacityProviderStrategy": [],
+        "launchType": "FARGATE",
+        "deploymentController": {
+          "type": "ECS"
+        },
+        "schedulingStrategy": "REPLICA",
+        "enableExecuteCommand": true,
+        "deploymentConfiguration": {
+          "alarms": {
+            "alarmNames": [],
+            "enable": false,
+            "rollback": false
+          },
+          "bakeTimeInMinutes": 0,
+          "deploymentCircuitBreaker": {
+            "enable": true,
+            "resetOnHealthyTask": true,
+            "rollback": true,
+            "thresholdConfiguration": {
+              "type": "BOUNDED_PERCENT",
+              "value": 50
+            }
+          },
+          "maximumPercent": 200,
+          "minimumHealthyPercent": 100,
+          "strategy": "ROLLING"
+        },
+        "platformVersion": "1.4.0"
+      },
+      "metrics": {
+        "attempts": {
+          "dimensions": {
+            "ServiceName": "healthcare-sensor-app"
+          },
+          "metric_name": "VitalIngestAttempts",
+          "namespace": "Healthcare/Sensor"
+        },
+        "failures": {
+          "dimensions": {
+            "ServiceName": "healthcare-sensor-app"
+          },
+          "metric_name": "VitalIngestFailures",
+          "namespace": "Healthcare/Sensor"
+        }
+      },
+      "metric_observations": {
+        "attempts": [
+          {
+            "Sum": 23.0,
+            "Timestamp": "2026-09-16T01:57:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 29.0,
+            "Timestamp": "2026-09-16T01:56:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "end": "2026-09-16T01:58:00+00:00",
+        "failures": [
+          {
+            "Sum": 0.0,
+            "Timestamp": "2026-09-16T01:57:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 0.0,
+            "Timestamp": "2026-09-16T01:56:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "start": "2026-09-16T01:56:00+00:00"
+      },
+      "observations": [
+        {
+          "message": {
+            "event": "source_manifest",
+            "fingerprint": "c0ab7b1c824d23378e0371ccc311f38a0d1fc127db07836831662a51d163db68",
+            "observed_at": "2026-09-16T00:24:36.962750+00:00",
+            "revision": "v1",
+            "verified": true
+          },
+          "timestamp": 1789518276967,
+          "event_id": "39907591122754619066589209988122780687376237268891795456",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/50c4fddaff70417fb3ad2506da489fd1"
+        },
+        {
+          "message": {
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ],
+            "event": "write_contract",
+            "observed_at": "2026-09-16T00:24:36.967814+00:00",
+            "operation": "ingest",
+            "schema_name": null,
+            "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+            "sql_hash_algorithm": "sha256",
+            "table_name": "sensor_readings"
+          },
+          "timestamp": 1789518276968,
+          "event_id": "39907591122776919811787740611264316405648885630397775873",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/50c4fddaff70417fb3ad2506da489fd1"
+        },
+        {
+          "message": {
+            "attempt_metric": "VitalIngestAttempts",
+            "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+            "cancellation_semantics": "excluded_from_completed_counters",
+            "event": "write_accounting",
+            "failure_metric": "VitalIngestFailures",
+            "failure_semantics": "failed_rows",
+            "metric_namespace": "Healthcare/Sensor",
+            "observed_at": "2026-09-16T00:24:37.192387+00:00",
+            "service_name": "healthcare-sensor-app",
+            "success_count_field": "count",
+            "success_evidence_event": "write_completed",
+            "success_semantics": "committed_rows"
+          },
+          "timestamp": 1789518277192,
+          "event_id": "39907591127772286736258600194968317298722118607737389059",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/50c4fddaff70417fb3ad2506da489fd1"
+        },
+        {
+          "message": {
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ],
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T01:57:59.593921+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings"
+          },
+          "timestamp": 1789523879594,
+          "event_id": "39907716065511788474618756350943923522486969262870298640",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/50c4fddaff70417fb3ad2506da489fd1"
+        },
+        {
+          "message": {
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ],
+            "completion_semantics": "committed_rows",
+            "count": 3,
+            "event": "write_completed",
+            "observed_at": "2026-09-16T01:57:47.786329+00:00",
+            "operation": "ingest",
+            "schema_name": null,
+            "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+            "sql_hash_algorithm": "sha256",
+            "table_name": "sensor_readings"
+          },
+          "timestamp": 1789523867787,
+          "event_id": "39907715802206889915567688906737752283194791413712158729",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/50c4fddaff70417fb3ad2506da489fd1"
+        }
+      ]
+    },
+    "current": {
+      "observed_at": "2026-09-16T02:02:37.866251+00:00",
+      "scope": {
+        "account_id": "395271362395",
+        "cluster_arn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+        "container_name": "healthcare",
+        "desired_count": 1,
+        "log_group": "/ecs/RcaAgentDev/healthcare",
+        "region": "us-east-1",
+        "service_arn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "service_name": "RcaAgentDevHealthcare"
+      },
+      "task_definition_arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+      "service_settings": {
+        "desiredCount": 1,
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ],
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "assignPublicIp": "DISABLED"
+          }
+        },
+        "launchType": "FARGATE",
+        "deploymentController": {
+          "type": "ECS"
+        },
+        "schedulingStrategy": "REPLICA",
+        "enableExecuteCommand": true,
+        "deploymentConfiguration": {
+          "deploymentCircuitBreaker": {
+            "enable": true,
+            "rollback": true,
+            "resetOnHealthyTask": true,
+            "thresholdConfiguration": {
+              "type": "BOUNDED_PERCENT",
+              "value": 50
+            }
+          },
+          "maximumPercent": 200,
+          "minimumHealthyPercent": 100,
+          "alarms": {
+            "alarmNames": [],
+            "rollback": false,
+            "enable": false
+          },
+          "strategy": "ROLLING",
+          "bakeTimeInMinutes": 0
+        },
+        "platformVersion": "1.4.0"
+      },
+      "deployments": [
+        {
+          "id": "ecs-svc/9564690679238279890",
+          "status": "PRIMARY",
+          "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+          "rolloutState": "IN_PROGRESS",
+          "createdAt": "2026-09-16T01:59:36.865000+00:00"
+        },
+        {
+          "id": "ecs-svc/2750950022834299278",
+          "status": "DRAINING",
+          "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+          "rolloutState": "COMPLETED",
+          "createdAt": "2026-09-16T00:23:42.373000+00:00"
+        }
+      ],
+      "tasks": [
+        {
+          "task_arn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/61ba9059f7124011985c8b70183e02a2",
+          "task_definition_arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:86",
+          "last_status": "RUNNING",
+          "containers": [
+            {
+              "name": "aws-guardduty-agent-zC7Pg",
+              "imageDigest": "sha256:195078e48505cb05b06e61df255fc85a6d7917b28678956c75b11e69855bdff3",
+              "lastStatus": "RUNNING"
+            },
+            {
+              "name": "otel-collector",
+              "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+              "imageDigest": "sha256:7968fb60db6a2390a47ba6a2df029745638486e285c9b2487da1b722d0855a3e",
+              "lastStatus": "RUNNING"
+            },
+            {
+              "name": "healthcare",
+              "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+              "imageDigest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+              "lastStatus": "RUNNING"
+            }
+          ]
+        }
+      ],
+      "observations": [
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:00:27.006986+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719352931540425613505690854204730376884695600594965",
+          "timestamp": 1789524027007
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:00:42.008780+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719687487319893969914078264201163149493681087119374",
+          "timestamp": 1789524042009
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:00:52.005201+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719910405568898482023013148017351292306393506447374",
+          "timestamp": 1789524052005
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:01:02.007881+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720133479923119383846310015935287891041952592232464",
+          "timestamp": 1789524062008
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:01:12.005170+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720356420472869094485868037526956813094782669488142",
+          "timestamp": 1789524072005
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:01:22.010766+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720579561729325591901034334456810945328725475393550",
+          "timestamp": 1789524082011
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:01:32.004776+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720802435376839706948722930300643487394583064018958",
+          "timestamp": 1789524092005
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:01:47.004581+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721136946554817666295864097682255834652679742881805",
+          "timestamp": 1789524107005
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:01:57.005840+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721359976307548171057914695384218105796595412041748",
+          "timestamp": 1789524117006
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:02:07.005953+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721582983759533477289342135392596771156777303212046",
+          "timestamp": 1789524127006
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:02:17.006637+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721806013512263982051392726274471643228052553400336",
+          "timestamp": 1789524137007
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:02:27.005680+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722028998663504089752197028306804900554622712152085",
+          "timestamp": 1789524147006
+        },
+        {
+          "message": {
+            "event": "db_write_error",
+            "observed_at": "2026-09-16T02:02:37.005898+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ],
+            "sqlstate": "42703",
+            "driver_table_name": null,
+            "driver_column_name": null
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722252006115489395983624477508200599435072021266446",
+          "timestamp": 1789524157006
+        },
+        {
+          "message": {
+            "event": "source_manifest",
+            "observed_at": "2026-09-16T02:00:26.552659+00:00",
+            "fingerprint": "e8ba16659f177418c80555bd001e5757a91c148d4ea329801d50aeff8998b5f3",
+            "revision": "v2",
+            "verified": true
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719342851603595877664030880060071139825294897446913",
+          "timestamp": 1789524026555
+        },
+        {
+          "message": {
+            "event": "write_contract",
+            "observed_at": "2026-09-16T02:00:26.555523+00:00",
+            "operation": "ingest",
+            "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+            "sql_hash_algorithm": "sha256",
+            "schema_name": null,
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "sampled_at",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719342873904341076194654021595789412473656403427330",
+          "timestamp": 1789524026556
+        },
+        {
+          "message": {
+            "event": "write_accounting",
+            "observed_at": "2026-09-16T02:00:26.726508+00:00",
+            "metric_namespace": "Healthcare/Sensor",
+            "service_name": "healthcare-sensor-app",
+            "attempt_metric": "VitalIngestAttempts",
+            "failure_metric": "VitalIngestFailures",
+            "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+            "failure_semantics": "failed_rows",
+            "cancellation_semantics": "excluded_from_completed_counters",
+            "success_evidence_event": "write_completed",
+            "success_count_field": "count",
+            "success_semantics": "committed_rows"
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719346665031024826400588082667895762695112420098052",
+          "timestamp": 1789524026726
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:26.993809+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719352641630738032607590014240392832455996022849547",
+          "timestamp": 1789524026994
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:26.999948+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719352775435209223791328863454702468346165058732048",
+          "timestamp": 1789524027000
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:28.053297+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719376258119903276537502908905593757216711102627840",
+          "timestamp": 1789524028053
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:29.066877+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719398871075534586589368426123922222655278166769666",
+          "timestamp": 1789524029067
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:30.079453+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719421439429675499579987660270814142797122218950660",
+          "timestamp": 1789524030079
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:31.093657+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719444052385306809631853177489142608235689283092486",
+          "timestamp": 1789524031093
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:32.106860+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719466665340938119683718694707471073674256347234317",
+          "timestamp": 1789524032107
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:33.119033+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719489233695079032674343971740241677977854893555712",
+          "timestamp": 1789524033119
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:34.132438+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719511824349965144195586347422851870768060451717122",
+          "timestamp": 1789524034132
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:35.144987+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719534415004851255716828723105462063558266009878532",
+          "timestamp": 1789524035145
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:36.158936+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719557027960482565768694240323790528996833074020358",
+          "timestamp": 1789524036159
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:37.172697+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719579618615368677289942655931878349369076659847168",
+          "timestamp": 1789524037172
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:38.190934+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719602343074725979994923880828798178049451253891074",
+          "timestamp": 1789524038191
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:39.204829+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719624956030357290046789398047126643488018318032900",
+          "timestamp": 1789524039205
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:40.217064+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719647524384498203037408632194018563629862370213894",
+          "timestamp": 1789524040217
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:41.230784+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719670115039384314558651007876628756420067928375304",
+          "timestamp": 1789524041230
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:42.246517+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719692772596506021671768859180279807353542401851392",
+          "timestamp": 1789524042246
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:43.271556+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719715630860334515560488933291509271924086031777794",
+          "timestamp": 1789524043271
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:44.285696+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719738243815965825612354450509837737362653095919620",
+          "timestamp": 1789524044285
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:45.298718+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719760834470851937133596826192447930152858654081030",
+          "timestamp": 1789524045298
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:46.311266+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719783425125738048654839201875058122943064212242440",
+          "timestamp": 1789524046311
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:47.324801+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719806038081369358706710760855835297974545518100480",
+          "timestamp": 1789524047325
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:48.337632+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719828606435510271697329995002727218116389570281474",
+          "timestamp": 1789524048337
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:49.352901+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719851263992631978810441795292492228851679646384132",
+          "timestamp": 1789524049353
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:50.367863+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719873899249008487392930454046538966938608216506374",
+          "timestamp": 1789524050368
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:51.381893+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719896512204639797444795971264867432377175280648200",
+          "timestamp": 1789524051382
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:52.423375+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719919727280391467823492357516131892913167476850688",
+          "timestamp": 1789524052423
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:53.436409+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719942317935277579344734733198742085703373035012103",
+          "timestamp": 1789524053436
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:54.449731+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719964908590163690865977108881352278493578593173513",
+          "timestamp": 1789524054449
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:55.461752+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907719987476944304603856596343028244198635422645354507",
+          "timestamp": 1789524055461
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:56.474255+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720010067599190715377838718710854391425628203515917",
+          "timestamp": 1789524056474
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:57.487200+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720032658254076826899087132952977247799584054771712",
+          "timestamp": 1789524057487
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:58.500303+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720055248908962938420329508635587440589789612933122",
+          "timestamp": 1789524058500
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:00:59.513519+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720077839563849049941571884318197633379995171094532",
+          "timestamp": 1789524059513
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:00.526817+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720100452519480359993437401536526098818562235236358",
+          "timestamp": 1789524060527
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:01.539674+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720123020873621272984056635683418018960406287417352",
+          "timestamp": 1789524061539
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:02.552455+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720145611528507384505305062060573849748971840798720",
+          "timestamp": 1789524062552
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:03.564847+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720168202183393496026547437743184042539177398960130",
+          "timestamp": 1789524063565
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:04.576999+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720190770537534409017166671890075962681021451141124",
+          "timestamp": 1789524064577
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:05.589131+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720213338891675322007785906036967882822865503322118",
+          "timestamp": 1789524065589
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:06.602658+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720235929546561433529028281719578075613071061483528",
+          "timestamp": 1789524066602
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:07.615360+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720258520201447545050276695723739886787771415461888",
+          "timestamp": 1789524067615
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:08.628344+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720281110856333656571519071406350079577976973623298",
+          "timestamp": 1789524068628
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:09.641232+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720303701511219768092761447088960272368182531784708",
+          "timestamp": 1789524069641
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:10.654813+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720326314466851078144626964307288737806749595926534",
+          "timestamp": 1789524070655
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:11.668631+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720348905121737189665869339989898930596955154087944",
+          "timestamp": 1789524071668
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:12.681674+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720371495776623301187117761365943624034389280948224",
+          "timestamp": 1789524072681
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:13.694865+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720394108732254611238983278584272089472956345090050",
+          "timestamp": 1789524073695
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:14.708477+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720416699387140722760225654266882282263161903251460",
+          "timestamp": 1789524074708
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:15.721518+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720439290042026834281468029949492475053367461412870",
+          "timestamp": 1789524075721
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:16.734335+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720461880696912945802710405632102667843573019574280",
+          "timestamp": 1789524076734
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:17.747066+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720484471351799057323958826154096372715263974899712",
+          "timestamp": 1789524077747
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:18.759303+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720507039705939970314578060300988292857108027080706",
+          "timestamp": 1789524078759
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:19.771970+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720529630360826081835820435983598485647313585242116",
+          "timestamp": 1789524079772
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:20.783939+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720552198714966994826439670130490405789157637423110",
+          "timestamp": 1789524080784
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:21.796119+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720574767069107907817058904277382325931001689604104",
+          "timestamp": 1789524081796
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:22.809120+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720597357723994019338307331721524056344290631876613",
+          "timestamp": 1789524082809
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:23.822666+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720619948378880130859549707404134249134496190038023",
+          "timestamp": 1789524083822
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:24.834881+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720642539033766242380792083086744441924701748199433",
+          "timestamp": 1789524084835
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:25.846911+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720665107387907155371411317233636362066545800380427",
+          "timestamp": 1789524085847
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:26.859326+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720687675742048068362030551380528282208389852561421",
+          "timestamp": 1789524086859
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:27.872751+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720710266396934179883278963177022631716478846959616",
+          "timestamp": 1789524087872
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:28.886356+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720732879352565489935144480395351097155045911101442",
+          "timestamp": 1789524088886
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:29.899986+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720755492308196799987009997613679562593612975243268",
+          "timestamp": 1789524089900
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:30.911946+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720778060662337712977629231760571482735457027424262",
+          "timestamp": 1789524090912
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:31.924001+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720800629016478625968248465907463402877301079605256",
+          "timestamp": 1789524091924
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:32.936637+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720823197370619538958873748203873177595866875756544",
+          "timestamp": 1789524092936
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:33.949494+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720845788025505650480116123886483370386072433917954",
+          "timestamp": 1789524093949
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:34.962216+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720868378680391762001358499569093563176277992079364",
+          "timestamp": 1789524094962
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:35.975273+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720890969335277873522600875251703755966483550240774",
+          "timestamp": 1789524095975
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:36.988293+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720913559990163985043843250934313948756689108402184",
+          "timestamp": 1789524096988
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:38.000999+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720936150645050096565091667576939695745985259765760",
+          "timestamp": 1789524098001
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:39.014175+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720958741299936208086334043259549888536190817927170",
+          "timestamp": 1789524099014
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:40.027626+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907720981331954822319607576418942160081326396376088580",
+          "timestamp": 1789524100027
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:41.040136+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721003922609708431128818794624770274116601934249990",
+          "timestamp": 1789524101040
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:42.055078+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721026557866084939711307453378817012203530504372237",
+          "timestamp": 1789524102055
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:43.069389+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721049170821716249763179013095134690701792203964416",
+          "timestamp": 1789524103069
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:44.082618+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721071761476602361284421388777744883491997762125826",
+          "timestamp": 1789524104082
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:45.096725+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721094374432233671336286905996073348930564826267652",
+          "timestamp": 1789524105096
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:46.110814+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721117009688610179918775564750120087017493396389894",
+          "timestamp": 1789524106111
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:47.123317+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721139578042751092909400849390945627164743231799296",
+          "timestamp": 1789524107123
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:48.136552+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721162168697637204430643225073555819954948789960706",
+          "timestamp": 1789524108136
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:49.149838+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721184781653268514482508742291884285393515854102532",
+          "timestamp": 1789524109150
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:50.162789+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721207350007409427473127976438776205535359906283526",
+          "timestamp": 1789524110162
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:51.175003+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721229940662295538994370352121386398325565464444936",
+          "timestamp": 1789524111175
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:52.223452+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721253311843263599087428730043720028683512307712000",
+          "timestamp": 1789524112223
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:53.235898+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721275902498149710608671105726330221473717865873415",
+          "timestamp": 1789524113236
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:54.248141+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721298470852290623599290339873222141615561918054409",
+          "timestamp": 1789524114248
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:55.261660+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721321061507176735120532715555832334405767476215819",
+          "timestamp": 1789524115261
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:56.275144+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721343674462808045172398232774160799844334540357645",
+          "timestamp": 1789524116275
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:57.288800+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721366287418439355224269785772585896167678977114112",
+          "timestamp": 1789524117289
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:58.301079+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721388855772580268214889019919477816309523029295106",
+          "timestamp": 1789524118301
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:01:59.314276+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721411446427466379736131395602088009099728587456516",
+          "timestamp": 1789524119314
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:00.327462+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721434037082352491257373771284698201889934145617926",
+          "timestamp": 1789524120327
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:01.340454+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721456627737238602778616146967308394680139703779336",
+          "timestamp": 1789524121340
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:02.354257+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721479240692869912830487711231192410979051482316800",
+          "timestamp": 1789524122354
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:03.368070+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721501853648501222882353228449520876417618546458626",
+          "timestamp": 1789524123368
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:04.379868+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721524422002642135872972462596412796559462598639620",
+          "timestamp": 1789524124380
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:05.392663+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721546990356783048863591696743304716701306650820614",
+          "timestamp": 1789524125392
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:06.405530+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721569581011669160384834072425914909491512208982024",
+          "timestamp": 1789524126405
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:07.417988+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721592171666555271906082489592059313262449846124544",
+          "timestamp": 1789524127418
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:08.431681+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721614762321441383427324865274669506052655404285954",
+          "timestamp": 1789524128431
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:09.444153+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721637352976327494948567240957279698842860962447364",
+          "timestamp": 1789524129444
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:10.457654+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721659943631213606469809616639889891633066520608774",
+          "timestamp": 1789524130457
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:11.470672+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721682534286099717991051992322500084423272078770184",
+          "timestamp": 1789524131470
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:12.483465+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721705124940985829512300418685006182040599497998336",
+          "timestamp": 1789524132483
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:13.496458+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721727715595871941033542794367616374830805056159746",
+          "timestamp": 1789524133496
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:14.509115+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721750306250758052554785170050226567621010614321156",
+          "timestamp": 1789524134509
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:15.522590+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721772896905644164076027545732836760411216172482566",
+          "timestamp": 1789524135522
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:16.535751+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721795487560530275597269921415446953201421730643976",
+          "timestamp": 1789524136535
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:17.548232+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721818078215416387118518337890406067884816531128320",
+          "timestamp": 1789524137548
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:18.561507+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721840668870302498639760713573016260675022089289730",
+          "timestamp": 1789524138561
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:19.573924+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721863259525188610161003089255626453465227647451140",
+          "timestamp": 1789524139574
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:20.586166+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721885827879329523151622323402518373607071699632134",
+          "timestamp": 1789524140586
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:21.599378+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721908418534215634672864699085128566397277257793544",
+          "timestamp": 1789524141599
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:22.612152+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721931009189101746194113120360714883654165434204165",
+          "timestamp": 1789524142612
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:23.625730+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721953599843987857715355496043325076444370992365575",
+          "timestamp": 1789524143625
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:24.637890+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721976190498873969236597871725935269234576550526985",
+          "timestamp": 1789524144638
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:25.649894+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907721998758853014882227217105872827189376420602707979",
+          "timestamp": 1789524145650
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:26.662171+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722021327207155795217836340019719109518264654888973",
+          "timestamp": 1789524146662
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:27.675269+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722043917862041906739084764083869997470421012774912",
+          "timestamp": 1789524147675
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:28.688482+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722066508516928018260327139766480190260626570936322",
+          "timestamp": 1789524148688
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:29.700973+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722089099171814129781569515449090383050832129097732",
+          "timestamp": 1789524149701
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:30.713099+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722111667525955042772188749595982303192676181278726",
+          "timestamp": 1789524150713
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:31.726353+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722134258180841154293431125278592495982881739440136",
+          "timestamp": 1789524151726
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:32.739289+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722156848835727265814679544598331208876526002831360",
+          "timestamp": 1789524152739
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:33.752751+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722179439490613377335921920280941401666731560992770",
+          "timestamp": 1789524153752
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:34.766350+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722202052446244687387787437499269867105298625134596",
+          "timestamp": 1789524154766
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:35.779391+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722224643101130798909029813181880059895504183296006",
+          "timestamp": 1789524155779
+        },
+        {
+          "message": {
+            "event": "db_schema_snapshot",
+            "observed_at": "2026-09-16T02:02:36.791938+00:00",
+            "schema_name": "public",
+            "table_name": "sensor_readings",
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ]
+          },
+          "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/61ba9059f7124011985c8b70183e02a2#39907722247233756016910430272188864490252685709741457416",
+          "timestamp": 1789524156792
+        }
+      ],
+      "log_stream_prefix": "healthcare",
+      "log_window": {
+        "start": "2026-09-16T01:57:21.467000+00:00",
+        "end": "2026-09-16T02:02:37.866251+00:00",
+        "limit": 100,
+        "coverage": {
+          "db_write_error": "complete",
+          "source_manifest": "complete",
+          "write_contract": "complete",
+          "write_accounting": "complete",
+          "schema_snapshot": "complete",
+          "db_schema_snapshot": "complete"
+        },
+        "errors": {},
+        "pages": {
+          "db_write_error": 2,
+          "source_manifest": 2,
+          "write_contract": 2,
+          "write_accounting": 2,
+          "schema_snapshot": 1,
+          "db_schema_snapshot": 3
+        }
+      },
+      "deployment_id": "ecs-svc/9564690679238279890",
+      "image_digest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e"
+    },
+    "diagnostics": []
+  },
+  "candidates": [
+    {
+      "name": "observed_mechanism",
+      "description": "새 애플리케이션 이미지 배포 후 sensor_readings INSERT가 sampled_at 컬럼을 참조하지만 실제 DB 스키마에는 timestamp가 있고 sampled_at이 없어 SQLSTATE 42703 쓰기 실패가 발생했다.",
+      "origin": "Reviewer-authored narrower claim grounded in captured observations; not an original stored hypothesis.",
+      "expected_confirmed": true
+    },
+    {
+      "name": "unsupported_process_extension",
+      "description": "01:59:36에 시작된 task-definition revision 78→86 배포 직후 02:00:27부터 sensor_readings 테이블에 대해 sqlstate=42703(undefined column) 오류가 반복 발생하고 있다. 로그의 write_contract 이벤트는 애플리케이션이 sampled_at 컬럼을 포함한 INSERT를 시도함을 보여주지만, 같은 시점의 db_schema_snapshot은 실제 DB에는 timestamp 컬럼만 존재하고 sampled_at은 없음을 보여준다. 즉 애플리케이션 코드(이미지 12e84138...)가 새 컬럼명을 기대하도록 변경되었으나, 이에 대응하는 DB 스키마 변경(컬럼 rename/추가)이 배포 전후로 함께 적용되지 않아 코드-스키마 계약이 어긋났고, 이로 인해 모든 INSERT가 42703 에러로 실패하며 VitalIngestFailures가 0→11→25로 계단형 급증했다. task-definition 86의 애플리케이션 코드 diff와 DB 마이그레이션 이력(있다면)을 대조하면 확정할 수 있다. 이 배포에서 의도되고 필수였던 DB 스키마 마이그레이션을 배포 과정에서 누락한 것이 상위 원인이다.",
+      "origin": "Adversarial explicit process-intent extension of original captured root cause; no synthetic supporting evidence added.",
+      "expected_confirmed": false
+    }
+  ]
+}

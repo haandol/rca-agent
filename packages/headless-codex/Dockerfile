@@ -8,6 +8,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src/ src/
 RUN uv sync --frozen --no-dev
+RUN /app/.venv/bin/python -m headless_codex.cli_models /app/aws-models
 
 FROM node:24-slim AS node-dist
 
@@ -42,10 +43,12 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+COPY --from=builder /app/aws-models /app/aws-models
 COPY prompts/ ./prompts/
 COPY harness/ ./harness/
 
 ENV PATH="/app/.venv/bin:$PATH"
+ENV AWS_DATA_PATH="/app/aws-models"
 
 RUN useradd -m -s /bin/bash codexuser \
     && chown -R codexuser:codexuser /app

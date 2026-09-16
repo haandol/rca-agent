@@ -30,11 +30,22 @@ const roleLabels: Record<string, string> = {
 <template>
   <div class="mt-4 min-w-0">
     <h4 class="text-[15px] font-semibold text-info">조치 후 고정 구간 관측</h4>
+    <p v-if="wait.deployment_step_id" class="detail-body mt-2">
+      최초 수렴 확인 시각이 속한 분의 다음 분부터 두 완결된 60초 구간을
+      관측합니다. 관측 중 같은 배포가 유지되어야 하며, 실제 쓰기 완료 증거는
+      별도로 확인합니다.
+    </p>
     <dl class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
-        <dt class="detail-label">관측 기준이 되는 조치 단계</dt>
+        <dt class="detail-label">
+          {{
+            wait.deployment_step_id
+              ? '관측 기준이 되는 배포 수렴 단계'
+              : '관측 기준이 되는 조치 단계'
+          }}
+        </dt>
         <dd class="detail-body font-mono">
-          {{ display(wait.action_step_id) }}
+          {{ display(wait.deployment_step_id ?? wait.action_step_id) }}
         </dd>
       </div>
       <div>
@@ -58,8 +69,10 @@ const roleLabels: Record<string, string> = {
         <dd class="detail-body">
           {{
             wait.max_wait_seconds === undefined
-              ? '300초 (기본값)'
-              : `${display(wait.max_wait_seconds)}초`
+              ? '900초 (15분, 기본값)'
+              : wait.max_wait_seconds === 900
+                ? '900초 (15분)'
+                : `${display(wait.max_wait_seconds)}초`
           }}
         </dd>
       </div>

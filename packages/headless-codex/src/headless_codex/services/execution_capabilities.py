@@ -44,13 +44,17 @@ def render_observation_wait_guidance() -> str:
         [
             "## 관측 대기와 새 데이터",
             "승인 실행 워커에는 `wait_for_post_action_metrics(step_id, action_step_id, metrics, "
-            "failure_alarm_name, region, max_wait_seconds=300, latency_alarm_name='', "
-            "completed_work_evidence=None)`가 있다. "
+            "failure_alarm_name, region, max_wait_seconds=900, latency_alarm_name='', "
+            "completed_work_evidence=None, deployment_step_id='')`가 있다. "
             "분석/Report에는 이 실행 도구가 없다. 검증 단계는 commands 대신 metric_wait에 인자를 "
             "승인 전에 고정한다. 실행자는 인자를 교정하지 않는다. "
             "승인된 현재 검증 step_id와 그보다 앞선 승인 조치 "
             "action_step_id를 전달한다. 임의 시각이나 셸 명령을 받는 도구가 아니다.",
-            "앵커는 같은 실행 범위에서 action_step_id의 실제 ECS StopTask가 처음 성공한 서버 기록 "
+            "서비스 롤백은 검증된 정상/장애 기준과 ecs_service_precondition을 승인 사본에 포함한다. "
+            "deployment_wait는 wait_for_service_deployment(step_id)로 수행한다. 배포 후 metric_wait는 "
+            "action_step_id 대신 deployment_step_id로 같은 실행의 최초 수렴 시각에 연결한다. "
+            "API 응답은 수렴이 아니며 두 대기는 각각 최대 900초와 기존 예산 안이다.",
+            "StopTask 앵커는 같은 실행 범위에서 action_step_id의 실제 ECS StopTask가 처음 성공한 서버 기록 "
             "ended_at이다. 실패한 조치·읽기 전용 명령·다른 실행·미승인 절차는 앵커가 될 수 없다. "
             "서버는 floor(epoch/60)*60+60부터 첫 두 개의 완결된 60초 구간과 요청을 조회 전에 고정한다. "
             "epoch는 ended_at의 UTC 초이며 정확한 분 경계에 끝나도 반드시 다음 분부터 두 구간이다. "
@@ -90,7 +94,7 @@ def render_observation_wait_guidance() -> str:
             "조치 이전·겹치는 구간과 진행 중 구간은 제외하며, nonfinite·중복·"
             "분 경계에 맞지 않는 데이터는 거부한다. 완결된 고정 구간에서 한 번이라도 비정상이 "
             "관측되면 실패는 최종이며 뒤의 정상 값으로 덮어쓰거나 정상까지 계속 기다리지 않는다.",
-            "max_wait_seconds는 최대 300초이며 남은 기존 실행 예산과 현재 MCP timeout 360초 안에서만 "
+            "max_wait_seconds는 최대 900초이며 남은 기존 실행 예산과 현재 MCP timeout 1200초 안에서만 "
             "데이터 도착을 기다린다. 서버가 짧은 취소 가능한 대기와 예산 내 명령을 수행하고 취소·claim을 "
             "계속 검사한다. 기존 명령 timeout·MCP timeout·실행 시간·취소·claim 경계를 늘리거나 우회하지 않는다. "
             "일반 sleep·셸 sleep·모델 busy-poll로 시간을 채우지 않는다. 같은 검증 step_id의 동일 요청 "

@@ -15,6 +15,42 @@ const EXECUTION_MODULE = 'packages/dashboard/server/utils/execution.ts';
 const PLAYBOOK_MODULE = 'packages/dashboard/server/utils/playbook.ts';
 const APPROVAL_MODULE = 'packages/dashboard/server/utils/executionApproval.ts';
 
+// Exercise the actual runtime binding on the exact approved snapshot, not only
+// validate_steps: pointer acceptance alone does not prove the descriptor resolves.
+async function bindApprovedAccounting(playbook) {
+  const { spawnSync } = await import('node:child_process');
+  const result = spawnSync(
+    path.join(REPOSITORY_ROOT, 'packages/headless-codex/.venv/bin/python'),
+    [
+      '-c',
+      `
+import json,sys
+from headless_codex.services.post_action_metrics import _completed_accounting
+from headless_codex.services.command_gate import evaluate_command
+book=json.load(sys.stdin)
+request=book['execution_steps'][-1]['metric_wait']
+try:
+    bound=_completed_accounting(request, [], {'playbook':book}, 'fixture-execution', [], evaluate_command)
+    print(json.dumps({'bound':bound}))
+except (ValueError,TypeError,KeyError) as exc:
+    print(json.dumps({'error':str(exc)}))
+`,
+    ],
+    {
+      cwd: REPOSITORY_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: 'packages/headless-codex/src',
+        AWS_EC2_METADATA_DISABLED: 'true',
+      },
+      input: JSON.stringify(playbook),
+      encoding: 'utf8',
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
 async function importRepositoryModule(relativePath) {
   return import(pathToFileURL(path.join(REPOSITORY_ROOT, relativePath)).href);
 }
@@ -523,7 +559,7 @@ test('runbooks require fixed command coordinates and bounded approved metric wai
     );
   }
   for (const metric_wait of [
-    { ...wait.metric_wait, max_wait_seconds: 301 },
+    { ...wait.metric_wait, max_wait_seconds: 901 },
     { ...wait.metric_wait, action_step_id: 'missing' },
     { ...wait.metric_wait, region: '' },
     { ...wait.metric_wait, metrics: { attempts: metric('Attempts') } },
@@ -1659,4 +1695,929 @@ test('deleting a session removes its artifacts without stripping the other engin
     /if \(!survivingEngines\.size\) prefixes\.push\(`rca\/\$\{id\}\/`\)/,
     'shared evidence goes only when no session for this RCA is left',
   );
+});
+
+test('deployment contracts agree with Python runtime including mandatory causal recovery', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { deploymentCases } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const { validateExecutablePlaybook, readableExecutionSteps } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const { sha256Hex, serializePlaybookSnapshot } =
+    await importRepositoryModule(APPROVAL_MODULE);
+  const cases = deploymentCases();
+  const python = spawnSync(
+    path.join(REPOSITORY_ROOT, 'packages/headless-codex/.venv/bin/python'),
+    [
+      '-c',
+      `
+import sys,json
+from headless_codex.services.execution_contract import validate_steps
+from headless_codex.services.runbook_contract import validate_runbook
+results=[]
+for case in json.load(sys.stdin):
+    try:
+        validate_runbook(case['book']['execution_steps'])
+        validate_steps(case['book'])
+        results.append(True)
+    except (ValueError, TypeError, KeyError):
+        results.append(False)
+print(json.dumps(results))
+`,
+    ],
+    {
+      cwd: REPOSITORY_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: 'packages/headless-codex/src',
+        AWS_EC2_METADATA_DISABLED: 'true',
+      },
+      input: JSON.stringify(cases),
+      encoding: 'utf8',
+    },
+  );
+  assert.equal(python.status, 0, python.stderr);
+  const runtimeResults = JSON.parse(python.stdout);
+  for (const [i, fixture] of cases.entries()) {
+    const before = JSON.stringify(fixture.book);
+    assert.equal(
+      validateExecutablePlaybook(fixture.book).valid,
+      fixture.valid,
+      fixture.name,
+    );
+    assert.equal(runtimeResults[i], fixture.valid, `Python: ${fixture.name}`);
+    assert.equal(JSON.stringify(fixture.book), before);
+    assert.deepEqual(
+      readableExecutionSteps(fixture.book).map((s) => s.raw_operation),
+      fixture.book.execution_steps,
+    );
+  }
+  const book = cases[0].book;
+  const first = sha256Hex(serializePlaybookSnapshot(book));
+  book.rollback_context.write_accounting.source_ref += '-changed';
+  assert.notEqual(
+    sha256Hex(serializePlaybookSnapshot(book)),
+    first,
+    'reader-owned proof participates in digest',
+  );
+});
+
+test('guard, convergence and normal proof are visible before approval, including invalid raw operations', async () => {
+  const { deploymentBook } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const book = deploymentBook();
+  const html = await renderRecoveryPlan({
+    steps: book.execution_steps,
+    rollbackContext: book.rollback_context,
+    executable: true,
+  });
+  for (const value of [
+    'ecs_service_precondition',
+    'deployment_wait',
+    'ecs-svc/fault',
+    'baseline_ref',
+    'normal/run.json',
+    'logical-writer',
+    'write_accounting',
+    'converge',
+    '최초 수렴',
+    'task-definition/app:1',
+    'task-definition/app:2',
+  ])
+    assert.ok(html.includes(value), value);
+  const invalid = {
+    step_id: 'broken',
+    action: 'recorded',
+    success_criteria: 'original',
+    deployment_wait: ['invalid', '<script>'],
+    ecs_service_precondition: 'GUARD',
+    metric_wait: 'unsafe',
+  };
+  const invalidHtml = await renderRecoveryPlan({
+    steps: [invalid],
+    executable: false,
+  });
+  assert.match(invalidHtml, /GUARD/);
+  assert.match(invalidHtml, /unsafe/);
+  assert.match(invalidHtml, /&lt;script&gt;/);
+  assert.doesNotMatch(invalidHtml, /<script>/);
+});
+
+test('approval checks actual ECS after digest and before snapshot, reservation and queue; posted context is ignored', async (t) => {
+  const { deploymentBook, ecsObservations } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const approval = await importRepositoryModule(APPROVAL_MODULE);
+  const playbooks = await importRepositoryModule(PLAYBOOK_MODULE);
+  const keys = await importRepositoryModule(
+    'packages/dashboard/server/utils/keys.ts',
+  );
+  const deployment = await importRepositoryModule(
+    'packages/dashboard/server/utils/deploymentApproval.ts',
+  );
+  const dashboardRequire = createRequire(
+    path.join(REPOSITORY_ROOT, 'packages/dashboard/package.json'),
+  );
+  const { transpileModule, ModuleKind, ScriptTarget } =
+    dashboardRequire('typescript');
+  const code = transpileModule(
+    await readRepositoryFile(
+      'packages/dashboard/server/api/executions.post.ts',
+    ),
+    {
+      compilerOptions: {
+        module: ModuleKind.CommonJS,
+        target: ScriptTarget.ES2022,
+      },
+    },
+  ).outputText;
+  async function run({
+    mutate = () => {},
+    stale = false,
+    changeBook = () => {},
+  } = {}) {
+    const book = deploymentBook();
+    changeBook(book);
+    const observations = ecsObservations();
+    mutate(observations);
+    const events = [];
+    const expected = approval.sha256Hex(
+      approval.serializePlaybookSnapshot(book),
+    );
+    const globals = {
+      ...approval,
+      ...playbooks,
+      ...keys,
+      ...deployment,
+      defineEventHandler: (handler) => handler,
+      readBody: async () => ({
+        rcaId: 'fixture',
+        engine: 'headless-codex',
+        approvalId: '12345678-1234-4234-8234-123456789012',
+        expectedPlaybookDigest: stale ? '0'.repeat(64) : expected,
+        rollback_context: { normal: { image_digest: 'forged-body' } },
+      }),
+      createError: (value) =>
+        Object.assign(new Error(value.statusMessage), value),
+      useRuntimeConfig: () => ({
+        executionQueueUrl: 'fixture-queue',
+        dynamodbTableName: 'fixture-table',
+        s3ReportBucket: 'fixture-bucket',
+      }),
+      useDynamoDB: () => ({
+        send: async (command) => {
+          events.push(command);
+          return command.constructor.name === 'QueryCommand'
+            ? {
+                Items: [
+                  {
+                    SK: 'headless-codex#SESSION',
+                    engine: 'headless-codex',
+                    state: 'COMPLETED',
+                    confirmed: true,
+                    report_s3_key: 'report.md',
+                    playbook_id: book.playbook_id,
+                    playbook: JSON.stringify(book),
+                  },
+                ],
+              }
+            : {};
+        },
+      }),
+      useS3: () => ({
+        send: async (command) => {
+          events.push(command);
+          if (
+            command.constructor.name === 'HeadObjectCommand' &&
+            command.input.Key.startsWith('approvals/')
+          )
+            throw Object.assign(new Error('missing'), { name: 'NotFound' });
+          return {};
+        },
+      }),
+      useSqs: () => ({
+        send: async (command) => {
+          events.push(command);
+          return {};
+        },
+      }),
+      useEcs: (region) => ({
+        send: async (command) => {
+          assert.equal(region, 'us-east-1');
+          events.push(command);
+          const key = {
+            DescribeTaskDefinitionCommand: 'target',
+            DescribeServicesCommand: 'service',
+            DescribeTasksCommand: 'tasks',
+            ListTasksCommand:
+              command.input.desiredStatus === 'RUNNING' ? 'running' : 'pending',
+          }[command.constructor.name];
+          assert.ok(key, 'only safe SDK reads');
+          if (observations[key] instanceof Error) throw observations[key];
+          return observations[key];
+        },
+      }),
+    };
+    const module = { exports: {} };
+    new Function('require', 'module', 'exports', ...Object.keys(globals), code)(
+      dashboardRequire,
+      module,
+      module.exports,
+      ...Object.values(globals),
+    );
+    try {
+      return { response: await module.exports.default({}), events, book };
+    } catch (error) {
+      return { error, events, book };
+    }
+  }
+  const stale = await run({ stale: true });
+  assert.equal(stale.error.statusCode, 409);
+  assert.ok(
+    stale.events.every((c) =>
+      ['QueryCommand', 'HeadObjectCommand'].includes(c.constructor.name),
+    ),
+  );
+  const mutations = [
+    (o) => {
+      o.service.services[0].deployments[0].id = 'ecs-svc/new-same-bad-TD';
+    },
+    (o) => {
+      o.service.services[0].taskDefinition = 'already-normal';
+    },
+    (o) => {
+      o.service.services[0].networkConfiguration = { changed: true };
+    },
+    (o) => {
+      o.service.services[0].deploymentController.type = 'CODE_DEPLOY';
+    },
+    (o) => {
+      o.service.services[0].runningCount = 0;
+    },
+    (o) => {
+      o.service.services[0].deployments.push({ id: 'foreign' });
+    },
+    (o) => {
+      o.target.taskDefinition.status = 'INACTIVE';
+    },
+    (o) => {
+      o.target.taskDefinition.containerDefinitions[0].image = 'repo:latest';
+    },
+    (o) => {
+      o.target.taskDefinition.containerDefinitions[0].name = 'sidecar';
+    },
+    (o) => {
+      o.tasks.tasks[0].containers[0].imageDigest = 'sha256:' + 'd'.repeat(64);
+    },
+    (o) => {
+      o.tasks.tasks[0].healthStatus = 'UNKNOWN';
+    },
+    (o) => {
+      o.tasks.tasks[0].containers[0].healthStatus = 'UNHEALTHY';
+    },
+    (o) => {
+      o.tasks.tasks[0].group = 'service:foreign';
+    },
+    (o) => {
+      o.tasks.failures = [{ reason: 'MISSING' }];
+    },
+    (o) => {
+      o.running.nextToken = 'incomplete';
+    },
+    (o) => {
+      o.running.taskArns.push(o.running.taskArns[0]);
+    },
+    (o) => {
+      o.pending.taskArns.push('unexpected-pending');
+    },
+    (o) => {
+      o.service = new Error('AccessDenied');
+    },
+  ];
+  for (const mutate of mutations) {
+    const result = await run({ mutate });
+    assert.equal(result.error?.statusCode, 409, String(mutate));
+    assert.ok(
+      result.events.every(
+        (c) =>
+          ![
+            'PutObjectCommand',
+            'TransactWriteCommand',
+            'SendMessageCommand',
+          ].includes(c.constructor.name),
+      ),
+      'drift cannot create approval',
+    );
+  }
+  const missing = await run({ changeBook: (b) => b.execution_steps.pop() });
+  assert.equal(missing.error?.statusCode, 409);
+  assert.ok(
+    missing.events.every((c) =>
+      ['QueryCommand', 'HeadObjectCommand'].includes(c.constructor.name),
+    ),
+  );
+  for (const pointer of [
+    '/rollback_context/write_accounting',
+    '/evidence',
+    '/',
+    '/playbook/rollback_context/write_accounting/',
+    '/playbook/rollback_context/write_accounting/namespace',
+  ]) {
+    const rejected = await run({
+      changeBook: (b) => {
+        b.execution_steps[3].metric_wait.completed_work_evidence.json_pointer =
+          pointer;
+      },
+    });
+    assert.equal(rejected.error?.statusCode, 409, pointer);
+    assert.ok(
+      rejected.events.every((c) =>
+        ['QueryCommand', 'HeadObjectCommand'].includes(c.constructor.name),
+      ),
+      'unsupported context pointers fail before ECS checks or approval writes',
+    );
+    assert.equal(
+      playbooks.countExecutionSteps(
+        [
+          {
+            SK: 'headless-codex#SESSION',
+            engine: 'headless-codex',
+            state: 'COMPLETED',
+            confirmed: true,
+            playbook_id: rejected.book.playbook_id,
+            playbook: rejected.book,
+          },
+        ],
+        'headless-codex',
+      ),
+      0,
+      'readiness must not advertise the rejected plan',
+    );
+    assert.deepEqual(
+      playbooks.readableExecutionSteps(rejected.book)[3].raw_operation,
+      rejected.book.execution_steps[3],
+      'invalid recorded pointer remains readable',
+    );
+    assert.match(
+      (await bindApprovedAccounting(rejected.book)).error,
+      /reader-owned normal context/,
+    );
+  }
+  for (const [index, operation] of [
+    [2, 'deployment_wait'],
+    [3, 'metric_wait'],
+  ]) {
+    const rejected = await run({
+      changeBook: (b) => {
+        b.execution_steps[index][operation].max_wait_seconds = 901;
+      },
+    });
+    assert.equal(
+      rejected.error?.statusCode,
+      409,
+      `${operation} above 900 must fail before reservation`,
+    );
+    assert.ok(
+      rejected.events.every((c) =>
+        ['QueryCommand', 'HeadObjectCommand'].includes(c.constructor.name),
+      ),
+    );
+  }
+  const accountingMismatches = [
+    [
+      'missing descriptor',
+      (b) => {
+        delete b.rollback_context.write_accounting;
+      },
+    ],
+    [
+      'descriptor namespace',
+      (b) => {
+        b.rollback_context.write_accounting.namespace = 'Other/Sensor';
+      },
+    ],
+    [
+      'descriptor dimensions',
+      (b) => {
+        b.rollback_context.write_accounting.dimensions.ServiceName =
+          'other-writer';
+      },
+    ],
+    [
+      'descriptor attempts metric',
+      (b) => {
+        b.rollback_context.write_accounting.attempts_metric = 'OtherAttempts';
+      },
+    ],
+    [
+      'descriptor failures metric',
+      (b) => {
+        b.rollback_context.write_accounting.failures_metric = 'OtherFailures';
+      },
+    ],
+    [
+      'actual metric namespace',
+      (b) => {
+        for (const m of Object.values(b.execution_steps[3].metric_wait.metrics))
+          m.namespace = 'Other/Sensor';
+      },
+    ],
+    [
+      'actual metric dimensions',
+      (b) => {
+        for (const m of Object.values(b.execution_steps[3].metric_wait.metrics))
+          m.dimensions.ServiceName = 'other-writer';
+      },
+    ],
+    [
+      'actual attempts metric',
+      (b) => {
+        b.execution_steps[3].metric_wait.metrics.attempts.metric_name =
+          'OtherAttempts';
+      },
+    ],
+    [
+      'actual failures metric',
+      (b) => {
+        b.execution_steps[3].metric_wait.metrics.failures.metric_name =
+          'OtherFailures';
+        b.execution_steps[3].success_criteria =
+          'OtherFailures zero and IngestFailures OK';
+      },
+    ],
+  ];
+  for (const [name, changeBook] of accountingMismatches) {
+    await t.test(`E4 rejects ${name} before snapshot/reservation`, async () => {
+      const rejected = await run({ changeBook });
+      assert.equal(rejected.error?.statusCode, 409, name);
+      assert.match(rejected.error.message, /집계 근거/);
+      assert.ok(
+        rejected.events.every((c) =>
+          ['QueryCommand', 'HeadObjectCommand'].includes(c.constructor.name),
+        ),
+        'no ECS checks, snapshot, reservation or publication for static accounting mismatch',
+      );
+      assert.equal(
+        playbooks.countExecutionSteps(
+          [
+            {
+              SK: 'headless-codex#SESSION',
+              engine: 'headless-codex',
+              state: 'COMPLETED',
+              confirmed: true,
+              playbook_id: rejected.book.playbook_id,
+              playbook: rejected.book,
+            },
+          ],
+          'headless-codex',
+        ),
+        0,
+      );
+      const before = approval.serializePlaybookSnapshot(rejected.book);
+      assert.equal(
+        playbooks.validateExecutablePlaybook(rejected.book).valid,
+        false,
+      );
+      assert.deepEqual(
+        approval.serializePlaybookSnapshot(rejected.book),
+        before,
+        'validation does not repair the original',
+      );
+      assert.deepEqual(
+        playbooks.readableExecutionSteps(rejected.book)[3].raw_operation,
+        rejected.book.execution_steps[3],
+      );
+      assert.ok(
+        (await bindApprovedAccounting(rejected.book)).error,
+        'the actual runtime binder rejects this same stored input',
+      );
+    });
+  }
+  for (const [name, changeBook] of [
+    [
+      'no descriptor or reference',
+      (b) => {
+        delete b.rollback_context.write_accounting;
+        delete b.execution_steps[3].metric_wait.completed_work_evidence;
+      },
+    ],
+    [
+      'unreferenced valid descriptor for other metrics',
+      (b) => {
+        b.rollback_context.write_accounting.namespace = 'Other/Sensor';
+        delete b.execution_steps[3].metric_wait.completed_work_evidence;
+      },
+    ],
+    [
+      'numeric journal reference',
+      (b) => {
+        delete b.rollback_context.write_accounting;
+        b.execution_steps[3].metric_wait.completed_work_evidence = {
+          record_index: 0,
+          json_pointer: '/events/0/message',
+        };
+      },
+    ],
+  ]) {
+    await t.test(`E4 preserves ${name}`, async () => {
+      const result = await run({ changeBook });
+      assert.equal(result.error, undefined);
+      assert.equal(result.response.requested, true);
+      assert.deepEqual(
+        result.events.find((c) => c.constructor.name === 'PutObjectCommand')
+          .input.Body,
+        approval.serializePlaybookSnapshot(result.book),
+      );
+      if (name !== 'numeric journal reference')
+        assert.deepEqual(await bindApprovedAccounting(result.book), {
+          bound: null,
+        });
+    });
+  }
+  const accepted = await run();
+  assert.equal(accepted.error, undefined);
+  const snapshot = JSON.parse(
+    Buffer.from(
+      accepted.events.find((c) => c.constructor.name === 'PutObjectCommand')
+        .input.Body,
+    ).toString('utf8'),
+  );
+  const binding = await bindApprovedAccounting(snapshot);
+  assert.equal(binding.error, undefined);
+  assert.deepEqual(
+    binding.bound.descriptor,
+    snapshot.rollback_context.write_accounting,
+  );
+  assert.deepEqual(
+    binding.bound.reference,
+    snapshot.execution_steps[3].metric_wait.completed_work_evidence,
+  );
+  assert.notEqual(
+    binding.bound.descriptor.dimensions.ServiceName,
+    snapshot.rollback_context.scope.service_name,
+  );
+  const numericReference = structuredClone(snapshot);
+  numericReference.execution_steps[3].metric_wait.completed_work_evidence = {
+    record_index: 0,
+    json_pointer: '/events/0/message',
+  };
+  assert.equal(
+    playbooks.validateExecutablePlaybook(numericReference).valid,
+    true,
+    'numeric observed-record pointers keep their existing contract',
+  );
+  const noDescriptor = structuredClone(snapshot);
+  delete noDescriptor.rollback_context.write_accounting;
+  delete noDescriptor.execution_steps[3].metric_wait.completed_work_evidence;
+  assert.deepEqual(
+    await bindApprovedAccounting(noDescriptor),
+    { bound: null },
+    'absent optional accounting makes no descriptor claim',
+  );
+  const names = accepted.events.map((c) => c.constructor.name);
+  assert.ok(
+    names.indexOf('DescribeServicesCommand') <
+      names.indexOf('PutObjectCommand'),
+  );
+  assert.ok(
+    names.indexOf('PutObjectCommand') < names.indexOf('TransactWriteCommand'),
+  );
+  assert.ok(
+    names.indexOf('TransactWriteCommand') < names.indexOf('SendMessageCommand'),
+  );
+  assert.deepEqual(
+    accepted.events.find((c) => c.constructor.name === 'PutObjectCommand').input
+      .Body,
+    approval.serializePlaybookSnapshot(accepted.book),
+  );
+});
+
+test('actual ECS precondition decisions match service_deployment.check_precondition', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { deploymentBook, ecsObservations } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const { verifyDeploymentApproval } = await importRepositoryModule(
+    'packages/dashboard/server/utils/deploymentApproval.ts',
+  );
+  const mutations = [
+    ['valid current fault and normal immutable target', () => {}, true],
+    [
+      'same bad TD redeployed',
+      (o) => {
+        o.service.services[0].deployments[0].id += '-new';
+      },
+      false,
+    ],
+    [
+      'wrong normal image',
+      (o) => {
+        o.target.taskDefinition.containerDefinitions[0].image = 'image:latest';
+      },
+      false,
+    ],
+    [
+      'inactive normal TD',
+      (o) => {
+        o.target.taskDefinition.status = 'INACTIVE';
+      },
+      false,
+    ],
+    [
+      'normal sidecar is not app',
+      (o) => {
+        o.target.taskDefinition.containerDefinitions[0].name = 'sidecar';
+      },
+      false,
+    ],
+    [
+      'wrong app digest',
+      (o) => {
+        o.tasks.tasks[0].containers[0].imageDigest = 'other';
+      },
+      false,
+    ],
+    [
+      'duplicate app container',
+      (o) => {
+        o.tasks.tasks[0].containers.push(o.tasks.tasks[0].containers[0]);
+      },
+      false,
+    ],
+    [
+      'sidecar digest ignored',
+      (o) => {
+        o.tasks.tasks[0].containers.push({
+          name: 'sidecar',
+          imageDigest: 'different',
+        });
+      },
+      true,
+    ],
+    [
+      'unhealthy app',
+      (o) => {
+        o.tasks.tasks[0].containers[0].healthStatus = 'UNHEALTHY';
+      },
+      false,
+    ],
+    [
+      'unknown task health',
+      (o) => {
+        o.tasks.tasks[0].healthStatus = 'UNKNOWN';
+      },
+      false,
+    ],
+    [
+      'foreign task group',
+      (o) => {
+        o.tasks.tasks[0].group = 'service:foreign';
+      },
+      false,
+    ],
+    [
+      'foreign cluster',
+      (o) => {
+        o.service.services[0].clusterArn += '-foreign';
+      },
+      false,
+    ],
+    [
+      'foreign controller',
+      (o) => {
+        o.service.services[0].deploymentController.type = 'CODE_DEPLOY';
+      },
+      false,
+    ],
+    [
+      'settings drift',
+      (o) => {
+        o.service.services[0].platformVersion = 'other';
+      },
+      false,
+    ],
+    [
+      'pending population',
+      (o) => {
+        o.service.services[0].pendingCount = 1;
+      },
+      false,
+    ],
+    [
+      'task pagination',
+      (o) => {
+        o.running.nextToken = 'next';
+      },
+      false,
+    ],
+    [
+      'service incomplete response',
+      (o) => {
+        o.service.nextToken = 'next';
+      },
+      false,
+    ],
+    [
+      'target read failure',
+      (o) => {
+        o.target.failures = [{ reason: 'denied' }];
+      },
+      false,
+    ],
+    [
+      'missing task',
+      (o) => {
+        o.tasks.tasks = [];
+      },
+      false,
+    ],
+  ];
+  const cases = mutations.map(([name, mutate, valid]) => {
+    const observations = ecsObservations();
+    mutate(observations);
+    return { name, valid, observations };
+  });
+  const book = deploymentBook();
+  const result = spawnSync(
+    path.join(REPOSITORY_ROOT, 'packages/headless-codex/.venv/bin/python'),
+    [
+      '-c',
+      `
+import json,sys,shlex
+from headless_codex.services.service_deployment import check_precondition
+payload=json.load(sys.stdin)
+class Budget:
+    def remaining(self): return 60
+results=[]
+for case in payload['cases']:
+    def run(command,budget):
+        argv=shlex.split(command)
+        key={'describe-task-definition':'target','describe-services':'service','describe-tasks':'tasks'}.get(argv[2])
+        if argv[2]=='list-tasks': key='running' if argv[argv.index('--desired-status')+1]=='RUNNING' else 'pending'
+        return {'ok':True,'stdout':json.dumps(case['observations'][key])}
+    try:
+        check_precondition(payload['book']['execution_steps'][1]['ecs_service_precondition'],payload['book']['execution_steps'][2]['deployment_wait'],Budget(),run)
+        results.append(True)
+    except (ValueError,TypeError,KeyError): results.append(False)
+print(json.dumps(results))
+`,
+    ],
+    {
+      cwd: REPOSITORY_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: 'packages/headless-codex/src',
+        AWS_EC2_METADATA_DISABLED: 'true',
+      },
+      encoding: 'utf8',
+      input: JSON.stringify({ book, cases }),
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const python = JSON.parse(result.stdout);
+  for (const [index, fixture] of cases.entries()) {
+    let accepted = true;
+    try {
+      await verifyDeploymentApproval(book, () => ({
+        send: async (command) => {
+          const key = {
+            DescribeTaskDefinitionCommand: 'target',
+            DescribeServicesCommand: 'service',
+            DescribeTasksCommand: 'tasks',
+            ListTasksCommand:
+              command.input.desiredStatus === 'RUNNING' ? 'running' : 'pending',
+          }[command.constructor.name];
+          return fixture.observations[key];
+        },
+      }));
+    } catch {
+      accepted = false;
+    }
+    assert.equal(accepted, fixture.valid, fixture.name);
+    assert.equal(python[index], fixture.valid, 'Python: ' + fixture.name);
+  }
+});
+
+test('900-second waits preserve explicit legacy values, default metrics and 15-minute labels', async () => {
+  const { deploymentBook } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const { validateExecutablePlaybook } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const { serializePlaybookSnapshot, sha256Hex } =
+    await importRepositoryModule(APPROVAL_MODULE);
+  const book = deploymentBook();
+  const original = serializePlaybookSnapshot(book);
+  assert.equal(validateExecutablePlaybook(book).valid, true);
+  assert.equal(
+    Object.hasOwn(book.execution_steps[3].metric_wait, 'max_wait_seconds'),
+    false,
+  );
+  const html = await renderRecoveryPlan({
+    steps: book.execution_steps,
+    rollbackContext: book.rollback_context,
+    executable: true,
+  });
+  assert.match(html, /900초 \(15분\)/);
+  assert.match(html, /900초 \(15분, 기본값\)/);
+  assert.match(html, /다음 분부터 두 완결된 60초 구간/);
+  assert.deepEqual(
+    serializePlaybookSnapshot(book),
+    original,
+    'validation and display never materialize defaults into an approved snapshot',
+  );
+  const oldBook = structuredClone(book);
+  oldBook.execution_steps[2].deployment_wait.max_wait_seconds = 300;
+  oldBook.execution_steps[3].metric_wait.max_wait_seconds = 240;
+  assert.equal(validateExecutablePlaybook(oldBook).valid, true);
+  const oldHtml = await renderRecoveryPlan({
+    steps: oldBook.execution_steps,
+    executable: true,
+  });
+  assert.match(oldHtml, /300초/);
+  assert.match(oldHtml, /240초/);
+  assert.notEqual(
+    sha256Hex(serializePlaybookSnapshot(oldBook)),
+    sha256Hex(original),
+    'changed explicit approved duration changes digest',
+  );
+});
+
+test('actual Python 900-second default and deployment binding keep the next-minute two-bin window', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { deploymentBook } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const result = spawnSync(
+    path.join(REPOSITORY_ROOT, 'packages/headless-codex/.venv/bin/python'),
+    [
+      '-c',
+      `
+import copy,json,sys
+from headless_codex.services.execution_contract import approved_wait
+from headless_codex.services.post_action_metrics import bind_request
+from headless_codex.services.command_gate import evaluate_command
+from test_post_action_metrics import data
+from test_service_deployment import deployment_metric_context
+book=json.load(sys.stdin)
+default=approved_wait(book['execution_steps'][3])
+plan={'rollback_context':book['rollback_context'],'execution_steps':book['execution_steps'][1:3]}
+results=[]
+for converged in ('2026-09-10T12:34:00Z','2026-09-10T12:34:59Z'):
+    request,records,context=deployment_metric_context(copy.deepcopy(plan),data.__wrapped__())
+    step=next(s for s in context['playbook']['execution_steps'] if s['step_id']==request['step_id'])
+    step['metric_wait']['max_wait_seconds']=900
+    request=approved_wait(step)
+    records[-1]['first_converged_at']=records[-1]['observed_at']=converged
+    bound=bind_request(request,records,context,'exec-1',evaluate_command)
+    results.append({'start':bound['start'],'end':bound['end'],'max_wait_seconds':request['max_wait_seconds']})
+print(json.dumps({'default':default['max_wait_seconds'],'windows':results}))
+`,
+    ],
+    {
+      cwd: REPOSITORY_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: 'packages/headless-codex/src:packages/headless-codex/tests',
+        AWS_EC2_METADATA_DISABLED: 'true',
+      },
+      encoding: 'utf8',
+      input: JSON.stringify(deploymentBook()),
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const actual = JSON.parse(result.stdout);
+  assert.equal(actual.default, 900);
+  assert.deepEqual(
+    actual.windows,
+    Array.from({ length: 2 }, () => ({
+      start: '2026-09-10T12:35:00+00:00',
+      end: '2026-09-10T12:37:00+00:00',
+      max_wait_seconds: 900,
+    })),
+  );
+});
+
+test('approved-context accounting requires a deployment anchor, while legacy numeric references remain usable', async () => {
+  const { deploymentBook } =
+    await import('../../packages/dashboard/tests/fixtures/deployment-contract.mjs');
+  const { validateExecutablePlaybook } =
+    await importRepositoryModule(PLAYBOOK_MODULE);
+  const book = deploymentBook();
+  const discover = book.execution_steps[0];
+  discover.commands.push(
+    'aws ecs stop-task --cluster cluster --task arn:aws:ecs:us-east-1:123456789012:task/cluster/owner --region us-east-1',
+  );
+  const metricStep = book.execution_steps[3];
+  delete metricStep.metric_wait.deployment_step_id;
+  metricStep.metric_wait.action_step_id = discover.step_id;
+  book.execution_steps = [discover, metricStep];
+  assert.equal(
+    validateExecutablePlaybook(book).valid,
+    false,
+    'a reader-owned normal deployment descriptor cannot anchor to StopTask',
+  );
+  metricStep.metric_wait.completed_work_evidence = {
+    record_index: 0,
+    json_pointer: '/events/0/message',
+  };
+  assert.equal(validateExecutablePlaybook(book).valid, true);
+  delete metricStep.metric_wait.completed_work_evidence;
+  assert.equal(validateExecutablePlaybook(book).valid, true);
 });

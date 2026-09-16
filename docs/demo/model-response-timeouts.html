@@ -1,0 +1,34 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>모델 응답의 대기 시간과 분석 예산</title><style>body{max-width:1050px;margin:40px auto;padding:0 24px;font:16px/1.7 system-ui,sans-serif;color:#203044;background:#f7f9fc}h1,h2{line-height:1.35}table{border-collapse:collapse;width:100%;background:white}th,td{border:1px solid #cdd6e3;padding:12px;text-align:left}pre{overflow:auto;padding:18px;background:#152336;color:#f0f5ff;border-radius:8px}svg{width:100%;height:auto}a{color:#185b9c}.note{padding:16px;border-left:4px solid #376b9c;background:#e8f1fa}code{overflow-wrap:anywhere}</style>
+<h1>모델 응답의 대기 시간과 분석 예산</h1>
+<p>모델이 답변을 생성하는 데 걸리는 전체 시간과 서버 데이터가 오지 않는 시간은 다르다. Strands의 대화 모델 호출은 데이터를 작은 조각으로 받는 스트리밍 방식을 사용하고, 데이터가 계속 도착하는 응답을 경과 시간만으로 끊지 않는 계약을 적용한다.</p>
+<table><tr><th>제한</th><th>의미</th></tr><tr><td>Strands 대화 모델: 소켓 읽기 유휴 300초</td><td>첫 서버 데이터를 기다리는 시간과 이후 다음 데이터를 기다리는 시간이다. 총 응답 시간이 300초를 넘었다는 뜻으로 실패시키지 않는다.</td></tr><tr><td>임베딩용 직접 boto3 호출: 읽기 60초</td><td>대화 모델과 별도인 클라이언트 설정이다. 대화 모델의 300초를 모든 Bedrock 호출에 적용하지 않는다.</td></tr><tr><td>단계 900초·증거 배치 1800초·분석 3600초</td><td>새 작업·재시도·다음 단계를 시작할지 판단하는 Strands 예산이다. 이미 수신 중인 모델 응답의 총시간 제한으로 사용하지 않는다.</td></tr><tr><td>출력 최대 65536토큰</td><td>한 응답의 출력량 상한이다. 응답 시간과 별도다. 토큰은 모델이 텍스트를 처리하는 단위다.</td></tr></table>
+<h2>데이터가 계속 오는 응답은 완료까지 받는다</h2>
+<svg viewBox="0 0 1000 215" role="img" aria-label="연결 후 첫 데이터를 기다리고, 데이터 수신을 반복한다. 무응답 5분이면 실패하고 정상 완료하면 다음 작업 예산을 확인한다."><defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3Z" fill="#315d86"/></marker></defs><g fill="white" stroke="#315d86"><rect x="10" y="35" width="175" height="60" rx="8"/><rect x="225" y="35" width="210" height="60" rx="8"/><rect x="505" y="35" width="195" height="60" rx="8"/><rect x="770" y="35" width="220" height="60" rx="8"/><rect x="220" y="150" width="270" height="50" rx="8"/></g><g fill="#203044" text-anchor="middle" font-size="17"><text x="97" y="72">첫 데이터 대기</text><text x="330" y="72">서버 데이터 수신</text><text x="602" y="72">현재 응답 완료</text><text x="880" y="72">다음 작업 예산 확인</text><text x="355" y="181">5분 무응답: 통신 실패</text></g><g fill="none" stroke="#315d86" stroke-width="2" marker-end="url(#a)"><path d="M185 65H225"/><path d="M435 65H505"/><path d="M700 65H770"/><path d="M295 35V15H365V35"/><path d="M95 95V175H220"/><path d="M330 95V150"/></g><g fill="#315d86" text-anchor="middle" font-size="13"><text x="329" y="12">다음 데이터가 계속 도착</text><text x="470" y="53">종료</text></g></svg>
+<details><summary>Mermaid 원문</summary><pre>flowchart LR
+  A[첫 서버 데이터 대기] --> B[서버 데이터 수신]
+  B -->|다음 데이터| B
+  A -->|5분 무응답| X[통신 실패]
+  B -->|5분 무응답| X
+  B -->|정상 완료| C[다음 작업 예산 확인]</pre></details>
+<p>명시적 취소와 처리 소유권 상실은 별도다. 이때는 응답 수신 중단을 요청하고 늦은 결과가 상태를 덮어쓰지 못하게 한다. 오래 걸리는 정당한 분석 중에는 큐 메시지가 다른 워커에 재전달되지 않도록 가시성을 갱신한다.</p>
+<h2>응답이 끝난 뒤 쉬고 있던 연결의 실패는 별개다</h2>
+<p>연결 풀은 다음 요청에 재사용하려고 이미 열린 연결을 보관하는 곳이다. 응답을 다 받은 뒤 요청 없이 400초를 보낸 시간은, 요청 중 다음 데이터를 기다리는 300초 읽기 시간과 다르다.</p>
+<p>아래 TD34·TD35는 컨테이너 실행 설정인 ECS 태스크 정의의 34·35번 버전이다.</p>
+<table><tr><th>관측</th><th>이전 TD34 시험</th><th>배포된 TD35 시험</th></tr>
+<tr><td>첫 대화 요청</td><td>2.58초에 성공</td><td>1.65초에 성공</td></tr>
+<tr><td>요청 사이 유휴 시간</td><td>400초</td><td>400초</td></tr>
+<tr><td>기존 연결로 다음 요청</td><td>약 4.3ms에 연결 재설정 오류. HTTP 응답과 모델 이벤트를 받기 전 실패했으며 새 연결 시도는 없었다.</td><td>같은 연결에서 1.40초에 성공. 원문 로그에 추가 connect 이벤트가 없고, 재시도도 없었다.</td></tr>
+<tr><td>비교 근거</td><td>새 클라이언트로 연결하자 1.56초에 성공했다. 결과 JSON은 완료된 시험 출력의 요약본이다.</td><td>실제 배포의 production factory를 그대로 사용했다. 첫 요청 전부터 두 번째 요청 후까지 연결 식별자가 같고 connect 이벤트는 총 1개다.</td></tr></table>
+<p>TD35 소켓에서는 TCP keepalive가 켜져 있고 <code>120 / 75 / 9</code> 설정이 확인됐다. 이는 유휴 후 첫 확인까지 120초, 응답이 없을 때 재확인 간격 75초, 확인 횟수 한도 9회를 뜻한다. 이 설정은 쉬고 있는 연결의 생존 확인을 위한 것이며, 모델 응답 전체 시간이나 소켓 읽기 한도를 바꾸지 않는다.</p>
+<p>TD35 로그의 Strands 대화용 Execution(도구 조회·증거 판정)·Planning(추론) 클라이언트는 읽기 300초, 임베딩용 직접 boto3 클라이언트는 읽기 60초였고 모두 총 요청 시도 한도는 1이었다. 실제 400초 연결 재사용 시험은 <strong>Execution 대화 클라이언트</strong>로 수행했다. Planning과 임베딩은 설정만 확인했으며 이 시험에서 네트워크 호출을 검증한 것은 아니다.</p>
+<h2>이 기록으로 말할 수 있는 범위</h2>
+<p>기존의 20초 읽기 실패와 이번 유휴 연결 재설정은 구분해야 한다. TD35의 한 차례 비교에서는 keepalive 설정이 적용된 같은 연결로 400초 후 요청이 성공했다. 패킷 캡처로 재설정 발신자를 확인하지 않았으므로 특정 네트워크 장비나 서버가 원인이라고 확정하지 않는다. 이 고정 프롬프트 통신 시험은 전체 RCA·실행 승인·롤백 또는 해결(RESOLVED)의 증거가 아니다.</p>
+<p>과거 일반 스코핑 실패에도 붙던 <code>[Timeout]</code> 표시는 실제 읽기 시간 초과를 증명하지 않는다. 현재 일반 실패 표시는 <code>[Scoping unavailable]</code>로 구분하며, 원인은 별도 예외 기록으로 확인한다.</p>
+<p class="note">응답 전체 시간으로 끊지 않는 계약은 Strands SDK 대화 경로에 적용한다. 300초 소켓 읽기 유휴 한도는 남아 있다. Headless 분석·승인 실행의 기존 강제 기한과 배포·지표 대기의 각 900초 한도는 바뀌지 않는다. 이 문서는 새로운 시간 한도를 추가하지 않는다.</p>
+<h2>로컬 증거</h2>
+<ul>
+<li><a href="../test-reports/single-column-implementation/transport-idle-diagnosis/ecs-idle-probe-result.json">TD34: 유휴 연결 재설정과 새 연결 비교 요약</a></li>
+<li><a href="../test-reports/single-column-implementation/transport-idle-diagnosis/deployed-td35-idle-probe-verbatim.log">TD35: 배포 태스크의 변경 없는 원문 로그</a> · <a href="../test-reports/single-column-implementation/transport-idle-diagnosis/deployed-td35-idle-probe-result.json">결과 요약과 검증 한계</a> · <a href="../test-reports/single-column-implementation/transport-idle-diagnosis/deployed-td35-task-identity.json">태스크 정의·이미지 식별 근거</a></li>
+<li><a href="../test-reports/single-column-implementation/timeout-expansion/agent-app-stream-validation.json">Strands: 시작 예산을 넘긴 활성 응답 보존 시험</a></li>
+</ul>
+</html>

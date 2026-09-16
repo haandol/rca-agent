@@ -46,21 +46,25 @@ lookup() {
   local svc=$1 field=$2
   case "${svc}:${field}" in
     agent:ctx)           echo "packages/agent" ;;
+    agent:container)     echo "rca-agent" ;;
     agent:repo)          echo "${ECR_NS}/rca-agent" ;;
     agent:cluster)       echo "${PREFIX}RcaAgent" ;;
     agent:service)       echo "${PREFIX}RcaAgent" ;;
     headless-codex:ctx)     echo "packages/headless-codex" ;;
+    headless-codex:container) echo "cc-headless" ;;
     # The deployed repository and ECS service names stay stable for in-place replacement.
     headless-codex:repo)    echo "${ECR_NS}/cc-headless" ;;
     headless-codex:cluster) echo "${PREFIX}CcHeadless" ;;
     headless-codex:service) echo "${PREFIX}CcHeadless" ;;
     healthcare:ctx)      echo "packages/healthcare-sensor-app" ;;
+    healthcare:container) echo "healthcare" ;;
     healthcare:repo)     echo "${ECR_NS}/healthcare" ;;
     healthcare:cluster)  echo "${PREFIX}Healthcare" ;;
     healthcare:service)  echo "${PREFIX}Healthcare" ;;
     # 실행 워커는 분석 워커와 같은 이미지를 다른 진입점으로 띄운다. 그래서 빌드
     # 컨텍스트와 리포지토리가 headless-codex 와 동일하고, 배포 대상 스택만 다르다.
     execution:ctx)       echo "packages/headless-codex" ;;
+    execution:container) echo "playbook-execution" ;;
     execution:repo)      echo "${ECR_NS}/cc-headless" ;;
     execution:cluster)   echo "${PREFIX}PlaybookExecution" ;;
     execution:service)   echo "${PREFIX}PlaybookExecution" ;;
@@ -110,33 +114,120 @@ do_push() {
   ok "푸시 완료: $svc"
 }
 
-# 지금 배포된 태스크 정의가 가리키는 이미지 태그.
-deployed_tag() {
-  local svc=$1 family
-  family=$(lookup "$svc" service)
-  aws ecs describe-task-definition \
-    --task-definition "$family" \
-    --region "$REGION" \
-    --query 'taskDefinition.containerDefinitions[0].image' \
-    --output text 2>/dev/null | sed 's/.*://' || true
+# Resolve the service's actual task definition, never the newest family revision.
+service_task_definition() {
+  aws ecs describe-services --cluster "$(lookup "$1" cluster)" \
+    --services "$(lookup "$1" service)" --region "$REGION" \
+    --query 'services[0].taskDefinition' --output text
 }
 
-# CDK 는 배포 대상이 의존하는 스택을 함께 갱신한다. 그래서 대상 서비스의 태그만
-# 주입하면 함께 갱신되는 다른 서비스의 태스크 정의가 다른 태그로 바뀐다. 설정에
-# 기본 태그가 없어 synth 가 네 태그를 모두 요구하므로, 배포하지 않는 서비스는 지금
-# 떠 있는 태그를 그대로 넘겨 태스크 정의를 건드리지 않는다.
+# Preserve the unique app image tag from the service's selected task definition.
+# Container order is not identity: tracing sidecars may precede the application.
+deployed_tag() {
+  local td definition repository container
+  td=$(service_task_definition "$1") || return 1
+  [[ -n "$td" && "$td" != "None" ]] || return 1
+  repository="${ECR_REGISTRY}/$(lookup "$1" repo)" || return 1
+  container=$(lookup "$1" container) || return 1
+  definition=$(aws ecs describe-task-definition --task-definition "$td" --region "$REGION" \
+    --output json) || return 1
+  python3 - "$td" "$repository" "$container" "$definition" <<'PYCODE'
+import json
+import re
+import sys
+
+td, repository, name = sys.argv[1:4]
+definition = json.loads(sys.argv[4]).get("taskDefinition", {})
+if definition.get("taskDefinitionArn") != td:
+    sys.exit("Preserved app task definition differs from the selected service revision")
+containers = definition.get("containerDefinitions", [])
+matches = [
+    c for c in containers
+    if isinstance(c.get("image"), str)
+    and c["image"].split("@", 1)[0].split(":", 1)[0] == repository
+]
+if len(matches) != 1 or matches[0].get("name") != name:
+    sys.exit("Preserved service requires one app container matching its repository and name")
+image = matches[0]["image"]
+prefix = repository + ":"
+tag = image[len(prefix):] if image.startswith(prefix) else ""
+if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", tag):
+    sys.exit("Preserved app image has no explicit valid tag")
+print(tag)
+PYCODE
+}
+
+# Validate pins before any CDK call so missing metadata cannot fall back to tags.
+require_digest() {
+  [[ "$1" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+    err "Healthcare image digest is missing or invalid"; return 1;
+  }
+}
+
+# Read the running service identity; reject rolling/mixed or unobserved baselines.
+healthcare_current_identity() {
+  local td definition tasks observed
+  td=$(service_task_definition healthcare) || return 1
+  [[ -n "$td" && "$td" != "None" ]] || return 1
+  definition=$(aws ecs describe-task-definition --task-definition "$td" --region "$REGION" --output json) || return 1
+  tasks=$(aws ecs list-tasks --cluster "$(lookup healthcare cluster)" \
+    --service-name "$(lookup healthcare service)" --desired-status RUNNING \
+    --region "$REGION" --query taskArns --output text) || return 1
+  [[ -n "$tasks" && "$tasks" != "None" ]] || return 1
+  local -a task_arns=()
+  read -r -a task_arns <<< "$tasks"
+  observed=$(aws ecs describe-tasks --cluster "$(lookup healthcare cluster)" \
+    --tasks "${task_arns[@]}" --region "$REGION" --output json) || return 1
+  python3 - "$td" "$definition" "$observed" <<'PYCODE'
+import json
+import re
+import sys
+
+td, definition, observed = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])
+containers = definition["taskDefinition"]["containerDefinitions"]
+container = next(c for c in containers if c["name"] == "healthcare")
+label = next(e["value"] for e in container["environment"] if e["name"] == "DEPLOYED_REVISION")
+tasks = observed.get("tasks", [])
+if observed.get("failures") or not tasks or any(
+    t.get("taskDefinitionArn") != td or t.get("lastStatus") != "RUNNING" for t in tasks
+):
+    sys.exit("Healthcare has no consistent running service baseline")
+digests = [c.get("imageDigest", "") for t in tasks for c in t["containers"] if c["name"] == "healthcare"]
+if len(digests) != len(tasks) or len(set(digests)) != 1 or not re.fullmatch(r"sha256:[a-f0-9]{64}", digests[0]):
+    sys.exit("Healthcare running image digests are missing or inconsistent")
+if "@" in container["image"] and container["image"].split("@", 1)[1] != digests[0]:
+    sys.exit("Healthcare task definition and running digest disagree")
+if not label or any(c.isspace() for c in label):
+    sys.exit("Healthcare revision label is invalid")
+print(label, digests[0])
+PYCODE
+}
+
+# Pass the newly selected Healthcare tag's ECR digest, or the observed current
+# Healthcare digest when deploying another service. Never inherit a stale env pin.
 build_tag_env() {
   local target_svc=$1
-  local svc tagenv tag
+  local svc tagenv tag digest identity
+  if [[ "$target_svc" == "healthcare" ]]; then
+    digest=$(aws ecr describe-images --repository-name "$(lookup healthcare repo)" \
+      --image-ids "imageTag=$IMAGE_TAG" --region "$REGION" \
+      --query 'imageDetails[0].imageDigest' --output text) || return 1
+    require_digest "$digest" || return 1
+    identity="$IMAGE_TAG $digest"
+  else
+    identity=$(healthcare_current_identity) || return 1
+  fi
   for svc in $ALL_SERVICES; do
     tagenv=$(lookup "$svc" tagenv)
-    if [[ "$svc" == "$target_svc" ]]; then
+    if [[ "$svc" == "healthcare" ]]; then
+      read -r tag digest <<< "$identity"
+      require_digest "$digest" || return 1
+      printf 'HEALTHCARE_IMAGE_DIGEST=%s\n' "$digest"
+    elif [[ "$svc" == "$target_svc" ]]; then
       tag="$IMAGE_TAG"
     else
-      tag=$(deployed_tag "$svc")
-      # 아직 배포되지 않은 서비스는 조회할 태스크 정의가 없다. 이 배포로 태스크
-      # 정의가 처음 만들어지는 경우이므로 이번 태그를 쓴다.
-      [[ -z "$tag" || "$tag" == "None" ]] && tag="$IMAGE_TAG"
+      tag=$(deployed_tag "$svc") || return 1
+      [[ -n "$tag" && "$tag" != "None" ]] || return 1
     fi
     printf '%s=%s\n' "$tagenv" "$tag"
   done
@@ -178,7 +269,9 @@ do_ecs_deploy() {
     assert_legacy_headless_queue_empty
   fi
   local -a tag_env=()
-  while IFS= read -r pair; do tag_env+=("$pair"); done < <(build_tag_env "$svc")
+  local resolved_env
+  resolved_env=$(build_tag_env "$svc") || return 1
+  while IFS= read -r pair; do tag_env+=("$pair"); done <<< "$resolved_env"
   log "스택 배포: $stack ($(lookup "$svc" tagenv)=${IMAGE_TAG})"
   # 태스크 정의가 불변 태그를 직접 가리키도록 CDK 로 배포한다. force-new-deployment
   # 만으로는 태스크 정의의 이미지 참조가 갱신되지 않는다.

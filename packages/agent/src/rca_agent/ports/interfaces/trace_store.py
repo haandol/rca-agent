@@ -40,7 +40,15 @@ class TraceStorePort(ABC):
         """Update effective state without erasing the complete direct judgment."""
 
     @abstractmethod
-    def update_hypothesis_evidence(self, hypothesis_id: str, *, evidence_summary: str) -> None: ...
+    def update_hypothesis_evidence(
+        self,
+        hypothesis_id: str,
+        *,
+        evidence_summary: str,
+        critical_facts: list[dict] | None = None,
+        evidence_refs: list[str] | None = None,
+    ) -> None:
+        """Store bounded prose separately from source-bound facts and original archive references."""
 
     @abstractmethod
     def check_cancelled(self) -> None: ...

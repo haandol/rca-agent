@@ -1,72 +1,41 @@
 <!doctype html>
-<html lang="ko">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Healthcare 실제 DB 메커니즘</title>
-<style>
-body{font:17px/1.75 system-ui,sans-serif;color:#173044;background:#f5f7fa;margin:0}
-main{max-width:1000px;margin:40px auto;padding:24px}h1,h2{line-height:1.3}
-section{background:white;padding:24px;margin:20px 0;border:1px solid #d8e1e8;border-radius:12px}
-table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #d8e1e8;text-align:left;padding:12px}
-pre{overflow:auto;background:#102536;color:#edf7ff;padding:18px;border-radius:8px;font-size:14px}
-code{font-size:.9em}svg{width:100%;height:auto}small{color:#526979}
-</style>
-<main>
-<h1>같은 입력, 실제 DB 결함, 확인 가능한 복원</h1>
-<p>정상 서비스와 결함 서비스가 같은 PostgreSQL에 같은 종류의 요청을 보냅니다.
-연결 설정·조회 코드·정리 코드·정비 트랜잭션만 바꾸어 원인과 결과를 비교합니다.
-자세한 명령과 인터페이스는 <a href="README.md">README</a>에 있습니다.</p>
-<section>
-<h2>실행 흐름</h2>
-<svg viewBox="0 0 920 160" role="img" aria-label="정상 측정, 결함 적용, 실제 증상 및 DB 관측, 원상복원과 재측정 순서">
-<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-<path d="M0,0 L8,4 L0,8" fill="#476985"/></marker></defs>
-<g fill="#e8f1f8" stroke="#476985" stroke-width="2">
-<rect x="10" y="40" width="185" height="80" rx="10"/>
-<rect x="245" y="40" width="185" height="80" rx="10"/>
-<rect x="480" y="40" width="185" height="80" rx="10"/>
-<rect x="715" y="40" width="195" height="80" rx="10"/>
-</g>
-<g stroke="#476985" stroke-width="2" marker-end="url(#arrow)">
-<path d="M197 80 H238"/><path d="M432 80 H473"/><path d="M667 80 H708"/></g>
-<g text-anchor="middle" fill="#173044" font-size="17">
-<text x="102" y="74">정상 기준 측정</text><text x="102" y="99">r1 · 같은 입력</text>
-<text x="338" y="74">설정·소스·락 변경</text><text x="338" y="99">실행 소유권 기록</text>
-<text x="572" y="74">실제 증상 관측</text><text x="572" y="99">SQL · 연결 · 차단자</text>
-<text x="812" y="74">원상복원 + 재측정</text><text x="812" y="99">성공과 정리 확인</text>
-</g></svg>
-<details><summary>Mermaid 원문 (위 SVG는 같은 흐름을 오프라인으로 표시)</summary>
-<pre>flowchart LR
-  A["정상 기준 측정: r1 · 같은 입력"] --> B["설정·소스·락 변경"]
-  B --> C["실제 증상: SQL · 연결 · 차단자"]
-  C --> D["원상복원 + 같은 입력 재측정"]</pre></details>
-</section>
-<section><h2>네 가지 원인과 구별할 증거</h2>
-<table><thead><tr><th>원인</th><th>실제로 달라지는 동작</th><th>복원 확인</th></tr></thead><tbody>
-<tr><td>풀 설정</td><td>앱이 동시에 빌릴 수 있는 연결을 8개에서 1개로 축소. 실제 INSERT가 경쟁.</td><td>8개 복원 후 같은 8개 요청 성공.</td></tr>
-<tr><td>조회 증폭 · r2</td><td>120행을 한 번에 읽던 SELECT가 ID 목록 + 행별 조회로 121회가 됨.</td><td>r1로 돌아가 SQL 1회, 같은 응답 hash.</td></tr>
-<tr><td>정비 락</td><td>별도 프로세스가 SHARE 락을 소유해 INSERT의 락 획득을 막음.</td><td>그 프로세스만 SIGTERM, 롤백 후 저장 재개.</td></tr>
-<tr><td>세션 정리 · r3</td><td>음수 LIMIT 오류 뒤 연결이 반환되지 않아 이후 유효한 저장까지 실패.</td><td>r1과 종료 정리 후 같은 오류에도 연결 반환.</td></tr>
-</tbody></table></section>
-<section><h2>연결이 남는 이유</h2>
-<p><strong>세션</strong>은 업무 쿼리를 실행하는 객체이고, <strong>풀</strong>은 재사용할 DB 연결의 묶음입니다.
-연결을 빌린 뒤 오류가 나도 반환해야 다음 요청이 사용할 수 있습니다. r1은 <code>finally</code>에서
-닫습니다. r3은 정상 처리 뒤에만 닫도록 소스가 달라져 예외 경로에서 반환하지 않습니다.</p>
-<p>저장소는 <code>async with database.session_context()</code>로 호출합니다.
-이렇게 해야 저장소 본문의 오류와 취소가 정리 코드를 감싼 범위에 전달됩니다.
-기존 <code>async for</code> 안에서 바로 반환하는 방식은 이런 전달과 즉시 정리를 보장하지 않습니다.</p>
-<p>취소 실험은 실제 연결에서 backend PID를 조회한 다음 소비자를 취소합니다.
-드라이버가 실행 중인 SQL을 취소하면서 연결 자체를 무효화하는 경우와 구별한 실험입니다.</p>
-</section>
-<section><h2>관측과 안전한 실행 범위</h2>
-<p>요청별 ID로 SQL hash·횟수·시간, 연결 획득과 반환을 연결합니다. 관측 전용 연결은 1개로 제한하며
-업무 요청이 대기 중이어도 차단 관계를 읽습니다. SQL 매개변수·원문·비밀번호는 로그에 담지 않습니다.</p>
-<p>로컬 runner는 명시한 127.0.0.1 포트의 rca_demo만 허용하고 5432는 거부합니다.
-자기 실행의 스키마와 프로세스만 정리합니다. Docker 컨테이너 수명은 호출자가 관리합니다.</p>
-<p>빌드 시 r1/r2/r3 소스가 고정되고, 시작 시 manifest의 파일 hash를 확인합니다.
-일반 실행 환경변수로 리비전을 바꿀 수 없습니다. 기본 이미지는 r1입니다.</p>
-<small>검증 경계: 실제 PostgreSQL + 서비스 메서드 + 독립 빌드 소스.
-HTTP 전체 경로, AWS 배포·알람, 모델 평가 결과는 별도 검증입니다.</small>
-</section>
-</main>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>센서 저장 컬럼 데모</title>
+<style>body{font:17px/1.75 system-ui,sans-serif;color:#182536;max-width:1000px;margin:48px auto;padding:0 24px}h1,h2{line-height:1.3}pre{white-space:pre-wrap;background:#edf2f7;padding:20px;border-radius:10px}table{border-collapse:collapse;width:100%}td,th{padding:12px;border-bottom:1px solid #d6e0ea;text-align:left}.mermaid{overflow:auto}</style>
+<h1>센서 저장 컬럼 하나로 실패와 복구를 비교한다</h1>
+<p>정상 이미지 v1은 timestamp 컬럼에 저장한다. 같은 소스를 캡처해 만든 v2는 저장 SQL의 컬럼 이름 한 곳만 sampled_at으로 바꾼다. 실제 데이터베이스에는 sampled_at이 없으므로 PostgreSQL이 INSERT를 거부한다. 오류를 만드는 별도 API는 없다.</p>
+<h2>요청부터 관측까지</h2>
+<pre class="mermaid">sequenceDiagram
+participant C as 센서 요청
+participant S as 서비스
+participant D as PostgreSQL
+participant L as 관측 로그
+C-&gt;&gt;S: 같은 2행 배치
+S-&gt;&gt;D: 값을 바인딩한 INSERT
+alt v1 정상 컬럼
+D--&gt;&gt;S: 실행 성공
+S-&gt;&gt;D: COMMIT
+D--&gt;&gt;S: 커밋 성공
+S-&gt;&gt;L: write_completed(count=2)
+S--&gt;&gt;C: 저장 결과
+else v2 없는 컬럼
+D--&gt;&gt;S: SQLSTATE 42703
+S-&gt;&gt;D: 트랜잭션 정리·연결 반환
+S-&gt;&gt;L: db_write_error (값 제외)
+S--&gt;&gt;C: 일반 오류 응답
+end
+S-&gt;&gt;D: 별도 읽기 전용 스키마 조회
+D--&gt;&gt;S: 실제 스키마·컬럼 목록
+S-&gt;&gt;L: db_schema_snapshot</pre>
+<p>SQLSTATE는 DB 오류 종류를 나타내는 코드다. 42703은 존재하지 않는 컬럼을 참조했음을 뜻한다. 바인딩은 환자 값과 SQL 구조를 분리해 드라이버에 전달하는 방식이다. 커밋은 트랜잭션의 저장을 확정하는 단계이므로 완료 이벤트는 그 성공 뒤에만 남긴다.</p>
+<h2>같은 스키마의 세 구간</h2>
+<table><tr><th>구간</th><th>요청</th><th>입증할 결과</th></tr><tr><td>정상 v1</td><td>2행 × 3회</td><td>6행 저장과 커밋 완료 이벤트</td></tr><tr><td>변경 v2</td><td>같은 내용</td><td>실제 42703 3회, 추가 저장 0행</td></tr><tr><td>복구 v1</td><td>같은 내용</td><td>6행 추가 저장, 기존 데이터 보존</td></tr></table>
+<p>세 구간 모두 기존 바이탈·이상치 조회와 헬스 응답 본문을 확인한다. 정상 헬스는 status=ok 및 db_connected=true다. 오류 이후 빌린 연결이 0개인지 검사하고, 환자·자격 증명 시험값이 로그·오류 응답·트레이스에 없는지 확인한다.</p>
+<h2>부모 실행기로 전달할 증거</h2>
+<p>source_manifest는 실제 설치 소스 지문과 검증 여부를 남긴다. write_contract는 INSERT 컬럼 목록과 SQL 형태 지문을, db_schema_snapshot은 실제 관계와 컬럼 목록을 남긴다. write_completed는 커밋된 행 수다. write_accounting은 VitalIngestAttempts가 성공 또는 실패로 완료된 행 수이며 시작한 행 수와 다르다는 생산자 정책을 기록한다.</p>
+<p>CloudWatch 원본 이벤트의 시간·ID·로그 그룹·스트림과 실제 태스크 식별을 함께 보존해야 같은 서비스·구간의 증거인지 판단할 수 있다. 로컬 재현은 AWS 알람이나 에이전트의 승인 복구 검증을 대신하지 않는다.</p>
+<details><summary>Mermaid 원문</summary><pre id="source"></pre></details>
+<p>실행 명령과 전체 필드는 같은 폴더의 README.md에 있다. 이 HTML은 빌드 없이 열리며 다이어그램 렌더링에 온라인 Mermaid 모듈을 사용한다.</p>
+<script>document.querySelector('#source').textContent=document.querySelector('.mermaid').textContent;</script>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';mermaid.initialize({startOnLoad:true,securityLevel:'strict',theme:'neutral'});</script>
 </html>

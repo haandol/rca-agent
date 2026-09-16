@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 
 from headless_codex.services.execution_contract import (
@@ -28,6 +29,7 @@ from headless_codex.services.execution_evidence import (
     redact_arguments,
 )
 from headless_codex.services.execution_state import ExecutionState
+from headless_codex.services.runbook_contract import validate_recovery_sequence
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,148 @@ def _steps_blocker(evidence: ExecutionEvidence) -> str | None:
     return None
 
 
+def _completed_write_proven(terminal: dict, records: list[dict], playbook: dict, execution_id: str) -> bool:
+    """Replay producer provenance or actual committed-write logs, never a model success flag.
+
+    Deployment recovery requires a real write in the fixed recovery window. A
+    server-bound producer descriptor can prove both bins; otherwise an approved
+    read must return a committed write from one of the converged application tasks.
+    """
+    from headless_codex.services.command_gate import evaluate_command
+    from headless_codex.services.post_action_metrics import _completed_accounting, timestamp
+
+    try:
+        bound = terminal["binding"]
+        request = bound["request"]
+        start, end = timestamp(bound["start"]), timestamp(bound["end"])
+        if end - start != 120 or start % 60:
+            return False
+        if terminal.get("write_semantics_verified") is True:
+            descriptor = _completed_accounting(
+                request,
+                records,
+                {"playbook": playbook},
+                execution_id,
+                [s["step_id"] for s in playbook["execution_steps"]],
+                evaluate_command,
+            )
+            if descriptor and descriptor == bound.get("completed_write_accounting"):
+                bins = terminal["bins"]
+                if len(bins) == 2 and all(
+                    timestamp(row["start"]) == start + index * 60
+                    and timestamp(row["end"]) == start + (index + 1) * 60
+                    and type(row["successful_writes"]) in (int, float)
+                    and math.isfinite(row["successful_writes"])
+                    and row["successful_writes"] > 0
+                    and row["failures"] == 0
+                    and row["successful_writes"] == row["attempts"] - row["failures"]
+                    for index, row in enumerate(bins)
+                ):
+                    return True
+        convergence = next(
+            r
+            for r in records
+            if r.get("type") == "deployment_wait"
+            and r.get("step_id") == request["deployment_step_id"]
+            and r.get("phase") == "terminal"
+            and r.get("status") == "HEALTHY"
+        )
+        scope = playbook["rollback_context"]["scope"]
+        task_ids = {arn.rsplit("/", 1)[-1] for arn in convergence["task_arns"]}
+        for record in records:
+            if _committed_log_observed(record, scope, task_ids, request["region"], execution_id, start, end):
+                return True
+    except (ValueError, TypeError, KeyError, IndexError, StopIteration, OverflowError):
+        return False
+    return False
+
+
+def _committed_log_observed(
+    record: dict,
+    scope: dict,
+    task_ids: set[str],
+    region: str,
+    execution_id: str,
+    start: float,
+    end: float,
+) -> bool:
+    """Accept only intact approved log reads tied to a converged task and fixed UTC window."""
+    from headless_codex.services.command_gate import evaluate_command
+    from headless_codex.services.post_action_metrics import _unaltered_aws_observation, timestamp
+
+    if (
+        record.get("type") != "attempt"
+        or record.get("execution_id") != execution_id
+        or record.get("succeeded") is not True
+        or str(record.get("exit_status")) != "0"
+        or record.get("blocked")
+        or record.get("stdout_truncated")
+        or record.get("output_incomplete")
+    ):
+        return False
+    try:
+        verdict = evaluate_command(record.get("command", ""))
+        if (
+            not verdict.allowed
+            or not _unaltered_aws_observation(verdict.argv)
+            or verdict.service != "logs"
+            or verdict.operation
+            not in {
+                "filter-log-events",
+                "get-log-events",
+            }
+        ):
+            return False
+        argv = list(verdict.argv)
+        options = {}
+        for index, token in enumerate(argv):
+            if token.startswith("--") and "=" in token:
+                key, value = token.split("=", 1)
+                options[key] = value
+            elif token.startswith("--") and index + 1 < len(argv):
+                options[token] = argv[index + 1]
+        if options.get("--region") != region or options.get("--log-group-name") != scope["log_group"]:
+            return False
+        payload = json.loads(record["stdout"])
+        for event in payload.get("events", []):
+            stream = event.get("logStreamName", options.get("--log-stream-name", "")).split("/")
+            if len(stream) < 3 or stream[-2] != scope["container_name"] or stream[-1] not in task_ids:
+                continue
+            message = json.loads(event["message"])
+            observed = timestamp(message["observed_at"])
+            logged = event["timestamp"] / 1000
+            count = message.get("count")
+            if (
+                message.get("event") == "write_completed"
+                and message.get("completion_semantics") == "committed_rows"
+                and type(count) is int
+                and count > 0
+                and start <= observed < end
+                and start <= logged < end
+                and abs(observed - logged) <= 60
+            ):
+                return True
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        return False
+    return False
+
+
+def _deployment_recovery_error(step: dict, records: list[dict], playbook: dict, execution_id: str) -> str | None:
+    """Keep a healthy arithmetic receipt unresolved until server-observed writes prove recovery."""
+    if not (step.get("metric_wait") or {}).get("deployment_step_id"):
+        return None
+    terminal = [
+        r
+        for r in records
+        if r.get("type") == "metric_wait" and r.get("step_id") == step["step_id"] and r.get("phase") == "terminal"
+    ]
+    if len(terminal) != 1 or terminal[0].get("ok") is not True:
+        return "deployment recovery has no successful metric receipt"
+    if not _completed_write_proven(terminal[0], records, playbook, execution_id):
+        return "deployment recovery requires verified completed-write accounting or actual committed-write evidence"
+    return None
+
+
 def _as_str(value: object, *, limit: int | None = 4000) -> str:
     if value is None:
         return ""
@@ -120,6 +264,10 @@ def _captured_output(record: dict) -> dict:
     """
     captured = capture_command_output(record.get("stdout"), record.get("stderr"))
     result: dict = {}
+    if isinstance(record.get("ecs_control_projection"), dict):
+        result["ecs_control_projection"] = json.loads(
+            redact(json.dumps(record["ecs_control_projection"], ensure_ascii=False))
+        )
     for name in ("stdout", "stderr"):
         if name not in record:
             continue
@@ -210,6 +358,7 @@ def assemble_evidence(
     contract_error = None
     try:
         approved_steps = validate_steps(playbook)
+        validate_recovery_sequence(approved_steps)
         declared_steps = approved_steps
     except (ValueError, TypeError, KeyError) as exc:
         approved_steps = []
@@ -229,7 +378,7 @@ def assemble_evidence(
             # This is the approved contract used for exact comparison, not a UI preview.
             criterion = step.get("success_criteria")
             tracked.success_criteria = criterion if isinstance(criterion, str) else ""
-            tracked.is_metric_wait = "metric_wait" in step
+            tracked.is_metric_wait = step.get("metric_wait") is not None or step.get("deployment_wait") is not None
             tracked.contract_error = contract_error or step_contract_error(step, [])
 
     attempt_counts: dict[str, int] = {}
@@ -255,7 +404,11 @@ def assemble_evidence(
             replayed.append(record)
         journal.append(record)
         for step in approved_steps:
-            evidence.step(step["step_id"]).contract_error = contract_error or step_contract_error(step, journal)
+            evidence.step(step["step_id"]).contract_error = (
+                contract_error
+                or step_contract_error(step, journal)
+                or _deployment_recovery_error(step, journal, playbook, execution_id)
+            )
         record_type = record.get("type")
         if record_type == "approval_rejection":
             evidence.approval_rejections.append(json.loads(redact(json.dumps(record, ensure_ascii=False))))
@@ -264,7 +417,7 @@ def assemble_evidence(
         step_id = _as_str(record.get("step_id"), limit=None)
         if step_id and step_id not in declared_step_ids:
             continue
-        if record_type == "metric_wait" and step_id:
+        if record_type in {"metric_wait", "deployment_wait"} and step_id:
             evidence.metric_wait_records.append(json.loads(redact(json.dumps(record, ensure_ascii=False))))
 
         if record_type == "attempt" and step_id:

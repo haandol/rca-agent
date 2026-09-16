@@ -2,12 +2,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from starlette.responses import JSONResponse
 
 from test_service.adapters.secondary.sensor_repository.models import Base
 from test_service.di.app_container import AppContainer
 from test_service.di.container import Container
-from test_service.middleware import FaultFlagMiddleware, LoggingMiddleware
+from test_service.middleware import LoggingMiddleware
 from test_service.services.runtime_identity import runtime_identity
 from test_service.services.traffic_generator import run_traffic_generator
 from test_service.telemetry import setup_logging, setup_telemetry
@@ -38,6 +40,8 @@ async def lifespan(_: FastAPI):
         if isinstance(db, SqlAlchemyDatabaseAdapter):
             async with db.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+            if settings.db_observability_enabled:
+                await db.schema_snapshot()
 
         flush_task = asyncio.create_task(
             metrics.run_periodic_flush(metrics_stop, interval=settings.metric_flush_interval_seconds),
@@ -99,13 +103,69 @@ async def _cancel_and_drain(tasks: list[asyncio.Task]) -> list[BaseException]:
     ]
 
 
+async def safe_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """Keep the 422 detail array while excluding rejected values and arbitrary validator text.
+
+    Only known field names, list offsets and fixed error types cross this boundary;
+    custom validation messages, context and unknown locations may contain patient data.
+    """
+    fields = {
+        "body",
+        "query",
+        "path",
+        "header",
+        "cookie",
+        "readings",
+        "patient_id",
+        "reading_type",
+        "value",
+        "unit",
+        "timestamp",
+        "limit",
+        "offset",
+    }
+    types = {
+        "missing",
+        "string_type",
+        "float_parsing",
+        "float_type",
+        "int_parsing",
+        "int_type",
+        "enum",
+        "datetime_from_date_parsing",
+        "datetime_parsing",
+        "datetime_type",
+        "list_type",
+        "model_attributes_type",
+        "json_invalid",
+        "greater_than",
+        "greater_than_equal",
+        "less_than",
+        "less_than_equal",
+    }
+    detail = []
+    for error in exc.errors():
+        error_type = error.get("type")
+        detail.append(
+            {
+                "type": error_type if error_type in types else "value_error",
+                "loc": [
+                    part if type(part) is int or (isinstance(part, str) and part in fields) else "[REDACTED]"
+                    for part in error.get("loc", ())
+                ],
+                "msg": "Field required" if error_type == "missing" else "Invalid input",
+            }
+        )
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
 def create_app() -> FastAPI:
     """Place the safe HTTP boundary around application middleware, inside server tracing."""
     setup_logging(container.settings)
 
     app = FastAPI(title="Healthcare Sensor Service", version="0.1.0", lifespan=lifespan)
 
-    app.add_middleware(FaultFlagMiddleware, settings=container.settings)
+    app.add_exception_handler(RequestValidationError, safe_validation_error)
     app.add_middleware(LoggingMiddleware)
 
     setup_telemetry(app, container.settings)

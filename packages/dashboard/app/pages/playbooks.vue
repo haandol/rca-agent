@@ -241,7 +241,14 @@ useHead({ title: '플레이북 라이브러리 · RCA Control' });
                 승인하지 않습니다.
               </p>
               <pre class="mt-4 whitespace-pre-wrap break-all text-xs">{{
-                JSON.stringify(detail.playbook.execution_steps ?? [], null, 2)
+                JSON.stringify(
+                  {
+                    execution_steps: detail.playbook.execution_steps ?? [],
+                    rollback_context: detail.playbook.rollback_context ?? null,
+                  },
+                  null,
+                  2,
+                )
               }}</pre>
             </details>
           </template>

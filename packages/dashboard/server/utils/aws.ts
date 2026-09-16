@@ -1,3 +1,4 @@
+import { ECSClient } from '@aws-sdk/client-ecs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
@@ -55,4 +56,15 @@ export function useSqs(): SQSClient {
     _sqs = new SQSClient({ region: config.awsRegion });
   }
   return _sqs;
+}
+
+const ecsByRegion = new Map<string, ECSClient>();
+/** Server-only read client scoped to the validated stored deployment region. */
+export function useEcs(region: string): ECSClient {
+  let client = ecsByRegion.get(region);
+  if (!client) {
+    client = new ECSClient({ region });
+    ecsByRegion.set(region, client);
+  }
+  return client;
 }

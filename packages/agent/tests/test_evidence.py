@@ -307,6 +307,7 @@ class TestCollectEvidence:
         result = collect_evidence(hypothesis, scoping_result)
 
         assert "No evidence could be collected" in result.full_evidence
+        assert result.failed
 
     @patch("rca_agent.services.evidence.create_evidence_collection_agent")
     def test_handles_timeout(self, mock_create, hypothesis, scoping_result):
@@ -359,7 +360,7 @@ class TestCollectEvidence:
 
         collect_evidence(hypothesis, scoping_result, mcp_clients=mcp_clients)
 
-        mock_create.assert_called_once_with(mcp_clients=mcp_clients)
+        mock_create.assert_called_once_with(mcp_clients=mcp_clients, invocation_timeout_seconds=1800)
 
     @patch("rca_agent.services.evidence.create_evidence_collection_agent")
     def test_creates_fresh_agent_per_call(self, mock_create, hypothesis, scoping_result):
@@ -410,10 +411,8 @@ class TestRunEvidenceCollection:
         assert isinstance(summary, EvidenceCollectionSummary)
         assert "h-1" in summary.evidence_map
         assert "h-2" in summary.evidence_map
-        assert summary.full_evidence_map == {
-            "h-1": "Full evidence for h-1",
-            "h-2": "Full evidence for h-2",
-        }
+        # Original responses stay with the collector/archive, outside orchestrator context.
+        assert summary.full_evidence_map == {}
         assert len(summary.failed_ids) == 0
         assert mock_collect.call_count == 2
 
@@ -559,6 +558,8 @@ class TestRunEvidenceCollection:
         trace.update_hypothesis_evidence.assert_called_once_with(
             "h-1",
             evidence_summary="Evidence summary",
+            critical_facts=[],
+            evidence_refs=[],
         )
 
     @patch("rca_agent.services.evidence.collect_evidence")
@@ -622,7 +623,7 @@ class TestRunEvidenceCollection:
 
         assert elapsed < 0.2
         assert summary.failed_ids == {"h-0", "h-1", "h-2"}
-        assert mock_create.call_count == 1
+        assert mock_create.call_count == 3
 
     @patch("rca_agent.services.evidence.collect_evidence")
     def test_passes_existing_evidence_map_for_parent_lookup(self, mock_collect, scoping_result):

@@ -205,6 +205,7 @@ def build_report_summary(report: RcaReport, playbook: Playbook | None) -> dict:
         "selected_playbook_id": comparison.get("selected_playbook_id") or None,
         "comparison_status": comparison.get("status") or None,
         "proposal_state": proposal.get("state") if isinstance(proposal, dict) else None,
+        "incident_observations": report.incident_observations.model_dump(mode="json"),
     }
 
 
@@ -318,6 +319,17 @@ def _render_playbook_section(playbook: Playbook | None) -> list[str]:
         return lines
     lines.extend(_render_playbook_knowledge(playbook))
     lines.extend([_RUNBOOK_SECTION, ""])
+    if playbook.rollback_context is not None:
+        lines.extend(
+            [
+                "**Reader-verified rollback context**",
+                "",
+                "```json",
+                json.dumps(playbook.rollback_context, ensure_ascii=False, indent=2),
+                "```",
+                "",
+            ]
+        )
     if not playbook.execution_steps:
         lines.extend(
             [
@@ -407,6 +419,21 @@ def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
     if report.detection_method:
         lines.append(f"- **Detection**: {report.detection_method}")
     lines.append("")
+    if (
+        report.incident_observations.critical_facts
+        or report.incident_observations.baseline
+        or report.incident_observations.diagnostics
+    ):
+        lines.extend(
+            [
+                "## Source Observations",
+                "These scoped source facts are separate from the prose summary and the root cause judgment.",
+                "```json",
+                json.dumps(report.incident_observations.model_dump(mode="json"), ensure_ascii=False, indent=2),
+                "```",
+                "",
+            ]
+        )
     if report.alarm_description is not None:
         lines.extend(
             [

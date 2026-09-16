@@ -75,6 +75,11 @@ export class RcaAgentServiceStack extends cdk.Stack {
       ),
       essential: true,
       stopTimeout: cdk.Duration.seconds(120),
+      // awsvpc shares network sysctls: define this once, never on the sidecar.
+      // The Agent enables SO_KEEPALIVE separately; retain interval/probes defaults.
+      systemControls: [
+        { namespace: 'net.ipv4.tcp_keepalive_time', value: '120' },
+      ],
       environment: {
         AWS_REGION: cdk.Aws.REGION,
         SQS_QUEUE_URL: props.alarmQueue.queueUrl,
@@ -83,6 +88,13 @@ export class RcaAgentServiceStack extends cdk.Stack {
         S3_EVIDENCE_BUCKET: props.evidenceBucket.bucketName,
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
         S3_REPORT_BUCKET: props.evidenceBucket.bucketName,
+        RCA_TIME_BUDGET_SECONDS: '3600',
+        SCOPING_TIMEOUT_SECONDS: '900',
+        HYPOTHESIS_GENERATION_TIMEOUT_SECONDS: '900',
+        LLM_DEFAULT_TIMEOUT_SECONDS: '900',
+        EVIDENCE_COLLECTION_TIMEOUT_SECONDS: '1800',
+        BEDROCK_MAX_TOKENS: '65536',
+        ALARM_STALENESS_SECONDS: '10800',
         OTEL_SERVICE_NAME: 'rca-agent',
         FAULT_DB_LEAK: 'false',
         FAULT_SLOW_QUERY_MS: '0',
@@ -130,6 +142,7 @@ export class RcaAgentServiceStack extends cdk.Stack {
     return taskDef;
   }
 
+  /** Read incident deployment identity while retaining approval-only mutation boundaries. */
   private grantTaskPermissions(
     taskDef: ecs.FargateTaskDefinition,
     props: IProps,
@@ -172,6 +185,18 @@ export class RcaAgentServiceStack extends cdk.Stack {
 
     taskDef.taskRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchReadOnlyAccess'),
+    );
+
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'ecs:DescribeServices',
+          'ecs:DescribeTasks',
+          'ecs:ListTasks',
+          'ecs:DescribeTaskDefinition',
+        ],
+        resources: ['*'],
+      }),
     );
 
     taskDef.taskRole.addToPrincipalPolicy(

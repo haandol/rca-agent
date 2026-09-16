@@ -86,6 +86,7 @@ def normalize_request(
     region: str,
     max_wait_seconds: int,
     completed_work_evidence: dict | None = None,
+    deployment_step_id: str = "",
 ) -> dict:
     def text(value: object) -> str:
         if not isinstance(value, str) or not value.strip() or len(value) > 1024:
@@ -94,8 +95,8 @@ def normalize_request(
             raise ValueError("invalid metric coordinate")
         return value
 
-    if type(max_wait_seconds) is not int or not 1 <= max_wait_seconds <= 300:
-        raise ValueError("max_wait_seconds must be between 1 and 300")
+    if type(max_wait_seconds) is not int or not 1 <= max_wait_seconds <= 900:
+        raise ValueError("max_wait_seconds must be between 1 and 900")
     if not isinstance(latency_alarm_name, str):
         raise ValueError("latency_alarm_name must be a string")
     if not isinstance(metrics, dict) or set(metrics) not in (
@@ -122,9 +123,15 @@ def normalize_request(
     base = normalized["failures"]
     if any(m["namespace"] != base["namespace"] or m["dimensions"] != base["dimensions"] for m in normalized.values()):
         raise ValueError("all metrics must share the approved namespace and dimensions")
+    if bool(action_step_id) == bool(deployment_step_id):
+        raise ValueError("action_step_id XOR deployment_step_id required")
     return {
         "step_id": text(step_id),
-        "action_step_id": text(action_step_id),
+        **(
+            {"deployment_step_id": text(deployment_step_id)}
+            if deployment_step_id
+            else {"action_step_id": text(action_step_id)}
+        ),
         "metrics": normalized,
         "failure_alarm_name": text(failure_alarm_name),
         "latency_alarm_name": text(latency_alarm_name) if latency_alarm_name else "",
@@ -199,7 +206,7 @@ def bind_request(request: dict, records: list[dict], context: dict, execution_id
 
     steps = validate_steps(context.get("playbook", {}))
     ids = [s.get("step_id") for s in steps if isinstance(s, dict)]
-    step, action = request["step_id"], request["action_step_id"]
+    step, action = request["step_id"], request.get("deployment_step_id") or request["action_step_id"]
     if step not in ids or action not in ids or ids.index(action) >= ids.index(step):
         raise ValueError("approved prior action and current verification step required")
     approved = steps[ids.index(step)]
@@ -216,6 +223,50 @@ def bind_request(request: dict, records: list[dict], context: dict, execution_id
     ):
         raise ValueError("optional latency must be explicitly included in the approved verification criterion")
     anchor = None
+    if request.get("deployment_step_id"):
+        from headless_codex.services.execution_contract import step_contract_error
+
+        deployment = steps[ids.index(action)]
+        if step_contract_error(deployment, records):
+            raise ValueError("healthy approved deployment receipt required")
+        terminals = [
+            (i, r)
+            for i, r in enumerate(records)
+            if r.get("type") == "deployment_wait" and r.get("step_id") == action and r.get("phase") == "terminal"
+        ]
+        if len(terminals) != 1 or terminals[0][1].get("execution_id") != execution_id:
+            raise ValueError("same execution unique convergence receipt required")
+        index, receipt = terminals[0]
+        from headless_codex.services.service_deployment import approved_action
+
+        write = approved_action(steps, deployment["deployment_wait"], records[:index], execution_id)
+        started = [
+            r
+            for r in records[:index]
+            if r.get("type") == "deployment_wait" and r.get("step_id") == action and r.get("phase") == "started"
+        ]
+        if len(started) != 1 or started[0].get("execution_id") != execution_id:
+            raise ValueError("same-execution persisted deployment start required")
+        binding = receipt.get("binding", {})
+        if (
+            not same_request(started[0].get("binding", {}), binding)
+            or binding.get("action_record") != write["ended_at"]
+            or receipt.get("deployment_id") != write["deployment_id"]
+        ):
+            raise ValueError("convergence receipt does not link to the actual approved write/start")
+        converged = timestamp(receipt["first_converged_at"])
+        if receipt.get("observed_at") != receipt["first_converged_at"] or not timestamp(write["ended_at"]) <= timestamp(
+            started[0]["observed_at"]
+        ) <= converged <= timestamp(binding["deadline"]):
+            raise ValueError("convergence timestamp is outside its recorded execution window")
+        anchor = {
+            "record_index": index,
+            "deployment_step_id": action,
+            "ended_at": utc(timestamp(receipt["first_converged_at"])),
+            "account_id": deployment["deployment_wait"]["account_id"],
+            "cluster_arn": deployment["deployment_wait"]["cluster"],
+            "deployment_id": receipt["deployment_id"],
+        }
     metadata = []
     for index, record in enumerate(records):
         if (
@@ -337,6 +388,36 @@ def _completed_accounting(
     if not isinstance(pointer, str) or not pointer.startswith("/"):
         raise ValueError("source descriptor requires JSON pointer")
     if index == "approved_context":
+        from headless_codex.services.service_deployment import validate_rollback_context, validate_write_accounting
+
+        if pointer != "/playbook/rollback_context/write_accounting":
+            raise ValueError("completed-work evidence requires reader-owned normal context")
+        rollback = context.get("playbook", {}).get("rollback_context")
+        if not isinstance(rollback, dict) or not request.get("deployment_step_id"):
+            raise ValueError("normal accounting requires approved deployment restoration")
+        descriptor = validate_write_accounting(rollback)
+        steps = context["playbook"].get("execution_steps", [])
+        deployment = next(
+            (s.get("deployment_wait", {}) for s in steps if s.get("step_id") == request["deployment_step_id"]), {}
+        )
+        if (
+            deployment.get("task_definition") != descriptor["task_definition_arn"]
+            or deployment.get("image_digest") != descriptor["image_digest"]
+            or deployment.get("region") != request["region"]
+        ):
+            raise ValueError("normal accounting image is not the approved restored deployment")
+        action_guard = next(
+            (
+                s.get("ecs_service_precondition", {})
+                for s in steps
+                if s.get("step_id") == deployment.get("action_step_id")
+            ),
+            {},
+        )
+        try:
+            validate_rollback_context(context["playbook"], action_guard, deployment)
+        except (KeyError, TypeError) as exc:
+            raise ValueError("normal accounting has no approved rollback relationship") from exc
         document = context
     elif type(index) is int and 0 <= index < len(records):
         source = records[index]
@@ -479,6 +560,7 @@ def poll_fixed_metrics(
     budget: ObservationBudget,
     execute: Callable[[str, ObservationBudget], dict],
     append: Callable[[dict], None],
+    check_scope: Callable[[ObservationBudget], None] | None = None,
 ) -> dict:
     request = bound["request"]
     step_id = request["step_id"]
@@ -497,6 +579,8 @@ def poll_fixed_metrics(
     try:
         while True:
             budget.remaining()
+            if check_scope is not None:
+                check_scope(budget)
             # No fixed bin can be assessed before the first one ends. Keep checking
             # cancellation/claim while waiting, without issuing unusable metric reads.
             first_complete = timestamp(bound["start"]) + 60
@@ -561,6 +645,8 @@ def poll_fixed_metrics(
             starts = (bound["start"], utc(timestamp(bound["start"]) + 60))
             if alarm_ok and all(set(values.get(role, {})) == set(starts) for role in request["metrics"]):
                 budget.remaining()
+                if check_scope is not None:
+                    check_scope(budget)
                 bins = [
                     {
                         "start": t,

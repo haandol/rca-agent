@@ -1,194 +1,32 @@
 # Healthcare Sensor App
 
-RCA 에이전트 검증을 위한 헬스케어 센서 데이터 수집/조회 서비스. 환자 바이탈 사인(심박수, 혈압, 체온, SpO2)을 수집하고, 이상치 감지 및 알림을 제공한다. 의도적 장애 주입(fault injection) 기능으로 RCA 에이전트의 근본원인분석 정확도를 검증할 수 있다.
+센서 데이터를 PostgreSQL에 저장하고 환자별 바이탈과 이상치 알림을 조회하는
+FastAPI 서비스다. RCA 데모는 저장 INSERT 컬럼 하나가 다른 불변 이미지로 재현한다.
 
-## Project Layout
+- `POST /sensors/data`: 배치 저장과 이상치 판정.
+- `GET /patients/{patient_id}/vitals`: 타입·기간 조건으로 기존 데이터 조회.
+- `GET /alerts`: 이상치 조회.
+- `GET /healthz`: `status`, `db_connected`, `active_db_connections`, `uptime_seconds`.
 
-```
-src/
-|- test_service/
-   |- adapters/
-   |  |- primary/             # FastAPI controllers (HTTP endpoints)
-   |  |  |- sensors/          # 센서 데이터 수집 API
-   |  |  |- patients/         # 환자별 바이탈 조회 API
-   |  |  |- alerts/           # 이상치 알림 API
-   |  |  |- health/           # Health check
-   |  |  |- fault/            # 장애 주입 API
-   |  |- secondary/           # External service adapters
-   |  |  |- database_adapter.py  # SQLAlchemy async engine (PostgreSQL)
-   |  |  |- sensor_repository/   # Sensor reading persistence
-   |- config/                 # Environment-backed settings
-   |- di/                     # Dependency injection container
-   |- middleware/              # Logging middleware
-   |- ports/                  # DTOs and abstract port contracts
-   |  |- dto/                 # Data transfer objects
-   |  |- interfaces/          # Port interfaces (ABC)
-   |- services/               # Application services
-   |- telemetry.py            # OpenTelemetry setup
-   |- main.py                 # FastAPI entrypoint
-tests/                        # pytest tests
-docker-compose.yml            # PostgreSQL + DynamoDB Local + ADOT Collector
-otel-collector-config.yaml    # ADOT Collector 로컬 설정 (debug exporter)
-```
-
-## Getting Started
-
-1. 로컬 인프라 실행:
-
-   ```bash
-   docker compose up -d
-   ```
-
-2. 의존성 설치 ([uv](https://docs.astral.sh/uv/)):
-
-   ```bash
-   uv sync
-   ```
-
-3. 개발 서버 시작:
-
-   ```bash
-   uv run uvicorn test_service.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-4. 린트 & 포맷:
-
-   ```bash
-   uv run ruff check src/ tests/
-   uv run ruff format src/ tests/
-   ```
-
-5. 테스트:
-
-   ```bash
-   uv run pytest
-   ```
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL 연결 문자열 (asyncpg) | `postgresql+asyncpg://postgres:postgres@localhost:5432/test_service` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry OTLP 엔드포인트 | `http://localhost:4317` |
-| `OTEL_SERVICE_NAME` | OpenTelemetry 서비스 이름 | `healthcare-sensor-app` |
-| `LOG_LEVEL` | 로그 레벨 | `INFO` |
-| `FAULT_INJECTION_ENABLED` | 장애 주입 API 활성화 여부 | `true` |
-| `DB_POOL_SIZE` | DB 커넥션 풀 크기 | `5` |
-| `DB_MAX_OVERFLOW` | DB 커넥션 풀 오버플로우 | `10` |
-| `FAULT_DB_LEAK` | DB 커넥션 리크 feature flag | `false` |
-| `FAULT_SLOW_QUERY_MS` | 요청당 인위적 지연 (ms) | `0` |
-| `FAULT_ERROR_RATE` | 요청 실패율 (0.0~1.0) | `0.0` |
-| `DEPLOYED_REVISION` | 배포된 리비전 식별자 (시작 로그에 기록) | `unknown` |
-
-## Symptom Metrics
-
-앱은 도메인 증상 지표를 CloudWatch EMF 형식으로 표준 출력에 기록한다. `PutMetricData`
-호출과 추가 IAM 권한 없이 로그 수집 계층이 지표를 추출한다.
-
-| Metric | Namespace | 의미 |
-|--------|-----------|------|
-| `VitalIngestAttempts` | `Healthcare/Sensor` | 수집 시도한 바이탈 리딩 수 |
-| `VitalIngestFailures` | `Healthcare/Sensor` | 저장에 실패한 바이탈 리딩 수 |
-| `AbnormalAlertDelaySeconds` | `Healthcare/Sensor` | 이상치 관측부터 알림까지 지연 |
-
-RCA 진입 알람은 `VitalIngestFailures`에 걸려 있다. 알람은 어떤 하위 시스템이 원인인지
-말하지 않으므로, 커넥션 수·CPU·메모리 지표는 에이전트가 검증 단계에서 직접 찾아야 하는
-증거로 남는다.
-
-## API Surface
-
-### Sensor Data
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/sensors/data` | POST | 센서 리딩 배치 수집 |
-
-### Patient Vitals
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/patients/{patient_id}/vitals` | GET | 환자별 바이탈 사인 조회 (타입/기간 필터) |
-
-### Alerts
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/alerts` | GET | 이상치 알림 목록 조회 (환자/타입/기간 필터) |
-
-### Health Check
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/healthz` | GET | Liveness probe |
-
-### Fault Injection
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/fault/db-leak` | POST | DB 커넥션 릭 유발 |
-| `/fault/db-leak/reset` | POST | 릭된 커넥션 해제 |
-| `/fault/high-cpu` | POST | CPU 부하 생성 |
-| `/fault/high-memory` | POST | 메모리 할당 |
-| `/fault/high-memory/reset` | POST | 할당된 메모리 해제 |
-| `/fault/slow-query` | POST | 지연 쿼리 실행 |
-
-이 엔드포인트는 즉시 주입용이다. 데모 시나리오는 배포 기반 주입
-(`scripts/inject_deployment_fault.py`)을 사용해 CloudTrail에 실제 배포 이벤트를
-남긴다. `FAULT_DB_LEAK`이 켜지면 환자 바이탈 조회 경로가 세션을 반환하지 않고,
-요청마다 커넥션이 누적된다.
-
-Request/response 스키마는 `src/test_service/ports/dto/`와 `src/test_service/adapters/primary/schemas.py`에 정의되어 있다.
-
-## Implementation Notes
-
-- `SensorService`는 바이탈 사인 수집, 이상치 판별, 환자별 조회를 담당한다. 이상치 임계값: HR 60-100, BP systolic 90-140, BP diastolic 60-90, 체온 36-38, SpO2 95-100.
-- `FaultInjectionService`는 DB 커넥션 릭, CPU 부하, 메모리 압박, 슬로우 쿼리를 의도적으로 발생시킨다. `FAULT_INJECTION_ENABLED=false`로 비활성화 가능.
-- `HealthService`는 DB 커넥션 풀 상태(체크아웃 수, 풀 크기)를 포함한 헬스 체크를 제공한다.
-- DI 컨테이너는 lazy `@property` 패턴으로 서비스를 초기화하며, `cleanup()`에서 DB 엔진을 정리한다.
-- OpenTelemetry 계측이 FastAPI에 자동 적용되어 분산 트레이싱을 지원한다.
-
-## Feature Flag 기반 장애 시나리오
-
-환경변수를 변경한 배포만으로 장애를 발생시키고, 롤백(환경변수 원복)으로 복구하는 데모 시나리오.
-
-### 시나리오 1: DB 커넥션 리크 (PRD 데모)
+헬스 확인은 HTTP 200뿐 아니라 `status=ok`, `db_connected=true`를 검사한다.
+저장 실패 중에도 DB 연결과 조회가 정상이라면 헬스는 정상이다.
 
 ```bash
-# 장애 배포: FAULT_DB_LEAK=true 로 환경변수 변경 후 재배포
-FAULT_DB_LEAK=true docker compose up -d app
-
-# 결과: 5초 간격 환자 바이탈 조회가 세션을 반환하지 않아 풀이 점진적으로 고갈됨
-# CloudWatch 메트릭: DatabaseConnections 지속 상승 → Alarm 트리거
-# 로그: "DB session not returned to the pool"
-
-# 복구: 환경변수 원복 후 재배포
-FAULT_DB_LEAK=false docker compose up -d app
+uv sync --extra dev
+uv run uvicorn test_service.main:app --host 0.0.0.0 --port 8000 --no-access-log
+uv run ruff check src tests demo
+uv run pytest
 ```
 
-### 시나리오 2: 지연 증가
+접속 정보는 `DATABASE_URL` 또는 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`,
+`DB_PASSWORD`로 제공한다. 배포에서는 자격 증명을 비밀 참조로 주입한다.
+기본 풀 크기는 5, 추가 연결 상한은 10이다. 트래픽은 기본 5초 간격, 동시 실행 1개로
+제한하며 실행하지 못한 슬롯을 별도 계수한다. `TRAFFIC_ENABLED=false`로 끌 수 있다.
 
-```bash
-# 장애 배포: 모든 비즈니스 요청에 3초 지연 주입
-FAULT_SLOW_QUERY_MS=3000 docker compose up -d app
+`DB_OBSERVABILITY_ENABLED`는 기본 true이며 false로 끌 수 있다. 기본 5초마다
+SQL 지문·연결·실제 스키마를 관측한다. 지표는 요청 완료와 독립적으로 기본 30초마다
+발행한다. `PatientVitalsQueryDuration`은 관측 지표로 유지하고 저장 실패 알람만
+RCA 토픽으로 전달한다.
 
-# 결과: p99 latency 급증 → Latency Alarm 트리거
-# 로그: "Injecting latency via FAULT_SLOW_QUERY_MS"
-```
-
-### 시나리오 3: 간헐적 500 에러
-
-```bash
-# 장애 배포: 30% 요청이 500 에러 반환
-FAULT_ERROR_RATE=0.3 docker compose up -d app
-
-# 결과: 5xx 에러율 급증 → Error Rate Alarm 트리거
-# 로그: "Request rejected by FAULT_ERROR_RATE"
-```
-
-### 시나리오 복합
-
-여러 flag를 동시에 설정하여 복합 장애 시나리오도 가능하다:
-
-```bash
-FAULT_DB_LEAK=true FAULT_SLOW_QUERY_MS=1000 docker compose up -d app
-```
+불변 소스 빌드, 실제 PostgreSQL 검증과 이벤트 필드는 [데모 안내](demo/README.md)를
+참조한다. 브라우저용 설명은 [저장 흐름](demo/mechanisms.html)에 있다.

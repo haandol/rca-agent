@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -16,15 +17,19 @@ from rca_agent.ports.dto.models import (
     ReportMatch,
     ScopingResult,
 )
+from rca_agent.ports.dto.observations import IncidentObservations
+from rca_agent.ports.interfaces.incident_observation import IncidentObservationPort
 from rca_agent.ports.interfaces.report_store import ReportStorePort
 from rca_agent.prompts.scoping import SCOPING_USER_PROMPT_TEMPLATE
-from rca_agent.services.observation_context import render_alarm_description
+from rca_agent.services.observation_context import render_alarm_description, render_critical_facts
 from rca_agent.services.report_context import build_report_context
+from rca_agent.utils.agent_invocation import bounded_admission_deadline, invoke_agent
 from rca_agent.utils.embed_key import build_embed_key
-from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
+
+from rca_agent.utils.exception_logging import safe_exception_info
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +68,12 @@ class ScopingOutput(BaseModel):
 
 
 def _parse_window(value: str | None) -> datetime | None:
+    """Preserve aware instants and interpret legacy naive observation windows as UTC."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value).replace(tzinfo=UTC)
+        parsed = datetime.fromisoformat(value)
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         logger.warning("Could not parse observation window: %s", value)
         return None
@@ -155,44 +162,53 @@ def build_report_query(alarm: AlarmPayload) -> str:
     )
 
 
-def _invoke_scoping_agent(
-    agent: Agent,
-    user_prompt: str,
-) -> ScopingOutput:
-    result = agent(user_prompt, structured_output_model=ScopingOutput)
-    return result.structured_output
-
-
 def run_scoping(
     alarm: AlarmPayload,
     agent: Agent,
     *,
     report_store: ReportStorePort,
     timeout_seconds: int = SCOPING_TIMEOUT_SECONDS,
+    incident_observer: IncidentObservationPort | None = None,
 ) -> ScopingResult:
-    reports = report_store.search_similar(build_report_query(alarm))
-    user_prompt = _build_user_prompt(alarm, reports)
+    """Keep bounded source observations available even when model summarization fails."""
+    deadline = bounded_admission_deadline(timeout_seconds)
+    observations = IncidentObservations()
+    if incident_observer is not None:
+        try:
+            observations = incident_observer.observe(
+                alarm.model_copy(deep=True),
+                timeout_seconds=min(600, max(0, deadline - time.monotonic())),
+            )
+        except Exception:
+            logger.exception("Initial incident observations unavailable")
+    reports = report_store.search_similar(build_report_query(alarm)) if time.monotonic() < deadline else []
+    user_prompt = _build_user_prompt(alarm, reports) + render_critical_facts(
+        ScopingResult(alarm_summary="", incident_observations=observations),
+    )
 
     logger.info("Running scoping agent for alarm: %s (timeout=%ds)", alarm.alarm_name, timeout_seconds)
 
     output: ScopingOutput | None = None
     try:
-        output = call_with_timeout(
-            lambda: _invoke_scoping_agent(agent, user_prompt),
+        output = invoke_agent(agent, user_prompt, ScopingOutput, max(0, deadline - time.monotonic()))
+    except TimeoutError as exc:
+        logger.warning(
+            "Scoping agent failed; exception_type=%s; configured_start_budget=%ss; using alarm payload as fallback",
+            type(exc).__name__,
             timeout_seconds,
+            exc_info=safe_exception_info(exc),
         )
-    except TimeoutError:
-        logger.warning("Scoping agent timed out after %ds, using alarm payload as fallback", timeout_seconds)
-    except Exception:
-        logger.exception("Scoping agent failed")
+    except Exception as exc:
+        logger.warning("Scoping agent failed; exception_type=%s", type(exc).__name__, exc_info=safe_exception_info(exc))
 
     if output is None:
         return ScopingResult(
-            alarm_summary=f"[Timeout] {alarm.alarm_name}: {alarm.new_state_reason}",
+            alarm_summary=f"[Scoping unavailable] {alarm.alarm_name}: {alarm.new_state_reason}",
             blast_radius="single",
             initial_severity="medium",
             similar_reports=reports,
             raw_alarm=alarm,
+            incident_observations=observations,
         )
 
     logger.info("Scoping complete: severity=%s, blast_radius=%s", output.initial_severity, output.blast_radius)
@@ -210,4 +226,5 @@ def run_scoping(
         ],
         similar_reports=reports,
         raw_alarm=alarm,
+        incident_observations=observations,
     )

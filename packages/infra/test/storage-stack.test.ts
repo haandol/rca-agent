@@ -37,6 +37,13 @@ test('evidence bucket blocks public access and retains encrypted evidence', () =
           Id: 'expire-evidence-60d',
           Prefix: 'rca/',
           Status: 'Enabled',
+          ExpirationInDays: 60,
+        }),
+        Match.objectLike({
+          Id: 'expire-baselines-60d',
+          Prefix: 'baselines/',
+          Status: 'Enabled',
+          ExpirationInDays: 60,
         }),
       ]),
     },

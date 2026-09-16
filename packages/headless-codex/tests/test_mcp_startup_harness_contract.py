@@ -73,6 +73,7 @@ def _render(tmp_path, profile):
                 "playbook-execution": [
                     "run_playbook_command",
                     "wait_for_post_action_metrics",
+                    "wait_for_service_deployment",
                     "record_step_outcome",
                     "record_resolution",
                 ],
@@ -114,7 +115,7 @@ def test_initial_catalog_waits_for_servers_and_essential_startup_failures_are_fa
     assert config["sandbox_mode"] == "read-only"
     for name, server in servers.items():
         assert server["startup_timeout_sec"] == 30
-        assert server["tool_timeout_sec"] == (360 if name == "playbook-execution" else 120)
+        assert server["tool_timeout_sec"] == (1200 if name == "playbook-execution" else 120)
         assert server["default_tools_approval_mode"] == "approve"
 
 
@@ -174,7 +175,7 @@ def test_model_eval_requires_artifact_startup_without_acquiring_aws_or_uv_enviro
 
 
 def test_execution_mcp_forwards_the_existing_aws_cli_environment_names(tmp_path):
-    """AWS CLI inherits the MCP process environment, so its AWS allowlist must match CloudWatch."""
+    """CLI retains the existing AWS credential environment plus its explicit locked ECS model path."""
     _, config = _render(tmp_path, EXECUTION_PROFILE)
     execution = config["mcp_servers"]["playbook-execution"]
     assert "cloudwatch" not in config["mcp_servers"]
@@ -186,13 +187,16 @@ def test_execution_mcp_forwards_the_existing_aws_cli_environment_names(tmp_path)
     }
     names = execution["env_vars"]
     assert len(names) == len(set(names))
-    assert set(names) == playbook_names | AWS_ENV_NAMES
+    assert set(names) == playbook_names | AWS_ENV_NAMES | {"AWS_DATA_PATH"}
     assert (AWS_ENV_NAMES | UV_ENV_NAMES).isdisjoint(execution["env"])
 
 
-def test_retrospective_artifact_server_does_not_acquire_aws_environment(tmp_path):
-    """Retrospective only saves local artifacts and needs no AWS credential discovery variables."""
+def test_retrospective_reader_inherits_aws_role_environment_names_only(tmp_path):
+    """Retrospective reads fixed S3 evidence through inherited role names, never credential values."""
     _, config = _render(tmp_path, RETROSPECTIVE_PROFILE)
     server = config["mcp_servers"]["playbook-retrospective"]
-    assert set(server["env_vars"]) == {"PLAYBOOK_EXECUTION_TOKEN", "PLAYBOOK_EXECUTION_ID"}
+    assert (
+        set(server["env_vars"])
+        == {"PLAYBOOK_EXECUTION_TOKEN", "PLAYBOOK_EXECUTION_ID", "S3_EVIDENCE_BUCKET"} | AWS_ENV_NAMES
+    )
     assert (AWS_ENV_NAMES | UV_ENV_NAMES).isdisjoint(server["env"])

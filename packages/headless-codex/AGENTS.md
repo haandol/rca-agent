@@ -141,7 +141,7 @@ floor(epoch/60)*60+60부터 첫 두 완결된 60초 구간을 고정합니다. �
 끝나도 반드시 다음 분부터 시작하며 조회 전에 앵커와 구간을 보존합니다.
 현재 검증 절차의 `run_playbook_command`로 list-metrics·describe-alarms를 먼저 기록하고,
 승인된 현재 서비스의 실제 좌표·알람 기준으로 읽기 전용 조회를 수행합니다.
-최대 300초를 기존 실행 예산과 MCP timeout 360초 안에서 기다리며 명령 gate·감사 기록,
+최대 900초를 기존 실행 전체 3600초 강제 기한과 MCP timeout 1200초 안에서 기다리며 명령 gate·감사 기록,
 취소·claim 경계를 유지합니다. 동일 요청은 최종 영수증을 재사용하고 비정상 구간을
 나중 정상 구간으로 바꾸지 않습니다. metrics의 attempts/failures는 필수이며 latency와
 latency_alarm_name은 승인 기준에 지연 지표와 알람이 명시된 경우에만 추가합니다.

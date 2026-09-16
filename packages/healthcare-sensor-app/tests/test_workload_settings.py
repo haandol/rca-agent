@@ -24,12 +24,8 @@ def test_existing_required_settings_constructor_keeps_new_defaults():
         otel_exporter_otlp_endpoint="http://localhost:4317",
         otel_service_name="custom-trace-name",
         log_level="INFO",
-        fault_injection_enabled=True,
         db_pool_size=5,
         db_max_overflow=10,
-        fault_db_leak=False,
-        fault_slow_query_ms=0,
-        fault_error_rate=0,
         deployed_revision="test",
     )
     assert settings.traffic_enabled is True
@@ -41,7 +37,7 @@ def test_existing_required_settings_constructor_keeps_new_defaults():
     assert settings.metric_flush_interval_seconds == 30
     assert settings.db_pool_timeout_seconds == 30
     assert settings.db_statement_timeout_ms == 0
-    assert settings.db_observability_enabled is False
+    assert settings.db_observability_enabled is True
     assert settings.db_observability_interval_seconds == 5
 
 

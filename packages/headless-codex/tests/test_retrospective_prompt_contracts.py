@@ -3,11 +3,8 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from headless_codex import retrospective_mcp_server
 from headless_codex.ports.interfaces.execution_store import ExecutionTarget
-from headless_codex.services.execution_evidence import CommandAttempt, ExecutionEvidence
 from headless_codex.services.execution_prompt import build_retrospective_prompt
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -16,10 +13,23 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 def test_runtime_and_analyst_require_persisted_no_change_attestation():
     """No-change review uses an empty update with rationale, not a new model-owned status."""
     target = ExecutionTarget(rca_id="rca", engine="headless-codex", alarm_name="alarm", playbook={})
-    evidence = ExecutionEvidence(execution_id="exec", rca_id="rca", playbook_id="pb")
-    runtime = build_retrospective_prompt(target, evidence, execution_id="exec")
+    runtime = build_retrospective_prompt(
+        target,
+        execution_id="exec",
+        evidence_key="executions/rca/exec/evidence.json",
+        approved_playbook_key="approvals/rca/exec/playbook.json",
+    )
     analyst = (PACKAGE_ROOT / "harness/retrospective/agents/retrospective-analyst.md").read_text()
     for guidance in (runtime, analyst):
+        assert "`binding`·`request`·초기 알람 스냅샷은 고정 입력" in guidance
+        assert "같은 대상·역할의 가장 늦은 실제 poll" in guidance
+        assert "`stdout` 본문을 마지막 페이지까지 읽고" in guidance
+        assert "terminal과 모순되면 그 모순을" in guidance
+        assert "poll pointer와 관측 시각을 명시" in guidance
+        assert "`complete=true`는 선택한 저장된 JSON 값의 페이지가 끝났다는 뜻일 뿐" in guidance
+        assert "`stdout_truncated`·`projection_omissions`" in guidance
+        assert "복원되지 않으며 여전히 알 수 없다" in guidance
+        assert "오류·사건의 부재나 성공의 증거로 해석하지 않는다" in guidance
         assert 'save_playbook_update(update_json="{}", rationale=' in guidance
         assert "비어 있지 않은 근거" in guidance
         assert "`ok: true`" in guidance
@@ -32,7 +42,7 @@ def test_runtime_and_analyst_require_persisted_no_change_attestation():
     assert "응답만 남기고 저장을 생략한 회고는 완료가 아니다" in orchestrator
 
 
-def test_documented_empty_update_is_accepted_and_persisted_by_existing_mcp(monkeypatch, tmp_path):
+def test_documented_empty_update_is_accepted_and_persisted_by_existing_mcp(monkeypatch, tmp_path, retrospective_reads):
     """The documented NO_CHANGE attestation matches the real MCP payload without adding fields."""
     path = tmp_path / "retrospective.json"
     monkeypatch.setattr(retrospective_mcp_server, "_target_path", lambda: path)
@@ -49,56 +59,3 @@ def test_no_change_attestation_still_requires_a_nonempty_rationale(monkeypatch, 
     response = json.loads(retrospective_mcp_server.save_playbook_update(update_json="{}", rationale=" "))
     assert not response["ok"]
     assert not path.exists()
-
-
-def test_large_retrospective_evidence_is_valid_bounded_json_with_final_resolution():
-    """Budgeting must preserve final resolution and step identities instead of slicing JSON text."""
-    target = ExecutionTarget(rca_id="rca", engine="headless-codex", alarm_name="alarm", playbook={})
-    evidence = ExecutionEvidence(
-        execution_id="exec",
-        rca_id="rca",
-        playbook_id="pb",
-        final_state="RESOLVED",
-        resolution_confirmed=True,
-        resolution_observation="sigterm rollback verified with two completed post-action periods",
-    )
-    for index in range(12):
-        evidence.record_attempt(
-            CommandAttempt(
-                step_id=f"step-{index}",
-                command="aws cloudwatch get-metric-statistics",
-                arguments={},
-                exit_status="0",
-                succeeded=True,
-                attempt_index=1,
-                observation="large-observation-" + "x" * 12000,
-                recorded_at="2026-09-10T10:00:00Z",
-            )
-        )
-    prompt = build_retrospective_prompt(target, evidence, execution_id="exec")
-    evidence_json = prompt.split("## 실행 증거\n\n```json\n")[1].split("\n```")[0]
-    parsed = json.loads(evidence_json)
-    assert len(evidence_json) <= 60000
-    assert parsed["final_state"] == "RESOLVED"
-    assert parsed["resolution_observation"] == evidence.resolution_observation
-    assert parsed["resolution_confirmed"] is True
-    assert {step["step_id"] for step in parsed["steps"]} == {f"step-{index}" for index in range(12)}
-    assert parsed["projection"]["output_previews_omitted"] is True
-    assert parsed["projection"]["persisted_evidence_unchanged"] is True
-    assert all(step["attempts"][0]["recorded_at"] == "2026-09-10T10:00:00Z" for step in parsed["steps"])
-    assert all(len(step.attempts[0].observation) > 12000 for step in evidence.steps)
-
-
-def test_retrospective_budget_failure_propagates_instead_of_dropping_resolution():
-    """The existing retrospective failure path receives an error when essential metadata cannot fit."""
-    target = ExecutionTarget(rca_id="rca", engine="headless-codex", alarm_name="alarm", playbook={})
-    evidence = ExecutionEvidence(
-        execution_id="exec",
-        rca_id="rca",
-        playbook_id="pb",
-        resolution_confirmed=True,
-        final_state="RESOLVED",
-        resolution_observation="essential outcome " * 4000,
-    )
-    with pytest.raises(ValueError, match="metadata exceeds JSON budget"):
-        build_retrospective_prompt(target, evidence, execution_id="exec")

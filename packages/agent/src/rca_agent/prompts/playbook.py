@@ -57,15 +57,40 @@ AWS CLI commands.** Fix every target and region argument from current incident e
 before approval. No placeholders, shell variables, command substitution, omitted target \
 arguments, or commands invented at execution time. A changed command requires new approval.
 - **Each step has exactly one operation:** nonempty `commands: list[str]` OR \
-`metric_wait: dict` with `commands: []`. `metric_wait` uses the existing \
+`deployment_wait: dict` OR `metric_wait: dict`, with `commands: []` for waits. `metric_wait` uses the existing \
 wait_for_post_action_metrics arguments without step_id: action_step_id (a prior action), \
-metrics, failure_alarm_name, region, max_wait_seconds (1–300, default 300), optional \
+metrics, failure_alarm_name, region, max_wait_seconds (1–900, default 900), optional \
 latency_alarm_name and completed_work_evidence. metrics requires attempts and failures, \
 optional latency; each has namespace, metric_name, dimensions (observed Name-to-Value map). \
 All metrics share namespace/dimensions. Supply latency and its alarm together. The server \
 binds the actual action completion time to the first two complete 60-second bins; do not \
 invent timestamps, intervals, or coordinates. Include prerequisite discovery CLI commands \
 (list-metrics and describe-alarms) as fixed commands before the metric_wait step.
+- **Deployment rollback requires the supplied server-verified normal/fault baseline.** \
+Never manufacture a prior revision, a digest, a completed-write proof, or a validated baseline. \
+When the server-owned rollback_context.write_accounting is present, the recovery metric_wait must use \
+completed_work_evidence={{"record_index":"approved_context", \
+"json_pointer":"/playbook/rollback_context/write_accounting"}}. This descriptor proves completed-write \
+semantics for the restored normal immutable image. Never create a descriptor or infer one from metric \
+names or fault-image-only logs. Without it, omit this optional reference and verify writes separately. \
+If `rollback_context` is null, leave deployment execution steps empty. \
+When the evidence supports rollback, use exactly one ordinary \
+`aws ecs update-service --cluster <observed ARN> --service <observed ARN> \
+--task-definition <normal task_definition_arn> --region <observed region>` command, with actual \
+values instead of angle-bracket text. Attach `ecs_service_precondition` containing \
+account_id, region, cluster, service, container_name, desired_count, \
+expected_task_definition, expected_image_digest, expected_deployment_id, service_settings. \
+Copy scope.cluster_arn/service_arn to cluster/service, current.task_definition_arn to \
+expected_task_definition, current.image_digest/deployment_id to the corresponding expected fields, \
+and the normalized service_settings from rollback_context exactly. Do not add fields.
+  Follow it with `deployment_wait`: account_id, region, cluster, service, container_name, \
+desired_count, action_step_id, task_definition, image_digest, max_wait_seconds. \
+Use the normal scope/definition/digest and the prior rollback step ID; max_wait_seconds is 900. \
+Then add `metric_wait` using `deployment_step_id` (the deployment_wait step ID) instead of \
+action_step_id, plus the actual metrics, failure_alarm_name, region and max_wait_seconds=900. \
+The server anchors the first two complete 60-second bins strictly after actual convergence. \
+Each bin must have positive attempts and zero failures; require alarm OK and actual committed \
+write evidence as well. Never treat UpdateService acknowledgement or convergence alone as recovery.
 - **`success_criteria` must be observable.** Name actual metrics, thresholds and alarms. \
 For writes, require evidence of completed writes, not merely attempts minus failures, \
 STOPPED task status, alarm OK, passive expiry, or missing observations.

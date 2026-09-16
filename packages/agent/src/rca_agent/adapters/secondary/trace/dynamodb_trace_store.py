@@ -411,15 +411,21 @@ class TraceStore:
         hypothesis_id: str,
         *,
         evidence_summary: str,
+        critical_facts: list[dict] | None = None,
+        evidence_refs: list[str] | None = None,
     ) -> None:
+        """Persist source evidence outside prose truncation under the existing claim fence."""
         now = datetime.now(UTC).isoformat()
+        set_parts = ["evidence_summary = :es", "updated_at = :now"]
+        values = {":es": {"S": evidence_summary[:_SUMMARY_MAX_LEN]}, ":now": {"S": now}}
+        for name, value in (("critical_facts", critical_facts), ("evidence_refs", evidence_refs)):
+            if value is not None:
+                set_parts.append(f"{name} = :{name}")
+                values[f":{name}"] = {"S": json.dumps(value, ensure_ascii=False)}
         self._update_hypothesis_item(
             hypothesis_id,
-            set_parts=["evidence_summary = :es", "updated_at = :now"],
-            attr_values={
-                ":es": {"S": evidence_summary[:_SUMMARY_MAX_LEN]},
-                ":now": {"S": now},
-            },
+            set_parts=set_parts,
+            attr_values=values,
             error_log="Failed to update hypothesis evidence for %s",
         )
 
@@ -738,6 +744,8 @@ def _deserialize_hypothesis(item: dict) -> dict:
         "required_evidence": required,
         "referenced_playbook_id": item.get("referenced_playbook_id", {}).get("S"),
         "evidence_summary": item.get("evidence_summary", {}).get("S", ""),
+        "critical_facts": json.loads(item.get("critical_facts", {}).get("S", "[]")),
+        "evidence_refs": json.loads(item.get("evidence_refs", {}).get("S", "[]")),
         "validation_evidence_summary": item.get("validation_evidence_summary", {}).get("S", ""),
         "judgment_reasoning": item.get("judgment_reasoning", {}).get("S", ""),
         "closure_reason": item.get("closure_reason", {}).get("S", ""),

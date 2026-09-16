@@ -1,0 +1,69 @@
+{
+  "id": "write-column-regression",
+  "category": "database",
+  "executionModes": ["model-eval"],
+  "provenance": {
+    "kind": "synthetic-illustrative",
+    "status": "fresh-capture-pending",
+    "awsMeasured": false,
+    "alarmEnvelope": "synthetic-illustrative-not-an-observed-aws-alarm",
+    "inputBoundary": "baseline-and-incident-only",
+    "note": "New native INSERT column case. All observations below are synthetic contract examples, not previous AWS or PostgreSQL measurements. Replace only with a fresh reviewed capture."
+  },
+  "alarm": {
+    "name": "Illustrative-Healthcare-VitalIngestFailures",
+    "metric": "VitalIngestFailures",
+    "stateReason": "Synthetic contract example; no observed AWS alarm transition.",
+    "namespace": "Healthcare/Sensor",
+    "dimensions": {
+      "ServiceName": "healthcare-sensor-app"
+    }
+  },
+  "observations": [
+    {
+      "id": "obs-01",
+      "source": "synthetic-illustrative",
+      "summary": "Synthetic example: native PostgreSQL INSERT failed with SQLSTATE 42703; table sensor_readings; INSERT column_names include sampled_at. SQL parameters and patient values are excluded."
+    },
+    {
+      "id": "obs-02",
+      "source": "synthetic-illustrative",
+      "summary": "Synthetic example: independently queried schema has sensor_readings.timestamp and no sampled_at before and during the incident; no schema change is asserted from deployment labels."
+    },
+    {
+      "id": "obs-03",
+      "source": "synthetic-illustrative",
+      "summary": "Synthetic example: same base source; v1 INSERT references timestamp; v2 INSERT references sampled_at. These are illustrative source relationships, not measured image digests or verified source hashes."
+    },
+    {
+      "id": "obs-04",
+      "source": "synthetic-illustrative",
+      "summary": "Synthetic example: baseline committed writes succeed, then writes fail while reads and health remain available under the same inputs. No real CloudWatch time bins are supplied."
+    },
+    {
+      "id": "obs-05",
+      "source": "synthetic-illustrative",
+      "summary": "Synthetic example: connection returns remain balanced and service load settings unchanged; write failure is a native missing-column error. These are example competing-cause observations, not live recovery proof."
+    }
+  ],
+  "expectation": {
+    "requireConfirmedRootCause": true,
+    "requireExecutableRemediation": true,
+    "acceptedRootFaultTypes": ["unsupported"],
+    "requiredRootCauseEvidenceIds": ["obs-01", "obs-02", "obs-03", "obs-04"],
+    "requiredEvidenceIds": ["obs-01", "obs-02", "obs-03", "obs-04", "obs-05"],
+    "requiredArtifacts": [
+      "scoping",
+      "hypotheses",
+      "validation",
+      "report",
+      "playbook"
+    ],
+    "competingCauses": [
+      {
+        "id": "connection-leak",
+        "requiredEvidenceIds": ["obs-05"]
+      }
+    ]
+  }
+}

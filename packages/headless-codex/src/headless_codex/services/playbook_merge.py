@@ -81,11 +81,13 @@ def _merge_step(existing: dict, update: dict) -> tuple[dict, dict | None]:
             continue
         merged[name] = new_value
         changes[name] = {"before": str(old_value), "after": str(new_value)}
-    if "commands" in update or "metric_wait" in update:
+    if any(k in update for k in ("commands", "metric_wait", "deployment_wait", "ecs_service_precondition")):
         validate_step_operation(update)
         operation = {
             "commands": deepcopy(update.get("commands", [])),
             "metric_wait": deepcopy(update.get("metric_wait")),
+            "deployment_wait": deepcopy(update.get("deployment_wait")),
+            "ecs_service_precondition": deepcopy(update.get("ecs_service_precondition")),
         }
         for name, value in operation.items():
             before = existing.get(name, [] if name == "commands" else None)
@@ -163,11 +165,15 @@ def merge_playbook_update(existing: dict, update: object) -> tuple[dict, Playboo
         validate_step_operation(update_step)
         added["commands"] = deepcopy(update_step.get("commands", []))
         added["metric_wait"] = deepcopy(update_step.get("metric_wait"))
+        for name in ("deployment_wait", "ecs_service_precondition"):
+            if name in update_step:
+                added[name] = deepcopy(update_step[name])
         merged_steps.append(added)
         diff.added_steps.append(step_id)
 
     if diff.added_steps or any(
-        {"commands", "metric_wait"} & correction["changes"].keys() for correction in diff.corrected_steps
+        {"commands", "metric_wait", "deployment_wait", "ecs_service_precondition"} & correction["changes"].keys()
+        for correction in diff.corrected_steps
     ):
         validate_runbook(merged_steps)
     merged["execution_steps"] = merged_steps

@@ -439,6 +439,9 @@ def test_completed_write_descriptor_binds_actual_source_counts(data):
     data["context"]["playbook"]["execution_steps"][2]["metric_wait"]["completed_work_evidence"] = data["request"][
         "completed_work_evidence"
     ]
+    from headless_codex.services.execution_contract import validate_steps
+
+    validate_steps(data["context"]["playbook"])
     bound = bind_request(data["request"], data["records"], data["context"], "exec-1", evaluate_command)
     data["bound"] = {**bound, "request": data["request"]}
     result, _, _ = run(data)
@@ -487,6 +490,7 @@ def invoke(data, **overrides):
         "metrics": data["metrics"],
         "failure_alarm_name": "observed-errors",
         "region": REGION,
+        "max_wait_seconds": data["request"]["max_wait_seconds"],
     }
     return json.loads(server.wait_for_post_action_metrics(**{**args, **overrides}))
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.evidence_store import EvidenceStorePort
@@ -12,6 +13,11 @@ from rca_agent.ports.interfaces.session_store import SessionStorePort
 
 
 class Container(ABC):
+    @contextmanager
+    def analysis_context(self):
+        """Allow stateful containers to isolate a newly claimed analysis; stateless containers need no reset."""
+        yield
+
     @property
     @abstractmethod
     def session_store(self) -> SessionStorePort: ...

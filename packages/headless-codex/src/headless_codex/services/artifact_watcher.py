@@ -72,6 +72,9 @@ def _build_execution_steps_metadata(steps: object) -> list[dict] | None:
         fields = {field: step.get(field, "") for field in _EXECUTION_STEP_FIELDS}
         fields["commands"] = step.get("commands", [])
         fields["metric_wait"] = step.get("metric_wait")
+        for key in ("deployment_wait", "ecs_service_precondition"):
+            if key in step:
+                fields[key] = step[key]
         value = json.loads(json.dumps(fields), parse_float=Decimal)
         rendered.append(TypeSerializer().serialize(value))
     return rendered or None
@@ -90,6 +93,9 @@ def _build_playbook_metadata(artifact: dict) -> dict:
     steps = _build_execution_steps_metadata(artifact.get("execution_steps"))
     if isinstance(artifact.get("execution_steps"), list):
         meta["execution_steps"] = {"L": steps or []}
+    if "rollback_context" in artifact:
+        value = json.loads(json.dumps(artifact["rollback_context"]), parse_float=Decimal)
+        meta["rollback_context"] = TypeSerializer().serialize(value)
     return meta
 
 

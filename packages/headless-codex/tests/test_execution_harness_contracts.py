@@ -49,6 +49,7 @@ def test_execution_operator_has_only_server_gated_execution_tools():
     assert servers["playbook-execution"]["enabled_tools"] == [
         "run_playbook_command",
         "wait_for_post_action_metrics",
+        "wait_for_service_deployment",
         "record_step_outcome",
         "record_resolution",
     ]
@@ -64,13 +65,14 @@ async def test_required_rendered_execution_catalog_exposes_the_actual_fixed_wait
     server = config["mcp_servers"]["playbook-execution"]
     catalog = {tool.name: tool for tool in await mcp.list_tools()}
     assert server["required"] is True
-    assert server["tool_timeout_sec"] == 360
+    assert server["tool_timeout_sec"] == 1200
     assert (
         set(server["enabled_tools"])
         == set(catalog)
         == {
             "run_playbook_command",
             "wait_for_post_action_metrics",
+            "wait_for_service_deployment",
             "record_step_outcome",
             "record_resolution",
         }
@@ -83,15 +85,16 @@ async def test_required_rendered_execution_catalog_exposes_the_actual_fixed_wait
         "failure_alarm_name",
         "region",
     }
-    assert set(schema["required"]) == required
+    assert set(schema["required"]) == {"step_id"}
     assert set(schema["properties"]) == required | {
         "max_wait_seconds",
         "latency_alarm_name",
         "completed_work_evidence",
+        "deployment_step_id",
     }
-    assert schema["properties"]["metrics"]["type"] == "object"
+    assert {"type": "object", "additionalProperties": True} in schema["properties"]["metrics"]["anyOf"]
     assert schema["properties"]["max_wait_seconds"]["type"] == "integer"
-    assert schema["properties"]["max_wait_seconds"]["default"] == 300
+    assert schema["properties"]["max_wait_seconds"]["default"] == 900
     assert schema["properties"]["latency_alarm_name"]["default"] == ""
     assert schema["properties"]["completed_work_evidence"]["default"] is None
     for name in required - {"metrics"}:
@@ -114,8 +117,10 @@ async def test_documented_wait_calls_match_actual_catalog_arguments_and_defaults
         assert documented is not None
         call = ast.parse(" ".join(documented.group().split()), mode="eval").body
         assert isinstance(call, ast.Call)
-        assert [arg.id for arg in call.args] == schema["required"]
-        assert {kw.arg for kw in call.keywords} == set(schema["properties"]) - set(schema["required"])
+        positional = [arg.id for arg in call.args]
+        assert positional == ["step_id", "action_step_id", "metrics", "failure_alarm_name", "region"]
+        assert set(schema["required"]) <= set(positional)
+        assert {kw.arg for kw in call.keywords} == set(schema["properties"]) - set(positional)
         for keyword in call.keywords:
             assert ast.literal_eval(keyword.value) == schema["properties"][keyword.arg]["default"]
 
@@ -126,14 +131,14 @@ def test_packaged_operator_allowlist_matches_required_execution_profile():
         operator["mcp_servers"]["playbook-execution"]["enabled_tools"]
         == (EXECUTION_CONFIG["mcp_servers"]["playbook-execution"]["enabled_tools"])
     )
-    assert operator["mcp_servers"]["playbook-execution"]["tool_timeout_sec"] == 360
+    assert operator["mcp_servers"]["playbook-execution"]["tool_timeout_sec"] == 1200
 
 
 def test_retrospective_cannot_execute_commands():
     servers = RETROSPECTIVE_ANALYST_CONFIG["mcp_servers"]
 
     assert set(servers) == {"playbook-retrospective"}
-    assert servers["playbook-retrospective"]["enabled_tools"] == ["save_playbook_update"]
+    assert servers["playbook-retrospective"]["enabled_tools"] == ["read_retrospective_document", "save_playbook_update"]
     assert RETROSPECTIVE_ANALYST_CONFIG["sandbox_mode"] == "read-only"
 
 
@@ -212,7 +217,7 @@ def test_packaged_execution_guidance_preserves_fixed_wait_contract(guidance):
     """Both operator entry points must avoid rolling windows and read-as-write false positives."""
     for contract in (
         "wait_for_post_action_metrics(step_id, action_step_id, metrics, failure_alarm_name,",
-        "region, max_wait_seconds=300, latency_alarm_name='', completed_work_evidence=None)",
+        "region, max_wait_seconds=900, latency_alarm_name='', completed_work_evidence=None, deployment_step_id='')",
         "승인된 현재 검증 step_id",
         "`run_playbook_command`",
         "`aws cloudwatch list-metrics`",
@@ -243,9 +248,9 @@ def test_packaged_execution_guidance_preserves_fixed_wait_contract(guidance):
         "다른 지표가 누락되어도",
         "nonfinite·중복",
         "최종 실패",
-        "최대 300초",
+        "최대 900초",
         "남은 기존 실행 예산",
-        "MCP timeout 360초",
+        "MCP timeout 1200초",
         "취소·claim·명령 timeout",
         "busy-poll",
         "같은 소유자의 해제·롤백",

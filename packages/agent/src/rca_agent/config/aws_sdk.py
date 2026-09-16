@@ -7,10 +7,11 @@ from botocore.config import Config
 from rca_agent.config.settings import S3_EVIDENCE_MAX_RETRIES
 
 AWS_SDK_CONNECT_TIMEOUT_SECONDS = 5
-AWS_SDK_READ_TIMEOUT_SECONDS = 20
+AWS_SDK_READ_TIMEOUT_SECONDS = 60
 AWS_SDK_TOTAL_MAX_ATTEMPTS = 1
 
 SIDE_EFFECT_AWS_CLIENT_CONFIG = Config(
+    tcp_keepalive=True,
     connect_timeout=AWS_SDK_CONNECT_TIMEOUT_SECONDS,
     read_timeout=AWS_SDK_READ_TIMEOUT_SECONDS,
     retries={

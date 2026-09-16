@@ -238,6 +238,8 @@ class TestProcessAlarmFullPipeline:
         report_s3_key="reports/rca-1.md",
         precollected_evidence=None,
         full_evidence_map=None,
+        fact_map=None,
+        source_ref_map=None,
     ):
         """Helper that patches all pipeline functions and runs process_alarm."""
         sr = _scoping()
@@ -298,6 +300,8 @@ class TestProcessAlarmFullPipeline:
             EvidenceCollectionSummary(
                 evidence_map={"h-1": "metrics evidence", "h-2": "logs evidence"},
                 full_evidence_map=full_evidence_map or {},
+                fact_map=fact_map or {},
+                source_ref_map=source_ref_map or {},
                 failed_ids=set(),
             ),
             vr,
@@ -366,13 +370,28 @@ class TestProcessAlarmFullPipeline:
         assert mocks["_result"] is True
 
     def test_live_evidence_coordinates_after_500_chars_reach_report_generation(self):
-        owner = "arn:aws:ecs:us-east-1:123456789012:task/current/observed-owner"
-        full = "source facts " * 100 + owner + " namespace=Observed/App dimension=Service:current"
-        mocks = self._run(full_evidence_map={"h-1": full})
+        """Report generation receives derived facts and read references without full tool responses."""
+        from rca_agent.ports.dto.observations import CriticalFact
+
+        owner = "arn:aws:ecs:us-east-1:123456789012:task-definition/current:2"
+        fact = CriticalFact(
+            source="cloudwatch_logs",
+            source_ref="cloudwatch-logs://group/stream#event",
+            observed_at="2026-09-15T00:00:00Z",
+            task_definition=owner,
+            sqlstate="42703",
+        )
+        full = "RAW_RESPONSE_ONLY " * 100
+        reference = "s3://evidence/rca/h1/attempt-1/combined.md"
+        mocks = self._run(
+            full_evidence_map={"h-1": full}, fact_map={"h-1": [fact]}, source_ref_map={"h-1": [reference]}
+        )
         report_evidence = mocks["run_report_generation"].call_args.args[4]
-        assert full in report_evidence
+        assert any(owner in item and reference in item and "42703" in item for item in report_evidence)
         assert "logs evidence" in report_evidence
-        assert "metrics evidence" not in report_evidence
+        assert not any("RAW_RESPONSE_ONLY" in item for item in report_evidence)
+        validation_evidence = mocks["run_validation"].call_args.args[1]
+        assert owner in validation_evidence["h-1"] and reference in validation_evidence["h-1"]
         assert mocks["_result"] is True
 
     def test_precollected_evidence_is_the_validation_map_and_skips_live_collection(self):
@@ -882,7 +901,7 @@ class TestProcessAlarmFullPipeline:
         container = _make_container()
         body = {
             **_make_body(),
-            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=4)).isoformat(),
         }
         orchestrator = PipelineOrchestrator(container)
         orchestrator._run_pipeline = MagicMock(return_value=True)
@@ -904,7 +923,7 @@ class TestProcessAlarmFullPipeline:
         )
         body = {
             **_make_body(),
-            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=4)).isoformat(),
         }
         orchestrator = PipelineOrchestrator(container)
         orchestrator._run_pipeline = MagicMock(return_value=True)
@@ -919,7 +938,7 @@ class TestProcessAlarmFullPipeline:
         container = _make_container()
         body = {
             **_make_body(),
-            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+            "StateChangeTime": (datetime.now(UTC) - timedelta(hours=4)).isoformat(),
         }
         alarm = AlarmPayload.from_cloudwatch_sns(body)
         rca_id = build_rca_id(build_idempotency_key(alarm))

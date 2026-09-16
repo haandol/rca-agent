@@ -133,6 +133,7 @@ def test_bedrock_embedding_client_has_bounded_sdk_calls():
 
 
 def test_side_effect_sdk_config_disables_implicit_retries():
+    assert SIDE_EFFECT_AWS_CLIENT_CONFIG.tcp_keepalive is True
     assert SIDE_EFFECT_AWS_CLIENT_CONFIG.connect_timeout == AWS_SDK_CONNECT_TIMEOUT_SECONDS
     assert SIDE_EFFECT_AWS_CLIENT_CONFIG.read_timeout == AWS_SDK_READ_TIMEOUT_SECONDS
     assert SIDE_EFFECT_AWS_CLIENT_CONFIG.retries == {
@@ -140,6 +141,25 @@ def test_side_effect_sdk_config_disables_implicit_retries():
         "total_max_attempts": AWS_SDK_TOTAL_MAX_ATTEMPTS,
     }
     assert AWS_SDK_TOTAL_MAX_ATTEMPTS == 1
+
+
+def test_actual_embedding_client_preserves_keepalive_timeouts_and_single_attempt():
+    """Construct the real SDK client without remote calls or credential discovery."""
+    session = bedrock_embedding.boto3.Session(
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        region_name="us-east-1",
+    )
+    with patch.object(bedrock_embedding.boto3, "client", side_effect=session.client):
+        client = bedrock_embedding.BedrockEmbeddingAdapter().client
+    try:
+        config = client.meta.config
+        assert config.tcp_keepalive is True
+        assert config.connect_timeout == AWS_SDK_CONNECT_TIMEOUT_SECONDS
+        assert config.read_timeout == AWS_SDK_READ_TIMEOUT_SECONDS
+        assert config.retries == {"mode": "standard", "total_max_attempts": 1}
+    finally:
+        client.close()
 
 
 def test_pipeline_uses_the_bounded_side_effect_lease():

@@ -22,9 +22,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/test_service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-      FAULT_DB_LEAK: "false"
-      FAULT_SLOW_QUERY_MS: "0"
-      FAULT_ERROR_RATE: "0.0"
     depends_on:
       postgres:
         condition: service_healthy

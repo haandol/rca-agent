@@ -6,9 +6,9 @@ import re
 import time
 import uuid
 from copy import deepcopy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rca_agent.config.settings import (
     LLM_DEFAULT_TIMEOUT_SECONDS,
@@ -28,24 +28,29 @@ from rca_agent.prompts.playbook import (
     PLAYBOOK_UPDATE_USER_PROMPT_TEMPLATE,
     PLAYBOOK_USER_PROMPT_TEMPLATE,
 )
+from rca_agent.services.deployment_baseline import build_rollback_context, validate_observed_plan
 from rca_agent.services.observation_context import render_alarm_description
 from rca_agent.services.runbook_contract import validate_runbook
+from rca_agent.utils.agent_invocation import bounded_admission_deadline, invoke_agent
 from rca_agent.utils.embed_key import build_embed_key
-from rca_agent.utils.timeout import call_with_timeout
 
 if TYPE_CHECKING:
     from strands import Agent
+
+from rca_agent.utils.exception_logging import safe_exception_info
 
 logger = logging.getLogger(__name__)
 
 
 class ExecutionStepOutput(BaseModel):
-    step_id: str = ""
+    step_id: str = Field(min_length=1)
     intent: str = ""
-    action: str = ""
-    success_criteria: str = ""
+    action: str = Field(min_length=1)
+    success_criteria: str = Field(min_length=1)
     commands: list[str] = Field(default_factory=list)
     metric_wait: dict | None = None
+    deployment_wait: dict | None = None
+    ecs_service_precondition: dict | None = None
 
 
 class PlaybookOutput(BaseModel):
@@ -60,6 +65,32 @@ class PlaybookOutput(BaseModel):
     prevention_measures: list[str] = Field(default_factory=list)
     related_metrics: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_generated_runbook(self) -> Self:
+        """Expose required step structure to SDK correction before accepting generated output."""
+        validate_runbook([step.model_dump() for step in self.execution_steps])
+        return self
+
+
+def _draft_output_model(scoping: ScopingResult | None) -> type[PlaybookOutput]:
+    """Let existing SDK correction see the same observed contract used before publication."""
+    baseline = build_rollback_context(scoping)
+    if baseline is None:
+        return PlaybookOutput
+
+    class ObservedPlaybookOutput(PlaybookOutput):
+        @model_validator(mode="after")
+        def validate_current_observations(self) -> Self:
+            """Reject invented targets or missing available write proof before accepting the draft."""
+            if self.execution_steps:
+                try:
+                    validate_observed_plan([step.model_dump() for step in self.execution_steps], baseline, scoping)
+                except (KeyError, TypeError) as exc:
+                    raise ValueError("execution coordinates are unavailable in the observed context") from exc
+            return self
+
+    return ObservedPlaybookOutput
 
 
 class PlaybookUpdateOutput(BaseModel):
@@ -147,6 +178,7 @@ def build_execution_steps(
     outputs: list[ExecutionStepOutput],
     *,
     confirmed: bool,
+    scoping_result: ScopingResult | None = None,
 ) -> list[ExecutionStep]:
     """실행 절차를 실행 가능한 형태로만 받아들인다.
 
@@ -159,8 +191,20 @@ def build_execution_steps(
     # Reject the entire incomplete plan: dropping one step could leave a control
     # action executable without its prerequisite or recovery observation.
     try:
-        validate_runbook([output.model_dump() for output in outputs])
-    except ValueError as exc:
+        steps = [output.model_dump() for output in outputs]
+        validate_runbook(steps)
+        observed_baseline = build_rollback_context(scoping_result)
+        guarded = any(step.get("deployment_wait") or step.get("ecs_service_precondition") for step in steps)
+        pinned = bool(
+            scoping_result
+            and scoping_result.raw_alarm
+            and '"baseline_ref"' in (scoping_result.raw_alarm.alarm_description or "")
+        )
+        if guarded or pinned:
+            if observed_baseline is None:
+                raise ValueError("verified normal/fault baseline is required")
+            validate_observed_plan(steps, observed_baseline, scoping_result)
+    except (ValueError, TypeError, KeyError) as exc:
         logger.warning("Runbook incomplete; publishing no executable steps: %s", exc)
         return []
     return [ExecutionStep(**output.model_dump()) for output in outputs]
@@ -215,6 +259,10 @@ def _render_current_observations(scoping: ScopingResult | None) -> str:
     if scoping is None:
         return "\nCurrent observation coordinates unavailable; do not infer targets or metrics."
     current = scoping.model_dump(mode="json", exclude={"similar_reports"})
+    from rca_agent.services.observation_context import model_observation_projection
+
+    current["incident_observations"] = model_observation_projection(scoping.incident_observations)
+    current["rollback_context"] = build_rollback_context(scoping)
     if scoping.raw_alarm is not None and scoping.raw_alarm.eval_source_metadata is not None:
         # The envelope time identifies this evaluation run, not the incident.
         current["raw_alarm"]["state_change_time"] = scoping.raw_alarm.eval_source_metadata.get("stateChangeTime")
@@ -254,20 +302,16 @@ def _build_update_prompt(
     ) + _render_current_observations(scoping)
 
 
-def _invoke_agent(agent: Agent, prompt: str) -> PlaybookOutput:
-    result = agent(prompt, structured_output_model=PlaybookOutput)
-    return result.structured_output
-
-
-def _invoke_update_agent(agent: Agent, prompt: str) -> PlaybookUpdateOutput:
+def _invoke_update_agent(agent: Agent, prompt: str, timeout_seconds: float) -> PlaybookUpdateOutput:
     """Apply appraisal rules to the reused agent and reject missing structured judgments."""
     # The same agent first drafts the current runbook. Give this invocation its
     # explicit appraisal rules rather than relying on an unused system template.
-    result = agent(
+    output = invoke_agent(
+        agent,
         PLAYBOOK_UPDATE_SYSTEM_PROMPT + "\n\n" + prompt,
-        structured_output_model=PlaybookUpdateOutput,
+        PlaybookUpdateOutput,
+        timeout_seconds,
     )
-    output = result.structured_output
     if not isinstance(output, PlaybookUpdateOutput):
         raise ValueError("model returned no structured playbook appraisal")
     return output
@@ -323,10 +367,7 @@ def _try_update_existing(
     )
 
     try:
-        output = call_with_timeout(
-            lambda: _invoke_update_agent(update_agent, prompt),
-            timeout_seconds,
-        )
+        output = _invoke_update_agent(update_agent, prompt, timeout_seconds)
         evidence = _anchored_evidence(output, report)
     except Exception as exc:
         logger.warning("Playbook update check failed for %s", existing.playbook_id)
@@ -412,9 +453,23 @@ def run_playbook_generation(
     playbook_store: PlaybookStorePort,
     scoping_result: ScopingResult | None = None,
     timeout_seconds: float = LLM_DEFAULT_TIMEOUT_SECONDS,
+    incident_observer=None,
 ) -> Playbook:
     """Keep the current incident runbook while comparing published knowledge within one model-call budget."""
-    deadline = time.monotonic() + max(0, timeout_seconds)
+    deadline = bounded_admission_deadline(timeout_seconds)
+
+    if (
+        incident_observer is not None
+        and scoping_result is not None
+        and scoping_result.raw_alarm is not None
+        and scoping_result.incident_observations.baseline_verified
+    ):
+        scoping_result = scoping_result.model_copy(deep=True)
+        scoping_result.incident_observations = incident_observer.refresh_current(
+            scoping_result.raw_alarm,
+            scoping_result.incident_observations,
+            timeout_seconds=min(300, max(0, deadline - time.monotonic())),
+        )
 
     # Search uses the generalized draft fields; the draft also owns the complete
     # current runbook even when published knowledge is reused.
@@ -444,15 +499,21 @@ def run_playbook_generation(
     }
     draft.comparison = comparison
 
+    if time.monotonic() >= deadline:
+        comparison["status"] = "SEARCH_FAILED"
+        comparison["failure_reason"] = "비교 검색 시작 전에 예산이 소진되었습니다. 생성된 현재 런북은 보존합니다."
+        return draft
+
     try:
         existing_hits = search_existing_playbooks(
             draft,
             scoping_result,
             playbook_store=playbook_store,
         )
-    except Exception:
-        logger.warning("Playbook search failed; keeping the current draft")
+    except Exception as exc:
+        logger.warning("Playbook search failed; keeping the current draft", exc_info=True)
         comparison["status"] = "SEARCH_FAILED"
+        comparison["failure_reason"] = f"게시 지식 검색 실패 ({type(exc).__name__}); 현재 런북은 보존합니다."
         return draft
 
     selected: Playbook | None = None
@@ -460,6 +521,9 @@ def run_playbook_generation(
     seen_pointers = set()
     compared_playbooks = set()
     for hit in sorted(existing_hits, key=lambda item: item.similarity, reverse=True):
+        if time.monotonic() >= deadline:
+            failed = True
+            break
         candidate = {
             "playbook_id": hit.playbook_id,
             "rca_id": hit.rca_id,
@@ -638,12 +702,11 @@ def _generate_draft(
     output: PlaybookOutput | None = None
     try:
         remaining_seconds = max(0.0, deadline - time.monotonic())
-        output = call_with_timeout(
-            lambda: _invoke_agent(agent, user_prompt),
-            remaining_seconds,
+        output = invoke_agent(agent, user_prompt, _draft_output_model(scoping_result), remaining_seconds)
+    except Exception as exc:
+        logger.warning(
+            "Playbook generation failed; exception_type=%s", type(exc).__name__, exc_info=safe_exception_info(exc)
         )
-    except Exception:
-        logger.warning("Playbook generation failed")
 
     if output is None:
         return Playbook(
@@ -663,7 +726,9 @@ def _generate_draft(
         execution_steps=build_execution_steps(
             output.execution_steps,
             confirmed=report.root_cause_confirmed,
+            scoping_result=scoping_result,
         ),
+        rollback_context=build_rollback_context(scoping_result),
         temporary_mitigation=output.temporary_mitigation,
         permanent_remediation=output.permanent_remediation,
         escalation_criteria=output.escalation_criteria,

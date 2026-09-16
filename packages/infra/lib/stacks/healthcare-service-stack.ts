@@ -20,8 +20,8 @@ interface IProps extends cdk.StackProps {
   readonly dbInstance: rds.DatabaseInstance;
   readonly alarmTopic: sns.ITopic;
   readonly imageTag: string;
-  /** Optional immutable image pin; imageTag still supplies the revision label. */
-  readonly imageDigest?: string;
+  /** Required immutable image pin; imageTag still supplies the revision label. */
+  readonly imageDigest: string;
   readonly tracing: boolean;
   readonly queryLatencyThresholdMs?: number;
   readonly controlledEnvironment?: Readonly<Record<string, string | undefined>>;
@@ -67,24 +67,21 @@ export class HealthcareServiceStack extends cdk.Stack {
     });
   }
 
-  /** Create the private service, optionally pinning its image without changing its revision label. */
+  /** Create the private service, pinning its image without changing its revision label. */
   private newTaskDefinition(
     ns: string,
     props: IProps,
   ): ecs.FargateTaskDefinition {
     if (
-      props.imageDigest !== undefined &&
-      (props.imageDigest.length !== 71 ||
-        !/^sha256:[a-f0-9]{64}$/.test(props.imageDigest))
+      typeof props.imageDigest !== 'string' ||
+      props.imageDigest.length !== 71 ||
+      !/^sha256:[a-f0-9]{64}$/.test(props.imageDigest)
     ) {
       throw new Error(
         'healthcare.imageDigest must be sha256:<64 lowercase hex digits>',
       );
     }
-    const imageSuffix =
-      props.imageDigest === undefined
-        ? `:${props.imageTag}`
-        : `@${props.imageDigest}`;
+    const imageSuffix = `@${props.imageDigest}`;
 
     const taskRole = new iam.Role(this, 'TaskRole', {
       roleName: healthcareTaskRoleName(ns),
@@ -129,14 +126,10 @@ export class HealthcareServiceStack extends cdk.Stack {
         DB_NAME: 'healthcare',
         OTEL_SERVICE_NAME: 'healthcare-sensor-app',
         DEPLOYED_REVISION: props.imageTag,
-        // Stated here rather than left to the app's defaults because the
-        // connection alarm threshold is derived from this capacity: the leak has
-        // to cross the threshold before it exhausts the pool.
+        // Keep bounded pool capacity explicit across both image revisions.
         DB_POOL_SIZE: '5',
         DB_MAX_OVERFLOW: '10',
-        FAULT_DB_LEAK: 'false',
-        FAULT_SLOW_QUERY_MS: '0',
-        FAULT_ERROR_RATE: '0.0',
+        DB_OBSERVABILITY_ENABLED: 'true',
         ...this.controlledEnvironment(props.controlledEnvironment ?? {}),
       },
       secrets: {
@@ -156,7 +149,7 @@ export class HealthcareServiceStack extends cdk.Stack {
       healthCheck: {
         command: [
           'CMD-SHELL',
-          'python -c "import urllib.request; urllib.request.urlopen(\'http://localhost:8000/healthz\')" || exit 1',
+          "python -c \"import json, urllib.request; body=json.load(urllib.request.urlopen('http://localhost:8000/healthz')); assert body['status']=='ok' and body['db_connected'] is True\" || exit 1",
         ],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
@@ -311,37 +304,27 @@ export class HealthcareServiceStack extends cdk.Stack {
     ingestFailureAlarm.addAlarmAction(alarmAction);
     ingestFailureAlarm.addOkAction(alarmAction);
 
-    const queryLatencyAlarm = new cloudwatch.Alarm(
-      this,
-      'PatientVitalsQueryLatency',
-      {
-        alarmName: `${ns}-Healthcare-PatientVitalsQueryLatency`,
-        alarmDescription:
-          'Patient vital record queries are slow. Initial threshold requires calibration against healthy and restored traffic. ' +
-          resourceCoordinates,
-        metric: new cloudwatch.Metric({
-          namespace: 'Healthcare/Sensor',
-          metricName: 'PatientVitalsQueryDuration',
-          dimensionsMap: { ServiceName: 'healthcare-sensor-app' },
-          unit: cloudwatch.Unit.MILLISECONDS,
-          statistic: 'Average',
-          period: cdk.Duration.minutes(1),
-        }),
-        threshold: props.queryLatencyThresholdMs ?? 500,
-        evaluationPeriods: 2,
-        comparisonOperator:
-          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        treatMissingData: cloudwatch.TreatMissingData.MISSING,
-      },
-    );
-    queryLatencyAlarm.addAlarmAction(alarmAction);
-    queryLatencyAlarm.addOkAction(alarmAction);
+    new cloudwatch.Alarm(this, 'PatientVitalsQueryLatency', {
+      alarmName: `${ns}-Healthcare-PatientVitalsQueryLatency`,
+      alarmDescription:
+        'Patient vital record queries are slow. Initial threshold requires calibration against healthy and restored traffic. ' +
+        resourceCoordinates,
+      metric: new cloudwatch.Metric({
+        namespace: 'Healthcare/Sensor',
+        metricName: 'PatientVitalsQueryDuration',
+        dimensionsMap: { ServiceName: 'healthcare-sensor-app' },
+        unit: cloudwatch.Unit.MILLISECONDS,
+        statistic: 'Average',
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: props.queryLatencyThresholdMs ?? 500,
+      evaluationPeriods: 2,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.MISSING,
+    });
 
-    // Threshold sits between normal usage and the app's pool capacity, so a leak
-    // trips this alarm before it exhausts the pool and turns into the ingest
-    // failures the symptom alarm watches. Above the pool ceiling the leak would
-    // starve requests while this metric stayed quiet, leaving the cause-level
-    // evidence the agent is supposed to find absent from the timeline.
+    // Resource pressure remains observable without publishing another RCA incident.
     new cloudwatch.Alarm(this, 'RdsHighConnections', {
       alarmName: `${ns}-Healthcare-RdsHighConnections`,
       metric: new cloudwatch.Metric({

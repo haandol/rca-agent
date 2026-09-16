@@ -1,6 +1,5 @@
 """Deterministic cloud model for the realistic demo orchestration contract."""
 
-import ast
 import contextlib
 import copy
 import fcntl
@@ -8,6 +7,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -142,6 +142,12 @@ class Cloud:
                 "tags": [{"key": "Project", "value": "keep"}],
             }
         }
+        self.objects = {}
+        self.put_failure = False
+        self.corrupt_object = False
+        self.omit_event = None
+        self.bad_schema = False
+        self.unsafe_event = False
         self.jobs = {}
         self.alarms = [
             {
@@ -192,10 +198,10 @@ class Cloud:
         self.failed_rollout = False
         self.async_restore = False
         self.async_fault = False
-        files = {"revision/query.py": "1" * 64, "revision/session.py": "2" * 64}
+        files = {"revision/write.py": "1" * 64, "revision/session.py": "2" * 64}
         self.source_manifest = {
             "event": "source_manifest",
-            "revision": "r1",
+            "revision": "v1",
             "verified": True,
             "files": files,
             "fingerprint": hashlib.sha256(
@@ -219,7 +225,7 @@ class Cloud:
         self.running = [
             {
                 "taskArn": "arn:task/service",
-                "createdAt": Clock.current.isoformat(),
+                "createdAt": (Clock.current - timedelta(minutes=10)).isoformat(),
                 "taskDefinitionArn": arn,
                 "lastStatus": "RUNNING",
                 "containers": [
@@ -259,20 +265,91 @@ class Cloud:
             all_tasks = self.jobs | {t["taskArn"]: t for t in self.running}
             result = {"tasks": [all_tasks[arn] for arn in payload["tasks"]]}
         elif operation == "describe-alarms":
-            result = {"MetricAlarms": self.alarms}
+            result = {
+                "MetricAlarms": [
+                    a for a in self.alarms if a["AlarmName"] in payload["AlarmNames"]
+                ]
+            }
         elif operation == "filter-log-events":
+            stamp = payload["startTime"] + 1000
+            observed = datetime.fromtimestamp(stamp / 1000, timezone.utc).isoformat()
+            contract = {
+                "observed_at": observed,
+                "table_name": "sensor_readings",
+                "schema_name": "public",
+                "column_names": ["timestamp"],
+                "sql_hash": "3" * 64,
+            }
+            candidates = [
+                dict(self.source_manifest, observed_at=observed),
+                dict(contract, event="write_contract", schema_name=None),
+                dict(contract, event="db_schema_snapshot"),
+                dict(
+                    contract,
+                    event="write_completed",
+                    schema_name=None,
+                    count=1,
+                    completion_semantics="committed_rows",
+                ),
+                {
+                    "event": "write_accounting",
+                    "observed_at": observed,
+                    "metric_namespace": "Healthcare/Sensor",
+                    "service_name": "healthcare-sensor-app",
+                    "attempt_metric": "VitalIngestAttempts",
+                    "failure_metric": "VitalIngestFailures",
+                    "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+                    "failure_semantics": "failed_rows",
+                    "cancellation_semantics": "excluded_from_completed_counters",
+                    "success_evidence_event": "write_completed",
+                    "success_count_field": "count",
+                    "success_semantics": "committed_rows",
+                },
+            ]
+            for candidate in candidates:
+                candidate["service"] = "healthcare-sensor-app"
+            if self.bad_schema:
+                candidates[2]["column_names"] = ["sampled_at"]
+            if self.unsafe_event:
+                candidates[3]["parameters"] = "PRIVATE_SENTINEL"
             result = {
                 "events": []
                 if self.source_events_missing
                 else [
                     {
-                        "eventId": "manifest-1",
+                        "eventId": item["event"],
                         "logStreamName": payload["logStreamNames"][0],
-                        "timestamp": payload["startTime"] + 1000,
-                        "message": json.dumps(self.source_manifest),
+                        "timestamp": stamp,
+                        "message": json.dumps(item),
                     }
+                    for item in candidates
+                    if item["event"] in payload["filterPattern"]
+                    and item["event"] != self.omit_event
                 ]
             }
+        elif operation == "put-object":
+            key = (payload["Bucket"], payload["Key"])
+            assert payload["IfNoneMatch"] == "*"
+            if key in self.objects:
+                raise RuntimeError("PreconditionFailed")
+            self.objects[key] = Path(payload["Body"]).read_bytes()
+            if self.corrupt_object:
+                self.objects[key] += b" "
+            if self.put_failure:
+                raise RuntimeError("lost PUT response")
+            result = {}  # Deliberately partial; only GET bytes can prove the write.
+        elif operation == "get-object":
+            Path(payload["OutputFile"]).write_bytes(
+                self.objects[(payload["Bucket"], payload["Key"])]
+            )
+            result = {}
+        elif operation == "put-metric-alarm":
+            alarm = next(
+                a for a in self.alarms if a["AlarmName"] == payload["AlarmName"]
+            )
+            alarm.pop("AlarmDescription", None)
+            alarm.update(payload)
+            result = {}
         elif operation == "get-metric-statistics":
             start = datetime.fromisoformat(payload["StartTime"])
             metric = payload["MetricName"]
@@ -286,6 +363,7 @@ class Cloud:
                         "Sum": value,
                         "Average": value,
                         "SampleCount": 1,
+                        "Unit": payload["Unit"],
                     }
                     for i in range(2)
                 ]
@@ -364,6 +442,7 @@ class DemoTests(unittest.TestCase):
         """Isolate the filesystem and cloud per case."""
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        Clock.current = datetime(2026, 9, 10, 12, 0, 5, tzinfo=timezone.utc)
         self.cloud = Cloud()
         self.journal = demo.Journal(Path(self.temp.name) / "run-1")
         self.runner = demo.Demo(self.cloud, self.journal, self.cloud.target)
@@ -372,14 +451,15 @@ class DemoTests(unittest.TestCase):
         demo.datetime = Clock
         self.addCleanup(setattr, demo, "datetime", self.old_datetime)
 
-    def plan(self, scenario="pool-config", **changes):
+    def plan(self, scenario="write-column-regression", **changes):
         """Freeze caller-supplied controls with deterministic healthy evidence."""
         options = {
             "run_id": "run-1",
             "scenario": scenario,
             "container": "healthcare",
-            "image": None,
-            "revision": None,
+            "image": "registry.example/healthcare@sha256:" + "b" * 64,
+            "revision": "v2",
+            "evidence_bucket": "configured-evidence",
             "pool_size": 1,
             "max_overflow": 0,
             "pool_timeout": 0.25,
@@ -478,639 +558,6 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(tags[key], value)
         self.assertFalse(self.journal.find("released"))
 
-    def test_post_mutation_journal_loss_still_restores_service_or_task(self):
-        """Successful UpdateService/RunTask must be undone when all later writes fail."""
-        for scenario, event in (
-            ("pool-config", "update_response"),
-            ("maintenance-lock", "maintenance_tasks"),
-        ):
-            with self.subTest(scenario=scenario):
-                self.setUp()
-                self.plan(scenario)
-                self.cloud.jobs["arn:task/foreign"] = {
-                    "taskArn": "arn:task/foreign",
-                    "startedBy": "foreign",
-                    "lastStatus": "RUNNING",
-                }
-                with (
-                    self.failing_journal(event, persistent=True) as (attempts, stderr),
-                    self.assertRaisesRegex(OSError, "storage failure"),
-                ):
-                    self.runner.apply()
-                self.assertIn("apply_error", attempts)
-                self.assertIn("restore_service_observation", attempts)
-                self.assertIn("maintenance_before_restore", attempts)
-                self.assertIn("restore_wait_result", attempts)
-                self.assertEqual(
-                    self.cloud.service["taskDefinition"], self.cloud.original
-                )
-                if scenario == "maintenance-lock":
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                    )
-                    self.assertFalse(self.journal.find("maintenance_tasks"))
-                self.assertEqual(
-                    self.cloud.jobs["arn:task/foreign"]["lastStatus"], "RUNNING"
-                )
-                self.assert_journal_failure_retains_owner(
-                    self.runner.cleanup_result, stderr
-                )
-                self.assertFalse(
-                    any(op == "untag-resource" for _, op, _ in self.cloud.calls)
-                )
-
-    def test_lost_responses_and_failed_error_log_use_persisted_original_intent(self):
-        """Rediscover unacknowledged changes from disk even with unavailable error logs."""
-        for scenario, flag in (
-            ("pool-config", "fail_update"),
-            ("maintenance-lock", "lost_run_response"),
-        ):
-            with self.subTest(scenario=scenario):
-                self.setUp()
-                self.plan(scenario)
-                setattr(self.cloud, flag, True)
-                with self.failing_journal("apply_error", persistent=True) as (
-                    _,
-                    stderr,
-                ):
-                    with self.assertRaisesRegex(RuntimeError, "response lost"):
-                        self.runner.apply()
-                    # A new controller has only original durable events, not cached tasks.
-                    resumed = demo.Demo(
-                        self.cloud, demo.Journal(self.journal.path), self.cloud.target
-                    )
-                    if scenario == "maintenance-lock":
-                        # Recreate a still-live owned launch for the new controller.
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"] = "RUNNING"
-                        self.cloud.jobs["arn:task/owned"]["tags"] = [
-                            {"key": k, "value": v}
-                            for k, v in resumed.owner_tags().items()
-                        ]
-                    result = resumed.restore()
-                self.assertEqual(
-                    self.cloud.service["taskDefinition"], self.cloud.original
-                )
-                if scenario == "maintenance-lock":
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                    )
-                    self.assertFalse(self.journal.find("maintenance_tasks"))
-                    self.assertEqual(
-                        sum(op == "run-task" for _, op, _ in self.cloud.calls), 1
-                    )
-                self.assert_journal_failure_retains_owner(result, stderr)
-
-    def test_post_apply_status_write_failure_triggers_cleanup(self):
-        """A failed observation after a successful mutation still invokes compensation."""
-        for scenario, response in (
-            ("pool-config", "update_response"),
-            ("maintenance-lock", "maintenance_tasks"),
-        ):
-            with self.subTest(scenario=scenario):
-                self.setUp()
-                self.plan(scenario)
-                with (
-                    self.failing_journal("status", after=response) as (_, stderr),
-                    self.assertRaises(OSError),
-                ):
-                    self.runner.apply()
-                self.assertEqual(
-                    self.cloud.service["taskDefinition"], self.cloud.original
-                )
-                if scenario == "maintenance-lock":
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                    )
-                self.assert_journal_failure_retains_owner(
-                    self.runner.cleanup_result, stderr
-                )
-
-    def test_journal_and_diagnostic_failure_still_restore_owned_resources(self):
-        """A broken or closed stderr cannot replace the original error or block cleanup."""
-        for scenario, event in (
-            ("pool-config", "update_response"),
-            ("maintenance-lock", "maintenance_tasks"),
-        ):
-            for error_type in (OSError, ValueError):
-                with self.subTest(scenario=scenario, diagnostic=error_type.__name__):
-                    self.setUp()
-                    self.plan(scenario)
-                    self.cloud.jobs["arn:task/foreign"] = {
-                        "taskArn": "arn:task/foreign",
-                        "startedBy": "foreign",
-                        "lastStatus": "RUNNING",
-                    }
-                    with (
-                        self.failing_journal(event, persistent=True) as (_, stderr),
-                        patch.object(
-                            stderr,
-                            "write",
-                            side_effect=error_type("unavailable diagnostic"),
-                        ),
-                        self.assertRaisesRegex(OSError, "storage failure"),
-                    ):
-                        self.runner.apply()
-                    result = self.runner.cleanup_result
-                    self.assertFalse(result["recoveryVerified"])
-                    self.assertEqual(result["restorationState"], "pending")
-                    self.assertTrue(result["journalErrors"])
-                    self.assertTrue(
-                        all(
-                            item["diagnosticErrorType"] == error_type.__name__
-                            for item in result["journalErrors"]
-                        )
-                    )
-                    self.assertEqual(
-                        self.cloud.service["taskDefinition"], self.cloud.original
-                    )
-                    if scenario == "maintenance-lock":
-                        self.assertEqual(
-                            self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                        )
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/foreign"]["lastStatus"], "RUNNING"
-                    )
-                    self.assertFalse(self.journal.find("released"))
-                    tags = {t["key"]: t["value"] for t in self.cloud.service["tags"]}
-                    for key, value in self.runner.owner_tags().items():
-                        self.assertEqual(tags[key], value)
-
-    def test_recovery_journal_boundaries_do_not_block_either_cleanup(self):
-        """Each recovery write failure preserves both compensations and foreign tasks."""
-        for event in (
-            "restore_intent",
-            "restore_service_observation",
-            "restore_update_intent",
-            "restore_update_response",
-            "owned_tasks",
-            "maintenance_before_restore",
-            "stop_intent",
-            "stop_response",
-            "restored_rollout_observed",
-            "status",
-            "restore_result",
-            "restore_wait_result",
-        ):
-            with self.subTest(event=event):
-                self.setUp()
-                self.plan("maintenance-lock")
-                self.runner.apply()
-                self.add_owned_service_change()
-                self.cloud.jobs["arn:task/foreign"] = {
-                    "taskArn": "arn:task/foreign",
-                    "startedBy": "foreign",
-                    "lastStatus": "RUNNING",
-                }
-                with self.failing_journal(event) as (attempts, stderr):
-                    result = self.runner.restore()
-                self.assertIn(event, attempts)
-                self.assertEqual(
-                    self.cloud.service["taskDefinition"], self.cloud.original
-                )
-                self.assertEqual(
-                    self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                )
-                self.assertEqual(
-                    self.cloud.jobs["arn:task/foreign"]["lastStatus"], "RUNNING"
-                )
-                self.assert_journal_failure_retains_owner(result, stderr)
-                self.assertFalse(
-                    any(op == "untag-resource" for _, op, _ in self.cloud.calls)
-                )
-
-    def test_failed_task_cleanup_log_does_not_skip_later_owned_tasks(self):
-        """A failed stop log for one task cannot prevent stopping the next owned task."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        extra = copy.deepcopy(self.cloud.jobs["arn:task/owned"])
-        extra["taskArn"] = "arn:task/owned-second"
-        self.cloud.jobs[extra["taskArn"]] = extra
-        with self.failing_journal("stop_response", persistent=True) as (_, stderr):
-            result = self.runner.restore()
-        self.assertTrue(
-            all(t["lastStatus"] == "STOPPED" for t in self.cloud.jobs.values())
-        )
-        self.assert_journal_failure_retains_owner(result, stderr)
-
-    def test_journal_loss_preserves_foreign_service_and_task_guards(self):
-        """Storage failure cannot authorize a foreign owner, deployment, setting or task."""
-        for foreign in (
-            "owner",
-            "deployment",
-            "settings",
-            "task-tags",
-            "task-definition",
-        ):
-            with self.subTest(foreign=foreign):
-                self.setUp()
-                self.plan("maintenance-lock")
-                self.runner.apply()
-                self.add_owned_service_change()
-                if foreign == "owner":
-                    self.cloud.service["tags"] = [{"key": demo.OWNER, "value": "peer"}]
-                elif foreign == "deployment":
-                    self.cloud.service["deployments"][0]["taskDefinition"] = "foreign"
-                elif foreign == "settings":
-                    self.cloud.service["desiredCount"] = 2
-                elif foreign == "task-tags":
-                    self.cloud.jobs["arn:task/owned"]["tags"] = []
-                else:
-                    self.cloud.jobs["arn:task/owned"]["taskDefinitionArn"] = "foreign"
-                before = copy.deepcopy(self.cloud.service)
-                with self.failing_journal("restore_intent", persistent=True):
-                    result = self.runner.restore()
-                self.assertFalse(result["recoveryVerified"])
-                if foreign.startswith("task-"):
-                    self.assertEqual(
-                        self.cloud.service["taskDefinition"], self.cloud.original
-                    )
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"], "RUNNING"
-                    )
-                else:
-                    self.assertEqual(self.cloud.service, before)
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                    )
-
-    def test_new_mutations_require_successful_prechange_writes(self):
-        """Failed intent persistence prevents the corresponding new external mutation."""
-        for scenario, event, forbidden in (
-            ("pool-config", "apply_intent", "tag-resource"),
-            ("pool-config", "register_intent", "register-task-definition"),
-            ("pool-config", "update_intent", "update-service"),
-            ("maintenance-lock", "run_task_intent", "run-task"),
-        ):
-            with self.subTest(event=event):
-                self.setUp()
-                self.plan(scenario)
-                with (
-                    self.failing_journal(event, persistent=True),
-                    self.assertRaises(OSError),
-                ):
-                    self.runner.apply()
-                self.assertFalse(any(op == forbidden for _, op, _ in self.cloud.calls))
-                self.assertFalse(demo.Journal(self.journal.path).find(event))
-
-    def test_unjournaled_rollback_requires_prior_durable_update_intent(self):
-        """A known revision alone cannot justify rollback when its new intent cannot save."""
-        self.plan()
-        self.runner.apply()
-        # Model a legacy journal that knows the revision but lacks UpdateService intent.
-        events = [e for e in self.journal.events if e["kind"] != "update_intent"]
-        journal = demo.Journal(Path(self.temp.name) / "legacy-no-update")
-        for event in events:
-            journal.append(event["kind"], event["data"])
-        runner = demo.Demo(self.cloud, journal, self.cloud.target)
-        self.cloud.service["tags"] = [
-            {"key": k, "value": v} for k, v in runner.owner_tags().items()
-        ]
-        before = self.cloud.service["taskDefinition"]
-        with self.failing_journal("restore_update_intent"):
-            result = runner.restore()
-        self.assertEqual(self.cloud.service["taskDefinition"], before)
-        self.assertIn("no persisted update intent", result["errors"][0]["error"])
-
-    def test_journal_loss_does_not_bypass_original_image_guard(self):
-        """A legacy mutable original stays refused while owned task cleanup continues."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        self.add_owned_service_change()
-        snapshot = self.journal.snapshot
-        snapshot["taskDefinition"]["taskDefinition"]["containerDefinitions"][0][
-            "image"
-        ] = "repo:latest"
-        journal = demo.Journal(Path(self.temp.name) / "legacy-mutable")
-        journal.append("snapshot", snapshot)
-        for event in self.journal.events[1:]:
-            # Legacy journals predate ownership receipts; do not transplant proof
-            # bound to the modern snapshot into this different legacy snapshot.
-            if event["kind"] != "task_ownership_verified":
-                journal.append(event["kind"], event["data"])
-        runner = demo.Demo(self.cloud, journal, self.cloud.target)
-        tags = [{"key": k, "value": v} for k, v in runner.owner_tags().items()]
-        self.cloud.service["tags"] = tags
-        self.cloud.jobs["arn:task/owned"].update(tags=tags, startedBy=runner.token())
-        before = self.cloud.service["taskDefinition"]
-        with self.failing_journal("restore_intent", persistent=True):
-            result = runner.restore()
-        self.assertEqual(self.cloud.service["taskDefinition"], before)
-        self.assertEqual(self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED")
-        self.assertFalse(result["recoveryVerified"])
-
-    def test_cli_journal_loss_returns_failure_and_in_memory_cleanup(self):
-        """CLI output includes recovery errors even when final journal records cannot save."""
-        for action, scenario, event in (
-            ("apply", "pool-config", "update_response"),
-            ("apply", "maintenance-lock", "maintenance_tasks"),
-            ("restore", "pool-config", "restore_intent"),
-            ("restore", "maintenance-lock", "owned_tasks"),
-        ):
-            with self.subTest(action=action, scenario=scenario):
-                self.setUp()
-                common = self.connect_cli()
-                self.plan(scenario)
-                if action == "restore":
-                    self.runner.apply()
-                stdout = io.StringIO()
-                with (
-                    self.failing_journal(event, persistent=True) as (_, stderr),
-                    contextlib.redirect_stdout(stdout),
-                ):
-                    code = demo.main([action, *common])
-                self.assertEqual(code, 1 if action == "apply" else 2)
-                if action == "apply":
-                    decoder = json.JSONDecoder()
-                    text = stderr.getvalue().strip()
-                    messages = []
-                    while text:
-                        message, offset = decoder.raw_decode(text)
-                        messages.append(message)
-                        text = text[offset:].lstrip()
-                    result = messages[-1]["cleanup"]
-                    self.assertFalse(messages[-1]["operationSucceeded"])
-                else:
-                    result = json.loads(stdout.getvalue())
-                self.assert_journal_failure_retains_owner(result, stderr)
-                self.assertEqual(
-                    self.cloud.service["taskDefinition"], self.cloud.original
-                )
-                if scenario == "maintenance-lock":
-                    self.assertEqual(
-                        self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED"
-                    )
-
-    def test_healthy_recovery_does_not_release_before_all_evidence_saves(self):
-        """Even healthy metrics cannot allow release after a late recovery write failure."""
-        for event in (
-            "status",
-            "restore_result",
-            "restore_wait_result",
-            "release_intent",
-            "released",
-        ):
-            with self.subTest(event=event):
-                self.setUp()
-                self.plan()
-                self.runner.apply()
-                self.runner.restore()
-                self.advance()
-                with self.failing_journal(event) as (_, stderr):
-                    result = self.runner.restore()
-                self.assertTrue(all(result["checks"].values()))
-                self.assert_journal_failure_retains_owner(result, stderr)
-                if event != "released":
-                    self.assertFalse(
-                        any(op == "untag-resource" for _, op, _ in self.cloud.calls)
-                    )
-
-    def test_journal_failure_stays_unverified_after_writes_resume_in_same_command(self):
-        """A transient evidence gap cannot be erased by later successful polls or logs."""
-        self.plan()
-        self.runner.apply()
-        with self.failing_journal("restore_intent"):
-            self.runner.restore()
-        self.runner.restore()
-        self.advance()
-        result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertTrue(result["journalErrors"])
-        self.assertFalse(any(op == "untag-resource" for _, op, _ in self.cloud.calls))
-
-    def test_persistent_journal_loss_keeps_retrying_both_cleanup_branches(self):
-        """The wait budget still retries a transient task failure while storage is down."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        self.add_owned_service_change()
-        self.cloud.fail_stop = True
-        self.polling_clock(lambda elapsed: setattr(self.cloud, "fail_stop", False))
-        with self.failing_journal("restore_intent", persistent=True) as (_, stderr):
-            result = self.runner.restore(wait_seconds=30)
-        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
-        self.assertEqual(self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED")
-        self.assertGreaterEqual(
-            sum(op == "stop-task" for _, op, _ in self.cloud.calls), 2
-        )
-        self.assert_journal_failure_retains_owner(result, stderr)
-        self.assertTrue(result["waitExpired"])
-
-    def test_lost_release_log_does_not_reclaim_foreign_ownership(self):
-        """A peer claiming after release cannot be overwritten to repair our journal gap."""
-        self.plan()
-        self.runner.apply()
-        self.runner.restore()
-        self.advance()
-        original = self.journal.append
-
-        def append(kind, data):
-            """Model a peer claim exactly when the release acknowledgement cannot save."""
-            if kind == "released":
-                self.cloud.service["tags"] = [{"key": demo.OWNER, "value": "peer"}]
-                raise OSError("release journal unavailable")
-            return original(kind, data)
-
-        with (
-            patch.object(self.journal, "append", append),
-            contextlib.redirect_stderr(io.StringIO()),
-        ):
-            result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertEqual(
-            self.cloud.service["tags"], [{"key": demo.OWNER, "value": "peer"}]
-        )
-        self.assertEqual(sum(op == "tag-resource" for _, op, _ in self.cloud.calls), 1)
-
-    def test_cleanup_error_logging_cannot_replace_original_apply_failure(self):
-        """A second failed diagnostic append must leave the original error visible."""
-        self.plan()
-        self.cloud.fail_update = True
-        with (
-            patch.object(
-                self.runner, "restore", side_effect=RuntimeError("cleanup failed")
-            ),
-            self.failing_journal("cleanup_error") as (attempts, stderr),
-            self.assertRaisesRegex(RuntimeError, "update response lost"),
-        ):
-            self.runner.apply()
-        self.assertIn("cleanup_error", attempts)
-        self.assertIn("journal append failed", stderr.getvalue())
-
-    def test_pool_round_trip_preserves_original_definition_absence_and_tags(self):
-        """Restore the exact ARN and absent timeout rather than reconstructed defaults."""
-        self.plan()
-        snapshot_bytes = (self.journal.path / "000000.json").read_bytes()
-        self.assertEqual(
-            self.journal.snapshot["environment"]["DB_POOL_TIMEOUT_SECONDS"],
-            {"present": False, "value": None},
-        )
-        self.assertFalse(
-            any(
-                op in {"update-service", "register-task-definition", "tag-resource"}
-                for _, op, _ in self.cloud.calls
-            )
-        )
-        result = self.runner.apply()
-        self.assertFalse(result["scenarioSuccess"])
-        active = self.cloud.definitions[self.cloud.service["taskDefinition"]][
-            "taskDefinition"
-        ]
-        env = demo.env_map(active, "healthcare")
-        self.assertEqual(
-            (
-                env["DB_POOL_SIZE"],
-                env["DB_MAX_OVERFLOW"],
-                env["DB_POOL_TIMEOUT_SECONDS"],
-            ),
-            ("1", "0", "0.25"),
-        )
-        self.assertEqual(env["TRAFFIC_SEED"], "123")
-        result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
-        self.advance()
-        self.assertTrue(self.runner.restore()["recoveryVerified"])
-        self.assertEqual(
-            self.cloud.service["tags"], [{"key": "Project", "value": "keep"}]
-        )
-        self.assertEqual(
-            (self.journal.path / "000000.json").read_bytes(), snapshot_bytes
-        )
-        self.assertTrue(demo.Journal(self.journal.path).find("released"))
-
-    def test_revision_scenarios_use_caller_digest_and_source_revision(self):
-        """Query and session revisions never substitute runtime fault flags."""
-        for scenario in ("query-revision", "session-revision"):
-            with self.subTest(scenario=scenario):
-                self.setUp()
-                image = "registry.example/healthcare@sha256:" + "b" * 64
-                self.plan(scenario, image=image, revision="caller-source-r2")
-                self.runner.apply()
-                active = self.cloud.definitions[self.cloud.service["taskDefinition"]][
-                    "taskDefinition"
-                ]
-                self.assertEqual(active["containerDefinitions"][0]["image"], image)
-                env = demo.env_map(active, "healthcare")
-                self.assertEqual(env["DEPLOYED_REVISION"], "caller-source-r2")
-                self.assertFalse(any(key.startswith("FAULT_") for key in env))
-                self.runner.restore()
-                self.advance()
-                self.assertTrue(self.runner.restore()["recoveryVerified"])
-
-    def test_maintenance_is_separate_same_digest_and_only_owned_task_stops(self):
-        """Maintenance uses the healthy image and network without the web healthcheck."""
-        self.plan("maintenance-lock")
-        self.cloud.jobs["arn:task/foreign"] = {
-            "taskArn": "arn:task/foreign",
-            "startedBy": "foreign",
-            "lastStatus": "RUNNING",
-        }
-        self.runner.apply()
-        request = next(p for _, op, p in self.cloud.calls if op == "run-task")
-        td = self.cloud.definitions[request["taskDefinition"]]["taskDefinition"]
-        app = td["containerDefinitions"][0]
-        self.assertIn("-demo-maint-", td["family"])
-        self.assertEqual(len(td["containerDefinitions"]), 1)
-        self.assertEqual(
-            app["image"], "registry.example/healthcare@" + self.cloud.healthy_digest
-        )
-        self.assertEqual(app["entryPoint"], ["python"])
-        self.assertEqual(
-            app["command"],
-            [
-                "-m",
-                "test_service.maintenance",
-                "--run-id",
-                "run-1",
-                "--hold-seconds",
-                "180",
-                "--schema",
-                "public",
-            ],
-        )
-        self.assertNotIn("healthCheck", app)
-        self.assertNotIn("dependsOn", app)
-        self.assertEqual(
-            request["networkConfiguration"],
-            self.journal.snapshot["service"]["networkConfiguration"],
-        )
-        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
-        self.runner.restore()
-        self.advance()
-        self.assertTrue(self.runner.restore()["recoveryVerified"])
-        self.assertEqual(self.cloud.jobs["arn:task/foreign"]["lastStatus"], "RUNNING")
-        self.assertEqual(
-            [p["task"] for _, op, p in self.cloud.calls if op == "stop-task"],
-            ["arn:task/owned"],
-        )
-
-    def test_legacy_arbitrary_command_refuses_apply_but_restores_owned_task(self):
-        """Reject old launch controls while retaining lost-response ownership cleanup."""
-        command = ["python", "-c", "pass", "{run_id}", "{hold_seconds}"]
-        self.plan("maintenance-lock", maintenance_command=command)
-        snapshot_bytes = (self.journal.path / "000000.json").read_bytes()
-        self.cloud.calls.clear()
-        with self.assertRaisesRegex(RuntimeError, "unsupported maintenance command"):
-            self.runner.apply()
-        with self.assertRaisesRegex(RuntimeError, "unsupported maintenance command"):
-            self.runner.register(maintenance=True)
-        self.assertEqual(self.cloud.calls, [])
-        self.assertFalse(self.journal.find("apply_intent"))
-
-        # Recreate an old owned launch whose RunTask response was never recorded.
-        arn = "arn:task-definition/legacy-maintenance:1"
-        self.journal.append("maintenance_revision", {"arn": arn})
-        self.journal.append("run_task_intent", {"taskDefinition": arn})
-        tags = [{"key": k, "value": v} for k, v in self.runner.owner_tags().items()]
-        self.cloud.service["tags"] = tags
-        self.cloud.jobs["arn:task/owned"] = {
-            "taskArn": "arn:task/owned",
-            "taskDefinitionArn": arn,
-            "startedBy": self.runner.token(),
-            "lastStatus": "RUNNING",
-            "tags": tags,
-        }
-        self.cloud.jobs["arn:task/foreign"] = {
-            "taskArn": "arn:task/foreign",
-            "startedBy": "foreign",
-            "lastStatus": "RUNNING",
-        }
-        self.runner.restore()
-        self.advance()
-        self.assertTrue(self.runner.restore()["recoveryVerified"])
-        self.assertEqual(self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED")
-        self.assertEqual(self.cloud.jobs["arn:task/foreign"]["lastStatus"], "RUNNING")
-        self.assertFalse(
-            any(
-                op in ("register-task-definition", "run-task")
-                for _, op, _ in self.cloud.calls
-            )
-        )
-        self.assertEqual(
-            (self.journal.path / "000000.json").read_bytes(), snapshot_bytes
-        )
-
-    def test_maintenance_journal_values_are_validated_before_launch(self):
-        """Persisted controls cannot bypass the CLI's run, duration or schema bounds."""
-        for changes in (
-            {"run_id": "bad/run"},
-            {"hold_seconds": 0},
-            {"hold_seconds": 7200.5},
-            {"hold_seconds": float("nan")},
-            {"hold_seconds": float("inf")},
-            {"hold_seconds": "180"},
-            {"hold_seconds": True},
-            {"maintenance_schema": "public; SELECT 1"},
-        ):
-            with self.subTest(changes=changes):
-                self.setUp()
-                self.plan("maintenance-lock", **changes)
-                self.cloud.calls.clear()
-                with self.assertRaises(ValueError):
-                    self.runner.apply()
-                with self.assertRaises(ValueError):
-                    self.runner.register(maintenance=True)
-                self.assertEqual(self.cloud.calls, [])
-
     def test_lost_update_response_attempts_exact_rollback(self):
         """An update transport failure still rolls back the already changed service."""
         self.plan()
@@ -1120,58 +567,6 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
         self.assertTrue(self.journal.find("apply_error"))
         self.assertTrue(self.journal.find("restore_result"))
-
-    def test_lost_run_response_is_rediscovered_by_proven_ownership(self):
-        """A created task with an unacknowledged response is safely discovered."""
-        self.plan("maintenance-lock")
-        self.cloud.lost_run_response = True
-        with self.assertRaisesRegex(RuntimeError, "response lost"):
-            self.runner.apply()
-        self.assertEqual(self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED")
-        self.assertEqual(sum(op == "run-task" for _, op, _ in self.cloud.calls), 1)
-        self.assertEqual(self.cloud.jobs["arn:task/owned"]["tags"], [])
-        self.assertTrue(self.journal.find("task_ownership_verified"))
-        self.advance()
-        resumed = demo.Demo(
-            self.cloud, demo.Journal(self.journal.path), self.cloud.target
-        )
-        self.assertTrue(resumed.restore()["recoveryVerified"])
-
-    def test_foreign_deployment_refused_but_owned_maintenance_still_cleaned(self):
-        """One failed cleanup path must not skip an independent owned task."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        self.cloud.service["networkConfiguration"]["awsvpcConfiguration"]["subnets"] = [
-            "foreign"
-        ]
-        result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertEqual(result["errors"][0]["step"], "service")
-        self.assertEqual(self.cloud.jobs["arn:task/owned"]["lastStatus"], "STOPPED")
-        self.assertFalse(any(op == "update-service" for _, op, _ in self.cloud.calls))
-
-    def test_foreign_task_tags_cannot_authorize_stop(self):
-        """A matching startedBy alone is insufficient task ownership proof."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        self.cloud.jobs["arn:task/owned"]["tags"] = [
-            {"key": demo.OWNER, "value": "foreign"}
-        ]
-        result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
-
-    def test_maintenance_stop_failure_keeps_service_cleanup_and_evidence(self):
-        """A failed stop retains ownership and independently verifies service state."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        self.cloud.fail_stop = True
-        result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
-        self.assertTrue(result["errors"])
-        self.assertTrue(self.journal.find("stop_intent"))
-        self.assertFalse(self.journal.find("released"))
 
     def apply_full_arn_maintenance(self):
         """Use a complete task ARN to exercise exact receipt identity comparisons."""
@@ -1192,341 +587,6 @@ class DemoTests(unittest.TestCase):
                 journal.append(event["kind"], event["data"])
         self.assertEqual(journal.events[0]["hash"], self.journal.events[0]["hash"])
         return demo.Demo(self.cloud, journal, self.cloud.target)
-
-    def test_stopped_tag_loss_uses_durable_receipt_saved_before_control(self):
-        """AWS tag deletion does not invalidate a previously verified owned task."""
-        task = self.apply_full_arn_maintenance()
-        expected = {
-            "snapshotHash": self.journal.events[0]["hash"],
-            "runId": "run-1",
-            "taskArn": task["taskArn"],
-            "taskDefinitionArn": task["taskDefinitionArn"],
-            "startedBy": task["startedBy"],
-        }
-
-        def checked_aws(service, operation, **payload):
-            if operation == "stop-task":
-                receipts = demo.Journal(self.journal.path).find(
-                    "task_ownership_verified"
-                )
-                self.assertEqual([e["data"] for e in receipts], [expected])
-                self.assertEqual(
-                    {t["key"]: t["value"] for t in task["tags"]},
-                    self.runner.owner_tags(),
-                )
-            return self.cloud(service, operation, **payload)
-
-        self.runner.aws = checked_aws
-        self.runner.restore()
-        self.assertEqual(task["tags"], [])
-        self.advance()
-        result = self.runner.restore()
-        self.assertTrue(result["recoveryVerified"])
-        self.assertTrue(result["checks"]["ownedMaintenanceStopped"])
-        evidence = result["maintenanceRestoration"]
-        self.assertEqual(evidence["stoppedBeforeRestore"], [])
-        self.assertEqual(evidence["stopRequestedTasks"], [task["taskArn"]])
-        self.assertEqual(evidence["exitEvidence"][0]["stopCode"], "UserInitiated")
-        self.assertFalse(evidence["approvedRestorationCausedRecovery"])
-        self.assertEqual(sum(op == "stop-task" for _, op, _ in self.cloud.calls), 1)
-
-    def test_cli_new_process_restores_stopped_task_from_durable_journal(self):
-        """An actual new Python process loads proof; no controller cache survives."""
-        common = self.connect_cli()
-        task = self.apply_full_arn_maintenance()
-        self.runner.restore()
-        self.assertEqual(task["tags"], [])
-        cloud_file = Path(self.temp.name) / "cloud.json"
-        cloud_file.write_text(json.dumps(self.cloud.__dict__))
-        child = """
-import json, runpy, sys
-from datetime import timedelta
-fixture = runpy.run_path(sys.argv[1])
-demo = fixture["demo"]
-cloud = fixture["Cloud"]()
-cloud.__dict__.update(json.loads(open(sys.argv[2]).read()))
-demo.Aws = lambda *args: cloud
-demo.datetime = fixture["Clock"]
-demo.datetime.current += timedelta(minutes=4)
-code = demo.main(["restore", *sys.argv[3:]])
-open(sys.argv[2], "w").write(json.dumps(cloud.__dict__))
-sys.exit(code)
-"""
-        result = subprocess.run(
-            [sys.executable, "-c", child, __file__, str(cloud_file), *common],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        output = json.loads(result.stdout)
-        self.assertTrue(output["recoveryVerified"])
-        self.assertEqual(output["maintenanceTasks"][0]["taskArn"], task["taskArn"])
-        self.assertEqual(output["maintenanceTasks"][0]["tags"], [])
-        self.assertTrue(demo.Journal(self.journal.path).find("released"))
-        calls = json.loads(cloud_file.read_text())["calls"]
-        self.assertEqual(sum(op == "stop-task" for _, op, _ in calls), 1)
-
-    def test_receipt_alone_rediscovers_expired_task_with_omitted_tags(self):
-        """The receipt retains a full ARN even without launch/observation responses."""
-        task = self.apply_full_arn_maintenance()
-        task["lastStatus"] = "STOPPED"
-        del task["tags"]
-        runner = self.replay_journal(
-            lambda event: (
-                None
-                if event["kind"] in ("maintenance_tasks", "owned_tasks", "status")
-                else event
-            )
-        )
-        self.assertEqual(runner.discovered_task_arns, set())
-        runner.restore()
-        self.advance()
-        result = runner.restore()
-        self.assertTrue(result["recoveryVerified"])
-        self.assertEqual(
-            result["maintenanceRestoration"]["stoppedBeforeRestore"],
-            [task["taskArn"]],
-        )
-        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
-
-    def test_stopped_without_receipt_fails_closed_despite_historical_tags(self):
-        """A launch response, old observation or stop intent is not a verified receipt."""
-        task = self.apply_full_arn_maintenance()
-        self.journal.append("stop_intent", {"taskArn": task["taskArn"]})
-        task.update(lastStatus="STOPPED", tags=[])
-        runner = self.replay_journal(
-            lambda event: None if event["kind"] == "task_ownership_verified" else event
-        )
-        result = runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertTrue(result["errors"])
-        self.assertFalse(runner.journal.find("task_ownership_verified"))
-        self.assertFalse(runner.journal.find("released"))
-        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
-
-    def test_stopped_receipt_requires_every_binding_to_match(self):
-        """Proof from another snapshot/run/task/definition/start marker never transfers."""
-        for field in (
-            "snapshotHash",
-            "runId",
-            "taskArn",
-            "taskDefinitionArn",
-            "startedBy",
-        ):
-            with self.subTest(field=field):
-                self.setUp()
-                task = self.apply_full_arn_maintenance()
-                task.update(lastStatus="STOPPED", tags=[])
-
-                def change_receipt(event, field=field, task=task):
-                    if event["kind"] == "task_ownership_verified":
-                        event["data"][field] += "-foreign"
-                        if field == "taskArn":
-                            # Same task ID suffix, different AWS account.
-                            event["data"][field] = task["taskArn"].replace(
-                                ":123456789012:", ":999999999999:"
-                            )
-                            self.cloud.jobs[event["data"][field]] = dict(
-                                task, taskArn=event["data"][field]
-                            )
-                    return event
-
-                runner = self.replay_journal(change_receipt)
-                result = runner.restore()
-                self.assertFalse(result["recoveryVerified"])
-                self.assertTrue(result["errors"])
-                self.assertFalse(runner.journal.find("released"))
-                self.assertFalse(
-                    any(op == "stop-task" for _, op, _ in self.cloud.calls)
-                )
-
-    def test_receipt_never_authorizes_missing_live_tags(self):
-        """Only the terminal STOPPED state admits tag loss, including during shutdown."""
-        for state in ("RUNNING", "PENDING", "STOPPING", "DEACTIVATING", "UNKNOWN"):
-            with self.subTest(state=state):
-                self.setUp()
-                task = self.apply_full_arn_maintenance()
-                task.update(lastStatus=state, tags=[])
-                result = self.runner.restore()
-                self.assertFalse(result["recoveryVerified"])
-                self.assertTrue(result["errors"])
-                self.assertFalse(
-                    any(op == "stop-task" for _, op, _ in self.cloud.calls)
-                )
-
-    def test_receipt_rejects_changed_task_identity_and_conflicting_tags(self):
-        """Even a known ARN cannot mask changed identity or partial/conflicting tags."""
-        for state in ("RUNNING", "STOPPED"):
-            for change in (
-                "startedBy",
-                "definition",
-                "owner",
-                "proof",
-                "partial",
-                "duplicate",
-            ):
-                with self.subTest(state=state, change=change):
-                    self.setUp()
-                    task = self.apply_full_arn_maintenance()
-                    task["lastStatus"] = state
-                    if change == "startedBy":
-                        task["startedBy"] = "foreign"
-                    elif change == "definition":
-                        task["taskDefinitionArn"] += "-other-owned-revision"
-                        self.journal.append(
-                            "maintenance_revision", {"arn": task["taskDefinitionArn"]}
-                        )
-                    elif change == "partial":
-                        task["tags"] = task["tags"][:1]
-                    elif change == "duplicate":
-                        task["tags"].insert(0, {"key": demo.OWNER, "value": "foreign"})
-                    else:
-                        key = demo.OWNER if change == "owner" else demo.PROOF
-                        next(t for t in task["tags"] if t["key"] == key)["value"] = (
-                            "foreign"
-                        )
-                    result = self.runner.restore()
-                    self.assertFalse(result["recoveryVerified"])
-                    self.assertTrue(result["errors"])
-                    self.assertFalse(
-                        any(op == "stop-task" for _, op, _ in self.cloud.calls)
-                    )
-
-    def test_tags_are_rechecked_immediately_before_stop(self):
-        """A tag removed after discovery still prevents StopTask."""
-        task = self.apply_full_arn_maintenance()
-        append = self.journal.append
-
-        def change_after_discovery(kind, data):
-            event = append(kind, data)
-            if kind == "maintenance_before_restore":
-                task["tags"] = []
-            return event
-
-        with patch.object(self.journal, "append", change_after_discovery):
-            result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertEqual(task["lastStatus"], "RUNNING")
-        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
-
-    def test_expiry_between_discovery_and_stop_never_records_a_stop_request(self):
-        """A naturally ended task at the final check needs no control operation."""
-        task = self.apply_full_arn_maintenance()
-        append = self.journal.append
-
-        def expire_after_discovery(kind, data):
-            event = append(kind, data)
-            if kind == "maintenance_before_restore":
-                task.update(
-                    lastStatus="STOPPED",
-                    tags=[],
-                    stopCode="EssentialContainerExited",
-                )
-            return event
-
-        with patch.object(self.journal, "append", expire_after_discovery):
-            self.runner.restore()
-        self.advance()
-        result = self.runner.restore()
-        self.assertTrue(result["recoveryVerified"])
-        evidence = result["maintenanceRestoration"]
-        self.assertEqual(evidence["stopRequestedTasks"], [])
-        self.assertEqual(
-            evidence["exitEvidence"][0]["stopCode"], "EssentialContainerExited"
-        )
-        self.assertFalse(evidence["approvedRestorationCausedRecovery"])
-        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
-
-    def test_retained_task_description_cannot_disappear_or_substitute_an_arn(self):
-        """Missing descriptions and same-ID ARNs from another cluster fail closed."""
-        for replacement in (None, "other-cluster"):
-            with self.subTest(replacement=replacement):
-                self.setUp()
-                task = self.apply_full_arn_maintenance()
-                task.update(lastStatus="STOPPED", tags=[])
-
-                def changed_description(
-                    service, operation, task=task, replacement=replacement, **payload
-                ):
-                    if operation == "describe-tasks" and payload["tasks"] == [
-                        task["taskArn"]
-                    ]:
-                        tasks = (
-                            []
-                            if replacement is None
-                            else [
-                                dict(
-                                    task,
-                                    taskArn=task["taskArn"].replace(
-                                        "demo-cluster/", "other-cluster/"
-                                    ),
-                                )
-                            ]
-                        )
-                        return {"tasks": tasks}
-                    return self.cloud(service, operation, **payload)
-
-                self.runner.aws = changed_description
-                result = self.runner.restore()
-                self.assertFalse(result["recoveryVerified"])
-                self.assertTrue(result["errors"])
-                self.assertFalse(self.journal.find("released"))
-                self.assertFalse(
-                    any(op == "stop-task" for _, op, _ in self.cloud.calls)
-                )
-
-    def test_receipt_write_loss_cleans_live_task_but_cannot_verify_tagless_exit(self):
-        """Best-effort cleanup survives disk/stderr failure without inventing proof."""
-        self.plan("maintenance-lock")
-        with (
-            self.failing_journal("task_ownership_verified", persistent=True),
-            patch.object(
-                demo, "print", create=True, side_effect=OSError("stderr full")
-            ),
-            self.assertRaisesRegex(OSError, "storage failure"),
-        ):
-            self.runner.apply()
-        task = self.cloud.jobs["arn:task/owned"]
-        self.assertEqual(task["lastStatus"], "STOPPED")
-        self.assertEqual(task["tags"], [])
-        self.assertFalse(self.runner.cleanup_result["recoveryVerified"])
-        journal = demo.Journal(self.journal.path)
-        self.assertFalse(journal.find("task_ownership_verified"))
-        resumed = demo.Demo(self.cloud, journal, self.cloud.target)
-        self.advance()
-        result = resumed.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertTrue(result["errors"])
-        self.assertFalse(journal.find("released"))
-
-    def test_expired_hold_is_recovery_state_not_approved_restore_causality(self):
-        """Keep natural exit evidence and never attribute it to an approved stop."""
-        self.plan("maintenance-lock")
-        self.runner.apply()
-        task = self.cloud.jobs["arn:task/owned"]
-        task.update(
-            lastStatus="STOPPED",
-            tags=[],
-            stopCode="EssentialContainerExited",
-            stoppedReason="Essential container in task exited",
-            stoppedAt=Clock.current.isoformat(),
-            containers=[{"name": "healthcare", "exitCode": 0}],
-        )
-        self.runner.restore()
-        self.advance()
-        result = self.runner.restore()
-        self.assertTrue(result["recoveryVerified"])
-        evidence = result["maintenanceRestoration"]
-        self.assertEqual(evidence["stoppedBeforeRestore"], ["arn:task/owned"])
-        self.assertFalse(evidence["approvedRestorationCausedRecovery"])
-        self.assertEqual(evidence["stopRequestedTasks"], [])
-        self.assertEqual(
-            evidence["exitEvidence"][0]["stopCode"], "EssentialContainerExited"
-        )
-        self.assertEqual(evidence["exitEvidence"][0]["containers"][0]["exitCode"], 0)
-        self.assertFalse(any(op == "stop-task" for _, op, _ in self.cloud.calls))
 
     def test_dirty_baseline_or_settings_mismatch_refuses_before_mutation(self):
         """Plans cannot start from a foreign claim, active alarm or mismatched load."""
@@ -1555,14 +615,14 @@ sys.exit(code)
         self.assertFalse(self.journal.find("released"))
 
     def test_mutable_baseline_tags_are_refused_before_any_cloud_mutation(self):
-        """A source-looking tag or r1 environment label cannot make restore immutable."""
+        """A source-looking tag or v1 environment label cannot make restore immutable."""
         original = self.cloud.definitions[self.cloud.original]["taskDefinition"]
         original["containerDefinitions"][0]["environment"].append(
-            {"name": "DEPLOYED_REVISION", "value": "r1"}
+            {"name": "DEPLOYED_REVISION", "value": "v1"}
         )
         for image in (
             "registry.example/healthcare:latest",
-            "registry.example/healthcare:r1",
+            "registry.example/healthcare:v1",
             "registry.example/healthcare:git-abc123",
         ):
             with (
@@ -1597,7 +657,7 @@ sys.exit(code)
             self.plan()
         self.assertFalse(self.journal.events)
 
-    def test_baseline_requires_verified_r1_source_manifest_from_its_task_stream(self):
+    def test_baseline_requires_verified_v1_source_manifest_from_its_task_stream(self):
         """Reject missing, unbuilt, fault-revision and corrupt runtime source evidence."""
         valid = copy.deepcopy(self.cloud.source_manifest)
         for change in (
@@ -1608,7 +668,7 @@ sys.exit(code)
         ):
             with (
                 self.subTest(change=change),
-                self.assertRaisesRegex(RuntimeError, "source_manifest must verify r1"),
+                self.assertRaisesRegex(RuntimeError, "source_manifest must verify v1"),
             ):
                 self.cloud.source_manifest = valid | change
                 self.plan()
@@ -1622,7 +682,7 @@ sys.exit(code)
         evidence = self.journal.snapshot["sourceManifests"][0]
         self.assertEqual(evidence["taskArn"], self.cloud.running[0]["taskArn"])
         self.assertEqual(evidence["logStreamName"], "healthcare/healthcare/service")
-        self.assertEqual(json.loads(evidence["events"][0]["message"])["revision"], "r1")
+        self.assertEqual(json.loads(evidence["events"][0]["message"])["revision"], "v1")
         self.assertFalse(
             any(
                 operation
@@ -1654,70 +714,6 @@ sys.exit(code)
         )
         self.assertEqual(
             self.cloud.running[0]["containers"][0]["imageDigest"], original_digest
-        )
-
-    def test_older_mutable_snapshot_cannot_apply_or_launch_unsafe_restore(self):
-        """Resuming a pre-fix journal never deploys an original whose tag can move."""
-        self.plan()
-        snapshot = self.journal.snapshot
-        tag = "registry.example/healthcare:old-r1"
-        snapshot["image"] = tag
-        snapshot["taskDefinition"]["taskDefinition"]["containerDefinitions"][0][
-            "image"
-        ] = tag
-        snapshot["tasks"][0]["containers"][0]["image"] = tag
-        self.journal = demo.Journal(Path(self.temp.name) / "legacy")
-        self.journal.append("snapshot", snapshot)
-        self.runner = demo.Demo(self.cloud, self.journal, self.cloud.target)
-        with self.assertRaisesRegex(
-            RuntimeError, "original application image must use"
-        ):
-            self.runner.apply()
-        fault = "arn:task-definition/healthcare:2"
-        self.cloud.definitions[fault] = copy.deepcopy(
-            self.cloud.definitions[self.cloud.original]
-        )
-        self.cloud.rollout(fault)
-        self.cloud.definitions[self.cloud.original]["taskDefinition"][
-            "containerDefinitions"
-        ][0]["image"] = tag
-        self.journal.append("service_revision", {"arn": fault})
-        self.cloud.service["tags"].extend(
-            {"key": key, "value": value}
-            for key, value in self.runner.owner_tags().items()
-        )
-        result = self.runner.restore()
-        self.assertFalse(result["recoveryVerified"])
-        self.assertEqual(result["restorationState"], "pending")
-        self.assertIn(
-            "original application image must use", result["errors"][0]["error"]
-        )
-        self.assertFalse(
-            any(
-                operation
-                in {"tag-resource", "register-task-definition", "update-service"}
-                for _, operation, _ in self.cloud.calls
-            )
-        )
-
-    def test_older_snapshot_without_r1_evidence_cannot_apply(self):
-        """An earlier plan cannot bypass the new source check merely by using a digest."""
-        self.plan()
-        snapshot = self.journal.snapshot
-        snapshot.pop("sourceManifests")
-        journal = demo.Journal(Path(self.temp.name) / "without-source")
-        journal.append("snapshot", snapshot)
-        runner = demo.Demo(self.cloud, journal, self.cloud.target)
-        with self.assertRaisesRegex(
-            RuntimeError, "lacks verified r1 baseline source evidence"
-        ):
-            runner.apply()
-        self.assertFalse(
-            any(
-                operation
-                in {"tag-resource", "register-task-definition", "update-service"}
-                for _, operation, _ in self.cloud.calls
-            )
         )
 
     def test_foreign_service_owner_refuses_rollback(self):
@@ -1763,16 +759,6 @@ sys.exit(code)
         self.advance()
         self.cloud.alarms[1]["Threshold"] = 999999
         self.assertFalse(self.runner.restore()["recoveryVerified"])
-
-    def test_no_discovered_task_after_lost_launch_stays_unresolved(self):
-        """An ambiguous launch never starts another task during restore."""
-        self.plan("maintenance-lock")
-        self.journal.append("run_task_intent", {})
-        result = self.runner.restore()
-        self.advance()
-        self.assertFalse(self.runner.restore()["recoveryVerified"])
-        self.assertFalse(result["checks"]["ownedMaintenanceStopped"])
-        self.assertFalse(any(op == "run-task" for _, op, _ in self.cloud.calls))
 
     def test_image_repository_preserves_registry_port(self):
         """Pinning a maintenance digest works for tagged and digest-only images."""
@@ -1837,228 +823,6 @@ sys.exit(code)
         self.cloud.missing_metrics = False
         self.assertTrue(self.runner.restore(wait_seconds=60)["recoveryVerified"])
 
-    def test_failed_apply_uses_wait_budget_for_async_cleanup(self):
-        """A failed apply still waits for verified cleanup before propagating failure."""
-        self.plan()
-        self.cloud.async_restore = True
-        self.cloud.fail_update = True
-        clock = self.polling_clock(self.complete_restore_later)
-        with self.assertRaisesRegex(RuntimeError, "response lost"):
-            self.runner.apply(wait_seconds=300)
-        cleanup = self.journal.find("restore_wait_result")[-1]["data"]
-        self.assertEqual(cleanup["waitSeconds"], 300)
-        self.assertTrue(cleanup["recoveryVerified"])
-        self.assertGreaterEqual(clock.elapsed, 180)
-        self.assertTrue(self.journal.find("released"))
-        self.assertFalse(
-            cleanup["maintenanceRestoration"]["approvedRestorationCausedRecovery"]
-        )
-
-    def test_failed_apply_cleanup_timeout_keeps_pending_owner(self):
-        """A cleanup budget too short for fresh periods cannot be reported as success."""
-        self.plan()
-        self.cloud.fail_update = True
-        clock = self.polling_clock()
-        with self.assertRaisesRegex(RuntimeError, "response lost"):
-            self.runner.apply(wait_seconds=60)
-        cleanup = self.journal.find("restore_wait_result")[-1]["data"]
-        self.assertFalse(cleanup["recoveryVerified"])
-        self.assertEqual(cleanup["restorationState"], "pending")
-        self.assertTrue(cleanup["waitExpired"])
-        self.assertEqual(clock.elapsed, 60)
-        self.assertFalse(self.journal.find("released"))
-        self.assertTrue(
-            any(tag["key"] == demo.OWNER for tag in self.cloud.service["tags"])
-        )
-
-    def test_apply_timeout_gives_cleanup_a_fresh_wait_budget(self):
-        """An exhausted apply wait must not consume the recovery observation budget."""
-        self.plan()
-        self.cloud.async_fault = True
-        clock = self.polling_clock()
-        with self.assertRaisesRegex(TimeoutError, "observation timed out"):
-            self.runner.apply(wait_seconds=300)
-        cleanup = self.journal.find("restore_wait_result")[-1]["data"]
-        self.assertEqual(cleanup["waitSeconds"], 300)
-        self.assertTrue(cleanup["recoveryVerified"])
-        self.assertGreater(clock.elapsed, 300)
-        self.assertLess(clock.elapsed, 600)
-
-    def test_cli_pending_restore_returns_nonzero_and_can_resume(self):
-        """CLI --wait-seconds is routed through the shared bounded restore path."""
-        common = self.connect_cli()
-        self.plan()
-        self.runner.apply()
-        clock = self.polling_clock()
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
-            code = demo.main(["restore", *common, "--wait-seconds", "60"])
-        result = json.loads(stdout.getvalue())
-        self.assertEqual(code, 2)
-        self.assertEqual(clock.elapsed, 60)
-        self.assertEqual(result["restorationState"], "pending")
-        self.assertFalse(result["recoveryVerified"])
-        self.assertFalse(demo.Journal(self.journal.path).find("released"))
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
-            code = demo.main(["restore", *common, "--wait-seconds", "300"])
-        self.assertEqual(code, 0)
-        self.assertTrue(json.loads(stdout.getvalue())["recoveryVerified"])
-
-    def test_cli_apply_failure_stays_failed_even_when_cleanup_verifies(self):
-        """Operator cleanup success is separate from the failed apply operation."""
-        common = self.connect_cli()
-        self.plan()
-        self.cloud.fail_update = True
-        self.polling_clock()
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            code = demo.main(["apply", *common, "--wait-seconds", "300"])
-        result = json.loads(stderr.getvalue())
-        self.assertEqual(code, 1)
-        self.assertFalse(result["operationSucceeded"])
-        self.assertTrue(result["cleanup"]["recoveryVerified"])
-        self.assertFalse(
-            result["cleanup"]["maintenanceRestoration"][
-                "approvedRestorationCausedRecovery"
-            ]
-        )
-
-    def test_maintenance_cli_bound_matches_app_and_passes_explicit_schema(self):
-        """Keep the standalone job command aligned with the app's finite hold bound."""
-        source = (
-            SCRIPT.parents[1]
-            / "packages/healthcare-sensor-app/src/test_service/maintenance.py"
-        )
-        module = ast.parse(source.read_text())
-        bound = next(
-            ast.literal_eval(node.value)
-            for node in module.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "MAX_HOLD_SECONDS"
-                for target in node.targets
-            )
-        )
-        arguments = [
-            "plan",
-            "--run-id",
-            "run-1",
-            "--cluster",
-            "cluster",
-            "--service",
-            "service",
-            "--region",
-            "us-east-1",
-            "--journal-root",
-            self.temp.name,
-            "--scenario",
-            "maintenance-lock",
-            "--alarm",
-            "ingest",
-            "--alarm",
-            "query",
-            "--alarm",
-            "connections",
-        ]
-        options = demo.parse_args(arguments)
-        self.assertEqual(options.hold_seconds, bound)
-        fractional = demo.parse_args([*arguments, "--hold-seconds", str(bound - 0.5)])
-        self.assertEqual(fractional.hold_seconds, bound - 0.5)
-        with (
-            contextlib.redirect_stderr(io.StringIO()),
-            self.assertRaises(SystemExit) as rejected,
-        ):
-            demo.parse_args([*arguments, "--hold-seconds", str(bound + 0.5)])
-        self.assertEqual(rejected.exception.code, 2)
-        self.plan(
-            "maintenance-lock",
-            hold_seconds=options.hold_seconds,
-            maintenance_command=list(demo.MAINTENANCE_COMMAND),
-            maintenance_schema="demo_schema",
-        )
-        self.runner.apply()
-        request = next(
-            payload
-            for _, operation, payload in self.cloud.calls
-            if operation == "run-task"
-        )
-        task = self.cloud.definitions[request["taskDefinition"]]["taskDefinition"]
-        app = task["containerDefinitions"][0]
-        self.assertEqual(app["entryPoint"], ["python"])
-        self.assertEqual(app["command"][:2], ["-m", "test_service.maintenance"])
-        self.assertEqual(
-            float(app["command"][app["command"].index("--hold-seconds") + 1]), bound
-        )
-        self.assertEqual(
-            app["command"][app["command"].index("--schema") + 1], "demo_schema"
-        )
-        self.assertEqual(demo.env_map(task, "healthcare")["TRAFFIC_ENABLED"], "false")
-
-    def test_all_scenarios_preserve_measured_workload_and_observation_profile(self):
-        """Faults keep every baseline workload/observer value and unrelated absence."""
-        profile = {
-            "TRAFFIC_ENABLED": "true",
-            "TRAFFIC_INTERVAL_SECONDS": "0.5",
-            "TRAFFIC_MAX_CONCURRENCY": "8",
-            "TRAFFIC_QUERY_LIMIT": "40",
-            "TRAFFIC_PATIENT_ID": "patient-baseline",
-            "TRAFFIC_SEED": "123",
-            "DB_STATEMENT_TIMEOUT_MS": "2000",
-            "DB_OBSERVABILITY_ENABLED": "true",
-            "DB_OBSERVABILITY_INTERVAL_SECONDS": "5",
-        }
-        for scenario in (
-            "pool-config",
-            "query-revision",
-            "session-revision",
-            "maintenance-lock",
-        ):
-            with self.subTest(scenario=scenario):
-                self.setUp()
-                original = self.cloud.definitions[self.cloud.original]["taskDefinition"]
-                environment = demo.env_map(original, "healthcare") | profile
-                original["containerDefinitions"][0]["environment"] = [
-                    {"name": key, "value": value} for key, value in environment.items()
-                ]
-                frozen = copy.deepcopy(original)
-                image_options = (
-                    {
-                        "image": "registry.example/healthcare@sha256:" + "b" * 64,
-                        "revision": "source-id",
-                    }
-                    if scenario.endswith("-revision")
-                    else {}
-                )
-                self.plan(scenario, expect_settings=profile, **image_options)
-                self.runner.apply()
-                active = self.cloud.definitions[self.cloud.service["taskDefinition"]][
-                    "taskDefinition"
-                ]
-                actual = demo.env_map(active, "healthcare")
-                self.assertEqual({key: actual[key] for key in profile}, profile)
-                expected = environment.copy()
-                if scenario != "maintenance-lock":
-                    expected["RCA_TEST_RUN_ID"] = "run-1"
-                if scenario == "pool-config":
-                    expected.update(
-                        DB_POOL_SIZE="1",
-                        DB_MAX_OVERFLOW="0",
-                        DB_POOL_TIMEOUT_SECONDS="0.25",
-                    )
-                elif scenario.endswith("-revision"):
-                    expected["DEPLOYED_REVISION"] = "source-id"
-                self.assertEqual(actual, expected)
-                self.assertNotIn("LOG_LEVEL", actual)
-                self.runner.restore()
-                self.assertEqual(
-                    self.cloud.service["taskDefinition"], self.cloud.original
-                )
-                self.assertEqual(
-                    self.cloud.definitions[self.cloud.original]["taskDefinition"],
-                    frozen,
-                )
-
     def test_workload_mismatch_rejected_without_cloud_mutation(self):
         """A requested profile is a baseline assertion, never a fault-time override."""
         for key in (
@@ -2108,95 +872,420 @@ sys.exit(code)
                 with self.assertRaisesRegex(RuntimeError, "same-load invariant"):
                     self.runner.assert_scenario_environment(candidate)
 
-    def test_automatic_rollback_is_original_not_foreign_and_restore_is_idempotent(self):
-        """Retain ECS rollback evidence and avoid another deployment when original."""
+    def test_baseline_wire_partial_put_and_lost_response(self):
+        """Only canonical downloaded content proves an immutable PUT, even with no receipt."""
+        self.cloud.put_failure = True
         self.plan()
         self.runner.apply()
-        self.cloud.rollout(self.cloud.original)
-        self.cloud.service["events"] = [
+        raw = self.cloud.objects[("configured-evidence", "baselines/run-1/normal.json")]
+        baseline = json.loads(raw)
+        self.assertEqual(raw, demo.canonical(baseline))
+        self.assertEqual(baseline["schema_version"], 1)
+        self.assertEqual(baseline["scope"]["desired_count"], 1)
+        self.assertEqual(set(baseline["service_settings"]), set(demo.SERVICE_SETTINGS))
+        self.assertTrue(
+            any(
+                o["message"]["event"] == "write_contract"
+                and o["message"]["schema_name"] is None
+                for o in baseline["observations"]
+            )
+        )
+        self.assertEqual(
+            set(baseline["metric_observations"]),
+            {"start", "end", "attempts", "failures"},
+        )
+        self.assertEqual(
+            {o["message"]["event"] for o in baseline["observations"]},
             {
-                "id": "rollback-1",
-                "createdAt": Clock.current.isoformat(),
-                "message": "service deployment failed; rolling back to the last completed deployment",
-            }
-        ]
-        status = self.runner.status()
-        observation = status["revisionObservation"]
-        self.assertEqual(observation["state"], "original-after-apply")
-        self.assertEqual(observation["returnCause"], "ecs-rollback-event")
-        self.assertTrue(observation["faultRevisionPreviouslyObserved"])
-        self.assertIsNone(status["ownershipError"])
-        with self.assertRaisesRegex(RuntimeError, "returned to original"):
-            self.runner.wait_applied(1)
-        count = len(self.cloud.calls)
-        result = self.runner.restore()
-        self.assertTrue(result["revisionObservation"]["alreadyOriginalAtRestore"])
+                "source_manifest",
+                "write_contract",
+                "write_completed",
+                "db_schema_snapshot",
+                "write_accounting",
+            },
+        )
+        metadata = json.loads(self.cloud.alarms[0]["AlarmDescription"])
+        self.assertEqual(
+            metadata["baseline_ref"]["sha256"], hashlib.sha256(raw).hexdigest()
+        )
+        operations = [op for _, op, _ in self.cloud.calls]
+        for _, operation, request in self.cloud.calls:
+            if operation == "put-metric-alarm":
+                self.assertFalse(
+                    {
+                        "AlarmArn",
+                        "StateValue",
+                        "StateReason",
+                        "StateUpdatedTimestamp",
+                    }.intersection(request)
+                )
+                self.assertLessEqual(len(request.get("AlarmDescription", "")), 1024)
+        self.assertLess(
+            operations.index("get-object"), operations.index("put-metric-alarm")
+        )
+        self.assertLess(
+            operations.index("put-metric-alarm"), operations.index("update-service")
+        )
+        self.assertFalse(
+            any(
+                op
+                in {"set-alarm-state", "put-log-events", "put-metric-data", "run-task"}
+                for op in operations
+            )
+        )
+
+    def test_corrupt_or_existing_s3_object_cannot_start_fault(self):
+        """A pre-existing foreign object and a mismatched GET both fail before deployment."""
+        self.cloud.objects[("configured-evidence", "baselines/run-1/normal.json")] = (
+            b"foreign"
+        )
+        self.plan()
+        with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
+            self.runner.apply()
+        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
+        self.assertFalse(self.journal.find("service_revision"))
+        self.assertEqual(
+            self.cloud.objects[("configured-evidence", "baselines/run-1/normal.json")],
+            b"foreign",
+        )
+
+    def test_normal_evidence_freshness_schema_and_safe_fields(self):
+        """Missing source/schema/write, changed schema and private payloads stop planning."""
+        for missing in (
+            "source_manifest",
+            "write_completed",
+            "db_schema_snapshot",
+            "write_contract",
+            "write_accounting",
+        ):
+            self.cloud.omit_event = missing
+            with self.subTest(missing=missing), self.assertRaises(RuntimeError):
+                self.plan()
+        self.cloud.omit_event = None
+        self.cloud.bad_schema = True
+        with self.assertRaisesRegex(RuntimeError, "column precondition"):
+            self.plan()
+        self.cloud.bad_schema = False
+        self.cloud.unsafe_event = True
+        with self.assertRaisesRegex(RuntimeError, "field contract"):
+            self.plan()
+        self.assertFalse(self.journal.events)
+
+    def test_absent_zero_and_invalid_metrics_never_prove_normal(self):
+        """Missing bins are not zero failures and zero attempts are not successful work."""
+        self.plan()
+        baseline = self.journal.snapshot["metrics"]
+        for metric, points in (
+            ("VitalIngestFailures", []),
+            ("VitalIngestAttempts", []),
+        ):
+            candidate = copy.deepcopy(baseline)
+            candidate["values"][metric]["Datapoints"] = points
+            self.assertFalse(demo.Demo.metrics_healthy(candidate, []))
+        for value in (0, False, float("nan"), -1):
+            candidate = copy.deepcopy(baseline)
+            candidate["values"]["VitalIngestAttempts"]["Datapoints"][0]["Sum"] = value
+            self.assertFalse(demo.Demo.metrics_healthy(candidate, []))
+
+    def test_original_alarm_metadata_and_criteria_restored(self):
+        """Cleanup restores the original Unicode description and every metric/action setting."""
+        self.cloud.alarms[0].update(
+            AlarmDescription="원래 설명", InsufficientDataActions=["arn:action"]
+        )
+        original = copy.deepcopy(self.cloud.alarms[0])
+        self.plan()
+        self.runner.apply()
+        self.runner.restore()
+        self.assertEqual(self.cloud.alarms[0], original)
         self.advance()
         self.assertTrue(self.runner.restore()["recoveryVerified"])
-        self.assertFalse(
-            any(op == "update-service" for _, op, _ in self.cloud.calls[count:])
-        )
+        self.assertIn("원래 설명", demo.canonical(original).decode())
+        with self.assertRaises(ValueError):
+            demo.canonical({"bad": float("nan")})
 
-    def test_return_to_original_without_rollback_evidence_keeps_cause_unknown(self):
-        """An already-restored original revision alone does not prove automatic rollback."""
+    def test_interrupted_apply_and_journal_loss_cleanup_independently(self):
+        """SIGINT after service mutation still restores service and alarm with a failed journal."""
+        self.plan()
+        original_call = self.cloud.__call__
+        original_append = self.journal.append
+        interrupted = False
+
+        def call(service, operation, /, **payload):
+            nonlocal interrupted
+            result = original_call(service, operation, **payload)
+            if (
+                operation == "update-service"
+                and payload["taskDefinition"] != self.cloud.original
+                and not interrupted
+            ):
+                interrupted = True
+                self.journal.append = lambda *args: (_ for _ in ()).throw(
+                    OSError("disk full")
+                )
+                raise KeyboardInterrupt("interrupt after mutation")
+            return result
+
+        self.runner.aws = call
+        with self.assertRaises(KeyboardInterrupt):
+            self.runner.apply()
+        self.journal.append = original_append
+        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
+        self.assertEqual(self.cloud.alarms[0].get("AlarmDescription", ""), "")
+        self.assertFalse(self.runner.cleanup_result["recoveryVerified"])
+
+    def test_foreign_service_still_allows_owned_alarm_cleanup(self):
+        """Independent metadata cleanup never authorizes overwriting a foreign deployment."""
         self.plan()
         self.runner.apply()
-        self.cloud.rollout(self.cloud.original)
-        observation = self.runner.status()["revisionObservation"]
-        self.assertEqual(observation["state"], "original-after-apply")
-        self.assertEqual(observation["returnCause"], "not-established")
-        self.assertEqual(observation["rollbackEventEvidence"], [])
+        self.cloud.service["taskDefinition"] = "foreign"
+        result = self.runner.restore()
+        self.assertFalse(result["recoveryVerified"])
+        self.assertEqual(self.cloud.service["taskDefinition"], "foreign")
+        self.assertEqual(self.cloud.alarms[0].get("AlarmDescription", ""), "")
 
-    def test_foreign_revision_is_not_an_already_restored_service(self):
-        """A different ARN must never be overwritten even when its settings look healthy."""
+    def test_foreign_alarm_refused_while_service_restored(self):
+        """Foreign metadata survives cleanup; failure cannot prevent our service rollback."""
         self.plan()
         self.runner.apply()
-        foreign = "arn:task-definition/healthcare:999"
-        self.cloud.definitions[foreign] = copy.deepcopy(
-            self.cloud.definitions[self.cloud.original]
-        )
-        self.cloud.rollout(foreign)
-        status = self.runner.status()
-        self.assertEqual(status["revisionObservation"]["state"], "foreign-revision")
-        self.assertIn("foreign deployment", status["ownershipError"])
-        count = len(self.cloud.calls)
-        self.assertFalse(self.runner.restore()["recoveryVerified"])
-        self.assertFalse(
-            any(op == "update-service" for _, op, _ in self.cloud.calls[count:])
+        self.cloud.alarms[0]["AlarmDescription"] = "someone else's incident"
+        result = self.runner.restore()
+        self.assertFalse(result["recoveryVerified"])
+        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
+        self.assertEqual(
+            self.cloud.alarms[0]["AlarmDescription"], "someone else's incident"
         )
 
-    def test_cli_service_lock_and_prior_run_refuse_competing_plan(self):
-        """Canonical service locks and unrestored journals prevent parallel writers."""
-        previous_aws = demo.Aws
-        demo.Aws = lambda *args: self.cloud
-        self.addCleanup(setattr, demo, "Aws", previous_aws)
-        base = [
+    def test_legacy_journal_remains_byte_identical(self):
+        """Old hash chains load unchanged but cannot be repurposed as new scenario runs."""
+        self.journal.append(
+            "snapshot",
+            {"target": self.cloud.target, "options": {"scenario": "maintenance-lock"}},
+        )
+        original = (self.journal.path / "000000.json").read_bytes()
+        self.runner.journal = demo.Journal(self.journal.path)
+        for action in (self.runner.apply, self.runner.status, self.runner.restore):
+            with self.assertRaisesRegex(RuntimeError, "legacy journal"):
+                action()
+        self.assertEqual((self.journal.path / "000000.json").read_bytes(), original)
+        self.assertEqual(len(list(self.journal.path.glob("*.json"))), 1)
+
+    def test_cli_adapter_get_object_uses_explicit_output_file(self):
+        """AWS CLI's positional output path must not leak into GetObject API input."""
+        with patch.object(
+            demo.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, "{}", ""),
+        ) as run:
+            demo.Aws("us-east-1")(
+                "s3api",
+                "get-object",
+                Bucket="bucket",
+                Key="key",
+                OutputFile="/tmp/test-output",
+            )
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[-1], "/tmp/test-output")
+        self.assertEqual(argv[argv.index("--bucket") + 1], "bucket")
+        self.assertEqual(argv[argv.index("--key") + 1], "key")
+        self.assertNotIn("--cli-input-json", argv)
+
+    def test_cli_put_object_loads_file_bytes_instead_of_decoding_path_as_base64(self):
+        """A baseline filename is a CLI file input, never an API blob value."""
+        with patch.object(
+            demo.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, "{}", ""),
+        ) as run:
+            demo.Aws("us-east-1")(
+                "s3api",
+                "put-object",
+                Bucket="bucket",
+                Key="key",
+                Body="/tmp/normal baseline.json",
+                IfNoneMatch="*",
+            )
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[argv.index("--body") + 1], "/tmp/normal baseline.json")
+        self.assertEqual(argv[argv.index("--bucket") + 1], "bucket")
+        self.assertEqual(argv[argv.index("--key") + 1], "key")
+        payload = json.loads(argv[argv.index("--cli-input-json") + 1])
+        self.assertNotIn("Body", payload)
+        self.assertEqual(payload["IfNoneMatch"], "*")
+
+    def test_optional_capacity_absence_is_canonical_without_dropping_circuit_breaker_fields(
+        self,
+    ):
+        """Serialization differences are equivalent; real control changes remain different."""
+        service = copy.deepcopy(self.cloud.service)
+        service.pop("capacityProviderStrategy", None)
+        service["deploymentConfiguration"]["deploymentCircuitBreaker"] = {
+            "enable": True,
+            "rollback": True,
+            "resetOnHealthyTask": True,
+            "thresholdConfiguration": {"type": "BOUNDED_PERCENT", "value": 50},
+        }
+        absent = copy.deepcopy(demo.settings(service))
+        service["capacityProviderStrategy"] = None
+        self.assertEqual(absent, demo.settings(service))
+        service["capacityProviderStrategy"] = []
+        self.assertEqual(absent, demo.settings(service))
+        service["deploymentConfiguration"]["deploymentCircuitBreaker"][
+            "resetOnHealthyTask"
+        ] = False
+        self.assertNotEqual(absent, demo.settings(service))
+
+    def test_cli_ecs_uses_an_uncompressed_locked_model_without_changing_global_environment(
+        self,
+    ):
+        """Old CLI loaders must see configurable fields instead of silently omitting them."""
+        import gzip
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "botocore"
+            model_dir = package / "data/ecs/2014-11-13"
+            model_dir.mkdir(parents=True)
+            model = {
+                "metadata": {"endpointPrefix": "ecs"},
+                "shapes": {
+                    "DeploymentCircuitBreaker": {
+                        "members": {
+                            "resetOnHealthyTask": {"shape": "Boolean"},
+                            "thresholdConfiguration": {"shape": "Threshold"},
+                        }
+                    }
+                },
+            }
+            (model_dir / "service-2.json.gz").write_bytes(
+                gzip.compress(json.dumps(model).encode())
+            )
+            original = os.environ.get("AWS_DATA_PATH")
+            with patch.dict(
+                sys.modules,
+                {"botocore": SimpleNamespace(__file__=str(package / "__init__.py"))},
+            ):
+                adapter = demo.Aws("us-east-1")
+                environment = adapter._environment("ecs")
+                path = Path(environment["AWS_DATA_PATH"].split(os.pathsep)[0])
+                self.assertEqual(
+                    json.loads((path / "ecs/2014-11-13/service-2.json").read_text()),
+                    model,
+                )
+                self.assertEqual(environment, adapter._environment("ecs"))
+                self.assertEqual(os.environ.get("AWS_DATA_PATH"), original)
+                adapter._model_directory.cleanup()
+
+    def test_cli_lock_and_unreleased_prior_run_block_plan(self):
+        """Name/ARN aliases resolve to the same lock and prior journals prevent overlap."""
+        directory = Path(self.temp.name) / demo.digest(self.cloud.target)
+        directory.mkdir()
+        arguments = [
+            "plan",
+            "--run-id",
+            "new-run",
             "--cluster",
-            "cluster-name",
+            "alias",
             "--service",
-            "service-name",
+            "alias",
             "--region",
             "us-east-1",
             "--journal-root",
             self.temp.name,
-            "--scenario",
-            "pool-config",
+            "--image",
+            "repo@sha256:" + "b" * 64,
+            "--evidence-bucket",
+            "configured-evidence",
             "--alarm",
             "ingest",
-            "--alarm",
-            "query",
-            "--alarm",
-            "connections",
         ]
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(demo.main(["plan", "--run-id", "cli-run", *base]), 0)
-        with self.assertRaisesRegex(RuntimeError, "unrestored local RunId"):
-            demo.main(["plan", "--run-id", "other-run", *base])
-        directory = Path(self.temp.name) / demo.digest(self.cloud.target)
-        with (directory / ".lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with self.assertRaisesRegex(RuntimeError, "owns this service lock"):
-                demo.main(["plan", "--run-id", "parallel-run", *base])
+        with patch.object(demo, "Aws", return_value=self.cloud):
+            with (directory / ".lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with self.assertRaisesRegex(RuntimeError, "owns this service lock"):
+                    demo.main(arguments)
+            old = demo.Journal(directory / "old-run")
+            old.append("snapshot", {"historical": True})
+            with self.assertRaisesRegex(RuntimeError, "unrestored local RunId"):
+                demo.main(arguments)
+        self.assertFalse(any(op == "tag-resource" for _, op, _ in self.cloud.calls))
+
+    def test_lost_alarm_response_still_restores_original_description(self):
+        """An interrupted metadata request remains owned by its persisted intent."""
+        self.plan()
+        call = self.cloud.__call__
+        injected = False
+
+        def lost(service, operation, /, **payload):
+            nonlocal injected
+            result = call(service, operation, **payload)
+            if operation == "put-metric-alarm" and not injected:
+                injected = True
+                raise RuntimeError("lost alarm update response")
+            return result
+
+        self.runner.aws = lost
+        with self.assertRaisesRegex(RuntimeError, "lost alarm"):
+            self.runner.apply()
+        self.assertNotIn("AlarmDescription", self.cloud.alarms[0])
+        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
+        self.assertFalse(self.journal.find("service_revision"))
+
+    def test_stale_normal_schema_and_write_events_refuse_plan(self):
+        """Events fetched from the right stream still need actual fresh timestamps."""
+        call = self.cloud.__call__
+
+        def stale(service, operation, /, **payload):
+            result = call(service, operation, **payload)
+            if (
+                operation == "filter-log-events"
+                and "db_schema_snapshot" in payload["filterPattern"]
+            ):
+                for event in result["events"]:
+                    event["timestamp"] -= 180000
+                    message = json.loads(event["message"])
+                    message["observed_at"] = datetime.fromtimestamp(
+                        event["timestamp"] / 1000, timezone.utc
+                    ).isoformat()
+                    event["message"] = json.dumps(message)
+            return result
+
+        self.runner.aws = stale
+        with self.assertRaisesRegex(RuntimeError, "fresh schema"):
+            self.plan()
+        self.assertFalse(self.journal.events)
+
+    def test_foreign_service_settings_between_plan_and_apply_refuse_writes(self):
+        """A valid snapshot cannot authorize changed traffic/service settings."""
+        self.plan()
+        self.cloud.service["desiredCount"] = 2
+        count = len(self.cloud.calls)
+        with self.assertRaisesRegex(RuntimeError, "dirty service settings"):
+            self.runner.apply()
+        self.assertFalse(
+            any(
+                op
+                in {"tag-resource", "put-object", "put-metric-alarm", "update-service"}
+                for _, op, _ in self.cloud.calls[count:]
+            )
+        )
+
+    def test_interrupt_during_s3_put_never_continues_to_fault(self):
+        """A signal remains an abort even when the immutable object reached S3."""
+        self.plan()
+        call = self.cloud.__call__
+
+        def interrupted_put(service, operation, /, **payload):
+            result = call(service, operation, **payload)
+            if operation == "put-object":
+                raise KeyboardInterrupt("operator interrupted")
+            return result
+
+        self.runner.aws = interrupted_put
+        with self.assertRaises(KeyboardInterrupt):
+            self.runner.apply()
+        self.assertFalse(self.journal.find("service_revision"))
+        self.assertFalse(self.journal.find("alarm_decoration_intent"))
+        self.assertEqual(self.cloud.service["taskDefinition"], self.cloud.original)
 
 
 if __name__ == "__main__":

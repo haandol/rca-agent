@@ -47,7 +47,7 @@ def test_tool_enabled_agents_expose_only_explicitly_supplied_clients(factory):
     with patch("rca_agent.agent_factory.Agent") as agent_class:
         factory(model=model, mcp_clients=approved_clients)
 
-    assert agent_class.call_args.kwargs["tools"] == approved_clients
+    assert [provider.client for provider in agent_class.call_args.kwargs["tools"]] == approved_clients
 
 
 @pytest.mark.parametrize(

@@ -83,8 +83,10 @@ function structuralProbe(scenario) {
   };
 }
 
-test('active catalog distinguishes measured AWS maintenance from local illustrative alarm inputs', async () => {
-  const scenarios = await loadScenarios();
+test('historical catalog distinguishes measured AWS maintenance from local illustrative alarm inputs', async () => {
+  const scenarios = await loadScenarios(
+    path.join(REPOSITORY_ROOT, 'tests/scenarios/history'),
+  );
   assert.deepEqual(
     scenarios.map(({ id }) => id),
     Object.keys(expectedTypes),
@@ -202,7 +204,9 @@ async function measuredInputs(scenario) {
 
 test('catalog captures reproduce the reviewed UTC proof projection and neutral operator mapping', async () => {
   for (const scenario of [
-    ...(await loadScenarios()),
+    ...(await loadScenarios(
+      path.join(REPOSITORY_ROOT, 'tests/scenarios/history'),
+    )),
     await localPredecessor(),
   ]) {
     const { proof, snippets } = await measuredInputs(scenario);
@@ -262,9 +266,9 @@ test('catalog captures reproduce the reviewed UTC proof projection and neutral o
 });
 
 test('restoration, shutdown results, operator labels and later events cannot change model captures', async () => {
-  const local = (await loadScenarios()).filter(
-    (scenario) => !isAwsCapture(scenario),
-  );
+  const local = (
+    await loadScenarios(path.join(REPOSITORY_ROOT, 'tests/scenarios/history'))
+  ).filter((scenario) => !isAwsCapture(scenario));
   for (const scenario of [...local, await localPredecessor()]) {
     const { proof, snippets } = await measuredInputs(scenario);
     const expected = projectIncidentCaptures(
@@ -339,9 +343,9 @@ test('archived local lock cutoff still excludes its post-recovery request', asyn
 });
 
 async function awsInputs() {
-  const scenario = (await loadScenarios()).find(
-    ({ id }) => id === 'maintenance-transaction-lock',
-  );
+  const scenario = (
+    await loadScenarios(path.join(REPOSITORY_ROOT, 'tests/scenarios/history'))
+  ).find(({ id }) => id === 'maintenance-transaction-lock');
   return { scenario, ...(await measuredInputs(scenario)) };
 }
 
@@ -609,9 +613,9 @@ test('AWS projection rejects missing or conflicting incident ownership, source a
 });
 
 test('capture construction refuses missing UTC evidence rather than inventing dates', async () => {
-  const scenario = (await loadScenarios()).find(
-    ({ id }) => id === 'pool-config-regression',
-  );
+  const scenario = (
+    await loadScenarios(path.join(REPOSITORY_ROOT, 'tests/scenarios/history'))
+  ).find(({ id }) => id === 'pool-config-regression');
   const { proof, snippets } = await measuredInputs(scenario);
   const incident = proof.phases.find(
     (phase) => phase.case === 'pool' && phase.phase === 'fault',
@@ -650,7 +654,9 @@ test('illustrative drafts remain labeled and the unsuccessful first DB run is pr
 });
 
 test('every realistic case rejects wrong type, missing confirmation and root evidence', async () => {
-  for (const scenario of await loadScenarios()) {
+  for (const scenario of await loadScenarios(
+    path.join(REPOSITORY_ROOT, 'tests/scenarios/history'),
+  )) {
     const probe = structuralProbe(scenario);
     assert.equal(evaluateScenario(scenario, probe).passed, true);
     for (const rootFaultType of ROOT_FAULT_TYPES.filter(
@@ -684,7 +690,9 @@ test('every realistic case rejects wrong type, missing confirmation and root evi
 });
 
 test('realistic alternatives cannot borrow another rejection or global citations', async () => {
-  for (const scenario of await loadScenarios()) {
+  for (const scenario of await loadScenarios(
+    path.join(REPOSITORY_ROOT, 'tests/scenarios/history'),
+  )) {
     const probe = structuralProbe(scenario);
     const [first, second] = probe.competingCauseJudgments;
     for (const judgments of [
@@ -719,7 +727,9 @@ test('realistic alternatives cannot borrow another rejection or global citations
 });
 
 test('realistic catalog still requires all artifacts and safe executable draft remediation', async () => {
-  for (const scenario of await loadScenarios()) {
+  for (const scenario of await loadScenarios(
+    path.join(REPOSITORY_ROOT, 'tests/scenarios/history'),
+  )) {
     const probe = structuralProbe(scenario);
     for (const artifact of probe.artifacts) {
       assert.equal(
@@ -749,7 +759,9 @@ test('realistic catalog still requires all artifacts and safe executable draft r
 });
 
 test('historical results cannot earn credit for any replacement scenario', async () => {
-  const scenarios = await loadScenarios();
+  const scenarios = await loadScenarios(
+    path.join(REPOSITORY_ROOT, 'tests/scenarios/history'),
+  );
   const results = await loadResults(path.join(archive, 'results'));
   const report = await evaluateResults({
     scenarios,
@@ -789,4 +801,233 @@ test('archived inputs and normalized snapshots match their recorded original byt
       relative,
     );
   }
+});
+
+test('single active native-column fixture uses fresh local proof and existing unsupported type', async () => {
+  const scenarios = await loadScenarios();
+  assert.deepEqual(
+    scenarios.map((item) => item.id),
+    ['write-column-regression'],
+  );
+  const [scenario] = scenarios;
+  assert.equal(scenario.provenance.kind, 'local-postgresql');
+  assert.equal(scenario.provenance.awsMeasured, false);
+  assert.equal(
+    scenario.provenance.status,
+    'incident-input-ready-aws-capture-pending',
+  );
+  assert.deepEqual(scenario.expectation.acceptedRootFaultTypes, [
+    'unsupported',
+  ]);
+  const probe = structuralProbe(scenario);
+  assert.equal(evaluateScenario(scenario, probe).passed, true);
+  for (const change of [
+    { rootCauseConfirmed: false },
+    { rootCauseEvidenceIds: [] },
+    { rootFaultType: 'db-leak' },
+    { artifacts: ['report'] },
+    { remediation: { ...probe.remediation, safe: false } },
+  ]) {
+    assert.equal(
+      evaluateScenario(scenario, { ...probe, ...change }).passed,
+      false,
+    );
+  }
+  const results = await loadResults(path.join(archive, 'results'));
+  const report = await evaluateResults({
+    scenarios,
+    results,
+    digest: { digest: 'probe', inputFiles: [] },
+  });
+  assert.equal(report.passed, false);
+  assert.equal(report.evaluations.length, 0);
+});
+
+/** In-memory synthetic unit data exercises projection rules without claiming DB measurements. */
+function nativeProofProbe() {
+  const snippets = {};
+  const phases = ['normal', 'fault'].map((phase, index) => {
+    const text = `TIMESTAMP_COLUMN = "${index ? 'sampled_at' : 'timestamp'}"\n`;
+    const files = {
+      'revision/write.py': createHash('sha256').update(text).digest('hex'),
+    };
+    const fileMap =
+      '{' +
+      Object.entries(files)
+        .map(
+          ([key, value]) => `${JSON.stringify(key)}: ${JSON.stringify(value)}`,
+        )
+        .join(', ') +
+      '}';
+    const source = {
+      verified: true,
+      revision: index ? 'v2' : 'v1',
+      base_fingerprint: 'a'.repeat(64),
+      files,
+      fingerprint: createHash('sha256').update(fileMap).digest('hex'),
+    };
+    snippets[index ? 'incident' : 'baseline'] = {
+      path: 'revision/write.py',
+      text,
+    };
+    const observed_at = `2026-09-15T12:0${index}:10+00:00`;
+    return {
+      phase,
+      source,
+      checked_out: 0,
+      events: [
+        {
+          event: 'db_schema_snapshot',
+          observed_at,
+          table_name: 'sensor_readings',
+          column_names: ['timestamp'],
+        },
+        {
+          event: index ? 'db_write_error' : 'write_completed',
+          observed_at,
+          sqlstate: index ? '42703' : undefined,
+          count: index ? undefined : 1,
+        },
+      ],
+    };
+  });
+  return {
+    snippets,
+    proof: {
+      run_id: 'synthetic-unit-only',
+      schema: 'synthetic_unit',
+      boundary: 'local_postgresql_service',
+      phases,
+      phase_windows: phases.map((phase, index) => ({
+        phase: phase.phase,
+        case: 'column',
+        started_at: `2026-09-15T12:0${index}:00+00:00`,
+        completed_at: `2026-09-15T12:0${index}:30+00:00`,
+      })),
+    },
+  };
+}
+
+test('new native capture checks fresh time/schema/source and excludes recovery and private payloads', () => {
+  const { proof, snippets } = nativeProofProbe();
+  const original = projectIncidentCaptures(
+    'write-column-regression',
+    proof,
+    snippets,
+  );
+  assert.equal(original.observations.length, 5);
+  const later = structuredClone(proof);
+  later.phases.push({
+    phase: 'restore',
+    rootCauseConfirmed: true,
+    outcome: 'RESOLVED',
+  });
+  later.cleanup_errors = ['not an incident input'];
+  later.checks = { allPassed: true };
+  later.phases[1].events[1].parameters = 'PRIVATE_SENTINEL';
+  assert.deepEqual(
+    projectIncidentCaptures('write-column-regression', later, snippets),
+    original,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(original),
+    /PRIVATE_SENTINEL|RESOLVED|allPassed/,
+  );
+  for (const mutate of [
+    (p) => {
+      p.phases[1].events[1].observed_at = '2026-09-15T12:03:00+00:00';
+    },
+    (p) => {
+      p.phases[0].events = p.phases[0].events.filter(
+        (event) => event.event !== 'db_schema_snapshot',
+      );
+    },
+    (p) => {
+      p.phases[1].source.fingerprint = '0'.repeat(64);
+    },
+    (p) => {
+      p.phases[1].source.base_fingerprint = 'b'.repeat(64);
+    },
+    (p) => {
+      p.phase_windows[1].completed_at = null;
+    },
+  ]) {
+    const changed = structuredClone(proof);
+    mutate(changed);
+    assert.throws(() =>
+      projectIncidentCaptures('write-column-regression', changed, snippets),
+    );
+  }
+  const changed = structuredClone(snippets);
+  changed.incident.text += '# wrong bytes';
+  assert.throws(() =>
+    projectIncidentCaptures('write-column-regression', proof, changed),
+  );
+});
+
+test('active native-column observations reproduce supplied actual PostgreSQL proof bytes', async () => {
+  const [scenario] = await loadScenarios();
+  const bytes = await readFile(
+    path.join(REPOSITORY_ROOT, scenario.provenance.source),
+  );
+  assert.equal(
+    createHash('sha256').update(bytes).digest('hex'),
+    scenario.provenance.sourceSha256,
+  );
+  const proof = JSON.parse(bytes);
+  const directory = path.dirname(
+    path.join(REPOSITORY_ROOT, scenario.provenance.source),
+  );
+  const snippets = {
+    baseline: {
+      path: 'revision/write.py',
+      text: await readFile(path.join(directory, 'normal-write.py'), 'utf8'),
+    },
+    incident: {
+      path: 'revision/write.py',
+      text: await readFile(path.join(directory, 'fault-write.py'), 'utf8'),
+    },
+  };
+  const projection = projectIncidentCaptures(scenario.id, proof, snippets);
+  assert.deepEqual(projection.observations, scenario.observations);
+  assert.equal(projection.cutoff, scenario.provenance.incidentCutoff);
+  const normal = proof.phases.find((phase) => phase.phase === 'normal');
+  const fault = proof.phases.find((phase) => phase.phase === 'fault');
+  assert.equal(normal.rows_after - normal.rows_before, 6);
+  assert.equal(fault.rows_after - fault.rows_before, 0);
+  assert.ok(
+    fault.events.some(
+      (event) => event.event === 'db_write_error' && event.sqlstate === '42703',
+    ),
+  );
+  assert.deepEqual(
+    normal.schema_snapshot.column_names,
+    fault.schema_snapshot.column_names,
+  );
+  assert.ok(normal.schema_snapshot.column_names.includes('timestamp'));
+  assert.ok(!normal.schema_snapshot.column_names.includes('sampled_at'));
+  assert.ok(
+    normal.events.some(
+      (event) =>
+        event.event === 'write_completed' &&
+        event.schema_name === null &&
+        event.completion_semantics === 'committed_rows',
+    ),
+  );
+  assert.ok(fault.read_status === 200 && fault.health.db_connected === true);
+  const changed = structuredClone(proof);
+  changed.phases.find((phase) => phase.phase === 'restore').events = [
+    { rootCauseConfirmed: true },
+  ];
+  changed.checks = {};
+  changed.schema_removed = false;
+  assert.deepEqual(
+    projectIncidentCaptures(scenario.id, changed, snippets),
+    projection,
+  );
+  const [synthetic] = await loadScenarios(
+    path.join(REPOSITORY_ROOT, 'tests/scenarios/history/synthetic'),
+  );
+  assert.equal(synthetic.provenance.kind, 'synthetic-illustrative');
+  assert.equal(synthetic.provenance.awsMeasured, false);
 });

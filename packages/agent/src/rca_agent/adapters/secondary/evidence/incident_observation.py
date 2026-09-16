@@ -1,0 +1,509 @@
+"""Read immutable baseline observations and bounded current AWS observations."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import time
+from datetime import UTC, datetime, timedelta
+
+from rca_agent.config.aws_sdk import AWS_SDK_CALL_WORST_CASE_SECONDS
+from rca_agent.ports.dto.models import AlarmPayload
+from rca_agent.ports.dto.observations import IncidentObservations
+from rca_agent.utils.observation_facts import _canonical, _fact, _message, _utc
+
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+_HASH = re.compile(r"[a-f0-9]{64}")
+_DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
+_MAX_BYTES = 512 * 1024
+_MAX_EVENTS = 100
+_ACCOUNTING_KEYS = {
+    "metric_namespace",
+    "service_name",
+    "attempt_metric",
+    "failure_metric",
+    "attempt_semantics",
+    "failure_semantics",
+    "cancellation_semantics",
+    "success_evidence_event",
+    "success_count_field",
+    "success_semantics",
+}
+_SETTING_KEYS = (
+    "desiredCount",
+    "networkConfiguration",
+    "capacityProviderStrategy",
+    "launchType",
+    "deploymentController",
+    "schedulingStrategy",
+    "enableExecuteCommand",
+    "deploymentConfiguration",
+    "platformVersion",
+)
+_MESSAGE_KEYS = {
+    "event",
+    "observed_at",
+    "operation",
+    "sql_hash",
+    "sql_hash_algorithm",
+    "schema_name",
+    "table_name",
+    "column_names",
+    "sqlstate",
+    "driver_table_name",
+    "driver_column_name",
+    "fingerprint",
+    "revision",
+    "verified",
+    "count",
+    "completion_semantics",
+} | _ACCOUNTING_KEYS
+
+
+class AwsIncidentObservation:
+    def __init__(self, *, s3_client, logs_client_for_region, ecs_client_for_region, evidence_bucket: str):
+        """Use injected application clients and a configured bucket instead of alarm-selected credentials."""
+        self.s3 = s3_client
+        self.logs_for_region = logs_client_for_region
+        self.ecs_for_region = ecs_client_for_region
+        self.bucket = evidence_bucket
+
+    def observe(self, alarm: AlarmPayload, *, timeout_seconds: float) -> IncidentObservations:
+        """Validate coordinates before AWS reads and keep failed normal proof out of approval context."""
+        result = IncidentObservations()
+        # Source-only evaluations must not replace historical evidence with live AWS data.
+        if alarm.eval_source_metadata is not None or not alarm.alarm_description:
+            return result
+        deadline = time.monotonic() + max(0, timeout_seconds)
+        try:
+            metadata = json.loads(alarm.alarm_description)
+            if not isinstance(metadata, dict) or "baseline_ref" not in metadata:
+                return result
+            baseline, scope = self._load_baseline(alarm, metadata, deadline)
+        except Exception as exc:
+            result.diagnostics.append(f"baseline reference unavailable: {type(exc).__name__}")
+            return result
+        try:
+            self._verify_normal(baseline, scope, alarm, deadline)
+            result.baseline = self._safe_baseline(baseline, metadata["baseline_ref"])
+            result.baseline_verified = True
+        except Exception as exc:
+            result.diagnostics.append(f"normal baseline unverified: {type(exc).__name__}: {exc}")
+        try:
+            current, facts = self._current(scope, metadata["run_id"], alarm, deadline)
+            result.current = current
+            result.critical_facts = facts
+        except Exception as exc:
+            result.diagnostics.append(f"current observations incomplete: {type(exc).__name__}: {exc}")
+        return result
+
+    def refresh_current(self, alarm, observations, *, timeout_seconds):
+        """Refresh only deployment control metadata using the original baseline and alarm cutoff."""
+        refreshed = observations.model_copy(deep=True)
+        refreshed.current = {}
+        if not observations.baseline_verified or alarm.eval_source_metadata is not None:
+            return refreshed
+        try:
+            current, _ = self._current(
+                observations.baseline["scope"],
+                observations.baseline["run_id"],
+                alarm,
+                time.monotonic() + max(0, timeout_seconds),
+                collect_logs=False,
+            )
+            previous = observations.current
+            if any(current.get(k) != previous.get(k) for k in ("deployment_id", "task_definition_arn")):
+                raise ValueError("deployment identity changed since incident observation")
+            if previous.get("image_digest") and current["image_digest"] != previous["image_digest"]:
+                raise ValueError("deployment image changed since incident observation")
+            for fact in observations.critical_facts:
+                if (
+                    fact.task_definition == current["task_definition_arn"]
+                    and fact.image_digest != current["image_digest"]
+                ):
+                    raise ValueError("observed image changed since causal evidence collection")
+            current["observations"] = previous.get("observations", [])
+            current["log_window"] = previous.get("log_window", {})
+            refreshed.current = current
+        except Exception as exc:
+            refreshed.diagnostics.append(f"deployment refresh unavailable: {type(exc).__name__}: {exc}")
+        return refreshed
+
+    def _check_budget(self, deadline):
+        """Do not start a new bounded SDK request after the observation deadline."""
+        if deadline - time.monotonic() < AWS_SDK_CALL_WORST_CASE_SECONDS:
+            raise TimeoutError("observation budget exhausted")
+
+    def _safe_baseline(self, baseline, reference):
+        """Transport approved observation fields, not arbitrary S3 JSON or logger extras."""
+        return {
+            "schema_version": 1,
+            "run_id": baseline["run_id"],
+            "observed_at": baseline["observed_at"],
+            "scope": {
+                key: baseline["scope"][key]
+                for key in (
+                    "account_id",
+                    "region",
+                    "cluster_arn",
+                    "service_arn",
+                    "service_name",
+                    "container_name",
+                    "log_group",
+                    "desired_count",
+                )
+            },
+            "normal": {key: baseline["normal"][key] for key in ("task_definition_arn", "image_digest")},
+            "baseline_ref": reference,
+            "service_settings": {
+                key: baseline["service_settings"][key]
+                for key in _SETTING_KEYS
+                if key in baseline.get("service_settings", {})
+            },
+            "metrics": baseline.get("metrics", {}),
+            "metric_observations": baseline["metric_observations"],
+            "observations": [
+                {
+                    "message": {key: value for key, value in _message(event).items() if key in _MESSAGE_KEYS},
+                    **{key: event[key] for key in ("timestamp", "event_id", "log_group", "log_stream")},
+                }
+                for event in baseline["observations"]
+            ],
+        }
+
+    def _load_baseline(self, alarm, metadata, deadline):
+        """Only the pinned object in the configured bucket is eligible for trust checks."""
+        run_id = metadata.get("run_id")
+        ref = metadata.get("baseline_ref")
+        if not isinstance(run_id, str) or not _ID.fullmatch(run_id) or not isinstance(ref, dict):
+            raise ValueError("invalid baseline reference")
+        if (
+            not self.bucket
+            or ref.get("bucket") != self.bucket
+            or ref.get("key") != f"baselines/{run_id}/normal.json"
+            or not isinstance(ref.get("sha256"), str)
+            or not _HASH.fullmatch(ref["sha256"])
+        ):
+            raise ValueError("baseline reference outside allowlisted scope")
+        arn = (alarm.alarm_arn or "").split(":")
+        if len(arn) < 6 or arn[2] != "cloudwatch" or not re.fullmatch(r"\d{12}", arn[4]):
+            raise ValueError("alarm account is unknown")
+        self._check_budget(deadline)
+        response = self.s3.get_object(Bucket=self.bucket, Key=ref["key"], ExpectedBucketOwner=arn[4])
+        body = response["Body"]
+        try:
+            raw = body.read(_MAX_BYTES + 1)
+        finally:
+            body.close()
+        if len(raw) > _MAX_BYTES or hashlib.sha256(raw).hexdigest() != ref["sha256"]:
+            raise ValueError("baseline size or content fingerprint mismatch")
+        baseline = json.loads(raw)
+        if (
+            _canonical(baseline) != raw
+            or type(baseline.get("schema_version")) is not int
+            or baseline["schema_version"] != 1
+            or baseline.get("run_id") != run_id
+        ):
+            raise ValueError("invalid canonical baseline")
+        scope = baseline.get("scope", {})
+        if scope.get("account_id") != arn[4] or scope.get("region") != arn[3] or alarm.region != arn[3]:
+            raise ValueError("baseline account/region mismatch")
+        if metadata.get("service") not in {scope.get("service_name"), scope.get("service_arn")}:
+            raise ValueError("baseline service mismatch")
+        for key in ("cluster_arn", "service_arn"):
+            value = scope.get(key, "")
+            if not isinstance(value, str) or not value.startswith(f"arn:{arn[1]}:ecs:{arn[3]}:{arn[4]}:"):
+                raise ValueError("invalid ECS scope")
+        if not scope.get("container_name") or not scope.get("log_group") or not scope.get("service_name"):
+            raise ValueError("missing service/log scope")
+        ecs_prefix = f"arn:{arn[1]}:ecs:{arn[3]}:{arn[4]}:"
+        cluster_prefix = ecs_prefix + "cluster/"
+        if not scope["cluster_arn"].startswith(cluster_prefix):
+            raise ValueError("invalid cluster ARN")
+        cluster_name = scope["cluster_arn"][len(cluster_prefix) :]
+        if scope["service_arn"] != f"{ecs_prefix}service/{cluster_name}/{scope['service_name']}":
+            raise ValueError("service ARN does not match the named service/cluster")
+        if type(scope.get("desired_count")) is not int or scope["desired_count"] < 1:
+            raise ValueError("normal desired task count missing")
+        if baseline.get("service_settings", {}).get("desiredCount") != scope["desired_count"]:
+            raise ValueError("normal service configuration is inconsistent")
+        if _utc(baseline["observed_at"]) >= _utc(alarm.state_change_time):
+            raise ValueError("baseline was not observed before the alarm")
+        return baseline, scope
+
+    def _tasks(self, scope, task_ids, deadline):
+        """Bind log streams to actual ECS service tasks before associating source or image facts."""
+        if not task_ids or len(task_ids) > 100:
+            raise ValueError("missing or excessive task identities")
+        self._check_budget(deadline)
+        response = self.ecs_for_region(scope["region"]).describe_tasks(cluster=scope["cluster_arn"], tasks=task_ids)
+        if response.get("failures") or len(response.get("tasks", [])) != len(task_ids):
+            raise ValueError("task ownership unavailable")
+        tasks = response["tasks"]
+        for task in tasks:
+            if (
+                task.get("clusterArn") != scope["cluster_arn"]
+                or task.get("group") != f"service:{scope['service_name']}"
+            ):
+                raise ValueError("task outside service scope")
+        return {task["taskArn"].rsplit("/", 1)[-1]: task for task in tasks}
+
+    def _verify_normal(self, baseline, scope, alarm, deadline):
+        """Require actual committed writes, zero failures, schema and verified installed source."""
+        normal = baseline["normal"]
+        digest = normal.get("image_digest", "")
+        if not _DIGEST.fullmatch(digest):
+            raise ValueError("normal image digest missing")
+        coordinates = baseline.get("metrics", {})
+        if not {"attempts", "failures"} <= coordinates.keys():
+            raise ValueError("normal metric coordinates missing")
+        for metric in coordinates.values():
+            if (
+                not isinstance(metric, dict)
+                or set(metric) != {"namespace", "metric_name", "dimensions"}
+                or not isinstance(metric["dimensions"], dict)
+                or not metric["dimensions"]
+                or not all(isinstance(v, str) and v for v in metric["dimensions"].values())
+            ):
+                raise ValueError("invalid normal metric coordinates")
+        if alarm.trigger is None or coordinates["failures"] != {
+            "namespace": alarm.trigger.namespace,
+            "metric_name": alarm.trigger.metric_name,
+            "dimensions": alarm.trigger.dimensions,
+        }:
+            raise ValueError("baseline failure metric does not match the alarm")
+        if any(
+            metric["namespace"] != coordinates["failures"]["namespace"]
+            or metric["dimensions"] != coordinates["failures"]["dimensions"]
+            for metric in coordinates.values()
+        ):
+            raise ValueError("baseline metrics have different scopes")
+        window = baseline["metric_observations"]
+        start, end = _utc(window["start"]), _utc(window["end"])
+        if not start < end <= _utc(baseline["observed_at"]) < _utc(alarm.state_change_time):
+            raise ValueError("normal metric window is not before the fault")
+        metric_times = []
+        for key in ("attempts", "failures"):
+            rows = window[key]
+            if not rows or len(rows) > 60:
+                raise ValueError("normal metric samples missing")
+            timestamps = []
+            for row in rows:
+                stamp = _utc(row["Timestamp"])
+                count = row.get("Sum")
+                if (
+                    not start <= stamp < end
+                    or row.get("Unit") != "Count"
+                    or type(count) not in (float, int)
+                    or (not count > 0 if key == "attempts" else count != 0)
+                ):
+                    raise ValueError("normal write metrics not proven")
+                timestamps.append(stamp)
+            metric_times.append(set(timestamps))
+        if metric_times[0] != metric_times[1]:
+            raise ValueError("normal metric windows do not match")
+        events = baseline["observations"]
+        if not events or len(events) > _MAX_EVENTS:
+            raise ValueError("normal observations missing or excessive")
+        ids = {event["log_stream"].rsplit("/", 1)[-1] for event in events}
+        identities = {(event["event_id"], event["log_group"], event["log_stream"]) for event in events}
+        if len(identities) != len(events):
+            raise ValueError("normal observations repeat a source identity")
+        tasks = self._tasks(scope, sorted(ids), deadline)
+        proven: dict[str, set[str]] = {}
+        for event in events:
+            task_id = event["log_stream"].rsplit("/", 1)[-1]
+            task = tasks[task_id]
+            fact = _fact(event, scope, baseline["run_id"], task=task)
+            if fact.task_definition != normal["task_definition_arn"] or fact.image_digest != digest:
+                raise ValueError("normal log source deployment mismatch")
+            stamp = datetime.fromtimestamp(event["timestamp"] / 1000, UTC)
+            if stamp > _utc(baseline["observed_at"]):
+                raise ValueError("normal event is from a later deployment window")
+            message = _message(event)
+            event_type = message.get("event")
+            checks = proven.setdefault(task_id, set())
+            if event_type == "write_completed":
+                if (
+                    start <= stamp < end
+                    and type(message.get("count")) is int
+                    and message["count"] > 0
+                    and message.get("completion_semantics") == "committed_rows"
+                    and fact.sql_fingerprint
+                ):
+                    checks.add("write")
+            elif event_type == "source_manifest" and message.get("verified") is True and fact.source_revision:
+                checks.add("source")
+            elif event_type in {"schema_snapshot", "db_schema_snapshot"} and fact.actual_schema:
+                checks.add("schema")
+        if not proven or any(checks != {"write", "source", "schema"} for checks in proven.values()):
+            raise ValueError("normal committed write/source/schema proof missing")
+
+    def _current(self, scope, run_id, alarm, deadline, *, collect_logs=True):
+        """Read actual ECS state and one bounded log window without choosing a cause or rollback."""
+        self._check_budget(deadline)
+        ecs = self.ecs_for_region(scope["region"])
+        response = ecs.describe_services(cluster=scope["cluster_arn"], services=[scope["service_arn"]])
+        if response.get("failures") or len(response.get("services", [])) != 1:
+            raise ValueError("current service unavailable")
+        service = response["services"][0]
+        if service["serviceArn"] != scope["service_arn"] or service["clusterArn"] != scope["cluster_arn"]:
+            raise ValueError("current service scope mismatch")
+        self._check_budget(deadline)
+        listed = ecs.list_tasks(
+            cluster=scope["cluster_arn"], serviceName=scope["service_name"], desiredStatus="RUNNING"
+        )
+        if listed.get("nextToken"):
+            raise ValueError("current task set exceeds bounded read")
+        tasks = self._tasks(scope, listed.get("taskArns", []), deadline)
+        self._check_budget(deadline)
+        definition = ecs.describe_task_definition(taskDefinition=service["taskDefinition"])["taskDefinition"]
+        container = next(
+            (c for c in definition.get("containerDefinitions", []) if c.get("name") == scope["container_name"]),
+            None,
+        )
+        if container is None:
+            raise ValueError("current container missing")
+        log_options = container.get("logConfiguration", {}).get("options", {})
+        if (
+            log_options.get("awslogs-group") != scope["log_group"]
+            or log_options.get("awslogs-region") != scope["region"]
+        ):
+            raise ValueError("current log scope differs from pinned service")
+        now = datetime.now(UTC)
+        alarm_time = _utc(alarm.state_change_time)
+        start = alarm_time - timedelta(minutes=5)
+        end = min(now, alarm_time + timedelta(minutes=5))
+        if end <= start:
+            raise ValueError("current observation window invalid")
+        facts, observations, coverage, errors = [], [], {}, {}
+        primary = [d for d in service.get("deployments", []) if d.get("status") == "PRIMARY"]
+        if len(primary) != 1 or primary[0].get("taskDefinition") != service["taskDefinition"]:
+            raise ValueError("current primary task definition unavailable")
+        prefix = log_options.get("awslogs-stream-prefix")
+        if not isinstance(prefix, str) or not prefix:
+            raise ValueError("current container log stream prefix unavailable")
+        streams = {
+            f"{prefix}/{scope['container_name']}/{task_id}": task
+            for task_id, task in tasks.items()
+            if task.get("taskDefinitionArn") == primary[0]["taskDefinition"]
+            and any(c.get("name") == scope["container_name"] for c in task.get("containers", []))
+        }
+        # Separate event-kind queues prevent frequent schema events from exhausting
+        # error/source capacity. Round-robin pages give every kind its first read.
+        kinds = (
+            "db_write_error",
+            "source_manifest",
+            "write_contract",
+            "write_accounting",
+            "schema_snapshot",
+            "db_schema_snapshot",
+        )
+        pending = [(kind, None) for kind in kinds] if collect_logs and streams else []
+        seen_tokens, seen_events, compact = set(), set(), {}
+        pages = dict.fromkeys(kinds, 0)
+        while pending:
+            kind, token = pending.pop(0)
+            if deadline - time.monotonic() < AWS_SDK_CALL_WORST_CASE_SECONDS:
+                coverage[kind] = "budget_exhausted"
+                for remaining, _ in pending:
+                    coverage[remaining] = "budget_exhausted"
+                break
+            kwargs = dict(
+                logGroupName=scope["log_group"],
+                logStreamNames=sorted(streams),
+                startTime=int(start.timestamp() * 1000),
+                endTime=int(end.timestamp() * 1000),
+                limit=_MAX_EVENTS,
+                filterPattern='{ $.event = "' + kind + '" }',
+            )
+            if token:
+                kwargs["nextToken"] = token
+            try:
+                logs = self.logs_for_region(scope["region"]).filter_log_events(**kwargs)
+            except Exception as exc:
+                # A later read cannot erase earlier verified source observations.
+                # Do not retry this page implicitly or expose provider error prose.
+                coverage[kind] = "failed"
+                errors[kind] = type(exc).__name__
+                continue
+            pages[kind] += 1
+            for event in logs.get("events", []):
+                event = {**event, "log_group": scope["log_group"]}
+                task = streams.get(event.get("logStreamName"))
+                try:
+                    if task is None or _message(event).get("event") != kind:
+                        continue
+                    if not start.timestamp() * 1000 <= event["timestamp"] < end.timestamp() * 1000:
+                        continue
+                    fact = _fact(event, scope, run_id, task=task)
+                    if fact.source_ref in seen_events:
+                        continue
+                    seen_events.add(fact.source_ref)
+                    safe = {k: v for k, v in _message(event).items() if k in _MESSAGE_KEYS}
+                    observations.append(
+                        {"message": safe, "source_ref": fact.source_ref, "timestamp": event["timestamp"]}
+                    )
+                    identity = fact.model_dump(exclude={"observed_at", "source_ref"})
+                    key = _canonical({"event": kind, "fact": identity})
+                    if key not in compact:
+                        compact[key] = fact
+                        facts.append(fact)
+                except (ValueError, TypeError, KeyError):
+                    continue
+            next_token = logs.get("nextToken")
+            coverage[kind] = "complete"
+            if next_token:
+                if (kind, next_token) in seen_tokens or pages[kind] >= 3:
+                    coverage[kind] = "pagination_incomplete"
+                else:
+                    seen_tokens.add((kind, next_token))
+                    pending.append((kind, next_token))
+                    coverage[kind] = "pagination_incomplete"
+        current = {
+            "observed_at": now.isoformat(),
+            "scope": scope,
+            "task_definition_arn": service["taskDefinition"],
+            "service_settings": {key: service[key] for key in _SETTING_KEYS if key in service},
+            "deployments": [
+                {
+                    key: d[key].isoformat() if isinstance(d[key], datetime) else d[key]
+                    for key in ("id", "status", "taskDefinition", "rolloutState", "createdAt")
+                    if key in d
+                }
+                for d in service.get("deployments", [])
+            ],
+            "tasks": [
+                {
+                    "task_arn": task["taskArn"],
+                    "task_definition_arn": task["taskDefinitionArn"],
+                    "last_status": task.get("lastStatus"),
+                    "containers": [
+                        {key: c[key] for key in ("name", "image", "imageDigest", "lastStatus") if key in c}
+                        for c in task.get("containers", [])
+                    ],
+                }
+                for task in tasks.values()
+            ],
+            "observations": observations,
+            "log_stream_prefix": prefix,
+            "log_window": {
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "limit": _MAX_EVENTS,
+                "coverage": coverage,
+                "errors": errors,
+                "pages": pages,
+            },
+        }
+        primary = [d for d in current["deployments"] if d.get("status") == "PRIMARY"]
+        current["deployment_id"] = primary[0].get("id") if len(primary) == 1 else None
+        digests = {
+            c.get("imageDigest")
+            for task in current["tasks"]
+            for c in task["containers"]
+            if c.get("name") == scope["container_name"]
+        }
+        current["image_digest"] = next(iter(digests)) if len(digests) == 1 else None
+        return current, facts

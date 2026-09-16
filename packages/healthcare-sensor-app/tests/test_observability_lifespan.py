@@ -43,6 +43,10 @@ class ObservedDatabase(SqlAlchemyDatabaseAdapter):
         if self.schema_failure:
             raise RuntimeError("schema initialization failed")
 
+    async def schema_snapshot(self):
+        """Keep startup catalog observation separate from schema creation in this double."""
+        return {"column_names": ["timestamp"]}
+
     async def observe(self, stop_event, interval=5):
         """Retain the worker's async interface and expose cleanup after cancellation."""
         self.stop_event = stop_event

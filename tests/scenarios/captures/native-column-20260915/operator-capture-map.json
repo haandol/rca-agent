@@ -1,0 +1,9 @@
+{
+  "source": "tests/scenarios/captures/native-column-20260915/evidence.json.txt",
+  "sourceSha256": "66e2622416dae216eb21f1d94fa68b893d315c33c9e37e795fbf74d332872f2b",
+  "obs-01": ["/phases/0/events", "/phases/1/events"],
+  "obs-02": ["/phases/0/source", "/phases/1/source"],
+  "obs-03": ["/phases/0/source/files", "/phases/1/source/files"],
+  "obs-04": ["/phases/0/write_statuses", "/phases/1/write_statuses"],
+  "obs-05": ["/phases/0/checked_out", "/phases/1/checked_out"]
+}

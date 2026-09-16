@@ -74,3 +74,15 @@ def test_codex_model_contract_accepts_only_the_bedrock_runtime_endpoint(monkeypa
         else:
             raise AssertionError("a non-Bedrock endpoint must be rejected")
     importlib.reload(settings)
+
+
+def test_approved_staleness_does_not_change_hard_process_budgets(monkeypatch):
+    """The 3-hour alarm gate does not extend either 1-hour hard process lifetime."""
+    with monkeypatch.context() as isolated:
+        for key in ("ALARM_STALENESS_SECONDS", "CODEX_TIMEOUT_SECONDS", "EXECUTION_TIMEOUT_SECONDS"):
+            isolated.delenv(key, raising=False)
+        current = importlib.reload(settings)
+        assert current.ALARM_STALENESS_SECONDS == 10800
+        assert current.CODEX_TIMEOUT_SECONDS == 3600
+        assert current.EXECUTION_TIMEOUT_SECONDS == 3600
+    importlib.reload(settings)

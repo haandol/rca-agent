@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plan, apply, inspect and restore owned Healthcare demo changes.
 
-AWS CLI v2 and Python 3.11+ are required. Planning only reads AWS. All commands
+AWS CLI v2 and the project's Agent Python environment are required. Planning only reads AWS. All commands
 retain hash-linked, create-only evidence under --journal-root (use the SAME
 shared directory for every operator). See run_realistic_demo.html for examples.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import copy
 import fcntl
+import gzip
 import hashlib
 import json
 import math
@@ -26,17 +27,7 @@ from pathlib import Path
 
 OWNER = "RealisticDemoRunId"
 PROOF = "RealisticDemoJournal"
-MAINTENANCE_COMMAND = [
-    "python",
-    "-m",
-    "test_service.maintenance",
-    "--run-id",
-    "{run_id}",
-    "--hold-seconds",
-    "{hold_seconds}",
-    "--schema",
-    "{schema}",
-]
+JOURNAL_VERSION = 2
 RECOVERABLE_ERRORS = (
     OSError,
     RuntimeError,
@@ -103,6 +94,9 @@ ALARM_SETTINGS = (
     "AlarmActions",
     "OKActions",
     "ActionsEnabled",
+    "InsufficientDataActions",
+    "EvaluateLowSampleCountPercentile",
+    "ThresholdMetricId",
 )
 READ_ONLY_TD = (
     "taskDefinitionArn",
@@ -121,37 +115,22 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def canonical(value):
+    """Match the agent reader's UTF-8 wire format without changing legacy journal hashes."""
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
 def digest(value):
     """Hash a canonical JSON value for journal integrity and ownership."""
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-
-
-def maintenance_command(options):
-    """Build only the bounded maintenance module command, including for old journals."""
-    if (
-        "maintenance_command" in options
-        and options["maintenance_command"] != MAINTENANCE_COMMAND
-    ):
-        raise RuntimeError(
-            "journal records an unsupported maintenance command; restore only"
-        )
-    run_id = options["run_id"]
-    hold_seconds = options["hold_seconds"]
-    schema = options.get("maintenance_schema", "public")
-    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,48}", run_id):
-        raise ValueError("RunId must be 1..48 letters, digits, underscores or hyphens")
-    if type(hold_seconds) not in (int, float) or not 0 < hold_seconds <= 7200:
-        raise ValueError("hold-seconds must be finite, positive and <=7200")
-    if not isinstance(schema, str) or not re.fullmatch(
-        r"[a-z_][a-z0-9_]{0,62}", schema
-    ):
-        raise ValueError("maintenance-schema must be a safe PostgreSQL identifier")
-    return [
-        part.format(run_id=run_id, hold_seconds=hold_seconds, schema=schema)
-        for part in MAINTENANCE_COMMAND
-    ]
 
 
 def atomic_create(path, value):
@@ -226,9 +205,78 @@ class Aws:
         self.context = ["--region", region]
         if profile:
             self.context += ["--profile", profile]
+        self._model_directory = None
+
+    def _environment(self, service):
+        """Give CLI ECS reads the same full response shape as the locked Python SDK.
+
+        Older CLI loaders do not read compressed custom service models. Materialize
+        the locked model as plain JSON instead of silently dropping mutable fields.
+        Only this child process's ECS model path changes; the installed CLI does not.
+        """
+        environment = os.environ.copy()
+        if service != "ecs":
+            return environment
+        if self._model_directory is None:
+            try:
+                import botocore
+            except ImportError:
+                raise RuntimeError(
+                    "Use packages/agent/.venv/bin/python for the locked ECS service model"
+                ) from None
+            source = Path(botocore.__file__).parent / "data/ecs/2014-11-13"
+            plain = source / "service-2.json"
+            compressed = source / "service-2.json.gz"
+            raw = (
+                plain.read_bytes()
+                if plain.exists()
+                else gzip.decompress(compressed.read_bytes())
+            )
+            model = json.loads(raw)
+            if model["metadata"]["endpointPrefix"] != "ecs":
+                raise RuntimeError("the configured service model is not ECS")
+            self._model_directory = tempfile.TemporaryDirectory(prefix="rca-ecs-model-")
+            destination = Path(self._model_directory.name) / "ecs/2014-11-13"
+            destination.mkdir(parents=True)
+            (destination / "service-2.json").write_bytes(raw)
+        existing = environment.get("AWS_DATA_PATH")
+        environment["AWS_DATA_PATH"] = self._model_directory.name + (
+            os.pathsep + existing if existing else ""
+        )
+        return environment
 
     def __call__(self, service, operation, /, **payload):
         """Execute one CLI operation and reject transport or partial failures."""
+        output_file = payload.pop("OutputFile", None)
+        # --cli-input-json treats blob values as base64, not filesystem paths.
+        # The S3 CLI's --body option owns file loading; preserve the actual bytes.
+        body_file = (
+            payload.pop("Body", None)
+            if (service, operation) == ("s3api", "put-object")
+            else None
+        )
+        object_args = []
+        if service == "s3api" and operation in {"get-object", "put-object"}:
+            # S3's file-transfer customization validates these CLI arguments
+            # before applying the JSON payload (notably for GetObject).
+            object_args = [
+                "--bucket",
+                payload.pop("Bucket"),
+                "--key",
+                payload.pop("Key"),
+            ]
+        json_args = ["--cli-input-json", json.dumps(payload)]
+        if (service, operation) == ("s3api", "get-object"):
+            flags = {
+                "ExpectedBucketOwner": "--expected-bucket-owner",
+                "VersionId": "--version-id",
+            }
+            if set(payload) - flags.keys():
+                raise ValueError("unsupported GetObject CLI option")
+            object_args.extend(
+                part for key, value in payload.items() for part in (flags[key], value)
+            )
+            json_args = []
         try:
             process = subprocess.run(
                 [
@@ -236,16 +284,19 @@ class Aws:
                     *self.context,
                     service,
                     operation,
-                    "--cli-input-json",
-                    json.dumps(payload),
+                    *json_args,
                     "--output",
                     "json",
                     "--no-cli-pager",
+                    *object_args,
+                    *(["--body", body_file] if body_file is not None else []),
+                    *([output_file] if output_file else []),
                 ],
                 capture_output=True,
                 text=True,
                 timeout=90,
                 check=False,
+                env=self._environment(service),
             )
         except subprocess.TimeoutExpired:
             # TimeoutExpired.__str__ includes argv, which can contain environment values.
@@ -290,7 +341,7 @@ def immutable_baseline_image(task_definition, tasks, name):
     image = container(task_definition, name)["image"]
     if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", image):
         raise RuntimeError(
-            "original application image must use repository@sha256:digest; prepare an immutable r1 baseline before plan"
+            "original application image must use repository@sha256:digest; prepare an immutable v1 baseline before plan"
         )
     expected = image.split("@")[1]
     if not tasks or any(
@@ -305,8 +356,11 @@ def immutable_baseline_image(task_definition, tasks, name):
 
 
 def settings(service):
-    """Preserve settings and their absence for exact drift detection."""
-    return {key: service.get(key) for key in SERVICE_SETTINGS}
+    """Preserve configurable fields; absent optional capacity strategy means no entries."""
+    value = {key: service.get(key) for key in SERVICE_SETTINGS}
+    if value["capacityProviderStrategy"] is None:
+        value["capacityProviderStrategy"] = []
+    return value
 
 
 def stable(service, arn):
@@ -424,6 +478,13 @@ class Demo:
             raise RuntimeError(
                 "RunId already has immutable evidence; choose a new RunId"
             )
+        if (
+            options["scenario"] != "write-column-regression"
+            or options["revision"] != "v2"
+        ):
+            raise RuntimeError("only the new v2 write-column regression is supported")
+        if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", options["image"] or ""):
+            raise RuntimeError("fault image must be digest-pinned")
         service = self.service()
         tags = {t["key"]: t["value"] for t in service.get("tags", [])}
         original = self.task_definition(service["taskDefinition"])
@@ -488,15 +549,8 @@ class Demo:
         )
         if any(t["key"] in (OWNER, PROOF) for t in original.get("tags", [])):
             raise RuntimeError("baseline task definition is owned by another demo")
-        required_metrics = {
-            "VitalIngestFailures",
-            "PatientVitalsQueryDuration",
-            "DatabaseConnections",
-        }
-        if not required_metrics.issubset({a.get("MetricName") for a in alarms}):
-            raise RuntimeError(
-                "alarms must include ingest, query latency and database connections"
-            )
+        if "VitalIngestFailures" not in {a.get("MetricName") for a in alarms}:
+            raise RuntimeError("the ingest failure alarm is required")
         for alarm in alarms:
             if alarm.get("MetricName") in {
                 "VitalIngestFailures",
@@ -524,19 +578,20 @@ class Demo:
         )
         if not self.metrics_healthy(baseline, alarms):
             raise RuntimeError("fresh successful healthy baseline metrics are required")
-        if options["scenario"] == "pool-config":
-            capacity = int(environment.get("DB_POOL_SIZE", "5")) + int(
-                environment.get("DB_MAX_OVERFLOW", "10")
-            )
-            if options["pool_size"] + options["max_overflow"] >= capacity:
-                raise RuntimeError(
-                    "pool-config must reduce actual baseline pool capacity"
-                )
         if options["image"] and options["image"].split("@")[-1] in self.image_digests(
             running, options["container"]
         ):
             raise RuntimeError("fault image equals the running healthy image")
+        observations = self.normal_observations(
+            original["taskDefinition"],
+            running,
+            options["container"],
+            baseline,
+            source_manifests,
+        )
         snapshot = {
+            "contractVersion": JOURNAL_VERSION,
+            "normalObservations": observations,
             "target": self.target,
             "options": options,
             "service": service,
@@ -559,7 +614,7 @@ class Demo:
         }
 
     def baseline_source_manifests(self, task_definition, tasks, name):
-        """Retain verified r1 startup manifests from each exact running task's log stream."""
+        """Retain verified v1 startup manifests from each exact running task's log stream."""
         logging = container(task_definition, name).get("logConfiguration", {})
         options = logging.get("options", {})
         if (
@@ -584,14 +639,17 @@ class Demo:
                 logStreamNames=[stream],
                 startTime=created,
                 endTime=int(
-                    datetime.fromisoformat(task.get("startedAt", task["createdAt"])).timestamp()
+                    datetime.fromisoformat(
+                        task.get("startedAt", task["createdAt"])
+                    ).timestamp()
                     * 1000
-                ) + 10 * 60 * 1000,
+                )
+                + 10 * 60 * 1000,
                 filterPattern='{ $.event = "source_manifest" }',
             ).get("events", [])
             if not events:
                 raise RuntimeError(
-                    "verified r1 source_manifest is missing for a running baseline task"
+                    "verified v1 source_manifest is missing for a running baseline task"
                 )
             for event in events:
                 manifest = json.loads(event["message"])
@@ -600,17 +658,18 @@ class Demo:
                     event.get("logStreamName") != stream
                     or event.get("timestamp", 0) < created
                     or manifest.get("event") != "source_manifest"
-                    or manifest.get("revision") != "r1"
+                    or manifest.get("revision") != "v1"
                     or manifest.get("verified") is not True
                     or not isinstance(files, dict)
                     or not files
+                    or "revision/write.py" not in files
                     or manifest.get("fingerprint")
                     != hashlib.sha256(
                         json.dumps(files, sort_keys=True).encode()
                     ).hexdigest()
                 ):
                     raise RuntimeError(
-                        "baseline source_manifest must verify r1 and its source fingerprint for the running task"
+                        "baseline source_manifest must verify v1 and its source fingerprint for the running task"
                     )
                 fingerprints.add(manifest["fingerprint"])
             evidence.append(
@@ -624,9 +683,404 @@ class Demo:
             )
         if len(fingerprints) != 1:
             raise RuntimeError(
-                "baseline tasks report inconsistent r1 source fingerprints"
+                "baseline tasks report inconsistent v1 source fingerprints"
             )
         return evidence
+
+    def normal_observations(self, definition, tasks, name, metrics, manifests):
+        """Bind safe logger dictionaries to each running task and fresh normal window.
+
+        Startup source/SQL contracts may precede the window; schema and committed
+        writes must occur inside it. Missing diagnostics cannot become a baseline.
+        """
+        group = container(definition, name)["logConfiguration"]["options"][
+            "awslogs-group"
+        ]
+        start = int(datetime.fromisoformat(metrics["start"]).timestamp() * 1000)
+        end = int(datetime.fromisoformat(metrics["end"]).timestamp() * 1000)
+        allowed = {
+            "event",
+            "timestamp",
+            "level",
+            "name",
+            "service",
+            "message",
+            "observed_at",
+            "revision",
+            "verified",
+            "files",
+            "fingerprint",
+            "base_fingerprint",
+            "built_at",
+            "request_id",
+            "operation",
+            "sql_hash",
+            "sql_hash_algorithm",
+            "schema_name",
+            "table_name",
+            "column_names",
+            "count",
+            "completion_semantics",
+            "metric_namespace",
+            "service_name",
+            "attempt_metric",
+            "failure_metric",
+            "attempt_semantics",
+            "failure_semantics",
+            "cancellation_semantics",
+            "success_evidence_event",
+            "success_count_field",
+            "success_semantics",
+        }
+        result = []
+        for task, manifest in zip(tasks, manifests, strict=True):
+            stream = manifest["logStreamName"]
+            created = int(datetime.fromisoformat(task["createdAt"]).timestamp() * 1000)
+            events = list(manifest["events"])
+            for lower, upper, pattern in (
+                (
+                    created,
+                    min(end, created + 600000),
+                    '{ $.event = "write_contract" || $.event = "write_accounting" }',
+                ),
+                (
+                    start,
+                    end,
+                    '{ $.event = "write_completed" || $.event = "db_schema_snapshot" }',
+                ),
+            ):
+                response = self.aws(
+                    "logs",
+                    "filter-log-events",
+                    logGroupName=group,
+                    logStreamNames=[stream],
+                    startTime=lower,
+                    endTime=upper,
+                    filterPattern=pattern,
+                )
+                if response.get("nextToken"):
+                    raise RuntimeError(
+                        "normal log query incomplete; narrow the capture before planning"
+                    )
+                events.extend(response.get("events", []))
+            chosen = {}
+            for event in events:
+                message = json.loads(event["message"])
+                kind = message.get("event")
+                stamp = event.get("timestamp", 0)
+                if kind not in {
+                    "source_manifest",
+                    "write_completed",
+                    "db_schema_snapshot",
+                    "write_contract",
+                    "write_accounting",
+                }:
+                    raise RuntimeError("unexpected normal diagnostic event")
+                if kind in {"write_completed", "db_schema_snapshot"} and stamp < start:
+                    continue
+                if (
+                    event.get("logStreamName") != stream
+                    or not event.get("eventId")
+                    or not created <= stamp < end
+                    or set(message) - allowed
+                    or not message.get("observed_at")
+                    or abs(
+                        datetime.fromisoformat(message["observed_at"]).timestamp()
+                        * 1000
+                        - stamp
+                    )
+                    > 60000
+                ):
+                    raise RuntimeError(
+                        "normal diagnostic source/time/field contract mismatch"
+                    )
+                if "message" in message and message["message"] != kind:
+                    raise RuntimeError("normal diagnostic contains unstructured prose")
+                if (
+                    "service" in message
+                    and message["service"] != "healthcare-sensor-app"
+                ):
+                    raise RuntimeError("normal diagnostic logger service mismatch")
+                if kind == "write_accounting":
+                    expected = {
+                        "metric_namespace": "Healthcare/Sensor",
+                        "service_name": "healthcare-sensor-app",
+                        "attempt_metric": "VitalIngestAttempts",
+                        "failure_metric": "VitalIngestFailures",
+                        "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+                        "failure_semantics": "failed_rows",
+                        "cancellation_semantics": "excluded_from_completed_counters",
+                        "success_evidence_event": "write_completed",
+                        "success_count_field": "count",
+                        "success_semantics": "committed_rows",
+                    }
+                    if any(
+                        message.get(key) != value for key, value in expected.items()
+                    ):
+                        raise RuntimeError(
+                            "normal completed-write accounting is not proven"
+                        )
+                if kind in {"write_completed", "write_contract", "db_schema_snapshot"}:
+                    columns = message.get("column_names", [])
+                    if (
+                        message.get("table_name") != "sensor_readings"
+                        or "timestamp" not in columns
+                        or "sampled_at" in columns
+                        or not isinstance(columns, list)
+                        or any(
+                            not re.fullmatch(r"[a-z_][a-z0-9_]*", c) for c in columns
+                        )
+                    ):
+                        raise RuntimeError(
+                            "normal schema/write column precondition not proven"
+                        )
+                if kind == "db_schema_snapshot" and not re.fullmatch(
+                    r"[a-z_][a-z0-9_]*", message.get("schema_name") or ""
+                ):
+                    raise RuntimeError("actual schema identity missing")
+                if kind in {"write_completed", "write_contract"} and not re.fullmatch(
+                    r"[a-f0-9]{64}", message.get("sql_hash") or ""
+                ):
+                    raise RuntimeError("actual INSERT fingerprint missing")
+                if kind == "write_completed" and (
+                    type(message.get("count")) is not int
+                    or message["count"] <= 0
+                    or message.get("completion_semantics") != "committed_rows"
+                ):
+                    raise RuntimeError("committed normal write not proven")
+                chosen[kind] = {
+                    "message": message,
+                    "timestamp": stamp,
+                    "event_id": event["eventId"],
+                    "log_group": group,
+                    "log_stream": stream,
+                }
+            if set(chosen) != {
+                "source_manifest",
+                "write_completed",
+                "db_schema_snapshot",
+                "write_contract",
+                "write_accounting",
+            }:
+                raise RuntimeError(
+                    "fresh schema, source, INSERT contract and committed write are required"
+                )
+            if (
+                chosen["write_completed"]["message"]["sql_hash"]
+                != chosen["write_contract"]["message"]["sql_hash"]
+            ):
+                raise RuntimeError("normal INSERT fingerprints disagree")
+            result.extend(chosen.values())
+        if len(result) > 100:
+            raise RuntimeError("normal observation count exceeds reader budget")
+        return result
+
+    def publish_baseline(self, metrics):
+        """Publish canonical actual evidence create-only, then verify stored bytes.
+
+        A timed-out PUT may have succeeded. GET and a full content hash settle
+        that uncertainty; ETag and a partial PUT response are not content proof.
+        """
+        snapshot = self.journal.snapshot
+        options = snapshot["options"]
+        service = self.service()
+        self.assert_owner(service)
+        tasks = self.tasks(serviceName=self.target["service"])
+        if not stable(
+            service, snapshot["service"]["taskDefinition"]
+        ) or not self.tasks_match(
+            tasks,
+            service["taskDefinition"],
+            service["desiredCount"],
+            options["container"],
+        ):
+            raise RuntimeError("normal deployment changed before publication")
+        definition = snapshot["taskDefinition"]["taskDefinition"]
+        immutable_baseline_image(definition, tasks, options["container"])
+        manifests = self.baseline_source_manifests(
+            definition, tasks, options["container"]
+        )
+        observations = self.normal_observations(
+            definition, tasks, options["container"], metrics, manifests
+        )
+        payload = {
+            "schema_version": 1,
+            "run_id": options["run_id"],
+            "observed_at": now(),
+            "scope": {
+                "account_id": self.target["account"],
+                "region": self.target["region"],
+                "cluster_arn": service["clusterArn"],
+                "service_arn": service["serviceArn"],
+                "service_name": service.get(
+                    "serviceName", service["serviceArn"].rsplit("/", 1)[-1]
+                ),
+                "container_name": options["container"],
+                "log_group": observations[0]["log_group"],
+                "desired_count": service["desiredCount"],
+            },
+            "normal": {
+                "task_definition_arn": service["taskDefinition"],
+                "image_digest": snapshot["image"].split("@")[1],
+            },
+            "service_settings": settings(service),
+            "metrics": {
+                key: {
+                    "namespace": "Healthcare/Sensor",
+                    "metric_name": metric,
+                    "dimensions": {"ServiceName": "healthcare-sensor-app"},
+                }
+                for key, metric in (
+                    ("attempts", "VitalIngestAttempts"),
+                    ("failures", "VitalIngestFailures"),
+                )
+            },
+            "metric_observations": {
+                "start": metrics["start"],
+                "end": metrics["end"],
+                **{
+                    key: [
+                        {field: point[field] for field in ("Timestamp", "Sum", "Unit")}
+                        for point in metrics["values"][metric]["Datapoints"]
+                    ]
+                    for key, metric in (
+                        ("attempts", "VitalIngestAttempts"),
+                        ("failures", "VitalIngestFailures"),
+                    )
+                },
+            },
+            "observations": observations,
+        }
+        raw = canonical(payload)
+        if len(raw) > 512 * 1024:
+            raise RuntimeError("normal baseline exceeds the agent reader size budget")
+        reference = {
+            "bucket": options["evidence_bucket"],
+            "key": f"baselines/{options['run_id']}/normal.json",
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+        self.record(
+            "baseline_put_intent", {"baseline_ref": reference, "baseline": payload}
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            body = Path(directory) / "normal.json"
+            body.write_bytes(raw)
+            try:
+                self.aws(
+                    "s3api",
+                    "put-object",
+                    Bucket=reference["bucket"],
+                    Key=reference["key"],
+                    Body=str(body),
+                    IfNoneMatch="*",
+                    ContentType="application/json",
+                )
+            except (
+                OSError,
+                RuntimeError,
+                ValueError,
+                KeyError,
+                TypeError,
+                subprocess.SubprocessError,
+            ) as error:
+                self.record("baseline_put_uncertain", {"error": str(error)})
+            downloaded = Path(directory) / "download.json"
+            self.aws(
+                "s3api",
+                "get-object",
+                Bucket=reference["bucket"],
+                Key=reference["key"],
+                OutputFile=str(downloaded),
+            )
+            if (
+                hashlib.sha256(downloaded.read_bytes()).hexdigest()
+                != reference["sha256"]
+            ):
+                raise RuntimeError("stored baseline digest mismatch")
+        self.record("baseline_published", reference)
+        return reference
+
+    @staticmethod
+    def alarm_configuration(alarm):
+        """Use only PutMetricAlarm fields so existing criteria and actions survive."""
+        return {key: alarm[key] for key in ALARM_SETTINGS if key in alarm}
+
+    def decorate_alarms(self):
+        """Publish only the incident pointer after the immutable baseline is verified."""
+        snapshot = self.journal.snapshot
+        reference = self.journal.find("baseline_published")[-1]["data"]
+        for original in snapshot["alarms"]:
+            if original.get("MetricName") != "VitalIngestFailures":
+                continue
+            current = self.alarms([original["AlarmName"]])[0]
+            if self.alarm_configuration(current) != self.alarm_configuration(
+                original
+            ) or current.get("AlarmDescription", "") != original.get(
+                "AlarmDescription", ""
+            ):
+                raise RuntimeError("alarm changed before decoration")
+            metadata = {
+                "summary": "Healthcare service symptoms",
+                "run_id": snapshot["options"]["run_id"],
+                "service": snapshot["service"]["serviceArn"],
+                "baseline_ref": reference,
+            }
+            description = canonical(metadata).decode("utf-8")
+            if len(description) > 1024:
+                raise RuntimeError("alarm description exceeds 1024 characters")
+            self.record(
+                "alarm_decoration_intent",
+                {"name": original["AlarmName"], "description": description},
+            )
+            self.aws(
+                "cloudwatch",
+                "put-metric-alarm",
+                **self.alarm_configuration(original),
+                AlarmDescription=description,
+            )
+            current = self.alarms([original["AlarmName"]])[0]
+            if current.get(
+                "AlarmDescription"
+            ) != description or self.alarm_configuration(
+                current
+            ) != self.alarm_configuration(original):
+                raise RuntimeError("alarm decoration not verified")
+            self.record("alarm_decorated", {"name": original["AlarmName"]})
+
+    def restore_alarm(self, original):
+        """Restore original metadata even after a lost PUT, refusing foreign edits."""
+        intents = [
+            e
+            for e in self.journal.find("alarm_decoration_intent")
+            if e["data"]["name"] == original["AlarmName"]
+        ]
+        if not intents:
+            return
+        current = self.alarms([original["AlarmName"]])[0]
+        if self.alarm_configuration(current) != self.alarm_configuration(original):
+            raise RuntimeError("foreign alarm criteria; refusing overwrite")
+        description = current.get("AlarmDescription", "")
+        if description == original.get("AlarmDescription", ""):
+            return
+        if description != intents[-1]["data"]["description"]:
+            raise RuntimeError("foreign alarm metadata; refusing overwrite")
+        self.record(
+            "restore_alarm_intent", {"name": original["AlarmName"]}, recovery=True
+        )
+        description_field = (
+            {"AlarmDescription": original["AlarmDescription"]}
+            if "AlarmDescription" in original
+            else {}
+        )
+        self.aws(
+            "cloudwatch",
+            "put-metric-alarm",
+            **self.alarm_configuration(original),
+            **description_field,
+        )
+        self.record(
+            "restore_alarm_response", {"name": original["AlarmName"]}, recovery=True
+        )
 
     @staticmethod
     def image_digests(tasks, name):
@@ -690,8 +1144,8 @@ class Demo:
         ):
             raise RuntimeError("unclaimed changed revision; refusing overwrite")
 
-    def register(self, maintenance=False):
-        """Clone the original definition; tag and record the new ARN before use."""
+    def register(self):
+        """Clone the healthy definition with only immutable image and lineage changes."""
         snapshot = self.journal.snapshot
         options = snapshot["options"]
         td = copy.deepcopy(snapshot["taskDefinition"]["taskDefinition"])
@@ -699,54 +1153,26 @@ class Demo:
             td.pop(key, None)
         app = container(td, options["container"])
         environment = env_map(td, options["container"])
-        environment["RCA_TEST_RUN_ID"] = options["run_id"]
-        if maintenance:
-            command = maintenance_command(options)
-            # A one-shot job must not inherit the web health check or HTTP sidecars.
-            td["family"] = (
-                f"{td['family'][:210]}-demo-maint-{self.journal.events[0]['hash'][:12]}"
-            )
-            td["containerDefinitions"] = [app]
-            app.pop("healthCheck", None)
-            app.pop("dependsOn", None)
-            app.pop("portMappings", None)
-            app["entryPoint"] = command[:1]
-            app["command"] = command[1:]
-            app["image"] = (
-                image_repository(snapshot["image"])
-                + "@"
-                + self.image_digests(snapshot["tasks"], options["container"])[0]
-            )
-            environment["TRAFFIC_ENABLED"] = "false"
-            environment["DB_OBSERVABILITY_ENABLED"] = "false"
-        elif options["scenario"] == "pool-config":
-            environment.update(
-                DB_POOL_SIZE=str(options["pool_size"]),
-                DB_MAX_OVERFLOW=str(options["max_overflow"]),
-                DB_POOL_TIMEOUT_SECONDS=str(options["pool_timeout"]),
-            )
-        else:
-            app["image"] = options["image"]
-            environment["DEPLOYED_REVISION"] = options["revision"]
+        environment.update(
+            RCA_TEST_RUN_ID=options["run_id"], DEPLOYED_REVISION=options["revision"]
+        )
+        app["image"] = options["image"]
         app["environment"] = [
-            {"name": key, "value": value} for key, value in sorted(environment.items())
+            {"name": k, "value": v} for k, v in sorted(environment.items())
         ]
-        if not maintenance:
-            self.assert_scenario_environment(td)
-        original_tags = {
+        self.assert_scenario_environment(td)
+        tags = {
             t["key"]: t["value"]
             for t in snapshot["taskDefinition"].get("tags", [])
             if not t["key"].startswith("aws:")
         }
         td["tags"] = [
-            {"key": key, "value": value}
-            for key, value in (original_tags | self.owner_tags()).items()
+            {"key": k, "value": v} for k, v in (tags | self.owner_tags()).items()
         ]
-        kind = "maintenance_revision" if maintenance else "service_revision"
-        self.record("register_intent", {"kind": kind, "definition": td})
+        self.record("register_intent", {"kind": "service_revision", "definition": td})
         registered = self.aws("ecs", "register-task-definition", **td)
         arn = registered["taskDefinition"]["taskDefinitionArn"]
-        self.record(kind, {"arn": arn, "response": registered})
+        self.record("service_revision", {"arn": arn, "response": registered})
         return arn
 
     def assert_scenario_environment(self, candidate):
@@ -757,13 +1183,7 @@ class Demo:
             snapshot["taskDefinition"]["taskDefinition"], options["container"]
         )
         proposed = env_map(candidate, options["container"])
-        permitted = {"RCA_TEST_RUN_ID"}
-        if options["scenario"] == "pool-config":
-            permitted.update(
-                {"DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_TIMEOUT_SECONDS"}
-            )
-        else:
-            permitted.add("DEPLOYED_REVISION")
+        permitted = {"RCA_TEST_RUN_ID", "DEPLOYED_REVISION"}
         changed = {
             key
             for key in original.keys() | proposed.keys()
@@ -781,8 +1201,8 @@ class Demo:
         if self.journal.find("apply_intent") or self.journal.find("restore_intent"):
             raise RuntimeError("apply is single-use; inspect or restore this RunId")
         snapshot = self.journal.snapshot
-        if snapshot["options"]["scenario"] == "maintenance-lock":
-            maintenance_command(snapshot["options"])
+        if snapshot.get("contractVersion") != JOURNAL_VERSION:
+            raise RuntimeError("legacy journal is read-only; use a fresh run id")
         immutable_baseline_image(
             snapshot["taskDefinition"]["taskDefinition"],
             snapshot["tasks"],
@@ -790,7 +1210,7 @@ class Demo:
         )
         if not snapshot.get("sourceManifests"):
             raise RuntimeError(
-                "snapshot lacks verified r1 baseline source evidence; create a new plan"
+                "snapshot lacks verified v1 baseline source evidence; create a new plan"
             )
         service = self.service()
         self.assert_owner(service, allow_unclaimed=True)
@@ -825,47 +1245,19 @@ class Demo:
                 tags=[{"key": k, "value": v} for k, v in self.owner_tags().items()],
             )
             self.assert_owner(self.service())
-            maintenance = (
-                self.journal.snapshot["options"]["scenario"] == "maintenance-lock"
-            )
-            arn = self.register(maintenance)
+            self.publish_baseline(baseline)
+            self.decorate_alarms()
+            arn = self.register()
             self.assert_owner(self.service())
-            if maintenance:
-                original = self.journal.snapshot["service"]
-                request = {
-                    "cluster": self.target["cluster"],
-                    "taskDefinition": arn,
-                    "count": 1,
-                    "startedBy": self.token(),
-                    "clientToken": self.token(),
-                    "networkConfiguration": original["networkConfiguration"],
-                    "tags": [
-                        {"key": k, "value": v} for k, v in self.owner_tags().items()
-                    ],
-                }
-                if original.get("capacityProviderStrategy"):
-                    request["capacityProviderStrategy"] = original[
-                        "capacityProviderStrategy"
-                    ]
-                else:
-                    request["launchType"] = original.get("launchType", "FARGATE")
-                if original.get("platformVersion"):
-                    request["platformVersion"] = original["platformVersion"]
-                self.record("run_task_intent", request)
-                response = self.aws("ecs", "run-task", **request)
-                self.record("maintenance_tasks", response)
-                if len(response.get("tasks", [])) != 1:
-                    raise RuntimeError("maintenance task launch was not acknowledged")
-            else:
-                self.record("update_intent", {"arn": arn})
-                response = self.aws(
-                    "ecs",
-                    "update-service",
-                    cluster=self.target["cluster"],
-                    service=self.target["service"],
-                    taskDefinition=arn,
-                )
-                self.record("update_response", response)
+            self.record("update_intent", {"arn": arn})
+            response = self.aws(
+                "ecs",
+                "update-service",
+                cluster=self.target["cluster"],
+                service=self.target["service"],
+                taskDefinition=arn,
+            )
+            self.record("update_response", response)
             return self.wait_applied(wait_seconds)
         except BaseException as error:
             self.record("apply_error", {"error": str(error)}, recovery=True)
@@ -904,99 +1296,25 @@ class Demo:
                 for d in result["service"].get("deployments", [])
             ):
                 raise RuntimeError("scenario deployment failed")
-            jobs = result["maintenanceTasks"]
-            if jobs and any(t["lastStatus"] == "STOPPED" for t in jobs):
-                raise RuntimeError("maintenance task exited before running observation")
-            rollout_ready = stable(result["service"], expected) and self.tasks_match(
-                result["tasks"],
-                expected,
-                self.journal.snapshot["service"]["desiredCount"],
+            rollout_ready = (
+                stable(result["service"], expected)
+                and self.tasks_match(
+                    result["tasks"],
+                    expected,
+                    self.journal.snapshot["service"]["desiredCount"],
+                    self.journal.snapshot["options"]["container"],
+                )
+                and self.image_digests(
+                    result["tasks"], self.journal.snapshot["options"]["container"]
+                )
+                == [self.journal.snapshot["options"]["image"].split("@")[1]]
             )
-            if not seconds or (
-                rollout_ready
-                and (bool(revisions) or any(t["lastStatus"] == "RUNNING" for t in jobs))
-            ):
+            if not seconds or (rollout_ready and bool(revisions)):
                 result["applyRolloutObserved"] = rollout_ready
                 return result
             if time.monotonic() >= deadline:
                 raise TimeoutError("scenario rollout observation timed out")
             time.sleep(min(10, max(0, deadline - time.monotonic())))
-
-    def token(self):
-        """Derive a deterministic ECS idempotency/start marker for task discovery."""
-        return "demo-" + self.journal.events[0]["hash"][:32]
-
-    def verify_task_ownership(self, task, *, recovery=False):
-        """Persist live proof; a receipt can explain tag loss only after termination."""
-        receipt = {
-            "snapshotHash": self.journal.events[0]["hash"],
-            "runId": self.journal.snapshot["options"]["run_id"],
-            "taskArn": task["taskArn"],
-            "taskDefinitionArn": task["taskDefinitionArn"],
-            "startedBy": task.get("startedBy"),
-        }
-        prior = [
-            event["data"]
-            for event in self.journal.find("task_ownership_verified")
-            if event["data"].get("taskArn") == task["taskArn"]
-        ]
-        revisions = {
-            event["data"]["arn"] for event in self.journal.find("maintenance_revision")
-        }
-        raw_tags = task.get("tags", [])
-        tags = {tag["key"]: tag["value"] for tag in raw_tags}
-        live_proof = all(
-            tags.get(key) == value and sum(tag["key"] == key for tag in raw_tags) == 1
-            for key, value in self.owner_tags().items()
-        )
-        # ECS deletes associated tags on StopTask. Never use their absence as
-        # authority to control a live task, or accept conflicting retained tags.
-        stopped_receipt = (
-            task.get("lastStatus") == "STOPPED" and not raw_tags and receipt in prior
-        )
-        if (
-            task.get("startedBy") != self.token()
-            or task["taskDefinitionArn"] not in revisions
-            or any(saved != receipt for saved in prior)
-            or not (live_proof or stopped_receipt)
-        ):
-            raise RuntimeError("maintenance task ownership mismatch; refusing stop")
-        if live_proof and task.get("lastStatus") != "STOPPED" and not prior:
-            # Normal control has a durable receipt first. During storage failure
-            # cleanup still uses current live proof, but cannot later explain
-            # missing tags or verify recovery without a published receipt.
-            self.record("task_ownership_verified", receipt, recovery=recovery)
-
-    def owned_tasks(self, *, recovery=False):
-        """Validate rediscovered jobs; recovery logging cannot hide proven owned tasks."""
-        if not self.journal.find("run_task_intent"):
-            return []
-        discovered = self.tasks(startedBy=self.token())
-        known = {
-            task["taskArn"]
-            for event in self.journal.find("maintenance_tasks")
-            for task in event["data"].get("tasks", [])
-        }
-        known.update(
-            task["taskArn"]
-            for event in self.journal.find("owned_tasks")
-            for task in event["data"]
-        )
-        known.update(
-            event["data"]["taskArn"]
-            for event in self.journal.find("task_ownership_verified")
-        )
-        known.update(self.discovered_task_arns)
-        known.difference_update(task["taskArn"] for task in discovered)
-        retained = self.describe_tasks(sorted(known))
-        if {task["taskArn"] for task in retained} != known:
-            raise RuntimeError("known maintenance task missing or identity changed")
-        discovered.extend(retained)
-        for task in discovered:
-            self.verify_task_ownership(task, recovery=recovery)
-        self.discovered_task_arns.update(task["taskArn"] for task in discovered)
-        self.record("owned_tasks", discovered, recovery=recovery)
-        return discovered
 
     def metrics(self, start):
         """Read complete post-transition minute buckets; absent data never passes."""
@@ -1017,7 +1335,6 @@ class Demo:
         for metric, unit in [
             ("VitalIngestAttempts", "Count"),
             ("VitalIngestFailures", "Count"),
-            ("PatientVitalsQueryDuration", "Milliseconds"),
         ]:
             values[metric] = self.aws(
                 "cloudwatch",
@@ -1040,39 +1357,37 @@ class Demo:
 
     @staticmethod
     def metrics_healthy(metrics, alarms):
-        """Require successful ingests and actual non-breaching query observations."""
+        """Two complete positive attempt bins and explicit zero failures prove activity."""
         if not metrics.get("ready"):
             return False
-        values = metrics["values"]
-        attempts = values["VitalIngestAttempts"].get("Datapoints", [])
-        failures = values["VitalIngestFailures"].get("Datapoints", [])
-        queries = values["PatientVitalsQueryDuration"].get("Datapoints", [])
-        threshold = next(
-            (
-                a.get("Threshold")
-                for a in alarms
-                if a.get("MetricName") == "PatientVitalsQueryDuration"
-            ),
-            None,
-        )
         start = datetime.fromisoformat(metrics["start"])
-        expected_times = {start, start + timedelta(minutes=1)}
-        aligned = all(
-            {datetime.fromisoformat(p["Timestamp"]) for p in points} == expected_times
-            for points in (attempts, failures, queries)
-        )
-        return (
-            threshold is not None
-            and len(attempts) == len(failures) == len(queries) == 2
-            and aligned
-            and all(p["Sum"] > 0 for p in attempts)
-            and all(p["Sum"] == 0 for p in failures)
-            and all(p["SampleCount"] > 0 and p["Average"] < threshold for p in queries)
-        )
+        expected = {start, start + timedelta(minutes=1)}
+        for metric, positive in (
+            ("VitalIngestAttempts", True),
+            ("VitalIngestFailures", False),
+        ):
+            points = metrics["values"].get(metric, {}).get("Datapoints", [])
+            if (
+                len(points) != 2
+                or {datetime.fromisoformat(p["Timestamp"]) for p in points} != expected
+            ):
+                return False
+            if any(
+                p.get("Unit") != "Count"
+                or not isinstance(p.get("Sum"), (int, float))
+                or isinstance(p.get("Sum"), bool)
+                or not math.isfinite(p["Sum"])
+                or (p["Sum"] <= 0 if positive else p["Sum"] != 0)
+                for p in points
+            ):
+                return False
+        return True
 
     def status(self, *, recovery=False):
         """Observe recovery conservatively, returning logging failures during cleanup."""
         snapshot = self.journal.snapshot
+        if snapshot.get("contractVersion") != JOURNAL_VERSION:
+            raise RuntimeError("legacy journal is read-only; retain it unchanged")
         service = self.service()
         ownership_error = None
         try:
@@ -1084,7 +1399,6 @@ class Demo:
         except RuntimeError as error:
             ownership_error = str(error)
         tasks = self.tasks(serviceName=self.target["service"])
-        jobs = self.owned_tasks(recovery=recovery)
         alarms = self.alarms(snapshot["options"]["alarms"])
         restore = self.journal.find("restore_intent")
         original = snapshot["service"]["taskDefinition"]
@@ -1094,16 +1408,11 @@ class Demo:
         digest_match = self.image_digests(
             tasks, snapshot["options"]["container"]
         ) == self.image_digests(snapshot["tasks"], snapshot["options"]["container"])
-        # A lost RunTask response with no discovered task remains unresolved.
-        jobs_stopped = (not self.journal.find("run_task_intent") or bool(jobs)) and all(
-            t["lastStatus"] == "STOPPED" for t in jobs
-        )
         configuration_restored = (
             ownership_error is None
             and stable(service, original)
             and original_tasks
             and digest_match
-            and jobs_stopped
         )
         observed = self.journal.find("restored_rollout_observed")
         if restore and configuration_restored and not observed:
@@ -1128,29 +1437,26 @@ class Demo:
             "originalRollout": stable(service, original),
             "originalTasks": original_tasks,
             "originalImageDigests": digest_match,
-            "ownedMaintenanceStopped": jobs_stopped,
             "alarmsOk": all(a["StateValue"] == "OK" for a in alarms),
             "alarmSettingsUnchanged": original_alarms == live_alarms,
             "successfulFreshSymptoms": self.metrics_healthy(metrics, alarms),
+            "alarmMetadataRestored": all(
+                a.get("AlarmDescription", "")
+                == next(
+                    o.get("AlarmDescription", "")
+                    for o in snapshot["alarms"]
+                    if o["AlarmName"] == a["AlarmName"]
+                )
+                for a in alarms
+            ),
         }
-        query_alarm = next(
-            a for a in alarms if a.get("MetricName") == "PatientVitalsQueryDuration"
-        )
         result = {
             "runId": snapshot["options"]["run_id"],
             "service": service,
             "tasks": tasks,
-            "maintenanceTasks": jobs,
-            "maintenanceRestoration": self.maintenance_restoration(jobs),
             "alarms": alarms,
             "metrics": metrics,
             "checks": checks,
-            "queryLatency": {
-                "statistic": query_alarm["Statistic"],
-                "thresholdMs": query_alarm["Threshold"],
-                "unit": query_alarm["Unit"],
-                "periodSeconds": query_alarm["Period"],
-            },
             "ownershipError": ownership_error,
             "revisionObservation": self.revision_observation(service),
             "recoveryVerified": bool(restore) and all(checks.values()),
@@ -1217,43 +1523,12 @@ class Demo:
             ),
         }
 
-    def maintenance_restoration(self, jobs):
-        """Separate observed termination from a claim that approved restore caused it."""
-        before = self.journal.find("maintenance_before_restore")
-        stopped_before = [
-            task["taskArn"]
-            for event in before
-            for task in event["data"]
-            if task.get("lastStatus") == "STOPPED"
-        ]
-        requested = [e["data"]["taskArn"] for e in self.journal.find("stop_intent")]
-        return {
-            "stoppedBeforeRestore": sorted(set(stopped_before)),
-            "stopRequestedTasks": sorted(set(requested)),
-            "exitEvidence": [
-                {
-                    key: task.get(key)
-                    for key in (
-                        "taskArn",
-                        "lastStatus",
-                        "desiredStatus",
-                        "startedAt",
-                        "stoppingAt",
-                        "stoppedAt",
-                        "stopCode",
-                        "stoppedReason",
-                        "containers",
-                    )
-                }
-                for task in jobs
-            ],
-            "approvedRestorationCausedRecovery": False,
-            "causality": "not-established",
-            "note": "An expired or already-stopped hold is not evidence of an approved restore. A stop request alone also does not prove lock release causality.",
-        }
-
     def restore(self, wait_seconds=0):
         """Persist cleanup evidence before release; keep journal failures unresolved."""
+        if self.journal.snapshot.get("contractVersion") != JOURNAL_VERSION:
+            raise RuntimeError(
+                "legacy journal is read-only; use its historical cleanup tooling"
+            )
         started = time.monotonic()
         deadline = started + wait_seconds
         result = self.restore_once()
@@ -1359,38 +1634,17 @@ class Demo:
                 self.record("restore_update_response", response, recovery=True)
         except RECOVERABLE_ERRORS as error:
             errors.append({"step": "service", "error": str(error)})
-        try:
-            jobs = self.owned_tasks(recovery=True)
-            if not self.journal.find("maintenance_before_restore"):
-                self.record("maintenance_before_restore", jobs, recovery=True)
-            for task in jobs:
-                if task["lastStatus"] != "STOPPED":
-                    try:
-                        current = self.describe_tasks([task["taskArn"]])
-                        if (
-                            len(current) != 1
-                            or current[0]["taskArn"] != task["taskArn"]
-                        ):
-                            raise RuntimeError("maintenance task identity changed")
-                        task = current[0]
-                        self.verify_task_ownership(task, recovery=True)
-                        if task["lastStatus"] == "STOPPED":
-                            continue
-                        self.record(
-                            "stop_intent", {"taskArn": task["taskArn"]}, recovery=True
-                        )
-                        response = self.aws(
-                            "ecs",
-                            "stop-task",
-                            cluster=self.target["cluster"],
-                            task=task["taskArn"],
-                            reason=f"Restore owned demo {self.journal.snapshot['options']['run_id']}",
-                        )
-                        self.record("stop_response", response, recovery=True)
-                    except RECOVERABLE_ERRORS as error:
-                        errors.append({"step": "maintenance", "error": str(error)})
-        except RECOVERABLE_ERRORS as error:
-            errors.append({"step": "maintenance-discovery", "error": str(error)})
+        # Metadata cleanup remains independent of service rollback failures.
+        for original_alarm in self.journal.snapshot["alarms"]:
+            try:
+                self.restore_alarm(original_alarm)
+            except RECOVERABLE_ERRORS as error:
+                errors.append(
+                    {
+                        "step": "alarm:" + original_alarm["AlarmName"],
+                        "error": str(error),
+                    }
+                )
         try:
             result = self.status(recovery=True)
         except RECOVERABLE_ERRORS as error:
@@ -1416,25 +1670,13 @@ def parse_args(argv=None):
     parser.add_argument("--journal-root", type=Path, required=True)
     parser.add_argument(
         "--scenario",
-        choices=[
-            "pool-config",
-            "query-revision",
-            "session-revision",
-            "maintenance-lock",
-        ],
+        choices=["write-column-regression"],
+        default="write-column-regression",
     )
     parser.add_argument("--container", default="healthcare")
-    parser.add_argument(
-        "--image", help="Caller-supplied repository@sha256:<64 hex> fault image"
-    )
-    parser.add_argument(
-        "--revision", help="Source/build revision recorded in DEPLOYED_REVISION"
-    )
-    parser.add_argument("--pool-size", type=int, default=1)
-    parser.add_argument("--max-overflow", type=int, default=0)
-    parser.add_argument("--pool-timeout", type=float, default=1.0)
-    parser.add_argument("--hold-seconds", type=float, default=7200)
-    parser.add_argument("--maintenance-schema", default="public")
+    parser.add_argument("--image", help="Fault repository@sha256:digest")
+    parser.add_argument("--revision", choices=["v2"], default="v2")
+    parser.add_argument("--evidence-bucket", help="Configured agent evidence bucket")
     parser.add_argument(
         "--expect-setting",
         action="append",
@@ -1445,7 +1687,7 @@ def parse_args(argv=None):
         "--alarm",
         action="append",
         default=[],
-        help="Required alarm name; repeat for ingest, query latency and connections",
+        help="Required ingest failure alarm; optional additional alarms",
     )
     parser.add_argument(
         "--wait-seconds",
@@ -1460,11 +1702,7 @@ def parse_args(argv=None):
         "--container",
         "--image",
         "--revision",
-        "--pool-size",
-        "--max-overflow",
-        "--pool-timeout",
-        "--hold-seconds",
-        "--maintenance-schema",
+        "--evidence-bucket",
         "--expect-setting",
         "--alarm",
     }
@@ -1476,23 +1714,8 @@ def parse_args(argv=None):
         )
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,48}", args.run_id):
         parser.error("RunId must be 1..48 letters, digits, underscores or hyphens")
-    if (
-        args.pool_size < 1
-        or args.max_overflow < 0
-        or not math.isfinite(args.pool_timeout)
-        or args.pool_timeout <= 0
-    ):
-        parser.error("pool size/timeout must be positive and overflow nonnegative")
-    if (
-        not math.isfinite(args.hold_seconds)
-        or not 0 < args.hold_seconds <= 7200
-        or args.wait_seconds < 0
-    ):
-        parser.error(
-            "hold-seconds must be finite, positive and <=7200; wait-seconds nonnegative"
-        )
-    if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", args.maintenance_schema):
-        parser.error("maintenance-schema must be a safe PostgreSQL identifier")
+    if args.wait_seconds < 0:
+        parser.error("wait-seconds must be nonnegative")
     args.expect_settings = {}
     for entry in args.expect_setting:
         key, separator, value = entry.partition("=")
@@ -1500,21 +1723,10 @@ def parse_args(argv=None):
             parser.error("--expect-setting requires a controlled KEY=VALUE")
         args.expect_settings[key] = value
     if args.action == "plan":
-        if not args.scenario or len(set(args.alarm)) < 3:
-            parser.error(
-                "plan requires --scenario and --alarm for ingest, query latency and connections"
-            )
-        revision = args.scenario in ("query-revision", "session-revision")
-        if revision and (
-            not args.image
-            or not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", args.image)
-            or not args.revision
-        ):
-            parser.error(
-                "revision scenarios require immutable --image repository@sha256:digest and --revision"
-            )
-        if not revision and args.image:
-            parser.error("--image is only valid for revision scenarios")
+        if not args.alarm or not args.evidence_bucket:
+            parser.error("plan requires --alarm and --evidence-bucket")
+        if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", args.image or ""):
+            parser.error("plan requires immutable --image repository@sha256:digest")
     return args
 
 
@@ -1568,11 +1780,7 @@ def main(argv=None):
                     "container",
                     "image",
                     "revision",
-                    "pool_size",
-                    "max_overflow",
-                    "pool_timeout",
-                    "hold_seconds",
-                    "maintenance_schema",
+                    "evidence_bucket",
                     "expect_settings",
                 ]
             }

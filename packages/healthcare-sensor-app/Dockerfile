@@ -8,8 +8,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src/ src/
 COPY demo/build_revision.py demo/build_revision.py
-COPY demo/revisions/ demo/revisions/
-ARG SOURCE_REVISION=r1
+ARG SOURCE_REVISION=v1
 RUN python demo/build_revision.py --revision "$SOURCE_REVISION" --destination src --in-place
 RUN uv sync --frozen --no-dev
 
@@ -28,6 +27,6 @@ EXPOSE 8000
 USER app
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+    CMD ["python", "-c", "import json, urllib.request; body=json.load(urllib.request.urlopen('http://localhost:8000/healthz')); assert body['status']=='ok' and body['db_connected'] is True"]
 
-CMD ["uvicorn", "test_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "test_service.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

@@ -9,14 +9,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from headless_codex.ports.interfaces.execution_store import ExecutionTarget
 from headless_codex.services.execution_evidence import (
     ExecutionEvidence,
     redact,
     resolve_retrospective_references,
     retrospective_evidence_json,
 )
-from headless_codex.services.execution_prompt import build_retrospective_prompt
 
 FIXTURE = Path(__file__).parent / "fixtures/retrospective-custlock-20260910.json"
 EVIDENCE_SHA = "904fc69c3ff76b6ace2f19121af753b5077d980aeb4f87a061947fee51efef52"
@@ -78,16 +76,7 @@ def test_actual_archived_payload_replays_with_exact_metadata_and_unchanged_sourc
     assert len(original["metric_wait_records"]) == 20
     for name in ("execution_id", "rca_id", "playbook_id"):
         assert fixture["provenance"][name] == original[name]
-    target = ExecutionTarget(
-        rca_id=original["rca_id"],
-        engine=original["engine"],
-        alarm_name="archived replay",
-        playbook=fixture["playbook_before"],
-    )
-    prompt = build_retrospective_prompt(
-        target, SimpleNamespace(to_dict=lambda: original), execution_id=original["execution_id"]
-    )
-    rendered = prompt.split("## 실행 증거\n\n```json\n")[1].split("\n```")[0]
+    rendered = _project(original)
     assert len(rendered) <= 60_000
     assert json.loads(rendered)["projection"]["shared_values"]
     _assert_reconstructs(rendered, original)
@@ -99,9 +88,6 @@ def test_actual_archived_payload_replays_with_exact_metadata_and_unchanged_sourc
         assert json.loads(redact(text)) == payload
         assert not re.search(r"(?:AKIA|ASIA)[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----", text)
         assert not re.search(r"(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}", text)
-    assert "projection.shared_values" in prompt
-    assert "원문 데이터" in prompt
-    assert "생략된 미리보기는 성공이나 무결함을 뜻하지 않는다" in prompt
 
 
 def test_failure_blocked_partial_poll_and_terminal_bins_survive_sharing():

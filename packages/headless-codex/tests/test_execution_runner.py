@@ -107,11 +107,15 @@ def test_execution_and_retrospective_use_separate_role_configs(monkeypatch, tmp_
     assert execution_servers["playbook-execution"]["enabled_tools"] == [
         "run_playbook_command",
         "wait_for_post_action_metrics",
+        "wait_for_service_deployment",
         "record_step_outcome",
         "record_resolution",
     ]
     assert set(retrospective_servers) == {"playbook-retrospective"}
-    assert retrospective_servers["playbook-retrospective"]["enabled_tools"] == ["save_playbook_update"]
+    assert retrospective_servers["playbook-retrospective"]["enabled_tools"] == [
+        "read_retrospective_document",
+        "save_playbook_update",
+    ]
 
 
 class _Clock:

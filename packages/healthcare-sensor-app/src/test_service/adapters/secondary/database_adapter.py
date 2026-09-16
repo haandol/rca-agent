@@ -3,6 +3,7 @@ import logging
 import time
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,18 +13,9 @@ from test_service.ports.interfaces.database import DatabasePort
 from test_service.revision.manifest import source_manifest
 from test_service.revision.session import close_session, session_scope
 from test_service.services.db_observability import current_operation, install_hooks
-from test_service.services.fault_state import (
-    begin_environment_database_leak,
-    environment_database_leaks_enabled,
-    environment_leaked_connections,
-    finish_environment_database_leak,
-    register_environment_database_leak,
-    retain_environment_leaked_connection,
-)
+from test_service.services.write_diagnostics import write_contract
 
 logger = logging.getLogger(__name__)
-
-_leaked_connections = environment_leaked_connections
 
 
 class SqlAlchemyDatabaseAdapter(DatabasePort):
@@ -31,7 +23,6 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         """Own bounded pools and session registries, verifying source identity before use."""
         self._settings = settings
         self._owned_sessions: set[AsyncSession] = set()
-        self._legacy_sessions: set[AsyncSession] = set()
         self._observer_engine = None
         self._observer_lock = asyncio.Lock()
         self._pool_timeout = getattr(settings, "db_pool_timeout_seconds", 30)
@@ -53,9 +44,11 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         if getattr(settings, "db_observability_enabled", False):
             install_hooks(self._engine)
         self._session_factory = async_sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
-        self._fault_db_leak = settings.fault_db_leak
-        register_environment_database_leak(self)
-        logger.info("source_manifest", extra={"event": "source_manifest", **source_manifest()})
+        logger.info(
+            "source_manifest",
+            extra={"event": "source_manifest", "observed_at": datetime.now(UTC).isoformat(), **source_manifest()},
+        )
+        logger.info("write_contract", extra={"event": "write_contract", **write_contract()})
         logger.info(
             "db_pool_config",
             extra={
@@ -83,12 +76,8 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
             yield session
 
     @asynccontextmanager
-    async def session_context(self, *, legacy_leak: bool = False):
+    async def session_context(self):
         """Deliver consumer exceptions to the compiled session implementation."""
-        if legacy_leak and environment_database_leaks_enabled() and self._fault_db_leak:
-            async with asynccontextmanager(self.leaky_session)() as session:
-                yield session
-            return
         async with AsyncExitStack() as stack:
             # Acquire inside this context, so all query/body exceptions have a
             # deterministic owner. Includes pool queue and physical connect time.
@@ -114,38 +103,6 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
                     )
             yield session
 
-    async def leaky_session(self) -> AsyncGenerator[AsyncSession]:
-        """Preserve resettable legacy leaks separately from the compiled revision's behavior.
-
-        Retain only sessions registered before a concurrent reset; otherwise use
-        the compiled cleanup scope so a lost registration cannot leak a session.
-        """
-        session = self._session_factory()
-        if not environment_database_leaks_enabled() or not self._fault_db_leak:
-            async with session_scope(lambda: session, self._owned_sessions) as session:
-                yield session
-            return
-
-        # The session is never closed, so its connection stays checked out for
-        # the lifetime of the process. Reset tracks it to make recovery possible.
-        retained = False
-        if begin_environment_database_leak(self):
-            try:
-                if retain_environment_leaked_connection(self, session):
-                    self._legacy_sessions.add(session)
-                    retained = True
-            finally:
-                finish_environment_database_leak()
-        if not retained:
-            async with session_scope(lambda: session, self._owned_sessions) as session:
-                yield session
-            return
-        logger.warning(
-            "DB session not returned to the pool",
-            extra={"pool_checked_out": self._engine.pool.checkedout()},
-        )
-        yield session
-
     def checked_out_connections(self) -> int:
         """Report actual application-pool occupancy, excluding the independent observer pool."""
         return self._engine.pool.checkedout()
@@ -157,13 +114,10 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
     async def dispose(self) -> None:
         """Close only this adapter's sessions, then dispose both owned pools."""
         errors = []
-        for session in self._owned_sessions | self._legacy_sessions:
+        for session in list(self._owned_sessions):
             try:
                 await close_session(session)
-                if session in environment_leaked_connections:
-                    environment_leaked_connections.remove(session)
                 self._owned_sessions.discard(session)
-                self._legacy_sessions.discard(session)
             except Exception as exc:
                 errors.append(exc)
         for engine in (self._engine, self._observer_engine):
@@ -175,6 +129,51 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         if errors:
             raise ExceptionGroup("Owned database resource cleanup failed", errors)
 
+    def _observation_engine(self):
+        """Share one bounded observer pool so catalog reads never borrow writer capacity."""
+        if self._observer_engine is None:
+            self._observer_engine = create_async_engine(
+                self._settings.database_url,
+                pool_size=1,
+                max_overflow=0,
+                pool_timeout=2,
+                hide_parameters=True,
+                connect_args={
+                    "server_settings": {"application_name": "healthcare-observer", "statement_timeout": "2000"}
+                },
+            )
+        return self._observer_engine
+
+    async def schema_snapshot(self) -> dict:
+        """Observe the resolved INSERT relation on a separate read-only transaction.
+
+        An independent connection remains usable after a writer transaction fails.
+        Catalog rows describe the existing schema and never create missing columns.
+        """
+        async with self._observer_lock, self._observation_engine().connect() as conn, conn.begin():
+            await conn.execute(text("SET TRANSACTION READ ONLY"))
+            result = await conn.execute(
+                text("""
+                    SELECT n.nspname AS schema_name, c.relname AS table_name,
+                           a.attname AS column_name
+                    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                    JOIN pg_attribute a ON a.attrelid = c.oid
+                    WHERE c.oid = to_regclass('sensor_readings')
+                      AND a.attnum > 0 AND NOT a.attisdropped
+                    ORDER BY a.attnum
+                """)
+            )
+            rows = list(result.mappings())
+        snapshot = {
+            "event": "db_schema_snapshot",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "schema_name": rows[0]["schema_name"] if rows else None,
+            "table_name": rows[0]["table_name"] if rows else None,
+            "column_names": [row["column_name"] for row in rows],
+        }
+        logger.info("db_schema_snapshot", extra=snapshot)
+        return snapshot
+
     async def wait_snapshot(self) -> dict:
         """Read wait/lock metadata with at most one independent observer backend.
 
@@ -182,18 +181,7 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         A hash links repeated queries while blocker IDs establish the lock chain.
         """
         async with self._observer_lock:
-            if self._observer_engine is None:
-                self._observer_engine = create_async_engine(
-                    self._settings.database_url,
-                    pool_size=1,
-                    max_overflow=0,
-                    pool_timeout=2,
-                    hide_parameters=True,
-                    connect_args={
-                        "server_settings": {"application_name": "healthcare-observer", "statement_timeout": "2000"}
-                    },
-                )
-            async with self._observer_engine.connect() as conn:
+            async with self._observation_engine().connect() as conn:
                 result = await conn.execute(
                     text("""
                     SELECT pid, application_name, state, wait_event_type, wait_event,
@@ -243,6 +231,7 @@ class SqlAlchemyDatabaseAdapter(DatabasePort):
         while not stop_event.is_set():
             try:
                 async with asyncio.timeout(5):
+                    await self.schema_snapshot()
                     snapshot = await self.wait_snapshot()
                     logger.info("db_wait_snapshot", extra=snapshot)
             except Exception as exc:

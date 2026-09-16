@@ -1,3 +1,8 @@
+import {
+  validateDeploymentGuard,
+  validateDeploymentPair,
+  sameDeploymentValue,
+} from './deploymentContract.ts';
 import commandModels from './runbook-command-models.json' with { type: 'json' };
 
 type DataRecord = Record<string, unknown>;
@@ -10,6 +15,8 @@ export interface PlaybookExecutionStep {
   action: string;
   success_criteria: string;
   commands?: string[];
+  deployment_wait?: Record<string, unknown> | null;
+  ecs_service_precondition?: Record<string, unknown> | null;
   metric_wait?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
@@ -329,6 +336,8 @@ export function validateExecutablePlaybook(
   const steps: PlaybookExecutionStep[] = [];
   const ids = new Set<string>();
   const priorActions = new Map<string, CommandScope[]>();
+  const priorSteps = new Map<string, DataRecord>();
+  const deployments = new Map<string, DataRecord>();
   const fields = new Set([
     'step_id',
     'intent',
@@ -336,6 +345,8 @@ export function validateExecutablePlaybook(
     'success_criteria',
     'commands',
     'metric_wait',
+    'deployment_wait',
+    'ecs_service_precondition',
   ]);
   for (const entry of rawSteps) {
     const step = object(entry);
@@ -357,37 +368,144 @@ export function validateExecutablePlaybook(
       return reject('명령 목록의 형식이 올바르지 않습니다.');
     const commands = Array.isArray(step.commands) ? step.commands : [];
     const hasWait = step.metric_wait !== undefined && step.metric_wait !== null;
-    if (Boolean(commands.length) === hasWait)
+    const hasDeployment =
+      step.deployment_wait !== undefined && step.deployment_wait !== null;
+    if (
+      [Boolean(commands.length), hasWait, hasDeployment].filter(Boolean)
+        .length !== 1
+    )
       return reject(
         '각 단계에는 확정된 명령 목록 또는 사후 관측 설정이 필요합니다. 명령 없는 과거 계획은 새 분석이 필요합니다.',
       );
+    try {
+      if (step.ecs_service_precondition != null)
+        validateDeploymentGuard(step, commandArgv(String(commands[0] ?? '')));
+      if (hasDeployment) {
+        const wait = object(step.deployment_wait);
+        const action = priorSteps.get(String(wait?.action_step_id));
+        if (
+          !action ||
+          [...deployments.values()].some(
+            (d) => d.action_step_id === wait?.action_step_id,
+          )
+        )
+          throw new Error(
+            '배포 대기는 중복되지 않는 선행 롤백을 참조해야 합니다.',
+          );
+        deployments.set(
+          stepId,
+          validateDeploymentPair(
+            playbook!,
+            action,
+            wait,
+            commandArgv(String((action.commands as string[])[0])),
+          ),
+        );
+      }
+    } catch (error) {
+      return reject(
+        error instanceof Error
+          ? error.message
+          : '배포 계약이 올바르지 않습니다.',
+      );
+    }
     if (commands.length) {
       const inspected = commands.map(inspectCommand);
       if (inspected.some((value) => !value))
         return reject(
           '명령의 리전·대상·형식이 올바르지 않습니다. 중복 옵션, 인자 덮어쓰기와 미확정 값은 승인할 수 없습니다.',
         );
+      if (
+        playbook?.rollback_context != null &&
+        inspected.some((c) => c?.operation === 'ecs update-service') &&
+        !step.ecs_service_precondition
+      )
+        return reject(
+          'reader 문맥이 있는 서비스 갱신에는 완전한 배포 전제가 필요합니다.',
+        );
       priorActions.set(stepId, inspected as CommandScope[]);
-    } else {
+    } else if (hasWait) {
       const wait = object(step.metric_wait);
-      if (!wait || !validMetricWait(wait, priorActions, step.success_criteria))
+      if (
+        !wait ||
+        !validMetricWait(wait, priorActions, step.success_criteria, deployments)
+      )
         return reject(
           '사후 관측의 선행 조치, 메트릭 좌표, 알람, 성공 기준 또는 대기 한도가 올바르지 않습니다.',
         );
+      if (
+        object(wait.completed_work_evidence)?.record_index ===
+          'approved_context' &&
+        !validApprovedAccounting(playbook!, wait, deployments)
+      )
+        return reject(
+          '승인 문맥의 쓰기 집계 근거가 없거나 관측 지표·복원 배포와 일치하지 않습니다.',
+        );
     }
+    priorSteps.set(stepId, step);
     ids.add(stepId);
     steps.push(entry as PlaybookExecutionStep);
   }
+  for (const step of priorSteps.values()) {
+    if (
+      step.ecs_service_precondition &&
+      [...deployments.values()].filter((d) => d.action_step_id === step.step_id)
+        .length !== 1
+    )
+      return reject('롤백에는 정확히 하나의 후속 배포 수렴 단계가 필요합니다.');
+  }
+  for (const id of deployments.keys()) {
+    if (!steps.some((s) => s.metric_wait?.deployment_step_id === id))
+      return reject(
+        '배포 수렴 뒤 같은 배포를 기준으로 하는 필수 사후 지표 관측이 필요합니다.',
+      );
+  }
   return { valid: true, steps, reason: '' };
+}
+
+/** Reject an unresolvable reader-owned accounting reference before approval writes.
+ * Earlier deployment-pair validation has already checked its guard and normal
+ * context. Match the binder's metric/image relationship without rewriting input;
+ * unreferenced descriptors and future numeric journal references keep old rules.
+ */
+function validApprovedAccounting(
+  playbook: DataRecord,
+  wait: DataRecord,
+  deployments: Map<string, DataRecord>,
+): boolean {
+  const descriptor = object(
+    object(playbook.rollback_context)?.write_accounting,
+  );
+  const deployment = deployments.get(String(wait.deployment_step_id));
+  const metrics = object(wait.metrics);
+  const attempts = object(metrics?.attempts);
+  const failures = object(metrics?.failures);
+  return Boolean(
+    descriptor &&
+    deployment &&
+    attempts &&
+    failures &&
+    descriptor.task_definition_arn === deployment.task_definition &&
+    descriptor.image_digest === deployment.image_digest &&
+    deployment.region === wait.region &&
+    descriptor.namespace === attempts.namespace &&
+    sameDeploymentValue(descriptor.dimensions, attempts.dimensions) &&
+    descriptor.attempts_metric === attempts.metric_name &&
+    descriptor.failures_metric === failures.metric_name &&
+    descriptor.operation_kind === 'write' &&
+    descriptor.accounting === 'completed',
+  );
 }
 
 function validMetricWait(
   wait: DataRecord,
   priorActions: Map<string, CommandScope[]>,
   criterion: string,
+  deployments: Map<string, DataRecord>,
 ): boolean {
   const allowed = new Set([
     'action_step_id',
+    'deployment_step_id',
     'metrics',
     'failure_alarm_name',
     'latency_alarm_name',
@@ -397,7 +515,8 @@ function validMetricWait(
   ]);
   if (Object.keys(wait).some((key) => !allowed.has(key))) return false;
   if (
-    !fixedText(wait.action_step_id, true) ||
+    'action_step_id' in wait === 'deployment_step_id' in wait ||
+    !fixedText(wait.action_step_id ?? wait.deployment_step_id, true) ||
     !fixedText(wait.failure_alarm_name, true) ||
     !fixedText(wait.region, true) ||
     !REGION.test(wait.region)
@@ -405,22 +524,24 @@ function validMetricWait(
     return false;
   // This tool anchors its fixed bins to an actual StopTask, not another wait/read.
   if (
-    !priorActions.get(wait.action_step_id)?.some((command) => {
-      if (
-        command.operation !== 'ecs stop-task' ||
-        command.region !== wait.region ||
-        !intactObservation(command)
-      )
-        return false;
-      const task = command.options.get('--task')?.[0] ?? '';
-      const cluster = command.options.get('--cluster')?.[0] ?? '';
-      const match = /^arn:aws:ecs:([^:]+):(\d{12}):task\/(.+)$/.exec(task);
-      if (!match || match[1] !== wait.region) return false;
-      return (
-        !cluster.startsWith('arn:') ||
-        cluster.startsWith(`arn:aws:ecs:${match[1]}:${match[2]}:cluster/`)
-      );
-    })
+    'deployment_step_id' in wait
+      ? deployments.get(String(wait.deployment_step_id))?.region !== wait.region
+      : !priorActions.get(String(wait.action_step_id))?.some((command) => {
+          if (
+            command.operation !== 'ecs stop-task' ||
+            command.region !== wait.region ||
+            !intactObservation(command)
+          )
+            return false;
+          const task = command.options.get('--task')?.[0] ?? '';
+          const cluster = command.options.get('--cluster')?.[0] ?? '';
+          const match = /^arn:aws:ecs:([^:]+):(\d{12}):task\/(.+)$/.exec(task);
+          if (!match || match[1] !== wait.region) return false;
+          return (
+            !cluster.startsWith('arn:') ||
+            cluster.startsWith(`arn:aws:ecs:${match[1]}:${match[2]}:cluster/`)
+          );
+        })
   )
     return false;
   // Runtime requires intact current-execution discovery before the fixed wait.
@@ -437,12 +558,12 @@ function validMetricWait(
       return false;
   }
   const seconds =
-    wait.max_wait_seconds === undefined ? 300 : wait.max_wait_seconds;
+    wait.max_wait_seconds === undefined ? 900 : wait.max_wait_seconds;
   if (
     typeof seconds !== 'number' ||
     !Number.isInteger(seconds) ||
     seconds < 1 ||
-    seconds > 300
+    seconds > 900
   )
     return false;
   const metrics = object(wait.metrics);
@@ -517,6 +638,13 @@ function validMetricWait(
       !ref.json_pointer.startsWith('/')
     )
       return false;
+    // Runtime _completed_accounting resolves this single reader-owned context path.
+    // Numeric journal references retain their own observed-document JSON pointers.
+    if (
+      ref.record_index === 'approved_context' &&
+      ref.json_pointer !== '/playbook/rollback_context/write_accounting'
+    )
+      return false;
     if (
       ref.record_index !== 'approved_context' &&
       (typeof ref.record_index !== 'number' ||
@@ -546,6 +674,8 @@ export function readableExecutionSteps(
     if (!step) return [];
     return [
       {
+        ...step,
+        raw_operation: { ...step },
         step_id: text(step.step_id),
         intent: text(step.intent),
         action: text(step.action),
@@ -556,6 +686,8 @@ export function readableExecutionSteps(
             )
           : [],
         metric_wait: asObject(step.metric_wait),
+        deployment_wait: asObject(step.deployment_wait),
+        ecs_service_precondition: asObject(step.ecs_service_precondition),
       },
     ];
   });

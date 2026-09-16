@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import TYPE_CHECKING
 
@@ -26,7 +27,7 @@ from rca_agent.services.observation_context import (
     render_observations,
 )
 from rca_agent.services.report_context import build_report_context
-from rca_agent.utils.timeout import call_with_timeout
+from rca_agent.utils.agent_invocation import bounded_admission_deadline, invoke_agent
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -122,14 +123,6 @@ def _build_user_prompt(scoping: ScopingResult, rejection_feedback: list[str] | N
     return prompt
 
 
-def _invoke_hypothesis_agent(
-    agent: Agent,
-    user_prompt: str,
-) -> HypothesisOutput:
-    result = agent(user_prompt, structured_output_model=HypothesisOutput)
-    return result.structured_output
-
-
 def run_hypothesis_generation(
     scoping_result: ScopingResult,
     agent: Agent,
@@ -141,7 +134,7 @@ def run_hypothesis_generation(
     """Generate root cause hypotheses from scoping results.
 
     Retries up to max_retries on parsing failure.
-    Enforces timeout_seconds per attempt.
+    Shares timeout_seconds as one admission budget across retries; active streams may finish.
     """
     tree_id = str(uuid.uuid4())
     user_prompt = _build_user_prompt(scoping_result, rejection_feedback)
@@ -151,12 +144,13 @@ def run_hypothesis_generation(
     output: HypothesisOutput | None = None
     last_error: Exception | None = None
 
+    deadline = bounded_admission_deadline(timeout_seconds)
     for attempt in range(max_retries):
+        remaining = max(0, deadline - time.monotonic())
+        if remaining <= 0:
+            break
         try:
-            output = call_with_timeout(
-                lambda: _invoke_hypothesis_agent(agent, user_prompt),
-                timeout_seconds,
-            )
+            output = invoke_agent(agent, user_prompt, HypothesisOutput, remaining)
             break
         except TimeoutError as exc:
             logger.warning("Hypothesis generation timed out (attempt %d/%d)", attempt + 1, max_retries)

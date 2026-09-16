@@ -25,7 +25,7 @@ from rca_agent.services.observation_context import (
     render_incident_context,
     render_observations,
 )
-from rca_agent.utils.timeout import call_with_timeout
+from rca_agent.utils.agent_invocation import invoke_agent
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -91,11 +91,6 @@ def _apply_fallback_order(hypotheses: list[Hypothesis]) -> list[PrioritizedHypot
     ]
 
 
-def _invoke_agent(agent: Agent, prompt: str) -> PrioritizationOutput:
-    result = agent(prompt, structured_output_model=PrioritizationOutput)
-    return result.structured_output
-
-
 def run_prioritization(
     scoping_result: ScopingResult,
     hypotheses: list[Hypothesis],
@@ -110,10 +105,7 @@ def run_prioritization(
 
     output: PrioritizationOutput | None = None
     try:
-        output = call_with_timeout(
-            lambda: _invoke_agent(agent, user_prompt),
-            timeout_seconds,
-        )
+        output = invoke_agent(agent, user_prompt, PrioritizationOutput, timeout_seconds)
     except Exception:
         logger.warning("Prioritization failed, applying category fallback order")
 

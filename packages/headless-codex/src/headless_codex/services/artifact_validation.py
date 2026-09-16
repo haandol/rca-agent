@@ -183,6 +183,12 @@ def _validate_playbook_shape(artifact: dict, *, allow_verified: bool = False) ->
         step_ids.append(step["step_id"])
     try:
         validate_runbook(artifact["execution_steps"])
+        if artifact.get("rollback_context") is not None or any(
+            step.get("deployment_wait") for step in artifact["execution_steps"]
+        ):
+            from headless_codex.services.execution_contract import validate_steps
+
+            validate_steps(artifact)
     except ValueError as exc:
         raise ArtifactValidationError(str(exc)) from exc
 
@@ -314,6 +320,17 @@ def _render_playbook(playbook: dict, *, confirmed: bool) -> str:
             "",
         ]
     )
+    if playbook.get("rollback_context") is not None:
+        lines.extend(
+            [
+                "**승인 롤백 문맥 (검증된 기준 기록)**",
+                "",
+                "```json",
+                json.dumps(playbook["rollback_context"], ensure_ascii=False, indent=2),
+                "```",
+                "",
+            ]
+        )
     for index, step in enumerate(steps, start=1):
         lines.extend(
             [
@@ -357,6 +374,10 @@ def build_report_summary(base: Path, playbook: dict, analysis: AnalysisResult) -
     if approval_eligible:
         try:
             validate_runbook(steps)
+            if playbook.get("rollback_context") is not None or any(step.get("deployment_wait") for step in steps):
+                from headless_codex.services.execution_contract import validate_steps
+
+                validate_steps(playbook)
         except (ValueError, TypeError):
             approval_eligible = False
     return {

@@ -94,6 +94,7 @@ class AppExecutionContainer(ExecutionContainer):
             self._playbook_store = S3VectorsPlaybookStore(
                 self.s3_vectors_client,
                 BedrockEmbeddingAdapter(self.bedrock_client),
+                self.dynamodb_client,
             )
         return self._playbook_store
 

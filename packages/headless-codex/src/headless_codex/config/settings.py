@@ -56,7 +56,7 @@ EXECUTION_CLAIM_SECONDS = max(
 # 알람에 그대로 전가된다. 이 기준이 분석 예산보다 짧으면 예산 초과 한 번이 뒤따르는
 # 알람을 통째로 폐기하므로, 예산 이상으로 둔다.
 ALARM_STALENESS_SECONDS = max(
-    int(os.environ.get("ALARM_STALENESS_SECONDS", "0")) or CODEX_TIMEOUT_SECONDS,
+    int(os.environ.get("ALARM_STALENESS_SECONDS", "0")) or 10800,
     CODEX_TIMEOUT_SECONDS,
 )
 ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS = int(os.environ.get("ACTIVE_INCIDENT_OK_COOLDOWN_SECONDS", "300"))

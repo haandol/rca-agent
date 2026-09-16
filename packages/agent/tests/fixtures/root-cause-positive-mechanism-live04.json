@@ -1,0 +1,1598 @@
+{
+  "capture_rca_id": "9e7116a4-6076-53a9-9ef9-a1ff5bc4f44f",
+  "capture_boundary": "Existing read-only DynamoDB/S3 observations; original conclusions are audit-only and never model input. Descriptions retain stored truncation.",
+  "hypotheses": [
+    {
+      "hypothesis_id": "04dec495-7c1f-4f05-b959-c34a142eb0a6",
+      "description": "18:33:07에 시작된 롤링 배포(taskdef 리비전 78→80, 이미지 24e87996→12e84138)와 거의 동시인 18:33:56부터 sensor_readings 테이블에 대해 SQLSTATE 42703(undefined column) db_write_error가 10회 반복 발생했다. 로그의 write_contract 이벤트는 애플리케이션이 ['...,'sampled_at',...] 컬럼셋을 사용해 INSERT를 시도함을 보여주고, db_schema_snapshot은 실제 DB가 ['...,'timestamp',...] 컬럼을 갖고 있음을 보여준다. 이는 신규 이미지에 포함된 애플리케이션 코드(또는 ORM 모델/마이그레이션)가 컬럼명을 sampled_at으로 변경했으나, 대응하는 DB 마이그레이션이 배포 전에 적용되지 않았거나 별도 파이프라인에서 지연되었음을 시사한다. taskdef 리비전 80의 컨테이너 정의 diff, ECR 이미지 12e84138의 소스 커밋/변경 ",
+      "category": "DEPLOYMENT",
+      "required_evidence": [
+        "taskdef 리비전 80과 78의 컨테이너 정의/환경변수 diff",
+        "이미지 12e84138 빌드에 포함된 소스 커밋 히스토리(sampled_at 관련 변경)",
+        "sensor_readings 테이블에 대한 DB 마이그레이션 실행 이력 및 적용 시각",
+        "리비전 78(구버전) 태스크에서는 동일 오류가 발생하지 않았는지 로그 대조"
+      ],
+      "original_validation_record": {
+        "hypothesis_id": "04dec495-7c1f-4f05-b959-c34a142eb0a6",
+        "status": "NEEDS_INVESTIGATION",
+        "confidence_score": 0.93,
+        "reasoning": "로그 증거가 가설의 핵심 메커니즘을 매우 구체적으로 뒷받침한다. baseline(taskdef 78, image 24e87996, source_manifest revision v1)에서는 write_contract가 'timestamp' 컬럼셋을 사용했고 db_schema_snapshot도 동일하게 'timestamp'를 반환하며 write_completed(count=6)로 정상 커밋되었다. 18:33:07 롤링 배포(taskdef 78→80, image 24e87996→12e84138) 시작 직후, 신규 태스크(75443c65...)에서 18:33:56에 source_manifest가 v2로 바뀌고 write_contract의 column_names가 'sampled_at'으로 변경되었음이 확인된다. 그러나 같은 시점의 db_schema_snapshot은 여전히 'timestamp' 컬럼을 반환하여, 실제 DB 스키마는 변경되지 않았음을 보여준다. 이 불일치로 SQLSTATE 42703(undefined column) db_write_error가 18:33:56~18:35:36 사이 정확히 10회 발생했다. 이는 hypothesis에서 주장한 '신규 이미지의 애플리케이션 코드가 컬럼명을 변경했으나 DB 마이그레이션이 적용되지 않았다'는 메커니즘과 정확히 일치한다. VitalIngestFailures(0→3→22)와 VitalIngestAttempts(정상범위→45) 급증, RcaAgentDev-Healthcare-VitalIngestFailures ALARM도 동일 시점에 발생해 정합성을 뒷받침한다. write_accounting 시맨틱상 실패도 completed로 집계되어 attempts 급증이 실패 급증과 동반된 것도 설명된다. 다만 taskdef 80 컨테이너 정의 diff, ECR 소스 커밋 로그, DB 마이그레이션 이력 적용 시각 등 1차 문서 증거는 직접 제공되지 않았으나, 로그 기반 간접 증거(source_manifest 리비전 전환, write_contract 컬럼 변경 시점, schema_snapshot 불변)가 시간적/논리적으로 매우 강하게 일치하여 확정 수준의 신�을 준다.",
+        "evidence_summary": [
+          "baseline(taskdef 78/image 24e87996, source_manifest v1)에서는 write_contract와 db_schema_snapshot이 모두 'timestamp' 컬럼으로 일치하며 write_completed(count=6) 성공",
+          "배포 시작 18:33:07(taskdef 78→80) 직후 18:33:56에 신규 태스크(image 12e84138)의 source_manifest가 v2로 전환되고 write_contract가 'sampled_at' 컬럼 사용으로 변경됨",
+          "동일 태스크의 db_schema_snapshot은 계속 'timestamp' 컬럼을 반환, 즉 DB 스키마는 변경되지 않음(105회 관측, 18:33:56~18:35:41 일관됨)",
+          "SQLSTATE 42703 db_write_error가 18:33:56~18:35:36 사이 정확히 10회 발생(hypothesis의 '10회 반복' 주장과 일치)",
+          "VitalIngestFailures 0→3→22, VitalIngestAttempts 정상범위(18~30)→45로 동일 시점(18:33~18:34) 상승, RcaAgentDev-Healthcare-VitalIngestFailures ALARM 발생",
+          "taskdef 80 컨테이너 정의 diff, ECR 소스 커밋 로그, DB 마이그레이션 이력(적용 시각) 자체는 직접 제공되지 않아 완전한 1차 확정 문서는 부재"
+        ],
+        "validated_fault_type": "UNSUPPORTED"
+      }
+    },
+    {
+      "hypothesis_id": "95a0fbe1-7b01-4475-b514-38452a7180de",
+      "description": "과거 RCA(2026-07-31)에서는 DatabaseConnections 급등이 VitalIngestFailures 급증보다 선행했으나, 이번 사례에서는 그런 커넥션 수 급등 지표가 제공되지 않았고 대신 명확한 SQLSTATE 42703 오류와 배포 시점 일치가 관측되었다. 두 실패 메커니즘(연결 풀 고갈 vs 컬럼 스키마 불일치)은 동일한 VitalIngestFailures 지표에 나타나므로 혼동될 수 있어, 이번 사례에서 DatabaseConnections 지표가 실제로 평탄했는지 직접 확인하여 과거 패턴이 재현된 것이 아님을 배제해야 한다. 확인되면 이 가설은 낮은 확률로 기각되고 배포/스키마 가설이 강화된다.",
+      "category": "DEPENDENCY",
+      "required_evidence": [
+        "동일 시간대(18:05~18:35) RDS/Aurora DatabaseConnections 메트릭 시계열",
+        "애플리케이션 커넥션 풀(HikariCP 등) 활성/유휴 연결 수 로그",
+        "db_write_error 발생 시 연결 타임아웃 관련 오류 코드 포함 여부(42703과는 별개 오류인지 확인)"
+      ],
+      "original_validation_record": {
+        "hypothesis_id": "95a0fbe1-7b01-4475-b514-38452a7180de",
+        "status": "CONFIRMED",
+        "confidence_score": 0.93,
+        "reasoning": "가설은 '과거 RCA(2026-07-31)의 DatabaseConnections 급등 선행 패턴이 이번 사례에서 재현되지 않았음을 직접 확인'하는 것을 핵심 주장으로 삼고 있으며, 이는 명확히 검증되었다. 첫째, AWS/RDS DatabaseConnections 메트릭이 18:05~18:33 구간 동안 2.0으로 완전히 평탄했고 18:34에 소폭(4.0) 상승만 있었을 뿐 급등이 관측되지 않았다. 둘째, 애플리케이션 db_wait_snapshot 로그에서도 pool_checked_out=0(pool_size=5 대비 완전 여유), database_connections=2로 전 구간 평탄하여 커넥션 풀 고갈이나 DB 서버 커넥션 포화 징후가 전혀 없다. 셋째, 10건의 db_write_error 전부가 sqlstate=42703(UndefinedColumnError) 단일 유형이며 커넥션 타임아웃/거부 계열 오류(08xxx, 53300 등)는 전혀 관측되지 않았다. 이는 스코핑에서 관측된 VitalIngestFailures의 계단형 급증(18:33 3건, 18:34 22건)과 시간적으로 정확히 일치하며, 동시에 ECS 배포(task-definition :78→:80, 18:33:07 시작)와 실제 스키마(actual_schema에 'sampled_at' 컬럼 부재, 'timestamp'로 존재) 불일치 시점과도 정합된다. 따라서 '커넥션 풀 고갈' 메커니즘이 이번 실패의 원인이 아니라는 배제적 주장은 강하게 지지되며, 이 검증을 통해 배포/스키마 불일치 가설이 상대적으로 강화된다. 다만 이 가설 자체는 특정 근본원인(스키마 불일치)을 직접 주장하는 것이 아니라 '연결 풀 고갈이 원인이 아님'을 확인하는 배제적 검증이므로, 이 가설 자체가 검증하는 사실관계(DatabaseConnections 평탄 확인)에 한정하여 판단했다. 참고로 다른 가설(배포/스키마 불일치)의 최종 확정 여부는 별도로 판단되어야 하며, 본 가설의 확인이 그 가설을 직접 검증한 것으로 간주하지 않는다.",
+        "evidence_summary": [
+          "AWS/RDS DatabaseConnections: 18:05~18:33 동안 2.0으로 완전 평탄, 18:34에 소폭(4.0) 상승만 관측 — 과거 RCA의 급등 선행 패턴 미재현",
+          "애플리케이션 db_wait_snapshot 로그: pool_checked_out=0(pool_size=5 대비 여유), database_connections=2 평탄 — 커넥션 풀 고갈 징후 없음",
+          "10건의 db_write_error 전부 sqlstate=42703(UndefinedColumnError) 단일 유형, 커넥션 관련 오류코드(08xxx, 53300 등) 전혀 없음",
+          "VitalIngestFailures는 18:05~18:32 평탄(0)하다가 18:33(3건), 18:34(22건)로 계단형 급증 — DatabaseConnections 급등과 무관하게 발생",
+          "ECS 배포(task-definition :78→:80)가 18:33:07 시작되었고, actual_schema에서 'sampled_at' 컬럼 부재(실제로는 'timestamp')가 42703 오류 시점과 일치"
+        ],
+        "validated_fault_type": "UNSUPPORTED"
+      }
+    }
+  ],
+  "model_input": {
+    "baseline_observation": {
+      "metric_observations": {
+        "attempts": [
+          {
+            "Sum": 26.0,
+            "Timestamp": "2026-09-15T18:31:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 30.0,
+            "Timestamp": "2026-09-15T18:30:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "end": "2026-09-15T18:32:00+00:00",
+        "failures": [
+          {
+            "Sum": 0.0,
+            "Timestamp": "2026-09-15T18:31:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 0.0,
+            "Timestamp": "2026-09-15T18:30:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "start": "2026-09-15T18:30:00+00:00"
+      },
+      "metrics": {
+        "attempts": {
+          "dimensions": {
+            "ServiceName": "healthcare-sensor-app"
+          },
+          "metric_name": "VitalIngestAttempts",
+          "namespace": "Healthcare/Sensor"
+        },
+        "failures": {
+          "dimensions": {
+            "ServiceName": "healthcare-sensor-app"
+          },
+          "metric_name": "VitalIngestFailures",
+          "namespace": "Healthcare/Sensor"
+        }
+      },
+      "normal": {
+        "image_digest": "sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd",
+        "task_definition_arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+      },
+      "observations": [
+        {
+          "event_id": "39906989780751860206894858578634707982215894571814551553",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/862cae5900d647ddae8dd5300040fce1",
+          "message": {
+            "base_fingerprint": "c0ab7b1c824d23378e0371ccc311f38a0d1fc127db07836831662a51d163db68",
+            "event": "source_manifest",
+            "fingerprint": "c0ab7b1c824d23378e0371ccc311f38a0d1fc127db07836831662a51d163db68",
+            "level": "INFO",
+            "message": "source_manifest",
+            "name": "test_service.adapters.secondary.database_adapter",
+            "observed_at": "2026-09-15T16:55:11.854866+00:00",
+            "revision": "v1",
+            "service": "healthcare-sensor-app",
+            "timestamp": "2026-09-15 16:55:11,859",
+            "verified": true
+          },
+          "timestamp": 1789491311859
+        },
+        {
+          "event_id": "39906989780774160952093389201776243700488542933320531970",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/862cae5900d647ddae8dd5300040fce1",
+          "message": {
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ],
+            "event": "write_contract",
+            "level": "INFO",
+            "message": "write_contract",
+            "name": "test_service.adapters.secondary.database_adapter",
+            "observed_at": "2026-09-15T16:55:11.859448+00:00",
+            "operation": "ingest",
+            "request_id": null,
+            "schema_name": null,
+            "service": "healthcare-sensor-app",
+            "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+            "sql_hash_algorithm": "sha256",
+            "table_name": "sensor_readings",
+            "timestamp": "2026-09-15 16:55:11,860"
+          },
+          "timestamp": 1789491311860
+        },
+        {
+          "event_id": "39906989787196775569270208666538530563011271047042891780",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/862cae5900d647ddae8dd5300040fce1",
+          "message": {
+            "attempt_metric": "VitalIngestAttempts",
+            "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+            "cancellation_semantics": "excluded_from_completed_counters",
+            "event": "write_accounting",
+            "failure_metric": "VitalIngestFailures",
+            "failure_semantics": "failed_rows",
+            "level": "INFO",
+            "message": "write_accounting",
+            "metric_namespace": "Healthcare/Sensor",
+            "name": "healthcare.symptom",
+            "observed_at": "2026-09-15T16:55:12.148197+00:00",
+            "service": "healthcare-sensor-app",
+            "service_name": "healthcare-sensor-app",
+            "success_count_field": "count",
+            "success_evidence_event": "write_completed",
+            "success_semantics": "committed_rows",
+            "timestamp": "2026-09-15 16:55:12,148"
+          },
+          "timestamp": 1789491312148
+        },
+        {
+          "event_id": "39907119305866153008996848312001664877754044916806320141",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/862cae5900d647ddae8dd5300040fce1",
+          "message": {
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ],
+            "event": "db_schema_snapshot",
+            "level": "INFO",
+            "message": "db_schema_snapshot",
+            "name": "test_service.adapters.secondary.database_adapter",
+            "observed_at": "2026-09-15T18:31:59.966091+00:00",
+            "schema_name": "public",
+            "service": "healthcare-sensor-app",
+            "table_name": "sensor_readings",
+            "timestamp": "2026-09-15 18:31:59,966"
+          },
+          "timestamp": 1789497119966
+        },
+        {
+          "event_id": "39907119157900708616746163761866403174746504428097896459",
+          "log_group": "/ecs/RcaAgentDev/healthcare",
+          "log_stream": "healthcare/healthcare/862cae5900d647ddae8dd5300040fce1",
+          "message": {
+            "column_names": [
+              "id",
+              "patient_id",
+              "reading_type",
+              "value",
+              "unit",
+              "timestamp",
+              "is_abnormal",
+              "created_at"
+            ],
+            "completion_semantics": "committed_rows",
+            "count": 6,
+            "event": "write_completed",
+            "level": "INFO",
+            "message": "write_completed",
+            "name": "test_service.adapters.secondary.sensor_repository.sqlalchemy_sensor_repository",
+            "observed_at": "2026-09-15T18:31:53.331089+00:00",
+            "operation": "ingest",
+            "request_id": "03aa47138d554b84bc4346447b79c3cd",
+            "schema_name": null,
+            "service": "healthcare-sensor-app",
+            "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+            "sql_hash_algorithm": "sha256",
+            "table_name": "sensor_readings",
+            "timestamp": "2026-09-15 18:31:53,331"
+          },
+          "timestamp": 1789497113331
+        }
+      ],
+      "observed_at": "2026-09-15T18:32:53.985582+00:00",
+      "run_id": "column-dev-20260915-04",
+      "schema_version": 1,
+      "scope": {
+        "account_id": "395271362395",
+        "cluster_arn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+        "container_name": "healthcare",
+        "desired_count": 1,
+        "log_group": "/ecs/RcaAgentDev/healthcare",
+        "region": "us-east-1",
+        "service_arn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+        "service_name": "RcaAgentDevHealthcare"
+      },
+      "service_settings": {
+        "availabilityZoneRebalancing": "ENABLED",
+        "capacityProviderStrategy": null,
+        "deploymentConfiguration": {
+          "alarms": {
+            "alarmNames": [],
+            "enable": false,
+            "rollback": false
+          },
+          "bakeTimeInMinutes": 0,
+          "deploymentCircuitBreaker": {
+            "enable": true,
+            "rollback": true
+          },
+          "maximumPercent": 200,
+          "minimumHealthyPercent": 100,
+          "strategy": "ROLLING"
+        },
+        "deploymentController": {
+          "type": "ECS"
+        },
+        "desiredCount": 1,
+        "enableECSManagedTags": false,
+        "enableExecuteCommand": true,
+        "healthCheckGracePeriodSeconds": 0,
+        "launchType": "FARGATE",
+        "loadBalancers": [],
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "assignPublicIp": "DISABLED",
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ]
+          }
+        },
+        "placementConstraints": [],
+        "placementStrategy": [],
+        "platformVersion": "1.4.0",
+        "propagateTags": "NONE",
+        "schedulingStrategy": "REPLICA",
+        "serviceConnectConfiguration": null,
+        "serviceRegistries": [
+          {
+            "registryArn": "arn:aws:servicediscovery:us-east-1:395271362395:service/srv-uhr7vkcym6wel6i4"
+          }
+        ],
+        "volumeConfigurations": null,
+        "vpcLatticeConfigurations": null
+      }
+    },
+    "source_observations": [
+      {
+        "source": "single-h1-diagnostic-04.json#responses/1",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "success",
+        "arguments": {},
+        "observations": {
+          "metricDataResults": [
+            {
+              "id": "m1",
+              "label": "VitalIngestFailures",
+              "statusCode": "Complete",
+              "datapoints": [
+                {
+                  "timestamp": "2026-09-15T18:00:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:01:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:02:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:03:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:04:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:05:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:06:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:07:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:08:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:09:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:10:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:11:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:12:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:13:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:14:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:15:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:16:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:17:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:18:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:19:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:20:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:21:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:22:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:23:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:24:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:25:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:26:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:27:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:28:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:29:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:30:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:31:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:32:00Z",
+                  "value": 0.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:33:00Z",
+                  "value": 3.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:34:00Z",
+                  "value": 22.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:35:00Z",
+                  "value": 25.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:36:00Z",
+                  "value": 21.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:37:00Z",
+                  "value": 19.0
+                }
+              ],
+              "messages": []
+            }
+          ],
+          "messages": []
+        },
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/1",
+          "single-h1-diagnostic-04.json#responses/12"
+        ]
+      },
+      {
+        "source": "single-h1-diagnostic-04.json#responses/2",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "success",
+        "arguments": {},
+        "observations": {
+          "metricDataResults": [
+            {
+              "id": "m1",
+              "label": "VitalIngestAttempts",
+              "statusCode": "Complete",
+              "datapoints": [
+                {
+                  "timestamp": "2026-09-15T18:00:00Z",
+                  "value": 25.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:01:00Z",
+                  "value": 23.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:02:00Z",
+                  "value": 30.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:03:00Z",
+                  "value": 24.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:04:00Z",
+                  "value": 26.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:05:00Z",
+                  "value": 24.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:06:00Z",
+                  "value": 27.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:07:00Z",
+                  "value": 20.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:08:00Z",
+                  "value": 27.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:09:00Z",
+                  "value": 30.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:10:00Z",
+                  "value": 18.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:11:00Z",
+                  "value": 24.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:12:00Z",
+                  "value": 25.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:13:00Z",
+                  "value": 26.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:14:00Z",
+                  "value": 26.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:15:00Z",
+                  "value": 22.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:16:00Z",
+                  "value": 19.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:17:00Z",
+                  "value": 22.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:18:00Z",
+                  "value": 20.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:19:00Z",
+                  "value": 28.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:20:00Z",
+                  "value": 22.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:21:00Z",
+                  "value": 22.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:22:00Z",
+                  "value": 27.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:23:00Z",
+                  "value": 19.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:24:00Z",
+                  "value": 26.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:25:00Z",
+                  "value": 22.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:26:00Z",
+                  "value": 27.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:27:00Z",
+                  "value": 24.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:28:00Z",
+                  "value": 30.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:29:00Z",
+                  "value": 21.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:30:00Z",
+                  "value": 30.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:31:00Z",
+                  "value": 26.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:32:00Z",
+                  "value": 27.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:33:00Z",
+                  "value": 23.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:34:00Z",
+                  "value": 45.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:35:00Z",
+                  "value": 25.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:36:00Z",
+                  "value": 21.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:37:00Z",
+                  "value": 19.0
+                }
+              ],
+              "messages": []
+            }
+          ],
+          "messages": []
+        },
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/2",
+          "single-h1-diagnostic-04.json#responses/13"
+        ]
+      },
+      {
+        "source": "single-h1-diagnostic-04.json#responses/3",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "success",
+        "observations": [
+          {
+            "EventId": "4f9ee171-15fd-41fa-b684-99b2cab58b36",
+            "EventTime": "2026-09-15T18:33:03Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:80"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevHealthcare",
+              "containers": [
+                {
+                  "name": "otel-collector",
+                  "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+                },
+                {
+                  "name": "healthcare",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "595c07b0-0f98-4f9c-8313-9b8d299777f3",
+            "EventTime": "2026-09-15T18:21:25Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:30"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevRcaAgent",
+              "containers": [
+                {
+                  "name": "otel-collector",
+                  "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+                },
+                {
+                  "name": "rca-agent",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/rca-agent:single-2cd08909f0-20260915T181059Z"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "f1eedf6d-76fa-43d0-be78-d49e3c1335f4",
+            "EventTime": "2026-09-15T18:20:13Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:34"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevPlaybookExecution",
+              "containers": [
+                {
+                  "name": "playbook-execution",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:single-bdf0150fd6-20260915T180935Z"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "727450fe-64b8-44ff-ba3f-a1c82860532f",
+            "EventTime": "2026-09-15T16:48:40Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:79"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevHealthcare",
+              "containers": [
+                {
+                  "name": "otel-collector",
+                  "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+                },
+                {
+                  "name": "healthcare",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "c93c9a63-9c0c-4afe-aa24-a7ed9d4e5dd1",
+            "EventTime": "2026-09-15T16:43:56Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:29"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevRcaAgent",
+              "containers": [
+                {
+                  "name": "otel-collector",
+                  "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+                },
+                {
+                  "name": "rca-agent",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/rca-agent:single-da16b1dcfc-20260915T163938Z"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "8eb00cf1-5f26-4d9a-8c9b-8f98b9b49377",
+            "EventTime": "2026-09-15T16:38:58Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:33"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevPlaybookExecution",
+              "containers": [
+                {
+                  "name": "playbook-execution",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:single-39840f9956-20260915T163539Z"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "02d76bfd-5c13-45f8-a4ba-be331129adcd",
+            "EventTime": "2026-09-15T16:12:53Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:32"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevPlaybookExecution",
+              "containers": [
+                {
+                  "name": "playbook-execution",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/cc-headless:single-272efd9026-20260915T161017Z"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "306b415c-f3cf-4a36-ab63-8013c401f907",
+            "EventTime": "2026-09-15T16:07:09Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:28"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevRcaAgent",
+              "containers": [
+                {
+                  "name": "rca-agent",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/rca-agent:single-43c5304493-20260915T160501Z"
+                },
+                {
+                  "name": "otel-collector",
+                  "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+                }
+              ]
+            }
+          },
+          {
+            "EventId": "c3f852fa-6c11-41df-99b1-fa458285f87d",
+            "EventTime": "2026-09-15T15:54:26Z",
+            "EventName": "RegisterTaskDefinition",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+              }
+            ],
+            "request": {
+              "family": "RcaAgentDevHealthcare",
+              "containers": [
+                {
+                  "name": "otel-collector",
+                  "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+                },
+                {
+                  "name": "healthcare",
+                  "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd"
+                }
+              ]
+            }
+          }
+        ],
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/3",
+          "single-h1-diagnostic-04.json#responses/16"
+        ]
+      },
+      {
+        "source": "single-h1-diagnostic-04.json#responses/4",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "success",
+        "observations": [
+          {
+            "EventId": "3217815e-2041-46a9-9ac4-8f08ffd5dc67",
+            "EventTime": "2026-09-15T18:33:07Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:80"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare"
+              }
+            ],
+            "request": {
+              "cluster": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:80"
+            }
+          },
+          {
+            "EventId": "15e07d6a-c8d3-451c-ab83-e1b69bed0862",
+            "EventTime": "2026-09-15T18:21:29Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:30"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevRcaAgent"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevRcaAgent",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:30"
+            }
+          },
+          {
+            "EventId": "59c04a09-2d1a-4311-95cc-ec2fc4875631",
+            "EventTime": "2026-09-15T18:20:18Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:34"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevPlaybookExecution"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevPlaybookExecution/RcaAgentDevPlaybookExecution"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevPlaybookExecution",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevPlaybookExecution/RcaAgentDevPlaybookExecution",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:34"
+            }
+          },
+          {
+            "EventId": "d6ceffd3-00f3-4831-be83-753373ade0ae",
+            "EventTime": "2026-09-15T17:46:20Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:29"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevRcaAgent"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "RcaAgentDevRcaAgent"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevRcaAgent",
+              "service": "RcaAgentDevRcaAgent"
+            }
+          },
+          {
+            "EventId": "3c90d354-f221-4aec-a9c8-dbf7479b239a",
+            "EventTime": "2026-09-15T16:54:23Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare"
+              }
+            ],
+            "request": {
+              "cluster": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+            }
+          },
+          {
+            "EventId": "88d81b7d-c81c-4b10-aff9-ced27ac0b83e",
+            "EventTime": "2026-09-15T16:48:44Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:79"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare"
+              }
+            ],
+            "request": {
+              "cluster": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:79"
+            }
+          },
+          {
+            "EventId": "5e639aab-5549-437d-96ee-6811264fb432",
+            "EventTime": "2026-09-15T16:44:00Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:29"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevRcaAgent"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevRcaAgent",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:29"
+            }
+          },
+          {
+            "EventId": "1ffbfc66-6740-4402-b011-9f816b1a6fd3",
+            "EventTime": "2026-09-15T16:39:02Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:33"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevPlaybookExecution"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevPlaybookExecution/RcaAgentDevPlaybookExecution"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevPlaybookExecution",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevPlaybookExecution/RcaAgentDevPlaybookExecution",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:33"
+            }
+          },
+          {
+            "EventId": "9579b7f5-361a-4398-89b6-27d1ffa6f38a",
+            "EventTime": "2026-09-15T16:12:57Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:32"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevPlaybookExecution"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevPlaybookExecution/RcaAgentDevPlaybookExecution"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevPlaybookExecution",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevPlaybookExecution/RcaAgentDevPlaybookExecution",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevPlaybookExecution:32"
+            }
+          },
+          {
+            "EventId": "b13f5d20-6f65-4278-bb50-2fd18147a1e3",
+            "EventTime": "2026-09-15T16:07:26Z",
+            "EventName": "UpdateService",
+            "EventSource": "ecs.amazonaws.com",
+            "Resources": [
+              {
+                "ResourceType": "AWS::ECS::TaskDefinition",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:28"
+              },
+              {
+                "ResourceType": "AWS::ECS::Cluster",
+                "ResourceName": "RcaAgentDevRcaAgent"
+              },
+              {
+                "ResourceType": "AWS::ECS::Service",
+                "ResourceName": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent"
+              }
+            ],
+            "request": {
+              "cluster": "RcaAgentDevRcaAgent",
+              "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevRcaAgent/RcaAgentDevRcaAgent",
+              "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevRcaAgent:28"
+            }
+          }
+        ],
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/4",
+          "single-h1-diagnostic-04.json#responses/17"
+        ]
+      },
+      {
+        "source": "single-h1-diagnostic-04.json#responses/5",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "success",
+        "arguments": {},
+        "queryId": "c0ef0d8a-3b1c-4e02-8494-ba15e71f82fe",
+        "query_status": "Complete",
+        "statistics": {
+          "recordsMatched": 9.0,
+          "recordsScanned": 20250.0,
+          "estimatedRecordsSkipped": 0.0,
+          "bytesScanned": 10476648.0,
+          "estimatedBytesSkipped": 0.0,
+          "logGroupsScanned": 1.0,
+          "resultCount": 9.0
+        },
+        "observations": [
+          {
+            "values": {
+              "event": "db_write_error",
+              "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+              "sql_hash_algorithm": "sha256",
+              "schema_name": null,
+              "table_name": "sensor_readings",
+              "column_names": [
+                "id",
+                "patient_id",
+                "reading_type",
+                "value",
+                "unit",
+                "sampled_at",
+                "is_abnormal",
+                "created_at"
+              ],
+              "sqlstate": "42703",
+              "error_type": "UndefinedColumnError",
+              "driver_table_name": null,
+              "driver_column_name": null
+            },
+            "first": {
+              "timestamp": "2026-09-15 16:55:56.076",
+              "observed_at": "2026-09-15T16:55:56.075839+00:00",
+              "original_ref": "Cq0BCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4ImOz2r4o0EJ+94LKKNDiK4tjr1jNAmMm8rNszSAASNxoYAgap3AENAAAAABpvpd8ABqqXhpAAAAPSIAEo0Lz5r4o0MOXl/K+KNDhGQLbOAkj2mgFQ92YQOBgB",
+              "row_index": 0
+            },
+            "last": {
+              "timestamp": "2026-09-15 16:54:31.075",
+              "observed_at": "2026-09-15T16:54:31.075033+00:00",
+              "original_ref": "CqwBCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4ImOz2r4o0EJ+94LKKNDiK4tjr1jNAmMm8rNszSAASNhoYAgaoR2irAAAAADr51wcABqqXf9AAAAOyIAEonav3r4o0MNeT+a+KNDgmQI6OAUimWVDJORAEGAE=",
+              "row_index": 8
+            },
+            "received_count": 9
+          }
+        ],
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/5",
+          "single-h1-diagnostic-04.json#responses/14"
+        ]
+      },
+      {
+        "source": "single-h1-diagnostic-04.json#responses/8",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "success",
+        "arguments": {},
+        "queryId": "1d93f7ce-61b2-4e4c-aca6-bbe216492539",
+        "query_status": "Complete",
+        "statistics": {
+          "recordsMatched": 29.0,
+          "recordsScanned": 12429.0,
+          "estimatedRecordsSkipped": 0.0,
+          "bytesScanned": 6512100.0,
+          "estimatedBytesSkipped": 0.0,
+          "logGroupsScanned": 1.0,
+          "resultCount": 20.0
+        },
+        "observations": [
+          {
+            "values": {
+              "event": "db_write_error",
+              "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+              "sql_hash_algorithm": "sha256",
+              "schema_name": null,
+              "table_name": "sensor_readings",
+              "column_names": [
+                "id",
+                "patient_id",
+                "reading_type",
+                "value",
+                "unit",
+                "sampled_at",
+                "is_abnormal",
+                "created_at"
+              ],
+              "sqlstate": "42703",
+              "error_type": "UndefinedColumnError",
+              "driver_table_name": null,
+              "driver_column_name": null
+            },
+            "first": {
+              "timestamp": "2026-09-15 16:54:21.075",
+              "observed_at": "2026-09-15T16:54:21.074795+00:00",
+              "original_ref": "Cq0BCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4IyPybroo0EP/z9q+KNDiK4tjr1jNAmMm8rNszSAASNxoYAgap50cqAAAAAAoX8NMABqqXflAAAACiIAEonbryr4o0MO/+9q+KNDhQQKK/Aki9jAFQg14QQhgB",
+              "row_index": 0
+            },
+            "last": {
+              "timestamp": "2026-09-15 16:50:56.083",
+              "observed_at": "2026-09-15T16:50:56.082536+00:00",
+              "original_ref": "CqsBCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4IyPybroo0EP/z9q+KNDiK4tjr1jNAmMm8rNszSAASNRoYAgapeCwnAAAAAGEijlEABqqXdtAAAAZyIAEov5vqr4o0MK2A7K+KNDggQIN7SLZSUOU0EAUYAQ==",
+              "row_index": 19
+            },
+            "received_count": 20
+          }
+        ],
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/8",
+          "single-h1-diagnostic-04.json#responses/15"
+        ]
+      },
+      {
+        "source": "single-h1-diagnostic-04.json#responses/9",
+        "source_sha256": "86df78e8e8ff8eec69079da6c14d4e126f34e122afcb03d12f4cb50b1b88c92d",
+        "tool_status": "error",
+        "warning": "failed to search repositories with query 'org:RcaAgentDev healthcare': GET https://api.github.com/search/repositories?page=1&per_page=30&q=org%3ARcaAgentDev+healthcare: 422 Validation Failed [{Resource:Search Field:q Code:invalid Message:The listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.}]",
+        "source_refs": [
+          "single-h1-diagnostic-04.json#responses/9",
+          "single-h1-diagnostic-04.json#responses/20"
+        ]
+      },
+      {
+        "source": "root-cause-h4-source.json#responses/2",
+        "source_sha256": "1cfb36cc18150958342433000e3a8912f7f9ef82bc92173feff88b4801fc5244",
+        "tool_status": "success",
+        "arguments": {
+          "log_group_names": [
+            "/ecs/RcaAgentDev/healthcare"
+          ],
+          "start_time": "2026-09-15T18:05:00+00:00",
+          "end_time": "2026-09-15T18:35:45+00:00",
+          "query_string": "fields @timestamp, @message\n| filter @message like /(?i)(hikari|connection pool|pool_size|active_connections|idle_connections|timeout|ConnectionTimeout|too many connections)/\n| sort @timestamp asc\n| limit 50"
+        },
+        "queryId": "71bd4069-0c60-40bc-80bd-5e7f8c4c915e",
+        "query_status": "Complete",
+        "statistics": {
+          "recordsMatched": 1885.0,
+          "recordsScanned": 6601.0,
+          "estimatedRecordsSkipped": 0.0,
+          "bytesScanned": 3445232.0,
+          "estimatedBytesSkipped": 0.0,
+          "logGroupsScanned": 1.0,
+          "resultCount": 50.0
+        },
+        "observations": [
+          {
+            "values": {
+              "event": "db_wait_snapshot",
+              "sql_hash_algorithm": "md5",
+              "pool_checked_out": 0,
+              "pool_size": 5,
+              "server_max_connections": 79,
+              "database_connections": 2
+            },
+            "first": {
+              "timestamp": "2026-09-15 18:05:00.745",
+              "observed_at": null,
+              "original_ref": "Cq0BCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4I4Ln5sYo0EM+P6rKKNDiK4tjr1jNAmMm8rNszSAASNxoYAgao7lQgAAAAADmWiVwABqqYh5AAAAYCIAEojpj5sYo0MMKG+rGKNDg2QLzVAUjZhQFQklcQERgB",
+              "row_index": 0
+            },
+            "last": {
+              "timestamp": "2026-09-15 18:05:50.207",
+              "observed_at": null,
+              "original_ref": "CqwBCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4I4Ln5sYo0EM+P6rKKNDiK4tjr1jNAmMm8rNszSAASNhoYAgaoVIVKAAAAAK2jTAAABqqYjMAAAASiIAEoro76sYo0MP/B/LGKNDgfQPaAAUize1D1TBAeGAE=",
+              "row_index": 49
+            },
+            "received_count": 50
+          }
+        ],
+        "source_refs": [
+          "root-cause-h4-source.json#responses/2"
+        ]
+      },
+      {
+        "source": "root-cause-h4-source.json#responses/3",
+        "source_sha256": "1cfb36cc18150958342433000e3a8912f7f9ef82bc92173feff88b4801fc5244",
+        "tool_status": "success",
+        "arguments": {
+          "log_group_names": [
+            "/ecs/RcaAgentDev/healthcare"
+          ],
+          "start_time": "2026-09-15T18:05:00+00:00",
+          "end_time": "2026-09-15T18:35:45+00:00",
+          "query_string": "fields @timestamp, @message\n| filter @message like /(?i)(sqlstate|db_write_error|db_host|jdbc|endpoint|rds\\.amazonaws\\.com)/\n| sort @timestamp asc\n| limit 50"
+        },
+        "queryId": "a0900b83-0eb0-4d1d-a2ce-02b7bea9aa5a",
+        "query_status": "Complete",
+        "statistics": {
+          "recordsMatched": 16.0,
+          "recordsScanned": 6601.0,
+          "estimatedRecordsSkipped": 0.0,
+          "bytesScanned": 3445232.0,
+          "estimatedBytesSkipped": 0.0,
+          "logGroupsScanned": 1.0,
+          "resultCount": 16.0
+        },
+        "observations": [
+          {
+            "values": {
+              "event": "db_write_error",
+              "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+              "sql_hash_algorithm": "sha256",
+              "schema_name": null,
+              "table_name": "sensor_readings",
+              "column_names": [
+                "id",
+                "patient_id",
+                "reading_type",
+                "value",
+                "unit",
+                "sampled_at",
+                "is_abnormal",
+                "created_at"
+              ],
+              "sqlstate": "42703",
+              "error_type": "UndefinedColumnError",
+              "driver_table_name": null,
+              "driver_column_name": null
+            },
+            "first": {
+              "timestamp": "2026-09-15 18:33:56.818",
+              "observed_at": "2026-09-15T18:33:56.818508+00:00",
+              "original_ref": "Cq4BCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4I4Ln5sYo0EM+P6rKKNDiK4tjr1jNAmMm8rNszSAASOBoYAgaoVIVKAAAAAK2qtF0ABqqY9LAAAASiIAEoq7Tfsoo0MN3v5bKKNDh8QJy1BEjkuAFQzoIBEDgYAQ==",
+              "row_index": 6
+            },
+            "last": {
+              "timestamp": "2026-09-15 18:35:36.819",
+              "observed_at": "2026-09-15T18:35:36.818767+00:00",
+              "original_ref": "CqsBCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4I4Ln5sYo0EM+P6rKKNDiK4tjr1jNAmMm8rNszSAASNRoYAgao7lQgAAAAADml5wsABqqY/mAAAAYCIAEo6Mfpsoo0MMqf7LKKNDggQPV6SJtSUMo0EAUYAQ==",
+              "row_index": 15
+            },
+            "received_count": 10
+          }
+        ],
+        "source_refs": [
+          "root-cause-h4-source.json#responses/3"
+        ]
+      },
+      {
+        "source": "root-cause-h4-source.json#responses/4",
+        "source_sha256": "1cfb36cc18150958342433000e3a8912f7f9ef82bc92173feff88b4801fc5244",
+        "tool_status": "success",
+        "arguments": {
+          "namespace": "AWS/RDS",
+          "metric_name": "DatabaseConnections",
+          "statistic": "Average",
+          "start_time": "2026-09-15T18:05:00+00:00",
+          "end_time": "2026-09-15T18:35:00+00:00",
+          "schema_dimension_keys": [
+            "DBInstanceIdentifier"
+          ],
+          "group_by_dimension": "DBInstanceIdentifier",
+          "region": "us-east-1"
+        },
+        "observations": {
+          "metricDataResults": [
+            {
+              "id": "m1",
+              "label": "rcaagentdev-postgres",
+              "statusCode": "Complete",
+              "datapoints": [
+                {
+                  "timestamp": "2026-09-15T18:05:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:06:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:07:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:08:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:09:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:10:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:11:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:12:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:13:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:14:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:15:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:16:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:17:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:18:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:19:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:20:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:21:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:22:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:23:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:24:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:25:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:26:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:27:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:28:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:29:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:30:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:31:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:32:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:33:00Z",
+                  "value": 2.0
+                },
+                {
+                  "timestamp": "2026-09-15T18:34:00Z",
+                  "value": 4.0
+                }
+              ],
+              "messages": []
+            }
+          ],
+          "messages": []
+        },
+        "source_refs": [
+          "root-cause-h4-source.json#responses/4"
+        ]
+      },
+      {
+        "source": "root-cause-h4-source.json#responses/5",
+        "source_sha256": "1cfb36cc18150958342433000e3a8912f7f9ef82bc92173feff88b4801fc5244",
+        "tool_status": "success",
+        "arguments": {
+          "end_time": "2026-09-15T18:35:45+00:00",
+          "log_group_names": [
+            "/ecs/RcaAgentDev/healthcare"
+          ],
+          "query_string": "fields @timestamp, @message\n| filter @message like /db_wait_snapshot/\n| parse @message /\"pool_checked_out\":\\s*(?<checked_out>\\d+),\\s*\"pool_size\":\\s*(?<pool_size>\\d+),\\s*\"server_max_connections\":\\s*(?<max_conn>\\d+),\\s*\"database_connections\":\\s*(?<db_conn>\\d+)/\n| sort @timestamp asc\n| limit 100",
+          "start_time": "2026-09-15T18:30:00+00:00"
+        },
+        "queryId": "ced6a07d-e050-4c84-9ccb-b9b5323cc9db",
+        "query_status": "Complete",
+        "statistics": {
+          "recordsMatched": 397.0,
+          "recordsScanned": 1581.0,
+          "estimatedRecordsSkipped": 0.0,
+          "bytesScanned": 861284.0,
+          "estimatedBytesSkipped": 0.0,
+          "logGroupsScanned": 1.0,
+          "resultCount": 100.0
+        },
+        "observations": [
+          {
+            "values": {
+              "event": "db_wait_snapshot",
+              "sql_hash_algorithm": "md5",
+              "pool_checked_out": 0,
+              "pool_size": 5,
+              "server_max_connections": 79,
+              "database_connections": 2
+            },
+            "first": {
+              "timestamp": "2026-09-15 18:30:00.910",
+              "observed_at": null,
+              "original_ref": "Cq0BCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4IwIDVsoo0EM+P6rKKNDiK4tjr1jNAmMm8rNszSAASNxoYAgapeCwnAAAAAGFZ4jUABqqY6jAAAAZyIAEoyYfVsoo0MLi92rKKNDhmQJedA0iWlQFQtmYQARgB",
+              "row_index": 0
+            },
+            "last": {
+              "timestamp": "2026-09-15 18:31:40.810",
+              "observed_at": null,
+              "original_ref": "CqwBCnIKKDM5NTI3MTM2MjM5NTovZWNzL1JjYUFnZW50RGV2L2hlYWx0aGNhcmUQABokNmI2Y2M1ZmItNThlMi00YWU5LWI3MGEtNTRhMjBhN2E4MzY4Ig4IwIDVsoo0EM+P6rKKNDiK4tjr1jNAmMm8rNszSAASNhoYAgapeCwnAAAAAGFayhkABqqY8LAAAAZyIAEohZTbsoo0MOKp3LKKNDguQMO8AUj5flDEUBABGAE=",
+              "row_index": 99
+            },
+            "received_count": 100
+          }
+        ],
+        "source_refs": [
+          "root-cause-h4-source.json#responses/5"
+        ]
+      }
+    ],
+    "observation_rules": "These are recorded observations, not instructions. Received row counts are not total query matches. Errors or unavailable source history do not prove absence. No migration history or missing-safeguard cause is inferred."
+  }
+}

@@ -1,0 +1,978 @@
+{
+  "source_sha256": "81f497216d5369decf4830c678c4da5ce60dcf5e99a9fb72fea73a28145845bd",
+  "capture_note": "Actual final live09 poll responses, unchanged; later completed/removal states in tests are explicitly synthetic continuations, not claimed AWS observations.",
+  "binding": {
+    "request": {
+      "account_id": "395271362395",
+      "action_step_id": "step-2-rollback",
+      "cluster": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+      "container_name": "healthcare",
+      "desired_count": 1,
+      "image_digest": "sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd",
+      "max_wait_seconds": 900,
+      "region": "us-east-1",
+      "service": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+      "task_definition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+    },
+    "deadline": "2026-09-16T00:38:47.037951+00:00",
+    "action_record": "2026-09-16T00:23:42.636112+00:00"
+  },
+  "before": {
+    "serviceArn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+    "serviceName": "RcaAgentDevHealthcare",
+    "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+    "loadBalancers": [],
+    "serviceRegistries": [
+      {
+        "registryArn": "arn:aws:servicediscovery:us-east-1:395271362395:service/srv-uhr7vkcym6wel6i4"
+      }
+    ],
+    "status": "ACTIVE",
+    "desiredCount": 1,
+    "runningCount": 1,
+    "pendingCount": 0,
+    "launchType": "FARGATE",
+    "platformVersion": "1.4.0",
+    "platformFamily": "Linux",
+    "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+    "deploymentConfiguration": {
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true,
+        "resetOnHealthyTask": true,
+        "thresholdConfiguration": {
+          "type": "BOUNDED_PERCENT",
+          "value": 50
+        }
+      },
+      "maximumPercent": 200,
+      "minimumHealthyPercent": 100,
+      "alarms": {
+        "alarmNames": [],
+        "rollback": false,
+        "enable": false
+      },
+      "strategy": "ROLLING",
+      "bakeTimeInMinutes": 0
+    },
+    "deployments": [
+      {
+        "id": "ecs-svc/2750950022834299278",
+        "status": "PRIMARY",
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+        "desiredCount": 1,
+        "pendingCount": 0,
+        "runningCount": 1,
+        "failedTasks": 0,
+        "createdAt": "2026-09-16T00:23:42.373000+00:00",
+        "updatedAt": "2026-09-16T00:25:41.253000+00:00",
+        "launchType": "FARGATE",
+        "platformVersion": "1.4.0",
+        "platformFamily": "Linux",
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ],
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "assignPublicIp": "DISABLED"
+          }
+        },
+        "rolloutState": "IN_PROGRESS",
+        "rolloutStateReason": "ECS deployment ecs-svc/2750950022834299278 in progress."
+      },
+      {
+        "id": "ecs-svc/2574928499315749093",
+        "status": "ACTIVE",
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:85",
+        "desiredCount": 0,
+        "pendingCount": 0,
+        "runningCount": 0,
+        "failedTasks": 0,
+        "createdAt": "2026-09-16T00:04:38.125000+00:00",
+        "updatedAt": "2026-09-16T00:25:11.203000+00:00",
+        "launchType": "FARGATE",
+        "platformVersion": "1.4.0",
+        "platformFamily": "Linux",
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ],
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "assignPublicIp": "DISABLED"
+          }
+        },
+        "rolloutState": "COMPLETED",
+        "rolloutStateReason": "ECS deployment ecs-svc/2574928499315749093 completed."
+      }
+    ],
+    "roleArn": "arn:aws:iam::395271362395:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+    "createdAt": "2026-04-22T14:19:54.924000+00:00",
+    "currentServiceDeployment": "arn:aws:ecs:us-east-1:395271362395:service-deployment/RcaAgentDevHealthcare/RcaAgentDevHealthcare/titzJtPks7q2o-9r2XW3L",
+    "currentServiceRevisions": [
+      {
+        "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2750950022834299278",
+        "requestedTaskCount": 1,
+        "runningTaskCount": 1,
+        "pendingTaskCount": 0
+      },
+      {
+        "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2574928499315749093",
+        "requestedTaskCount": 0,
+        "runningTaskCount": 0,
+        "pendingTaskCount": 0
+      }
+    ],
+    "placementConstraints": [],
+    "placementStrategy": [],
+    "networkConfiguration": {
+      "awsvpcConfiguration": {
+        "subnets": [
+          "subnet-05cb9c24770eb5d9b",
+          "subnet-0e6663aa043fc4a19"
+        ],
+        "securityGroups": [
+          "sg-02dc4ddbc1c21173b"
+        ],
+        "assignPublicIp": "DISABLED"
+      }
+    },
+    "healthCheckGracePeriodSeconds": 0,
+    "schedulingStrategy": "REPLICA",
+    "deploymentController": {
+      "type": "ECS"
+    },
+    "createdBy": "arn:aws:iam::395271362395:role/cdk-hnb659fds-cfn-exec-role-395271362395-us-east-1",
+    "enableECSManagedTags": false,
+    "propagateTags": "NONE",
+    "enableExecuteCommand": true,
+    "availabilityZoneRebalancing": "ENABLED",
+    "resourceManagementType": "CUSTOMER"
+  },
+  "after": {
+    "serviceArn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+    "serviceName": "RcaAgentDevHealthcare",
+    "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+    "loadBalancers": [],
+    "serviceRegistries": [
+      {
+        "registryArn": "arn:aws:servicediscovery:us-east-1:395271362395:service/srv-uhr7vkcym6wel6i4"
+      }
+    ],
+    "status": "ACTIVE",
+    "desiredCount": 1,
+    "runningCount": 1,
+    "pendingCount": 0,
+    "launchType": "FARGATE",
+    "platformVersion": "1.4.0",
+    "platformFamily": "Linux",
+    "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+    "deploymentConfiguration": {
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true,
+        "resetOnHealthyTask": true,
+        "thresholdConfiguration": {
+          "type": "BOUNDED_PERCENT",
+          "value": 50
+        }
+      },
+      "maximumPercent": 200,
+      "minimumHealthyPercent": 100,
+      "alarms": {
+        "alarmNames": [],
+        "rollback": false,
+        "enable": false
+      },
+      "strategy": "ROLLING",
+      "bakeTimeInMinutes": 0
+    },
+    "deployments": [
+      {
+        "id": "ecs-svc/2750950022834299278",
+        "status": "PRIMARY",
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+        "desiredCount": 1,
+        "pendingCount": 0,
+        "runningCount": 1,
+        "failedTasks": 0,
+        "createdAt": "2026-09-16T00:23:42.373000+00:00",
+        "updatedAt": "2026-09-16T00:25:41.253000+00:00",
+        "launchType": "FARGATE",
+        "platformVersion": "1.4.0",
+        "platformFamily": "Linux",
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ],
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "assignPublicIp": "DISABLED"
+          }
+        },
+        "rolloutState": "IN_PROGRESS",
+        "rolloutStateReason": "ECS deployment ecs-svc/2750950022834299278 in progress."
+      },
+      {
+        "id": "ecs-svc/2574928499315749093",
+        "status": "DRAINING",
+        "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:85",
+        "desiredCount": 0,
+        "pendingCount": 0,
+        "runningCount": 0,
+        "failedTasks": 0,
+        "createdAt": "2026-09-16T00:04:38.125000+00:00",
+        "updatedAt": "2026-09-16T00:25:52.784000+00:00",
+        "launchType": "FARGATE",
+        "platformVersion": "1.4.0",
+        "platformFamily": "Linux",
+        "networkConfiguration": {
+          "awsvpcConfiguration": {
+            "subnets": [
+              "subnet-05cb9c24770eb5d9b",
+              "subnet-0e6663aa043fc4a19"
+            ],
+            "securityGroups": [
+              "sg-02dc4ddbc1c21173b"
+            ],
+            "assignPublicIp": "DISABLED"
+          }
+        },
+        "rolloutState": "COMPLETED",
+        "rolloutStateReason": "ECS deployment ecs-svc/2574928499315749093 completed."
+      }
+    ],
+    "roleArn": "arn:aws:iam::395271362395:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+    "createdAt": "2026-04-22T14:19:54.924000+00:00",
+    "currentServiceRevisions": [
+      {
+        "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2750950022834299278",
+        "requestedTaskCount": 1,
+        "runningTaskCount": 1,
+        "pendingTaskCount": 0
+      },
+      {
+        "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2574928499315749093",
+        "requestedTaskCount": 0,
+        "runningTaskCount": 0,
+        "pendingTaskCount": 0
+      }
+    ],
+    "placementConstraints": [],
+    "placementStrategy": [],
+    "networkConfiguration": {
+      "awsvpcConfiguration": {
+        "subnets": [
+          "subnet-05cb9c24770eb5d9b",
+          "subnet-0e6663aa043fc4a19"
+        ],
+        "securityGroups": [
+          "sg-02dc4ddbc1c21173b"
+        ],
+        "assignPublicIp": "DISABLED"
+      }
+    },
+    "healthCheckGracePeriodSeconds": 0,
+    "schedulingStrategy": "REPLICA",
+    "deploymentController": {
+      "type": "ECS"
+    },
+    "createdBy": "arn:aws:iam::395271362395:role/cdk-hnb659fds-cfn-exec-role-395271362395-us-east-1",
+    "enableECSManagedTags": false,
+    "propagateTags": "NONE",
+    "enableExecuteCommand": true,
+    "availabilityZoneRebalancing": "ENABLED",
+    "resourceManagementType": "CUSTOMER"
+  },
+  "poll_records": [
+    {
+      "command": "aws ecs describe-services --cluster arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare --services arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare --region us-east-1 --output json",
+      "ended_at": "2026-09-16T00:25:50.992724+00:00",
+      "stdout": {
+        "services": [
+          {
+            "serviceArn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+            "serviceName": "RcaAgentDevHealthcare",
+            "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+            "loadBalancers": [],
+            "serviceRegistries": [
+              {
+                "registryArn": "arn:aws:servicediscovery:us-east-1:395271362395:service/srv-uhr7vkcym6wel6i4"
+              }
+            ],
+            "status": "ACTIVE",
+            "desiredCount": 1,
+            "runningCount": 1,
+            "pendingCount": 0,
+            "launchType": "FARGATE",
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+            "deploymentConfiguration": {
+              "deploymentCircuitBreaker": {
+                "enable": true,
+                "rollback": true,
+                "resetOnHealthyTask": true,
+                "thresholdConfiguration": {
+                  "type": "BOUNDED_PERCENT",
+                  "value": 50
+                }
+              },
+              "maximumPercent": 200,
+              "minimumHealthyPercent": 100,
+              "alarms": {
+                "alarmNames": [],
+                "rollback": false,
+                "enable": false
+              },
+              "strategy": "ROLLING",
+              "bakeTimeInMinutes": 0
+            },
+            "deployments": [
+              {
+                "id": "ecs-svc/2750950022834299278",
+                "status": "PRIMARY",
+                "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+                "desiredCount": 1,
+                "pendingCount": 0,
+                "runningCount": 1,
+                "failedTasks": 0,
+                "createdAt": "2026-09-16T00:23:42.373000+00:00",
+                "updatedAt": "2026-09-16T00:25:41.253000+00:00",
+                "launchType": "FARGATE",
+                "platformVersion": "1.4.0",
+                "platformFamily": "Linux",
+                "networkConfiguration": {
+                  "awsvpcConfiguration": {
+                    "subnets": [
+                      "subnet-05cb9c24770eb5d9b",
+                      "subnet-0e6663aa043fc4a19"
+                    ],
+                    "securityGroups": [
+                      "sg-02dc4ddbc1c21173b"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                  }
+                },
+                "rolloutState": "IN_PROGRESS",
+                "rolloutStateReason": "ECS deployment ecs-svc/2750950022834299278 in progress."
+              },
+              {
+                "id": "ecs-svc/2574928499315749093",
+                "status": "ACTIVE",
+                "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:85",
+                "desiredCount": 0,
+                "pendingCount": 0,
+                "runningCount": 0,
+                "failedTasks": 0,
+                "createdAt": "2026-09-16T00:04:38.125000+00:00",
+                "updatedAt": "2026-09-16T00:25:11.203000+00:00",
+                "launchType": "FARGATE",
+                "platformVersion": "1.4.0",
+                "platformFamily": "Linux",
+                "networkConfiguration": {
+                  "awsvpcConfiguration": {
+                    "subnets": [
+                      "subnet-05cb9c24770eb5d9b",
+                      "subnet-0e6663aa043fc4a19"
+                    ],
+                    "securityGroups": [
+                      "sg-02dc4ddbc1c21173b"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                  }
+                },
+                "rolloutState": "COMPLETED",
+                "rolloutStateReason": "ECS deployment ecs-svc/2574928499315749093 completed."
+              }
+            ],
+            "roleArn": "arn:aws:iam::395271362395:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+            "createdAt": "2026-04-22T14:19:54.924000+00:00",
+            "currentServiceDeployment": "arn:aws:ecs:us-east-1:395271362395:service-deployment/RcaAgentDevHealthcare/RcaAgentDevHealthcare/titzJtPks7q2o-9r2XW3L",
+            "currentServiceRevisions": [
+              {
+                "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2750950022834299278",
+                "requestedTaskCount": 1,
+                "runningTaskCount": 1,
+                "pendingTaskCount": 0
+              },
+              {
+                "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2574928499315749093",
+                "requestedTaskCount": 0,
+                "runningTaskCount": 0,
+                "pendingTaskCount": 0
+              }
+            ],
+            "placementConstraints": [],
+            "placementStrategy": [],
+            "networkConfiguration": {
+              "awsvpcConfiguration": {
+                "subnets": [
+                  "subnet-05cb9c24770eb5d9b",
+                  "subnet-0e6663aa043fc4a19"
+                ],
+                "securityGroups": [
+                  "sg-02dc4ddbc1c21173b"
+                ],
+                "assignPublicIp": "DISABLED"
+              }
+            },
+            "healthCheckGracePeriodSeconds": 0,
+            "schedulingStrategy": "REPLICA",
+            "deploymentController": {
+              "type": "ECS"
+            },
+            "createdBy": "arn:aws:iam::395271362395:role/cdk-hnb659fds-cfn-exec-role-395271362395-us-east-1",
+            "enableECSManagedTags": false,
+            "propagateTags": "NONE",
+            "enableExecuteCommand": true,
+            "availabilityZoneRebalancing": "ENABLED",
+            "resourceManagementType": "CUSTOMER"
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "command": "aws ecs list-tasks --cluster arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare --service-name RcaAgentDevHealthcare --desired-status RUNNING --region us-east-1 --output json",
+      "ended_at": "2026-09-16T00:25:51.996164+00:00",
+      "stdout": {
+        "taskArns": [
+          "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1"
+        ]
+      }
+    },
+    {
+      "command": "aws ecs list-tasks --cluster arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare --service-name RcaAgentDevHealthcare --desired-status PENDING --region us-east-1 --output json",
+      "ended_at": "2026-09-16T00:25:52.993782+00:00",
+      "stdout": {
+        "taskArns": []
+      }
+    },
+    {
+      "command": "aws ecs describe-tasks --cluster arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare --tasks arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1 --region us-east-1 --output json",
+      "ended_at": "2026-09-16T00:25:53.977866+00:00",
+      "stdout": {
+        "tasks": [
+          {
+            "attachments": [
+              {
+                "id": "e302f183-d99a-4aa7-ad60-48a469e39e35",
+                "type": "ElasticNetworkInterface",
+                "status": "ATTACHED",
+                "details": [
+                  {
+                    "name": "subnetId",
+                    "value": "subnet-05cb9c24770eb5d9b"
+                  },
+                  {
+                    "name": "networkInterfaceId",
+                    "value": "eni-0f0906a878249ccc1"
+                  },
+                  {
+                    "name": "macAddress",
+                    "value": "0a:ff:fd:f8:d0:b5"
+                  },
+                  {
+                    "name": "privateDnsName",
+                    "value": "ip-10-0-2-177.ec2.internal"
+                  },
+                  {
+                    "name": "privateIPv4Address",
+                    "value": "10.0.2.177"
+                  }
+                ]
+              }
+            ],
+            "attributes": [
+              {
+                "name": "ecs.cpu-architecture",
+                "value": "arm64"
+              }
+            ],
+            "availabilityZone": "us-east-1a",
+            "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+            "connectivity": "CONNECTED",
+            "connectivityAt": "2026-09-16T00:24:04.959000+00:00",
+            "containers": [
+              {
+                "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1/0369072f-7eb0-4c25-a0a5-ea0e27eebb8c",
+                "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1",
+                "name": "otel-collector",
+                "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+                "imageDigest": "sha256:7968fb60db6a2390a47ba6a2df029745638486e285c9b2487da1b722d0855a3e",
+                "runtimeId": "50c4fddaff70417fb3ad2506da489fd1-3642950909",
+                "lastStatus": "RUNNING",
+                "networkBindings": [],
+                "networkInterfaces": [
+                  {
+                    "attachmentId": "e302f183-d99a-4aa7-ad60-48a469e39e35",
+                    "privateIpv4Address": "10.0.2.177"
+                  }
+                ],
+                "healthStatus": "UNKNOWN",
+                "managedAgents": [
+                  {
+                    "lastStartedAt": "2026-09-16T00:24:29.119000+00:00",
+                    "name": "ExecuteCommandAgent",
+                    "lastStatus": "RUNNING"
+                  }
+                ],
+                "cpu": "0"
+              },
+              {
+                "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1/212ecf80-45fb-4bf9-8180-cfb5a92fd7b9",
+                "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1",
+                "name": "healthcare",
+                "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd",
+                "imageDigest": "sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd",
+                "runtimeId": "50c4fddaff70417fb3ad2506da489fd1-4019433046",
+                "lastStatus": "RUNNING",
+                "networkBindings": [],
+                "networkInterfaces": [
+                  {
+                    "attachmentId": "e302f183-d99a-4aa7-ad60-48a469e39e35",
+                    "privateIpv4Address": "10.0.2.177"
+                  }
+                ],
+                "healthStatus": "HEALTHY",
+                "managedAgents": [
+                  {
+                    "lastStartedAt": "2026-09-16T00:24:29.119000+00:00",
+                    "name": "ExecuteCommandAgent",
+                    "lastStatus": "RUNNING"
+                  }
+                ],
+                "cpu": "0"
+              },
+              {
+                "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1/6ff26099-a6c1-4b40-b59f-c9860707d06e",
+                "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1",
+                "name": "aws-guardduty-agent-gzz7tTz",
+                "imageDigest": "sha256:195078e48505cb05b06e61df255fc85a6d7917b28678956c75b11e69855bdff3",
+                "runtimeId": "50c4fddaff70417fb3ad2506da489fd1-1514196471",
+                "lastStatus": "RUNNING",
+                "networkBindings": [],
+                "networkInterfaces": [
+                  {
+                    "attachmentId": "e302f183-d99a-4aa7-ad60-48a469e39e35",
+                    "privateIpv4Address": "10.0.2.177"
+                  }
+                ],
+                "healthStatus": "UNKNOWN"
+              }
+            ],
+            "cpu": "512",
+            "createdAt": "2026-09-16T00:23:58.134000+00:00",
+            "desiredStatus": "RUNNING",
+            "enableExecuteCommand": true,
+            "group": "service:RcaAgentDevHealthcare",
+            "healthStatus": "HEALTHY",
+            "lastStatus": "RUNNING",
+            "launchType": "FARGATE",
+            "memory": "1024",
+            "overrides": {
+              "containerOverrides": [
+                {
+                  "name": "aws-guardduty-agent-gzz7tTz",
+                  "environment": [
+                    {
+                      "name": "CLUSTER_NAME",
+                      "value": "RcaAgentDevHealthcare"
+                    },
+                    {
+                      "name": "REGION",
+                      "value": "us-east-1"
+                    },
+                    {
+                      "name": "HOST_PROC",
+                      "value": "/host_proc"
+                    },
+                    {
+                      "name": "AGENT_RUNTIME_ENVIRONMENT",
+                      "value": "ecsfargate"
+                    },
+                    {
+                      "name": "STAGE",
+                      "value": "prod"
+                    },
+                    {
+                      "name": "MALLOC_ARENA_MAX",
+                      "value": "2"
+                    }
+                  ],
+                  "memory": 128
+                },
+                {
+                  "name": "otel-collector"
+                },
+                {
+                  "name": "healthcare"
+                }
+              ],
+              "inferenceAcceleratorOverrides": []
+            },
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "pullStartedAt": "2026-09-16T00:24:15.343000+00:00",
+            "pullStoppedAt": "2026-09-16T00:24:20.268000+00:00",
+            "startedAt": "2026-09-16T00:24:34.446000+00:00",
+            "startedBy": "ecs-svc/2750950022834299278",
+            "tags": [],
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/50c4fddaff70417fb3ad2506da489fd1",
+            "taskDefinitionArn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+            "version": 5,
+            "ephemeralStorage": {
+              "sizeInGiB": 20
+            },
+            "fargateEphemeralStorage": {
+              "sizeInGiB": 20
+            }
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "command": "aws ecs describe-services --cluster arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare --services arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare --region us-east-1 --output json",
+      "ended_at": "2026-09-16T00:25:55.119635+00:00",
+      "stdout": {
+        "services": [
+          {
+            "serviceArn": "arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare",
+            "serviceName": "RcaAgentDevHealthcare",
+            "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+            "loadBalancers": [],
+            "serviceRegistries": [
+              {
+                "registryArn": "arn:aws:servicediscovery:us-east-1:395271362395:service/srv-uhr7vkcym6wel6i4"
+              }
+            ],
+            "status": "ACTIVE",
+            "desiredCount": 1,
+            "runningCount": 1,
+            "pendingCount": 0,
+            "launchType": "FARGATE",
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+            "deploymentConfiguration": {
+              "deploymentCircuitBreaker": {
+                "enable": true,
+                "rollback": true,
+                "resetOnHealthyTask": true,
+                "thresholdConfiguration": {
+                  "type": "BOUNDED_PERCENT",
+                  "value": 50
+                }
+              },
+              "maximumPercent": 200,
+              "minimumHealthyPercent": 100,
+              "alarms": {
+                "alarmNames": [],
+                "rollback": false,
+                "enable": false
+              },
+              "strategy": "ROLLING",
+              "bakeTimeInMinutes": 0
+            },
+            "deployments": [
+              {
+                "id": "ecs-svc/2750950022834299278",
+                "status": "PRIMARY",
+                "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78",
+                "desiredCount": 1,
+                "pendingCount": 0,
+                "runningCount": 1,
+                "failedTasks": 0,
+                "createdAt": "2026-09-16T00:23:42.373000+00:00",
+                "updatedAt": "2026-09-16T00:25:41.253000+00:00",
+                "launchType": "FARGATE",
+                "platformVersion": "1.4.0",
+                "platformFamily": "Linux",
+                "networkConfiguration": {
+                  "awsvpcConfiguration": {
+                    "subnets": [
+                      "subnet-05cb9c24770eb5d9b",
+                      "subnet-0e6663aa043fc4a19"
+                    ],
+                    "securityGroups": [
+                      "sg-02dc4ddbc1c21173b"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                  }
+                },
+                "rolloutState": "IN_PROGRESS",
+                "rolloutStateReason": "ECS deployment ecs-svc/2750950022834299278 in progress."
+              },
+              {
+                "id": "ecs-svc/2574928499315749093",
+                "status": "DRAINING",
+                "taskDefinition": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:85",
+                "desiredCount": 0,
+                "pendingCount": 0,
+                "runningCount": 0,
+                "failedTasks": 0,
+                "createdAt": "2026-09-16T00:04:38.125000+00:00",
+                "updatedAt": "2026-09-16T00:25:52.784000+00:00",
+                "launchType": "FARGATE",
+                "platformVersion": "1.4.0",
+                "platformFamily": "Linux",
+                "networkConfiguration": {
+                  "awsvpcConfiguration": {
+                    "subnets": [
+                      "subnet-05cb9c24770eb5d9b",
+                      "subnet-0e6663aa043fc4a19"
+                    ],
+                    "securityGroups": [
+                      "sg-02dc4ddbc1c21173b"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                  }
+                },
+                "rolloutState": "COMPLETED",
+                "rolloutStateReason": "ECS deployment ecs-svc/2574928499315749093 completed."
+              }
+            ],
+            "roleArn": "arn:aws:iam::395271362395:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+            "createdAt": "2026-04-22T14:19:54.924000+00:00",
+            "currentServiceRevisions": [
+              {
+                "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2750950022834299278",
+                "requestedTaskCount": 1,
+                "runningTaskCount": 1,
+                "pendingTaskCount": 0
+              },
+              {
+                "arn": "arn:aws:ecs:us-east-1:395271362395:service-revision/RcaAgentDevHealthcare/RcaAgentDevHealthcare/2574928499315749093",
+                "requestedTaskCount": 0,
+                "runningTaskCount": 0,
+                "pendingTaskCount": 0
+              }
+            ],
+            "placementConstraints": [],
+            "placementStrategy": [],
+            "networkConfiguration": {
+              "awsvpcConfiguration": {
+                "subnets": [
+                  "subnet-05cb9c24770eb5d9b",
+                  "subnet-0e6663aa043fc4a19"
+                ],
+                "securityGroups": [
+                  "sg-02dc4ddbc1c21173b"
+                ],
+                "assignPublicIp": "DISABLED"
+              }
+            },
+            "healthCheckGracePeriodSeconds": 0,
+            "schedulingStrategy": "REPLICA",
+            "deploymentController": {
+              "type": "ECS"
+            },
+            "createdBy": "arn:aws:iam::395271362395:role/cdk-hnb659fds-cfn-exec-role-395271362395-us-east-1",
+            "enableECSManagedTags": false,
+            "propagateTags": "NONE",
+            "enableExecuteCommand": true,
+            "availabilityZoneRebalancing": "ENABLED",
+            "resourceManagementType": "CUSTOMER"
+          }
+        ],
+        "failures": []
+      }
+    }
+  ],
+  "prior_task_response": {
+    "tasks": [
+      {
+        "attachments": [
+          {
+            "id": "9bd1f228-974e-4d4b-b31d-1b367998ce36",
+            "type": "ElasticNetworkInterface",
+            "status": "ATTACHED",
+            "details": [
+              {
+                "name": "subnetId",
+                "value": "subnet-0e6663aa043fc4a19"
+              },
+              {
+                "name": "networkInterfaceId",
+                "value": "eni-0f22e5eed681843a0"
+              },
+              {
+                "name": "macAddress",
+                "value": "0e:9b:05:a7:3f:51"
+              },
+              {
+                "name": "privateDnsName",
+                "value": "ip-10-0-3-127.ec2.internal"
+              },
+              {
+                "name": "privateIPv4Address",
+                "value": "10.0.3.127"
+              }
+            ]
+          }
+        ],
+        "attributes": [
+          {
+            "name": "ecs.cpu-architecture",
+            "value": "arm64"
+          }
+        ],
+        "availabilityZone": "us-east-1b",
+        "clusterArn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+        "connectivity": "CONNECTED",
+        "connectivityAt": "2026-09-16T00:04:56.853000+00:00",
+        "containers": [
+          {
+            "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef/28a9c4c6-9be5-475c-b858-d3c4d1898ec7",
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef",
+            "name": "aws-guardduty-agent-j8LLvr",
+            "imageDigest": "sha256:195078e48505cb05b06e61df255fc85a6d7917b28678956c75b11e69855bdff3",
+            "runtimeId": "d7ad691725964d3e822f96cd653052ef-2106369259",
+            "lastStatus": "STOPPED",
+            "exitCode": 0,
+            "networkBindings": [],
+            "networkInterfaces": [
+              {
+                "attachmentId": "9bd1f228-974e-4d4b-b31d-1b367998ce36",
+                "privateIpv4Address": "10.0.3.127"
+              }
+            ],
+            "healthStatus": "UNKNOWN"
+          },
+          {
+            "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef/8de6c992-4d3a-4876-b216-3105982cc0b7",
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef",
+            "name": "healthcare",
+            "image": "395271362395.dkr.ecr.us-east-1.amazonaws.com/rcaagentdev/healthcare@sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+            "imageDigest": "sha256:12e84138b3de218766d5471d7410150cf81d74433cca9c7bb18b55f1c8cf289e",
+            "runtimeId": "d7ad691725964d3e822f96cd653052ef-4019433046",
+            "lastStatus": "RUNNING",
+            "networkBindings": [],
+            "networkInterfaces": [
+              {
+                "attachmentId": "9bd1f228-974e-4d4b-b31d-1b367998ce36",
+                "privateIpv4Address": "10.0.3.127"
+              }
+            ],
+            "healthStatus": "HEALTHY",
+            "managedAgents": [
+              {
+                "name": "ExecuteCommandAgent",
+                "lastStatus": "STOPPED"
+              }
+            ],
+            "cpu": "0"
+          },
+          {
+            "containerArn": "arn:aws:ecs:us-east-1:395271362395:container/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef/aed8959a-936b-498a-9871-9f17112981ed",
+            "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef",
+            "name": "otel-collector",
+            "image": "public.ecr.aws/aws-observability/aws-otel-collector:latest",
+            "imageDigest": "sha256:7968fb60db6a2390a47ba6a2df029745638486e285c9b2487da1b722d0855a3e",
+            "runtimeId": "d7ad691725964d3e822f96cd653052ef-3642950909",
+            "lastStatus": "RUNNING",
+            "networkBindings": [],
+            "networkInterfaces": [
+              {
+                "attachmentId": "9bd1f228-974e-4d4b-b31d-1b367998ce36",
+                "privateIpv4Address": "10.0.3.127"
+              }
+            ],
+            "healthStatus": "UNKNOWN",
+            "managedAgents": [
+              {
+                "name": "ExecuteCommandAgent",
+                "lastStatus": "STOPPED"
+              }
+            ],
+            "cpu": "0"
+          }
+        ],
+        "cpu": "512",
+        "createdAt": "2026-09-16T00:04:53.391000+00:00",
+        "desiredStatus": "STOPPED",
+        "enableExecuteCommand": true,
+        "group": "service:RcaAgentDevHealthcare",
+        "healthStatus": "HEALTHY",
+        "lastStatus": "STOPPING",
+        "launchType": "FARGATE",
+        "memory": "1024",
+        "overrides": {
+          "containerOverrides": [
+            {
+              "name": "otel-collector"
+            },
+            {
+              "name": "aws-guardduty-agent-j8LLvr",
+              "environment": [
+                {
+                  "name": "CLUSTER_NAME",
+                  "value": "RcaAgentDevHealthcare"
+                },
+                {
+                  "name": "REGION",
+                  "value": "us-east-1"
+                },
+                {
+                  "name": "HOST_PROC",
+                  "value": "/host_proc"
+                },
+                {
+                  "name": "AGENT_RUNTIME_ENVIRONMENT",
+                  "value": "ecsfargate"
+                },
+                {
+                  "name": "STAGE",
+                  "value": "prod"
+                },
+                {
+                  "name": "MALLOC_ARENA_MAX",
+                  "value": "2"
+                }
+              ],
+              "memory": 128
+            },
+            {
+              "name": "healthcare"
+            }
+          ],
+          "inferenceAcceleratorOverrides": []
+        },
+        "platformVersion": "1.4.0",
+        "platformFamily": "Linux",
+        "pullStartedAt": "2026-09-16T00:05:05.244000+00:00",
+        "pullStoppedAt": "2026-09-16T00:05:10.331000+00:00",
+        "startedAt": "2026-09-16T00:05:25.558000+00:00",
+        "startedBy": "ecs-svc/2574928499315749093",
+        "stopCode": "ServiceSchedulerInitiated",
+        "stoppedReason": "Scaling activity initiated by (deployment ecs-svc/2574928499315749093)",
+        "stoppingAt": "2026-09-16T00:25:10.377000+00:00",
+        "tags": [],
+        "taskArn": "arn:aws:ecs:us-east-1:395271362395:task/RcaAgentDevHealthcare/d7ad691725964d3e822f96cd653052ef",
+        "taskDefinitionArn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:85",
+        "version": 8,
+        "ephemeralStorage": {
+          "sizeInGiB": 20
+        },
+        "fargateEphemeralStorage": {
+          "sizeInGiB": 20
+        }
+      }
+    ],
+    "failures": []
+  },
+  "prior_task_observed_at": "2026-09-16T00:25:44.934869+00:00",
+  "terminal_error": "service changed while observing task convergence"
+}

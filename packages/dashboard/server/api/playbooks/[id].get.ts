@@ -85,6 +85,7 @@ export default defineEventHandler(async (event) => {
     severity_criteria: readText(playbook.severity_criteria),
     verification_steps: readStringList(playbook.verification_steps),
     execution_steps: readableExecutionSteps(playbook),
+    rollback_context: playbook.rollback_context ?? null,
     executable: validation.valid,
     validationError: validation.reason,
     temporary_mitigation: readText(playbook.temporary_mitigation),

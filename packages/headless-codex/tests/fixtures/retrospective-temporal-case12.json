@@ -1,0 +1,298 @@
+{
+  "provenance": {
+    "source": "executions/4a135fcf-5fae-5892-bf51-2145111b990b/d5db1b35-ecb5-4abc-96f0-92ff30e7ca1c/evidence.json",
+    "sha256": "207efe1c6d89ab69e7383f566a7304bf11b0dc3dbf41fbff927f04858b0827db",
+    "original_record_indices": [
+      22,
+      25,
+      37,
+      38
+    ],
+    "note": "Exact source record subset. The ALARM variant is synthetic and generated only in tests."
+  },
+  "evidence": {
+    "rca_id": "4a135fcf-5fae-5892-bf51-2145111b990b",
+    "execution_id": "d5db1b35-ecb5-4abc-96f0-92ff30e7ca1c",
+    "playbook_id": "07276c44-ceb9-49e7-8611-f303387f2912",
+    "final_state": "RESOLVED",
+    "resolution_confirmed": true,
+    "started_at": "2026-09-16T06:32:50.841352+00:00",
+    "ended_at": "2026-09-16T06:39:35.077021+00:00",
+    "metric_wait_records": [
+      {
+        "type": "metric_wait",
+        "phase": "started",
+        "step_id": "step-5-verify-recovery",
+        "observed_at": "2026-09-16T06:36:58.694849+00:00",
+        "binding": {
+          "anchor": {
+            "record_index": 158,
+            "deployment_step_id": "step-3-deploy-wait",
+            "ended_at": "2026-09-16T06:36:38.083172+00:00",
+            "account_id": "395271362395",
+            "cluster_arn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+            "deployment_id": "ecs-svc/7781956425531985277"
+          },
+          "start": "2026-09-16T06:37:00+00:00",
+          "end": "2026-09-16T06:39:00+00:00",
+          "alarms": {
+            "failures": {
+              "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+              "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures",
+              "AlarmDescription": "{\"baseline_ref\":{\"bucket\":\"rca-agent-dev-evidence\",\"key\":\"baselines/dev-20260916-12/normal.json\",\"sha256\":\"8645565aba6343441a3f94368f03c24b493c1afc69eeba352d7bed76965080f4\"},\"run_id\":\"dev-20260916-12\",\"service\":\"arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare\",\"summary\":\"Healthcare service symptoms\"}",
+              "AlarmConfigurationUpdatedTimestamp": "2026-09-16T06:13:33.498000+00:00",
+              "ActionsEnabled": true,
+              "OKActions": [
+                "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+              ],
+              "AlarmActions": [
+                "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+              ],
+              "InsufficientDataActions": [],
+              "StateValue": "ALARM",
+              "StateReason": "Threshold Crossed: 2 datapoints [25.0 (16/09/26 06:15:00), 15.0 (16/09/26 06:14:00)] were greater than or equal to the threshold (1.0).",
+              "StateReasonData": "{\"version\":\"1.0\",\"queryDate\":\"2026-09-16T06:16:53.645+0000\",\"startDate\":\"2026-09-16T06:14:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[15.0,25.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-16T06:15:00.000+0000\",\"sampleCount\":4.0,\"value\":25.0},{\"timestamp\":\"2026-09-16T06:14:00.000+0000\",\"sampleCount\":5.0,\"value\":15.0}]}",
+              "StateUpdatedTimestamp": "2026-09-16T06:16:53.647000+00:00",
+              "MetricName": "VitalIngestFailures",
+              "Namespace": "Healthcare/Sensor",
+              "Statistic": "Sum",
+              "Dimensions": [
+                {
+                  "Name": "ServiceName",
+                  "Value": "healthcare-sensor-app"
+                }
+              ],
+              "Period": 60,
+              "EvaluationPeriods": 2,
+              "Threshold": 1.0,
+              "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+              "TreatMissingData": "notBreaching",
+              "StateTransitionedTimestamp": "2026-09-16T06:16:53.647000+00:00"
+            }
+          },
+          "completed_write_accounting": {
+            "reference": {
+              "json_pointer": "/playbook/rollback_context/write_accounting",
+              "record_index": "approved_context"
+            },
+            "descriptor": {
+              "accounting": "completed",
+              "attempts_metric": "VitalIngestAttempts",
+              "dimensions": {
+                "ServiceName": "healthcare-sensor-app"
+              },
+              "failures_metric": "VitalIngestFailures",
+              "image_digest": "sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd",
+              "namespace": "Healthcare/Sensor",
+              "operation_kind": "write",
+              "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/50547cfde3bb4d13bdc7bf52374c997f#39907741289572472099827164388102568450347590770361630723",
+              "task_definition_arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+            }
+          },
+          "request": {
+            "step_id": "step-5-verify-recovery",
+            "deployment_step_id": "step-3-deploy-wait",
+            "metrics": {
+              "attempts": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "VitalIngestAttempts",
+                "dimensions": {
+                  "ServiceName": "healthcare-sensor-app"
+                }
+              },
+              "failures": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "VitalIngestFailures",
+                "dimensions": {
+                  "ServiceName": "healthcare-sensor-app"
+                }
+              }
+            },
+            "failure_alarm_name": "RcaAgentDev-Healthcare-VitalIngestFailures",
+            "latency_alarm_name": "",
+            "region": "us-east-1",
+            "max_wait_seconds": 900,
+            "completed_work_evidence": {
+              "json_pointer": "/playbook/rollback_context/write_accounting",
+              "record_index": "approved_context"
+            }
+          },
+          "deadline": "2026-09-16T06:51:58.694839+00:00"
+        },
+        "recorded_at": "2026-09-16T06:36:58.694891+00:00"
+      },
+      {
+        "type": "metric_wait",
+        "phase": "poll",
+        "step_id": "step-5-verify-recovery",
+        "observed_at": "2026-09-16T06:38:02.652559+00:00",
+        "role": "alarms",
+        "command": "aws cloudwatch describe-alarms --alarm-names RcaAgentDev-Healthcare-VitalIngestFailures --region us-east-1 --output json",
+        "response": {
+          "ok": true,
+          "exit_status": 0,
+          "stdout": "{\n    \"MetricAlarms\": [\n        {\n            \"AlarmName\": \"RcaAgentDev-Healthcare-VitalIngestFailures\",\n            \"AlarmArn\": \"arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures\",\n            \"AlarmDescription\": \"{\\\"baseline_ref\\\":{\\\"bucket\\\":\\\"rca-agent-dev-evidence\\\",\\\"key\\\":\\\"baselines/dev-20260916-12/normal.json\\\",\\\"sha256\\\":\\\"8645565aba6343441a3f94368f03c24b493c1afc69eeba352d7bed76965080f4\\\"},\\\"run_id\\\":\\\"dev-20260916-12\\\",\\\"service\\\":\\\"arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare\\\",\\\"summary\\\":\\\"Healthcare service symptoms\\\"}\",\n            \"AlarmConfigurationUpdatedTimestamp\": \"2026-09-16T06:13:33.498000+00:00\",\n            \"ActionsEnabled\": true,\n            \"OKActions\": [\n                \"arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm\"\n            ],\n            \"AlarmActions\": [\n                \"arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm\"\n            ],\n            \"InsufficientDataActions\": [],\n            \"StateValue\": \"OK\",\n            \"StateReason\": \"Threshold Crossed: 1 datapoint [0.0 (16/09/26 06:35:00)] was not greater than or equal to the threshold (1.0).\",\n            \"StateReasonData\": \"{\\\"version\\\":\\\"1.0\\\",\\\"queryDate\\\":\\\"2026-09-16T06:36:53.643+0000\\\",\\\"startDate\\\":\\\"2026-09-16T06:34:00.000+0000\\\",\\\"statistic\\\":\\\"Sum\\\",\\\"period\\\":60,\\\"recentDatapoints\\\":[23.0,0.0],\\\"threshold\\\":1.0,\\\"evaluatedDatapoints\\\":[{\\\"timestamp\\\":\\\"2026-09-16T06:35:00.000+0000\\\",\\\"sampleCount\\\":4.0,\\\"value\\\":0.0}]}\",\n            \"StateUpdatedTimestamp\": \"2026-09-16T06:36:53.644000+00:00\",\n            \"MetricName\": \"VitalIngestFailures\",\n            \"Namespace\": \"Healthcare/Sensor\",\n            \"Statistic\": \"Sum\",\n            \"Dimensions\": [\n                {\n                    \"Name\": \"ServiceName\",\n                    \"Value\": \"healthcare-sensor-app\"\n                }\n            ],\n            \"Period\": 60,\n            \"EvaluationPeriods\": 2,\n            \"Threshold\": 1.0,\n            \"ComparisonOperator\": \"GreaterThanOrEqualToThreshold\",\n            \"TreatMissingData\": \"notBreaching\",\n            \"StateTransitionedTimestamp\": \"2026-09-16T06:36:53.644000+00:00\"\n        }\n    ],\n    \"CompositeAlarms\": [],\n    \"LogAlarms\": []\n}\n",
+          "stdout_chars": 2260,
+          "stdout_retained_chars": 2260,
+          "stdout_omitted_chars": 0,
+          "stdout_truncated": false,
+          "stderr": "",
+          "stderr_chars": 0,
+          "stderr_retained_chars": 0,
+          "stderr_omitted_chars": 0,
+          "stderr_truncated": false,
+          "failure_class": null
+        },
+        "recorded_at": "2026-09-16T06:38:02.652638+00:00"
+      },
+      {
+        "type": "metric_wait",
+        "phase": "poll",
+        "step_id": "step-5-verify-recovery",
+        "observed_at": "2026-09-16T06:39:08.551063+00:00",
+        "role": "alarms",
+        "command": "aws cloudwatch describe-alarms --alarm-names RcaAgentDev-Healthcare-VitalIngestFailures --region us-east-1 --output json",
+        "response": {
+          "ok": true,
+          "exit_status": 0,
+          "stdout": "{\n    \"MetricAlarms\": [\n        {\n            \"AlarmName\": \"RcaAgentDev-Healthcare-VitalIngestFailures\",\n            \"AlarmArn\": \"arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures\",\n            \"AlarmDescription\": \"{\\\"baseline_ref\\\":{\\\"bucket\\\":\\\"rca-agent-dev-evidence\\\",\\\"key\\\":\\\"baselines/dev-20260916-12/normal.json\\\",\\\"sha256\\\":\\\"8645565aba6343441a3f94368f03c24b493c1afc69eeba352d7bed76965080f4\\\"},\\\"run_id\\\":\\\"dev-20260916-12\\\",\\\"service\\\":\\\"arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare\\\",\\\"summary\\\":\\\"Healthcare service symptoms\\\"}\",\n            \"AlarmConfigurationUpdatedTimestamp\": \"2026-09-16T06:13:33.498000+00:00\",\n            \"ActionsEnabled\": true,\n            \"OKActions\": [\n                \"arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm\"\n            ],\n            \"AlarmActions\": [\n                \"arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm\"\n            ],\n            \"InsufficientDataActions\": [],\n            \"StateValue\": \"OK\",\n            \"StateReason\": \"Threshold Crossed: 1 datapoint [0.0 (16/09/26 06:35:00)] was not greater than or equal to the threshold (1.0).\",\n            \"StateReasonData\": \"{\\\"version\\\":\\\"1.0\\\",\\\"queryDate\\\":\\\"2026-09-16T06:36:53.643+0000\\\",\\\"startDate\\\":\\\"2026-09-16T06:34:00.000+0000\\\",\\\"statistic\\\":\\\"Sum\\\",\\\"period\\\":60,\\\"recentDatapoints\\\":[23.0,0.0],\\\"threshold\\\":1.0,\\\"evaluatedDatapoints\\\":[{\\\"timestamp\\\":\\\"2026-09-16T06:35:00.000+0000\\\",\\\"sampleCount\\\":4.0,\\\"value\\\":0.0}]}\",\n            \"StateUpdatedTimestamp\": \"2026-09-16T06:36:53.644000+00:00\",\n            \"MetricName\": \"VitalIngestFailures\",\n            \"Namespace\": \"Healthcare/Sensor\",\n            \"Statistic\": \"Sum\",\n            \"Dimensions\": [\n                {\n                    \"Name\": \"ServiceName\",\n                    \"Value\": \"healthcare-sensor-app\"\n                }\n            ],\n            \"Period\": 60,\n            \"EvaluationPeriods\": 2,\n            \"Threshold\": 1.0,\n            \"ComparisonOperator\": \"GreaterThanOrEqualToThreshold\",\n            \"TreatMissingData\": \"notBreaching\",\n            \"StateTransitionedTimestamp\": \"2026-09-16T06:36:53.644000+00:00\"\n        }\n    ],\n    \"CompositeAlarms\": [],\n    \"LogAlarms\": []\n}\n",
+          "stdout_chars": 2260,
+          "stdout_retained_chars": 2260,
+          "stdout_omitted_chars": 0,
+          "stdout_truncated": false,
+          "stderr": "",
+          "stderr_chars": 0,
+          "stderr_retained_chars": 0,
+          "stderr_omitted_chars": 0,
+          "stderr_truncated": false,
+          "failure_class": null
+        },
+        "recorded_at": "2026-09-16T06:39:08.551137+00:00"
+      },
+      {
+        "type": "metric_wait",
+        "phase": "terminal",
+        "step_id": "step-5-verify-recovery",
+        "observed_at": "2026-09-16T06:39:12.946995+00:00",
+        "status": "HEALTHY",
+        "ok": true,
+        "bins": [
+          {
+            "start": "2026-09-16T06:37:00+00:00",
+            "end": "2026-09-16T06:38:00+00:00",
+            "attempts": 24.0,
+            "failures": 0.0,
+            "attempts_minus_failures": 24.0,
+            "successful_writes": 24.0
+          },
+          {
+            "start": "2026-09-16T06:38:00+00:00",
+            "end": "2026-09-16T06:39:00+00:00",
+            "attempts": 14.0,
+            "failures": 0.0,
+            "attempts_minus_failures": 14.0,
+            "successful_writes": 14.0
+          }
+        ],
+        "binding": {
+          "anchor": {
+            "record_index": 158,
+            "deployment_step_id": "step-3-deploy-wait",
+            "ended_at": "2026-09-16T06:36:38.083172+00:00",
+            "account_id": "395271362395",
+            "cluster_arn": "arn:aws:ecs:us-east-1:395271362395:cluster/RcaAgentDevHealthcare",
+            "deployment_id": "ecs-svc/7781956425531985277"
+          },
+          "start": "2026-09-16T06:37:00+00:00",
+          "end": "2026-09-16T06:39:00+00:00",
+          "alarms": {
+            "failures": {
+              "AlarmName": "RcaAgentDev-Healthcare-VitalIngestFailures",
+              "AlarmArn": "arn:aws:cloudwatch:us-east-1:395271362395:alarm:RcaAgentDev-Healthcare-VitalIngestFailures",
+              "AlarmDescription": "{\"baseline_ref\":{\"bucket\":\"rca-agent-dev-evidence\",\"key\":\"baselines/dev-20260916-12/normal.json\",\"sha256\":\"8645565aba6343441a3f94368f03c24b493c1afc69eeba352d7bed76965080f4\"},\"run_id\":\"dev-20260916-12\",\"service\":\"arn:aws:ecs:us-east-1:395271362395:service/RcaAgentDevHealthcare/RcaAgentDevHealthcare\",\"summary\":\"Healthcare service symptoms\"}",
+              "AlarmConfigurationUpdatedTimestamp": "2026-09-16T06:13:33.498000+00:00",
+              "ActionsEnabled": true,
+              "OKActions": [
+                "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+              ],
+              "AlarmActions": [
+                "arn:aws:sns:us-east-1:395271362395:RcaAgentDevAlarm"
+              ],
+              "InsufficientDataActions": [],
+              "StateValue": "ALARM",
+              "StateReason": "Threshold Crossed: 2 datapoints [25.0 (16/09/26 06:15:00), 15.0 (16/09/26 06:14:00)] were greater than or equal to the threshold (1.0).",
+              "StateReasonData": "{\"version\":\"1.0\",\"queryDate\":\"2026-09-16T06:16:53.645+0000\",\"startDate\":\"2026-09-16T06:14:00.000+0000\",\"statistic\":\"Sum\",\"period\":60,\"recentDatapoints\":[15.0,25.0],\"threshold\":1.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-09-16T06:15:00.000+0000\",\"sampleCount\":4.0,\"value\":25.0},{\"timestamp\":\"2026-09-16T06:14:00.000+0000\",\"sampleCount\":5.0,\"value\":15.0}]}",
+              "StateUpdatedTimestamp": "2026-09-16T06:16:53.647000+00:00",
+              "MetricName": "VitalIngestFailures",
+              "Namespace": "Healthcare/Sensor",
+              "Statistic": "Sum",
+              "Dimensions": [
+                {
+                  "Name": "ServiceName",
+                  "Value": "healthcare-sensor-app"
+                }
+              ],
+              "Period": 60,
+              "EvaluationPeriods": 2,
+              "Threshold": 1.0,
+              "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+              "TreatMissingData": "notBreaching",
+              "StateTransitionedTimestamp": "2026-09-16T06:16:53.647000+00:00"
+            }
+          },
+          "completed_write_accounting": {
+            "reference": {
+              "json_pointer": "/playbook/rollback_context/write_accounting",
+              "record_index": "approved_context"
+            },
+            "descriptor": {
+              "accounting": "completed",
+              "attempts_metric": "VitalIngestAttempts",
+              "dimensions": {
+                "ServiceName": "healthcare-sensor-app"
+              },
+              "failures_metric": "VitalIngestFailures",
+              "image_digest": "sha256:24e87996e136210035bf958d71a0545ec9b5e2db96e59f3a743ab4aa672706cd",
+              "namespace": "Healthcare/Sensor",
+              "operation_kind": "write",
+              "source_ref": "cloudwatch-logs:///ecs/RcaAgentDev/healthcare/healthcare/healthcare/50547cfde3bb4d13bdc7bf52374c997f#39907741289572472099827164388102568450347590770361630723",
+              "task_definition_arn": "arn:aws:ecs:us-east-1:395271362395:task-definition/RcaAgentDevHealthcare:78"
+            }
+          },
+          "request": {
+            "step_id": "step-5-verify-recovery",
+            "deployment_step_id": "step-3-deploy-wait",
+            "metrics": {
+              "attempts": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "VitalIngestAttempts",
+                "dimensions": {
+                  "ServiceName": "healthcare-sensor-app"
+                }
+              },
+              "failures": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "VitalIngestFailures",
+                "dimensions": {
+                  "ServiceName": "healthcare-sensor-app"
+                }
+              }
+            },
+            "failure_alarm_name": "RcaAgentDev-Healthcare-VitalIngestFailures",
+            "latency_alarm_name": "",
+            "region": "us-east-1",
+            "max_wait_seconds": 900,
+            "completed_work_evidence": {
+              "json_pointer": "/playbook/rollback_context/write_accounting",
+              "record_index": "approved_context"
+            }
+          },
+          "deadline": "2026-09-16T06:51:58.694839+00:00"
+        },
+        "write_semantics_verified": true,
+        "guidance": "Metric receipt only; separately verify exact owned release and all approved criteria. Without completed-write accounting evidence, attempts-minus-failures is arithmetic, not successful-write proof: verify real write successes independently.",
+        "recorded_at": "2026-09-16T06:39:12.947066+00:00"
+      }
+    ]
+  }
+}

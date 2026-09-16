@@ -139,14 +139,14 @@ test('failed alarm messages are retained rather than dropped', () => {
   );
 });
 
-test('the shared queue covers the longest analysis budget', () => {
+test('the shared queue uses three hours of visibility for renewal during active processing', () => {
   const template = synthesizeEventBus();
 
   template.hasResourceProperties(
     'AWS::SQS::Queue',
     Match.objectLike({
       QueueName: `${NS}AlarmQueue`,
-      VisibilityTimeout: 65 * 60,
+      VisibilityTimeout: 3 * 60 * 60,
     }),
   );
 });

@@ -123,6 +123,21 @@ export default defineEventHandler(async (event) => {
         '검토한 후 런북 내용이 변경되었습니다. 최신 런북을 불러와 다시 검토하세요.',
     });
   }
+  // All targets come from the current stored record above, never the posted body.
+  // Digest mismatch must win before ECS reads; drift must win before any writes.
+  if (validation.steps.some((step) => step.deployment_wait)) {
+    try {
+      await verifyDeploymentApproval(resolved.playbook, useEcs);
+    } catch (error) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          error instanceof Error
+            ? error.message
+            : '현재 배포 전제를 확인할 수 없습니다.',
+      });
+    }
+  }
   const executionId = approvalId;
   const approvedPlaybookS3Key = `approvals/${rcaId}/${executionId}/playbook.json`;
 

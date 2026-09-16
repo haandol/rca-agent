@@ -1,4 +1,4 @@
-"""Compile a revision by copying source, applying an overlay, and hashing it.
+"""Compile a revision by copying source, selecting one INSERT column, and hashing it.
 
 This is a build tool, not a runtime selector. Destination must be a fresh tree.
 Docker uses --in-place after COPY; local proofs compile separate temporary trees.
@@ -29,7 +29,7 @@ def fingerprint(files: dict[str, str]) -> str:
 
 
 def capture_source_snapshot(destination: Path) -> dict:
-    """Freeze one verified base, overlays, and worker before compiling revisions.
+    """Freeze one verified base and worker before compiling revisions.
 
     Read twice to reject edits during capture. Every revision and phase then
     reads this private snapshot, never the concurrently edited workspace.
@@ -40,7 +40,6 @@ def capture_source_snapshot(destination: Path) -> dict:
         return sorted(
             [
                 *PACKAGE.joinpath("src/test_service").rglob("*.py"),
-                *PACKAGE.joinpath("demo/revisions").rglob("*.py"),
                 PACKAGE / "demo/local_worker.py",
                 PACKAGE / "demo/build_revision.py",
             ]
@@ -70,7 +69,7 @@ def compile_revision(
     revision: str, destination: Path, *, in_place: bool = False, source_package: Path | None = None
 ) -> dict:
     """Build exactly one known revision and record all installed source hashes."""
-    if revision not in ("r1", "r2", "r3"):
+    if revision not in ("v1", "v2"):
         raise ValueError("Unknown source revision")
     if in_place and (destination / "test_service" / "revision" / "_build_manifest.py").exists():
         raise ValueError("Refusing to relabel an already compiled source tree")
@@ -84,8 +83,12 @@ def compile_revision(
     # Always start from stable source, including repeated local builds.
     if not in_place:
         assert (root / "revision" / "session.py").exists()
-    for overlay in (package / "demo" / "revisions" / revision).glob("*.py"):
-        shutil.copyfile(overlay, root / "revision" / overlay.name)
+    write_path = root / "revision" / "write.py"
+    source = write_path.read_text()
+    if source.count('TIMESTAMP_COLUMN = "timestamp"') != 1:
+        raise ValueError("Captured source must contain the canonical write column once")
+    if revision == "v2":
+        write_path.write_text(source.replace('TIMESTAMP_COLUMN = "timestamp"', 'TIMESTAMP_COLUMN = "sampled_at"'))
     files = source_files(root)
     manifest = {
         "revision": revision,
@@ -99,7 +102,7 @@ def compile_revision(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--revision", choices=("r1", "r2", "r3"), default="r1")
+    parser.add_argument("--revision", choices=("v1", "v2"), default="v1")
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--in-place", action="store_true")
     args = parser.parse_args()

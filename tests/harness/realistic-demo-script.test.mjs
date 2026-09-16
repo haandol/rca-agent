@@ -101,7 +101,7 @@ test('apply cannot replace the profile frozen by plan', () => {
   for (const override of [
     ['--expect-setting', 'TRAFFIC_QUERY_LIMIT=999'],
     ['--expect-setting', 'DB_OBSERVABILITY_ENABLED=false'],
-    ['--pool-size', '2'],
+    ['--evidence-bucket', 'other-bucket'],
     ['--image', `repo@sha256:${'b'.repeat(64)}`],
   ]) {
     const result = spawnSync(

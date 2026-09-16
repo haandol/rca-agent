@@ -85,7 +85,7 @@ type IConfig = Omit<
 > & {
   readonly agent: IServiceImage;
   readonly healthcare: IServiceImage & {
-    readonly imageDigest?: string;
+    readonly imageDigest: string;
     readonly queryLatencyThresholdMs: number;
     readonly environment?: IRawConfig['healthcare']['environment'];
   };
@@ -104,8 +104,8 @@ if (!result.success) {
 
 const parsed = result.data;
 
-// 배포 스크립트가 방금 빌드·푸시한 불변 태그를 주입한다. 태스크 정의가 그 태그를
-// 직접 가리켜야 실행 중인 코드와 하네스 버전을 태그만으로 식별할 수 있다.
+// 배포 스크립트가 서비스의 리비전 식별 태그를 주입한다. Healthcare는 태그를
+// DEPLOYED_REVISION으로 보존하고, 실제 이미지 참조에는 별도의 필수 digest를 쓴다.
 const IMAGE_TAG_ENV_KEYS = {
   agent: 'AGENT_IMAGE_TAG',
   healthcare: 'HEALTHCARE_IMAGE_TAG',
@@ -136,14 +136,22 @@ function imageTagFor(service: keyof typeof IMAGE_TAG_ENV_KEYS): string {
 }
 
 /**
- * Resolve the optional Healthcare pin, preferring the environment over TOML.
+ * Resolve the required Healthcare pin, preferring the environment over TOML.
  * An explicitly empty or malformed override fails instead of falling back to a
  * mutable tag. The image tag remains the DEPLOYED_REVISION label, not source proof.
  */
-function healthcareImageDigest(): string | undefined {
+function healthcareImageDigest(): string {
   const resolved =
     process.env.HEALTHCARE_IMAGE_DIGEST ?? parsed.healthcare.imageDigest;
-  const result = ImageDigestSchema.optional().safeParse(resolved);
+  if (
+    process.env.HEALTHCARE_IMAGE_TAG !== undefined &&
+    process.env.HEALTHCARE_IMAGE_DIGEST === undefined
+  ) {
+    throw new Error(
+      'HEALTHCARE_IMAGE_TAG override requires HEALTHCARE_IMAGE_DIGEST; do not reuse a stale TOML pin',
+    );
+  }
+  const result = ImageDigestSchema.safeParse(resolved);
   if (!result.success) {
     throw new Error(
       `Invalid HEALTHCARE_IMAGE_DIGEST / healthcare.imageDigest: ${result.error.message}`,

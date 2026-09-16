@@ -43,10 +43,10 @@
 - **`action`은 사람이 읽는 설명이고 `commands`는 실행할 완성된 AWS CLI 명령 목록이다.**
   대상과 리전 인자를 현재 사고 증거로 승인 전에 고정한다. 위 JSON의 설명 문자열을
   실제 명령으로 대체한다. 변수, 자리표시자, 명령 치환, 실행 중 인자 교정은 금지한다.
-- 각 단계는 비어 있지 않은 `commands: string[]` 또는 `metric_wait: dict` 중 하나만
+- 각 단계는 비어 있지 않은 `commands: string[]`, `deployment_wait: dict`, `metric_wait: dict` 중 하나만
   가진다. 관측 연산이면 `commands: []`다. `metric_wait`에는 기존 도구 인자를
   그대로 담되 `step_id`는 제외한다: `action_step_id`(앞선 조치 단계), `metrics`,
-  `failure_alarm_name`, `region`, `max_wait_seconds`(1–300, 기본 300), 선택
+  `failure_alarm_name`, `region`, `max_wait_seconds`(1–900, 기본 900), 선택
   `latency_alarm_name`, `completed_work_evidence`. `metrics`는 attempts/failures 필수,
   latency 선택이며 각각 namespace, metric_name, dimensions(Name-to-Value 객체)를 가진다.
   메트릭은 같은 namespace/dimensions를 사용하고 latency와 그 알람은 함께 제공한다.
@@ -84,3 +84,38 @@
 
 실행 결과와 정상화 여부는 이 플레이북에 쓰지 않는다. 실행은 사용자 승인 뒤에
 일어나므로 작성 시점에는 알 수 없다.
+
+### 승인된 서비스 배포와 수렴
+
+각 단계는 commands / deployment_wait / metric_wait 중 하나만 가진다. 서비스 롤백은
+정상 저장이 입증된 서버 소유 `rollback_context` 사본을 보유해야 한다.
+loader가 원본·지문·대상·시각을 검증한 기록만 사용하며 모델이 검증 표식을 만들지 않는다.
+정상 기준이 없거나 현재 결함 대상과 일치하지 않으면 실행 단계를 만들지 않는다.
+
+롤백 commands는 `aws ecs update-service --cluster ... --service ... --task-definition ...
+--region ...` 하나이며 추가 옵션을 넣지 않는다. 같은 단계의 `ecs_service_precondition`은
+account_id, region, cluster(ARN), service(ARN), container_name, desired_count,
+expected_task_definition(결함 ARN), expected_image_digest(sha256), expected_deployment_id,
+service_settings를 모두 가진다. service_settings의 키는 deploymentConfiguration,
+networkConfiguration, capacityProviderStrategy, launchType, platformVersion, schedulingStrategy다.
+관측에 없는 값의 기본값은 각각 {}, {}, [], null, null, REPLICA다.
+
+다음 `deployment_wait`는 action_step_id(롤백 단계), account_id, region, cluster, service,
+container_name, desired_count, task_definition(정상 ARN), image_digest(정상 sha256),
+max_wait_seconds(1..900)를 모두 가진다. 앱 컨테이너와 사이드카를 구분하며 실제 앱의
+정상 digest·health, 모든 서비스 태스크의 전환과 이전 장애 버전 소멸을 서버가 검사한다.
+AWS 일반 wait 명령을 대신 넣거나 승인 범위 밖 조회·시간을 추가하지 않는다.
+
+배포 후 metric_wait는 기존 action_step_id 대신 deployment_step_id(수렴 단계)를 가진다.
+두 참조는 XOR이다. 나머지 기존 지표·알람·완료 증거 입력은 같다. 최초 수렴 UTC 시각의
+다음 분부터 첫 두 완결된 60초 구간만 사용한다. StopTask의 기존 action_step_id는 유지한다.
+배포 수렴과 지표 도착 대기는 각각 최대 900초이며 실행·도구 예산을 늘리지 않는다.
+
+rollback_context는 서버의 검증된 reader가 baseline_ref, scope, normal, current,
+service_settings를 포함해 붙인다. 모델 출력에서 이 문맥을 생성·채택·수정하지 않는다.
+baseline_ref는 bucket, key, sha256이다. scope는 account_id, region, cluster_arn,
+service_arn, service_name, container_name, desired_count, log_group이다. normal은
+task_definition_arn, image_digest이며 current는 같은 두 값과 deployment_id다.
+명령과 수렴 목표는 normal, 전제는 current, 모든 좌표와 설정은 scope/service_settings와
+같아야 한다. 실제 정상 저장·원본·지문·시간 검증은 reader의 책임이며 실행 워커는
+승인 문맥만 소비한다. 문맥이 있는 UpdateService에서 전제나 수렴 단계를 제거할 수 없다.

@@ -1,7 +1,0 @@
-# Candidate only: calibrate healthy / lock-held / recovered at identical load.
-# Copy this section into the selected deployment configuration deliberately.
-# This file is not loaded by the application or CDK.
-[healthcare.environment]
-DB_STATEMENT_TIMEOUT_MS = "2000"
-DB_OBSERVABILITY_ENABLED = "true"
-DB_OBSERVABILITY_INTERVAL_SECONDS = "1"

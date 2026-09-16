@@ -55,8 +55,8 @@ APPROVAL = json.dumps(
         "approval_id": "approval-1",
         "requested_by": "operator",
         "report_s3_key": "reports/headless-codex/rca-1/report.md",
-        "approved_playbook_s3_key": "approved/rca-1/exec-1/playbook.json",
-        "playbook_digest": "a" * 64,
+        "approved_playbook_s3_key": "approvals/rca-1/exec-1/playbook.json",
+        "playbook_digest": hashlib.sha256(json.dumps(PLAYBOOK).encode()).hexdigest(),
     }
 )
 
@@ -143,6 +143,10 @@ class RecordingRunner:
         )
 
     def run_retrospective(self, prompt, *, execution_token, execution_id, cancel_checker=None):
+        from headless_codex.services.retrospective_reader import read_document
+
+        for document in ("evidence", "approved_playbook"):
+            assert read_document(execution_token, execution_id, document)["ok"]
         self.retrospective_cancel_checker = cancel_checker
         self.retrospective_prompts.append(prompt)
         if self._retrospective is not None:
@@ -189,6 +193,23 @@ def _container(runner, *, target=None, claim=None, retrospective_claimed=True):
 
 @pytest.fixture(autouse=True)
 def isolated_workspaces(monkeypatch, tmp_path: Path):
+    from headless_codex.config import settings
+    from headless_codex.services import retrospective_reader as reader
+
+    monkeypatch.setattr(settings, "S3_EVIDENCE_BUCKET", "offline-evidence")
+    monkeypatch.setattr(reader, "S3_EVIDENCE_BUCKET", "offline-evidence")
+    objects = LocalEvidenceObjects()
+    objects.objects["approvals/rca-1/exec-1/playbook.json"] = json.dumps(PLAYBOOK).encode()
+    monkeypatch.setattr(reader, "_s3_client", lambda: objects)
+    original = ExecutionOrchestrator._finish
+
+    def finish(self, *args, **kwargs):
+        key = original(self, *args, **kwargs)
+        if key:
+            objects.objects[key] = json.dumps(args[2].to_dict()).encode()
+        return key
+
+    monkeypatch.setattr(ExecutionOrchestrator, "_finish", finish)
     monkeypatch.setattr(execution_workspace, "_WORKSPACE_ROOT", tmp_path / "executions")
 
 
@@ -239,7 +260,8 @@ def test_observation_context_is_approved_server_data_not_rendered_prompt(monkeyp
         "alarm_name": target.alarm_name,
     }
     container.evidence_store.load_approved_playbook.assert_called_once_with(
-        "approved/rca-1/exec-1/playbook.json", playbook_digest="a" * 64
+        "approvals/rca-1/exec-1/playbook.json",
+        playbook_digest=hashlib.sha256(json.dumps(PLAYBOOK).encode()).hexdigest(),
     )
 
 
@@ -462,7 +484,7 @@ def test_the_playbook_snapshot_is_saved_before_the_run_so_the_diff_has_a_baselin
     container.evidence_store.save_playbook_snapshot.assert_not_called()
     assert (
         container.execution_store.record_retrospective.call_args.kwargs["playbook_snapshot_s3_key"]
-        == "approved/rca-1/exec-1/playbook.json"
+        == "approvals/rca-1/exec-1/playbook.json"
     )
 
 
@@ -559,6 +581,9 @@ def test_public_orchestrator_persists_readable_attestation_before_publication(
     runner = RecordingRunner(retrospective=saved)
     container = _container(runner)
     client = LocalEvidenceObjects()
+    from headless_codex.services import retrospective_reader
+
+    monkeypatch.setattr(retrospective_reader, "_s3_client", lambda: client)
     monkeypatch.setattr(s3_evidence_store, "S3_EVIDENCE_BUCKET", "offline-evidence")
     container.evidence_store = S3EvidenceStore(client)
     approval = json.loads(APPROVAL)
@@ -600,6 +625,9 @@ def test_public_orchestrator_attestation_s3_failure_blocks_completion_and_public
     runner = RecordingRunner(retrospective={"update": update, "rationale": "observed evidence rationale"})
     container = _container(runner)
     client = LocalEvidenceObjects(fail_diff=True)
+    from headless_codex.services import retrospective_reader
+
+    monkeypatch.setattr(retrospective_reader, "_s3_client", lambda: client)
     monkeypatch.setattr(s3_evidence_store, "S3_EVIDENCE_BUCKET", "offline-evidence")
     container.evidence_store = S3EvidenceStore(client)
     approval = json.loads(APPROVAL)
@@ -831,8 +859,9 @@ def test_the_retrospective_prompt_carries_the_evidence_and_the_pre_execution_ste
 
     prompt = runner.retrospective_prompts[0]
 
-    assert "step-1" in prompt
-    assert "DatabaseConnections 12" in prompt
+    assert "executions/rca-1/exec-1/evidence.json" in prompt
+    assert "approvals/rca-1/exec-1/playbook.json" in prompt
+    assert "DatabaseConnections 12" not in prompt
     assert "TRANSIENT" in prompt
 
 
@@ -988,3 +1017,33 @@ def test_terminal_redelivery_recovers_publication_without_rerunning_execution_or
     container.execution_store.load_target.assert_not_called()
     container.execution_store.claim_retrospective.assert_not_called()
     container.playbook_store.save_to_s3_vectors.assert_not_called()
+
+
+@pytest.mark.parametrize("read_mode", ["none", "source_failure"])
+def test_retrospective_cannot_publish_a_forged_draft_without_verified_sources(read_mode):
+    """A model/runner success and a local draft cannot bypass server read validation."""
+    runner = RecordingRunner()
+    container = _container(runner)
+
+    def unverified(prompt, *, execution_token, execution_id, **kwargs):
+        if read_mode == "source_failure":
+            from headless_codex.services import retrospective_reader as reader
+
+            assert reader.read_document(execution_token, execution_id, "evidence")["ok"]
+            path = execution_workspace.workspace_for_token(execution_token) / "retrospective-reference.json"
+            reference = json.loads(path.read_text())
+            reference["execution_id"] = "other-execution"
+            path.write_text(json.dumps(reference))
+            assert not reader.read_document(execution_token, execution_id, "approved_playbook")["ok"]
+        execution_workspace.retrospective_path_for_token(execution_token).write_text(
+            json.dumps({"update": {}, "rationale": "unverified model claim"})
+        )
+        return CodexResult(success=True, result="claimed complete", raw_output="")
+
+    runner.run_retrospective = unverified
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    assert _states(container)[-1] is ExecutionState.RESOLVED
+    assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "FAILED"
+    container.execution_store.save_playbook_revision.assert_not_called()
+    container.execution_store.publish_playbook_revision.assert_not_called()
+    container.evidence_store.save_retrospective_diff.assert_not_called()

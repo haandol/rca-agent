@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from rca_agent.ports.dto.observations import IncidentObservations
+
 
 class RcaSessionState(StrEnum):
     ALARM_RECEIVED = "ALARM_RECEIVED"
@@ -233,6 +235,7 @@ class ScopingResult(BaseModel):
     concurrent_alarms: list[ConcurrentAlarm] = Field(default_factory=list)
     similar_reports: list[ReportMatch] = Field(default_factory=list)
     raw_alarm: AlarmPayload | None = None
+    incident_observations: IncidentObservations = Field(default_factory=IncidentObservations)
 
 
 class Hypothesis(BaseModel):
@@ -332,6 +335,7 @@ class RcaReport(BaseModel):
     lessons_learned: str = ""
     timeline: list[str] = Field(default_factory=list)
     rejected_hypotheses: list[str] = Field(default_factory=list)
+    incident_observations: IncidentObservations = Field(default_factory=IncidentObservations)
 
 
 class ExecutionStep(BaseModel):
@@ -347,6 +351,8 @@ class ExecutionStep(BaseModel):
 
     commands: list[str] = Field(default_factory=list)
     metric_wait: dict | None = None
+    deployment_wait: dict | None = None
+    ecs_service_precondition: dict | None = None
 
 
 class Playbook(BaseModel):
@@ -371,6 +377,8 @@ class Playbook(BaseModel):
     library_revision: str = "legacy"
     source_engine: str = ""
     source_rca_id: str = ""
+    # Assembled from verified source observations, never from generation output.
+    rollback_context: dict | None = None
 
 
 class AlarmContext(BaseModel):

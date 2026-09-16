@@ -21,20 +21,28 @@ def command_identity(command: str) -> str:
 
 def approved_wait(step: dict) -> dict:
     """Apply only existing tool defaults; reject unknown fields and caller-owned step IDs."""
+    from headless_codex.services.runbook_contract import validate_completed_work_reference
+
     value = step["metric_wait"]
-    required = {"action_step_id", "metrics", "failure_alarm_name", "region"}
+    required = {"metrics", "failure_alarm_name", "region"}
+    anchors = set(value) & {"action_step_id", "deployment_step_id"} if isinstance(value, dict) else set()
+    if len(anchors) != 1:
+        raise ValueError("metric_wait requires action_step_id XOR deployment_step_id")
+    required |= anchors
     optional = {"max_wait_seconds", "latency_alarm_name", "completed_work_evidence"}
     if not isinstance(value, dict) or not required <= value.keys() or value.keys() - required - optional:
         raise ValueError("metric_wait must contain the existing wait arguments, excluding step_id")
+    validate_completed_work_reference(value.get("completed_work_evidence"))
     return normalize_request(
         step["step_id"],
-        value["action_step_id"],
+        value.get("action_step_id", ""),
         value["metrics"],
         value["failure_alarm_name"],
         value.get("latency_alarm_name", ""),
         value["region"],
-        value.get("max_wait_seconds", 300),
+        value.get("max_wait_seconds", 900),
         value.get("completed_work_evidence"),
+        value.get("deployment_step_id", ""),
     )
 
 
@@ -48,6 +56,14 @@ def validate_steps(playbook: dict) -> list[dict]:
     steps = playbook.get("execution_steps")
     if not isinstance(steps, list) or not steps:
         raise ValueError("approved playbook declares no execution steps")
+    from headless_codex.services.runbook_contract import (
+        validate_deployment_pair,
+        validate_deployment_wait,
+        validate_precondition,
+        validate_recovery_sequence,
+    )
+    from headless_codex.services.service_deployment import validate_rollback_context
+
     ids: set[str] = set()
     normalized: list[dict] = []
     for step in steps:
@@ -61,19 +77,60 @@ def validate_steps(playbook: dict) -> list[dict]:
             raise ValueError("approved playbook has a missing or invalid success criterion")
         commands = step.get("commands")
         has_commands = isinstance(commands, list) and bool(commands)
+        if playbook.get("rollback_context") is not None and has_commands:
+            for command in commands:
+                verdict = evaluate_command(command) if isinstance(command, str) else None
+                if (
+                    verdict
+                    and (verdict.service, verdict.operation) == ("ecs", "update-service")
+                    and not step.get("ecs_service_precondition")
+                ):
+                    raise ValueError("rollback context requires guarded UpdateService; precondition cannot be stripped")
         has_wait = step.get("metric_wait") is not None
-        if has_commands == has_wait or ("commands" in step and not isinstance(commands, list)):
-            raise ValueError("each approved step requires nonempty commands XOR metric_wait; new approval required")
+        has_deployment = step.get("deployment_wait") is not None
+        if sum((has_commands, has_wait, has_deployment)) != 1 or (
+            "commands" in step and not isinstance(commands, list)
+        ):
+            raise ValueError(
+                "each approved step requires nonempty commands XOR deployment_wait XOR metric_wait; "
+                "new approval required"
+            )
+        if step.get("ecs_service_precondition") is not None:
+            validate_precondition(step)
+            followers = [
+                s["deployment_wait"]
+                for s in steps
+                if isinstance(s, dict)
+                and isinstance(s.get("deployment_wait"), dict)
+                and s["deployment_wait"].get("action_step_id") == step_id
+            ]
+            if len(followers) != 1:
+                raise ValueError("guarded rollback requires exactly one deployment wait")
+            validate_deployment_wait(followers[0])
+            validate_deployment_pair(step, followers[0])
+            validate_rollback_context(playbook, step["ecs_service_precondition"], followers[0])
         if has_commands:
             if any(not isinstance(command, str) or not command.strip() for command in commands):
                 raise ValueError("approved commands must be nonblank AWS CLI strings")
             normalized.append({key: value for key, value in step.items() if key != "metric_wait"})
+        elif has_deployment:
+            wait = step["deployment_wait"]
+            validate_deployment_wait(wait)
+            action = next((s for s in normalized if s["step_id"] == wait["action_step_id"]), {})
+            validate_deployment_pair(action, wait)
+            normalized.append({key: value for key, value in step.items() if key != "commands"})
         else:
             request = approved_wait(step)
-            if request["action_step_id"] not in ids:
+            reference = request.get("deployment_step_id") or request.get("action_step_id")
+            if reference not in ids:
                 raise ValueError("metric_wait requires an earlier approved action_step_id")
+            if request.get("deployment_step_id"):
+                prior = next(s for s in normalized if s["step_id"] == reference)
+                if not prior.get("deployment_wait") or prior["deployment_wait"]["region"] != request["region"]:
+                    raise ValueError("metric_wait requires same-region deployment_wait")
             normalized.append({key: value for key, value in step.items() if key != "commands"})
         ids.add(step_id)
+    validate_recovery_sequence(normalized)
     return normalized
 
 
@@ -111,9 +168,10 @@ def _prerequisite_complete(attempts: list[dict]) -> bool:
 
 def step_attempted(step: dict, records: list[dict]) -> bool:
     """Advancing requires all commands to have been attempted, or a terminal wait receipt."""
-    if step.get("metric_wait") is not None:
+    if step.get("metric_wait") is not None or step.get("deployment_wait") is not None:
+        kind = "deployment_wait" if step.get("deployment_wait") is not None else "metric_wait"
         return any(
-            r.get("type") == "metric_wait" and r.get("step_id") == step["step_id"] and r.get("phase") == "terminal"
+            r.get("type") == kind and r.get("step_id") == step["step_id"] and r.get("phase") == "terminal"
             for r in records
         )
     return all(command_records(step, records, index) for index in range(len(step["commands"])))
@@ -126,7 +184,8 @@ def order_error(steps: list[dict], step_id: str, records: list[dict]) -> str | N
     if any(not step_attempted(step, records) for step in steps[:index]):
         return "approved step order requires every preceding command/wait to be attempted"
     if any(
-        r.get("step_id") in ids[index + 1 :] and r.get("type") in {"attempt", "command_started", "metric_wait"}
+        r.get("step_id") in ids[index + 1 :]
+        and r.get("type") in {"attempt", "command_started", "metric_wait", "deployment_wait"}
         for r in records
     ):
         return "execution has already advanced beyond this approved step"
@@ -136,7 +195,11 @@ def order_error(steps: list[dict], step_id: str, records: list[dict]) -> str | N
 def authorize_command(steps: list[dict], step_id: str, command: str, records: list[dict]) -> int:
     """Select the next exact command, allowing only same-position transient retries or reads."""
     step = next(s for s in steps if s["step_id"] == step_id)
-    if step.get("metric_wait") is not None or command not in step["commands"]:
+    if (
+        step.get("metric_wait") is not None
+        or step.get("deployment_wait") is not None
+        or command not in step["commands"]
+    ):
         raise ValueError("command does not exactly match approved commands; new runbook approval required")
     if error := order_error(steps, step_id, records):
         raise ValueError(error)
@@ -147,17 +210,25 @@ def authorize_command(steps: list[dict], step_id: str, command: str, records: li
     elif next_index and commands[next_index - 1] == command:
         index = next_index - 1
         previous = command_records(step, records, index)[-1]
-        if previous.get("blocked") or previous.get("failure_class") not in (
-            None,
-            "TRANSIENT",
-            "THROTTLED",
-            "TIMEOUT",
-            "UNKNOWN",
+        if (
+            previous.get("blocked")
+            or previous.get("retry_forbidden")
+            or previous.get("failure_class")
+            not in (
+                None,
+                "TRANSIENT",
+                "THROTTLED",
+                "TIMEOUT",
+                "UNKNOWN",
+            )
         ):
             raise ValueError("only an identical command with a temporary failure may be retried")
     else:
         raise ValueError("command is not next in the approved command order")
     if not is_read(command):
+        for prior in steps[: steps.index(step)]:
+            if (prior.get("deployment_wait") or prior.get("metric_wait")) and step_contract_error(prior, records):
+                raise ValueError("preceding observation did not succeed; later writes are forbidden")
         prerequisites = [(step, i) for i in range(index)]
         for prior in steps[: steps.index(step)]:
             prerequisites.extend((prior, i) for i in range(len(prior.get("commands", []))))
@@ -180,6 +251,19 @@ def step_contract_error(step: dict, records: list[dict]) -> str | None:
     """Require every approved command to succeed before accepting an observed outcome."""
     if any(r.get("type") == "approval_rejection" for r in records):
         return "approved scope or order was rejected; new runbook approval required"
+    if step.get("deployment_wait") is not None:
+        terminal = [
+            r
+            for r in records
+            if r.get("type") == "deployment_wait"
+            and r.get("step_id") == step["step_id"]
+            and r.get("phase") == "terminal"
+        ]
+        if len(terminal) != 1 or terminal[0].get("status") != "HEALTHY" or not terminal[0].get("first_converged_at"):
+            return "approved deployment_wait has no healthy terminal observation"
+        if not same_request(terminal[0].get("binding", {}).get("request", {}), step["deployment_wait"]):
+            return "deployment_wait evidence does not match approved arguments"
+        return None
     if step.get("metric_wait") is not None:
         waits = [r for r in records if r.get("type") == "metric_wait" and r.get("step_id") == step["step_id"]]
         terminal = [r for r in waits if r.get("phase") == "terminal"]

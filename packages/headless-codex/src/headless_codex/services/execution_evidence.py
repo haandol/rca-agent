@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -204,6 +205,42 @@ def capture_command_output(stdout: object, stderr: object) -> dict:
                 f"{name}_truncated": len(safe) > len(retained),
             }
         )
+    return captured
+
+
+def capture_ecs_control_output(stdout: object, stderr: object) -> dict:
+    """Retain complete service control data without letting event history consume its preview.
+
+    Only the non-configurable service event history is omitted. Every identity,
+    deployment and configuration field, failures and pagination remain intact.
+    Malformed or still oversized responses retain the ordinary failure/truncation behavior.
+    """
+    safe = redact(stdout)
+    try:
+        document = json.loads(safe)
+    except (ValueError, TypeError):
+        return capture_command_output(stdout, stderr)
+    if not isinstance(document, dict):
+        return capture_command_output(stdout, stderr)
+    omitted = []
+    services = document.get("services")
+    if isinstance(services, list):
+        for index, service in enumerate(services):
+            if isinstance(service, dict) and isinstance(service.get("events"), list):
+                service.pop("events")
+                omitted.append(f"/services/{index}/events")
+    service = document.get("service")
+    if isinstance(service, dict) and isinstance(service.get("events"), list):
+        service.pop("events")
+        omitted.append("/service/events")
+    if not omitted:
+        return capture_command_output(stdout, stderr)
+    captured = capture_command_output(json.dumps(document, ensure_ascii=False), stderr)
+    captured["ecs_control_projection"] = {
+        "omitted_fields": omitted,
+        "redacted_source_chars": len(safe),
+        "redacted_source_sha256": hashlib.sha256(safe.encode()).hexdigest(),
+    }
     return captured
 
 

@@ -229,7 +229,7 @@ class TestRunScoping:
 
         assert elapsed < 0.15
         assert isinstance(result, ScopingResult)
-        assert result.alarm_summary.startswith("[Timeout]")
+        assert result.alarm_summary.startswith("[Scoping unavailable]")
         assert "HighCPU-web-service" in result.alarm_summary
         assert result.raw_alarm == sample_alarm
 
@@ -239,7 +239,7 @@ class TestRunScoping:
         result = run_scoping(sample_alarm, mock_agent, report_store=_report_store())
 
         assert isinstance(result, ScopingResult)
-        assert result.alarm_summary.startswith("[Timeout]")
+        assert result.alarm_summary.startswith("[Scoping unavailable]")
         assert result.raw_alarm == sample_alarm
 
 
@@ -259,3 +259,64 @@ class TestReconcileTrend:
 
     def test_two_points_are_enough_to_report_a_shape(self):
         assert reconcile_trend(MetricTrend.RISING, [2.0, 30.0]) is MetricTrend.RISING
+
+
+def test_parse_window_preserves_aware_offset_and_legacy_naive_time():
+    """An explicit UTC+9 offset converts to UTC; naive windows retain their UTC interpretation."""
+    from datetime import UTC, datetime
+
+    from rca_agent.services.scoping import _parse_window
+
+    assert _parse_window("2026-09-15T12:00:00+09:00") == datetime(2026, 9, 15, 3, tzinfo=UTC)
+    assert _parse_window("2026-09-15T12:00:00") == datetime(2026, 9, 15, 12, tzinfo=UTC)
+
+
+def test_precollection_cap_uses_600_seconds_or_remaining_stage_budget():
+    """Several 65-second AWS requests fit the expanded precollection allowance without a reset."""
+    from unittest.mock import MagicMock
+
+    from rca_agent.ports.dto.models import AlarmPayload
+    from rca_agent.ports.dto.observations import IncidentObservations
+    from rca_agent.services.scoping import ScopingOutput, run_scoping
+
+    for seconds in (900, 200):
+        observer = MagicMock()
+        observer.observe.return_value = IncidentObservations()
+        agent = MagicMock()
+        agent.return_value.structured_output = ScopingOutput(alarm_summary="observed")
+        store = MagicMock()
+        store.search_similar.return_value = []
+        run_scoping(
+            AlarmPayload(alarm_name="local"),
+            agent,
+            report_store=store,
+            incident_observer=observer,
+            timeout_seconds=seconds,
+        )
+        allowance = observer.observe.call_args.kwargs["timeout_seconds"]
+        assert min(600, seconds) - 1 < allowance <= min(600, seconds)
+
+
+def test_non_timeout_fallback_preserves_alarm_facts_without_claiming_timeout(sample_alarm):
+    """A transport failure or validation error must not relabel the incident as a timeout."""
+    from botocore.exceptions import ConnectionClosedError
+
+    from rca_agent.ports.dto.observations import IncidentObservations
+
+    before = sample_alarm.model_dump_json()
+    observed = IncidentObservations(diagnostics=["captured observation retained"])
+    observer = MagicMock()
+    observer.observe.return_value = observed
+    for error in (ValueError("invalid response"), ConnectionClosedError(endpoint_url="https://example.invalid")):
+        result = run_scoping(
+            sample_alarm,
+            MagicMock(side_effect=error),
+            report_store=_report_store(),
+            incident_observer=observer,
+        )
+        assert (
+            result.alarm_summary == f"[Scoping unavailable] {sample_alarm.alarm_name}: {sample_alarm.new_state_reason}"
+        )
+        assert result.raw_alarm == sample_alarm
+        assert result.incident_observations == observed
+        assert sample_alarm.model_dump_json() == before

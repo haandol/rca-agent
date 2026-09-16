@@ -256,6 +256,7 @@ class ExecutionOrchestrator:
                     workspace,
                     request.approved_playbook_s3_key,
                     log,
+                    evidence_key=evidence_key,
                 )
                 if retrospective is False:
                     return False
@@ -408,6 +409,8 @@ class ExecutionOrchestrator:
         workspace: ExecutionWorkspace,
         snapshot_key: str,
         log: structlog.stdlib.BoundLogger,
+        *,
+        evidence_key: str = "",
     ) -> bool | None:
         """Keep resolved execution intact; return False only for durable publication redelivery."""
         store = self._c.execution_store
@@ -415,9 +418,27 @@ class ExecutionOrchestrator:
             log.info("retrospective_already_claimed")
             return
 
-        phase = "build_prompt"
+        phase = "prepare_evidence_reference"
         try:
-            prompt = build_retrospective_prompt(target, evidence, execution_id=execution_id)
+            from headless_codex.config.settings import S3_EVIDENCE_BUCKET
+            from headless_codex.services.retrospective_reader import require_successful_reads, write_reference
+
+            write_reference(
+                workspace.token,
+                rca_id=request.rca_id,
+                execution_id=execution_id,
+                evidence_key=evidence_key,
+                approved_playbook_key=snapshot_key,
+                playbook_digest=request.playbook_digest,
+                bucket=S3_EVIDENCE_BUCKET,
+            )
+            phase = "build_prompt"
+            prompt = build_retrospective_prompt(
+                target,
+                execution_id=execution_id,
+                evidence_key=evidence_key,
+                approved_playbook_key=snapshot_key,
+            )
             phase = "run_agent"
             result = self._c.execution_runner.run_retrospective(
                 prompt,
@@ -438,6 +459,7 @@ class ExecutionOrchestrator:
                 return
 
             phase = "read_attestation"
+            require_successful_reads(workspace.token, execution_id)
             saved = workspace.read_retrospective()
             if (
                 saved is None

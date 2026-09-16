@@ -60,9 +60,9 @@ export class EventBusStack extends cdk.Stack {
   private newAlarmQueue(ns: string): sqs.Queue {
     const queue = new sqs.Queue(this, 'AlarmQueue', {
       queueName: `${ns}AlarmQueue`,
-      // Shared by both engines, so visibility must exceed the longest analysis
-      // budget (Headless Codex: 60 minutes).
-      visibilityTimeout: cdk.Duration.minutes(65),
+      // Active Strands streams may outlast admission budgets. The worker renews
+      // the current receipt while processing; this is not a model-response cap.
+      visibilityTimeout: cdk.Duration.hours(3),
       retentionPeriod: cdk.Duration.days(4),
       deadLetterQueue: {
         queue: this.deadLetterQueue,

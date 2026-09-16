@@ -200,7 +200,7 @@ def test_catalog_prompts_preserve_supplied_metadata_and_mark_only_missing_fields
     monkeypatch.setenv("AWS_REGION", "eu-west-3")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-west-3")
     paths = sorted((Path(__file__).resolve().parents[3] / "tests/scenarios").glob("*.json"))
-    assert len(paths) == 4
+    assert paths, "the active catalog must provide at least one metadata contract case"
     for path in paths:
         supplied = json.loads(path.read_text())
         original = json.dumps(supplied, sort_keys=True)

@@ -93,7 +93,7 @@ window보다 이전에 생성된 수동 장애 주입·수동 테스트 로그�
 
 - `step_id`는 안정적인 식별자이고 `report.md`의 서술과 일치해야 한다.
 - `action`은 설명이며, `commands`에 현재 사고의 대상·리전을 고정한 완성된 AWS CLI를 담는다.
-  각 단계는 commands 또는 고정 metric_wait 인자 중 하나만 가진다. 과거 명령·대상을
+  각 단계는 commands, 고정 deployment_wait, 고정 metric_wait 중 하나만 가진다. 과거 명령·대상을
   상속하지 않으며, 승인 후 변경은 새 승인을 요구한다. 근거 부족이면 실행 목록을 비운다.
 - `success_criteria`는 관측 가능한 기준이어야 한다. 없으면 실행 에이전트가 해결
   여부를 판정할 수 없다.

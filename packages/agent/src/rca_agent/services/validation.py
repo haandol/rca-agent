@@ -21,9 +21,10 @@ from rca_agent.ports.dto.models import (
 from rca_agent.prompts.validation import VALIDATION_USER_PROMPT_TEMPLATE
 from rca_agent.services.observation_context import (
     render_concurrent_alarms,
+    render_critical_facts,
     render_observations,
 )
-from rca_agent.utils.timeout import call_with_timeout
+from rca_agent.utils.agent_invocation import invoke_agent
 
 if TYPE_CHECKING:
     from strands import Agent
@@ -68,16 +69,15 @@ def _build_user_prompt(
         evidence_text=evidence_text or "No evidence collected yet.",
         metric_observations=observations,
         concurrent_alarms=concurrent,
-    )
+    ) + render_critical_facts(scoping_result)
 
 
-def _invoke_agent(agent: Agent, prompt: str) -> ValidationOutput:
+def _invoke_agent(agent: Agent, prompt: str, timeout_seconds: float) -> ValidationOutput:
     # Each validation receives its evidence explicitly. Keep the model, connections,
     # and SDK retry configuration, but never carry another invocation's conversation.
     agent.messages.clear()
     try:
-        result = agent(prompt, structured_output_model=ValidationOutput)
-        return result.structured_output
+        return invoke_agent(agent, prompt, ValidationOutput, timeout_seconds)
     finally:
         # Also discard partial conversations after a failure or hard timeout.
         agent.messages.clear()
@@ -97,10 +97,7 @@ def validate_hypothesis(
     logger.info("Validating hypothesis %s: %s", hypothesis.hypothesis_id, hypothesis.description[:60])
 
     try:
-        output = call_with_timeout(
-            lambda: _invoke_agent(agent, user_prompt),
-            timeout_seconds,
-        )
+        output = _invoke_agent(agent, user_prompt, timeout_seconds)
     except Exception:
         logger.warning("Validation failed for hypothesis %s", hypothesis.hypothesis_id)
         output = None
@@ -115,8 +112,8 @@ def validate_hypothesis(
 
     status = _classify_status(output.judgment.confidence_score)
     evidence_summary = [summary for summary in output.judgment.evidence_summary if summary.strip()]
-    required_evidence_missing = bool(hypothesis.required_evidence) and (
-        evidence_failed or not evidence_text.strip() or not evidence_summary
+    required_evidence_missing = evidence_failed or (
+        bool(hypothesis.required_evidence) and (not evidence_text.strip() or not evidence_summary)
     )
     if required_evidence_missing and status == HypothesisStatus.CONFIRMED:
         logger.warning(

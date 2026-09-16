@@ -108,14 +108,18 @@ function loadConfig(): typeof import('../config/loader').Config {
   return config;
 }
 
-test('omitting the digest preserves all existing tag settings', () => {
+test('omitting the digest fails configuration and the real bin path', () => {
   configureToml();
-  const config = loadConfig();
-  expect(config.healthcare.imageDigest).toBeUndefined();
-  expect(config.healthcare.imageTag).toBe('build-label');
-  expect(config.agent.imageTag).toBe('agent-build');
-  expect(config.headlessCodex.imageTag).toBe('headless-build');
-  expect(config.execution.imageTag).toBe('execution-build');
+  expect(loadConfig).toThrow('HEALTHCARE_IMAGE_DIGEST');
+  expect(() => jest.isolateModules(() => require('../bin/infra.ts'))).toThrow(
+    'HEALTHCARE_IMAGE_DIGEST',
+  );
+});
+
+test('an environment label cannot reuse a stale TOML digest', () => {
+  configureToml(TOML_DIGEST);
+  process.env.HEALTHCARE_IMAGE_TAG = 'new-build';
+  expect(loadConfig).toThrow('HEALTHCARE_IMAGE_DIGEST');
 });
 
 test('TOML accepts an immutable digest while keeping the revision label', () => {
@@ -172,12 +176,6 @@ test.each(malformedDigests)(
 );
 
 test.each([
-  {
-    name: 'legacy tag',
-    digest: undefined,
-    override: undefined,
-    suffix: ':build-label',
-  },
   {
     name: 'TOML pin',
     digest: TOML_DIGEST,

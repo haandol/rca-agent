@@ -33,18 +33,3 @@ class HealthResponse(BaseModel):
     db_connected: bool
     active_db_connections: int
     uptime_seconds: float
-
-
-class FaultRequest(BaseModel):
-    # Default has to exceed the connection pool ceiling, or a single injection
-    # leaks without exhausting the pool and never reaches the ingest failures the
-    # entry-point alarm watches.
-    count: int = 20
-
-
-class FaultMemoryRequest(BaseModel):
-    megabytes: int = 256
-
-
-class FaultSlowQueryRequest(BaseModel):
-    seconds: int = 5

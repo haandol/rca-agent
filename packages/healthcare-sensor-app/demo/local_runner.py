@@ -8,11 +8,9 @@ or stops Docker, changes database roles, or falls back to default app settings.
 import argparse
 import asyncio
 import json
-import math
 import os
 import shutil
 import signal
-import statistics
 import sys
 import tempfile
 import uuid
@@ -33,7 +31,7 @@ async def wait_for_phase_exit(process: asyncio.subprocess.Process) -> None:
     """Observe leader exit independently of pipes inherited by descendants.
 
     communicate() drains output concurrently, but its EOF (and sometimes wait())
-    can be delayed by a maintenance descendant after the phase leader crashes.
+    can be delayed by a descendant after the phase leader crashes.
     """
     while process.returncode is None:
         await asyncio.sleep(0.02)
@@ -104,154 +102,54 @@ def read_dsn(path: Path, expected_port: int) -> str:
 
 
 def check_proof(phases):
-    """Fail the run when observations do not establish all four real mechanisms."""
-    by_key = {(p["case"], p["phase"]): p for p in phases}
-    assert len({phase["source"]["base_fingerprint"] for phase in phases}) == 1
+    """Require actual native errors, stable schema and successful post-commit restoration."""
+    assert [p["phase"] for p in phases] == ["normal", "fault", "restore"]
+    assert len({p["source"]["base_fingerprint"] for p in phases}) == 1
+    assert len({tuple(p["schema_snapshot"]["column_names"]) for p in phases}) == 1
     for phase in phases:
-        bounds = [
-            phase["process_window"]["started_at"],
-            phase["started_at"],
-            phase["measurement_started_at"],
-            phase["measurement_completed_at"],
-            phase["completed_at"],
-            phase["process_window"]["completed_at"],
-        ]
-        parsed = [datetime.fromisoformat(value) for value in bounds]
-        assert all(value.utcoffset().total_seconds() == 0 for value in parsed)
-        assert parsed == sorted(parsed)
-        for event in phase["events"]:
-            assert parsed[1] <= datetime.fromisoformat(event["timestamp"]) <= parsed[-2]
+        bad = phase["phase"] == "fault"
+        assert phase["write_statuses"] == [500 if bad else 200] * 3
+        assert phase["rows_after"] - phase["rows_before"] == (0 if bad else 6)
+        assert phase["read_status"] == phase["alerts_status"] == 200
+        assert phase["read_count"] == phase["alert_count"] == phase["rows_after"]
+        assert phase["existing_rows_preserved"]
+        assert phase["health"]["status"] == "ok" and phase["health"]["db_connected"] is True
+        assert phase["checked_out"] == phase["owned_sessions_after_dispose"] == 0
+        assert phase["canaries_absent"]
+        errors = [e for e in phase["events"] if e.get("event") == "db_write_error"]
+        completed = [e for e in phase["events"] if e.get("event") == "write_completed"]
+        assert len(errors) == (3 if bad else 0)
+        assert phase["source"]["verified"]
+        assert any(e.get("event") == "db_schema_snapshot" for e in phase["events"])
+        assert any(e.get("event") == "write_accounting" for e in phase["events"])
+        for error in errors:
+            assert any(
+                e.get("event") == "db_sql"
+                and e.get("outcome") == "error"
+                and e.get("request_id") == error["request_id"]
+                and e.get("sql_hash") == error["sql_hash"]
+                for e in phase["events"]
+            )
 
-        def check_operations(value, measurement_start=parsed[2], measurement_end=parsed[3]):
-            """Require each nested operation's UTC interval to lie inside its measured phase."""
-            if isinstance(value, dict):
-                if isinstance(value.get("operation"), dict):
-                    begin = datetime.fromisoformat(value["started_at"])
-                    end = datetime.fromisoformat(value["completed_at"])
-                    assert begin.utcoffset().total_seconds() == end.utcoffset().total_seconds() == 0
-                    assert measurement_start <= begin <= end <= measurement_end
-                for child in value.values():
-                    check_operations(child)
-            elif isinstance(value, list):
-                for child in value:
-                    check_operations(child)
-
-        check_operations(phase)
-    for case in ("pool", "query", "exception", "lock", "cancel"):
-        for phase in ("normal", "fault", "restore"):
-            proof = by_key[case, phase]
-            assert proof["owned_sessions_after_dispose"] == 0
-            assert proof["remaining_owned_schema_locks"] == 0
-    for phase in ("normal", "restore"):
-        assert all(w["outcome"] == "ok" for w in by_key["pool", phase]["writes"])
-        assert by_key["exception", phase]["subsequent_write"]["outcome"] == "ok"
-        assert all(p["checked_out_after_request"] == 0 for p in by_key["exception", phase]["probes"])
-        assert by_key["cancel", phase]["checked_out_after_cancel"] == 0
-        assert by_key["lock", phase]["write"]["outcome"] == "ok"
-    assert any(w["error_type"] == "TimeoutError" for w in by_key["pool", "fault"]["writes"])
-    hashes = set()
-    for phase in ("normal", "fault", "restore"):
-        for query in by_key["query", phase]["queries"]:
-            assert query["outcome"] == "ok" and query["row_count"] == 120
-            assert query["operation"]["sql_count"] == (121 if phase == "fault" else 1)
-            hashes.add(query["rows_sha256"])
-    assert len(hashes) == 1
-    query_medians = {
-        phase: statistics.median(q["elapsed_ms"] for q in by_key["query", phase]["queries"])
-        for phase in ("normal", "fault", "restore")
-    }
-    assert query_medians["fault"] > max(query_medians["normal"], query_medians["restore"])
-    fault = by_key["exception", "fault"]
-    assert [p["checked_out_after_request"] for p in fault["probes"]] == [1, 2, 3]
-    assert all(p["error_type"] == "DBAPIError" for p in fault["probes"])
-    assert fault["subsequent_write"]["error_type"] == "TimeoutError"
-    assert by_key["cancel", "fault"]["checked_out_after_cancel"] == 1
-    lock = by_key["lock", "fault"]
-    assert lock["blocked_write"]["outcome"] == "error"
-    assert lock["restored_write"]["outcome"] == "ok"
-    assert lock["maintenance_exit_code"] == 0
-    assert any(e["event"] == "maintenance_released" for e in lock["release_events"])
-    assert any(e.get("release_reason") == "sigterm" for e in lock["release_events"])
-    assert [e["event"] for e in lock["bounded_hold_events"]] == ["maintenance_lock_acquired", "maintenance_released"]
-    assert lock["bounded_hold_events"][-1]["release_reason"] == "hold_expired"
-    assert any(lock["maintenance"]["backend_pid"] in row["blocking_pids"] for row in lock["snapshot"]["activity"])
-    assert any(
-        lock["maintenance"]["backend_pid"] in row["blocking_pids"]
-        for snapshot in lock["events"]
-        if snapshot.get("event") == "db_wait_snapshot"
-        for row in snapshot["activity"]
-    )
+        assert all(e["sqlstate"] == "42703" and e["error_type"] == "UndefinedColumnError" for e in errors)
+        assert len(completed) == (0 if bad else 3)
+        assert all(e["count"] == 2 and e["completion_semantics"] == "committed_rows" for e in completed)
+        assert phase["metrics"]["VitalIngestAttempts"] == 6
+        assert phase["metrics"]["VitalIngestFailures"] == (6 if bad else 0)
+        assert phase["metrics"]["VitalIngestInFlight"] == 0
     return {
-        "all_four_mechanisms": True,
-        "cancellation_cleanup": True,
-        "owned_resource_cleanup": True,
-        "utc_phase_windows": True,
-        "utc_operation_windows": True,
-        "common_source_base": True,
-    }
-
-
-def calibrate_local_query_threshold(phases: list[dict]) -> dict:
-    """Calibrate a LOCAL, same-run candidate from unchanged request timings.
-
-    This is an in-sample comparison, not independent validation or an AWS alarm
-    evaluation. Require separation of every recorded healthy/fault request;
-    never round or alter raw samples to manufacture a passing threshold.
-    """
-    queries = {phase["phase"]: phase for phase in phases if phase["case"] == "query"}
-    if set(queries) != {"normal", "fault", "restore"}:
-        raise ValueError("Calibration requires all three actual query phases")
-    workload = queries["normal"]["query_input"]
-    if any(phase["query_input"] != workload for phase in queries.values()):
-        raise ValueError("Query inputs differ across calibration phases")
-    samples = {name: [q["elapsed_ms"] for q in phase["queries"]] for name, phase in queries.items()}
-    if any(not values or any(not math.isfinite(value) or value < 0 for value in values) for values in samples.values()):
-        raise ValueError("Calibration requires finite, nonnegative measured latencies")
-    if any(len(values) != workload["requests"] for values in samples.values()):
-        raise ValueError("Recorded query counts differ from the shared workload")
-    healthy_max = max(*samples["normal"], *samples["restore"])
-    fault_min = min(samples["fault"])
-    if healthy_max >= fault_min:
-        raise ValueError("No threshold separates all recorded healthy and fault requests")
-    threshold = healthy_max + (fault_min - healthy_max) / 2
-    if not healthy_max < threshold < fault_min:
-        raise ValueError("No representable threshold strictly separates these samples")
-    comparisons = {
-        name: {
-            "measurement_started_at": queries[name]["measurement_started_at"],
-            "measurement_completed_at": queries[name]["measurement_completed_at"],
-            "samples_ms": values,
-            "sample_count": len(values),
-            "above_threshold_count": sum(value > threshold for value in values),
-            "below_threshold_count": sum(value < threshold for value in values),
-        }
-        for name, values in samples.items()
-    }
-    return {
-        "scope": "LOCAL_ONLY: this PostgreSQL fixture and identical query workload",
-        "metric": "local.patient_vitals.service_call_elapsed_ms",
-        "unit": "Milliseconds",
-        "comparison": "individual request latency > threshold_ms",
-        "threshold_ms": threshold,
-        "method": "midpoint between max(normal + restore) and min(fault)",
-        "calibration_dataset": "same_run; not an independent validation dataset",
-        "calibrated_at": datetime.now(UTC).isoformat(),
-        "aws_alarm_evaluated": False,
-        "aws_threshold_calibrated": False,
-        "query_input": workload,
-        "healthy_max_ms": healthy_max,
-        "fault_min_ms": fault_min,
-        "phases": comparisons,
-        "relationship_verified": (
-            comparisons["normal"]["below_threshold_count"] == comparisons["normal"]["sample_count"]
-            and comparisons["restore"]["below_threshold_count"] == comparisons["restore"]["sample_count"]
-            and comparisons["fault"]["above_threshold_count"] == comparisons["fault"]["sample_count"]
-        ),
+        "single_insert_column": True,
+        "native_42703": True,
+        "no_partial_writes": True,
+        "read_health_preserved": True,
+        "no_connection_leaks": True,
+        "canaries_absent": True,
     }
 
 
 async def run(args):
     """Execute frozen revisions against the owned fixture and preserve evidence through cleanup."""
+    args.output = args.output.resolve()
     started_at = datetime.now(UTC).isoformat()
     dsn = read_dsn(args.env_file, args.expected_port)
     native = make_url(dsn).set(drivername="postgresql").render_as_string(hide_password=False)
@@ -291,19 +189,21 @@ async def run(args):
         await admin.close()
         snapshot = scratch / "source-snapshot"
         proof["source_snapshot"] = capture_source_snapshot(snapshot)
-        for revision in ("r1", "r2", "r3"):
-            compile_revision(revision, scratch / revision, source_package=snapshot)
-        plans = [("setup", "normal", "r1")]
-        plans += [
-            (case, phase, revision if phase == "fault" else "r1")
-            for case, revision in (
-                ("query", "r2"),
-                ("pool", "r1"),
-                ("lock", "r1"),
-                ("exception", "r3"),
-                ("cancel", "r3"),
-            )
-            for phase in ("normal", "fault", "restore")
+        manifests = {}
+        for revision in ("v1", "v2"):
+            manifests[revision] = compile_revision(revision, scratch / revision, source_package=snapshot)
+        # Reject extra differences before executing either tree.
+        if all(isinstance(m, dict) for m in manifests.values()):
+            changed = [
+                key for key, value in manifests["v1"]["files"].items() if manifests["v2"]["files"].get(key) != value
+            ]
+            assert changed == ["revision/write.py"]
+            proof["revisions"] = manifests
+        plans = [
+            ("setup", "normal", "v1"),
+            ("insert", "normal", "v1"),
+            ("insert", "fault", "v2"),
+            ("insert", "restore", "v1"),
         ]
         for case, phase, revision in plans:
             destination = args.output / f"{case}-{phase}.json"
@@ -356,9 +256,6 @@ async def run(args):
                 proof["phases"].append(result)
             print(json.dumps({"case": case, "phase": phase, "revision": revision, "completed": True}), flush=True)
         proof["checks"] = check_proof(proof["phases"])
-        proof["local_query_calibration"] = calibrate_local_query_threshold(proof["phases"])
-        proof["checks"]["identical_query_inputs"] = True
-        proof["checks"]["local_query_threshold_relation"] = proof["local_query_calibration"]["relationship_verified"]
     except BaseException as exc:
         if proof["phase_windows"] and proof["phase_windows"][-1]["completed_at"] is None:
             proof["phase_windows"][-1]["completed_at"] = datetime.now(UTC).isoformat()
@@ -393,10 +290,6 @@ async def run(args):
         proof["cleanup_errors"] = cleanup_errors
         proof["completed_at"] = datetime.now(UTC).isoformat()
         (args.output / "evidence.json").write_text(json.dumps(proof, indent=2, default=str))
-        if "local_query_calibration" in proof:
-            (args.output / "local-query-calibration.json").write_text(
-                json.dumps(proof["local_query_calibration"], indent=2)
-            )
         if cleanup_errors:
             raise RuntimeError("Owned fixture cleanup failed")
 
@@ -417,7 +310,7 @@ async def cancellable_run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
-    parser.add_argument("--expected-port", type=int, default=32768)
+    parser.add_argument("--expected-port", type=int, default=15439)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

@@ -1,0 +1,2867 @@
+{
+  "run_id": "local_be25e73e1b254178",
+  "schema": "proof_local_be25e73e1b254178",
+  "boundary": "local_postgresql_service",
+  "started_at": "2026-09-15T14:57:26.648316+00:00",
+  "phases": [
+    {
+      "phase": "normal",
+      "source": {
+        "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+          "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+          "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+          "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+          "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+          "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+          "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+          "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+        "revision": "v1",
+        "verified": true
+      },
+      "schema_snapshot": {
+        "event": "db_schema_snapshot",
+        "observed_at": "2026-09-15T14:57:28.432596+00:00",
+        "schema_name": "proof_local_be25e73e1b254178",
+        "table_name": "sensor_readings",
+        "column_names": [
+          "id",
+          "patient_id",
+          "reading_type",
+          "value",
+          "unit",
+          "timestamp",
+          "is_abnormal",
+          "created_at"
+        ]
+      },
+      "write_statuses": [
+        200,
+        200,
+        200
+      ],
+      "rows_before": 0,
+      "rows_after": 6,
+      "existing_rows_preserved": true,
+      "read_status": 200,
+      "alerts_status": 200,
+      "read_count": 6,
+      "alert_count": 6,
+      "health": {
+        "status": "ok",
+        "db_connected": true,
+        "active_db_connections": 0,
+        "uptime_seconds": 0.26
+      },
+      "checked_out": 0,
+      "canaries_absent": true,
+      "events": [
+        {
+          "message": "source_manifest",
+          "event": "source_manifest",
+          "observed_at": "2026-09-15T14:57:28.189701+00:00",
+          "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+            "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+            "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+            "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+            "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+            "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+            "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+            "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+          "revision": "v1",
+          "verified": true
+        },
+        {
+          "message": "write_contract",
+          "event": "write_contract",
+          "observed_at": "2026-09-15T14:57:28.205861+00:00",
+          "request_id": null,
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_pool_config",
+          "event": "db_pool_config",
+          "pool_size": 5,
+          "max_overflow": 10,
+          "pool_timeout_seconds": 30.0,
+          "statement_timeout_ms": 0
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:28.261519+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "write_accounting",
+          "event": "write_accounting",
+          "observed_at": "2026-09-15T14:57:28.323084+00:00",
+          "metric_namespace": "Healthcare/Sensor",
+          "service_name": "healthcare-sensor-app",
+          "attempt_metric": "VitalIngestAttempts",
+          "failure_metric": "VitalIngestFailures",
+          "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+          "failure_semantics": "failed_rows",
+          "cancellation_semantics": "excluded_from_completed_counters",
+          "success_evidence_event": "write_completed",
+          "success_count_field": "count",
+          "success_semantics": "committed_rows"
+        },
+        {
+          "message": "ecs_runtime_identity",
+          "event": "ecs_runtime_identity",
+          "status": "unavailable",
+          "reason": "not_ecs"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "f73e99ac71405d95cf478b28893a476c0f7d80ce05500ac3c592654ebe269fee",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 5.501916995854117,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:28.365749+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:28.368547+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "079f0472a363d1e50d043e4beac381fa31ec85b67f6e0b2082c3c07fa2ec19dd",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 4.720416996860877,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "8e0e964ac6bd48119b36e13bb5bd1092",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "8e0e964ac6bd48119b36e13bb5bd1092",
+          "elapsed_ms": 3.2390419946750626,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "8e0e964ac6bd48119b36e13bb5bd1092",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 4.414499999256805,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "8e0e964ac6bd48119b36e13bb5bd1092",
+          "backend_pid": 138
+        },
+        {
+          "message": "write_completed",
+          "event": "write_completed",
+          "observed_at": "2026-09-15T14:57:28.393338+00:00",
+          "request_id": "8e0e964ac6bd48119b36e13bb5bd1092",
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ],
+          "count": 2,
+          "completion_semantics": "committed_rows"
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "8e0e964ac6bd48119b36e13bb5bd1092",
+          "outcome": "ok",
+          "elapsed_ms": 18.21679199929349,
+          "sql_count": 1,
+          "sql_time_ms": 4.414499999256805,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 3.2390419946750626,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 4.414499999256805
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 200,
+          "elapsed_ms": 19
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_wait_snapshot",
+          "event": "db_wait_snapshot",
+          "sql_hash_algorithm": "md5",
+          "activity": [
+            {
+              "pid": 138,
+              "application_name": "healthcare-service",
+              "state": "active",
+              "wait_event_type": "IO",
+              "wait_event": "WalSync",
+              "xact_start": "2026-09-15 14:57:28.379188+00",
+              "query_start": "2026-09-15 14:57:28.383623+00",
+              "blocking_pids": [],
+              "sql_hash": "f55491f57410557264aac04492c0232c"
+            }
+          ],
+          "locks": [
+            {
+              "pid": 138,
+              "locktype": "relation",
+              "mode": "RowExclusiveLock",
+              "granted": true,
+              "relation": "sensor_readings"
+            }
+          ],
+          "pool_checked_out": 1,
+          "pool_size": 5,
+          "server_max_connections": 100,
+          "database_connections": 2
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "b103082729b1487fa2f093f19e3f61c4",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "b103082729b1487fa2f093f19e3f61c4",
+          "elapsed_ms": 1.165541005320847,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "b103082729b1487fa2f093f19e3f61c4",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 1.0602499969536439,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "b103082729b1487fa2f093f19e3f61c4",
+          "backend_pid": 138
+        },
+        {
+          "message": "write_completed",
+          "event": "write_completed",
+          "observed_at": "2026-09-15T14:57:28.402153+00:00",
+          "request_id": "b103082729b1487fa2f093f19e3f61c4",
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ],
+          "count": 2,
+          "completion_semantics": "committed_rows"
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "b103082729b1487fa2f093f19e3f61c4",
+          "outcome": "ok",
+          "elapsed_ms": 7.8397909965133294,
+          "sql_count": 1,
+          "sql_time_ms": 1.0602499969536439,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.165541005320847,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 1.0602499969536439
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 200,
+          "elapsed_ms": 8
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "498885293d8f4c17bcb45567f60428a4",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "498885293d8f4c17bcb45567f60428a4",
+          "elapsed_ms": 1.6096670005936176,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "498885293d8f4c17bcb45567f60428a4",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 1.1467499862192199,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "498885293d8f4c17bcb45567f60428a4",
+          "backend_pid": 138
+        },
+        {
+          "message": "write_completed",
+          "event": "write_completed",
+          "observed_at": "2026-09-15T14:57:28.409166+00:00",
+          "request_id": "498885293d8f4c17bcb45567f60428a4",
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ],
+          "count": 2,
+          "completion_semantics": "committed_rows"
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "498885293d8f4c17bcb45567f60428a4",
+          "outcome": "ok",
+          "elapsed_ms": 6.346167006995529,
+          "sql_count": 1,
+          "sql_time_ms": 1.1467499862192199,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.6096670005936176,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 1.1467499862192199
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 200,
+          "elapsed_ms": 6
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "51294847e0e8488c98edff5f8ed9356b",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "51294847e0e8488c98edff5f8ed9356b",
+          "elapsed_ms": 1.2183750077383593,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "51294847e0e8488c98edff5f8ed9356b",
+          "sql_hash": "e2b9191f213cb9b63a2ff56d86a4116295b7e11fb4e089fc1be6f6d5860540d6",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 2.4613749992568046,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "51294847e0e8488c98edff5f8ed9356b",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "51294847e0e8488c98edff5f8ed9356b",
+          "outcome": "ok",
+          "elapsed_ms": 5.6840409961296245,
+          "sql_count": 1,
+          "sql_time_ms": 2.4613749992568046,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.2183750077383593,
+          "sql_patterns": [
+            {
+              "sql_hash": "e2b9191f213cb9b63a2ff56d86a4116295b7e11fb4e089fc1be6f6d5860540d6",
+              "count": 1,
+              "time_ms": 2.4613749992568046
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/patients/{patient_id}/vitals",
+          "status_code": 200,
+          "elapsed_ms": 6
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "d8276f420c804314ba42498e6a02c5dd",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "d8276f420c804314ba42498e6a02c5dd",
+          "elapsed_ms": 1.1707920057233423,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "d8276f420c804314ba42498e6a02c5dd",
+          "sql_hash": "f9a45c978798d6fe592a2db13de2462f2ef5c3858ae5fb458ae50fc1aaca4804",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 1.6198749945033342,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "d8276f420c804314ba42498e6a02c5dd",
+          "backend_pid": 138
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "alerts",
+          "request_id": "d8276f420c804314ba42498e6a02c5dd",
+          "outcome": "ok",
+          "elapsed_ms": 3.9793329924577847,
+          "sql_count": 1,
+          "sql_time_ms": 1.6198749945033342,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.1707920057233423,
+          "sql_patterns": [
+            {
+              "sql_hash": "f9a45c978798d6fe592a2db13de2462f2ef5c3858ae5fb458ae50fc1aaca4804",
+              "count": 1,
+              "time_ms": 1.6198749945033342
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/alerts",
+          "status_code": 200,
+          "elapsed_ms": 4
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": null,
+          "elapsed_ms": 1.3363750040298328,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 1.6086249961517751,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/healthz",
+          "status_code": 200,
+          "elapsed_ms": 4
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "079f0472a363d1e50d043e4beac381fa31ec85b67f6e0b2082c3c07fa2ec19dd",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 138,
+          "count": 1,
+          "elapsed_ms": 0.8333340083481744,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 138
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:28.432596+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        }
+      ],
+      "metrics": {
+        "_aws": {
+          "Timestamp": 1789484248375,
+          "CloudWatchMetrics": [
+            {
+              "Namespace": "Healthcare/Sensor",
+              "Dimensions": [
+                [
+                  "ServiceName"
+                ]
+              ],
+              "Metrics": [
+                {
+                  "Name": "VitalIngestAttempts",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestFailures",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestStarted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestInFlight",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficOffered",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficStarted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficCompleted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficSkipped",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficFailed",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficCancelled",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "AbnormalAlertDelaySeconds",
+                  "Unit": "Seconds"
+                },
+                {
+                  "Name": "PatientVitalsQueryDuration",
+                  "Unit": "Milliseconds"
+                }
+              ]
+            }
+          ]
+        },
+        "ServiceName": "healthcare-sensor-app",
+        "VitalIngestAttempts": 6,
+        "VitalIngestFailures": 0,
+        "VitalIngestStarted": 6,
+        "VitalIngestInFlight": 0,
+        "TrafficOffered": 0,
+        "TrafficStarted": 0,
+        "TrafficCompleted": 0,
+        "TrafficSkipped": 0,
+        "TrafficFailed": 0,
+        "TrafficCancelled": 0,
+        "AbnormalAlertDelaySeconds": [
+          53848.39357,
+          53848.39357,
+          53848.402356,
+          53848.402356,
+          53848.40936,
+          53848.40936
+        ],
+        "PatientVitalsQueryDuration": [
+          5.724500006181188
+        ]
+      },
+      "trace_count": 24,
+      "owned_sessions_after_dispose": 0,
+      "process_window": {
+        "case": "insert",
+        "phase": "normal",
+        "revision": "v1",
+        "started_at": "2026-09-15T14:57:27.529565+00:00",
+        "completed_at": "2026-09-15T14:57:28.532851+00:00"
+      }
+    },
+    {
+      "phase": "fault",
+      "source": {
+        "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+          "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+          "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "revision/write.py": "7780ff5c28898bf605d0a5f9026439d34cc6f3feaa38f0ca3cfd6105cf6527de",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+          "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+          "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+          "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+          "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+          "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "9744331b54f9b561f4bdeb29682e519e77b3417338ddb5cbad4cf4d601e9b477",
+        "revision": "v2",
+        "verified": true
+      },
+      "schema_snapshot": {
+        "event": "db_schema_snapshot",
+        "observed_at": "2026-09-15T14:57:29.367735+00:00",
+        "schema_name": "proof_local_be25e73e1b254178",
+        "table_name": "sensor_readings",
+        "column_names": [
+          "id",
+          "patient_id",
+          "reading_type",
+          "value",
+          "unit",
+          "timestamp",
+          "is_abnormal",
+          "created_at"
+        ]
+      },
+      "write_statuses": [
+        500,
+        500,
+        500
+      ],
+      "rows_before": 6,
+      "rows_after": 6,
+      "existing_rows_preserved": true,
+      "read_status": 200,
+      "alerts_status": 200,
+      "read_count": 6,
+      "alert_count": 6,
+      "health": {
+        "status": "ok",
+        "db_connected": true,
+        "active_db_connections": 0,
+        "uptime_seconds": 0.23
+      },
+      "checked_out": 0,
+      "canaries_absent": true,
+      "events": [
+        {
+          "message": "source_manifest",
+          "event": "source_manifest",
+          "observed_at": "2026-09-15T14:57:29.152791+00:00",
+          "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+            "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+            "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "revision/write.py": "7780ff5c28898bf605d0a5f9026439d34cc6f3feaa38f0ca3cfd6105cf6527de",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+            "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+            "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+            "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+            "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+            "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "9744331b54f9b561f4bdeb29682e519e77b3417338ddb5cbad4cf4d601e9b477",
+          "revision": "v2",
+          "verified": true
+        },
+        {
+          "message": "write_contract",
+          "event": "write_contract",
+          "observed_at": "2026-09-15T14:57:29.165784+00:00",
+          "request_id": null,
+          "operation": "ingest",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "sampled_at",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_pool_config",
+          "event": "db_pool_config",
+          "pool_size": 5,
+          "max_overflow": 10,
+          "pool_timeout_seconds": 30.0,
+          "statement_timeout_ms": 0
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:29.215712+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "write_accounting",
+          "event": "write_accounting",
+          "observed_at": "2026-09-15T14:57:29.271476+00:00",
+          "metric_namespace": "Healthcare/Sensor",
+          "service_name": "healthcare-sensor-app",
+          "attempt_metric": "VitalIngestAttempts",
+          "failure_metric": "VitalIngestFailures",
+          "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+          "failure_semantics": "failed_rows",
+          "cancellation_semantics": "excluded_from_completed_counters",
+          "success_evidence_event": "write_completed",
+          "success_count_field": "count",
+          "success_semantics": "committed_rows"
+        },
+        {
+          "message": "ecs_runtime_identity",
+          "event": "ecs_runtime_identity",
+          "status": "unavailable",
+          "reason": "not_ecs"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "f73e99ac71405d95cf478b28893a476c0f7d80ce05500ac3c592654ebe269fee",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 5.386332995840348,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:29.317777+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:29.320274+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "079f0472a363d1e50d043e4beac381fa31ec85b67f6e0b2082c3c07fa2ec19dd",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 2.2259999968810007,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "7d34878214bd4f9484fa1faddf090e74",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "7d34878214bd4f9484fa1faddf090e74",
+          "elapsed_ms": 2.5021250039571896,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "7d34878214bd4f9484fa1faddf090e74",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 2.6318339951103553,
+          "outcome": "error"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "7d34878214bd4f9484fa1faddf090e74",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_write_error",
+          "event": "db_write_error",
+          "observed_at": "2026-09-15T14:57:29.334208+00:00",
+          "request_id": "7d34878214bd4f9484fa1faddf090e74",
+          "operation": "ingest",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "sampled_at",
+            "is_abnormal",
+            "created_at"
+          ],
+          "sqlstate": "42703",
+          "error_type": "UndefinedColumnError",
+          "driver_table_name": null,
+          "driver_column_name": null
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "7d34878214bd4f9484fa1faddf090e74",
+          "outcome": "error",
+          "elapsed_ms": 8.814083004835993,
+          "sql_count": 1,
+          "sql_time_ms": 2.6318339951103553,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.5021250039571896,
+          "sql_patterns": [
+            {
+              "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+              "count": 1,
+              "time_ms": 2.6318339951103553
+            }
+          ]
+        },
+        {
+          "message": "Vital ingest failed",
+          "batch_size": 2,
+          "error_type": "ProgrammingError"
+        },
+        {
+          "message": "Request failed",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 500,
+          "elapsed_ms": 9,
+          "error_type": "ProgrammingError"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "55ac83f0543b451ab54f61bc44cc7181",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "55ac83f0543b451ab54f61bc44cc7181",
+          "elapsed_ms": 2.186417012126185,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "55ac83f0543b451ab54f61bc44cc7181",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 1.4870419981889427,
+          "outcome": "error"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "55ac83f0543b451ab54f61bc44cc7181",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_write_error",
+          "event": "db_write_error",
+          "observed_at": "2026-09-15T14:57:29.339849+00:00",
+          "request_id": "55ac83f0543b451ab54f61bc44cc7181",
+          "operation": "ingest",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "sampled_at",
+            "is_abnormal",
+            "created_at"
+          ],
+          "sqlstate": "42703",
+          "error_type": "UndefinedColumnError",
+          "driver_table_name": null,
+          "driver_column_name": null
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "55ac83f0543b451ab54f61bc44cc7181",
+          "outcome": "error",
+          "elapsed_ms": 4.63412499811966,
+          "sql_count": 1,
+          "sql_time_ms": 1.4870419981889427,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.186417012126185,
+          "sql_patterns": [
+            {
+              "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+              "count": 1,
+              "time_ms": 1.4870419981889427
+            }
+          ]
+        },
+        {
+          "message": "Vital ingest failed",
+          "batch_size": 2,
+          "error_type": "ProgrammingError"
+        },
+        {
+          "message": "Request failed",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 500,
+          "elapsed_ms": 4,
+          "error_type": "ProgrammingError"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "9b480ba8df8349b3a0d560384bb1581b",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "9b480ba8df8349b3a0d560384bb1581b",
+          "elapsed_ms": 1.8632920109666884,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "9b480ba8df8349b3a0d560384bb1581b",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 1.4255419955588877,
+          "outcome": "error"
+        },
+        {
+          "message": "db_wait_snapshot",
+          "event": "db_wait_snapshot",
+          "sql_hash_algorithm": "md5",
+          "activity": [
+            {
+              "pid": 140,
+              "application_name": "healthcare-service",
+              "state": "idle in transaction (aborted)",
+              "wait_event_type": "Client",
+              "wait_event": "ClientRead",
+              "xact_start": null,
+              "query_start": "2026-09-15 14:57:29.338387+00",
+              "blocking_pids": [],
+              "sql_hash": "1f5d15a277f36c21ae8d113856ea37fb"
+            }
+          ],
+          "locks": [],
+          "pool_checked_out": 1,
+          "pool_size": 5,
+          "server_max_connections": 100,
+          "database_connections": 2
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "9b480ba8df8349b3a0d560384bb1581b",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_write_error",
+          "event": "db_write_error",
+          "observed_at": "2026-09-15T14:57:29.344684+00:00",
+          "request_id": "9b480ba8df8349b3a0d560384bb1581b",
+          "operation": "ingest",
+          "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "sampled_at",
+            "is_abnormal",
+            "created_at"
+          ],
+          "sqlstate": "42703",
+          "error_type": "UndefinedColumnError",
+          "driver_table_name": null,
+          "driver_column_name": null
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "9b480ba8df8349b3a0d560384bb1581b",
+          "outcome": "error",
+          "elapsed_ms": 4.152124995016493,
+          "sql_count": 1,
+          "sql_time_ms": 1.4255419955588877,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.8632920109666884,
+          "sql_patterns": [
+            {
+              "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+              "count": 1,
+              "time_ms": 1.4255419955588877
+            }
+          ]
+        },
+        {
+          "message": "Vital ingest failed",
+          "batch_size": 2,
+          "error_type": "ProgrammingError"
+        },
+        {
+          "message": "Request failed",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 500,
+          "elapsed_ms": 4,
+          "error_type": "ProgrammingError"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "9a714ff7ee584c83b35e0fd81624e440",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "9a714ff7ee584c83b35e0fd81624e440",
+          "elapsed_ms": 2.1179999894229695,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "9a714ff7ee584c83b35e0fd81624e440",
+          "sql_hash": "e2b9191f213cb9b63a2ff56d86a4116295b7e11fb4e089fc1be6f6d5860540d6",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 1.9813749968307093,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "9a714ff7ee584c83b35e0fd81624e440",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "9a714ff7ee584c83b35e0fd81624e440",
+          "outcome": "ok",
+          "elapsed_ms": 5.966458993498236,
+          "sql_count": 1,
+          "sql_time_ms": 1.9813749968307093,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 2.1179999894229695,
+          "sql_patterns": [
+            {
+              "sql_hash": "e2b9191f213cb9b63a2ff56d86a4116295b7e11fb4e089fc1be6f6d5860540d6",
+              "count": 1,
+              "time_ms": 1.9813749968307093
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/patients/{patient_id}/vitals",
+          "status_code": 200,
+          "elapsed_ms": 6
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "006fc8ccf0f840dcb827b180514893c2",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "006fc8ccf0f840dcb827b180514893c2",
+          "elapsed_ms": 1.2740829988615587,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "006fc8ccf0f840dcb827b180514893c2",
+          "sql_hash": "f9a45c978798d6fe592a2db13de2462f2ef5c3858ae5fb458ae50fc1aaca4804",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 1.2672080047195777,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "006fc8ccf0f840dcb827b180514893c2",
+          "backend_pid": 140
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "alerts",
+          "request_id": "006fc8ccf0f840dcb827b180514893c2",
+          "outcome": "ok",
+          "elapsed_ms": 3.6104589962633327,
+          "sql_count": 1,
+          "sql_time_ms": 1.2672080047195777,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.2740829988615587,
+          "sql_patterns": [
+            {
+              "sql_hash": "f9a45c978798d6fe592a2db13de2462f2ef5c3858ae5fb458ae50fc1aaca4804",
+              "count": 1,
+              "time_ms": 1.2672080047195777
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/alerts",
+          "status_code": 200,
+          "elapsed_ms": 4
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": null,
+          "elapsed_ms": 1.2112499971408397,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 1.1786249961005524,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/healthz",
+          "status_code": 200,
+          "elapsed_ms": 3
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "079f0472a363d1e50d043e4beac381fa31ec85b67f6e0b2082c3c07fa2ec19dd",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 140,
+          "count": 1,
+          "elapsed_ms": 0.8990420028567314,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 140
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:29.367735+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        }
+      ],
+      "metrics": {
+        "_aws": {
+          "Timestamp": 1789484249325,
+          "CloudWatchMetrics": [
+            {
+              "Namespace": "Healthcare/Sensor",
+              "Dimensions": [
+                [
+                  "ServiceName"
+                ]
+              ],
+              "Metrics": [
+                {
+                  "Name": "VitalIngestAttempts",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestFailures",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestStarted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestInFlight",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficOffered",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficStarted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficCompleted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficSkipped",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficFailed",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficCancelled",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "PatientVitalsQueryDuration",
+                  "Unit": "Milliseconds"
+                }
+              ]
+            }
+          ]
+        },
+        "ServiceName": "healthcare-sensor-app",
+        "VitalIngestAttempts": 6,
+        "VitalIngestFailures": 6,
+        "VitalIngestStarted": 6,
+        "VitalIngestInFlight": 0,
+        "TrafficOffered": 0,
+        "TrafficStarted": 0,
+        "TrafficCompleted": 0,
+        "TrafficSkipped": 0,
+        "TrafficFailed": 0,
+        "TrafficCancelled": 0,
+        "PatientVitalsQueryDuration": [
+          6.006416995660402
+        ]
+      },
+      "trace_count": 24,
+      "owned_sessions_after_dispose": 0,
+      "process_window": {
+        "case": "insert",
+        "phase": "fault",
+        "revision": "v2",
+        "started_at": "2026-09-15T14:57:28.533868+00:00",
+        "completed_at": "2026-09-15T14:57:29.459021+00:00"
+      }
+    },
+    {
+      "phase": "restore",
+      "source": {
+        "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+        "files": {
+          "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+          "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+          "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+          "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+          "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+          "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+          "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+          "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+          "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+          "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+          "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+          "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+          "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+          "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+          "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+          "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+          "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+          "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+          "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+          "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+          "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+          "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+          "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+          "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+          "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+          "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+          "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+          "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+          "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+          "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+          "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+        "revision": "v1",
+        "verified": true
+      },
+      "schema_snapshot": {
+        "event": "db_schema_snapshot",
+        "observed_at": "2026-09-15T14:57:30.277981+00:00",
+        "schema_name": "proof_local_be25e73e1b254178",
+        "table_name": "sensor_readings",
+        "column_names": [
+          "id",
+          "patient_id",
+          "reading_type",
+          "value",
+          "unit",
+          "timestamp",
+          "is_abnormal",
+          "created_at"
+        ]
+      },
+      "write_statuses": [
+        200,
+        200,
+        200
+      ],
+      "rows_before": 6,
+      "rows_after": 12,
+      "existing_rows_preserved": true,
+      "read_status": 200,
+      "alerts_status": 200,
+      "read_count": 12,
+      "alert_count": 12,
+      "health": {
+        "status": "ok",
+        "db_connected": true,
+        "active_db_connections": 0,
+        "uptime_seconds": 0.22
+      },
+      "checked_out": 0,
+      "canaries_absent": true,
+      "events": [
+        {
+          "message": "source_manifest",
+          "event": "source_manifest",
+          "observed_at": "2026-09-15T14:57:30.070278+00:00",
+          "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+          "files": {
+            "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+            "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+            "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+            "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+            "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+            "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+            "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+            "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+            "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+            "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+            "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+            "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+            "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+            "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+            "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+            "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+            "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+            "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+            "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+            "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+            "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+            "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+            "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+            "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+            "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+            "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+            "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+            "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+            "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+            "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+            "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+            "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+          "revision": "v1",
+          "verified": true
+        },
+        {
+          "message": "write_contract",
+          "event": "write_contract",
+          "observed_at": "2026-09-15T14:57:30.086410+00:00",
+          "request_id": null,
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_pool_config",
+          "event": "db_pool_config",
+          "pool_size": 5,
+          "max_overflow": 10,
+          "pool_timeout_seconds": 30.0,
+          "statement_timeout_ms": 0
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:30.134431+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "write_accounting",
+          "event": "write_accounting",
+          "observed_at": "2026-09-15T14:57:30.178614+00:00",
+          "metric_namespace": "Healthcare/Sensor",
+          "service_name": "healthcare-sensor-app",
+          "attempt_metric": "VitalIngestAttempts",
+          "failure_metric": "VitalIngestFailures",
+          "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+          "failure_semantics": "failed_rows",
+          "cancellation_semantics": "excluded_from_completed_counters",
+          "success_evidence_event": "write_completed",
+          "success_count_field": "count",
+          "success_semantics": "committed_rows"
+        },
+        {
+          "message": "ecs_runtime_identity",
+          "event": "ecs_runtime_identity",
+          "status": "unavailable",
+          "reason": "not_ecs"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "f73e99ac71405d95cf478b28893a476c0f7d80ce05500ac3c592654ebe269fee",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 4.837250002310611,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:30.219225+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:30.221651+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "079f0472a363d1e50d043e4beac381fa31ec85b67f6e0b2082c3c07fa2ec19dd",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 3.255499992519617,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "4944ca303d4f4fcfa164345b721eb50a",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "4944ca303d4f4fcfa164345b721eb50a",
+          "elapsed_ms": 5.972208993625827,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "4944ca303d4f4fcfa164345b721eb50a",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 1.7218330031028017,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "4944ca303d4f4fcfa164345b721eb50a",
+          "backend_pid": 142
+        },
+        {
+          "message": "write_completed",
+          "event": "write_completed",
+          "observed_at": "2026-09-15T14:57:30.243346+00:00",
+          "request_id": "4944ca303d4f4fcfa164345b721eb50a",
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ],
+          "count": 2,
+          "completion_semantics": "committed_rows"
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "4944ca303d4f4fcfa164345b721eb50a",
+          "outcome": "ok",
+          "elapsed_ms": 16.13491699390579,
+          "sql_count": 1,
+          "sql_time_ms": 1.7218330031028017,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 5.972208993625827,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 1.7218330031028017
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 200,
+          "elapsed_ms": 17
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_wait_snapshot",
+          "event": "db_wait_snapshot",
+          "sql_hash_algorithm": "md5",
+          "activity": [
+            {
+              "pid": 142,
+              "application_name": "healthcare-service",
+              "state": "active",
+              "wait_event_type": "IO",
+              "wait_event": "WalSync",
+              "xact_start": "2026-09-15 14:57:30.233989+00",
+              "query_start": "2026-09-15 14:57:30.235696+00",
+              "blocking_pids": [],
+              "sql_hash": "f55491f57410557264aac04492c0232c"
+            }
+          ],
+          "locks": [
+            {
+              "pid": 142,
+              "locktype": "relation",
+              "mode": "RowExclusiveLock",
+              "granted": true,
+              "relation": "sensor_readings"
+            }
+          ],
+          "pool_checked_out": 1,
+          "pool_size": 5,
+          "server_max_connections": 100,
+          "database_connections": 2
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "4d0f43b032d9496393679258fba85406",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "4d0f43b032d9496393679258fba85406",
+          "elapsed_ms": 1.9566660048440099,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "4d0f43b032d9496393679258fba85406",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 1.5775000065332279,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "4d0f43b032d9496393679258fba85406",
+          "backend_pid": 142
+        },
+        {
+          "message": "write_completed",
+          "event": "write_completed",
+          "observed_at": "2026-09-15T14:57:30.251558+00:00",
+          "request_id": "4d0f43b032d9496393679258fba85406",
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ],
+          "count": 2,
+          "completion_semantics": "committed_rows"
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "4d0f43b032d9496393679258fba85406",
+          "outcome": "ok",
+          "elapsed_ms": 7.183958005043678,
+          "sql_count": 1,
+          "sql_time_ms": 1.5775000065332279,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.9566660048440099,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 1.5775000065332279
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 200,
+          "elapsed_ms": 7
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "Abnormal reading detected",
+          "reading_type": "heart_rate"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "aa5931e270f9432aae88a389474c7ac8",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "aa5931e270f9432aae88a389474c7ac8",
+          "elapsed_ms": 1.1465839925222099,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "aa5931e270f9432aae88a389474c7ac8",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 0.8177499985322356,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "aa5931e270f9432aae88a389474c7ac8",
+          "backend_pid": 142
+        },
+        {
+          "message": "write_completed",
+          "event": "write_completed",
+          "observed_at": "2026-09-15T14:57:30.257427+00:00",
+          "request_id": "aa5931e270f9432aae88a389474c7ac8",
+          "operation": "ingest",
+          "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+          "sql_hash_algorithm": "sha256",
+          "schema_name": null,
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ],
+          "count": 2,
+          "completion_semantics": "committed_rows"
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "ingest",
+          "request_id": "aa5931e270f9432aae88a389474c7ac8",
+          "outcome": "ok",
+          "elapsed_ms": 5.254832998616621,
+          "sql_count": 1,
+          "sql_time_ms": 0.8177499985322356,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.1465839925222099,
+          "sql_patterns": [
+            {
+              "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+              "count": 1,
+              "time_ms": 0.8177499985322356
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "POST",
+          "path": "/sensors/data",
+          "status_code": 200,
+          "elapsed_ms": 5
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "4420f531086a423db74ff61cddd8e1c2",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "4420f531086a423db74ff61cddd8e1c2",
+          "elapsed_ms": 1.3420409959508106,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "4420f531086a423db74ff61cddd8e1c2",
+          "sql_hash": "e2b9191f213cb9b63a2ff56d86a4116295b7e11fb4e089fc1be6f6d5860540d6",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 1.6510830027982593,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "4420f531086a423db74ff61cddd8e1c2",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "patient_vitals",
+          "request_id": "4420f531086a423db74ff61cddd8e1c2",
+          "outcome": "ok",
+          "elapsed_ms": 4.8538749979343265,
+          "sql_count": 1,
+          "sql_time_ms": 1.6510830027982593,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.3420409959508106,
+          "sql_patterns": [
+            {
+              "sql_hash": "e2b9191f213cb9b63a2ff56d86a4116295b7e11fb4e089fc1be6f6d5860540d6",
+              "count": 1,
+              "time_ms": 1.6510830027982593
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/patients/{patient_id}/vitals",
+          "status_code": 200,
+          "elapsed_ms": 5
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": "6a5cbab627bb4845bdbfdb66abe0e18c",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": "6a5cbab627bb4845bdbfdb66abe0e18c",
+          "elapsed_ms": 1.498124998761341,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": "6a5cbab627bb4845bdbfdb66abe0e18c",
+          "sql_hash": "f9a45c978798d6fe592a2db13de2462f2ef5c3858ae5fb458ae50fc1aaca4804",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 1.0320000001229346,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": "6a5cbab627bb4845bdbfdb66abe0e18c",
+          "backend_pid": 142
+        },
+        {
+          "message": "db_operation",
+          "event": "db_operation",
+          "operation": "alerts",
+          "request_id": "6a5cbab627bb4845bdbfdb66abe0e18c",
+          "outcome": "ok",
+          "elapsed_ms": 3.8568330055568367,
+          "sql_count": 1,
+          "sql_time_ms": 1.0320000001229346,
+          "checkouts": 1,
+          "checkins": 1,
+          "acquire_time_ms": 1.498124998761341,
+          "sql_patterns": [
+            {
+              "sql_hash": "f9a45c978798d6fe592a2db13de2462f2ef5c3858ae5fb458ae50fc1aaca4804",
+              "count": 1,
+              "time_ms": 1.0320000001229346
+            }
+          ]
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/alerts",
+          "status_code": 200,
+          "elapsed_ms": 4
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "db_acquire",
+          "event": "db_acquire",
+          "request_id": null,
+          "elapsed_ms": 1.0887920070672408,
+          "pool_checked_out": 1
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 1.0341669985791668,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "Handled request",
+          "method": "GET",
+          "path": "/healthz",
+          "status_code": 200,
+          "elapsed_ms": 3
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkout",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "db_sql",
+          "event": "db_sql",
+          "request_id": null,
+          "sql_hash": "079f0472a363d1e50d043e4beac381fa31ec85b67f6e0b2082c3c07fa2ec19dd",
+          "sql_hash_algorithm": "sha256",
+          "backend_pid": 142,
+          "count": 1,
+          "elapsed_ms": 0.6700420053675771,
+          "outcome": "ok"
+        },
+        {
+          "message": "db_connection",
+          "event": "db_checkin",
+          "request_id": null,
+          "backend_pid": 142
+        },
+        {
+          "message": "db_schema_snapshot",
+          "event": "db_schema_snapshot",
+          "observed_at": "2026-09-15T14:57:30.277981+00:00",
+          "schema_name": "proof_local_be25e73e1b254178",
+          "table_name": "sensor_readings",
+          "column_names": [
+            "id",
+            "patient_id",
+            "reading_type",
+            "value",
+            "unit",
+            "timestamp",
+            "is_abnormal",
+            "created_at"
+          ]
+        }
+      ],
+      "metrics": {
+        "_aws": {
+          "Timestamp": 1789484250227,
+          "CloudWatchMetrics": [
+            {
+              "Namespace": "Healthcare/Sensor",
+              "Dimensions": [
+                [
+                  "ServiceName"
+                ]
+              ],
+              "Metrics": [
+                {
+                  "Name": "VitalIngestAttempts",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestFailures",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestStarted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "VitalIngestInFlight",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficOffered",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficStarted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficCompleted",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficSkipped",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficFailed",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "TrafficCancelled",
+                  "Unit": "Count"
+                },
+                {
+                  "Name": "AbnormalAlertDelaySeconds",
+                  "Unit": "Seconds"
+                },
+                {
+                  "Name": "PatientVitalsQueryDuration",
+                  "Unit": "Milliseconds"
+                }
+              ]
+            }
+          ]
+        },
+        "ServiceName": "healthcare-sensor-app",
+        "VitalIngestAttempts": 6,
+        "VitalIngestFailures": 0,
+        "VitalIngestStarted": 6,
+        "VitalIngestInFlight": 0,
+        "TrafficOffered": 0,
+        "TrafficStarted": 0,
+        "TrafficCompleted": 0,
+        "TrafficSkipped": 0,
+        "TrafficFailed": 0,
+        "TrafficCancelled": 0,
+        "AbnormalAlertDelaySeconds": [
+          53850.243595,
+          53850.243595,
+          53850.251768,
+          53850.251768,
+          53850.257669,
+          53850.257669
+        ],
+        "PatientVitalsQueryDuration": [
+          4.895749996649101
+        ]
+      },
+      "trace_count": 24,
+      "owned_sessions_after_dispose": 0,
+      "process_window": {
+        "case": "insert",
+        "phase": "restore",
+        "revision": "v1",
+        "started_at": "2026-09-15T14:57:29.460259+00:00",
+        "completed_at": "2026-09-15T14:57:30.381767+00:00"
+      }
+    }
+  ],
+  "phase_windows": [
+    {
+      "case": "setup",
+      "phase": "normal",
+      "revision": "v1",
+      "started_at": "2026-09-15T14:57:26.856213+00:00",
+      "completed_at": "2026-09-15T14:57:27.528393+00:00"
+    },
+    {
+      "case": "insert",
+      "phase": "normal",
+      "revision": "v1",
+      "started_at": "2026-09-15T14:57:27.529565+00:00",
+      "completed_at": "2026-09-15T14:57:28.532851+00:00"
+    },
+    {
+      "case": "insert",
+      "phase": "fault",
+      "revision": "v2",
+      "started_at": "2026-09-15T14:57:28.533868+00:00",
+      "completed_at": "2026-09-15T14:57:29.459021+00:00"
+    },
+    {
+      "case": "insert",
+      "phase": "restore",
+      "revision": "v1",
+      "started_at": "2026-09-15T14:57:29.460259+00:00",
+      "completed_at": "2026-09-15T14:57:30.381767+00:00"
+    }
+  ],
+  "source_snapshot": {
+    "captured_at": "2026-09-15T14:57:26.693444+00:00",
+    "fingerprint": "64afd1ffd8fb99b27c65e7390e6cc75e8fa6968740f49762e7a40fa2a215ad41",
+    "files": {
+      "demo/build_revision.py": "508ec47a9a1d0358d1b8761f5e308f691b879ccf836395840fa1e7d84a40632f",
+      "demo/local_worker.py": "ecd4e01cb01f60335305fc6d2e5073a5d59b29e1a4b123dc6f0a678b94d7e34f",
+      "src/test_service/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+      "src/test_service/adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+      "src/test_service/adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+      "src/test_service/adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+      "src/test_service/adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+      "src/test_service/adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+      "src/test_service/adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+      "src/test_service/adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+      "src/test_service/config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+      "src/test_service/config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+      "src/test_service/di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+      "src/test_service/di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+      "src/test_service/main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+      "src/test_service/middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+      "src/test_service/middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+      "src/test_service/ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+      "src/test_service/ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+      "src/test_service/ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+      "src/test_service/revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+      "src/test_service/revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+      "src/test_service/revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+      "src/test_service/revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+      "src/test_service/revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+      "src/test_service/services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "src/test_service/services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+      "src/test_service/services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+      "src/test_service/services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+      "src/test_service/services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+      "src/test_service/services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+      "src/test_service/services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+      "src/test_service/services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+      "src/test_service/telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+      "src/test_service/utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "revisions": {
+    "v1": {
+      "revision": "v1",
+      "fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+      "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+        "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+        "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+        "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+        "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+        "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+        "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+        "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+        "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+        "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+        "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+        "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+        "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+        "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+        "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+        "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+        "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+        "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+        "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+        "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+        "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+        "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+        "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+        "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+        "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+        "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+        "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+        "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+        "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+        "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+        "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+        "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "v2": {
+      "revision": "v2",
+      "fingerprint": "9744331b54f9b561f4bdeb29682e519e77b3417338ddb5cbad4cf4d601e9b477",
+      "base_fingerprint": "f28be1e2db61f7a3f86050fe192579f41ff6d4f412b6a8f769e0dd668d1c81e1",
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/alert_controller.py": "bd7c0bfea294fad6085952502809e9550c2d326440b01407d01f96e45f24b591",
+        "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+        "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/patients/patient_controller.py": "6476baea6c5b8ee846d8e6a9c523a66e5c620d2ee670042b36520139118697b3",
+        "adapters/primary/schemas.py": "fa83845d0a794b19cbf097ad0444d6d3162ff36bbf23e247e1735ad6e140f8b4",
+        "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/sensors/sensor_controller.py": "1d0a249a130a0245c89472632c56940709b9a8e57aa6e0dfe171cc8eda4777d9",
+        "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+        "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+        "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+        "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+        "config/settings.py": "153a01c65661f5f71c79497883090d93ccae53228b60ebf47308a711210fe56b",
+        "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "di/app_container.py": "f65cea530747502799f4e3b8d8c13f3dc55f83f2fa516625737507f72d8a72c1",
+        "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+        "main.py": "664f05df4a7d82201db4aec3d8bc679b66656bd7b7b8e549ce1a71253743d33f",
+        "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+        "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+        "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+        "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+        "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+        "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+        "revision/manifest.py": "cbfcd456e4405f81dac05a22077eb7ee94ed7dae2463edbb756d50b3ea08b3b9",
+        "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+        "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+        "revision/write.py": "7780ff5c28898bf605d0a5f9026439d34cc6f3feaa38f0ca3cfd6105cf6527de",
+        "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+        "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+        "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+        "services/sensor.py": "c0f3165ffc71b8231006d5e481dd5a3da302627d338ee9e0f4a787b9ee6ef29b",
+        "services/symptom_metrics.py": "824b4b3016838a0c804fdb5ee477b2ae4a4d12d00827886794f35e3656f11c9a",
+        "services/traffic_generator.py": "46633116666cb8aa8c465230b38a1da6a46689763d672fb1fd8690a56cd071db",
+        "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+        "telemetry.py": "e876d8d74b115fe0927eded91078bd1dc843a71429dfce8e9886be5bfa36ec88",
+        "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  },
+  "checks": {
+    "single_insert_column": true,
+    "native_42703": true,
+    "no_partial_writes": true,
+    "read_health_preserved": true,
+    "no_connection_leaks": true,
+    "canaries_absent": true
+  },
+  "schema_removed": true,
+  "cleanup_errors": [],
+  "completed_at": "2026-09-15T14:57:30.532946+00:00"
+}

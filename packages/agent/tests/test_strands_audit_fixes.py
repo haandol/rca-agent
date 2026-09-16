@@ -309,25 +309,26 @@ def test_hard_timeout_discards_partial_validation_messages():
     assert agent.messages == []
 
 
-def test_installed_strands_timeout_signal_cleanup_and_reuse():
-    """Verify cleanup/reuse after the signal, not a hard elapsed-time bound.
-
-    The SDK joins its worker before returning: a 0.5-second model delay with a
-    0.02-second timeout still takes roughly 0.5 seconds. This existing timeout
-    limitation is outside the conversation-isolation fix.
-    """
+def test_installed_strands_short_budget_admission_and_reuse():
+    """Reject an undrainable invocation before starting Strands, then reuse its clean conversation."""
     model = RecordingValidationModel()
     model.delay = 0.5
     agent = create_validation_agent(model=model)
     agent.callback_handler = lambda **_: None
-    judgment = validate_hypothesis(_hypothesis("timed-out"), "TIMEOUT_EVIDENCE", agent, timeout_seconds=0.02)
+    started = time.monotonic()
+    from rca_agent.utils.agent_invocation import invocation_scope
+
+    with invocation_scope(admission_deadline=time.monotonic() - 1):
+        judgment = validate_hypothesis(_hypothesis("timed-out"), "TIMEOUT_EVIDENCE", agent, timeout_seconds=0.02)
+    assert time.monotonic() - started < 0.02
+    assert model.inputs == []
+    assert model.delay == 0.5
     assert "timed out or failed" in judgment.reasoning
     assert agent.messages == []
-    # The installed SDK joins its synchronous-call worker while unwinding. Cleanup
-    # therefore runs after the worker finishes, before this agent can be reused.
+    # No first request was started; the next invocation must have only its own input.
     next_judgment = validate_hypothesis(_hypothesis("next"), "NEXT_EVIDENCE", agent)
     assert next_judgment.reasoning == "A bounded fake judgment"
-    assert len(model.inputs) == 2
+    assert len(model.inputs) == 1
     assert len(model.inputs[-1]) == 1
     assert "TIMEOUT_EVIDENCE" not in json.dumps(model.inputs[-1])
     assert agent.messages == []
@@ -430,10 +431,10 @@ def test_pipeline_forwards_feedback_across_regenerations_and_preserves_trace_his
 
 def test_validation_keeps_per_invocation_timeout():
     agent = MagicMock()
-    with patch("rca_agent.services.validation.call_with_timeout", side_effect=TimeoutError) as timeout:
+    with patch("rca_agent.services.validation.invoke_agent", side_effect=TimeoutError) as timeout:
         run_validation([_hypothesis("one"), _hypothesis("two")], {}, agent, timeout_seconds=17)
     assert timeout.call_count == 2
-    assert all(call.args[1] == 17 for call in timeout.call_args_list)
+    assert all(call.args[3] == 17 for call in timeout.call_args_list)
 
 
 def test_regeneration_preserves_rejection_evidence_from_an_earlier_validation_loop():

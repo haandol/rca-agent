@@ -21,4 +21,4 @@ def source_manifest() -> dict:
         if expected["files"] != files:
             raise RuntimeError("Installed source differs from the build manifest")
         return {**expected, "verified": True}
-    return {"revision": "r1", "fingerprint": fingerprint, "files": files, "verified": False}
+    return {"revision": "v1", "fingerprint": fingerprint, "files": files, "verified": False}

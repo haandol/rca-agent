@@ -13,11 +13,13 @@ from rca_agent.ports.dto.models import (
     ScopingResult,
 )
 from rca_agent.prompts.report import REPORT_USER_PROMPT_TEMPLATE
-from rca_agent.services.observation_context import render_alarm_description
-from rca_agent.utils.timeout import call_with_timeout
+from rca_agent.services.observation_context import render_alarm_description, render_critical_facts
+from rca_agent.utils.agent_invocation import invoke_agent
 
 if TYPE_CHECKING:
     from strands import Agent
+
+from rca_agent.utils.exception_logging import safe_exception_info
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +70,7 @@ def _build_user_prompt(
         evidence_text="\n".join(f"- {e}" for e in evidence_texts) or "No evidence collected.",
         rejected_text="\n".join(f"- {r}" for r in rejected_descriptions) or "None",
         timeline_text="\n".join(f"- {t}" for t in timeline) or "N/A",
-    )
-
-
-def _invoke_agent(agent: Agent, prompt: str) -> ReportOutput:
-    result = agent(prompt, structured_output_model=ReportOutput)
-    return result.structured_output
+    ) + render_critical_facts(scoping)
 
 
 def run_report_generation(
@@ -104,16 +101,18 @@ def run_report_generation(
 
     output: ReportOutput | None = None
     try:
-        output = call_with_timeout(
-            lambda: _invoke_agent(agent, user_prompt),
-            timeout_seconds,
+        output = invoke_agent(agent, user_prompt, ReportOutput, timeout_seconds)
+    except Exception as exc:
+        logger.warning(
+            "Report generation failed; exception_type=%s; building minimal report",
+            type(exc).__name__,
+            exc_info=safe_exception_info(exc),
         )
-    except Exception:
-        logger.warning("Report generation failed, building minimal report")
 
     if output is None:
         return RcaReport(
             rca_id=rca_id,
+            incident_observations=scoping_result.incident_observations.model_copy(deep=True),
             incident_summary=scoping_result.alarm_summary,
             alarm_description=scoping_result.raw_alarm.alarm_description if scoping_result.raw_alarm else None,
             severity=scoping_result.initial_severity,
@@ -133,6 +132,7 @@ def run_report_generation(
     logger.info("RCA report generated (rca_id=%s)", rca_id)
     return RcaReport(
         rca_id=rca_id,
+        incident_observations=scoping_result.incident_observations.model_copy(deep=True),
         incident_summary=output.incident_summary,
         alarm_description=scoping_result.raw_alarm.alarm_description if scoping_result.raw_alarm else None,
         severity=output.severity,

@@ -206,6 +206,15 @@ function routineAttempts(
         <p v-else class="text-[13px] text-base-content/65">
           절차가 없었습니다.
         </p>
+        <details v-if="data.playbookBefore" class="mt-4">
+          <summary class="cursor-pointer text-primary text-sm">
+            승인 당시 작업·배포 전제·정상 근거 원문
+          </summary>
+          <pre
+            class="plan-command"
+            tabindex="0"
+          ><code>{{ JSON.stringify({ execution_steps: data.playbookBefore.execution_steps, rollback_context: data.playbookBefore.rollback_context ?? null }, null, 2) }}</code></pre>
+        </details>
       </section>
 
       <!-- 3. What was attempted and what failed -->

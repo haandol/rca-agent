@@ -11,10 +11,13 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Annotated, Literal
 
 from fastmcp import FastMCP
+from pydantic import Field, StrictInt
 
 from headless_codex.services.execution_workspace import (
+    EXECUTION_ID_ENV,
     EXECUTION_TOKEN_ENV,
     retrospective_path_for_token,
 )
@@ -22,7 +25,52 @@ from headless_codex.services.runbook_contract import validate_step_operation
 
 mcp = FastMCP("playbook-retrospective")
 
-_EXECUTION_STEP_FIELDS = ("step_id", "intent", "action", "success_criteria", "commands", "metric_wait")
+
+@mcp.tool()
+def read_retrospective_document(
+    document: Literal["evidence", "approved_playbook"],
+    pointer: str = "",
+    offset: Annotated[StrictInt, Field(ge=0)] = 0,
+    max_items: Annotated[StrictInt, Field(ge=1, le=50)] = 20,
+    text_chars: Annotated[StrictInt, Field(ge=1, le=4000)] = 4000,
+) -> str:
+    """Read current execution evidence or its approved playbook, never arbitrary files or S3 keys.
+
+    document is evidence or approved_playbook. Begin at pointer="" to list fields.
+    Object/array replies index children with reusable JSON pointers, not their full contents.
+    Follow returned pointers to inspect steps, attempts, failures, waits and final proof.
+    Values are redacted before paging; offsets address the redacted stored value.
+    source.sha256 identifies original stored bytes, not the returned redacted view.
+    next_offset pages a collection or string; complete=false means more source remains.
+    max_items is 1..50 (default 20); text_chars is 1..4000; offset is nonnegative.
+    Source errors must not be treated as an empty result or proof of success.
+    """
+    from headless_codex.services.retrospective_reader import read_document
+
+    return json.dumps(
+        read_document(
+            os.environ.get(EXECUTION_TOKEN_ENV, ""),
+            os.environ.get(EXECUTION_ID_ENV, ""),
+            document,
+            pointer,
+            offset=offset,
+            max_items=max_items,
+            text_chars=text_chars,
+        ),
+        ensure_ascii=False,
+    )
+
+
+_EXECUTION_STEP_FIELDS = (
+    "step_id",
+    "intent",
+    "action",
+    "success_criteria",
+    "commands",
+    "metric_wait",
+    "deployment_wait",
+    "ecs_service_precondition",
+)
 
 
 def _target_path() -> Path | None:
@@ -93,7 +141,7 @@ def save_playbook_update(update_json: str, rationale: str) -> str:
                     },
                     ensure_ascii=False,
                 )
-            if "commands" in step or "metric_wait" in step:
+            if any(k in step for k in ("commands", "metric_wait", "deployment_wait", "ecs_service_precondition")):
                 try:
                     validate_step_operation(step)
                 except ValueError as exc:
@@ -108,6 +156,15 @@ def save_playbook_update(update_json: str, rationale: str) -> str:
     path = _target_path()
     if path is None:
         return json.dumps({"ok": False, "error": "missing execution context"}, ensure_ascii=False)
+    from headless_codex.services.retrospective_reader import require_successful_reads
+
+    try:
+        require_successful_reads(
+            os.environ.get(EXECUTION_TOKEN_ENV, ""),
+            os.environ.get(EXECUTION_ID_ENV, ""),
+        )
+    except Exception:
+        return json.dumps({"ok": False, "error": "successful source reads are required before saving a review"})
 
     _write_atomic(
         path,

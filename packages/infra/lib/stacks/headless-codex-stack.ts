@@ -90,6 +90,7 @@ export class HeadlessCodexStack extends cdk.Stack {
         S3_VECTOR_BUCKET_NAME: props.vectorBucketName,
         S3_REPORT_BUCKET: props.reportBucket,
         SNS_NOTIFICATION_TOPIC_ARN: props.notificationTopic.topicArn,
+        ALARM_STALENESS_SECONDS: '10800',
       },
       secrets: {
         GITHUB_PERSONAL_ACCESS_TOKEN:

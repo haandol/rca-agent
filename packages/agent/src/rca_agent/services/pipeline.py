@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
@@ -37,13 +37,22 @@ from rca_agent.ports.dto.models import (
     ValidationJudgment,
     ValidationResult,
 )
+from rca_agent.ports.dto.observations import CriticalFact
+from rca_agent.ports.interfaces.queue_consumer import QueueLeaseLostError
 from rca_agent.ports.interfaces.session_store import (
     ClaimDisposition,
     IncidentClaimDisposition,
     SideEffectLeaseUnavailableError,
 )
 from rca_agent.services.branching import run_branching
-from rca_agent.services.evidence import run_evidence_collection
+from rca_agent.services.collected_observations import render_collected_facts
+from rca_agent.services.evidence import (
+    CollectionAttempt,
+    CollectionStatus,
+    collection_is_due,
+    evidence_scope_key,
+    run_evidence_collection,
+)
 from rca_agent.services.hypothesis import (
     MAX_REJECTION_FEEDBACK_ITEMS,
     build_rejection_feedback,
@@ -57,6 +66,8 @@ from rca_agent.services.review_gate import ReviewGateResult, run_review_gate
 from rca_agent.services.scoping import run_scoping
 from rca_agent.services.termination import check_termination, effective_judgments
 from rca_agent.services.validation import run_validation
+from rca_agent.utils.agent_invocation import invocation_scope
+from rca_agent.utils.message_lease import bind_message_claim, check_message_lease, stop_message_renewal
 
 logger = logging.getLogger(__name__)
 
@@ -151,11 +162,23 @@ class ValidationLoopState:
     evidence_map: dict[str, str] = field(default_factory=dict)
     full_evidence_map: dict[str, str] = field(default_factory=dict)
     evidence_failed_ids: set[str] = field(default_factory=set)
+    collection_states: dict[str, CollectionAttempt] = field(default_factory=dict)
+    fact_map: dict[str, list[CriticalFact]] = field(default_factory=dict)
+    source_ref_map: dict[str, list[str]] = field(default_factory=dict)
+    warning_map: dict[str, list[dict]] = field(default_factory=dict)
     timeline: list[str] = field(default_factory=list)
     loop_count: int = 0
     regeneration_count: int = 0
     consecutive_blocked_loops: int = 0
     termination: TerminationDecision | None = None
+
+    def model_evidence(self, hypothesis_id: str) -> str:
+        """Return bounded prose plus source-bound facts/references, never the original tool archive."""
+        return self.evidence_map.get(hypothesis_id, "")[:500] + render_collected_facts(
+            self.fact_map.get(hypothesis_id, []),
+            self.source_ref_map.get(hypothesis_id, []),
+            self.warning_map.get(hypothesis_id, []),
+        )
 
 
 class ShutdownRequestedError(Exception):
@@ -178,11 +201,13 @@ class PipelineOrchestrator:
         self._precollected_evidence = precollected_evidence
 
     def _check_shutdown(self) -> None:
+        check_message_lease()
         if self._shutdown_event.is_set():
             raise ShutdownRequestedError
 
     @contextmanager
     def _side_effect_lease(self, rca_id: str, claim_token: str, effect_name: str):
+        check_message_lease()
         store = self._container.session_store
         lease_token = store.acquire_side_effect_lease(
             rca_id,
@@ -341,8 +366,34 @@ class PipelineOrchestrator:
             start_time=start_time,
         )
 
+        def invocation_control():
+            """Check shutdown and current claim while model responses remain active."""
+            self._check_shutdown()
+            trace.check_cancelled()
+
         try:
-            return self._run_pipeline(alarm, run)
+            bind_message_claim(
+                rca_id,
+                claim_token,
+                dynamodb_client=self._container.dynamodb_client,
+                table_name=settings.DYNAMODB_TABLE_NAME,
+            )
+            with invocation_scope(
+                admission_deadline=run.start_time + settings.RCA_TIME_BUDGET_SECONDS,
+                control=invocation_control,
+            ):
+                return self._run_pipeline(alarm, run)
+        except QueueLeaseLostError:
+            logger.warning("Receipt lease lost for RCA %s; leaving message unacknowledged", rca_id)
+            try:
+                store.mark_failed(
+                    rca_id,
+                    error_reason="SQS receipt lease lost; processing stopped",
+                    claim_token=claim_token,
+                )
+            except Exception:
+                logger.exception("Failed to record receipt lease loss for RCA %s", rca_id)
+            return False
         except ShutdownRequestedError:
             logger.info(
                 "Pipeline aborted by SIGTERM for alarm %s (rca_id=%s)",
@@ -391,6 +442,7 @@ class PipelineOrchestrator:
         claim_token: str | None,
         handoff: CompletionHandoff | None = None,
     ) -> bool:
+        check_message_lease()
         if handoff is None:
             handoff = self._container.session_store.get_completion_handoff(rca_id)
         if handoff is None:
@@ -475,6 +527,13 @@ class PipelineOrchestrator:
         return age_seconds > ALARM_STALENESS_SECONDS
 
     def _run_pipeline(self, alarm, run: RunContext) -> bool:
+        """Isolate newly claimed analysis state before the first stage; keep intra-analysis context intact."""
+        context = getattr(self._container, "analysis_context", None)
+        with context() if context is not None else nullcontext():
+            return self._run_pipeline_in_context(alarm, run)
+
+    def _run_pipeline_in_context(self, alarm, run: RunContext) -> bool:
+        """Run all stages inside the container's incident boundary without rebuilding shared clients."""
         store = self._container.session_store
 
         self._check_shutdown()
@@ -508,7 +567,7 @@ class PipelineOrchestrator:
             run,
             alarm=alarm,
             hypothesis_path=[best_hypothesis.description] if best_hypothesis else [],
-            evidence_texts=[e for e in (state.evidence_map | state.full_evidence_map).values() if e],
+            evidence_texts=[state.model_evidence(key) for key in state.evidence_map if state.model_evidence(key)],
             rejected_descriptions=state.rejected_descriptions,
             timeline=state.timeline,
         )
@@ -529,6 +588,7 @@ class PipelineOrchestrator:
                 alarm,
                 c.scoping_agent,
                 report_store=c.report_store,
+                incident_observer=getattr(c, "incident_observer", None),
             )
             s.output_summary = (
                 f"심각도={scoping_result.initial_severity},"
@@ -607,6 +667,10 @@ class PipelineOrchestrator:
             gate = self._apply_review_gate(state, run, loop_span)
             if gate.early_exit:
                 break
+            if time.monotonic() - run.start_time >= settings.RCA_TIME_BUDGET_SECONDS:
+                self._loop_termination_check(state, run, loop_span)
+                trace.end_span(loop_span, output_summary="전체 시작 예산 소진: 받은 결과를 보존하고 종료")
+                break
 
             prioritization_result = self._loop_prioritization(
                 state,
@@ -661,7 +725,7 @@ class PipelineOrchestrator:
             if regen_action == _LoopAction.BREAK:
                 break
 
-            if not self._loop_branching(state, gate, trace, loop_span):
+            if not self._loop_branching(state, gate, trace, loop_span, scoping_result=scoping_result):
                 break
 
         return state
@@ -776,7 +840,16 @@ class PipelineOrchestrator:
             RcaSessionState.EVIDENCE_COLLECTION,
             claim_token=run.claim_token,
         )
-        new_hypotheses = [h for h in active_hypotheses if h.hypothesis_id not in state.evidence_map]
+        scope_key = evidence_scope_key(scoping_result)
+        new_hypotheses = [
+            h
+            for h in active_hypotheses
+            if collection_is_due(
+                state.collection_states.get(h.hypothesis_id),
+                scope_key,
+                state.evidence_map.get(h.hypothesis_id),
+            )
+        ]
         with trace.span(
             SpanType.EVIDENCE_COLLECTION,
             parent_span_id=loop_span.span_id,
@@ -791,6 +864,14 @@ class PipelineOrchestrator:
                     trace=trace,
                     s3_client=c.s3_client,
                     existing_evidence_map=state.evidence_map,
+                    collection_states=state.collection_states,
+                    existing_fact_map=state.fact_map,
+                    existing_source_ref_map=state.source_ref_map,
+                    existing_warning_map=state.warning_map,
+                    timeout_seconds=min(
+                        settings.EVIDENCE_COLLECTION_TIMEOUT_SECONDS,
+                        max(0, settings.RCA_TIME_BUDGET_SECONDS - (time.monotonic() - run.start_time)),
+                    ),
                     all_hypotheses=state.hypotheses,
                     cancel_checker=self._check_shutdown,
                     save_lease=lambda effect_name: self._side_effect_lease(
@@ -801,11 +882,28 @@ class PipelineOrchestrator:
                 )
                 state.evidence_map.update(ev_summary.evidence_map)
                 state.full_evidence_map.update(ev_summary.full_evidence_map)
+                state.fact_map.update(ev_summary.fact_map)
+                state.source_ref_map.update(ev_summary.source_ref_map)
+                state.warning_map.update(ev_summary.warning_map)
                 state.evidence_failed_ids.update(ev_summary.failed_ids)
-            s.output_summary = f"가설 {len(new_hypotheses)}개에 대한 증거 수집 완료"
+                state.evidence_failed_ids.difference_update(
+                    key for key, value in state.collection_states.items() if value.status == CollectionStatus.COMPLETE
+                )
+            counts = {
+                status: sum(record.status == status for record in state.collection_states.values())
+                for status in CollectionStatus
+            }
+            s.output_summary = (
+                f"완료 {counts[CollectionStatus.COMPLETE]}개, 실패 {counts[CollectionStatus.FAILED]}개, "
+                f"미시작 {counts[CollectionStatus.NOT_STARTED]}개"
+            )
             s.metadata = {
                 "신규_가설_수": len(new_hypotheses),
                 "beam_width": RCA_BEAM_WIDTH,
+                "collection_warnings": state.warning_map,
+                "collection_states": {
+                    key: value.model_dump(mode="json") for key, value in state.collection_states.items()
+                },
             }
         state.timeline.append(
             f"Loop {state.loop_count}: evidence for {len(new_hypotheses)} hypotheses (beam={len(active_hypotheses)})"
@@ -843,9 +941,15 @@ class PipelineOrchestrator:
         ) as s:
             validation_result = run_validation(
                 active_hypotheses,
-                state.evidence_map,
+                {key: state.model_evidence(key) for key in state.evidence_map},
                 c.validation_agent,
-                evidence_failed_ids=state.evidence_failed_ids,
+                evidence_failed_ids=state.evidence_failed_ids
+                | {
+                    h.hypothesis_id
+                    for h in active_hypotheses
+                    if h.hypothesis_id in state.collection_states
+                    and state.collection_states[h.hypothesis_id].status != CollectionStatus.COMPLETE
+                },
                 scoping_result=scoping_result,
             )
             state.all_judgments = validation_result.judgments
@@ -1075,6 +1179,7 @@ class PipelineOrchestrator:
         gate: ReviewGateResult,
         trace,
         loop_span,
+        scoping_result=None,
     ) -> bool:
         """Returns True to continue the loop, False to break."""
         c = self._container
@@ -1113,13 +1218,19 @@ class PipelineOrchestrator:
                 )
                 if parent is None:
                     continue
+                collection = state.collection_states.get(parent.hypothesis_id)
+                if collection is not None and collection.eligible():
+                    # Use the next existing validation turn to complete the parent's
+                    # evidence before creating children from an incomplete collection.
+                    continue
                 attempted_parent_ids.add(parent.hypothesis_id)
-                evidence_text = state.evidence_map.get(parent.hypothesis_id, "")
+                evidence_text = state.model_evidence(parent.hypothesis_id)
                 branching_result = run_branching(
                     parent,
                     evidence_text,
                     state.rejected_descriptions,
                     c.branching_agent,
+                    scoping_result=scoping_result,
                     existing_children=[
                         child
                         for child in [*state.hypotheses, *new_children]
@@ -1253,6 +1364,7 @@ class PipelineOrchestrator:
         logger.info("RCA report generated: %s", rca_report.rca_id)
 
         trace.check_cancelled()
+        check_message_lease()
         # 플레이북은 확정된 리포트를 입력으로 만든다 — 조치 방안과 조치 항목이 절차의
         # 재료이므로 순서를 뒤집으면 플레이북이 그 재료를 잃는다. 리포트 본문의 절차
         # 섹션은 그래서 모델이 쓰지 않고 이 플레이북에서 렌더링된다.
@@ -1262,6 +1374,7 @@ class PipelineOrchestrator:
             run,
         )
         trace.check_cancelled()
+        check_message_lease()
 
         report_s3_key = c.report_store.save(
             rca_report,
@@ -1297,6 +1410,7 @@ class PipelineOrchestrator:
                 selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
             )
 
+            check_message_lease()
             completed = store.mark_completed(
                 rca_report.rca_id,
                 root_cause=rca_report.root_cause,
@@ -1314,6 +1428,8 @@ class PipelineOrchestrator:
             if not completed:
                 s.output_summary = "완료 상태 및 알림 저장 실패"
                 return False
+            stop_message_renewal()
+            check_message_lease()
             c.report_store.save_vectors(rca_report, scoping_result=scoping_result)
             if not self._flush_completion_handoff(
                 rca_report.rca_id,
@@ -1358,7 +1474,9 @@ class PipelineOrchestrator:
                 c.playbook_agent,
                 playbook_store=c.playbook_store,
                 scoping_result=scoping_result,
+                incident_observer=getattr(c, "incident_observer", None),
             )
+            check_message_lease()
             report_playbook, playbook = archive_incident_comparison(playbook, store=c.playbook_store, rca_id=run.rca_id)
             trace.end_span(
                 playbook_span,
@@ -1372,6 +1490,7 @@ class PipelineOrchestrator:
                     "severity_criteria": playbook.severity_criteria,
                     "verification_steps": playbook.verification_steps,
                     "execution_steps": [step.model_dump() for step in playbook.execution_steps],
+                    "rollback_context": playbook.rollback_context,
                     "temporary_mitigation": playbook.temporary_mitigation,
                     "permanent_remediation": playbook.permanent_remediation,
                     "escalation_criteria": playbook.escalation_criteria,

@@ -809,7 +809,8 @@ def test_a_retrospective_step_with_unknown_fields_is_rejected(workspace):
     assert "command" in result["error"]
 
 
-def test_a_valid_retrospective_update_is_saved_with_its_rationale(workspace):
+def test_a_valid_retrospective_update_is_saved_with_its_rationale(retrospective_reads):
+    workspace = retrospective_reads
     result = json.loads(
         retrospective_mcp_server.save_playbook_update(
             json.dumps({"execution_steps": [{"step_id": "step-1", "action": "재배포 후 30초 대기"}]}),

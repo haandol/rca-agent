@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
-const CASES = {
+const HISTORICAL_CASES = {
   'exception-session-cleanup': 'exception',
   'maintenance-transaction-lock': 'lock',
   'pool-config-regression': 'pool',
@@ -206,18 +206,22 @@ const units = {
  * snippets is a reviewed source excerpt whose content hash matches the measured build.
  */
 export function projectIncidentCaptures(scenarioId, proof, snippets = {}) {
+  if (scenarioId === 'write-column-regression') {
+    return projectWriteColumnCaptures(proof, snippets);
+  }
+  // Historical callers only: retained raw captures still reproduce their old projection.
   if (proof.kind === 'aws-maintenance-capture') {
     assert.equal(scenarioId, 'maintenance-transaction-lock');
     return projectAwsMaintenanceCaptures(proof, snippets);
   }
-  const caseName = CASES[scenarioId];
+  const caseName = HISTORICAL_CASES[scenarioId];
   assert.ok(caseName, 'unknown catalog id');
   const baseline = phaseData(proof, caseName, 'normal');
   const incident = phaseData(proof, caseName, 'fault');
   const pair = [baseline, incident];
   const resource = { runId: proof.run_id, schema: proof.schema };
   const operatorMapping = {};
-  const ordinal = Object.keys(CASES).indexOf(scenarioId) + 1;
+  const ordinal = Object.keys(HISTORICAL_CASES).indexOf(scenarioId) + 1;
   /** Give each capture a neutral identity and keep raw phase pointers operator-only. */
   const wrap = (number, select, pointerSuffixes = []) => {
     const captureId = `capture-${ordinal}${String(number).padStart(3, '0')}`;
@@ -982,4 +986,162 @@ export function projectAwsMaintenanceCaptures(capture, files) {
     ),
   ];
   return { observations, operatorMapping, cutoff, alarm: alarmPayload };
+}
+
+/** Project a fresh native-column proof; restoration and operator verdicts never enter input. */
+export function projectWriteColumnCaptures(proof, snippets) {
+  assert.equal(proof.boundary, 'local_postgresql_service');
+  assert.ok(proof.run_id && proof.schema);
+  const phases = ['normal', 'fault'].map((phase) => {
+    const matches = proof.phases.filter((item) => item.phase === phase);
+    const windows = proof.phase_windows.filter(
+      (item) => item.phase === phase && item.case !== 'setup',
+    );
+    assert.equal(matches.length, 1);
+    assert.equal(windows.length, 1);
+    const raw = matches[0];
+    const window = {
+      start: iso(windows[0].started_at, 'phase start'),
+      end: iso(windows[0].completed_at, 'phase end'),
+    };
+    assert.ok(Date.parse(window.start) < Date.parse(window.end));
+    assert.equal(raw.source.verified, true);
+    assert.match(raw.source.files['revision/write.py'], /^[a-f0-9]{64}$/);
+    // Python source manifests use sorted default-separator JSON, unlike the baseline wire.
+    const fileMap =
+      '{' +
+      Object.entries(raw.source.files)
+        .sort()
+        .map(
+          ([key, value]) => `${JSON.stringify(key)}: ${JSON.stringify(value)}`,
+        )
+        .join(', ') +
+      '}';
+    const fingerprint = createHash('sha256').update(fileMap).digest('hex');
+    assert.equal(raw.source.fingerprint, fingerprint);
+    const context = phase === 'normal' ? 'baseline' : 'incident';
+    const snippet = snippets[context];
+    assert.equal(snippet.path, 'revision/write.py');
+    assert.equal(
+      createHash('sha256').update(snippet.text).digest('hex'),
+      raw.source.files[snippet.path],
+    );
+    const allowed = [
+      'event',
+      'observed_at',
+      'request_id',
+      'operation',
+      'sqlstate',
+      'error_type',
+      'schema_name',
+      'table_name',
+      'driver_table_name',
+      'driver_column_name',
+      'column_names',
+      'sql_hash',
+      'sql_hash_algorithm',
+      'count',
+      'completion_semantics',
+    ];
+    const events = raw.events
+      .filter((event) =>
+        [
+          'db_write_error',
+          'db_schema_snapshot',
+          'write_completed',
+          'write_contract',
+        ].includes(event.event),
+      )
+      .map((event) => {
+        const stamp = iso(event.observed_at, 'logger observation');
+        assert.ok(
+          Date.parse(stamp) >= Date.parse(window.start) &&
+            Date.parse(stamp) <= Date.parse(window.end),
+        );
+        return pick(event, allowed);
+      });
+    assert.ok(events.some((event) => event.event === 'db_schema_snapshot'));
+    assert.ok(
+      events.some(
+        (event) =>
+          event.event ===
+          (phase === 'normal' ? 'write_completed' : 'db_write_error'),
+      ),
+    );
+    return {
+      context,
+      window,
+      source: pick(raw.source, [
+        'revision',
+        'fingerprint',
+        'base_fingerprint',
+        'files',
+      ]),
+      code: { path: snippet.path, text: snippet.text },
+      events,
+      service: pick(raw, [
+        'write_statuses',
+        'rows_before',
+        'rows_after',
+        'read_status',
+        'alerts_status',
+        'health',
+        'checked_out',
+        'metrics',
+      ]),
+    };
+  });
+  assert.ok(
+    Date.parse(phases[0].window.end) <= Date.parse(phases[1].window.start),
+  );
+  assert.ok(phases[0].source.base_fingerprint);
+  assert.equal(
+    phases[0].source.base_fingerprint,
+    phases[1].source.base_fingerprint,
+  );
+  assert.deepEqual(
+    Object.keys(phases[0].source.files).sort(),
+    Object.keys(phases[1].source.files).sort(),
+  );
+  assert.deepEqual(
+    Object.keys(phases[0].source.files).filter(
+      (key) => phases[0].source.files[key] !== phases[1].source.files[key],
+    ),
+    ['revision/write.py'],
+  );
+  phases.forEach((phase) => {
+    phase.connections = { checked_out: phase.service.checked_out };
+  });
+  const observations = [
+    'events',
+    'source',
+    'code',
+    'service',
+    'connections',
+  ].map((field, index) => ({
+    id: `obs-0${index + 1}`,
+    source: 'local-postgresql-capture',
+    summary: JSON.stringify({
+      provenance: 'local-postgresql-measurement',
+      resource: { runId: proof.run_id, schema: proof.schema },
+      records: phases.map((phase) => ({
+        context: phase.context,
+        window: phase.window,
+        [field]: phase[field],
+      })),
+    }),
+  }));
+  return {
+    observations,
+    cutoff: phases[1].window.end,
+    operatorMapping: Object.fromEntries(
+      observations.map((item, index) => [
+        item.id,
+        ['normal', 'fault'].map(
+          (phase) =>
+            `/phases/${proof.phases.findIndex((p) => p.phase === phase)}/${['events', 'source', 'source/files', 'write_statuses', 'checked_out'][index]}`,
+        ),
+      ]),
+    ),
+  };
 }

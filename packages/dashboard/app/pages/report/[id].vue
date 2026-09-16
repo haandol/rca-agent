@@ -102,7 +102,14 @@ const hasFixedDefinitions = computed(
         step.metric_wait !== null &&
         typeof step.metric_wait === 'object' &&
         !Array.isArray(step.metric_wait);
-      return Boolean(commands) !== metricWait;
+      const deploymentWait =
+        step.deployment_wait !== null &&
+        typeof step.deployment_wait === 'object' &&
+        !Array.isArray(step.deployment_wait);
+      return (
+        [Boolean(commands), metricWait, deploymentWait].filter(Boolean)
+          .length === 1
+      );
     }),
 );
 // Anything other than the recorded VERIFIED reads as a draft: an unproven
@@ -815,6 +822,7 @@ const comparisonLabels = {
             </button>
             <RecoveryPlanSteps
               :steps="executionSteps"
+              :rollback-context="playbook.rollback_context"
               :validation-error="playbook.validationError"
               :executable="playbook.executable === true"
             />

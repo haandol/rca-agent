@@ -4,6 +4,7 @@ import logging
 import math
 import threading
 import time
+from datetime import UTC, datetime
 
 logger = logging.getLogger("healthcare.symptom")
 
@@ -62,6 +63,23 @@ class SymptomMetrics:
         self._query_durations: list[float] = []
         self._timestamp_ms = int(time.time() * 1000)
         self._last_flush = time.monotonic()
+        logger.info(
+            "write_accounting",
+            extra={
+                "event": "write_accounting",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "metric_namespace": NAMESPACE,
+                "service_name": service_name,
+                "attempt_metric": METRIC_INGEST_ATTEMPTS,
+                "failure_metric": METRIC_INGEST_FAILURES,
+                "attempt_semantics": "completed_successful_rows_plus_failed_rows",
+                "failure_semantics": "failed_rows",
+                "cancellation_semantics": "excluded_from_completed_counters",
+                "success_evidence_event": "write_completed",
+                "success_count_field": "count",
+                "success_semantics": "committed_rows",
+            },
+        )
 
     def record_ingest(self, *, attempted: int, failed: int) -> None:
         """Preserve the legacy completed-reading counters, excluding unfinished work."""

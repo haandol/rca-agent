@@ -91,7 +91,7 @@ def test_legacy_or_ambiguous_plan_is_not_new_executable_input(change):
     [
         {"action_step_id": "missing"},
         {"step_id": "observe"},
-        {"max_wait_seconds": 301},
+        {"max_wait_seconds": 901},
         {"max_wait_seconds": True},
         {"region": "$REGION"},
         {"metrics": {}},
@@ -199,10 +199,14 @@ def test_retrospective_publishes_changed_operation_as_draft(change):
     runner = ExecutionOrchestrator(container)
     runner._publish_playbook = Mock()
     before = deepcopy(original)
-    with patch("headless_codex.services.execution_pipeline.build_retrospective_prompt", return_value="review"):
+    with (
+        patch("headless_codex.services.execution_pipeline.build_retrospective_prompt", return_value="review"),
+        patch("headless_codex.services.retrospective_reader.write_reference"),
+        patch("headless_codex.services.retrospective_reader.require_successful_reads"),
+    ):
         runner._retrospect(
             "exec",
-            SimpleNamespace(rca_id="rca"),
+            SimpleNamespace(rca_id="rca", playbook_digest="a" * 64),
             SimpleNamespace(playbook=original),
             Mock(),
             "claim",
@@ -218,7 +222,9 @@ def test_retrospective_publishes_changed_operation_as_draft(change):
     assert container.execution_store.record_retrospective.call_args.kwargs["status"] == "UPDATED"
 
 
-def test_retrospective_save_preserves_operations_and_rejects_ambiguous_updates(monkeypatch, tmp_path):
+def test_retrospective_save_preserves_operations_and_rejects_ambiguous_updates(
+    monkeypatch, tmp_path, retrospective_reads
+):
     from headless_codex import retrospective_mcp_server
 
     path = tmp_path / "retrospective.json"
@@ -298,3 +304,46 @@ def test_jsonpath_filter_does_not_allow_substitutions_or_placeholders(unfixed):
     )
     with pytest.raises(ValueError):
         validate_runbook([{**command_step(), "commands": [command]}])
+
+
+@pytest.mark.parametrize(
+    "pointer",
+    ["/rollback_context/write_accounting", "/model_authored", "/playbook/rollback_context/write_accounting/", ""],
+)
+def test_wrong_approved_context_pointer_rejected_before_publication(pointer):
+    """A model-written context shortcut must not survive runbook structural validation."""
+    wait = wait_step()
+    wait["metric_wait"]["completed_work_evidence"] = {"record_index": "approved_context", "json_pointer": pointer}
+    with pytest.raises(ValueError):
+        validate_runbook([command_step(), wait])
+
+
+@pytest.mark.parametrize(
+    "index,pointer",
+    [
+        ("approved_context", "/playbook/rollback_context/write_accounting"),
+        (0, "/events/0/message/accounting"),
+        (3, "/rollback_context/write_accounting"),
+        (100, "/custom~1key"),
+    ],
+)
+def test_completed_work_reference_preserves_numeric_record_pointer_semantics(index, pointer):
+    """Only the named context pointer is fixed; numeric record existence is a runtime check."""
+    wait = wait_step()
+    reference = {"record_index": index, "json_pointer": pointer}
+    wait["metric_wait"]["completed_work_evidence"] = reference.copy()
+    validate_runbook([command_step(), wait])
+    assert wait["metric_wait"]["completed_work_evidence"] == reference
+
+
+@pytest.mark.parametrize("duration", [1, 300, 900])
+def test_approved_metric_wait_bound_and_default_are_900(duration):
+    """Retain explicit older budgets while admitting the new boundary and resolving omission consistently."""
+    wait = wait_step()
+    wait["metric_wait"]["max_wait_seconds"] = duration
+    validate_runbook([command_step(), wait])
+    del wait["metric_wait"]["max_wait_seconds"]
+    validate_runbook([command_step(), wait])
+    from headless_codex.services.execution_contract import approved_wait
+
+    assert approved_wait(wait)["max_wait_seconds"] == 900

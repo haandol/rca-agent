@@ -1,11 +1,11 @@
 # ADR 0010: 실행 엔진별 모델과 추론 강도 고정
 
 Date: 2026-04-22
-Updated: 2026-08-30
+Updated: 2026-09-15
 
 ## Status
 
-Accepted (2026-08-30)
+Proposed
 
 ## Context
 
@@ -56,6 +56,9 @@ SQS 재전달·DLQ 정책에 맡긴다. 다른 모델로 자동 대체하지 않
 
 Adaptive thinking은 사고량을 모델이 프롬프트 복잡도에 따라 자율 조절하는 모드다.
 Strands의 기본값은 비활성이며 비용 관측이 확보된 환경에서만 Planning 경로에 켠다.
+Execution은 thinking 비활성을 명시한다. Planning을 비활성으로 설정한 경우에도 비활성을
+명시하며, 요청에서 설정을 생략한 것을 비활성으로 간주하지 않는다. 이는 기존 thinking
+없음 계약의 명확화이며, 제공자 기본값으로 Execution thinking이 켜지는 것을 허용하지 않는다.
 
 Strands의 Sonnet 5 호출 표면에는 두 가지 제약이 있다.
 
@@ -68,6 +71,16 @@ Strands의 Sonnet 5 호출 표면에는 두 가지 제약이 있다.
 Headless Codex는 sampling 파라미터를 별도로 고정하지 않고 Codex 런타임의
 Responses 요청 계약을 따른다. reasoning effort는 `high`를 명시해 기본값 변화가
 실행 품질과 지연을 바꾸지 못하게 한다.
+
+### Strands 출력과 응답 수신 계약
+
+- 모델 호출의 최대 출력은 **65536토큰**으로 고정한다. 출력 한도는 시간 한도가 아니다.
+- Strands SDK 모델 응답은 스트리밍으로 수신하고 전체 응답의 총시간 제한을 두지 않는다.
+- Strands SDK의 Bedrock 읽기 **300초**는 첫 소켓 데이터와 이후 다음 소켓 데이터까지의 유휴 한도다. 계속 데이터를 받는 응답을 단계나 전체 시작 예산 때문에 자르지 않는다.
+- 예산 소진 후 새 작업의 시작 제한과 명시적 취소·소유권 상실 처리는 [종료 조건](0006-termination-conditions.md)을 따른다. 모델·thinking·fallback의 기존 구분은 유지한다.
+
+이 수신 계약은 Headless 분석·승인 실행에 적용하지 않는다. 해당 경로의 기존 전체
+강제 종료 기한을 유지하며 새로운 응답별 SDK 시간 한도를 도입하지 않는다.
 
 ### Strands 파이프라인 단계 → 티어 매핑
 
