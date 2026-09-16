@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
   "status": "pending",
-  "updatedAt": "2026-09-16T23:52:39.515Z",
+  "updatedAt": "2026-09-16T10:58:44.359Z",
   "approvedAt": null,
   "engines": ["headless-codex", "strands"],
   "contractInputs": [
@@ -20,7 +20,7 @@
     "packages/agent/src/rca_agent/services/destructive_actions.py",
     "packages/headless-codex/src/headless_codex/services/destructive_actions.py"
   ],
-  "inputDigest": "sha256:c2e8466445cfdf2eb07ab2f0acb2654be282621ede3ad6c54692bcca582290a5",
+  "inputDigest": "sha256:4235f059e5c8e75c4dc3253be37febf13558323726a979db172dbf6c3a373cc7",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/eval_adapter.py",
