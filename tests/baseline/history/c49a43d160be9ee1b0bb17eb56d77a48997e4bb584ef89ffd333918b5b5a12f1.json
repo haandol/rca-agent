@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
   "status": "pending",
-  "updatedAt": "2026-09-16T10:58:44.359Z",
+  "updatedAt": "2026-09-15T10:43:29.252Z",
   "approvedAt": null,
   "engines": ["headless-codex", "strands"],
   "contractInputs": [
@@ -20,7 +20,7 @@
     "packages/agent/src/rca_agent/services/destructive_actions.py",
     "packages/headless-codex/src/headless_codex/services/destructive_actions.py"
   ],
-  "inputDigest": "sha256:4235f059e5c8e75c4dc3253be37febf13558323726a979db172dbf6c3a373cc7",
+  "inputDigest": "sha256:fa387c2c9a883fe5ac3413fd884e996870cf38d0b13831257b33daf7338ad603",
   "inputFiles": [
     "packages/agent/src/rca_agent/agent_factory.py",
     "packages/agent/src/rca_agent/eval_adapter.py",
@@ -90,12 +90,9 @@
     "packages/headless-codex/src/headless_codex/services/prompt_builder.py",
     "tests/fixtures/results/README.md",
     "tests/harness/evaluator.mjs",
-    "tests/scenarios/captures/native-column-20260915/operator-capture-map.json",
-    "tests/scenarios/history/exception-session-cleanup.json",
-    "tests/scenarios/history/maintenance-transaction-lock.json",
-    "tests/scenarios/history/pool-config-regression.json",
-    "tests/scenarios/history/query-amplification.json",
-    "tests/scenarios/history/synthetic/write-column-regression.json",
-    "tests/scenarios/write-column-regression.json"
+    "tests/scenarios/exception-session-cleanup.json",
+    "tests/scenarios/maintenance-transaction-lock.json",
+    "tests/scenarios/pool-config-regression.json",
+    "tests/scenarios/query-amplification.json"
   ]
 }
