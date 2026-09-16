@@ -338,27 +338,25 @@ def _root_cause(notification) -> str:
     return " ".join(part for part in parts if isinstance(part, str) and part).strip()
 
 
-def _recorded_playbook_detail(container, notification):
-    """실행 주체가 읽는 것과 같은 곳에서 플레이북 상세를 읽는다.
-
-    알림 payload 에는 절차가 담기지 않으므로(잘린 절차가 실행되지 않게) 평가도
-    기록된 플레이북을 조회한다. 조회에 실패하면 상세 없음으로 채점되어 부재가
-    점수에 드러난다.
-    """
-    from rca_agent.ports.dto.models import PlaybookMatch
+def _recorded_playbook_detail(handoff, notification, *, rca_id: str):
+    """Score only this completed run's persisted playbook, never a mutable library head."""
+    from rca_agent.ports.dto.models import RcaSessionState
 
     playbook_id = (notification.playbook or {}).get("playbook_id")
     if not isinstance(playbook_id, str) or not playbook_id:
         return None
-    try:
-        detail = container.playbook_store.load_detail(
-            PlaybookMatch(playbook_id=playbook_id, similarity=1.0, rca_id=notification.rca_id)
-        )
-    except Exception:
-        logger.exception("Failed to load recorded playbook %s for scoring", playbook_id)
+    detail = handoff.playbook if handoff is not None else None
+    if (
+        handoff is None
+        or handoff.state != RcaSessionState.COMPLETED
+        or handoff.rca_id != rca_id
+        or notification.rca_id != rca_id
+        or detail is None
+        or detail.rca_id != rca_id
+        or detail.playbook_id != playbook_id
+    ):
+        logger.info("Completed playbook %s is missing or does not match this evaluation", playbook_id)
         return None
-    if detail is None:
-        logger.info("Recorded playbook %s is unavailable for scoring", playbook_id)
     return detail
 
 
@@ -549,7 +547,7 @@ def main(argv: list[str] | None = None) -> None:
             "evidenceIds": _evidence_ids(corpus, scenario),
             "competingCauseJudgments": _competing_cause_judgments(scenario, validation_hypotheses) or [],
             "artifacts": _stages_reached(notification),
-            "remediation": _remediation(_recorded_playbook_detail(container, notification), notification),
+            "remediation": _remediation(_recorded_playbook_detail(handoff, notification, rca_id=rca_id), notification),
         }
         result_stream.write(json.dumps(payload, ensure_ascii=False))
 

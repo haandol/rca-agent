@@ -79,30 +79,44 @@ class _Store:
 
     def get_completion_handoff(self, rca_id: str):
         self.requested.append(rca_id)
-        return self.handoff
+        if self.handoff is None:
+            return None
+        handoff = self.handoff.model_copy(deep=True)
+        handoff.rca_id = rca_id
+        if handoff.notification is not None:
+            handoff.notification.rca_id = rca_id
+        if handoff.playbook is not None:
+            handoff.playbook.rca_id = rca_id
+        return handoff
 
 
 class _PlaybookStore:
-    """실행 절차는 알림이 아니라 기록된 플레이북에서 읽힌다."""
+    """Mutable library reads must never supply this completed evaluation's procedure."""
 
     def __init__(self) -> None:
         self.requested: list[str] = []
 
     def load_detail(self, match):
         self.requested.append(match.playbook_id)
-        return Playbook(
-            playbook_id=match.playbook_id,
-            failure_type="DB_CONNECTION_LEAK",
-            symptom_pattern="커넥션 증가",
-            execution_steps=[
-                ExecutionStep(
-                    step_id="step-1",
-                    intent="커넥션 회수",
-                    action="api 서비스를 강제 재배포한다",
-                    success_criteria="DatabaseConnections 가 20 이하",
-                )
-            ],
-        )
+        raise AssertionError("evaluation must read the completed run's snapshot")
+
+
+def _completed_playbook() -> Playbook:
+    """Keep the original fixture procedure in its persisted completion snapshot."""
+    return Playbook(
+        rca_id="rca-1",
+        playbook_id="pb-1",
+        failure_type="DB_CONNECTION_LEAK",
+        symptom_pattern="커넥션 증가",
+        execution_steps=[
+            ExecutionStep(
+                step_id="step-1",
+                intent="커넥션 회수",
+                action="api 서비스를 강제 재배포한다",
+                success_criteria="DatabaseConnections 가 20 이하",
+            )
+        ],
+    )
 
 
 class _Container:
@@ -142,6 +156,7 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
         rca_id="rca-1",
         state=RcaSessionState.COMPLETED,
         notification=_notification(),
+        playbook=_completed_playbook(),
     )
 
 
@@ -250,8 +265,8 @@ def test_adapter_emits_exactly_one_normalized_result_object(wired, stdin_scenari
     ]
     assert payload["remediation"]["safe"] is True
     assert payload["competingCauseJudgments"] == []
-    # 절차의 안전성이 채점되므로 절차가 실제로 조회되어야 한다.
-    assert _Container.instances[0].playbook_store.requested == ["pb-1"]
+    # Score the persisted completion snapshot without looking up a mutable public head.
+    assert _Container.instances[0].playbook_store.requested == []
     assert payload["remediation"]["unsafeSteps"] == []
 
 
@@ -317,6 +332,78 @@ def test_adapter_uses_persisted_confirmation_as_the_normalized_authority(
     payload = _run(capsys)
 
     assert payload["rootCauseConfirmed"] is False
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "missing_handoff",
+        "missing_playbook",
+        "missing_notification_playbook",
+        "missing_playbook_id",
+        "handoff_rca",
+        "notification_rca",
+        "playbook_rca",
+        "playbook_id",
+        "expected_rca",
+    ],
+)
+def test_completed_playbook_loader_refuses_missing_or_foreign_snapshot(mismatch):
+    """Never substitute another run or a public revision for a missing matching completion."""
+    handoff = _Container.handoff.model_copy(deep=True)
+    notification = handoff.notification
+    expected_rca = "rca-1"
+    if mismatch == "missing_handoff":
+        handoff = None
+    elif mismatch == "missing_playbook":
+        handoff.playbook = None
+    elif mismatch == "missing_notification_playbook":
+        notification.playbook = None
+    elif mismatch == "missing_playbook_id":
+        notification.playbook.pop("playbook_id")
+    elif mismatch == "handoff_rca":
+        handoff.rca_id = "other"
+    elif mismatch == "notification_rca":
+        notification.rca_id = "other"
+    elif mismatch == "playbook_rca":
+        handoff.playbook.rca_id = "other"
+    elif mismatch == "playbook_id":
+        handoff.playbook.playbook_id = "other"
+    else:
+        expected_rca = "other"
+    assert eval_adapter._recorded_playbook_detail(handoff, notification, rca_id=expected_rca) is None
+
+
+@pytest.mark.parametrize("state", [state for state in RcaSessionState if state != RcaSessionState.COMPLETED])
+def test_completed_playbook_loader_refuses_every_noncompleted_state(state):
+    """An existing playbook alone cannot make an unfinished session evaluable."""
+    handoff = _Container.handoff.model_copy(update={"state": state}, deep=True)
+    assert eval_adapter._recorded_playbook_detail(handoff, handoff.notification, rca_id="rca-1") is None
+
+
+@pytest.mark.parametrize("publication_status", ["", "PENDING", "PUBLISHED"])
+def test_completed_playbook_loader_preserves_snapshot_independent_of_publication(publication_status):
+    """Publishing or replacing a library head is not authority over the completed run."""
+    handoff = _Container.handoff.model_copy(update={"playbook_index_status": publication_status}, deep=True)
+    before = handoff.model_dump(mode="json")
+    detail = eval_adapter._recorded_playbook_detail(handoff, handoff.notification, rca_id="rca-1")
+    assert detail is handoff.playbook
+    assert detail.execution_steps[0].step_id == "step-1"
+    assert handoff.model_dump(mode="json") == before
+
+
+def test_adapter_preserves_available_empty_completed_draft(wired, stdin_scenario, capsys):
+    """The live failure shape becomes available, without inventing executable remediation."""
+    stdin_scenario(SCENARIO)
+    _Container.handoff.playbook.execution_steps = []
+    _Container.handoff.playbook.rollback_context = None
+    before = _Container.handoff.model_dump(mode="json")
+    payload = _run(capsys)
+    assert payload["remediation"]["available"] is True
+    assert payload["remediation"]["executionSteps"] == []
+    assert payload["remediation"]["verificationStatus"] == "DRAFT"
+    assert _Container.instances[0].playbook_store.requested == []
+    assert _Container.handoff.model_dump(mode="json") == before
 
 
 def test_a_completed_session_is_scored_even_when_the_message_was_not_acked(wired, stdin_scenario, capsys) -> None:
