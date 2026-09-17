@@ -26,6 +26,13 @@ and json_pointer=/playbook/rollback_context/write_accounting. Never create this 
 Name the actual failure metric and alarm in success_criteria; require both full 60-second bins after convergence,
 positive completed writes, zero failures and alarm OK. Never equate accepted UpdateService or RUNNING with recovery.
 Only read checks and the verified UpdateService are allowed; no other mutations or inferred commands.
+When supplied, validated_recovery_reference contains execution_steps constructed from this incident's
+verified context and observed metrics, already checked against the same plan validators. Its authority
+is REFERENCE_ONLY: it is input guidance, not your output, approval, execution, or a fallback plan.
+Use its exact observed coordinates, step links and completed_work_evidence reference when applicable
+to avoid transcription errors. Still author and choose the FULL RecoveryOutput, including the complete
+playbook and steps; never return only a reference name. You may recommend UNAVAILABLE when warranted.
+The server validates your complete result independently and never substitutes this reference for it.
 """
 
 CODE_PREVIEW_SYSTEM_PROMPT = """Prepare a code PR PREVIEW, never a branch, commit or published PR.

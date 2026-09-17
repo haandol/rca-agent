@@ -8,15 +8,18 @@ import json
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS
 from rca_agent.ports.dto.models import ExecutionStep, Playbook, RcaReport, ScopingResult
 from rca_agent.services.analysis_parts import validate_recovery_operations
 from rca_agent.services.deployment_baseline import validate_observed_plan
 from rca_agent.services.playbook_gen import PlaybookOutput
+from rca_agent.services.recovery_reference import build_recovery_reference
 from rca_agent.services.runbook_contract import validate_runbook
 from rca_agent.utils.agent_invocation import invoke_agent
+from rca_agent.utils.recovery_diagnostics import record as record_recovery
+from rca_agent.utils.recovery_diagnostics import recovery_diagnostics, validation_errors, validation_phase
 
 
 class RecoveryOutput(BaseModel):
@@ -247,24 +250,70 @@ def recovery_result(
                 if self.playbook is None or not self.playbook.execution_steps:
                     raise ValueError("rollback requires a complete playbook")
                 steps = [step.model_dump() for step in self.playbook.execution_steps]
-                validate_runbook(steps)
-                validate_observed_plan(steps, context, scoping)
-                validate_recovery_operations({**self.playbook.model_dump(mode="json"), "rollback_context": context})
+                with validation_phase("runbook"):
+                    validate_runbook(steps)
+                with validation_phase("observed_plan"):
+                    validate_observed_plan(steps, context, scoping)
+                with validation_phase("rollback_operations"):
+                    validate_recovery_operations({**self.playbook.model_dump(mode="json"), "rollback_context": context})
                 for index, step in enumerate(steps):
                     wait = step.get("metric_wait")
                     if wait and (
                         wait["failure_alarm_name"] not in step["success_criteria"]
                         or wait["metrics"]["failures"]["metric_name"] not in step["success_criteria"]
                     ):
+                        record_recovery("contract_rejected", phase="success_criteria", step_index=index)
                         raise ValueError(f"step {index}: success_criteria must name the failure metric and exact alarm")
             return self
 
-    output = invoke_agent(
-        agent,
-        json.dumps({"scoping": scoping.model_dump(mode="json"), "verification": verification}, ensure_ascii=False),
-        ObservedRecovery,
-        timeout_seconds,
-    )
+        @model_validator(mode="wrap")
+        @classmethod
+        def diagnose_validation(cls, value, handler):
+            """Record safe field paths for SDK correction without logging candidate contents."""
+            try:
+                result = handler(value)
+            except ValidationError as exc:
+                record_recovery(
+                    "output_rejected", error=exc, errors=validation_errors(exc), error_count=exc.error_count()
+                )
+                raise
+            record_recovery("output_validated")
+            return result
+
+    model_input = {"scoping": scoping.model_dump(mode="json"), "verification": verification}
+    reference_error = None
+    try:
+        reference = build_recovery_reference(scoping, verification)
+        # Exercise the exact output validator before presenting reference steps.
+        # This object is input only and is never used as the model's result.
+        ObservedRecovery.model_validate(
+            {
+                "title": "참고 구조",
+                "summary": "모델 작성용 참고이며 승인·실행 권위가 아님",
+                "reason": "현재 검증 context에서 구성한 참고 단계",
+                "recommendation": "ROLLBACK",
+                "playbook": {
+                    "failure_type": "검증된 배포 롤백",
+                    "symptom_pattern": scoping.raw_alarm.alarm_name,
+                    **reference,
+                },
+            }
+        )
+        model_input["validated_recovery_reference"] = {"authority": "REFERENCE_ONLY", **reference}
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        reference_error = exc
+
+    with recovery_diagnostics(rca_id):
+        record_recovery(
+            "reference_unavailable" if reference_error else "reference_validated",
+            error=reference_error,
+        )
+        output = invoke_agent(
+            agent,
+            json.dumps(model_input, ensure_ascii=False),
+            ObservedRecovery,
+            timeout_seconds,
+        )
     result = output.model_dump(mode="json")
     result["verification"] = verification
     if output.recommendation == "ROLLBACK":

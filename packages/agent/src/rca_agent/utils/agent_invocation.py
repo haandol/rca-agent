@@ -11,6 +11,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from threading import Event, Lock
 
+from rca_agent.utils.recovery_diagnostics import record
 from rca_agent.utils.timeout import call_with_timeout
 
 _CONTROL_POLL_SECONDS = 1.0
@@ -71,6 +72,7 @@ class _Invocation:
     chunks: int = 0
     last_data: float | None = None
     failure: BaseException | None = None
+    model_requests: int = 0
 
     def check_control(self):
         """Recheck explicit ownership without interpreting budget expiry as cancellation."""
@@ -125,6 +127,15 @@ class _OwnedEventStream:
                     raise InvocationStoppedError("model response cancelled")
                 self.owner.chunks += 1
                 self.owner.last_data = time.monotonic()
+                if isinstance(chunk, dict) and isinstance(chunk.get("messageStop"), dict):
+                    reason = chunk["messageStop"].get("stopReason")
+                    record(
+                        "model_message_stopped",
+                        request=self.owner.model_requests,
+                        stop_reason=reason
+                        if isinstance(reason, str) and reason in {"end_turn", "tool_use", "max_tokens", "stop_sequence"}
+                        else "other",
+                    )
                 yield chunk
         finally:
             self.close()
@@ -138,11 +149,20 @@ class _OwnedEventStream:
             finally:
                 with self.owner.lock:
                     self.owner.streams.pop(id(self), None)
+                record("model_stream_closed", request=self.owner.model_requests, chunks=self.owner.chunks)
 
 
 def guard_model_request(params=None, **kwargs):
     """Check at the actual SDK request boundary, including internal model retries."""
-    require_request_budget()
+    owner = _active.get()
+    try:
+        require_request_budget()
+    except (WorkAdmissionError, InvocationNotStartedError, InvocationStoppedError) as exc:
+        record("model_request_rejected", request=(owner.model_requests + 1) if owner else 1, error=exc)
+        raise
+    if owner is not None:
+        owner.model_requests += 1
+        record("model_request_admitted", request=owner.model_requests)
 
 
 def own_model_response(parsed, **kwargs):
@@ -150,6 +170,7 @@ def own_model_response(parsed, **kwargs):
     owner = _active.get()
     if owner is not None and isinstance(parsed, dict) and "stream" in parsed:
         parsed["stream"] = _OwnedEventStream(parsed["stream"], owner)
+        record("model_stream_opened", request=owner.model_requests)
 
 
 def bounded_admission_deadline(timeout_seconds: float) -> float:
