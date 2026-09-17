@@ -63,6 +63,7 @@ class AppContainer(Container):
         self._analysis_part_store = None
         self._scoping_mcp_clients = None
         self._evidence_mcp_clients = None
+        self._github_mcp_client = None
         self._agent_baselines = {}
         self._analysis_lock = Lock()
 
@@ -272,13 +273,20 @@ class AppContainer(Container):
         return self._scoping_mcp_clients
 
     @property
+    def github_mcp_client(self):
+        """Share the existing readonly GitHub transport with deliberate source and CI readers."""
+        if self._github_mcp_client is None and GITHUB_PERSONAL_ACCESS_TOKEN:
+            from rca_agent.agent_factory import create_github_mcp_client
+
+            self._github_mcp_client = create_github_mcp_client()
+        return self._github_mcp_client
+
+    @property
     def evidence_mcp_clients(self):
         if self._evidence_mcp_clients is None:
             self._evidence_mcp_clients = list(self.scoping_mcp_clients)
-            if GITHUB_PERSONAL_ACCESS_TOKEN:
-                from rca_agent.agent_factory import create_github_mcp_client
-
-                self._evidence_mcp_clients.append(create_github_mcp_client())
+            if client := self.github_mcp_client:
+                self._evidence_mcp_clients.append(client)
                 logger.info("GitHub MCP client enabled for evidence collection")
         return self._evidence_mcp_clients
 

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from headless_codex.ports.dto.models import parse_alarm
 from headless_codex.services.runbook_contract import SERVICE_SETTING_DEFAULTS
+from headless_codex.services.source_locations import declared_source_locations
 
 AWS_SDK_CALL_WORST_CASE_SECONDS = 65
 
@@ -210,6 +211,14 @@ _MESSAGE_KEYS = {
 } | _ACCOUNTING_KEYS
 
 
+def _safe_message(message: dict) -> dict:
+    """Preserve validated optional Git locators as declarations alongside existing safe facts."""
+    result = {key: value for key, value in message.items() if key in _MESSAGE_KEYS}
+    if locations := declared_source_locations(message):
+        result["source_locations"] = locations
+    return result
+
+
 class AwsIncidentObservation:
     def __init__(self, *, s3_client, logs_client_for_region, ecs_client_for_region, evidence_bucket: str):
         """Use injected application clients and a configured bucket instead of alarm-selected credentials."""
@@ -321,7 +330,7 @@ class AwsIncidentObservation:
             "metric_observations": baseline["metric_observations"],
             "observations": [
                 {
-                    "message": {key: value for key, value in _message(event).items() if key in _MESSAGE_KEYS},
+                    "message": _safe_message(_message(event)),
                     **{key: event[key] for key in ("timestamp", "event_id", "log_group", "log_stream")},
                     **baseline["normal"],
                 }
@@ -599,7 +608,7 @@ class AwsIncidentObservation:
                     if fact.source_ref in seen_events:
                         continue
                     seen_events.add(fact.source_ref)
-                    safe = {k: v for k, v in _message(event).items() if k in _MESSAGE_KEYS}
+                    safe = _safe_message(_message(event))
                     observations.append(
                         {
                             "message": safe,

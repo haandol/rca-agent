@@ -166,7 +166,7 @@ async function report({
     },
   };
   const exposedNames =
-    'openDetail,activeDetail,detailOpen,visited,reviewed,canApprove,approveExecution,reviewedDigest,pendingApprovalId,reloadPlanForReview,showEvidence,evidenceError,evidence,approvalError,reviewRecovery,pollAnalysisParts,pendingRecoveryRequest,retransmitRecovery,resolvedEngine,analysisHandoff';
+    'openDetail,activeDetail,detailOpen,visited,reviewed,canApprove,approveExecution,reviewedDigest,pendingApprovalId,reloadPlanForReview,showEvidence,evidenceError,evidence,approvalError,reviewRecovery,pollAnalysisParts,pendingRecoveryRequest,retransmitRecovery,resolvedEngine,analysisHandoff,openAnalysisPart,selectedAnalysisPart';
   const page = compile('pages/report/[id].vue', globals, exposedNames);
   const originalSetup = page.setup;
   let controls;
@@ -191,6 +191,7 @@ async function report({
     'RecoveryPlanSteps',
     'MetricWaitDetails',
     'AnalysisParts',
+    'AnalysisEvidenceRefs',
     'CausalChain',
   ])
     app.component(name, compile(`components/${name}.vue`, globals));
@@ -666,7 +667,10 @@ test('three-part source and PR previews escape HTML and preserve explicit untest
       limitations: [],
     },
   };
-  const result = await report({ dataOverrides: data });
+  const result = await report({
+    dataOverrides: data,
+    operation: (state) => state.openAnalysisPart('root_cause'),
+  });
   assert.doesNotMatch(result.html, /<script>|<img src=x/);
   assert.match(result.html, /NOT_RUN/);
   assert.match(result.html, /제안이며 실제 게시/);
@@ -737,6 +741,7 @@ for (const parentState of ['CANCELLED', 'FAILED', 'OUTDATED']) {
         operation: async (state) => {
           await state.pollAnalysisParts();
           await state.pollAnalysisParts();
+          state.openAnalysisPart('recovery');
         },
       });
       assert.equal(
@@ -932,4 +937,221 @@ test('completed confirmed root remains confirmed when early recovery is unavaila
   assert.doesNotMatch(header, /원인 미확정/);
   assert.match(result.html, /승인 불가/);
   assert.equal(result.calls.length, 0);
+});
+
+test('grounded code and CI sources are displayed with their own refs and statuses without execution', async () => {
+  const data = earlyPartViews();
+  data['/api/analysis-parts/fixture'].parts[0].approval_status = 'UNAVAILABLE';
+  const source = {
+    source_ref: 'source:incident-write',
+    path: 'revision/write.py',
+    revision: 'captured-image-source',
+    sha256: 'a'.repeat(64),
+    source_kind: 'read_image_source',
+    text: 'TIMESTAMP_COLUMN = "sampled_at"',
+  };
+  const control = {
+    source_ref: 'source:ci-workflow',
+    path: '.github/workflows/check.yml',
+    revision: 'observed-revision',
+    sha256: 'b'.repeat(64),
+    source_kind: 'read_control_configuration',
+    text: 'steps:\n  - run: pytest tests/unit',
+  };
+  data['/api/analysis-parts/fixture'].parts[1] = {
+    part: 'root_cause',
+    status: 'COMPLETED',
+    available: true,
+    payload: {
+      result: {
+        source_artifacts: [source],
+        control_artifacts: [control],
+        code_proposal: {
+          status: 'PROPOSED',
+          repository: 'recorded/repository',
+          base_revision: 'captured-image-source',
+          title: 'Correct DB mapping',
+          files: [
+            {
+              path: 'revision/write.py',
+              start_line: 5,
+              end_line: 5,
+              original: source.text,
+              proposed: 'TIMESTAMP_COLUMN = "timestamp"',
+              unified_diff:
+                '-TIMESTAMP_COLUMN = "sampled_at"\n+TIMESTAMP_COLUMN = "timestamp"',
+              evidence_refs: ['source:incident-write'],
+            },
+          ],
+          test_plan: ['Test both input formats against PostgreSQL'],
+          tests_status: 'NOT_RUN',
+          limitations: ['No branch or PR has been published'],
+        },
+      },
+      limitations: [],
+    },
+  };
+  data['/api/analysis-parts/fixture'].parts[2] = {
+    part: 'operations',
+    status: 'COMPLETED',
+    available: true,
+    payload: {
+      result: {
+        findings: [
+          {
+            statement: 'Observed workflow invokes unit tests',
+            status: 'OBSERVED',
+            evidence_refs: ['source:ci-workflow'],
+          },
+          {
+            statement: 'Deployment gate not yet inspected',
+            status: 'UNVERIFIED',
+            evidence_refs: ['source:unavailable'],
+          },
+        ],
+        recommendations: [
+          {
+            title: 'Add a database mapping check',
+            description: 'Proposed check only',
+            stage: 'CI',
+            priority: 'high',
+            check: 'v2 writes to physical timestamp',
+            failure_condition: 'INSERT contract mismatch',
+            verification_plan: 'Run a real DB contract test',
+            validation_status: 'NOT_RUN',
+            evidence_refs: ['source:ci-workflow'],
+          },
+        ],
+        limitations: [],
+      },
+      limitations: [],
+    },
+  };
+  const result = await report({
+    dataOverrides: data,
+    operation: (state) => state.openAnalysisPart('root_cause'),
+  });
+  const rootVisible = result.html
+    .split('<dialog')[1]
+    .split('data-part="root_cause"')[1]
+    .split('<summary>원본 결과 · 증거 참조</summary>')[0];
+  assert.match(rootVisible, /revision\/write.py:5–5/);
+  assert.match(rootVisible, /data-testid="proposal-original"/);
+  assert.match(rootVisible, /data-testid="proposal-proposed"/);
+  assert.match(rootVisible, /data-testid="proposal-diff"/);
+  assert.match(rootVisible, /source:incident-write/);
+  assert.match(rootVisible, /captured-image-source/);
+  assert.match(rootVisible, /Test both input formats against PostgreSQL/);
+  assert.match(rootVisible, /No branch or PR has been published/);
+  const opsResult = await report({
+    dataOverrides: data,
+    operation: (state) => {
+      state.openAnalysisPart('root_cause');
+      state.openAnalysisPart('operations');
+    },
+  });
+  const opsDialog = opsResult.html.split('<dialog')[1];
+  assert.doesNotMatch(opsDialog, /data-testid="proposal-original"/);
+  assert.equal((opsResult.html.match(/<dialog/g) || []).length, 1);
+  const opsVisible = opsDialog
+    .split('data-part="operations"')[1]
+    .split('<summary>원본 결과 · 증거 참조</summary>')[0];
+  assert.match(opsVisible, /관측 기록 \(OBSERVED\)/);
+  assert.match(opsVisible, /미검증 \(UNVERIFIED\)/);
+  assert.match(opsVisible, /source:ci-workflow/);
+  assert.match(opsVisible, /\.github\/workflows\/check.yml/);
+  assert.match(opsVisible, /pytest tests\/unit/);
+  assert.match(opsVisible, /자료 부재를 검사 부재로 판단하지 않습니다/);
+  assert.match(opsVisible, /미실행 \(NOT_RUN\)/);
+  assert.equal(result.calls.length, 0);
+  assert.equal(result.controls.canApprove.value, false);
+});
+test('unavailable proposal exposes limitations without inventing code or test success', async () => {
+  const data = earlyPartViews();
+  data['/api/analysis-parts/fixture'].parts[1] = {
+    part: 'root_cause',
+    status: 'COMPLETED',
+    available: true,
+    payload: {
+      result: {
+        code_proposal: {
+          status: 'UNAVAILABLE',
+          files: [],
+          limitations: ['Exact source revision unavailable'],
+        },
+      },
+      limitations: [],
+    },
+  };
+  const result = await report({
+    dataOverrides: data,
+    operation: (state) => state.openAnalysisPart('root_cause'),
+  });
+  const visible = result.html
+    .split('<dialog')[1]
+    .split('data-part="root_cause"')[1]
+    .split('<summary>원본 결과 · 증거 참조</summary>')[0];
+  assert.match(visible, /Exact source revision unavailable/);
+  assert.match(visible, /구체 코드 수정 파일이 제공되지 않았습니다/);
+  assert.match(visible, /상태 미제공/);
+  assert.doesNotMatch(visible, /proposal-diff|통과 기록/);
+});
+
+test('three-part first view exposes common impact and next action while detailed parts stay in one modal', async () => {
+  const data = earlyPartViews();
+  data['/api/reports/fixture'] = {
+    engine: 'headless-codex',
+    summary: {
+      incidentSummary: 'VISIBLE INCIDENT SUMMARY',
+      impactSummary: 'VISIBLE IMPACT',
+      severity: 'high',
+      nextAction: 'VISIBLE NEXT ACTION',
+    },
+    markdown: '# retained report',
+  };
+  data['/api/analysis-parts/fixture'].parts[1] = {
+    part: 'root_cause',
+    status: 'COMPLETED',
+    summary: 'SHORT ROOT SUMMARY',
+    available: true,
+    payload: {
+      result: {
+        report_markdown: 'DETAILED ROOT EVIDENCE',
+        code_proposal: {
+          status: 'PROPOSED',
+          files: [
+            {
+              path: 'original.py',
+              start_line: 7,
+              end_line: 7,
+              original: 'ORIGINAL DETAIL',
+              proposed: 'PROPOSED DETAIL',
+              unified_diff: 'DIFF DETAIL',
+            },
+          ],
+        },
+      },
+      limitations: [],
+    },
+  };
+  const result = await report({ dataOverrides: data });
+  const outside = result.html.split('<dialog')[0];
+  assert.match(outside, /VISIBLE IMPACT/);
+  assert.match(outside, /VISIBLE NEXT ACTION/);
+  assert.match(outside, /VISIBLE INCIDENT SUMMARY/);
+  assert.match(outside, /SHORT ROOT SUMMARY/);
+  assert.doesNotMatch(
+    outside,
+    /DETAILED ROOT EVIDENCE|ORIGINAL DETAIL|DIFF DETAIL/,
+  );
+  assert.equal(result.controls.detailOpen.value, false);
+  const opened = await report({
+    dataOverrides: data,
+    operation: (state) => state.openAnalysisPart('root_cause'),
+  });
+  assert.equal(opened.controls.detailOpen.value, true);
+  assert.equal((opened.html.match(/<dialog/g) || []).length, 1);
+  assert.match(opened.html.split('<dialog')[1], /DETAILED ROOT EVIDENCE/);
+  assert.match(opened.html.split('<dialog')[1], /ORIGINAL DETAIL/);
+  assert.equal(opened.calls.length, 0);
 });

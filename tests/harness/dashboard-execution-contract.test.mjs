@@ -129,7 +129,12 @@ test('the dashboard cannot publish an approval that the worker would reject', as
   assert.match(source, /HeadObjectCommand/);
   assert.match(source, /validateExecutablePlaybook/);
   assert.match(playbookSource, /session\.state !== 'COMPLETED'/);
-  assert.match(reportSource, /sessionResult\.Item\?\.state !== 'COMPLETED'/);
+  assert.match(
+    reportSource,
+    /candidate\?\.state !== 'COMPLETED' && !persistedFailure/,
+  );
+  assert.match(reportSource, /candidate\.analysis_parts_finalized === true/);
+  assert.match(reportSource, /candidate\?\.state === 'FAILED'/);
 
   // No queue URL must fail loudly: a dashboard that silently skipped publishing
   // would look like it approved something.

@@ -591,12 +591,22 @@ class TestRunEvidenceCollection:
         assert kwargs["mcp_clients"] is mcp_clients
         assert 0 < kwargs["timeout_seconds"] <= 30
 
-    @patch("rca_agent.services.evidence.create_evidence_collection_agent")
+    @pytest.mark.parametrize("elapsed_ms", [(10, 10, 10), (20, 31)])
+    @patch("rca_agent.services.evidence.collect_evidence")
     def test_uses_one_deadline_across_multiple_hypotheses(
         self,
-        mock_create,
+        mock_collect,
         scoping_result,
+        monkeypatch,
+        elapsed_ms,
     ):
+        """A fake clock verifies fair remaining budgets and exhaustion without scheduler-dependent sleeps."""
+        from types import SimpleNamespace
+
+        from rca_agent.services import evidence as evidence_service
+
+        clock_ms = [0]
+        monkeypatch.setattr(evidence_service, "time", SimpleNamespace(monotonic=lambda: clock_ms[0] / 1000))
         hypotheses = [
             Hypothesis(
                 hypothesis_id=f"h-{index}",
@@ -608,26 +618,44 @@ class TestRunEvidenceCollection:
             for index in range(3)
         ]
 
-        def slow_agent(prompt, **kwargs):  # noqa: ARG001
-            time.sleep(0.2)
+        budgets = []
 
-        mock_create.return_value = MagicMock(side_effect=slow_agent)
+        def completed_failure(hypothesis, scope, **kwargs):
+            """Advance only modeled request time and preserve actual admission/result bookkeeping."""
+            index = len(budgets)
+            assert index < len(elapsed_ms), "shared deadline incorrectly admitted another hypothesis"
+            budgets.append(kwargs["timeout_seconds"])
+            kwargs["on_started"]()
+            clock_ms[0] += elapsed_ms[index]
+            return EvidenceCollectionResult(
+                hypothesis_id=hypothesis.hypothesis_id,
+                summary=EVIDENCE_FAILED_SENTINEL,
+                full_evidence=EVIDENCE_FAILED_SENTINEL,
+                failed=True,
+                failure_reason="completed fixture failure",
+                external_request_finished=True,
+            )
 
-        started = perf_counter()
+        mock_collect.side_effect = completed_failure
         summary = run_evidence_collection(
             hypotheses,
             scoping_result,
             timeout_seconds=0.05,
         )
-        elapsed = perf_counter() - started
-
-        assert elapsed < 0.2
+        spent_ms = 0
+        for index, budget in enumerate(budgets):
+            assert budget == pytest.approx((0.05 - spent_ms / 1000) / (3 - index))
+            spent_ms += elapsed_ms[index]
         expected_ids = {"h-0", "h-1", "h-2"}
         not_started = {key for key, record in summary.collection_states.items() if record.attempts == 0}
         assert summary.failed_ids | not_started == expected_ids
         assert not summary.failed_ids & not_started
         assert all(summary.collection_states[key].status.value == "NOT_STARTED" for key in not_started)
-        assert mock_create.call_count == 3
+        assert mock_collect.call_count == len(elapsed_ms)
+        assert summary.failed_ids == {f"h-{index}" for index in range(len(elapsed_ms))}
+        assert not_started == ({"h-2"} if len(elapsed_ms) == 2 else set())
+        if not_started:
+            assert summary.collection_states["h-2"].reason == "batch budget exhausted before invocation"
 
     @patch("rca_agent.services.evidence.collect_evidence")
     def test_passes_existing_evidence_map_for_parent_lookup(self, mock_collect, scoping_result):

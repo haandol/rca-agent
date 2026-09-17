@@ -13,6 +13,7 @@ from rca_agent.ports.dto.models import AlarmPayload
 from rca_agent.ports.dto.observations import IncidentObservations
 from rca_agent.services.recovery_evidence import has_reader_receipt, seal_observations
 from rca_agent.utils.observation_facts import _canonical, _fact, _message, _utc
+from rca_agent.utils.source_locations import declared_source_locations
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _HASH = re.compile(r"[a-f0-9]{64}")
@@ -65,6 +66,14 @@ _MESSAGE_KEYS = {
     "input_contract",
     "input_contract_sha256",
 } | _ACCOUNTING_KEYS
+
+
+def _safe_message(message: dict) -> dict:
+    """Preserve validated optional Git locators as declarations alongside existing safe facts."""
+    result = {key: value for key, value in message.items() if key in _MESSAGE_KEYS}
+    if locations := declared_source_locations(message):
+        result["source_locations"] = locations
+    return result
 
 
 class AwsIncidentObservation:
@@ -174,7 +183,7 @@ class AwsIncidentObservation:
             "metric_observations": baseline["metric_observations"],
             "observations": [
                 {
-                    "message": {key: value for key, value in _message(event).items() if key in _MESSAGE_KEYS},
+                    "message": _safe_message(_message(event)),
                     **{key: event[key] for key in ("timestamp", "event_id", "log_group", "log_stream")},
                     **baseline["normal"],
                 }
@@ -452,7 +461,7 @@ class AwsIncidentObservation:
                     if fact.source_ref in seen_events:
                         continue
                     seen_events.add(fact.source_ref)
-                    safe = {k: v for k, v in _message(event).items() if k in _MESSAGE_KEYS}
+                    safe = _safe_message(_message(event))
                     observations.append(
                         {
                             "message": safe,

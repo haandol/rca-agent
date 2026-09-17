@@ -73,7 +73,34 @@ def _file_objects(result: dict, arguments: dict):
             yield {"type": "file", "path": path, "sha": hashes[0], "encoding": "text", "content": resource["text"]}
 
 
-def _incident_source_phase(incident: dict, path: str, digest: str, revision: str) -> str | None:
+def _mapped_manifest_source(value: dict, path: str, digest: str, revision: str, repository: str) -> bool:
+    """Treat a declared Git location as a locator only; the actual read must match installed file hashes."""
+    files, locations = value.get("files"), value.get("source_locations")
+    if not isinstance(files, dict) or not isinstance(locations, dict):
+        return False
+    if value.get("fingerprint") != hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest():
+        return False
+    matches = [
+        (installed_path, location)
+        for installed_path, location in locations.items()
+        if isinstance(location, dict) and location.get("path") == path
+    ]
+    if len(matches) != 1:
+        return False
+    installed_path, location = matches[0]
+    return (
+        isinstance(installed_path, str)
+        and not installed_path.startswith("/")
+        and all(segment not in {"", ".", ".."} for segment in installed_path.split("/"))
+        and files.get(installed_path) == digest
+        and location.get("sha256") == digest
+        and location.get("repository") == repository
+        and location.get("commit") == revision
+        and location.get("verification") == "declared"
+    )
+
+
+def _incident_source_phase(incident: dict, path: str, digest: str, revision: str, repository: str = "") -> str | None:
     """Retain source phase so a correct normal baseline cannot become the faulty deployment's code."""
     for source in incident.get("source_artifacts", []):
         if source.get("path") == path and source.get("sha256") == digest:
@@ -87,7 +114,10 @@ def _incident_source_phase(incident: dict, path: str, digest: str, revision: str
                 value.get("event") == "source_manifest"
                 and value.get("verified") is True
                 and isinstance(value.get("files"), dict)
-                and value["files"].get(path) == digest
+                and (
+                    value["files"].get(path) == digest
+                    or _mapped_manifest_source(value, path, digest, revision, repository)
+                )
             ):
                 return True
             if any(
@@ -189,7 +219,7 @@ def capture_sources(raw_output: str, incident: dict) -> dict:
             if obj.get("sha") != blob:
                 continue
             digest = hashlib.sha256(raw).hexdigest()
-            phase = _incident_source_phase(incident, obj["path"], digest, revision)
+            phase = _incident_source_phase(incident, obj["path"], digest, revision, f"{owner}/{repo}")
             if phase is None:
                 continue
             source = {

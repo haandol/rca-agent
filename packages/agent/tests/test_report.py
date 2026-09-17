@@ -123,6 +123,34 @@ class TestRunReportGeneration:
         assert report.root_cause == h.description
         assert not report.root_cause_confirmed
         assert report.severity == "high"
+        assert report.incident_summary.startswith("[보고서 생성 실패: RuntimeError]")
+        assert _make_scoping().alarm_summary in report.incident_summary
+        assert report.evidence_list == ["ev"] and report.timeline == ["t1"]
+        assert report.hypothesis_path == ["h-1"] and report.rejected_hypotheses == ["rej"]
+
+    @pytest.mark.parametrize("severity", ["critical", "high", "medium", "low"])
+    def test_report_output_accepts_only_contract_severities(self, severity):
+        """New generated output uses the existing four-value contract before SDK acceptance."""
+        assert ReportOutput(incident_summary="incident", root_cause="cause", severity=severity).severity == severity
+
+    def test_invalid_generated_severity_and_failed_report_are_not_normal_success(self):
+        """Reject an unknown generated grade and retain an explicit nonsecret fallback marker."""
+        with pytest.raises(ValueError, match="severity"):
+            ReportOutput(incident_summary="incident", root_cause="cause", severity="catastrophic")
+        scope, hypothesis = _make_scoping(), _make_hypothesis()
+        with patch("rca_agent.services.report.invoke_agent", side_effect=RuntimeError("PRIVATE_PROVIDER_VALUE")):
+            report = run_report_generation(scope, hypothesis, True, ["parent", "cause"], ["partial"], [], ["t1"], None)
+        assert report.root_cause == hypothesis.description and report.root_cause_confirmed is True
+        assert report.evidence_list == ["partial"]
+        assert report.incident_observations == scope.incident_observations
+        assert "[보고서 생성 실패: RuntimeError]" in _render_markdown(report, None)
+        assert "PRIVATE_PROVIDER_VALUE" not in report.model_dump_json()
+        scope.initial_severity = "catastrophic"
+        with patch("rca_agent.services.report.invoke_agent", side_effect=RuntimeError("PRIVATE_PROVIDER_VALUE")):
+            fallback = run_report_generation(scope, hypothesis, True, [], ["partial"], [], [], None)
+        assert fallback.severity == "medium"
+        assert "기본 등급 medium" in fallback.incident_summary
+        assert fallback.evidence_list == ["partial"] and fallback.root_cause == hypothesis.description
 
     def test_timeout_returns_minimal_report_without_waiting_for_worker(self):
         def slow_agent(*args, **kwargs):  # noqa: ARG001

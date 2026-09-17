@@ -68,19 +68,87 @@ def wired_pipeline(part_store, monkeypatch):
     return orchestrator, container, alarm, run
 
 
-@pytest.mark.parametrize("execution", ["PENDING_APPROVAL", "RUNNING", "UNRESOLVED", "RESOLVED"])
+@pytest.mark.parametrize(
+    "execution",
+    [
+        "PENDING_APPROVAL",
+        "EXECUTING",
+        "VERIFYING",
+        "APPROVAL_REJECTED",
+        "CANCELLED",
+        "FAILED",
+        "UNRESOLVED",
+        "RESOLVED",
+    ],
+)
+@pytest.mark.parametrize("recovery_outcome", ["UNAVAILABLE", "FAILED"])
 def test_pipeline_publishes_recovery_then_root_then_operations_without_execution_gate(
-    part_store, monkeypatch, execution
+    part_store, monkeypatch, execution, recovery_outcome
 ):
-    """Every execution outcome leaves the logical analysis order and immutable early result unchanged."""
+    """Unavailable/failed recovery never gates later roles on any approval or execution state."""
     orchestrator, container, alarm, run = wired_pipeline(part_store, monkeypatch)
-    container.execution_state = execution
+    # Declining approval creates no reserved execution. Actual execution records
+    # use execution_state and EXEC#; only active executions retain EXEC_ACTIVE.
+    if execution != "APPROVAL_REJECTED":
+        part_store.ddb.put_item(
+            TableName="parts",
+            Item={
+                "PK": {"S": "RCA#rca-1"},
+                "SK": {"S": "EXEC#independent"},
+                "execution_id": {"S": "independent"},
+                "execution_state": {"S": execution},
+            },
+        )
+    if execution in {"PENDING_APPROVAL", "EXECUTING", "VERIFYING"}:
+        part_store.ddb.put_item(
+            TableName="parts",
+            Item={
+                "PK": {"S": "RCA#rca-1"},
+                "SK": {"S": "EXEC_ACTIVE"},
+                "execution_id": {"S": "independent"},
+            },
+        )
+    execution_reads = []
+
+    class NoExecutionAccess(SimpleNamespace):
+        """Make accidental analysis dependencies on an execution port fail instead of returning a mock."""
+
+        def __getattribute__(self, name):
+            """Record forbidden port/state access even if a caller catches the assertion."""
+            if name in {"execution_state", "execution_store", "execution_client", "approval_store"}:
+                execution_reads.append(name)
+                raise AssertionError("analysis must not read approval/execution state")
+            return super().__getattribute__(name)
+
+    orchestrator._container = NoExecutionAccess(**vars(container))
+
+    def guard_reads(params, model, **kwargs):
+        """Catch execution-row reads or broad scans at the actual local DynamoDB request boundary."""
+        if model.name == "GetItem":
+            key = params["Key"]["SK"]["S"]
+            if key != "EXEC_ACTIVE" and not key.startswith("EXEC#"):
+                return
+        execution_reads.append(model.name)
+        raise AssertionError("analysis must not fetch execution records or scan their partition")
+
+    for operation in ("GetItem", "Query", "Scan", "BatchGetItem", "TransactGetItems"):
+        part_store.ddb.meta.events.register(f"before-parameter-build.dynamodb.{operation}", guard_reads)
+    for key in ("EXEC#independent", "EXEC_ACTIVE"):
+        with pytest.raises(AssertionError, match="must not fetch execution"):
+            part_store.ddb.get_item(TableName="parts", Key={"PK": {"S": "RCA#rca-1"}, "SK": {"S": key}})
+    assert execution_reads == ["GetItem", "GetItem"]
+    execution_reads.clear()
+    if recovery_outcome == "FAILED":
+        monkeypatch.setattr(analysis_workflow, "recovery_result", Mock(side_effect=ValueError("recovery model failed")))
     order = []
+    early_results = []
 
     def root(alarm_arg, scoping_arg, hypotheses, run_arg):
         """Observe the early publication before any root inference proceeds."""
         order.append("root")
-        assert part_store.read_part("rca-1", "recovery")["record"]["status"] == "COMPLETED"
+        recovery = part_store.read_part("rca-1", "recovery")
+        assert recovery["record"]["status"] == ("FAILED" if recovery_outcome == "FAILED" else "COMPLETED")
+        early_results.append(recovery)
         assert part_store._get("rca-1", "ANALYSIS#SESSION")["state"] != "COMPLETED"
         assert scoping_arg.alarm_summary == "frozen fault"
         return SimpleNamespace(
@@ -105,6 +173,8 @@ def test_pipeline_publishes_recovery_then_root_then_operations_without_execution
     monkeypatch.setattr(analysis_workflow, "generate_operations", operations)
     assert orchestrator._run_pipeline_in_context(alarm, run)
     assert order == ["root", "operations"]
+    assert execution_reads == []
+    assert part_store.read_part("rca-1", "recovery") == early_results[0]
     assert part_store._get("rca-1", "ANALYSIS#SESSION")["state"] == "COMPLETED"
     assert part_store.read_part("rca-1", "recovery")["record"]["approval_status"] == "UNAVAILABLE"
     orchestrator._run_playbook.assert_called_once()
@@ -134,6 +204,26 @@ def test_root_failure_is_published_before_operations_and_preserves_recovery(part
     assert part_store._get("rca-1", "ANALYSIS#SESSION")["state"] == "FAILED"
     assert part_store.read_part("rca-1", "recovery")["record"]["status"] == "COMPLETED"
     assert part_store.read_part("rca-1", "operations")["record"]["status"] == "COMPLETED"
+
+
+def test_failed_root_unknown_severity_is_disclosed_without_losing_incident(part_store, monkeypatch):
+    """The final failed-root constructor must obey the same grade/failure contract as report fallback."""
+    orchestrator, container, alarm, run = wired_pipeline(part_store, monkeypatch)
+    scope = orchestrator._run_scoping.return_value
+    scope.initial_severity = "catastrophic"
+    scope.incident_observations.diagnostics = ["partial source observation retained"]
+    orchestrator._run_hypothesis_generation.side_effect = ValueError("PRIVATE_PROVIDER_VALUE")
+    monkeypatch.setattr(analysis_workflow, "generate_operations", Mock(return_value={"title": "limited operations"}))
+    assert orchestrator._run_pipeline_in_context(alarm, run)
+    saved = container.report_store.save.call_args.args[0]
+    assert saved.severity == "medium"
+    assert "기본 등급 medium" in saved.incident_summary
+    assert "근본원인 파트 FAILED: ValueError" in saved.incident_summary
+    assert "frozen fault" in saved.incident_summary
+    assert "PRIVATE_PROVIDER_VALUE" not in saved.model_dump_json()
+    assert saved.incident_observations.diagnostics == ["partial source observation retained"]
+    assert saved.root_cause_confirmed is False
+    assert part_store._get("rca-1", "ANALYSIS#SESSION")["state"] == "FAILED"
 
 
 def test_redelivery_reuses_original_incident_and_completed_recovery(part_store, monkeypatch):

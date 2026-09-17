@@ -197,11 +197,15 @@ class AnalysisPartsRun:
 
             refs.append(archive_root_files(self.store, self.rca_id, token))
         if part == "operations":
-            from headless_codex.services.analysis_root_archive import archive_operations_sources
+            from headless_codex.services.analysis_root_archive import (
+                archive_operations_sources,
+                read_operations_sources,
+            )
 
             source_ref = archive_operations_sources(self.store, self.rca_id, token)
             if source_ref is not None:
                 refs.append(source_ref)
+                result = {**result, "control_artifacts": read_operations_sources(self.store, self.rca_id, source_ref)}
         outcome = self.store.publish_part(
             self.rca_id,
             part,

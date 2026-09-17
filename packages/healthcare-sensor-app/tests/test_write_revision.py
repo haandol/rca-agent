@@ -180,10 +180,12 @@ def test_snapshot_remains_frozen_after_workspace_edit(tmp_path, monkeypatch):
     (workspace / "demo").mkdir()
     for name in ("local_worker.py", "build_revision.py"):
         shutil.copyfile(PACKAGE / "demo" / name, workspace / "demo" / name)
+    shutil.copytree(PACKAGE / "demo/revisions", workspace / "demo/revisions")
     monkeypatch.setattr(builder, "PACKAGE", workspace)
     snapshot = tmp_path / "snapshot"
     builder.capture_source_snapshot(snapshot)
     (workspace / "src/test_service/revision/write.py").write_text("# concurrent workspace change\n")
+    (workspace / "demo/revisions/v2/revision/write.py").write_text("# concurrent fault change\n")
     manifests = [builder.compile_revision(v, tmp_path / v, source_package=snapshot) for v in ("v1", "v2")]
     assert manifests[0]["base_fingerprint"] == manifests[1]["base_fingerprint"]
     assert "concurrent workspace change" not in (tmp_path / "v2/test_service/revision/write.py").read_text()

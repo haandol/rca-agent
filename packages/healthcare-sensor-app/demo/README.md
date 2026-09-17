@@ -11,9 +11,21 @@
 `SOURCE_REVISION`은 Docker 빌드 인자다. 런타임 환경 변수로 구현을 전환할 수 없다.
 기본값은 `v1`이며 다른 과거 revision은 받지 않는다. 실제 데모 이미지를 함께
 만들 때는 작업공간을 한 번 캡처하고 그 스냅샷을 양쪽 빌드 입력으로 사용한다.
+정상 원문은 `src/test_service/revision/write.py`, 결함 원문은
+`demo/revisions/v2/revision/write.py`다. 빌더는 상수 한 곳 외의 byte 차이를 거부하고
+결함 원문을 그대로 설치한다. 캡처는 결함 원문도 포함하므로 중간 작업공간 변경을 읽지 않는다.
 `build_revision.capture_source_snapshot`과 `compile_revision(source_package=...)`가
 그 경로를 제공한다. 설치 소스가 manifest와 다르면 기동을 거부한다.
 빌드하지 않은 개발 소스는 `verified=false`여서 정상 기준 증거로 사용할 수 없다.
+
+Docker의 선택적 `SOURCE_REPOSITORY=owner/repo`, `SOURCE_COMMIT=<전체 40자 SHA>` 인자는
+함께 지정한다. manifest의 `source_locations["revision/write.py"]`에
+`repository`, `commit`, `path`, `sha256`, `verification="declared"`가 기록된다.
+정상과 결함은 각각 위 저장소 경로를 가리킨다. 이 선언은 Git 증명이 아니며 `verified=true`는
+설치 바이트 검증만 뜻한다. 소비자는 실제 해당 commit/path의 GitHub 원문을 읽어 blob과
+파일 SHA-256이 사고 이미지 manifest와 일치하는지 확인해야 한다. 브랜치명·부분 SHA나
+아직 결함 파일을 포함하지 않은 commit으로 위치를 추정하지 않는다. 인자가 없으면
+기존처럼 위치 정보 없이 빌드하며 소스 본문·SQL 원문을 로그에 추가하지 않는다.
 
 ## 로컬 실행
 

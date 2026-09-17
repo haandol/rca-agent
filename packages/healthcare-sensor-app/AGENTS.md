@@ -27,6 +27,10 @@ Compose의 PostgreSQL은 일반 개발용 PostgreSQL 16/5432 설정이다. 아�
 `adapters/secondary/sensor_repository/models.py`, 저장 전용 SQL은 `revision/write.py`에 있다.
 정상·변경 소스는 같은 캡처에서 만들고 `TIMESTAMP_COLUMN` 상수만 다르게 한다.
 revision ID는 `v1`, `v2`이며 런타임 플래그로 구현을 바꾸지 않는다.
+결함 파일은 `demo/revisions/v2/revision/write.py`에 보존하고 빌드에서 그대로 복사한다.
+빌드 전 정상 파일과 상수 한 곳 외에는 byte 차이가 없는지 검사하며 캡처에 두 파일을 포함한다.
+선택적 `source_locations`는 설치 파일 해시와 연결된 Git 조회 위치의 선언일 뿐이다.
+로그에는 소스 본문을 넣지 않으며 실제 GitHub 불변 원문 읽기·해시 검증 없이 Git 소스로 인정하지 않는다.
 
 조회, 헬스, 세션 정리는 공통 경로다. session context는 성공 시 커밋하고 실패·취소에서도
 닫는다. 완료 로그는 커밋 뒤에만 기록한다. 실제 오류의 허용된 필드만 기록하며 SQL 원문,

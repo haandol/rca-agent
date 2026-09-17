@@ -7,11 +7,14 @@ Docker uses --in-place after COPY; local proofs compile separate temporary trees
 import argparse
 import hashlib
 import json
+import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[1]
+FAULT_SOURCE = Path("demo/revisions/v2/revision/write.py")
+REPO_PACKAGE = "packages/healthcare-sensor-app"
 
 
 def source_files(root: Path) -> dict[str, str]:
@@ -42,6 +45,7 @@ def capture_source_snapshot(destination: Path) -> dict:
                 *PACKAGE.joinpath("src/test_service").rglob("*.py"),
                 PACKAGE / "demo/local_worker.py",
                 PACKAGE / "demo/build_revision.py",
+                PACKAGE / FAULT_SOURCE,
             ]
         )
 
@@ -66,7 +70,13 @@ def capture_source_snapshot(destination: Path) -> dict:
 
 
 def compile_revision(
-    revision: str, destination: Path, *, in_place: bool = False, source_package: Path | None = None
+    revision: str,
+    destination: Path,
+    *,
+    in_place: bool = False,
+    source_package: Path | None = None,
+    source_repository: str = "",
+    source_commit: str = "",
 ) -> dict:
     """Build exactly one known revision and record all installed source hashes."""
     if revision not in ("v1", "v2"):
@@ -74,6 +84,20 @@ def compile_revision(
     if in_place and (destination / "test_service" / "revision" / "_build_manifest.py").exists():
         raise ValueError("Refusing to relabel an already compiled source tree")
     package = source_package or PACKAGE
+    if bool(source_repository) != bool(source_commit) or (
+        source_repository
+        and (
+            not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", source_repository)
+            or not re.fullmatch(r"[a-f0-9]{40}", source_commit)
+        )
+    ):
+        raise ValueError("Source location requires repository owner/name and full lowercase commit SHA")
+    normal = (package / "src/test_service/revision/write.py").read_bytes()
+    fault = (package / FAULT_SOURCE).read_bytes()
+    if normal.count(b'TIMESTAMP_COLUMN = "timestamp"') != 1 or fault != normal.replace(
+        b'TIMESTAMP_COLUMN = "timestamp"', b'TIMESTAMP_COLUMN = "sampled_at"'
+    ):
+        raise ValueError("Checked-in fault source must differ only in the timestamp column constant")
     base_fingerprint = fingerprint(source_files(package / "src/test_service"))
     if not in_place:
         shutil.copytree(
@@ -84,11 +108,10 @@ def compile_revision(
     if not in_place:
         assert (root / "revision" / "session.py").exists()
     write_path = root / "revision" / "write.py"
-    source = write_path.read_text()
-    if source.count('TIMESTAMP_COLUMN = "timestamp"') != 1:
-        raise ValueError("Captured source must contain the canonical write column once")
+    if write_path.read_bytes() != normal:
+        raise ValueError("Destination write source differs from the captured normal source")
     if revision == "v2":
-        write_path.write_text(source.replace('TIMESTAMP_COLUMN = "timestamp"', 'TIMESTAMP_COLUMN = "sampled_at"'))
+        write_path.write_bytes(fault)
     files = source_files(root)
     manifest = {
         "revision": revision,
@@ -96,6 +119,18 @@ def compile_revision(
         "base_fingerprint": base_fingerprint,
         "files": files,
     }
+    if source_repository:
+        relative = FAULT_SOURCE if revision == "v2" else Path("src/test_service/revision/write.py")
+        manifest["source_locations"] = {
+            "revision/write.py": {
+                "repository": source_repository,
+                "commit": source_commit,
+                "path": f"{REPO_PACKAGE}/{relative.as_posix()}",
+                "sha256": files["revision/write.py"],
+                # A build argument is a locator, never proof of Git ownership or contents.
+                "verification": "declared",
+            }
+        }
     (root / "revision" / "_build_manifest.py").write_text(json.dumps(manifest, sort_keys=True, indent=2))
     return manifest
 
@@ -105,5 +140,17 @@ if __name__ == "__main__":
     parser.add_argument("--revision", choices=("v1", "v2"), default="v1")
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--in-place", action="store_true")
+    parser.add_argument("--source-repository", default="")
+    parser.add_argument("--source-commit", default="")
     args = parser.parse_args()
-    print(json.dumps(compile_revision(args.revision, args.destination, in_place=args.in_place)))
+    print(
+        json.dumps(
+            compile_revision(
+                args.revision,
+                args.destination,
+                in_place=args.in_place,
+                source_repository=args.source_repository,
+                source_commit=args.source_commit,
+            )
+        )
+    )

@@ -876,6 +876,157 @@ class DemoTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "same-load invariant"):
                     self.runner.assert_scenario_environment(candidate)
 
+    def test_declared_source_location_survives_actual_baseline_publication(self):
+        """Archive the real local file binding as declared, never as verified Git evidence."""
+        relative = "packages/healthcare-sensor-app/src/test_service/revision/write.py"
+        sha = hashlib.sha256((SCRIPT.parents[1] / relative).read_bytes()).hexdigest()
+        source = self.cloud.source_manifest
+        source["files"]["revision/write.py"] = sha
+        source["fingerprint"] = hashlib.sha256(
+            json.dumps(source["files"], sort_keys=True).encode()
+        ).hexdigest()
+        location = {
+            "repository": "team/repo",
+            # Deliberately not proven to exist: the runner does not read Git.
+            "commit": "a" * 40,
+            "path": relative,
+            "sha256": sha,
+            "verification": "declared",
+        }
+        source["source_locations"] = {"revision/write.py": location}
+        before = copy.deepcopy(location)
+        self.plan()
+        self.runner.apply()
+        raw = self.cloud.objects[("configured-evidence", "baselines/run-1/normal.json")]
+        baseline = json.loads(raw)
+        observed = next(
+            row["message"]
+            for row in baseline["observations"]
+            if row["message"]["event"] == "source_manifest"
+        )
+        self.assertEqual(raw, demo.canonical(baseline))
+        self.assertEqual(observed["source_locations"], {"revision/write.py": before})
+        self.assertTrue(observed["verified"])  # Existing installed-file proof only.
+        self.assertEqual(
+            observed["source_locations"]["revision/write.py"]["verification"],
+            "declared",
+        )
+        self.assertEqual(location, before)
+
+    def test_missing_source_locations_preserves_legacy_baseline(self):
+        """Old captures stay without repository claims; no locator is guessed from local Git."""
+        self.plan()
+        observed = next(
+            row["message"]
+            for row in self.journal.snapshot["normalObservations"]
+            if row["message"]["event"] == "source_manifest"
+        )
+        self.assertNotIn("source_locations", observed)
+
+    def test_invalid_declared_source_locations_fail_before_plan_is_saved(self):
+        """Reject unsafe locators, detached hashes and attempts to elevate a declaration."""
+        valid = {
+            "repository": "team/repo",
+            "commit": "a" * 40,
+            "path": "packages/healthcare-sensor-app/src/test_service/revision/write.py",
+            "sha256": self.cloud.source_manifest["files"]["revision/write.py"],
+            "verification": "declared",
+        }
+        cases = [
+            None,
+            [],
+            {},
+            {"revision/write.py": None},
+            {"revision/write.py": valid, "extra.py": valid},
+        ]
+        for field, value in (
+            ("repository", "https://user:PRIVATE_SENTINEL@host/repo"),
+            ("repository", "../repo"),
+            ("repository", 1),
+            ("commit", "main"),
+            ("commit", "A" * 40),
+            ("commit", []),
+            ("path", "../revision/write.py"),
+            ("path", "/tmp/write.py"),
+            (
+                "path",
+                "packages/healthcare-sensor-app/demo/revisions/v2/revision/write.py",
+            ),
+            ("sha256", "b" * 64),
+            ("sha256", 1),
+            ("verification", "verified"),
+            ("verification", True),
+            ("text", "PRIVATE_SENTINEL"),
+        ):
+            cases.append({"revision/write.py": valid | {field: value}})
+        cases.extend(
+            {
+                "revision/write.py": {
+                    key: value for key, value in valid.items() if key != field
+                }
+            }
+            for field in valid
+        )
+        for index, locations in enumerate(cases):
+            with self.subTest(case=index):
+                self.cloud.source_manifest["source_locations"] = locations
+                with self.assertRaisesRegex(
+                    RuntimeError, "invalid declared source_locations"
+                ) as caught:
+                    self.plan()
+                self.assertNotIn("PRIVATE_SENTINEL", str(caught.exception))
+                self.assertFalse(self.journal.events)
+                self.assertFalse(
+                    any(op == "put-object" for _, op, _ in self.cloud.calls)
+                )
+
+    def test_normal_observations_recheck_declared_location_and_event_kind(self):
+        """Do not pass a locator added after startup validation or attached to a different event."""
+        self.plan()
+        snapshot = self.journal.snapshot
+        manifests = copy.deepcopy(snapshot["sourceManifests"])
+        raw = manifests[0]["events"][0]
+        value = json.loads(raw["message"])
+        value["source_locations"] = {"revision/write.py": {"verification": "verified"}}
+        raw["message"] = json.dumps(value)
+        with self.assertRaisesRegex(RuntimeError, "invalid declared source_locations"):
+            self.runner.normal_observations(
+                snapshot["taskDefinition"]["taskDefinition"],
+                snapshot["tasks"],
+                "healthcare",
+                snapshot["metrics"],
+                manifests,
+            )
+        original = self.runner.aws
+
+        def misplaced(service, operation, **payload):
+            """Place otherwise valid declared metadata on a write receipt in the local fake."""
+            result = original(service, operation, **payload)
+            for event in result.get("events", []):
+                message = json.loads(event["message"])
+                if message.get("event") == "write_completed":
+                    message["source_locations"] = {
+                        "revision/write.py": {
+                            "repository": "team/repo",
+                            "commit": "a" * 40,
+                            "path": "packages/healthcare-sensor-app/src/test_service/revision/write.py",
+                            "sha256": "1" * 64,
+                            "verification": "declared",
+                        }
+                    }
+                    event["message"] = json.dumps(message)
+            return result
+
+        self.runner.aws = misplaced
+        with self.assertRaisesRegex(RuntimeError, "invalid declared source_locations"):
+            self.runner.normal_observations(
+                snapshot["taskDefinition"]["taskDefinition"],
+                snapshot["tasks"],
+                "healthcare",
+                snapshot["metrics"],
+                snapshot["sourceManifests"],
+            )
+
     def test_optional_input_contract_is_preserved_only_for_the_committed_request(self):
         """Old baselines stay valid; optional input proof must join the selected write."""
         original = self.runner.aws

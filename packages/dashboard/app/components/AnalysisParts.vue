@@ -1,17 +1,47 @@
 <script setup lang="ts">
 import { renderMarkdownDocument } from '~/utils/markdown';
 import { analysisPartInterrupted } from '~/utils/analysisParts';
-defineProps<{
+const props = defineProps<{
   parts: Record<string, any>[];
   approvalEligible?: boolean;
   parentState?: string;
   historicalView?: boolean;
+  summaryOnly?: boolean;
+  selectedPart?: string;
 }>();
-defineEmits<{ review: []; retry: [] }>();
+defineEmits<{ review: []; retry: []; detail: [part: string] }>();
 /** Optional lists remain absent when malformed; never invent successful results. */
 function list(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
+/** Reuse only source snapshots already returned with these same incident parts; never fetch a latest revision. */
+const artifacts = computed(() =>
+  props.parts.flatMap((part) =>
+    part.available
+      ? [
+          ...list(part.payload?.result?.source_artifacts),
+          ...list(part.payload?.result?.control_artifacts),
+        ]
+      : [],
+  ),
+);
+/** Preserve the recorded test status; absence is neither NOT_RUN nor a passing test. */
+function testStatus(value: unknown): string {
+  return (
+    (
+      {
+        NOT_RUN: '미실행 (NOT_RUN)',
+        PASSED: '통과 기록 (PASSED)',
+        FAILED: '실패 기록 (FAILED)',
+      } as Record<string, string>
+    )[String(value)] ?? '상태 미제공'
+  );
+}
+const visibleParts = computed(() =>
+  props.selectedPart
+    ? props.parts.filter((part) => part.part === props.selectedPart)
+    : props.parts,
+);
 const names: Record<string, string> = {
   recovery: '1. 빠른 정상화',
   root_cause: '2. 근본원인 · 코드 PR',
@@ -28,7 +58,7 @@ const labels: Record<string, string> = {
 <template>
   <div class="space-y-5" data-testid="analysis-parts">
     <section
-      v-for="part in parts"
+      v-for="part in visibleParts"
       :key="part.part"
       :data-part="part.part"
       class="ops-panel p-5"
@@ -70,7 +100,26 @@ const labels: Record<string, string> = {
           다시 조회
         </button>
       </p>
-      <template v-if="part.available && part.payload">
+      <div v-if="summaryOnly" class="flex flex-wrap gap-2 mt-3">
+        <button
+          class="btn btn-outline btn-sm"
+          @click="$emit('detail', part.part)"
+        >
+          {{ names[part.part] }} · 근거와 상세
+        </button>
+        <button
+          v-if="
+            part.part === 'recovery' &&
+            part.approval_status === 'READY' &&
+            approvalEligible
+          "
+          class="btn btn-primary btn-sm"
+          @click="$emit('review')"
+        >
+          전체 런북 검토 · 승인
+        </button>
+      </div>
+      <template v-if="!summaryOnly && part.available && part.payload">
         <p class="detail-body mt-3">{{ part.payload.result.title }}</p>
         <p v-if="part.payload.result.reason" class="mt-3 whitespace-pre-wrap">
           {{ part.payload.result.reason }}
@@ -108,23 +157,84 @@ const labels: Record<string, string> = {
             </h3>
             <p>제안이며 실제 게시·적용·머지 상태가 아닙니다.</p>
             <p>{{ part.payload.result.code_proposal.title }}</p>
-            <p>
-              {{ part.payload.result.code_proposal.repository }} ·
-              {{ part.payload.result.code_proposal.base_revision }}
+            <p class="break-all">
+              저장소:
+              {{ part.payload.result.code_proposal.repository || '미제공' }} ·
+              비교 기준:
+              {{ part.payload.result.code_proposal.base_revision || '미제공' }}
             </p>
-            <p>테스트: {{ part.payload.result.code_proposal.tests_status }}</p>
+            <p>
+              기록된 테스트 상태:
+              {{ testStatus(part.payload.result.code_proposal.tests_status) }}
+            </p>
+            <h4 class="detail-label mt-3">테스트 계획</h4>
+            <ul>
+              <li
+                v-for="(plan, index) in list(
+                  part.payload.result.code_proposal.test_plan,
+                )"
+                :key="index"
+              >
+                {{ plan }}
+              </li>
+            </ul>
+            <p v-if="!list(part.payload.result.code_proposal.test_plan).length">
+              테스트 계획이 제공되지 않았습니다.
+            </p>
+            <ul class="mt-3" data-testid="code-proposal-limitations">
+              <li
+                v-for="(limit, index) in list(
+                  part.payload.result.code_proposal.limitations,
+                )"
+                :key="index"
+              >
+                {{ limit }}
+              </li>
+            </ul>
+            <p
+              v-if="!list(part.payload.result.code_proposal.files).length"
+              class="mt-3"
+            >
+              구체 코드 수정 파일이 제공되지 않았습니다.
+            </p>
             <div
-              v-for="(file, index) in part.payload.result.code_proposal.files ||
-              []"
+              v-for="(file, index) in list(
+                part.payload.result.code_proposal.files,
+              )"
               :key="index"
               class="mt-3"
             >
               <p class="font-mono break-all">
                 {{ file.path }}:{{ file.start_line }}–{{ file.end_line }}
               </p>
-              <pre class="overflow-auto whitespace-pre-wrap text-xs">{{
-                file.unified_diff
-              }}</pre>
+              <p class="detail-label mt-3">기록된 원본 코드</p>
+              <pre
+                v-if="typeof file.original === 'string'"
+                class="overflow-auto whitespace-pre-wrap text-xs"
+                data-testid="proposal-original"
+                tabindex="0"
+                >{{ file.original }}</pre>
+              <p v-else>원본 코드가 제공되지 않았습니다.</p>
+              <p class="detail-label mt-3">제안 코드</p>
+              <pre
+                v-if="typeof file.proposed === 'string'"
+                class="overflow-auto whitespace-pre-wrap text-xs"
+                data-testid="proposal-proposed"
+                tabindex="0"
+                >{{ file.proposed }}</pre>
+              <p v-else>제안 코드가 제공되지 않았습니다.</p>
+              <p class="detail-label mt-3">기록된 수정 diff</p>
+              <pre
+                v-if="typeof file.unified_diff === 'string'"
+                class="overflow-auto whitespace-pre-wrap text-xs"
+                data-testid="proposal-diff"
+                tabindex="0"
+                >{{ file.unified_diff }}</pre>
+              <p v-else>수정 diff가 제공되지 않았습니다.</p>
+              <AnalysisEvidenceRefs
+                :references="file.evidence_refs"
+                :artifacts="artifacts"
+              />
             </div>
           </section>
         </template>
@@ -135,11 +245,23 @@ const labels: Record<string, string> = {
             :key="index"
             class="mt-3"
           >
-            {{ finding.status }} · {{ finding.statement }}
+            <span>{{
+              finding.status === 'OBSERVED'
+                ? '관측 기록 (OBSERVED)'
+                : finding.status === 'UNVERIFIED'
+                  ? '미검증 (UNVERIFIED)'
+                  : '관측 상태 미제공'
+            }}</span>
+            · {{ finding.statement }}
+            <AnalysisEvidenceRefs
+              :references="finding.evidence_refs"
+              :artifacts="artifacts"
+            />
           </div>
           <div
-            v-for="(proposal, index) in part.payload.result.recommendations ||
-            []"
+            v-for="(proposal, index) in list(
+              part.payload.result.recommendations,
+            )"
             :key="index"
             class="mt-4 border-t border-base-content/15 pt-3"
           >
@@ -152,7 +274,13 @@ const labels: Record<string, string> = {
             <p>검사: {{ proposal.check }}</p>
             <p>차단 조건: {{ proposal.failure_condition }}</p>
             <p>검증 계획: {{ proposal.verification_plan }}</p>
-            <p>검증 상태: {{ proposal.validation_status }}</p>
+            <p>
+              기록된 검증 상태: {{ testStatus(proposal.validation_status) }}
+            </p>
+            <AnalysisEvidenceRefs
+              :references="proposal.evidence_refs"
+              :artifacts="artifacts"
+            />
           </div>
         </template>
         <ul class="mt-3">
@@ -173,7 +301,7 @@ const labels: Record<string, string> = {
           }}</pre>
         </details>
       </template>
-      <p v-else-if="!part.error" class="mt-3 text-sm">
+      <p v-else-if="!part.error && !part.available" class="mt-3 text-sm">
         {{
           historicalView
             ? '인계 전 기록입니다. 현재 담당 엔진의 진행 상황은 위 이동 링크에서 확인하세요.'

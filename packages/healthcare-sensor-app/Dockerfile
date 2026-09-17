@@ -8,8 +8,12 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src/ src/
 COPY demo/build_revision.py demo/build_revision.py
+COPY demo/revisions/ demo/revisions/
 ARG SOURCE_REVISION=v1
-RUN python demo/build_revision.py --revision "$SOURCE_REVISION" --destination src --in-place
+ARG SOURCE_REPOSITORY=""
+ARG SOURCE_COMMIT=""
+RUN python demo/build_revision.py --revision "$SOURCE_REVISION" --destination src --in-place \
+    --source-repository "$SOURCE_REPOSITORY" --source-commit "$SOURCE_COMMIT"
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim

@@ -164,15 +164,18 @@ def _received_files(receipts: list[dict]) -> list[dict]:
                 uri = urlparse(document["uri"])
                 path = unquote(uri.path)
                 prefix = "/" + str(args.get("repo", "")) + "/"
-                query_ref = parse_qs(uri.query).get("ref", [args.get("ref")])[0]
-                segment = path[len(prefix) :].split("/", 1)[0] if path.startswith(prefix) else ""
+                query_refs = parse_qs(uri.query, keep_blank_values=True).get("ref", [])
+                contents = "contents/" + str(args.get("path", ""))
+                allowed_paths = {
+                    prefix + contents,
+                    prefix + args["ref"] + "/" + contents,
+                    prefix + "sha/" + args["ref"] + "/" + contents,
+                }
                 if (
                     uri.scheme != "repo"
                     or uri.netloc != args.get("owner")
-                    or not path.startswith(prefix)
-                    or not path.endswith("/" + str(args.get("path", "")))
-                    or query_ref != args.get("ref")
-                    or (re.fullmatch(r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", segment) and segment != args.get("ref"))
+                    or path not in allowed_paths
+                    or any(ref != args["ref"] for ref in query_refs)
                 ):
                     continue
                 document = {"path": args["path"], "content": document["text"], "encoding": "utf-8"}
@@ -258,6 +261,8 @@ def received_control_artifacts(receipts: list[dict]) -> list[dict]:
             "package.json",
             "tox.ini",
             "Makefile",
+            "Dockerfile",
+            "build_revision.py",
         }:
             controls.append({**artifact, "source_kind": "read_control_configuration"})
     return controls

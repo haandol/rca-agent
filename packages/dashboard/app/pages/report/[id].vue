@@ -500,7 +500,9 @@ onBeforeUnmount(() => {
 
 useHead({ title: () => `${session.value?.alarmName ?? '보고서'} · 장애 기록` });
 
+const selectedAnalysisPart = ref('root_cause');
 const detailTitles = {
+  part: '파트 근거 · 코드 · 운영 상세',
   report: '보고서 전문 · 근거',
   action: '보고서에 기록된 조치 설명',
   cause: '원인 사슬 · 5 Whys',
@@ -536,6 +538,12 @@ function openDetail(kind: DetailKind) {
     reviewedRecoveryRevision.value = playbook.value?.recovery_revision ?? '';
     reviewed.value = false;
   }
+}
+/** Open one part inside the existing dialog without changing the reviewed runbook or other part state. */
+function openAnalysisPart(part: string) {
+  if (!['recovery', 'root_cause', 'operations'].includes(part)) return;
+  selectedAnalysisPart.value = part;
+  openDetail('part');
 }
 const summary = computed(
   () =>
@@ -735,15 +743,40 @@ const comparisonLabels = {
           분석 갱신 실패 <button @click="refreshParts()">다시 조회</button>
         </p>
       </section>
+      <section
+        class="ops-panel p-5 mb-5 space-y-3"
+        data-testid="common-incident-summary"
+      >
+        <h2 class="detail-section-title">사고 요약</h2>
+        <p>{{ summary?.incidentSummary || '사고 요약 미제공' }}</p>
+        <p>영향 범위: {{ summary?.impactSummary || '영향 범위 미제공' }}</p>
+        <p>심각도: {{ summary?.severity || '미제공' }}</p>
+        <p>
+          다음 조치:
+          {{
+            summary?.nextAction ||
+            (canApprove
+              ? '정상화 런북의 전체 명령과 근거를 검토하세요.'
+              : '정상화 제안과 부족한 근거를 확인하세요.')
+          }}
+        </p>
+        <button class="btn btn-outline btn-sm" @click="openDetail('report')">
+          보고서 원문 · 상세
+        </button>
+      </section>
       <AnalysisParts
+        summary-only
         :parts="analysisParts?.parts || []"
         :parent-state="session?.state || ''"
         :historical-view="analysisHandoff"
         :approval-eligible="
-          !analysisHandoff && analysisParts?.parentEligible === true
+          !analysisHandoff &&
+          analysisParts?.parentEligible === true &&
+          !['CANCELLED', 'OUTDATED'].includes(session?.state || '')
         "
         @review="reviewRecovery"
         @retry="refreshParts()"
+        @detail="openAnalysisPart"
       />
     </template>
     <template v-else>
@@ -981,6 +1014,25 @@ const comparisonLabels = {
       @close="detailOpen = false"
     >
       <nav class="flex flex-wrap gap-2 mb-5" aria-label="상세 자료 전환">
+        <template v-if="isThreePart">
+          <button
+            v-for="part in [
+              { name: 'recovery', label: '정상화 근거' },
+              { name: 'root_cause', label: '원인 · 코드 PR' },
+              { name: 'operations', label: '운영 개선 근거' },
+            ]"
+            :key="part.name"
+            class="btn btn-sm"
+            :class="
+              activeDetail === 'part' && selectedAnalysisPart === part.name
+                ? 'btn-primary'
+                : 'btn-ghost'
+            "
+            @click="openAnalysisPart(part.name)"
+          >
+            {{ part.label }}
+          </button>
+        </template>
         <button
           v-for="kind in [
             'report',
@@ -1002,6 +1054,27 @@ const comparisonLabels = {
         </button>
       </nav>
 
+      <ReadState
+        v-if="activeDetail === 'part'"
+        label="파트 원본"
+        :pending="false"
+        :error="partsError"
+        @retry="refreshParts()"
+      >
+        <AnalysisParts
+          :parts="analysisParts?.parts || []"
+          :selected-part="selectedAnalysisPart"
+          :parent-state="session?.state || ''"
+          :historical-view="analysisHandoff"
+          :approval-eligible="
+            !analysisHandoff &&
+            analysisParts?.parentEligible === true &&
+            !['CANCELLED', 'OUTDATED'].includes(session?.state || '')
+          "
+          @review="reviewRecovery"
+          @retry="refreshParts()"
+        />
+      </ReadState>
       <ReadState
         v-if="['report', 'cause', 'timeline', 'action'].includes(activeDetail)"
         label="보고서"

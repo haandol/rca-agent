@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import logging
 import uuid
 from typing import Literal
 
@@ -14,12 +15,15 @@ from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS
 from rca_agent.ports.dto.models import ExecutionStep, Playbook, RcaReport, ScopingResult
 from rca_agent.services.analysis_parts import validate_recovery_operations
 from rca_agent.services.deployment_baseline import validate_observed_plan
+from rca_agent.services.operations_context import operations_context
 from rca_agent.services.playbook_gen import PlaybookOutput
 from rca_agent.services.recovery_reference import build_recovery_reference
 from rca_agent.services.runbook_contract import validate_runbook
 from rca_agent.utils.agent_invocation import invoke_agent
 from rca_agent.utils.recovery_diagnostics import record as record_recovery
 from rca_agent.utils.recovery_diagnostics import recovery_diagnostics, validation_errors, validation_phase
+
+logger = logging.getLogger(__name__)
 
 
 class RecoveryOutput(BaseModel):
@@ -38,10 +42,15 @@ class CodeFile(BaseModel):
     """A proposed edit must identify exact observed bytes and an inclusive source range."""
 
     path: str
-    start_line: int = Field(ge=1)
-    end_line: int = Field(ge=1)
-    original: str
-    proposed: str
+    start_line: int = Field(ge=1, description="1-based inclusive line_number from the supplied source_lines.")
+    end_line: int = Field(ge=1, description="1-based inclusive last line_number from source_lines.")
+    original: str = Field(
+        description=(
+            "Exact concatenation of source_lines[].text for start_line through end_line, including each line ending. "
+            "JSON newline escapes must decode to newline characters, not literal backslash+n text."
+        )
+    )
+    proposed: str = Field(description="Replacement text for the same inclusive range; preserve intended line endings.")
     evidence_refs: list[str] = Field(default_factory=list)
 
 
@@ -163,7 +172,23 @@ def validate_code_preview(output: CodePreview, artifacts: list[dict]) -> dict:
             raise ValueError("code preview range is outside the observed file")
         original = "".join(lines[edit.start_line - 1 : edit.end_line])
         if edit.original != original:
-            raise ValueError("code preview original does not match observed bytes")
+            details = {
+                "file_index": index,
+                "start_line": edit.start_line,
+                "end_line": edit.end_line,
+                "expected_chars": len(original),
+                "received_chars": len(edit.original),
+                "expected_newlines": original.count("\n"),
+                "received_newlines": edit.original.count("\n"),
+                "literal_backslash_n": "\\n" in edit.original,
+                "expected_trailing_newline": original.endswith("\n"),
+                "received_trailing_newline": edit.original.endswith("\n"),
+            }
+            logger.warning("code_preview_original_mismatch %s", json.dumps(details, sort_keys=True))
+            raise ValueError(
+                "code preview original does not match observed bytes; concatenate the supplied source_lines text "
+                f"for the inclusive range without escaping it twice. Field diagnostics: {json.dumps(details)}"
+            )
         if edit.proposed == original:
             raise ValueError("code preview does not change the observed source")
         differences = difflib.unified_diff(
@@ -214,13 +239,32 @@ def generate_code_preview(
     output = invoke_agent(
         agent,
         json.dumps(
-            {"root_cause": report.root_cause, "confirmed": report.root_cause_confirmed, "sources": sources},
+            {
+                "root_cause": report.root_cause,
+                "confirmed": report.root_cause_confirmed,
+                "sources": [
+                    {
+                        **source,
+                        "source_lines": [
+                            {"line_number": number, "text": line}
+                            for number, line in enumerate(source["text"].splitlines(keepends=True), 1)
+                        ],
+                    }
+                    for source in sources
+                ],
+                "verified_build_sources": verified_sources(incident.get("control_artifacts", [])),
+            },
             ensure_ascii=False,
         ),
         ObservedCodePreview,
         timeout_seconds,
     )
-    return validate_code_preview(output, sources)
+    result = validate_code_preview(output, sources)
+    if result["status"] == "PROPOSED":
+        result["limitations"].append(
+            "Source-grounded preview only: tests are NOT_RUN; build compatibility and merge readiness are not verified."
+        )
+    return result
 
 
 def recovery_result(
@@ -347,12 +391,20 @@ def generate_operations(
         @model_validator(mode="after")
         def check_control_evidence(self):
             """Keep unsupported findings UNVERIFIED while proposals remain NOT_RUN."""
-            for finding in self.findings:
+            for index, finding in enumerate(self.findings):
                 if finding.status == "OBSERVED" and (
                     not finding.evidence_refs or not set(finding.evidence_refs) <= allowed_refs
                 ):
+                    logger.warning(
+                        "operations_reference_mismatch finding_index=%d provided_count=%d allowed_count=%d",
+                        index,
+                        len(finding.evidence_refs),
+                        len(allowed_refs),
+                    )
                     raise ValueError(
-                        "OBSERVED requires actually read CI/control source references; otherwise use UNVERIFIED"
+                        "OBSERVED requires actually read CI/control source references; otherwise use UNVERIFIED. "
+                        f"findings[{index}].evidence_refs must copy exact evidence_ref strings from "
+                        "control_reference_catalog, not source_id, path, or an invented shortened reference."
                     )
             return self
 
@@ -360,10 +412,18 @@ def generate_operations(
         agent,
         json.dumps(
             {
-                "incident": incident,
-                "root_result": root_result,
+                **operations_context(incident, root_result),
                 "verified_control_sources": controls,
                 "allowed_observed_control_refs": sorted(allowed_refs),
+                "control_reference_catalog": [
+                    {
+                        "source_id": f"control-{index}",
+                        "path": source["path"],
+                        "evidence_ref": source["source_ref"],
+                        "base_ref": source.get("base_ref", source.get("base_revision")),
+                    }
+                    for index, source in enumerate(controls, 1)
+                ],
             },
             ensure_ascii=False,
         ),

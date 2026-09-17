@@ -255,3 +255,122 @@ def test_github_mcp_pinned_version_embedded_resource_shape_is_captured():
     assert captured["sources"][0]["base_revision"] == "a" * 40
     item["result"]["content"][0]["text"] += " Note: default branch was used instead."
     assert capture_sources("\n".join(json.dumps(event) for event in events), incident)["sources"] == []
+
+
+def mapped_source_receipts():
+    """A real-shaped immutable GitHub read of the checked-in build variant, with a runtime-relative manifest."""
+    output, incident = source_receipts()
+    path = "packages/healthcare-sensor-app/demo/revisions/v2/revision/write.py"
+    output = output.replace("src/app.py", path)
+    digest = hashlib.sha256(b"bad = 1\n").hexdigest()
+    files = {"revision/write.py": digest}
+    manifest = {
+        "event": "source_manifest",
+        "verified": True,
+        "files": files,
+        "fingerprint": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
+        "source_locations": {
+            "revision/write.py": {
+                "repository": "o/r",
+                "commit": "a" * 40,
+                "path": path,
+                "sha256": digest,
+                "verification": "declared",
+            }
+        },
+    }
+    incident["observations"] = {"current": {"observations": [{"message": manifest}]}}
+    return output, incident, manifest
+
+
+def test_declared_location_binds_actual_immutable_read_to_exact_installed_hash():
+    output, incident, _ = mapped_source_receipts()
+    original = copy.deepcopy(incident)
+    sources = capture_sources(output, incident)["sources"]
+    assert len(sources) == 1 and sources[0]["source_phase"] == "incident"
+    assert sources[0]["path"] == "packages/healthcare-sensor-app/demo/revisions/v2/revision/write.py"
+    assert sources[0]["text"] == "bad = 1\n" and sources[0]["base_revision"] == "a" * 40
+    assert incident == original
+
+
+@pytest.mark.parametrize(
+    "change", ["repo", "commit", "hash", "fingerprint", "suffix", "ambiguous", "no_read", "no_manifest"]
+)
+def test_declared_location_cannot_replace_actual_read_or_exact_binding(change):
+    output, incident, manifest = mapped_source_receipts()
+    location = manifest["source_locations"]["revision/write.py"]
+    if change == "repo":
+        location["repository"] = "other/repo"
+    elif change == "commit":
+        location["commit"] = "b" * 40
+    elif change == "hash":
+        location["sha256"] = "b" * 64
+    elif change == "fingerprint":
+        manifest["fingerprint"] = "b" * 64
+    elif change == "suffix":
+        location["path"] = "other/" + location["path"]
+    elif change == "ambiguous":
+        manifest["source_locations"]["other/write.py"] = dict(location)
+    elif change == "no_read":
+        output = output.splitlines()[0]
+    else:
+        manifest["verified"] = False
+    assert capture_sources(output, incident)["sources"] == []
+
+
+def test_normal_mapped_source_keeps_baseline_phase():
+    output, incident, _ = mapped_source_receipts()
+    incident["observations"]["baseline"] = incident["observations"].pop("current")
+    assert capture_sources(output, incident)["sources"][0]["source_phase"] == "normal_baseline"
+
+
+def test_actual_compiled_fault_file_maps_through_git_receipt_to_preview(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[2] / "healthcare-sensor-app"
+    spec = importlib.util.spec_from_file_location("sensor_build_proof", package / "demo/build_revision.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    snapshot = tmp_path / "snapshot"
+    builder.capture_source_snapshot(snapshot)
+    manifest = builder.compile_revision(
+        "v2", tmp_path / "installed", source_package=snapshot, source_repository="o/r", source_commit="a" * 40
+    )
+    text = (tmp_path / "installed/test_service/revision/write.py").read_text()
+    assert text == (snapshot / "demo/revisions/v2/revision/write.py").read_text()
+    path = manifest["source_locations"]["revision/write.py"]["path"]
+    output, incident = source_receipts(text)
+    output = output.replace("src/app.py", path)
+    incident["observations"] = {
+        "current": {"observations": [{"message": {**manifest, "event": "source_manifest", "verified": True}}]}
+    }
+    sources = capture_sources(output, incident)["sources"]
+    assert len(sources) == 1 and sources[0]["text"] == text
+    proposed = text.replace('TIMESTAMP_COLUMN = "sampled_at"', 'TIMESTAMP_COLUMN = "timestamp"')
+    preview = {
+        "status": "PROPOSED",
+        "title": "실제 결함 원문 수정",
+        "tests_status": "NOT_RUN",
+        "files": [
+            {
+                "path": path,
+                "start_line": 1,
+                "end_line": len(text.splitlines()),
+                "original": text,
+                "proposed": proposed,
+                "unified_diff": "".join(
+                    difflib.unified_diff(
+                        text.splitlines(keepends=True),
+                        proposed.splitlines(keepends=True),
+                        fromfile=f"a/{path}",
+                        tofile=f"b/{path}",
+                    )
+                ),
+                "evidence_refs": [sources[0]["source_ref"]],
+            }
+        ],
+        "test_plan": [],
+        "limitations": [],
+    }
+    assert validate_code_proposal(preview, sources)["status"] == "PROPOSED"

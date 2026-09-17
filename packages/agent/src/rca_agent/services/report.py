@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class ReportOutput(BaseModel):
     incident_summary: str
-    severity: str = "medium"
+    severity: Literal["critical", "high", "medium", "low"] = "medium"
     impact_summary: str = ""
     detection_method: str = ""
     root_cause: str
@@ -36,6 +36,13 @@ class ReportOutput(BaseModel):
     lessons_learned: str = ""
     timeline: list[str] = Field(default_factory=list)
     five_whys: list[str] = Field(default_factory=list)
+
+
+def report_severity(value: str) -> tuple[str, str]:
+    """Use the existing default for invalid new-report grades and disclose that default in the summary."""
+    if value in {"critical", "high", "medium", "low"}:
+        return value, ""
+    return "medium", " [유효한 심각도 정보 없음: 기본 등급 medium]"
 
 
 def _build_user_prompt(
@@ -113,9 +120,11 @@ def run_report_generation(
     logger.info("Generating RCA report (rca_id=%s)", rca_id)
 
     output: ReportOutput | None = None
+    failure_kind = "NO_OUTPUT"
     try:
         output = invoke_agent(agent, user_prompt, ReportOutput, timeout_seconds)
     except Exception as exc:
+        failure_kind = type(exc).__name__
         logger.warning(
             "Report generation failed; exception_type=%s; building minimal report",
             type(exc).__name__,
@@ -123,12 +132,13 @@ def run_report_generation(
         )
 
     if output is None:
+        severity, severity_note = report_severity(scoping_result.initial_severity)
         return RcaReport(
             rca_id=rca_id,
             incident_observations=scoping_result.incident_observations.model_copy(deep=True),
-            incident_summary=scoping_result.alarm_summary,
+            incident_summary=f"[보고서 생성 실패: {failure_kind}]{severity_note} {scoping_result.alarm_summary}",
             alarm_description=scoping_result.raw_alarm.alarm_description if scoping_result.raw_alarm else None,
-            severity=scoping_result.initial_severity,
+            severity=severity,
             **_selected_hypothesis_fields(best_hypothesis, confirmed),
             hypothesis_path=hypothesis_path,
             evidence_list=evidence_texts,
@@ -137,12 +147,13 @@ def run_report_generation(
         )
 
     logger.info("RCA report generated (rca_id=%s)", rca_id)
+    severity, severity_note = report_severity(output.severity)
     return RcaReport(
         rca_id=rca_id,
         incident_observations=scoping_result.incident_observations.model_copy(deep=True),
-        incident_summary=output.incident_summary,
+        incident_summary=severity_note + output.incident_summary,
         alarm_description=scoping_result.raw_alarm.alarm_description if scoping_result.raw_alarm else None,
-        severity=output.severity,
+        severity=severity,
         impact_summary=output.impact_summary,
         detection_method=output.detection_method,
         **_selected_hypothesis_fields(best_hypothesis, confirmed),

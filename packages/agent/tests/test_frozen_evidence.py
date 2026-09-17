@@ -208,6 +208,44 @@ def test_github_embedded_text_resource_is_also_bound_to_commit_path_and_manifest
     assert received_source_artifacts([receipt], scope) == []
 
 
+@pytest.mark.parametrize(
+    "suffix,accepted",
+    [
+        ("sha/{ref}/contents/.github/workflows/ci.yml", True),
+        ("{ref}/contents/.github/workflows/ci.yml", True),
+        ("contents/.github/workflows/ci.yml?ref={ref}", True),
+        ("contents/.github/workflows/ci.yml", True),
+        ("sha/{foreign}/contents/.github/workflows/ci.yml", False),
+        ("{foreign}/contents/.github/workflows/ci.yml", False),
+        ("sha/{ref}/contents/other/.github/workflows/ci.yml", False),
+        ("unrecognized/contents/.github/workflows/ci.yml", False),
+        ("sha/{ref}/contents/.github/workflows/ci.yml?ref={foreign}", False),
+        ("contents/.github/workflows/ci.yml?ref={ref}&ref={foreign}", False),
+        ("contents/.github/workflows/ci.yml?ref=", False),
+    ],
+)
+def test_ci_embedded_uri_requires_exact_commit_and_path_without_manifest_fallback(suffix, accepted):
+    """CI has no app-manifest hash guard, so URI revision/path must bind to the actual request."""
+    from rca_agent.services.frozen_evidence import received_control_artifacts
+
+    receipt = source_receipt("name: local CI fixture\n")
+    receipt["arguments"]["path"] = ".github/workflows/ci.yml"
+    receipt["result"]["content"] = [
+        {
+            "type": "resource",
+            "resource": {
+                "uri": "repo://team/service/" + suffix.format(ref="a" * 40, foreign="b" * 40),
+                "mimeType": "text/plain",
+                "text": "name: local CI fixture\n",
+            },
+        }
+    ]
+    result = received_control_artifacts([receipt])
+    assert bool(result) is accepted
+    if result:
+        assert result[0]["base_ref"] == "a" * 40
+
+
 @pytest.mark.asyncio
 async def test_no_baseline_provider_performs_actual_bounded_metric_call():
     """The actual MCP wrapper admits generic metrics and sends the schema-supported frozen end time."""

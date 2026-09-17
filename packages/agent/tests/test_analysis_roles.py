@@ -31,6 +31,61 @@ def source():
     }
 
 
+def test_code_input_numbers_exact_lines_without_changing_original_guard(monkeypatch):
+    """Model guidance preserves blank lines/endings; external edits still require exact source bytes."""
+    from rca_agent.ports.dto.models import RcaReport
+
+    text = "first\n\nvalue = 1\nlast"
+    artifact = {**source(), "text": text, "sha256": hashlib.sha256(text.encode()).hexdigest()}
+
+    def invoke(agent, prompt, output_model, timeout):
+        """Return an actual validated local candidate using the supplied exact line values."""
+        item = json.loads(prompt)["sources"][0]
+        assert item["text"] == text
+        assert item["source_lines"] == [
+            {"line_number": 1, "text": "first\n"},
+            {"line_number": 2, "text": "\n"},
+            {"line_number": 3, "text": "value = 1\n"},
+            {"line_number": 4, "text": "last"},
+        ]
+        return output_model.model_validate(
+            {
+                "status": "PROPOSED",
+                "title": "local source edit",
+                "base_revision": artifact["base_revision"],
+                "files": [
+                    {
+                        "path": artifact["path"],
+                        "start_line": 3,
+                        "end_line": 3,
+                        "original": item["source_lines"][2]["text"],
+                        "proposed": "value = 2\n",
+                        "evidence_refs": [artifact["source_ref"]],
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(analysis_roles, "invoke_agent", invoke)
+    report = RcaReport(rca_id="local", incident_summary="local", root_cause="local", confidence_score=0.9)
+    result = analysis_roles.generate_code_preview(report, {"source_artifacts": [artifact]}, object())
+    assert result["files"][0]["original"] == "value = 1\n"
+    assert result["tests_status"] == "NOT_RUN"
+    assert result["files"][0]["unified_diff"]
+
+
+@pytest.mark.parametrize("original", ["second", "second\\n", "second\r\n", "first\n"])
+def test_original_newline_or_range_mismatch_remains_rejected_and_diagnosable(original, caplog):
+    """Neither guidance nor diagnostics repairs a model's inexact original string."""
+    candidate = preview()
+    candidate.files[0].original = original
+    with pytest.raises(ValueError, match="original does not match observed bytes"):
+        validate_code_preview(candidate, [source()])
+    assert "code_preview_original_mismatch" in caplog.text
+    assert '"expected_newlines": 1' in caplog.text
+    assert '"file_index": 0' in caplog.text
+
+
 def preview():
     """Build a verifiable one-line proposal whose diff must come from the server."""
     return CodePreview(
@@ -162,6 +217,11 @@ def test_operations_observed_requires_actual_control_refs_and_missing_ci_stays_u
 
     def invoke(agent, prompt, output_model, timeout):
         """Use the actual dynamic model validator for both negative and source-qualified outputs."""
+        payload = json.loads(prompt)
+        if payload["verified_control_sources"]:
+            assert payload["control_reference_catalog"] == [
+                {"source_id": "control-1", "path": "app.py", "evidence_ref": "read:ci", "base_ref": "snapshot:1"}
+            ]
         return output_model.model_validate(raw)
 
     monkeypatch.setattr(analysis_roles, "invoke_agent", invoke)
@@ -175,6 +235,10 @@ def test_operations_observed_requires_actual_control_refs_and_missing_ci_stays_u
         generate_operations({}, {"result": {"control_artifacts": [control]}}, object())["findings"][0]["status"]
         == "OBSERVED"
     )
+    for invalid in ("control-1", "app.py", "invented"):
+        raw["findings"][0]["evidence_refs"] = [invalid]
+        with pytest.raises(ValueError, match="control_reference_catalog"):
+            generate_operations({}, {"result": {"control_artifacts": [control]}}, object())
 
 
 def test_noop_baseline_and_already_fixed_target_cannot_be_proposed():

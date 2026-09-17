@@ -391,6 +391,44 @@ class Aws:
         return result
 
 
+def validate_declared_source_locations(message):
+    """Preserve optional byte-bound locators without claiming Git contents were read."""
+    if "source_locations" not in message:
+        return
+    locations = message["source_locations"]
+    location = (
+        locations.get("revision/write.py") if isinstance(locations, dict) else None
+    )
+    files = message.get("files")
+    paths = {
+        "v1": "packages/healthcare-sensor-app/src/test_service/revision/write.py",
+        "v2": "packages/healthcare-sensor-app/demo/revisions/v2/revision/write.py",
+    }
+    if (
+        message.get("event") != "source_manifest"
+        or not isinstance(message.get("revision"), str)
+        or message.get("revision") not in paths
+        or not isinstance(locations, dict)
+        or set(locations) != {"revision/write.py"}
+        or not isinstance(location, dict)
+        or set(location) != {"repository", "commit", "path", "sha256", "verification"}
+        or not isinstance(files, dict)
+        or location.get("path") != paths[message["revision"]]
+        or location.get("verification") != "declared"
+        or not isinstance(location.get("repository"), str)
+        or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*",
+            location["repository"],
+        )
+        or not isinstance(location.get("commit"), str)
+        or not re.fullmatch(r"[a-f0-9]{40}", location["commit"])
+        or not isinstance(location.get("sha256"), str)
+        or not re.fullmatch(r"[a-f0-9]{64}", location["sha256"])
+        or location["sha256"] != files.get("revision/write.py")
+    ):
+        raise RuntimeError("invalid declared source_locations binding")
+
+
 def container(task_definition, name):
     """Select exactly the application container, rejecting ambiguous definitions."""
     matches = [c for c in task_definition["containerDefinitions"] if c["name"] == name]
@@ -748,6 +786,7 @@ class Demo:
                     raise RuntimeError(
                         "baseline source_manifest must verify v1 and its source fingerprint for the running task"
                     )
+                validate_declared_source_locations(manifest)
                 fingerprints.add(manifest["fingerprint"])
             evidence.append(
                 {
@@ -786,6 +825,7 @@ class Demo:
             "revision",
             "verified",
             "files",
+            "source_locations",
             "fingerprint",
             "base_fingerprint",
             "built_at",
@@ -890,6 +930,7 @@ class Demo:
                     and message["service"] != "healthcare-sensor-app"
                 ):
                     raise RuntimeError("normal diagnostic logger service mismatch")
+                validate_declared_source_locations(message)
                 if kind == "write_accounting":
                     expected = {
                         "metric_namespace": "Healthcare/Sensor",

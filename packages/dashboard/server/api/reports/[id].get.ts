@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
   for (const engine of engines) {
     let reportKey = '';
     let completed = false;
+    let finalizedFailure = false;
     let summaryAuthority: Record<string, unknown> = {};
     for (const sessionKey of sessionSkCandidates(engine)) {
       const sessionResult = await ddb.send(
@@ -45,25 +46,37 @@ export default defineEventHandler(async (event) => {
           TableName: config.dynamodbTableName,
           Key: { PK: rcaPk(id), SK: sessionKey },
           ProjectionExpression:
-            'report_s3_key, engine, #st, root_cause, confirmed, confidence_score',
+            'report_s3_key, engine, #st, root_cause, confirmed, confidence_score, workflow, analysis_parts_finalized',
           ExpressionAttributeNames: { '#st': 'state' },
         }),
       );
       if (sessionResult.Item?.engine && sessionResult.Item.engine !== engine)
         continue;
-      if (sessionResult.Item?.state !== 'COMPLETED') continue;
-      completed = true;
-      completedSessionFound = true;
-      summaryAuthority = sessionResult.Item ?? {};
-      reportKey =
-        typeof sessionResult.Item?.report_s3_key === 'string'
-          ? sessionResult.Item.report_s3_key
+      const candidate = sessionResult.Item;
+      const storedKey =
+        typeof candidate?.report_s3_key === 'string'
+          ? candidate.report_s3_key
           : '';
+      const persistedFailure =
+        candidate?.state === 'FAILED' &&
+        candidate.engine === engine &&
+        candidate.workflow === 'recovery-first-v1' &&
+        candidate.analysis_parts_finalized === true &&
+        Boolean(storedKey.trim());
+      if (candidate?.state !== 'COMPLETED' && !persistedFailure) continue;
+      completed = true;
+      finalizedFailure = persistedFailure;
+      if (candidate?.state === 'COMPLETED') completedSessionFound = true;
+      summaryAuthority = candidate ?? {};
+      reportKey = storedKey;
       if (reportKey) break;
     }
     if (!completed) continue;
 
-    const keys = [reportKey, `reports/${engine}/${id}.md`].filter(
+    // Failed finalized reports grant read access to the persisted key only, never an inferred fallback.
+    const keys = (
+      finalizedFailure ? [reportKey] : [reportKey, `reports/${engine}/${id}.md`]
+    ).filter(
       (key, index, all): key is string =>
         Boolean(key) && all.indexOf(key) === index,
     );

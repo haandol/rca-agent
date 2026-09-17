@@ -7,6 +7,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 
 from rca_agent.adapters.secondary.report.s3_report_store import _render_markdown
+from rca_agent.config.settings import LLM_DEFAULT_TIMEOUT_SECONDS
 from rca_agent.ports.dto.models import AlarmPayload, Hypothesis, RcaReport, RcaSessionState, ScopingResult
 from rca_agent.ports.dto.observations import IncidentObservations
 from rca_agent.services.analysis_parts import approval_digest
@@ -18,11 +19,14 @@ from rca_agent.services.analysis_roles import (
 )
 from rca_agent.services.deployment_baseline import build_rollback_context
 from rca_agent.services.recovery_evidence import prepare_recovery_evidence
-from rca_agent.services.report import run_report_generation
+from rca_agent.services.report import report_severity, run_report_generation
+from rca_agent.services.repository_evidence import collect_repository_evidence, source_locations
 from rca_agent.utils.agent_invocation import (
     InvocationNotStartedError,
     InvocationStoppedError,
     WorkAdmissionError,
+    bounded_admission_deadline,
+    invocation_scope,
     require_request_budget,
 )
 
@@ -33,6 +37,18 @@ def _control(orchestrator, run) -> None:
     """Keep explicit cancellation and claim ownership effective between every role and publication."""
     orchestrator._check_shutdown()
     run.trace.check_cancelled()
+
+
+def _repository_collection(orchestrator, scoping, run, *, controls=False, prior_receipts=()) -> dict:
+    """Read declared source/CI through the existing provider without replacing frozen incident data."""
+    client = getattr(orchestrator._container, "github_mcp_client", None) if source_locations(scoping) else None
+    return collect_repository_evidence(
+        scoping,
+        client,
+        controls=controls,
+        prior_receipts=prior_receipts,
+        control=lambda: _control(orchestrator, run),
+    )
 
 
 def _run_part(orchestrator, store, run, part, work) -> dict:
@@ -128,15 +144,18 @@ def _root_work(orchestrator, alarm, scoping, incident, run) -> dict:
         )
         span.output_summary = f"rca_id={run.rca_id}, confidence={report.confidence_score}"
     report.rca_id = run.rca_id
+    collection = {"source_artifacts": [], "control_artifacts": [], "receipts": [], "warnings": []}
+    sources = [*incident.get("source_artifacts", []), *getattr(state, "source_artifacts", [])]
     try:
-        preview = generate_code_preview(
-            report,
-            {
-                **incident,
-                "source_artifacts": [*incident.get("source_artifacts", []), *getattr(state, "source_artifacts", [])],
-            },
-            container.code_preview_agent,
-        )
+        with invocation_scope(admission_deadline=bounded_admission_deadline(LLM_DEFAULT_TIMEOUT_SECONDS)):
+            collection = _repository_collection(orchestrator, scoping, run)
+            sources.extend(source for source in collection["source_artifacts"] if source not in sources)
+            _control(orchestrator, run)
+            preview = generate_code_preview(
+                report,
+                {**incident, "source_artifacts": sources, "control_artifacts": collection["control_artifacts"]},
+                container.code_preview_agent,
+            )
     except InvocationStoppedError:
         raise
     except Exception as exc:
@@ -155,8 +174,9 @@ def _root_work(orchestrator, alarm, scoping, incident, run) -> dict:
         "report": report.model_dump(mode="json"),
         "selected_hypothesis": selected.model_dump(mode="json") if selected else None,
         "validated_fault_type": selected.validated_fault_type.value if selected else "UNSUPPORTED",
-        "source_artifacts": getattr(state, "source_artifacts", []),
-        "control_artifacts": getattr(state, "control_artifacts", []),
+        "source_artifacts": sources,
+        "control_artifacts": [*getattr(state, "control_artifacts", []), *collection["control_artifacts"]],
+        "repository_collection": collection,
         "code_proposal": preview,
     }
 
@@ -268,19 +288,43 @@ def run_analysis_parts(orchestrator, alarm, run, store) -> bool:
 
     def operations():
         """A root failure is still input; no execution state is consulted before prevention work."""
-        return generate_operations(incident, root_part["payload"], container.operations_agent)
+        with invocation_scope(admission_deadline=bounded_admission_deadline(LLM_DEFAULT_TIMEOUT_SECONDS)):
+            root_payload = root_part["payload"]
+            root_result = root_payload.get("result", {})
+            collection = _repository_collection(
+                orchestrator,
+                scoping,
+                run,
+                controls=True,
+                prior_receipts=root_result.get("repository_collection", {}).get("receipts", []),
+            )
+            controls = [*root_result.get("control_artifacts", []), *collection["control_artifacts"]]
+            _control(orchestrator, run)
+            output = generate_operations(
+                incident,
+                {**root_payload, "result": {**root_result, "control_artifacts": controls}},
+                container.operations_agent,
+            )
+            return {**output, "control_artifacts": controls, "repository_collection": collection}
 
     operations_part = _run_part(orchestrator, store, run, "operations", operations)
     _control(orchestrator, run)
     result = root_part["payload"].get("result", {})
     cause = result.get("root_cause", {})
+    fallback_severity, severity_note = report_severity(scoping.initial_severity)
+    root_status = root_part["payload"].get("status", "UNKNOWN")
+    root_error = root_part["payload"].get("error") or "결과 없음"
     report = (
         RcaReport.model_validate(result["report"])
         if result.get("report")
         else RcaReport(
             rca_id=run.rca_id,
-            incident_summary=result.get("summary", scoping.alarm_summary),
-            severity=scoping.initial_severity,
+            incident_summary=(
+                f"[근본원인 파트 {root_status}: {root_error}]{severity_note} "
+                + result.get("summary", scoping.alarm_summary)
+            ),
+            alarm_description=scoping.raw_alarm.alarm_description if scoping.raw_alarm else None,
+            severity=fallback_severity,
             root_cause=cause.get("description", "Unknown"),
             root_cause_confirmed=cause.get("confirmed", False),
             confidence_score=cause.get("confidence", 0),

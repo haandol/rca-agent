@@ -1612,3 +1612,110 @@ test('base-table confirmed status reaches aggregate outcomes without implying re
   assert.equal(counts.get('NO_PROCEDURE'), 1);
   assert.equal(counts.has('NO_CAUSE'), false);
 });
+
+function reportReadFixture(overrides = {}) {
+  const item = {
+    engine: 'strands',
+    state: 'FAILED',
+    workflow: 'recovery-first-v1',
+    analysis_parts_finalized: true,
+    report_s3_key: 'reports/final-failed.md',
+    root_cause: 'observed root',
+    confirmed: false,
+    ...overrides,
+  };
+  const calls = [];
+  const globals = {
+    ...util,
+    ...load('packages/dashboard/server/utils/reportSummary.ts'),
+    defineEventHandler: (fn) => fn,
+    getRouterParam: () => 'failed-rca',
+    getQuery: () => ({ engine: 'strands' }),
+    useRuntimeConfig: () => ({
+      dynamodbTableName: 'table',
+      s3ReportBucket: 'reports',
+    }),
+    createError: (spec) => Object.assign(new Error(spec.statusMessage), spec),
+    useDynamoDB: () => ({
+      send: async (command) => {
+        calls.push(command);
+        assert.equal(command.constructor.name, 'GetCommand');
+        assert.equal(command.input.Key.PK, 'RCA#failed-rca');
+        if (command.input.Key.SK !== 'ANALYSIS#SESSION') return {};
+        const fields = command.input.ProjectionExpression.split(',').map(
+          (field) =>
+            command.input.ExpressionAttributeNames?.[field.trim()] ??
+            field.trim(),
+        );
+        return {
+          Item: Object.fromEntries(
+            Object.entries(item).filter(([key]) => fields.includes(key)),
+          ),
+        };
+      },
+    }),
+    useS3: () => ({
+      send: async (command) => {
+        calls.push(command);
+        assert.equal(command.constructor.name, 'GetObjectCommand');
+        if (overrides.missingObject)
+          throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+        return {
+          Body: {
+            transformToString: async () =>
+              '# Retained failed report\n\nActual recorded partial results',
+          },
+        };
+      },
+    }),
+  };
+  return {
+    item,
+    calls,
+    run: () =>
+      load(
+        'packages/dashboard/server/api/reports/[id].get.ts',
+        globals,
+      ).default({}),
+  };
+}
+test('actual report route reads persisted finalized FAILED analysis without changing state or granting completion', async () => {
+  const f = reportReadFixture();
+  const before = structuredClone(f.item);
+  const report = await f.run();
+  assert.match(report.markdown, /Actual recorded partial results/);
+  assert.equal(report.summary.confirmed, false);
+  assert.deepEqual(f.item, before);
+  const reads = f.calls.filter(
+    (c) => c.constructor.name === 'GetObjectCommand',
+  );
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0].input.Key, 'reports/final-failed.md');
+});
+for (const [name, override] of [
+  ['not finalized', { analysis_parts_finalized: false }],
+  ['string flag', { analysis_parts_finalized: 'true' }],
+  ['missing key', { report_s3_key: '' }],
+  ['cancelled', { state: 'CANCELLED' }],
+  ['outdated', { state: 'OUTDATED' }],
+  ['running', { state: 'REPORT_GENERATION' }],
+  ['legacy failed', { workflow: undefined }],
+])
+  test(`failed-report read exception rejects ${name}`, async () => {
+    const f = reportReadFixture(override);
+    await assert.rejects(f.run(), { statusCode: 404 });
+    assert.equal(
+      f.calls.filter((c) => c.constructor.name === 'GetObjectCommand').length,
+      0,
+    );
+  });
+test('missing finalized failure body never falls back to an inferred report key', async () => {
+  const f = reportReadFixture({ missingObject: true });
+  await assert.rejects(f.run(), { statusCode: 404 });
+  assert.deepEqual(
+    f.calls
+      .filter((c) => c.constructor.name === 'GetObjectCommand')
+      .map((c) => c.input.Key),
+    ['reports/final-failed.md'],
+  );
+});
