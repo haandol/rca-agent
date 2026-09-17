@@ -1,4 +1,8 @@
-import { QueryCommand, type QueryCommandInput } from '@aws-sdk/lib-dynamodb';
+import {
+  GetCommand,
+  QueryCommand,
+  type QueryCommandInput,
+} from '@aws-sdk/lib-dynamodb';
 
 /**
  * What the archive contains, counted across all of it.
@@ -23,12 +27,7 @@ export default defineEventHandler(async () => {
   const config = useRuntimeConfig();
   const ddb = useDynamoDB();
 
-  const sessions: {
-    rcaId: string;
-    engine: string;
-    state: string;
-    workflow: string;
-  }[] = [];
+  const indexedKeys = new Map<string, { PK: string; SK: string }>();
 
   for (const engine of ALLOWED_ENGINES) {
     let startKey: QueryCommandInput['ExclusiveStartKey'];
@@ -38,28 +37,57 @@ export default defineEventHandler(async () => {
           TableName: config.dynamodbTableName,
           IndexName: SESSION_LIST_INDEX,
           KeyConditionExpression: '#pk = :engine',
-          // `state` is a DynamoDB reserved word, so it can only be named through
-          // an alias — and every alias a projection uses has to be declared here.
+          // The INCLUDE index discovers keys only. Workflow authority lives in the base table.
           ExpressionAttributeNames: {
             '#pk': LIST_PARTITION_KEY,
-            '#st': 'state',
           },
           ExpressionAttributeValues: { ':engine': engine },
-          ProjectionExpression: 'PK, #st, engine, workflow',
+          ProjectionExpression: 'PK, SK',
           ExclusiveStartKey: startKey,
         }),
       );
       for (const item of result.Items ?? []) {
-        sessions.push({
-          rcaId: rcaIdFromPk(item.PK as string),
-          engine: (item.engine as string) || engine,
-          state: (item.state as string) || 'UNKNOWN',
-          workflow: (item.workflow as string) || '',
-        });
+        if (
+          typeof item.PK === 'string' &&
+          typeof item.SK === 'string' &&
+          isSessionSortKey(item.SK)
+        )
+          indexedKeys.set(`${item.PK}\0${item.SK}`, {
+            PK: item.PK,
+            SK: item.SK,
+          });
       }
       startKey = result.LastEvaluatedKey;
     } while (startKey);
   }
+
+  // A GSI can lag an ownership change or deletion; never infer workflow from its projection.
+  const baseSessions = await Promise.all(
+    [...indexedKeys.values()].map(async (Key) => {
+      const response = await ddb.send(
+        new GetCommand({
+          TableName: config.dynamodbTableName,
+          Key,
+          ConsistentRead: true,
+          ProjectionExpression: 'PK, SK, engine, #st, workflow',
+          ExpressionAttributeNames: { '#st': 'state' },
+        }),
+      );
+      const item = response.Item;
+      if (!item || item.PK !== Key.PK || item.SK !== Key.SK) return null;
+      const owner = (item.engine as string) || parseEngine(Key.SK);
+      if (!isAllowedEngine(owner)) return null;
+      return {
+        rcaId: rcaIdFromPk(Key.PK),
+        engine: owner,
+        state: (item.state as string) || 'UNKNOWN',
+        workflow: (item.workflow as string) || '',
+      };
+    }),
+  );
+  const sessions = baseSessions.filter(
+    (session): session is NonNullable<typeof session> => session !== null,
+  );
 
   const completed = sessions.filter(
     (session) =>

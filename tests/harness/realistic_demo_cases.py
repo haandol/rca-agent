@@ -56,6 +56,10 @@ class PollClock:
 class Cloud:
     """Stateful AWS double with real task-definition, tag and rollout boundaries."""
 
+    def preflight(self):
+        """Keep simulated AWS tests explicit without importing or contacting a real SDK runtime."""
+        return {"runtime": "deterministic test double"}
+
     def __init__(self):
         """Create a healthy private service and three correctly bound alarms."""
         self.calls = []
@@ -879,10 +883,14 @@ class DemoTests(unittest.TestCase):
 
         def with_input(service, operation, **payload):
             response = original(service, operation, **payload)
-            if operation != "filter-log-events" or "input_contract_observed" not in payload["filterPattern"]:
+            if (
+                operation != "filter-log-events"
+                or "input_contract_observed" not in payload["filterPattern"]
+            ):
                 return response
             write = next(
-                event for event in response["events"]
+                event
+                for event in response["events"]
                 if json.loads(event["message"])["event"] == "write_completed"
             )
             message = json.loads(write["message"])
@@ -890,12 +898,17 @@ class DemoTests(unittest.TestCase):
             write["message"] = json.dumps(message)
             receipt = copy.deepcopy(write)
             receipt["eventId"] = "input"
-            receipt["message"] = json.dumps({
-                "event": "input_contract_observed", "observed_at": message["observed_at"],
-                "request_id": ("a" if matching else "b") * 32, "operation": "ingest", "count": 1,
-                "input_contract": {"format": "producer-observed-test"},
-                "input_contract_sha256": "d" * 64,
-            })
+            receipt["message"] = json.dumps(
+                {
+                    "event": "input_contract_observed",
+                    "observed_at": message["observed_at"],
+                    "request_id": ("a" if matching else "b") * 32,
+                    "operation": "ingest",
+                    "count": 1,
+                    "input_contract": {"format": "producer-observed-test"},
+                    "input_contract_sha256": "d" * 64,
+                }
+            )
             response["events"].append(receipt)
             return response
 
@@ -905,7 +918,8 @@ class DemoTests(unittest.TestCase):
         # Capture passes through metadata; the analysis server, not the demo,
         # decides whether its descriptor/source hashes prove compatibility.
         inputs = [
-            e for e in planned["normalObservations"]
+            e
+            for e in planned["normalObservations"]
             if e["message"]["event"] == "input_contract_observed"
         ]
         self.assertEqual(len(inputs), 1)
@@ -913,9 +927,17 @@ class DemoTests(unittest.TestCase):
         matching = False
         definitions = self.journal.snapshot["taskDefinition"]["taskDefinition"]
         observations = self.runner.normal_observations(
-            definitions, self.cloud.running, "healthcare", planned["metrics"], planned["sourceManifests"]
+            definitions,
+            self.cloud.running,
+            "healthcare",
+            planned["metrics"],
+            planned["sourceManifests"],
         )
-        self.assertFalse(any(e["message"]["event"] == "input_contract_observed" for e in observations))
+        self.assertFalse(
+            any(
+                e["message"]["event"] == "input_contract_observed" for e in observations
+            )
+        )
 
     def test_baseline_wire_partial_put_and_lost_response(self):
         """Only canonical downloaded content proves an immutable PUT, even with no receipt."""
@@ -1205,9 +1227,26 @@ class DemoTests(unittest.TestCase):
                 gzip.compress(json.dumps(model).encode())
             )
             original = os.environ.get("AWS_DATA_PATH")
-            with patch.dict(
-                sys.modules,
-                {"botocore": SimpleNamespace(__file__=str(package / "__init__.py"))},
+            version = demo._locked_botocore_version()
+            with (
+                patch.dict(
+                    sys.modules,
+                    {
+                        "botocore": SimpleNamespace(
+                            __file__=str(package / "__init__.py"), __version__=version
+                        )
+                    },
+                ),
+                patch.object(
+                    demo,
+                    "_agent_ecs_model_identity",
+                    return_value={
+                        "version": version,
+                        "sha256": hashlib.sha256(
+                            json.dumps(model).encode()
+                        ).hexdigest(),
+                    },
+                ),
             ):
                 adapter = demo.Aws("us-east-1")
                 environment = adapter._environment("ecs")
@@ -1219,6 +1258,76 @@ class DemoTests(unittest.TestCase):
                 self.assertEqual(environment, adapter._environment("ecs"))
                 self.assertEqual(os.environ.get("AWS_DATA_PATH"), original)
                 adapter._model_directory.cleanup()
+
+    def test_cli_preflight_rejects_old_interpreter_before_plan_or_apply_aws_calls(self):
+        """An inherited good AWS_DATA_PATH cannot excuse an old interpreter that would overwrite it."""
+        raw = json.dumps({"metadata": {"endpointPrefix": "ecs"}}).encode()
+        for action in ("plan", "apply"):
+            with self.subTest(action=action):
+                journal = Path(self.temp.name) / ("preflight-" + action)
+                argv = [
+                    action,
+                    "--run-id",
+                    "fresh",
+                    "--cluster",
+                    "cluster",
+                    "--service",
+                    "service",
+                    "--region",
+                    "us-east-1",
+                    "--journal-root",
+                    str(journal),
+                ]
+                if action == "plan":
+                    argv += [
+                        "--image",
+                        "repo@sha256:" + "a" * 64,
+                        "--evidence-bucket",
+                        "evidence",
+                        "--alarm",
+                        "alarm",
+                    ]
+                with (
+                    patch.object(
+                        demo, "_locked_botocore_version", return_value="1.43.58"
+                    ),
+                    patch.object(
+                        demo, "_installed_ecs_model", return_value=("1.42.79", raw)
+                    ),
+                    patch.object(demo, "_agent_ecs_model_identity") as reference,
+                    patch.object(demo.Aws, "__call__") as aws_call,
+                    patch.dict(
+                        os.environ, {"AWS_DATA_PATH": "/preexisting/aligned/model"}
+                    ),
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "uv run --project packages/agent --no-sync python"
+                    ):
+                        demo.main(argv)
+                    aws_call.assert_not_called()
+                    reference.assert_not_called()
+                self.assertFalse(journal.exists())
+
+    def test_cli_preflight_rejects_same_version_with_different_complete_model_bytes(
+        self,
+    ):
+        """Compare the whole model rather than testing or ignoring a selected set of known fields."""
+        raw = json.dumps(
+            {"metadata": {"endpointPrefix": "ecs"}, "future_mutable_field": True}
+        ).encode()
+        with (
+            patch.object(demo, "_locked_botocore_version", return_value="1.43.58"),
+            patch.object(demo, "_installed_ecs_model", return_value=("1.43.58", raw)),
+            patch.object(
+                demo,
+                "_agent_ecs_model_identity",
+                return_value={"version": "1.43.58", "sha256": "0" * 64},
+            ),
+            patch.object(demo.subprocess, "run") as remote,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "model bytes differ"):
+                demo.Aws("us-east-1")._environment("ecs")
+            remote.assert_not_called()
 
     def test_cli_lock_and_unreleased_prior_run_block_plan(self):
         """Name/ARN aliases resolve to the same lock and prior journals prevent overlap."""

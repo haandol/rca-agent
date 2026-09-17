@@ -25,6 +25,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import tomllib
+
 OWNER = "RealisticDemoRunId"
 PROOF = "RealisticDemoJournal"
 JOURNAL_VERSION = 2
@@ -197,6 +199,72 @@ class Journal:
         return copy.deepcopy(self.events[0]["data"])
 
 
+_AGENT_COMMAND = "uv run --project packages/agent --no-sync python scripts/run_realistic_demo.py <same arguments>"
+
+
+def _locked_botocore_version():
+    """Read the admitted Agent dependency version without resolving or installing anything."""
+    lock = Path(__file__).resolve().parents[1] / "packages/agent/uv.lock"
+    packages = tomllib.loads(lock.read_text())["package"]
+    matches = [item["version"] for item in packages if item.get("name") == "botocore"]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Agent lock has no unique botocore version; " + _AGENT_COMMAND
+        )
+    return matches[0]
+
+
+def _installed_ecs_model():
+    """Inspect the interpreter's actual ECS model bytes, never infer compatibility from known fields."""
+    try:
+        import botocore
+    except ImportError:
+        raise RuntimeError("Agent botocore is required; " + _AGENT_COMMAND) from None
+    source = Path(botocore.__file__).parent / "data/ecs/2014-11-13"
+    plain, compressed = source / "service-2.json", source / "service-2.json.gz"
+    raw = (
+        plain.read_bytes()
+        if plain.exists()
+        else gzip.decompress(compressed.read_bytes())
+    )
+    if json.loads(raw).get("metadata", {}).get("endpointPrefix") != "ecs":
+        raise RuntimeError("Installed service model is not ECS; " + _AGENT_COMMAND)
+    return botocore.__version__, raw
+
+
+def _agent_ecs_model_identity():
+    """Use the local Agent environment as the independent locked-model reference, with no AWS calls."""
+    root = Path(__file__).resolve().parents[1]
+    python = root / "packages/agent/.venv/bin/python"
+    if not python.is_file():
+        raise RuntimeError(
+            "Agent environment is missing; prepare it from uv.lock, then run "
+            + _AGENT_COMMAND
+        )
+    code = """import gzip,hashlib,json; from pathlib import Path; import botocore
+p=Path(botocore.__file__).parent/'data/ecs/2014-11-13'
+f=p/'service-2.json'
+b=f.read_bytes() if f.exists() else gzip.decompress((p/'service-2.json.gz').read_bytes())
+print(json.dumps({'version':botocore.__version__,'sha256':hashlib.sha256(b).hexdigest()}))
+"""
+    try:
+        result = subprocess.run(
+            [str(python), "-I", "-c", code],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        identity = json.loads(result.stdout)
+        if not isinstance(identity, dict) or set(identity) != {"version", "sha256"}:
+            raise ValueError("invalid Agent model identity")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            "Cannot verify locked Agent ECS model; " + _AGENT_COMMAND
+        ) from exc
+    return identity
+
+
 class Aws:
     """Small injectable AWS CLI adapter; command arguments never use a shell."""
 
@@ -206,6 +274,36 @@ class Aws:
         if profile:
             self.context += ["--profile", profile]
         self._model_directory = None
+        self._model_identity = None
+
+    def preflight(self):
+        """Reject interpreter/model drift before any AWS command or journal mutation."""
+        if self._model_identity is not None:
+            return dict(self._model_identity)
+        expected = _locked_botocore_version()
+        version, raw = _installed_ecs_model()
+        if version != expected:
+            raise RuntimeError(
+                f"ECS model mismatch: interpreter botocore {version}, Agent lock {expected}. "
+                + _AGENT_COMMAND
+            )
+        reference = _agent_ecs_model_identity()
+        digest = hashlib.sha256(raw).hexdigest()
+        if reference.get("version") != expected or reference.get("sha256") != digest:
+            raise RuntimeError(
+                "ECS model bytes differ from the locked Agent environment. "
+                + _AGENT_COMMAND
+            )
+        self._model_directory = tempfile.TemporaryDirectory(prefix="rca-ecs-model-")
+        destination = Path(self._model_directory.name) / "ecs/2014-11-13"
+        destination.mkdir(parents=True)
+        (destination / "service-2.json").write_bytes(raw)
+        self._model_identity = {
+            "python": sys.executable,
+            "botocore_version": version,
+            "ecs_model_sha256": digest,
+        }
+        return dict(self._model_identity)
 
     def _environment(self, service):
         """Give CLI ECS reads the same full response shape as the locked Python SDK.
@@ -217,28 +315,7 @@ class Aws:
         environment = os.environ.copy()
         if service != "ecs":
             return environment
-        if self._model_directory is None:
-            try:
-                import botocore
-            except ImportError:
-                raise RuntimeError(
-                    "Use packages/agent/.venv/bin/python for the locked ECS service model"
-                ) from None
-            source = Path(botocore.__file__).parent / "data/ecs/2014-11-13"
-            plain = source / "service-2.json"
-            compressed = source / "service-2.json.gz"
-            raw = (
-                plain.read_bytes()
-                if plain.exists()
-                else gzip.decompress(compressed.read_bytes())
-            )
-            model = json.loads(raw)
-            if model["metadata"]["endpointPrefix"] != "ecs":
-                raise RuntimeError("the configured service model is not ECS")
-            self._model_directory = tempfile.TemporaryDirectory(prefix="rca-ecs-model-")
-            destination = Path(self._model_directory.name) / "ecs/2014-11-13"
-            destination.mkdir(parents=True)
-            (destination / "service-2.json").write_bytes(raw)
+        self.preflight()
         existing = environment.get("AWS_DATA_PATH")
         environment["AWS_DATA_PATH"] = self._model_directory.name + (
             os.pathsep + existing if existing else ""
@@ -780,7 +857,15 @@ class Demo:
                     "input_contract_observed",
                 }:
                     raise RuntimeError("unexpected normal diagnostic event")
-                if kind in {"write_completed", "db_schema_snapshot", "input_contract_observed"} and stamp < start:
+                if (
+                    kind
+                    in {
+                        "write_completed",
+                        "db_schema_snapshot",
+                        "input_contract_observed",
+                    }
+                    and stamp < start
+                ):
                     continue
                 if (
                     event.get("logStreamName") != stream
@@ -1757,6 +1842,10 @@ def main(argv=None):
     """Run one command under a nonblocking service lock and print JSON evidence."""
     args = parse_args(argv)
     aws = Aws(args.region, args.profile)
+    print(
+        "ECS_MODEL_PREFLIGHT " + json.dumps(aws.preflight(), sort_keys=True),
+        file=sys.stderr,
+    )
     account = aws("sts", "get-caller-identity")["Account"]
     target = {
         "account": account,

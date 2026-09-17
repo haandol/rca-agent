@@ -16,9 +16,14 @@ description: RCA Agent의 단일 SQL 저장 컬럼 오류 데모를 계획하거
    정상 이미지와 결함 이미지 지문, 증거 버킷, run ID와 journal 경로를 확인한다.
    정상 리비전을 최신 또는 직전 번호로 추정하지 않는다. 필요한 값이 없으면
    읽기 전용 조회로 확인하고, 대상이 여럿이면 실제 변경 전에 대상을 확정한다.
-2. `python3 scripts/run_realistic_demo.py --help`로 인자를 확인한다.
+2. `uv run --project packages/agent --no-sync python scripts/run_realistic_demo.py --help`로 인자를 확인한다.
    `plan`은 정상 기준과 변경 계획을 보존하며, `apply`는 같은 run ID와 journal의
    계획을 사용한다. apply/status/restore에서 계획의 입력을 바꾸지 않는다.
+   모든 실제 명령도 같은 Agent 환경으로 실행한다. runner는 첫 AWS 호출 전에 실행
+   interpreter의 botocore 버전과 전체 ECS 모델 지문이 Agent lock/환경과 같은지 검사한다.
+   불일치하면 중단한다. `AWS_DATA_PATH`만 설정해 구형 interpreter를 우회하지 않는다.
+   검증한 모델을 해당 CLI 자식 프로세스에만 비압축 JSON으로 제공하며 전역 CLI는 바꾸지 않는다.
+   stderr의 `ECS_MODEL_PREFLIGHT`에는 interpreter·버전·모델 지문만 기록된다.
 3. 사용자가 승인한 범위에서만 `apply`로 결함 이미지를 배포한다. 계획 검토만
    요청했으면 주입하지 않는다. 이미 승인한 동일 범위는 반복 확인하지 않는다.
 4. `status`와 실제 알람·세션 기록으로 진행 상태를 확인한다. 장기 실행 명령은

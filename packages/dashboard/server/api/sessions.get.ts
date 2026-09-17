@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
     .flatMap(({ engine, items }) =>
       items.map((item) => ({
         item,
-        engine: (item.engine as string) || engine,
+        engine,
         createdAt: (item.created_at as string) || '',
       })),
     )
@@ -110,13 +110,26 @@ export default defineEventHandler(async (event) => {
 
   // Enrichment is per-partition, so it runs only for the rows on this page.
   const sessions = await Promise.all(
-    merged.map(async ({ item, engine }) => {
-      const rcaId = rcaIdFromPk(item.PK as string);
+    merged.map(async ({ item: indexedItem, engine: indexedEngine }) => {
+      const rcaId = rcaIdFromPk(indexedItem.PK as string);
       const partitionItems = await readAnalysisPartition(
         ddb,
         config.dynamodbTableName,
         rcaId,
       );
+
+      const item = partitionItems.find(
+        (entry) =>
+          entry.PK === indexedItem.PK &&
+          entry.SK === indexedItem.SK &&
+          isSessionSortKey(String(entry.SK ?? '')),
+      );
+      if (!item) return null;
+      const engine =
+        (item.engine as string) ||
+        parseEngine(String(item.SK)) ||
+        indexedEngine;
+      if (!isAllowedEngine(engine)) return null;
 
       // Executions have their own lifecycle, so they are attached to the row
       // rather than folded into its state: an execution failure must not make a
@@ -204,7 +217,9 @@ export default defineEventHandler(async (event) => {
   );
 
   return {
-    sessions,
+    sessions: sessions.filter(
+      (session): session is NonNullable<typeof session> => session !== null,
+    ),
     nextCursor: encodeCursor(nextPositions),
   };
 });

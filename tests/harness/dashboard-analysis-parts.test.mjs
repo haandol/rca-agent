@@ -1393,3 +1393,198 @@ test('last analysis deletion removes canonical incident while keeping approval c
     ),
   );
 });
+
+/** Derive the GSI's real INCLUDE projection from CDK source; never hand a route full base rows as index results. */
+function sessionIndexProjection() {
+  const filename = path.join(
+    root,
+    'packages/infra/lib/stacks/database-stack.ts',
+  );
+  const tree = ts.createSourceFile(
+    filename,
+    readFileSync(filename, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let projection;
+  const property = (object, name) =>
+    object.properties.find((p) => p.name?.getText(tree) === name)?.initializer;
+  function visit(node) {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(tree).endsWith('.addGlobalSecondaryIndex')
+    ) {
+      const object = node.arguments[0];
+      if (
+        object &&
+        ts.isObjectLiteralExpression(object) &&
+        property(object, 'indexName')?.text === 'session-by-engine-index'
+      ) {
+        assert.equal(
+          property(object, 'projectionType').getText(tree),
+          'dynamodb.ProjectionType.INCLUDE',
+        );
+        const names = property(object, 'nonKeyAttributes');
+        assert.ok(ts.isArrayLiteralExpression(names));
+        assert.ok(names.elements.every(ts.isStringLiteral));
+        projection = new Set([
+          'PK',
+          'SK',
+          property(property(object, 'partitionKey'), 'name').text,
+          property(property(object, 'sortKey'), 'name').text,
+          ...names.elements.map((n) => n.text),
+        ]);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  assert.ok(projection);
+  assert.equal(projection.has('workflow'), false);
+  return projection;
+}
+function enforceActualSessionProjection(f, indexRows = null) {
+  const projected = sessionIndexProjection();
+  const select = (row, attributes) =>
+    Object.fromEntries(
+      Object.entries(row).filter(([key]) => attributes.has(key)),
+    );
+  f.globals.useDynamoDB = () => ({
+    send: async (command) => {
+      f.events.push(command);
+      const input = command.input;
+      const fields = input.ProjectionExpression?.split(',').map(
+        (field) =>
+          input.ExpressionAttributeNames?.[field.trim()] ?? field.trim(),
+      );
+      if (input.IndexName) {
+        assert.equal(command.constructor.name, 'QueryCommand');
+        assert.equal(input.IndexName, 'session-by-engine-index');
+        assert.notEqual(input.ConsistentRead, true);
+        for (const field of fields ?? [])
+          if (!projected.has(field))
+            throw Object.assign(new Error(`GSI does not project [${field}]`), {
+              name: 'ValidationException',
+            });
+        const rows = (indexRows ?? f.rows)
+          .filter(
+            (row) =>
+              row.list_engine === input.ExpressionAttributeValues[':engine'],
+          )
+          .sort((a, b) =>
+            String(b.list_created_at).localeCompare(String(a.list_created_at)),
+          );
+        const offset = input.ExclusiveStartKey
+          ? rows.findIndex(
+              (row) =>
+                row.PK === input.ExclusiveStartKey.PK &&
+                row.SK === input.ExclusiveStartKey.SK,
+            ) + 1
+          : 0;
+        const page = rows.slice(offset, offset + (input.Limit ?? 100));
+        return {
+          Items: page.map((row) =>
+            select(select(row, projected), new Set(fields ?? projected)),
+          ),
+          ...(offset + page.length < rows.length
+            ? {
+                LastEvaluatedKey: select(
+                  page.at(-1),
+                  new Set(['PK', 'SK', 'list_engine', 'list_created_at']),
+                ),
+              }
+            : {}),
+        };
+      }
+      if (command.constructor.name === 'GetCommand') {
+        assert.equal(input.ConsistentRead, true);
+        const row = f.rows.find(
+          (row) => row.PK === input.Key.PK && row.SK === input.Key.SK,
+        );
+        return {
+          Item: row
+            ? structuredClone(fields ? select(row, new Set(fields)) : row)
+            : undefined,
+        };
+      }
+      assert.equal(
+        command.constructor.name,
+        'QueryCommand',
+        'preflight list/summary only read',
+      );
+      return {
+        Items: structuredClone(
+          f.rows.filter(
+            (row) => row.PK === input.ExpressionAttributeValues[':pk'],
+          ),
+        ),
+      };
+    },
+  });
+}
+test('empty summary honors actual CDK GSI projection even when the index returns no records', async () => {
+  const f = fixture();
+  f.rows.length = 0;
+  enforceActualSessionProjection(f);
+  const summary = await f.route('sessions-summary.get.ts');
+  assert.equal(summary.total, 0);
+  assert.deepEqual(summary.byState, {});
+});
+test('summary discovers active recovery from base-table workflow absent from real GSI projection', async () => {
+  const f = fixture();
+  Object.assign(f.rows[0], {
+    list_engine: engine,
+    list_created_at: '2026-09-17T01:00:00Z',
+    created_at: '2026-09-17T01:00:00Z',
+  });
+  enforceActualSessionProjection(f);
+  const summary = await f.route('sessions-summary.get.ts');
+  assert.equal(summary.total, 1);
+  assert.equal(summary.byReadiness.AWAITING_APPROVAL, 1);
+  assert.equal(summary.completedOutcomes[0].workflow, 'recovery-first-v1');
+  assert.ok(
+    f.events.some(
+      (event) =>
+        event.constructor.name === 'GetCommand' && !event.input.IndexName,
+    ),
+  );
+});
+test('list reads fresh parent fields after indexed discovery instead of treating stale GSI metadata as current', async () => {
+  const f = fixture();
+  Object.assign(f.rows[0], {
+    state: 'FAILED',
+    root_cause: 'fresh parent result',
+    list_engine: engine,
+    list_created_at: '2026-09-17T01:00:00Z',
+    created_at: '2026-09-17T01:00:00Z',
+  });
+  const stale = {
+    ...f.rows[0],
+    engine: 'strands',
+    list_engine: 'strands',
+    state: 'HYPOTHESIS_GENERATION',
+    root_cause: 'stale index',
+  };
+  f.rows.push(priorEngineExecution());
+  enforceActualSessionProjection(f, [stale]);
+  const result = await f.route('sessions.get.ts');
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].engine, engine);
+  assert.equal(result.sessions[0].state, 'FAILED');
+  assert.equal(result.sessions[0].rootCause, 'fresh parent result');
+  assert.equal(result.sessions[0].executionState, 'RESOLVED');
+});
+test('stale index records whose base parent was deleted do not recreate summary sessions', async () => {
+  const f = fixture();
+  const stale = {
+    ...f.rows[0],
+    list_engine: engine,
+    list_created_at: '2026-09-17T01:00:00Z',
+  };
+  f.rows.length = 0;
+  enforceActualSessionProjection(f, [stale]);
+  const summary = await f.route('sessions-summary.get.ts');
+  assert.equal(summary.total, 0);
+  const list = await f.route('sessions.get.ts');
+  assert.deepEqual(list.sessions, []);
+});

@@ -375,15 +375,63 @@ def test_three_part_caller_retains_actual_final_generation_archive_report_and_pu
     container.report_store.save_vectors.assert_called_once()
 
 
+@pytest.mark.parametrize("initial_rollout", ["COMPLETED", "IN_PROGRESS"])
+@pytest.mark.parametrize("change", ["none", "settings", "target", "image", "unstable", "cancel", "claim"])
 def test_ready_recovery_is_durable_before_root_and_remains_distinct_from_final_public_book(
-    part_store, monkeypatch, compatible
+    part_store, monkeypatch, compatible, initial_rollout, change
 ):
-    """The actual caller publishes a fully validated private rollback before root confirmation is available."""
+    """Fresh controls gate early publication without replacing the incident or bypassing ownership."""
+    from copy import deepcopy
+
+    from botocore.exceptions import ClientError
+
     from rca_agent.services import analysis_roles
     from tests.test_deployment_baseline import observed_plan
 
     orchestrator, container, _, run = wired_pipeline(part_store, monkeypatch)
     scope, context, steps = observed_plan(compatible)
+    reader, alarm, _, _, _, logs, ecs = compatible
+    service = ecs.describe_services.return_value["services"][0]
+    service["deployments"][0]["rolloutState"] = initial_rollout
+    scope.incident_observations = reader.observe(alarm, timeout_seconds=90)
+    original = deepcopy(scope.incident_observations.model_dump(mode="json"))
+    log_calls = logs.filter_log_events.call_count
+    service["deployments"][0]["rolloutState"] = "COMPLETED"
+    if change == "settings":
+        service["deploymentConfiguration"] = {"deploymentCircuitBreaker": {"enable": True, "rollback": True}}
+    elif change == "target":
+        service["deployments"][0]["id"] = "ecs-svc/foreign"
+    elif change == "image":
+        previous_tasks = ecs.describe_tasks.side_effect
+
+        def changed_tasks(**kwargs):
+            """Return a different live image while preserving all other task metadata."""
+            response = deepcopy(previous_tasks(**kwargs))
+            response["tasks"][0]["containers"][0]["imageDigest"] = "sha256:" + "c" * 64
+            return response
+
+        ecs.describe_tasks.side_effect = changed_tasks
+    elif change == "unstable":
+        service["deployments"][0]["rolloutState"] = "IN_PROGRESS"
+    frozen_before_refresh = []
+
+    def refresh(*args, **kwargs):
+        """Use the real metadata-only reader and simulate changes during its bounded request."""
+        frozen_before_refresh.append(part_store.read_incident("rca-1"))
+        assert kwargs == {"timeout_seconds": 300}
+        result = reader.refresh_current(*args, **kwargs)
+        if change == "cancel":
+            run.trace.check_cancelled.side_effect = InvocationStoppedError("cancelled during refresh")
+        elif change == "claim":
+            part_store.ddb.update_item(
+                TableName="parts",
+                Key={"PK": {"S": "RCA#rca-1"}, "SK": {"S": "ANALYSIS#SESSION"}},
+                UpdateExpression="SET claim_token = :claim",
+                ExpressionAttributeValues={":claim": {"S": "new-owner"}},
+            )
+        return result
+
+    container.incident_observer = SimpleNamespace(refresh_current=Mock(side_effect=refresh))
     steps[-1]["success_criteria"] = (
         steps[-1]["metric_wait"]["failure_alarm_name"]
         + " OK; "
@@ -408,23 +456,48 @@ def test_ready_recovery_is_durable_before_root_and_remains_distinct_from_final_p
             }
         )
 
-    monkeypatch.setattr(analysis_roles, "invoke_agent", recovery_model)
+    model = Mock(side_effect=recovery_model)
+    monkeypatch.setattr(analysis_roles, "invoke_agent", model)
     original_loop = orchestrator._run_validation_loop
 
     def root(alarm, scoping, hypotheses, context_run):
         """Observe READY before root result exists, without changing its immutable playbook later."""
         recovery = part_store.read_part("rca-1", "recovery")
-        assert recovery["record"]["approval_status"] == "READY"
-        assert recovery["payload"]["result"]["playbook"]["rollback_context"] == context
+        assert recovery["record"]["approval_status"] == ("READY" if change == "none" else "UNAVAILABLE")
+        if change == "none":
+            assert recovery["payload"]["result"]["playbook"]["rollback_context"] == context
         assert part_store.read_part("rca-1", "root_cause")["payload"] is None
         return original_loop(alarm, scoping, hypotheses, context_run)
 
     monkeypatch.setattr(orchestrator, "_run_validation_loop", root)
     monkeypatch.setattr(analysis_workflow, "generate_operations", Mock(return_value={"summary": "ops"}))
-    assert orchestrator._run_pipeline_in_context(scope.raw_alarm, run)
+    if change in {"cancel", "claim"}:
+        with pytest.raises(InvocationStoppedError if change == "cancel" else ClientError):
+            orchestrator._run_pipeline_in_context(scope.raw_alarm, run)
+        assert part_store.read_part("rca-1", "recovery")["payload"] is None
+    else:
+        assert orchestrator._run_pipeline_in_context(scope.raw_alarm, run)
+    assert len(frozen_before_refresh) == 1
+    assert part_store.read_incident("rca-1") == frozen_before_refresh[0]
+    assert scope.incident_observations.model_dump(mode="json") == original
+    assert logs.filter_log_events.call_count == log_calls
+    if change in {"cancel", "claim"}:
+        return
     recovery = part_store.read_part("rca-1", "recovery")
-    assert recovery["record"]["approval_status"] == "READY"
-    assert recovery["payload"]["result"]["playbook"]["playbook_id"] != "public-knowledge"
+    result = recovery["payload"]["result"]
+    if change == "none":
+        assert recovery["record"]["approval_status"] == "READY"
+        assert result["playbook"]["playbook_id"] != "public-knowledge"
+        control = result["verification"]["current_control"]
+        assert control["observed_at"] > original["current"]["observed_at"]
+        assert control["deployments"][0]["rolloutState"] == "COMPLETED"
+        assert control["service_settings"] == original["current"]["service_settings"]
+        assert "observations" not in control
+        assert result["verification"]["witnesses"]
+    else:
+        assert result["verification"]["valid"] is False
+        assert result["playbook"] is None
+        model.assert_not_called()
     assert part_store._get("rca-1", "ANALYSIS#SESSION")["playbook_id"] == "public-knowledge"
 
 

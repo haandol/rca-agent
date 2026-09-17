@@ -220,21 +220,43 @@ def run_analysis_parts(orchestrator, alarm, run, store) -> bool:
 
     def recovery():
         """Supply only the reader-verified eligibility to the early-only plan validator."""
-        current_scope = scoping
-        current_verification = dict(verification)
-        if resumed and current_verification["valid"]:
-            observer = getattr(container, "incident_observer", None)
-            if observer is None:
-                current_verification.update(valid=False, reason="current control refresh unavailable")
+        _control(orchestrator, run)
+        observer = getattr(container, "incident_observer", None)
+        if observer is None:
+            return recovery_result(
+                run.rca_id,
+                scoping,
+                {**verification, "valid": False, "reason": "current control refresh unavailable"},
+                container.recovery_agent,
+            )
+        require_request_budget()
+        current_scope = scoping.model_copy(deep=True)
+        current_scope.incident_observations = observer.refresh_current(
+            alarm, scoping.incident_observations, timeout_seconds=300
+        )
+        _control(orchestrator, run)
+        fresh = prepare_recovery_evidence(current_scope)
+        current_verification = {
+            **fresh["verification"],
+            "valid": fresh["verification"]["status"] == "VERIFIED",
+            "rollback_context": fresh["context"],
+        }
+        # A verified immutable snapshot can survive a process restart; its private
+        # reader receipt cannot. Retain that existing proof only for the exact
+        # same context after the live control guard passes again.
+        if resumed and verification["valid"]:
+            if build_rollback_context(current_scope) == verification["rollback_context"]:
+                current_verification = dict(verification)
             else:
-                current_scope = scoping.model_copy(deep=True)
-                current_scope.incident_observations = observer.refresh_current(
-                    alarm, scoping.incident_observations, timeout_seconds=300
-                )
-                if build_rollback_context(current_scope) != verification["rollback_context"]:
-                    current_verification.update(
-                        valid=False, reason="current deployment no longer matches frozen recovery"
-                    )
+                current_verification.update(valid=False, reason="current deployment no longer matches frozen recovery")
+        current_verification["current_control"] = deepcopy(
+            {
+                key: value
+                for key, value in current_scope.incident_observations.current.items()
+                if key not in {"observations", "log_window"}
+            }
+        )
+        current_verification["control_diagnostics"] = list(current_scope.incident_observations.diagnostics)
         return recovery_result(run.rca_id, current_scope, current_verification, container.recovery_agent)
 
     def root():
