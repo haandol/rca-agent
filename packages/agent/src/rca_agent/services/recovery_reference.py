@@ -67,7 +67,10 @@ def build_recovery_reference(scoping, verification: dict) -> dict:
             "step_id": "observe",
             "intent": "현재 승인 대상 확인",
             "action": "현재 서비스 배포를 조회한다",
-            "success_criteria": "현재 배포와 서비스가 승인 전제와 일치함",
+            "success_criteria": (
+                "DescribeServices 응답의 serviceArn·clusterArn이 승인 scope와 일치하고, "
+                "taskDefinition·PRIMARY deployments[].id가 승인 current의 task_definition_arn·deployment_id와 일치함"
+            ),
             "commands": [
                 command("ecs", "describe-services", "--cluster", control["cluster"], "--services", control["service"])
             ],

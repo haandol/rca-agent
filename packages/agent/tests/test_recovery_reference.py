@@ -58,10 +58,36 @@ def test_reference_matches_native_builder_steps_and_never_mutates_inputs(referen
     native = build_recovery_plan("fixture", {"AlarmName": scope.raw_alarm.alarm_name}, prepared)
     assert native["approval_status"] == "READY"
     reference = build_recovery_reference(scope, verification)
-    assert reference["execution_steps"] == native["playbook"]["execution_steps"]
+    native_steps = deepcopy(native["playbook"]["execution_steps"])
+    # Agent guidance names only fields returned by this step; construction of
+    # every operation and all native image/health guards retains native parity.
+    native_steps[0]["success_criteria"] = reference["execution_steps"][0]["success_criteria"]
+    assert reference["execution_steps"] == native_steps
     assert len(validate_steps({**reference, "rollback_context": prepared["context"]})) == 5
     assert set(reference) == {"execution_steps"}
     assert (scope.model_dump(mode="json"), prepared, verification) == before
+
+
+def test_observe_criteria_are_service_response_fields_and_native_image_guards_remain(reference_scope):
+    """The initial read must not require container fields available only in native task checks."""
+    from rca_agent.prompts.analysis_parts import RECOVERY_SYSTEM_PROMPT
+
+    scope, _, verification = reference_scope
+    steps = build_recovery_reference(scope, verification)["execution_steps"]
+    observe = steps[0]
+    assert len(observe["commands"]) == 1 and "ecs describe-services" in observe["commands"][0]
+    for field in ("serviceArn", "clusterArn", "taskDefinition", "deployments[].id"):
+        assert field in observe["success_criteria"]
+        assert field in RECOVERY_SYSTEM_PROMPT
+    assert "imageDigest" not in observe["success_criteria"]
+    assert "health" not in observe["success_criteria"].lower()
+    assert "never require either in observe" in RECOVERY_SYSTEM_PROMPT
+    assert "native rollback precondition and deployment" in RECOVERY_SYSTEM_PROMPT
+    assert (
+        steps[1]["ecs_service_precondition"]["expected_image_digest"]
+        == verification["rollback_context"]["current"]["image_digest"]
+    )
+    assert steps[2]["deployment_wait"]["image_digest"] == verification["rollback_context"]["normal"]["image_digest"]
 
 
 @pytest.mark.parametrize("change", ["missing_proof", "missing_metrics", "settings", "unverified"])

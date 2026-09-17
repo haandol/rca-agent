@@ -12,6 +12,12 @@ limitations, recommendation and a PlaybookOutput-shaped playbook or null. Identi
 Write the user-facing narrative in Korean. Unknown causes remain unknown; do not infer process intent.
 Each step requires step_id, intent, action and observable success_criteria. Use commands XOR deployment_wait
 XOR metric_wait; waits have commands=[]. Every command fixes the actual target and region from verification.
+For the observe step using ecs describe-services, success_criteria checks ONLY serviceArn, clusterArn,
+taskDefinition and the PRIMARY deployments[].id against the corresponding verified scope/current fields.
+DescribeServices does not return container imageDigest or task health; never require either in observe.
+Image digest and task health verification belongs to the native rollback precondition and deployment
+convergence checks. Preserve those checks there. Do not embellish a step's success_criteria with fields
+that its own approved command cannot return, even when those fields exist in the incident context.
 Use exactly one aws ecs update-service with --cluster, --service, --task-definition (normal ARN), --region.
 Its ecs_service_precondition has account_id, region, cluster, service, container_name, desired_count,
 expected_task_definition, expected_image_digest, expected_deployment_id, service_settings. Map these from
