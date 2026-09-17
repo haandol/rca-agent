@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# push 를 검증 뒤로 미룬다 — Claude Code PreToolUse 훅 (matcher: Bash).
+# push 를 검증 뒤로 미룬다 — Codex PreToolUse 훅 (matcher: Bash).
 #
 # 이 저장소의 git hook 경로는 회사 git-defender 가 core.hooksPath 로 점유하고 있어
 # pre-commit 이나 .git/hooks 를 쓸 수 없다. 그래서 push 직전 게이트를 여기에 둔다.
@@ -24,7 +24,8 @@ cmd=$(jq -r '.tool_input.command // empty' 2>/dev/null)
 push_re='(^|[[:space:]])git([[:space:]]+(-[a-zA-Z-]+|--[a-z-]+=[^[:space:]]+)([[:space:]]+[^[:space:]-][^[:space:]]*)?)*[[:space:]]+push([[:space:]]|$)'
 printf '%s' "$cmd" | awk '{ gsub(/[;&|]/, "\n"); print }' | grep -Eq "$push_re" || exit 0
 
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd) || exit 2
+cd -- "$root" || exit 2
 
 if output=$(FORCE_COLOR= NO_COLOR=1 pnpm run verify 2>&1); then
   echo '{"systemMessage":"pnpm verify passed — push allowed"}'

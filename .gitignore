@@ -73,9 +73,6 @@ node-compile-cache/
 # qdrant
 qdrant_storage/
 .claude/settings.local.json
-.claude/skills/card-news/assets/fonts/*.otf
-.claude/skills/card-news/assets/fonts/*.ttf
-packages/card-news/.claude/settings.local.json
 
 # E2E test scripts (generated at runtime, contain credentials)
 packages/web/public/e2e-*.js

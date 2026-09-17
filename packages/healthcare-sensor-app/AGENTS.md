@@ -3,6 +3,24 @@
 이 패키지는 FastAPI, SQLAlchemy async, asyncpg, PostgreSQL을 사용하는 센서 서비스다.
 공통 규칙은 루트 AGENTS.md를 적용한다. 현재 결정은 infra/0004와 infra/0007이다.
 
+## 개발 명령과 코드 구조
+
+패키지 디렉토리에서 실행한다. Python 모듈명은 디렉토리명과 다른 `test_service`다.
+
+```bash
+uv run uvicorn test_service.main:app --reload --host 0.0.0.0 --port 8000 --no-access-log
+uv run ruff format src tests demo
+docker compose up -d postgres
+```
+
+Compose의 PostgreSQL은 일반 개발용 PostgreSQL 16/5432 설정이다. 아래 실제 DB 증거
+검증에 사용하는 PostgreSQL 17/15439와 구분한다.
+
+- FastAPI controller는 `self.router`를 보유하는 클래스 패턴을 사용한다.
+- DI는 `Container` ABC를 구현한 `AppContainer`의 lazy `@property` 패턴을 따른다.
+- Port 인터페이스는 `ports/interfaces/`의 ABC로 정의한다.
+- 도메인 DTO는 `ports/dto/`의 dataclass로 정의한다.
+
 ## 구현 경계
 
 서비스는 Port에 의존하고 DI 컨테이너가 어댑터를 연결한다. ORM 모델과 테이블 정의는

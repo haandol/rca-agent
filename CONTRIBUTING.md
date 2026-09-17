@@ -227,26 +227,30 @@ pnpm prettier --check .
 pnpm prettier --write .
 ```
 
-### 자동화 훅 (Claude Code)
+### 자동화 훅 (Codex)
 
-`format:check`와 테스트는 CI 하드 게이트(`pnpm verify`)이므로, 사람이 기억해서
-맞추는 대신 Claude Code 훅이 앞당겨 처리합니다. 설정은 `.claude/settings.json`,
-스크립트는 `scripts/hooks/`에 있습니다.
+개발 지침은 루트와 패키지의 `AGENTS.md`를 사용합니다. 프로젝트 훅 설정은
+`.codex/hooks.json`, 구현은 `scripts/hooks/`에 있습니다. 저장소 스킬은
+`.agents/skills/`에 두며, 장애 주입 스킬은 현재 단일 컬럼 오류 데모를 따릅니다.
 
-| 훅                      | 시점                 | 동작                                                |
-| ----------------------- | -------------------- | --------------------------------------------------- |
-| `format-file.sh`        | 파일 편집 직후       | 편집된 파일만 포맷 (`.py` → ruff, 그 외 → prettier) |
-| `verify-before-push.sh` | `git push` 실행 직전 | `pnpm verify` 실행, 실패하면 push 차단              |
+| 훅 | 시점 | 동작 |
+| --- | --- | --- |
+| `format-file.sh` | Codex `apply_patch` 완료 후 | 패치에 포함된 추가·수정·이동 대상 파일을 각 패키지의 Ruff 또는 저장소 Prettier로 포맷 |
+| `verify-before-push.sh` | Codex 셸의 `git push` 실행 전 | 저장소 루트에서 `pnpm verify` 실행, 실패하면 push 차단 |
 
-두 스크립트 모두 포맷 규칙을 갖고 있지 않습니다 — ruff는 각 패키지의
-`pyproject.toml`, prettier는 `.prettierrc`/`.prettierignore`를 스스로 찾습니다.
-규칙을 훅에 적으면 설정과 갈라지므로 추가하지 마세요.
+Codex CLI의 `/hooks`에서 프로젝트 훅 두 개의 내용을 검토하고 신뢰해야 실행됩니다.
+새 설정을 저장한 것만으로 신뢰가 부여되지는 않습니다. 훅이 로드되지 않는 세션이나
+일반 터미널에서는 `pnpm verify`를 직접 실행하세요. 셸·스크립트로 수정한 파일은
+패치 후 포맷 훅의 대상이 아니므로 해당 포매터를 직접 실행해야 합니다.
+훅은 보조 검사이며 CI의 동일한 검증을 대체하지 않습니다.
 
-> 이 저장소는 `core.hooksPath`가 사내 도구에 점유되어 있어 `pre-commit install`과
-> `.git/hooks`를 쓸 수 없습니다. `.pre-commit-config.yaml`은 CI용으로 남겨 둡니다.
+포맷 규칙은 각 패키지의 `pyproject.toml`, `.prettierrc`와 `.prettierignore`가
+소유합니다. 훅은 작업 디렉터리가 하위 패키지여도 저장소 루트를 찾아 실행합니다.
+사내 git-defender가 사용하는 `core.hooksPath`와 전역 Codex 설정은 변경하지 않습니다.
+모델 평가가 pending이면 검증 성공으로 취급하지 않습니다.
 
-훅을 잠시 끄려면 `/hooks`에서 비활성화하거나, 검증을 직접 돌리려면
-`pnpm verify`를 실행하세요.
+Codex 훅의 설정·신뢰·입출력 규격은 [공식 문서](https://learn.chatgpt.com/docs/hooks)를
+따릅니다. 과거 테스트 보고서의 Claude Code 기록은 당시 실행 이력으로 보존합니다.
 
 ### 프로젝트 구조
 

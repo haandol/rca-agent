@@ -80,3 +80,10 @@ pnpm nx affected -t test
 | [라이브 재실측 인계](./docs/loop-live-reverification-handoff.md) | 회고 개정본이 다음 분석의 보강 대상이 되는지 확인하는 실행 절차 |
 | [RCA 흐름 점검 High 발견사항](./docs/rca-remediation-high-findings.md) | 전체 흐름 점검에서 확인된 High 문제, 상태, 완료 조건, 새 세션 인계 절차 |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |
+
+## Codex 개발 훅
+
+프로젝트 훅은 `.codex/hooks.json`에 정의한다. `apply_patch` 뒤 포맷과 셸 push 전
+`pnpm verify`를 실행한다. CLI `/hooks`에서 신뢰한 훅만 활성화되므로 훅 실행 여부를
+추정하지 않는다. 훅이 없거나 비활성 상태여도 push 전 `pnpm verify`를 직접 실행하고
+실패를 성공으로 기록하지 않는다. 자세한 적용 범위는 CONTRIBUTING.md를 따른다.
