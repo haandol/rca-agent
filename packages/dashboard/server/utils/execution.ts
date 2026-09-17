@@ -1,3 +1,5 @@
+import { EXECUTION_SK_PREFIX, rcaIdFromPk } from './keys.ts';
+
 type DataRecord = Record<string, unknown>;
 
 /**
@@ -38,6 +40,9 @@ export const EXECUTION_STATE_LABELS: Record<ExecutionState, string> = {
 };
 
 export interface ExecutionSummary {
+  sourcePart: string;
+  sourcePartRevision: string;
+  sourcePartPayloadSha256: string;
   executionId: string;
   rcaId: string;
   engine: string;
@@ -105,6 +110,9 @@ export function readExecution(item: DataRecord): ExecutionSummary {
   const summary = asRecord(item.evidence_summary) ?? {};
 
   return {
+    sourcePart: readString(item.source_part),
+    sourcePartRevision: readString(item.source_part_revision),
+    sourcePartPayloadSha256: readString(item.source_part_payload_sha256),
     executionId:
       readString(item.execution_id) || sortKey.replace(EXECUTION_SK_PREFIX, ''),
     rcaId: readString(item.rca_id) || rcaIdFromPk(readString(item.PK)),
@@ -138,9 +146,16 @@ export function readExecution(item: DataRecord): ExecutionSummary {
  */
 export function latestExecution(
   executions: ExecutionSummary[],
+  preferActive = false,
 ): ExecutionSummary | null {
   if (!executions.length) return null;
   return [...executions].sort((a, b) => {
+    if (preferActive) {
+      const active = ['PENDING_APPROVAL', 'EXECUTING', 'VERIFYING'];
+      const difference =
+        Number(active.includes(b.state)) - Number(active.includes(a.state));
+      if (difference) return difference;
+    }
     if (a.attempt !== b.attempt) return b.attempt - a.attempt;
     return (b.updatedAt || '').localeCompare(a.updatedAt || '');
   })[0]!;

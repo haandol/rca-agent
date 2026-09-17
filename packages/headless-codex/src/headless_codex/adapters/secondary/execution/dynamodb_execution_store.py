@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import time
 import uuid
 from datetime import UTC, datetime
 
 from botocore.exceptions import ClientError
 
-from headless_codex.config.settings import DYNAMODB_TABLE_NAME, SESSION_TTL_DAYS
+from headless_codex.config.settings import DYNAMODB_TABLE_NAME, S3_EVIDENCE_BUCKET, SESSION_TTL_DAYS
 from headless_codex.ports.interfaces.execution_store import (
     ExecutionClaim,
     ExecutionClaimDisposition,
@@ -57,8 +59,48 @@ def _summary_attribute(summary: dict) -> dict:
 
 
 class DynamoDbExecutionStore(ExecutionStorePort):
-    def __init__(self, dynamodb_client=None):
+    def __init__(self, dynamodb_client=None, *, s3_client=None):
         self._ddb = dynamodb_client
+        self._s3 = s3_client
+
+    def _reserved_incident_alarm(self, rca_id: str, reserved: dict) -> dict:
+        """Read approval-owned exact bytes so analysis deletion cannot invalidate an approved execution."""
+        origin = reserved.get("source_incident_engine", {}).get("S", "")
+        digest = reserved.get("source_incident_sha256", {}).get("S", "")
+        key = reserved.get("source_incident_s3_key", {}).get("S", "")
+        approval_id = reserved.get("approval_id", {}).get("S", "")
+        if (
+            not S3_EVIDENCE_BUCKET
+            or self._s3 is None
+            or origin not in {"strands", "headless-codex"}
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", approval_id)
+            or not re.fullmatch(r"[a-f0-9]{64}", digest)
+            or key != f"approvals/{rca_id}/{approval_id}/incident.json"
+            or reserved.get("approved_playbook_s3_key", {}).get("S")
+            != f"approvals/{rca_id}/{approval_id}/playbook.json"
+        ):
+            raise ExecutionTargetUnavailableError("approved incident reference is invalid or unavailable")
+        try:
+            body = self._s3.get_object(Bucket=S3_EVIDENCE_BUCKET, Key=key)["Body"]
+            try:
+                raw = body.read()
+            finally:
+                body.close()
+            if hashlib.sha256(raw).hexdigest() != digest:
+                raise ValueError("incident hash mismatch")
+            incident = json.loads(raw)
+            if (
+                not isinstance(incident, dict)
+                or type(incident.get("schema_version")) is not int
+                or incident["schema_version"] != 1
+                or incident.get("rca_id") != rca_id
+                or incident.get("engine") != origin
+                or not isinstance(incident.get("alarm"), dict)
+            ):
+                raise ValueError("incident identity mismatch")
+        except Exception as exc:
+            raise ExecutionTargetUnavailableError("approved original incident could not be verified") from exc
+        return incident["alarm"]
 
     def _key(self, rca_id: str, execution_id: str) -> dict:
         return {
@@ -280,10 +322,84 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         *,
         report_s3_key: str,
         playbook: dict,
+        execution_id: str = "",
+        claim_token: str = "",
     ) -> ExecutionTarget:
-        """완료 세션의 알람 컨텍스트를 승인 스냅샷과 결합한다."""
+        """Use only the reserved approved snapshot for early recovery, or the unchanged legacy completed path.
+
+        A later part or parent cancellation cannot swap the already-approved recovery
+        target. The execution's own claim/cancellation/deadline remain authoritative.
+        """
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             raise ExecutionTargetUnavailableError(f"{rca_id}: execution store is unavailable")
+
+        if execution_id:
+            reserved = self._get_execution(rca_id, execution_id)
+            source_part = (reserved or {}).get("source_part", {}).get("S", "")
+            if source_part:
+                if source_part != "recovery" or not claim_token or not reserved:
+                    raise ExecutionTargetUnavailableError("unsupported approved source part")
+                revision = reserved.get("source_part_revision", {}).get("S", "")
+                payload_hash = reserved.get("source_part_payload_sha256", {}).get("S", "")
+                if (
+                    engine not in {"strands", "headless-codex"}
+                    or not re.fullmatch(r"[a-f0-9]{64}", revision)
+                    or revision != payload_hash
+                    or reserved.get("claim_token", {}).get("S") != claim_token
+                    or reserved.get("execution_state", {}).get("S") != "EXECUTING"
+                    or reserved.get("engine", {}).get("S") != engine
+                    or reserved.get("rca_id", {}).get("S") != rca_id
+                    or reserved.get("report_s3_key", {}).get("S") != report_s3_key
+                    or report_s3_key != f"analysis-parts/{engine}/{rca_id}/recovery/{payload_hash}.json"
+                ):
+                    raise ExecutionTargetUnavailableError("early approval reservation identity differs")
+                from headless_codex.services.execution_contract import validate_steps
+
+                steps = validate_steps(playbook)
+                from headless_codex.services.analysis_parts import validate_recovery_operations
+
+                validate_recovery_operations(playbook)
+                alarms = {step["metric_wait"]["failure_alarm_name"] for step in steps if step.get("metric_wait")}
+                if len(alarms) != 1 or not playbook.get("rollback_context"):
+                    raise ExecutionTargetUnavailableError("approved recovery alarm context is incomplete")
+                source_alarm_name = reserved.get("source_alarm_name", {}).get("S", "")
+                source_alarm = self._reserved_incident_alarm(rca_id, reserved)
+                if (
+                    not source_alarm_name
+                    or source_alarm_name != next(iter(alarms))
+                    or source_alarm.get("AlarmName", source_alarm.get("alarm_name")) != source_alarm_name
+                ):
+                    raise ExecutionTargetUnavailableError(
+                        "approved original alarm is missing or differs from the runbook"
+                    )
+                current = self._get_execution(rca_id, execution_id) or {}
+                authority_fields = (
+                    "claim_token",
+                    "approval_id",
+                    "approved_playbook_s3_key",
+                    "execution_state",
+                    "engine",
+                    "rca_id",
+                    "report_s3_key",
+                    "source_part",
+                    "source_part_revision",
+                    "source_part_payload_sha256",
+                    "source_alarm_name",
+                    "source_incident_s3_key",
+                    "source_incident_sha256",
+                    "source_incident_engine",
+                )
+                if any(current.get(field) != reserved.get(field) for field in authority_fields):
+                    raise ExecutionTargetUnavailableError("early approval reservation changed while reading incident")
+                return ExecutionTarget(
+                    rca_id=rca_id,
+                    engine=engine,
+                    alarm_name=source_alarm_name,
+                    playbook=playbook,
+                    alarm_data=source_alarm,
+                    report_s3_key=report_s3_key,
+                    source_part="recovery",
+                )
 
         session = None
         session_keys = [_ANALYSIS_SESSION_SK, f"{engine}#SESSION"]

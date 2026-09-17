@@ -654,7 +654,11 @@ class DynamoDbSessionStore(SessionStorePort):
         if not existing:
             return SessionClaim(ClaimDisposition.CONTENDED)
         state = existing.get("state", {}).get("S", "")
-        if state in _DEDUPE_STATES:
+        finalized_parts = (
+            existing.get("workflow", {}).get("S") == "recovery-first-v1"
+            and existing.get("analysis_parts_finalized", {}).get("BOOL") is True
+        )
+        if state in _DEDUPE_STATES or (state == "FAILED" and finalized_parts):
             previous_claim = existing.get("claim_token", {}).get("S")
             previous_receive_count = int(existing.get("receive_count", {}).get("N", "0"))
             return SessionClaim(
@@ -844,7 +848,7 @@ class DynamoDbSessionStore(SessionStorePort):
             return None
 
         playbook = None
-        raw_playbook = item.get("playbook", {}).get("S", "")
+        raw_playbook = item.get("completion_playbook", item.get("playbook", {})).get("S", "")
         if raw_playbook:
             try:
                 parsed = json.loads(raw_playbook)
@@ -869,6 +873,8 @@ class DynamoDbSessionStore(SessionStorePort):
             playbook_metric_name=item.get("completion_playbook_metric_name", {}).get("S", ""),
             notification_status=item.get("completion_notification_status", {}).get("S", ""),
             notification=notification,
+            workflow=item.get("workflow", {}).get("S", ""),
+            analysis_parts_finalized=item.get("analysis_parts_finalized", {}).get("BOOL") is True,
         )
 
     def mark_playbook_indexed(self, rca_id: str, *, claim_token: str) -> bool:
@@ -906,11 +912,19 @@ class DynamoDbSessionStore(SessionStorePort):
                 Key=_session_key(rca_id),
                 UpdateExpression=("SET completion_notification_status = :sent, completion_notified_at = :now"),
                 ConditionExpression=(
-                    "#state = :completed AND claim_token = :claim AND completion_notification_status = :pending"
+                    "(#state = :completed OR (#state = :failed AND #workflow = :workflow AND #finalized = :true)) "
+                    "AND claim_token = :claim AND completion_notification_status = :pending"
                 ),
-                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeNames={
+                    "#state": "state",
+                    "#workflow": "workflow",
+                    "#finalized": "analysis_parts_finalized",
+                },
                 ExpressionAttributeValues={
                     ":completed": {"S": "COMPLETED"},
+                    ":failed": {"S": "FAILED"},
+                    ":workflow": {"S": "recovery-first-v1"},
+                    ":true": {"BOOL": True},
                     ":claim": {"S": claim_token},
                     ":pending": {"S": "PENDING"},
                     ":sent": {"S": "SENT"},

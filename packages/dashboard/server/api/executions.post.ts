@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
     engine?: string;
     approvalId?: string;
     expectedPlaybookDigest?: string;
+    expectedRecoveryRevision?: string;
   }>(event);
 
   const rcaId = typeof body?.rcaId === 'string' ? body.rcaId.trim() : '';
@@ -71,6 +72,123 @@ export default defineEventHandler(async (event) => {
     config.dynamodbTableName,
     rcaPk(rcaId),
   );
+  // Retransmission belongs to the already reserved immutable source, not today's analysis.
+  const existing = items.find((item) => item.SK === executionSk(approvalId));
+  if (existing?.source_part === 'recovery') {
+    const active = items.find((item) => item.SK === ACTIVE_EXECUTION_SK);
+    const request: ExecutionRequestFields = {
+      execution_id: approvalId,
+      rca_id: rcaId,
+      engine,
+      approval_id: approvalId,
+      requested_by: APPROVAL_REQUESTED_BY,
+      report_s3_key: String(existing.report_s3_key ?? ''),
+      approved_playbook_s3_key: `approvals/${rcaId}/${approvalId}/playbook.json`,
+      playbook_digest: expectedPlaybookDigest,
+    };
+    if (
+      typeof existing.source_alarm_name !== 'string' ||
+      !existing.source_alarm_name ||
+      typeof existing.source_incident_sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(existing.source_incident_sha256) ||
+      !['strands', 'headless-codex'].includes(
+        existing.source_incident_engine as string,
+      ) ||
+      existing.source_incident_s3_key !==
+        `approvals/${rcaId}/${approvalId}/incident.json` ||
+      existing.PK !== rcaPk(rcaId) ||
+      !executionReservationMatches(existing, request) ||
+      active?.execution_id !== approvalId ||
+      active?.engine !== engine ||
+      body.expectedRecoveryRevision !== existing.source_part_revision
+    ) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: '기존 승인 식별자의 사본 또는 예약이 일치하지 않습니다.',
+      });
+    }
+    await verifyExistingSnapshot(
+      useS3(),
+      config.s3EvidenceBucket,
+      String(existing.source_incident_s3_key),
+      String(existing.source_incident_sha256),
+    );
+    const approvedBytes = await verifyExistingSnapshot(
+      useS3(),
+      config.s3ReportBucket,
+      request.approved_playbook_s3_key,
+      expectedPlaybookDigest,
+    );
+    let replayPlan: DataRecord;
+    try {
+      replayPlan = JSON.parse(Buffer.from(approvedBytes).toString('utf8'));
+    } catch {
+      throw createError({
+        statusCode: 409,
+        statusMessage: '기존 조기 승인 사본을 해석할 수 없습니다.',
+      });
+    }
+    const replayValidation = validateEarlyRecoveryPlaybook(replayPlan);
+    if (!replayValidation.valid)
+      throw createError({
+        statusCode: 409,
+        statusMessage: replayValidation.reason,
+      });
+
+    try {
+      await useSqs().send(
+        new SendMessageCommand({
+          QueueUrl: config.executionQueueUrl,
+          MessageBody: JSON.stringify(request),
+        }),
+      );
+    } catch {
+      throw createError({
+        statusCode: 503,
+        statusMessage:
+          '기존 승인은 보존되었습니다. 같은 요청으로 다시 전송하세요.',
+      });
+    }
+    return {
+      requested: true,
+      reserved: false,
+      rcaId,
+      engine,
+      approvalId,
+      executionId: approvalId,
+      approvedPlaybookS3Key: request.approved_playbook_s3_key,
+      playbookDigest: expectedPlaybookDigest,
+    };
+  }
+  const newWorkflow = hasAnalysisParts(items, engine);
+  let recovery: Awaited<ReturnType<typeof readReadyRecovery>> | undefined;
+  if (newWorkflow) {
+    try {
+      recovery = await readReadyRecovery(
+        items,
+        rcaId,
+        engine,
+        useS3(),
+        config.s3EvidenceBucket,
+      );
+    } catch (error) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          error instanceof Error ? error.message : '정상화 원본 검증 실패',
+      });
+    }
+    if (body.expectedRecoveryRevision !== recovery.revision)
+      throw createError({
+        statusCode: 409,
+        statusMessage: '정상화 개정본이 변경되었습니다. 다시 검토하세요.',
+      });
+  } else if (body.expectedRecoveryRevision) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: '정상화 개정본을 찾을 수 없습니다.',
+    });
+  }
   const session = findSessionForEngine(items, engine);
   if (!session) {
     throw createError({
@@ -78,13 +196,13 @@ export default defineEventHandler(async (event) => {
       statusMessage: '세션을 찾을 수 없습니다.',
     });
   }
-  if (session.state !== 'COMPLETED') {
+  if (!newWorkflow && session.state !== 'COMPLETED') {
     throw createError({
       statusCode: 409,
       statusMessage: '분석이 완료되지 않아 승인할 수 없습니다.',
     });
   }
-  if (session.confirmed !== true) {
+  if (!newWorkflow && session.confirmed !== true) {
     throw createError({
       statusCode: 409,
       statusMessage: '근본원인이 확정되지 않아 승인할 수 없습니다.',
@@ -92,18 +210,20 @@ export default defineEventHandler(async (event) => {
   }
 
   const reportS3Key =
-    typeof session.report_s3_key === 'string'
+    recovery?.record.payload_s3_key ??
+    (typeof session.report_s3_key === 'string'
       ? session.report_s3_key.trim()
-      : '';
+      : '');
   if (!reportS3Key) {
     throw createError({
       statusCode: 409,
       statusMessage: '승인할 리포트의 저장 위치가 없습니다.',
     });
   }
-  await requireReportObject(useS3(), config.s3ReportBucket, reportS3Key);
+  if (!recovery)
+    await requireReportObject(useS3(), config.s3ReportBucket, reportS3Key);
 
-  const resolved = resolveCurrentPlaybook(items, session, engine);
+  const resolved = recovery ?? resolveCurrentPlaybook(items, session, engine);
   const validation = validateExecutablePlaybook(resolved?.playbook ?? null);
   if (!resolved || !validation.valid) {
     throw createError({
@@ -148,6 +268,15 @@ export default defineEventHandler(async (event) => {
     digest: playbookDigest,
   });
 
+  if (recovery) {
+    await storeImmutableSnapshot({
+      bucket: config.s3EvidenceBucket,
+      key: `approvals/${rcaId}/${approvalId}/incident.json`,
+      bytes: recovery.sourceAlarm.bytes,
+      digest: recovery.sourceAlarm.incidentHash,
+    });
+  }
+
   const request: ExecutionRequestFields = {
     execution_id: executionId,
     rca_id: rcaId,
@@ -162,6 +291,8 @@ export default defineEventHandler(async (event) => {
     ddb,
     tableName: config.dynamodbTableName,
     request,
+    recoveryRecord: recovery?.record,
+    sourceAlarm: recovery?.sourceAlarm,
   });
 
   try {
@@ -290,7 +421,7 @@ async function verifyExistingSnapshot(
   bucket: string,
   key: string,
   expectedDigest: string,
-): Promise<void> {
+): Promise<Uint8Array> {
   try {
     const existing = await s3.send(
       new GetObjectCommand({ Bucket: bucket, Key: key }),
@@ -304,6 +435,7 @@ async function verifyExistingSnapshot(
           '같은 승인 식별자에 다른 플레이북 스냅샷이 이미 존재합니다.',
       });
     }
+    return bytes;
   } catch (error) {
     if (isHttpError(error)) throw error;
     throw createError({
@@ -317,10 +449,14 @@ async function reserveExecution({
   ddb,
   tableName,
   request,
+  recoveryRecord,
+  sourceAlarm,
 }: {
   ddb: ReturnType<typeof useDynamoDB>;
   tableName: string;
   request: ExecutionRequestFields;
+  recoveryRecord?: DataRecord;
+  sourceAlarm?: RecoveryAlarmSource;
 }): Promise<boolean> {
   const now = new Date().toISOString();
   const ttl = Math.floor(Date.now() / 1000) + APPROVAL_TTL_DAYS * 24 * 60 * 60;
@@ -328,6 +464,18 @@ async function reserveExecution({
     PK: rcaPk(request.rca_id),
     SK: executionSk(request.execution_id),
     ...request,
+    ...(recoveryRecord
+      ? {
+          source_alarm_name: sourceAlarm!.name,
+          source_incident_s3_key: `approvals/${request.rca_id}/${request.approval_id}/incident.json`,
+          original_incident_s3_key: sourceAlarm!.incidentKey,
+          source_incident_sha256: sourceAlarm!.incidentHash,
+          source_incident_engine: sourceAlarm!.incidentEngine,
+          source_part: 'recovery',
+          source_part_revision: recoveryRecord.revision,
+          source_part_payload_sha256: recoveryRecord.payload_sha256,
+        }
+      : {}),
     execution_state: 'PENDING_APPROVAL',
     attempt: 0,
     created_at: now,
@@ -348,6 +496,9 @@ async function reserveExecution({
     await ddb.send(
       new TransactWriteCommand({
         TransactItems: [
+          ...(recoveryRecord
+            ? recoveryReservationChecks(tableName, recoveryRecord, sourceAlarm!)
+            : []),
           {
             Put: {
               TableName: tableName,

@@ -622,7 +622,11 @@ class TestRunEvidenceCollection:
         elapsed = perf_counter() - started
 
         assert elapsed < 0.2
-        assert summary.failed_ids == {"h-0", "h-1", "h-2"}
+        expected_ids = {"h-0", "h-1", "h-2"}
+        not_started = {key for key, record in summary.collection_states.items() if record.attempts == 0}
+        assert summary.failed_ids | not_started == expected_ids
+        assert not summary.failed_ids & not_started
+        assert all(summary.collection_states[key].status.value == "NOT_STARTED" for key in not_started)
         assert mock_create.call_count == 3
 
     @patch("rca_agent.services.evidence.collect_evidence")

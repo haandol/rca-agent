@@ -336,6 +336,8 @@ class RcaReport(BaseModel):
     timeline: list[str] = Field(default_factory=list)
     rejected_hypotheses: list[str] = Field(default_factory=list)
     incident_observations: IncidentObservations = Field(default_factory=IncidentObservations)
+    analysis_parts: dict = Field(default_factory=dict, exclude=True)
+    analysis_part_refs: dict = Field(default_factory=dict)
 
 
 class ExecutionStep(BaseModel):
@@ -426,6 +428,8 @@ class NotificationMessage(BaseModel):
 class CompletionHandoff(BaseModel):
     rca_id: str
     state: RcaSessionState
+    workflow: str = ""
+    analysis_parts_finalized: bool = False
     claim_token: str = ""
     playbook_index_status: str = ""
     playbook: Playbook | None = None

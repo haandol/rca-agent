@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ProposalResponse } from '../../../shared/types/playbook-library';
 import { renderMarkdownDocument } from '~/utils/markdown';
+import { analysisPartsComplete } from '~/utils/analysisParts';
 import {
   parseCausalChain,
   parseTimeline,
@@ -37,8 +38,17 @@ const {
 });
 // The playbook is part of this report, not a separate artifact: a person
 // approves the procedure while reading the analysis that produced it.
+const pinnedEngine = ref(engine);
+watch(
+  () => session.value?.engine,
+  (value) => {
+    if (!pinnedEngine.value && value) pinnedEngine.value = value;
+  },
+  { immediate: true },
+);
 const resolvedEngine = computed(
   () =>
+    pinnedEngine.value ||
     session.value?.engine ||
     engine ||
     (report.value?.engine === 'legacy' ? '' : report.value?.engine) ||
@@ -61,6 +71,101 @@ const {
   query: computed(() => ({ engine: resolvedEngine.value })),
 });
 
+const {
+  data: analysisParts,
+  error: partsError,
+  refresh: refreshParts,
+} = useFetch(`/api/analysis-parts/${id}`, {
+  query: computed(() => ({ engine: resolvedEngine.value })),
+});
+const isThreePart = computed(
+  () =>
+    analysisParts.value?.workflow === 'recovery-first-v1' ||
+    session.value?.workflow === 'recovery-first-v1',
+);
+const activeAnalysisEngine = computed(
+  () =>
+    session.value?.activeEngine ||
+    analysisParts.value?.activeEngine ||
+    session.value?.engine ||
+    '',
+);
+const analysisHandoff = computed(
+  () =>
+    isThreePart.value &&
+    Boolean(activeAnalysisEngine.value) &&
+    activeAnalysisEngine.value !== resolvedEngine.value,
+);
+const recoveryPart = computed(() =>
+  analysisParts.value?.parts.find((part) => part.part === 'recovery'),
+);
+const recoveryCurrent = computed(
+  () =>
+    !isThreePart.value ||
+    (!analysisHandoff.value &&
+      analysisParts.value?.parentEligible === true &&
+      !['CANCELLED', 'OUTDATED'].includes(session.value?.state ?? '') &&
+      recoveryPart.value?.approval_status === 'READY' &&
+      recoveryPart.value?.available === true &&
+      recoveryPart.value?.revision === playbook.value?.recovery_revision),
+);
+const reviewedRecoveryRevision = ref('');
+/** Poll parts independently of execution, never replacing the plan currently being reviewed. */
+let partsPolling = false;
+// Read once more after observing parent termination, then stop polling fenced writers.
+let refreshedTermination = '';
+async function pollAnalysisParts() {
+  if (document.visibilityState !== 'visible' || partsPolling) return;
+  if (!isThreePart.value && session.value?.state === 'COMPLETED') return;
+  // One last requested-engine read can expose its final records; never poll stale WAITING parts forever.
+  if (
+    analysisHandoff.value &&
+    analysisParts.value?.historicalView === true &&
+    !partsError.value &&
+    !sessionError.value
+  )
+    return;
+  const parentState = session.value?.state ?? '';
+  const interrupted = ['FAILED', 'CANCELLED', 'OUTDATED'].includes(parentState);
+  if (!interrupted) refreshedTermination = '';
+  if (!partsError.value && !sessionError.value && isThreePart.value) {
+    if (analysisPartsComplete(parentState, analysisParts.value?.parts ?? []))
+      return;
+    if (interrupted && refreshedTermination === parentState) return;
+  }
+  partsPolling = true;
+  try {
+    const results = await Promise.allSettled([
+      refreshParts(),
+      refreshSession(),
+    ]);
+    if (
+      interrupted &&
+      session.value?.state === parentState &&
+      !partsError.value &&
+      !sessionError.value &&
+      results.every((result) => result.status === 'fulfilled')
+    )
+      refreshedTermination = parentState;
+  } finally {
+    partsPolling = false;
+  }
+}
+let partsPollTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  partsPollTimer = setInterval(pollAnalysisParts, 5000);
+  document.addEventListener('visibilitychange', pollAnalysisParts);
+});
+onBeforeUnmount(() => {
+  clearInterval(partsPollTimer);
+  document.removeEventListener('visibilitychange', pollAnalysisParts);
+});
+/** An explicit review obtains the current stored runbook, with no model or client-authored context. */
+async function reviewRecovery() {
+  await reloadPlanForReview();
+  openDetail('runbook');
+}
+
 const outcome = computed(() =>
   session.value ? outcomeOf(session.value) : null,
 );
@@ -77,10 +182,12 @@ const renderedHtml = computed(() =>
 
 const executions = computed(() => executionHistory.value?.executions ?? []);
 const latest = computed(() => executions.value[0] ?? null);
-const inFlight = computed(() =>
-  executions.value.some((execution) =>
-    ['PENDING_APPROVAL', 'EXECUTING', 'VERIFYING'].includes(execution.state),
-  ),
+const inFlight = computed(
+  () =>
+    Boolean(isThreePart.value && executionHistory.value?.activeExecutionId) ||
+    executions.value.some((execution) =>
+      ['PENDING_APPROVAL', 'EXECUTING', 'VERIFYING'].includes(execution.state),
+    ),
 );
 const executionSteps = computed(() => playbook.value?.execution_steps ?? []);
 // Keep legacy prose read-only even while an older API is still deployed.
@@ -123,14 +230,17 @@ const isVerifiedPlaybook = computed(
 const canApprove = computed(
   () =>
     Boolean(session.value?.engine) &&
-    Boolean(report.value) &&
-    !error.value &&
+    (isThreePart.value || (Boolean(report.value) && !error.value)) &&
     !sessionError.value &&
     Boolean(executionHistory.value) &&
     !executionError.value &&
     !playbookError.value &&
-    session.value?.state === 'COMPLETED' &&
-    session.value?.confirmed === true &&
+    (isThreePart.value
+      ? !partsError.value &&
+        recoveryCurrent.value &&
+        playbook.value?.source_mode === 'recovery'
+      : session.value?.state === 'COMPLETED' &&
+        session.value?.confirmed === true) &&
     executionSteps.value.length > 0 &&
     playbook.value?.executable === true &&
     /^[a-f0-9]{64}$/.test(playbook.value?.playbookDigest ?? '') &&
@@ -158,11 +268,13 @@ const blockedReason = computed(() => {
     return '실행 이력을 확인할 수 없어 승인할 수 없습니다';
   if (playbookError.value)
     return '현재 런북을 불러오지 못해 승인할 수 없습니다';
-  if (error.value || !report.value)
+  if (!isThreePart.value && (error.value || !report.value))
     return '보고서를 확인할 수 없어 승인할 수 없습니다';
   if (inFlight.value) return '이미 진행 중인 실행이 있습니다';
   if (!session.value) return '세션 정보를 확인할 수 없어 승인할 수 없습니다';
-  if (session.value.confirmed !== true)
+  if (isThreePart.value && !recoveryCurrent.value)
+    return '정상화 개정본 또는 승인 상태가 변경되었습니다. 다시 조회·검토하세요.';
+  if (!isThreePart.value && session.value.confirmed !== true)
     return '근본원인이 확정되지 않아 승인할 수 없습니다';
   if (!hasFixedDefinitions.value)
     return '명령 미생성 또는 실행 정의 불완전 · 새 분석 필요';
@@ -177,7 +289,8 @@ const blockedReason = computed(() => {
     return (
       playbook.value?.validationError || '승인할 복구 계획 단계가 없습니다'
     );
-  if (session.value?.state !== 'COMPLETED') return '분석이 완료되지 않았습니다';
+  if (!isThreePart.value && session.value?.state !== 'COMPLETED')
+    return '분석이 완료되지 않았습니다';
   return '';
 });
 
@@ -186,6 +299,7 @@ const approvalError = ref('');
 const detailOpen = ref(false);
 const reviewed = ref(false);
 const pendingApprovalId = ref<string | null>(null);
+const pendingRecoveryRequest = ref<Record<string, string> | null>(null);
 const reviewedDigest = ref('');
 
 /**
@@ -193,9 +307,15 @@ const reviewedDigest = ref('');
  * Clear confirmation and the retry UUID before a new approval can be submitted.
  */
 async function reloadPlanForReview() {
+  if (pendingRecoveryRequest.value) {
+    approvalError.value =
+      '전송 결과가 불명확한 승인을 먼저 같은 요청으로 확인하세요.';
+    return;
+  }
   reviewed.value = false;
   await refreshPlaybook();
   reviewedDigest.value = playbook.value?.playbookDigest ?? '';
+  reviewedRecoveryRevision.value = playbook.value?.recovery_revision ?? '';
   pendingApprovalId.value = null;
   approvalError.value = '';
 }
@@ -205,6 +325,10 @@ async function reloadPlanForReview() {
  * Reuse the UUID after transport failure so a retry cannot authorize a second execution.
  */
 async function approveExecution() {
+  if (pendingRecoveryRequest.value) {
+    await retransmitRecovery();
+    return;
+  }
   if (!canApprove.value || !reviewed.value) {
     approvalError.value = blockedReason.value;
     return;
@@ -218,19 +342,37 @@ async function approveExecution() {
   approvalError.value = '';
   pendingApprovalId.value ??= crypto.randomUUID();
   try {
-    await $fetch('/api/executions', {
-      method: 'POST',
-      body: {
-        rcaId: id,
-        engine: session.value?.engine,
-        approvalId: pendingApprovalId.value,
-        expectedPlaybookDigest: reviewedDigest.value,
-      },
-    });
+    const request = {
+      rcaId: id,
+      engine: isThreePart.value ? resolvedEngine.value : session.value!.engine,
+      approvalId: pendingApprovalId.value,
+      expectedPlaybookDigest: reviewedDigest.value,
+      ...(playbook.value?.source_mode === 'recovery'
+        ? { expectedRecoveryRevision: reviewedRecoveryRevision.value }
+        : {}),
+    };
+    if (playbook.value?.source_mode === 'recovery')
+      pendingRecoveryRequest.value = { ...request };
+    await $fetch('/api/executions', { method: 'POST', body: request });
+    pendingRecoveryRequest.value = null;
     pendingApprovalId.value = null;
     reviewed.value = false;
     await Promise.allSettled([refreshExecutions(), refreshSession()]);
   } catch (err) {
+    const statusCode = err as {
+      statusCode?: number;
+      status?: number;
+      data?: { statusCode?: number };
+    };
+    if (
+      [400, 409].includes(
+        statusCode.statusCode ??
+          statusCode.status ??
+          statusCode.data?.statusCode ??
+          0,
+      )
+    )
+      pendingRecoveryRequest.value = null;
     // `$fetch` fills `statusMessage` from the status line ('Conflict'), while the
     // sentence the handler wrote — which of the three approval conditions failed —
     // is in the parsed body. Reading the body is what tells the approver why.
@@ -239,6 +381,40 @@ async function approveExecution() {
     )?.data;
     approvalError.value =
       data?.statusMessage || data?.message || '실행 요청에 실패했습니다.';
+  } finally {
+    approving.value = false;
+  }
+}
+
+/** Retry the original reserved request even if later analysis or cancellation changes current eligibility. */
+async function retransmitRecovery() {
+  if (!pendingRecoveryRequest.value || approving.value) return;
+  approving.value = true;
+  try {
+    await $fetch('/api/executions', {
+      method: 'POST',
+      body: { ...pendingRecoveryRequest.value },
+    });
+    pendingRecoveryRequest.value = null;
+    pendingApprovalId.value = null;
+    reviewed.value = false;
+    approvalError.value = '';
+    await Promise.allSettled([refreshExecutions(), refreshSession()]);
+  } catch (err) {
+    const failure = err as {
+      statusCode?: number;
+      status?: number;
+      data?: { statusCode?: number; statusMessage?: string };
+    };
+    approvalError.value =
+      failure.data?.statusMessage ||
+      '동일 승인 요청의 전송 결과를 확인하지 못했습니다.';
+    if (
+      [400, 409].includes(
+        failure.statusCode ?? failure.status ?? failure.data?.statusCode ?? 0,
+      )
+    )
+      pendingRecoveryRequest.value = null;
   } finally {
     approving.value = false;
   }
@@ -332,8 +508,14 @@ function openDetail(kind: DetailKind) {
   detailOpen.value = true;
   if (kind === 'runbook') {
     const digest = playbook.value?.playbookDigest ?? '';
-    if (reviewedDigest.value !== digest) pendingApprovalId.value = null;
+    if (
+      reviewedDigest.value !== digest ||
+      reviewedRecoveryRevision.value !==
+        (playbook.value?.recovery_revision ?? '')
+    )
+      pendingApprovalId.value = null;
     reviewedDigest.value = digest;
+    reviewedRecoveryRevision.value = playbook.value?.recovery_revision ?? '';
     reviewed.value = false;
   }
 }
@@ -457,228 +639,310 @@ const comparisonLabels = {
       </div>
     </header>
 
-    <ReadState
-      label="사고 상태"
-      :pending="sessionStatus === 'pending'"
-      :error="sessionError"
-      @retry="refreshSession()"
+    <section
+      v-if="pendingRecoveryRequest"
+      class="ops-panel p-4 mb-4"
+      role="status"
     >
-      <section class="ops-panel p-5 mb-5">
-        <div class="flex items-center gap-3 mb-3">
-          <h2 class="detail-section-title">원인 요약</h2>
-          <span
-            class="status-chip"
-            :class="session?.confirmed ? 'text-info' : 'text-warning'"
-            >{{ session?.confirmed ? '원인 확정' : '원인 미확정' }}</span
-          >
-        </div>
-        <p class="detail-body whitespace-pre-wrap">
-          {{ rootCause || '별도 원인 요약이 제공되지 않았습니다.' }}
-        </p>
-        <section
-          class="mt-5 border-t border-base-content/15 pt-4"
-          data-testid="summary-five-whys"
-        >
-          <h3 class="detail-section-title mb-3">5 Whys · 증상에서 원인까지</h3>
-          <ol v-if="chain.length" class="flex flex-wrap items-stretch gap-2">
-            <li
-              v-for="link in chain"
-              :key="link.index"
-              class="flex items-center gap-2"
-            >
-              <span v-if="link.index > 1" aria-hidden="true" class="text-info"
-                >→</span
-              >
-              <button
-                class="rounded-md border border-base-content/15 bg-base-200/50 p-3 text-left text-sm max-w-56 hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
-                :title="`${link.question} — ${link.answer}`"
-                @click="openDetail('cause')"
-              >
-                <span class="block font-mono text-xs text-info mb-1"
-                  >Why {{ link.index }}</span
-                >
-                <span class="line-clamp-2">{{ link.answer }}</span>
-              </button>
-            </li>
-          </ol>
-          <p v-else class="detail-empty">
-            분리해서 표시할 수 있는 5 Whys 사슬이 제공되지 않았습니다.
-          </p>
-          <button
-            class="btn btn-ghost btn-sm mt-3"
-            @click="openDetail('cause')"
-          >
-            {{ chain.length ? '단계별 질문과 전체 근거' : '원문 · 근거 확인' }}
-          </button>
-        </section>
-        <div class="grid gap-4 mt-5 sm:grid-cols-3">
-          <div>
-            <p class="detail-label">영향 범위</p>
-            <p class="text-sm mt-1 whitespace-pre-wrap">
-              {{ summary?.impactSummary || '미제공' }}
-            </p>
-          </div>
-          <div>
-            <p class="detail-label">심각도</p>
-            <p class="text-sm mt-1">{{ summary?.severity || '미제공' }}</p>
-          </div>
-          <div>
-            <p class="detail-label">서버 판정 신뢰도</p>
-            <p class="text-sm mt-1">
-              {{
-                summary?.confidence == null
-                  ? '미제공'
-                  : `${Math.round(summary.confidence * 100)}%`
-              }}
-            </p>
-          </div>
-        </div>
-      </section>
-    </ReadState>
-
-    <div class="grid gap-5 lg:grid-cols-2 mb-5">
-      <section
-        class="ops-panel flex min-w-0 flex-col p-5"
-        data-testid="next-action-card"
+      <p>
+        승인 전송 결과가 불명확합니다. 새 승인 대신 원래 사본의 동일 요청을 다시
+        전송합니다.
+      </p>
+      <button
+        class="btn btn-outline btn-sm"
+        :disabled="approving"
+        @click="retransmitRecovery"
       >
-        <h2 class="detail-section-title">지금 필요한 다음 조치</h2>
-        <p class="detail-body mt-3">
-          {{
-            inFlight
-              ? '승인한 런북의 실행 결과를 확인하세요.'
-              : canApprove
-                ? '현재 런북의 전체 명령을 검토한 뒤 실행을 승인할 수 있습니다.'
-                : blockedReason
-          }}
+        동일 승인 요청 재전송
+      </button>
+      <p class="text-error">{{ approvalError }}</p>
+    </section>
+    <section
+      v-if="analysisHandoff"
+      class="ops-panel p-5 mb-5"
+      role="status"
+      data-testid="analysis-handoff"
+    >
+      <h2 class="detail-section-title">분석 담당 엔진이 변경되었습니다</h2>
+      <p>
+        이 화면의 {{ resolvedEngine }} 파트와 런북은 이전 엔진의 읽기 전용
+        기록입니다. 현재 분석 담당은 {{ activeAnalysisEngine }}입니다.
+      </p>
+      <p>
+        검토한 런북과 승인 사본은 자동 교체하지 않습니다. 이미 승인한 실행은
+        별도로 계속 확인할 수 있습니다.
+      </p>
+      <a
+        class="btn btn-outline btn-sm mt-3"
+        :href="`/report/${encodeURIComponent(id)}?engine=${encodeURIComponent(activeAnalysisEngine)}`"
+        >현재 분석 보기 · {{ activeAnalysisEngine }}</a
+      >
+    </section>
+    <template v-if="isThreePart">
+      <section class="ops-panel p-5 mb-5" data-testid="independent-outcomes">
+        <p>
+          {{ analysisHandoff ? '현재 담당의 마지막 조회 상태' : '분석 상태' }}:
+          {{ session?.state || '미확인' }}
         </p>
-        <p
-          v-if="summary?.nextAction"
-          class="mt-3 line-clamp-3 text-sm leading-relaxed text-base-content/75"
-        >
-          {{ summary.nextAction }}
+        <p :class="latest?.state === 'RESOLVED' ? 'text-success' : ''">
+          실행 상태: {{ latest?.stateLabel || '미실행' }}
+          <span v-if="latest?.engine">
+            · 실행 원본 엔진 {{ latest.engine }}</span
+          >
+        </p>
+        <p v-if="executionHistory?.activeExecutionId" class="text-sm mt-2">
+          활성 실행 예약: {{ executionHistory.activeExecutionId }} ·
+          {{ executionHistory.activeExecutionEngine }}
         </p>
         <button
-          v-if="summary?.nextAction"
-          class="link link-hover mt-2 self-start text-xs text-primary"
-          @click="openDetail('action')"
+          class="btn btn-outline btn-sm mt-3"
+          @click="openDetail('executions')"
         >
-          조치 설명 전체 보기
+          실행 이력 · 승인 사본 근거
         </button>
-        <div class="mt-auto pt-4">
-          <div
-            class="flex flex-wrap items-center gap-3 border-t border-base-content/10 pt-4"
-          >
-            <ReadState
-              label="현재 런북"
-              :pending="playbookStatus === 'pending'"
-              :error="playbookError"
-              @retry="refreshPlaybook()"
+        <p v-if="partsError" class="text-error">
+          분석 갱신 실패 <button @click="refreshParts()">다시 조회</button>
+        </p>
+      </section>
+      <AnalysisParts
+        :parts="analysisParts?.parts || []"
+        :parent-state="session?.state || ''"
+        :historical-view="analysisHandoff"
+        :approval-eligible="
+          !analysisHandoff && analysisParts?.parentEligible === true
+        "
+        @review="reviewRecovery"
+        @retry="refreshParts()"
+      />
+    </template>
+    <template v-else>
+      <ReadState
+        label="사고 상태"
+        :pending="sessionStatus === 'pending'"
+        :error="sessionError"
+        @retry="refreshSession()"
+      >
+        <section class="ops-panel p-5 mb-5">
+          <div class="flex items-center gap-3 mb-3">
+            <h2 class="detail-section-title">원인 요약</h2>
+            <span
+              class="status-chip"
+              :class="session?.confirmed ? 'text-info' : 'text-warning'"
+              >{{ session?.confirmed ? '원인 확정' : '원인 미확정' }}</span
             >
-              <span
-                v-if="playbook"
-                class="status-chip max-w-full"
-                :class="isVerifiedPlaybook ? 'text-success' : 'text-warning'"
+          </div>
+          <p class="detail-body whitespace-pre-wrap">
+            {{ rootCause || '별도 원인 요약이 제공되지 않았습니다.' }}
+          </p>
+          <section
+            class="mt-5 border-t border-base-content/15 pt-4"
+            data-testid="summary-five-whys"
+          >
+            <h3 class="detail-section-title mb-3">
+              5 Whys · 증상에서 원인까지
+            </h3>
+            <ol v-if="chain.length" class="flex flex-wrap items-stretch gap-2">
+              <li
+                v-for="link in chain"
+                :key="link.index"
+                class="flex items-center gap-2"
               >
-                <template v-if="executionSteps.length">
-                  {{
-                    isVerifiedPlaybook ? '현재 런북 검증됨' : '현재 런북 초안'
-                  }}
-                  · {{ executionSteps.length }}개 단계
-                </template>
-                <template v-else>실행할 명령 없음</template>
-              </span>
-            </ReadState>
+                <span v-if="link.index > 1" aria-hidden="true" class="text-info"
+                  >→</span
+                >
+                <button
+                  class="rounded-md border border-base-content/15 bg-base-200/50 p-3 text-left text-sm max-w-56 hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
+                  :title="`${link.question} — ${link.answer}`"
+                  @click="openDetail('cause')"
+                >
+                  <span class="block font-mono text-xs text-info mb-1"
+                    >Why {{ link.index }}</span
+                  >
+                  <span class="line-clamp-2">{{ link.answer }}</span>
+                </button>
+              </li>
+            </ol>
+            <p v-else class="detail-empty">
+              분리해서 표시할 수 있는 5 Whys 사슬이 제공되지 않았습니다.
+            </p>
             <button
-              class="btn btn-sm"
-              :class="isPendingDecision ? 'btn-warning' : 'btn-outline'"
-              @click="
-                openDetail(executionSteps.length ? 'runbook' : 'knowledge')
-              "
+              class="btn btn-ghost btn-sm mt-3"
+              @click="openDetail('cause')"
             >
               {{
-                executionSteps.length
-                  ? canApprove
-                    ? '런북 전체 검토 · 실행 승인'
-                    : '런북 전체 검토'
-                  : '대응 지식 확인'
+                chain.length ? '단계별 질문과 전체 근거' : '원문 · 근거 확인'
               }}
             </button>
+          </section>
+          <div class="grid gap-4 mt-5 sm:grid-cols-3">
+            <div>
+              <p class="detail-label">영향 범위</p>
+              <p class="text-sm mt-1 whitespace-pre-wrap">
+                {{ summary?.impactSummary || '미제공' }}
+              </p>
+            </div>
+            <div>
+              <p class="detail-label">심각도</p>
+              <p class="text-sm mt-1">{{ summary?.severity || '미제공' }}</p>
+            </div>
+            <div>
+              <p class="detail-label">서버 판정 신뢰도</p>
+              <p class="text-sm mt-1">
+                {{
+                  summary?.confidence == null
+                    ? '미제공'
+                    : `${Math.round(summary.confidence * 100)}%`
+                }}
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
-      <section class="ops-panel p-5">
-        <h2 class="detail-section-title">생성에 사용한 참고 자료</h2>
-        <ReadState
-          label="비교 기록"
-          :pending="proposalStatus === 'pending'"
-          :error="proposalError"
-          @retry="refreshProposals()"
+        </section>
+      </ReadState>
+
+      <div class="grid gap-5 lg:grid-cols-2 mb-5">
+        <section
+          class="ops-panel flex min-w-0 flex-col p-5"
+          data-testid="next-action-card"
         >
+          <h2 class="detail-section-title">지금 필요한 다음 조치</h2>
           <p class="detail-body mt-3">
             {{
-              proposals?.comparison?.used_references
-                ? `생성에 사용한 자료 ${proposals.comparison.used_references.length}건`
-                : '실제 사용한 참고 자료 목록 미기록'
+              inFlight
+                ? '승인한 런북의 실행 결과를 확인하세요.'
+                : canApprove
+                  ? '현재 런북의 전체 명령을 검토한 뒤 실행을 승인할 수 있습니다.'
+                  : blockedReason
             }}
           </p>
-          <p v-if="referenceState" class="detail-label mt-2">
-            {{ comparisonLabels[referenceState.status] }}
+          <p
+            v-if="summary?.nextAction"
+            class="mt-3 line-clamp-3 text-sm leading-relaxed text-base-content/75"
+          >
+            {{ summary.nextAction }}
           </p>
-          <p v-if="referenceState?.proposal" class="detail-label mt-2">
+          <button
+            v-if="summary?.nextAction"
+            class="link link-hover mt-2 self-start text-xs text-primary"
+            @click="openDetail('action')"
+          >
+            조치 설명 전체 보기
+          </button>
+          <div class="mt-auto pt-4">
+            <div
+              class="flex flex-wrap items-center gap-3 border-t border-base-content/10 pt-4"
+            >
+              <ReadState
+                label="현재 런북"
+                :pending="playbookStatus === 'pending'"
+                :error="playbookError"
+                @retry="refreshPlaybook()"
+              >
+                <span
+                  v-if="playbook"
+                  class="status-chip max-w-full"
+                  :class="isVerifiedPlaybook ? 'text-success' : 'text-warning'"
+                >
+                  <template v-if="executionSteps.length">
+                    {{
+                      isVerifiedPlaybook ? '현재 런북 검증됨' : '현재 런북 초안'
+                    }}
+                    · {{ executionSteps.length }}개 단계
+                  </template>
+                  <template v-else>실행할 명령 없음</template>
+                </span>
+              </ReadState>
+              <button
+                class="btn btn-sm"
+                :class="isPendingDecision ? 'btn-warning' : 'btn-outline'"
+                @click="
+                  openDetail(executionSteps.length ? 'runbook' : 'knowledge')
+                "
+              >
+                {{
+                  executionSteps.length
+                    ? canApprove
+                      ? '런북 전체 검토 · 실행 승인'
+                      : '런북 전체 검토'
+                    : '대응 지식 확인'
+                }}
+              </button>
+            </div>
+          </div>
+        </section>
+        <section class="ops-panel p-5">
+          <h2 class="detail-section-title">생성에 사용한 참고 자료</h2>
+          <ReadState
+            label="비교 기록"
+            :pending="proposalStatus === 'pending'"
+            :error="proposalError"
+            @retry="refreshProposals()"
+          >
+            <p class="detail-body mt-3">
+              {{
+                proposals?.comparison?.used_references
+                  ? `생성에 사용한 자료 ${proposals.comparison.used_references.length}건`
+                  : '실제 사용한 참고 자료 목록 미기록'
+              }}
+            </p>
+            <p v-if="referenceState" class="detail-label mt-2">
+              {{ comparisonLabels[referenceState.status] }}
+            </p>
+            <p v-if="referenceState?.proposal" class="detail-label mt-2">
+              {{
+                { PENDING: '검토 대기', APPLIED: '반영됨', REJECTED: '기각됨' }[
+                  referenceState.proposal.state
+                ]
+              }}
+            </p>
+          </ReadState>
+          <button
+            class="btn btn-outline btn-sm mt-4"
+            data-testid="open-generation-references"
+            @click="openDetail('comparison')"
+          >
+            참고 원본 · 변경 제안 검토
+          </button>
+        </section>
+      </div>
+
+      <section class="ops-panel p-5">
+        <h2 class="detail-section-title mb-4">필요한 상세 확인</h2>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="kind in [
+              'report',
+              'cause',
+              'timeline',
+              'analysis',
+              'knowledge',
+              'executions',
+            ] as const"
+            :key="kind"
+            class="btn btn-outline btn-sm"
+            @click="openDetail(kind)"
+          >
+            {{ detailTitles[kind] }}
+          </button>
+        </div>
+        <p v-if="error" class="text-sm text-error mt-3">
+          보고서를 불러오지 못했습니다. 상세에서 다시 시도할 수 있습니다.
+        </p>
+        <ReadState
+          label="실행 이력"
+          :pending="executionStatus === 'pending'"
+          :error="executionError"
+          @retry="refreshExecutions()"
+        >
+          <p class="detail-label mt-4">
             {{
-              { PENDING: '검토 대기', APPLIED: '반영됨', REJECTED: '기각됨' }[
-                referenceState.proposal.state
-              ]
+              latest
+                ? `최근 실행 · ${latest.stateLabel} · ${executions.length}회 시도`
+                : '기록된 실행 없음'
             }}
           </p>
         </ReadState>
-        <button
-          class="btn btn-outline btn-sm mt-4"
-          data-testid="open-generation-references"
-          @click="openDetail('comparison')"
-        >
-          참고 원본 · 변경 제안 검토
-        </button>
       </section>
-    </div>
-
-    <section class="ops-panel p-5">
-      <h2 class="detail-section-title mb-4">필요한 상세 확인</h2>
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="kind in [
-            'report',
-            'cause',
-            'timeline',
-            'analysis',
-            'knowledge',
-            'executions',
-          ] as const"
-          :key="kind"
-          class="btn btn-outline btn-sm"
-          @click="openDetail(kind)"
-        >
-          {{ detailTitles[kind] }}
-        </button>
-      </div>
-      <p v-if="error" class="text-sm text-error mt-3">
-        보고서를 불러오지 못했습니다. 상세에서 다시 시도할 수 있습니다.
-      </p>
-      <ReadState
-        label="실행 이력"
-        :pending="executionStatus === 'pending'"
-        :error="executionError"
-        @retry="refreshExecutions()"
-      >
-        <p class="detail-label mt-4">
-          {{
-            latest
-              ? `최근 실행 · ${latest.stateLabel} · ${executions.length}회 시도`
-              : '기록된 실행 없음'
-          }}
-        </p>
-      </ReadState>
-    </section>
+    </template>
 
     <DetailDialog
       :open="detailOpen"
@@ -937,6 +1201,16 @@ const comparisonLabels = {
                 {{ execution.blockedCount }} · 실패
                 {{ execution.failedStepCount }}</span
               >
+              <span v-if="isThreePart" class="text-xs"
+                >실행 원본 엔진: {{ execution.engine }}</span
+              >
+              <p
+                v-if="execution.sourcePart"
+                class="text-xs font-mono break-all"
+              >
+                승인 원본: {{ execution.sourcePart }} ·
+                {{ execution.sourcePartRevision }}
+              </p>
               <button
                 class="btn btn-outline btn-sm ml-auto"
                 @click="showRetrospective(execution.executionId)"

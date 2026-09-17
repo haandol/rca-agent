@@ -125,6 +125,7 @@ class _Container:
 
     def __init__(self, queue_url, *, poll_wait_seconds=20) -> None:
         self.queue_url = queue_url
+        self.analysis_part_store = None
         self.session_store = _Store(_Container.handoff)
         self.playbook_store = _PlaybookStore()
         self.s3_client = None

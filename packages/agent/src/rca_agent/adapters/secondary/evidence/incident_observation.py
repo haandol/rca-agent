@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from rca_agent.config.aws_sdk import AWS_SDK_CALL_WORST_CASE_SECONDS
 from rca_agent.ports.dto.models import AlarmPayload
 from rca_agent.ports.dto.observations import IncidentObservations
+from rca_agent.services.recovery_evidence import has_reader_receipt, seal_observations
 from rca_agent.utils.observation_facts import _canonical, _fact, _message, _utc
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
@@ -58,6 +59,11 @@ _MESSAGE_KEYS = {
     "verified",
     "count",
     "completion_semantics",
+    "request_id",
+    "files",
+    "base_fingerprint",
+    "input_contract",
+    "input_contract_sha256",
 } | _ACCOUNTING_KEYS
 
 
@@ -96,6 +102,7 @@ class AwsIncidentObservation:
             result.critical_facts = facts
         except Exception as exc:
             result.diagnostics.append(f"current observations incomplete: {type(exc).__name__}: {exc}")
+        seal_observations(result, alarm)
         return result
 
     def refresh_current(self, alarm, observations, *, timeout_seconds):
@@ -126,6 +133,8 @@ class AwsIncidentObservation:
             current["observations"] = previous.get("observations", [])
             current["log_window"] = previous.get("log_window", {})
             refreshed.current = current
+            if has_reader_receipt(observations, alarm):
+                seal_observations(refreshed, alarm)
         except Exception as exc:
             refreshed.diagnostics.append(f"deployment refresh unavailable: {type(exc).__name__}: {exc}")
         return refreshed
@@ -167,6 +176,7 @@ class AwsIncidentObservation:
                 {
                     "message": {key: value for key, value in _message(event).items() if key in _MESSAGE_KEYS},
                     **{key: event[key] for key in ("timestamp", "event_id", "log_group", "log_stream")},
+                    **baseline["normal"],
                 }
                 for event in baseline["observations"]
             ],
@@ -399,6 +409,7 @@ class AwsIncidentObservation:
             "write_accounting",
             "schema_snapshot",
             "db_schema_snapshot",
+            "input_contract_observed",
         )
         pending = [(kind, None) for kind in kinds] if collect_logs and streams else []
         seen_tokens, seen_events, compact = set(), set(), {}
@@ -443,7 +454,16 @@ class AwsIncidentObservation:
                     seen_events.add(fact.source_ref)
                     safe = {k: v for k, v in _message(event).items() if k in _MESSAGE_KEYS}
                     observations.append(
-                        {"message": safe, "source_ref": fact.source_ref, "timestamp": event["timestamp"]}
+                        {
+                            "message": safe,
+                            "source_ref": fact.source_ref,
+                            "timestamp": event["timestamp"],
+                            "event_id": event.get("eventId", event.get("event_id")),
+                            "log_group": scope["log_group"],
+                            "log_stream": event.get("logStreamName", event.get("log_stream")),
+                            "task_definition_arn": fact.task_definition,
+                            "image_digest": fact.image_digest,
+                        }
                     )
                     identity = fact.model_dump(exclude={"observed_at", "source_ref"})
                     key = _canonical({"event": kind, "fact": identity})

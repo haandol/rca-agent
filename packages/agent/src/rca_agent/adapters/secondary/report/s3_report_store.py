@@ -61,7 +61,13 @@ class S3ReportStore(ReportStorePort):
         # 저장하지 않는다. 이 엔진에서 절차 섹션은 모델이 쓰지 않고 실행 주체가 읽는
         # 것과 같은 플레이북에서 렌더링되므로, 이 검사가 막는 것은 모델의 발산이 아니라
         # 렌더러가 절차를 빠뜨리거나 재배열하는 회귀다.
-        mismatch = _step_mismatch(body, playbook)
+        displayed = _private_recovery_book(report) if report.analysis_parts else playbook
+        approval_fragment = (
+            "\n".join(_render_playbook_section(displayed)) if report.analysis_parts and displayed else body
+        )
+        mismatch = _step_mismatch(approval_fragment, displayed)
+        if report.analysis_parts and displayed and approval_fragment not in body:
+            mismatch = "immutable recovery runbook is missing from the three-part report"
         if mismatch:
             logger.error("Refusing to save report %s: %s", report.rca_id, mismatch)
             return ""
@@ -183,13 +189,19 @@ _COMPARISON_LABELS = {
 
 def build_report_summary(report: RcaReport, playbook: Playbook | None) -> dict:
     """One server-owned summary supplies both the human view and the API marker."""
-    approval_eligible = bool(report.root_cause_confirmed and playbook and playbook.execution_steps)
+    public_playbook = playbook
+    if report.analysis_parts:
+        playbook = _private_recovery_book(report)
+        recovery_record = report.analysis_parts.get("recovery", {}).get("record", {})
+        approval_eligible = bool(playbook and recovery_record.get("approval_status") == "READY")
+    else:
+        approval_eligible = bool(report.root_cause_confirmed and playbook and playbook.execution_steps)
     if approval_eligible:
         try:
             validate_runbook([step.model_dump() for step in playbook.execution_steps])
         except (ValueError, TypeError):
             approval_eligible = False
-    comparison = playbook.comparison if playbook else {}
+    comparison = public_playbook.comparison if public_playbook else {}
     proposal = comparison.get("proposal")
     return {
         "incident_summary": report.incident_summary or None,
@@ -404,18 +416,20 @@ def _step_mismatch(body: str, playbook: Playbook | None) -> str:
     return ""
 
 
-def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
+def _render_markdown(report: RcaReport, playbook: Playbook | None, *, include_header=True, include_runtime=True) -> str:
     """Render server-owned results and quote supplied discovery metadata without promotion."""
+    if report.analysis_parts and include_header:
+        return _render_analysis_parts(report, playbook)
     confirmed_label = "Confirmed" if report.root_cause_confirmed else "Unconfirmed (most likely candidate)"
-    lines = [
-        f"# RCA Report: {report.rca_id}",
-        "",
-        *_render_summary(report, playbook),
-        "## Incident Summary",
-        report.incident_summary,
-        "",
-        f"- **Severity**: {report.severity}",
-    ]
+    lines = [f"# RCA Report: {report.rca_id}", "", *_render_summary(report, playbook)] if include_header else []
+    lines.extend(
+        [
+            "## Incident Summary",
+            report.incident_summary,
+            "",
+            f"- **Severity**: {report.severity}",
+        ]
+    )
     if report.detection_method:
         lines.append(f"- **Detection**: {report.detection_method}")
     lines.append("")
@@ -485,8 +499,9 @@ def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
         lines.extend(["## Temporary Mitigation", report.temporary_mitigation, ""])
     if report.permanent_remediation:
         lines.extend(["## Permanent Remediation", report.permanent_remediation, ""])
-    lines.extend(_render_comparison_section(playbook))
-    lines.extend(_render_playbook_section(playbook))
+    if include_runtime:
+        lines.extend(_render_comparison_section(playbook))
+        lines.extend(_render_playbook_section(playbook))
     if report.action_items:
         lines.append("## Action Items")
         for item in report.action_items:
@@ -499,4 +514,132 @@ def _render_markdown(report: RcaReport, playbook: Playbook | None) -> str:
         for r in report.rejected_hypotheses:
             lines.append(f"- {r}")
         lines.append("")
+    return "\n".join(lines)
+
+
+def _private_recovery_book(report: RcaReport) -> Playbook | None:
+    """Only the immutable early part can be the displayed current runbook in a three-part report."""
+    value = report.analysis_parts.get("recovery", {})
+    payload, record = value.get("payload", {}), value.get("record", {})
+    book = payload.get("result", {}).get("playbook")
+    if not book or record.get("approval_status") != "READY" or payload.get("status") != "COMPLETED":
+        return None
+    from rca_agent.services.analysis_parts import approval_digest, validate_recovery_operations
+
+    if book.get("rca_id") != report.rca_id or record.get("runbook_digest") != approval_digest(book):
+        raise ValueError("report recovery snapshot identity or digest mismatch")
+    validate_recovery_operations(book)
+    return Playbook.model_validate(book)
+
+
+def _render_analysis_parts(report: RcaReport, public_playbook: Playbook | None) -> str:
+    """Render role results separately; proposals never masquerade as measured evidence or the approved plan."""
+    parts = report.analysis_parts
+    recovery = parts.get("recovery", {})
+    root = parts.get("root_cause", {})
+    operations = parts.get("operations", {})
+    recovery_result = recovery.get("payload", {}).get("result", {})
+    root_result = root.get("payload", {}).get("result", {})
+    ops_result = operations.get("payload", {}).get("result", {})
+    book = _private_recovery_book(report)
+    lines = [
+        f"# RCA Report: {report.rca_id}",
+        "",
+        *_render_summary(report, public_playbook),
+        "## 1. 신속 복구 — 불변 승인 대상",
+        "",
+        f"상태: {recovery.get('record', {}).get('status', 'UNAVAILABLE')}; 승인 가용성: "
+        f"{recovery.get('record', {}).get('approval_status', 'UNAVAILABLE')}",
+        f"Recovery revision: `{recovery.get('record', {}).get('revision', '')}`",
+        "",
+        str(recovery_result.get("summary", "")),
+        str(recovery_result.get("reason", "")),
+        "",
+    ]
+    if book:
+        lines.extend(_render_playbook_section(book))
+    else:
+        lines.extend(["검증된 복구 런북을 제공하지 못했습니다. 후속 공개 지식의 명령으로 대체하지 않습니다.", ""])
+    for limitation in recovery_result.get("limitations", []):
+        lines.append(f"- 제한: {limitation}")
+    lines.extend(
+        [
+            "",
+            "## 2. 근본 원인 분석 및 코드 PR 미리보기",
+            "",
+            f"상태: {root.get('record', {}).get('status', 'UNAVAILABLE')}",
+            "",
+        ]
+    )
+    original = RcaReport.model_validate(root_result["report"]) if root_result.get("report") else report
+    lines.append(_render_markdown(original, None, include_header=False, include_runtime=False).replace("## ", "### "))
+    code = root_result.get("code_proposal", {})
+    lines.extend(
+        [
+            "",
+            "### 코드 PR 미리보기 — 게시·실행하지 않음",
+            "",
+            f"상태: {code.get('status', 'UNAVAILABLE')}; 테스트: {code.get('tests_status', 'NOT_RUN')}",
+            str(code.get("title", "")),
+            f"Repository: {code.get('repository') or '미확인'}",
+            f"Base revision: `{code.get('base_revision') or '미확인'}`",
+            "",
+        ]
+    )
+    for file in code.get("files", []):
+        lines.extend(
+            [
+                f"#### {file.get('path')}:{file.get('start_line')}-{file.get('end_line')}",
+                "```diff",
+                file.get("unified_diff", ""),
+                "```",
+                "",
+            ]
+        )
+        lines.extend(f"- 소스: {ref}" for ref in file.get("evidence_refs", []))
+    lines.extend(f"- 제안 테스트: {test}" for test in code.get("test_plan", []))
+    lines.extend(f"- 제한: {reason}" for reason in code.get("limitations", []))
+    lines.extend(
+        [
+            "",
+            "## 3. 운영 예방 및 CI 개선 제안",
+            "",
+            f"상태: {operations.get('record', {}).get('status', 'UNAVAILABLE')}",
+            str(ops_result.get("summary", "")),
+            "",
+        ]
+    )
+    for finding in ops_result.get("findings", []):
+        lines.append(f"- [{finding.get('status', 'UNVERIFIED')}] {finding.get('statement', '')}")
+        lines.extend(f"  - 소스: {ref}" for ref in finding.get("evidence_refs", []))
+    for recommendation in ops_result.get("recommendations", []):
+        lines.extend(
+            [
+                f"### {recommendation.get('title', '')}",
+                recommendation.get("description", ""),
+                f"제안 단계: {recommendation.get('stage', '')}; 우선순위: {recommendation.get('priority', '')}",
+                f"검증 상태: {recommendation.get('validation_status', 'NOT_RUN')}",
+                f"검사: {recommendation.get('check', '')}",
+                f"실패 조건: {recommendation.get('failure_condition', '')}",
+                f"검증 계획: {recommendation.get('verification_plan', '')}",
+                "",
+            ]
+        )
+    lines.extend(f"- 제한: {reason}" for reason in ops_result.get("limitations", []))
+    lines.extend(
+        [
+            "",
+            "## 최종 공개 지식 — 실행 권한과 별개",
+            "",
+            "이 절은 재사용 지식입니다. 이번 사고의 승인 런북은 1번 recovery 사본이며 후속 명령으로 교체하지 않습니다.",
+            "",
+        ]
+    )
+    if public_playbook:
+        lines.extend(_render_playbook_knowledge(public_playbook))
+        lines.extend(_render_comparison_section(public_playbook))
+    lines.extend(["", "## 산출물 manifest", ""])
+    for name, part in parts.items():
+        record = part.get("record", {})
+        lines.append(f"- {name}: `{record.get('payload_s3_key', '')}`; SHA-256 `{record.get('payload_sha256', '')}`")
     return "\n".join(lines)

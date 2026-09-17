@@ -1,5 +1,3 @@
-import { QueryCommand, type QueryCommandInput } from '@aws-sdk/lib-dynamodb';
-
 /**
  * Every execution attempt against one report, newest attempt first.
  *
@@ -25,31 +23,53 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const ddb = useDynamoDB();
 
-  const items: Record<string, unknown>[] = [];
-  let startKey: QueryCommandInput['ExclusiveStartKey'];
-  do {
-    const result = await ddb.send(
-      new QueryCommand({
-        TableName: config.dynamodbTableName,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        ExpressionAttributeValues: {
-          ':pk': rcaPk(rcaId),
-          ':prefix': EXECUTION_SK_PREFIX,
-        },
-        ExclusiveStartKey: startKey,
-      }),
+  const items = await readAnalysisPartition(
+    ddb,
+    config.dynamodbTableName,
+    rcaId,
+  );
+  // A takeover changes the analysis engine, not the RCA-scoped execution lineage.
+  const lineage =
+    hasAnalysisParts(items, engine) ||
+    items.some(
+      (item) =>
+        item.SK === ANALYSIS_SESSION_SK &&
+        item.workflow === 'recovery-first-v1',
     );
-    items.push(...(result.Items ?? []));
-    startKey = result.LastEvaluatedKey;
-  } while (startKey);
+  const active = lineage
+    ? items.find(
+        (item) => item.SK === ACTIVE_EXECUTION_SK && item.PK === rcaPk(rcaId),
+      )
+    : undefined;
 
   const executions = items
+    .filter((item) => isExecutionItem(String(item.SK ?? '')))
     .map(readExecution)
-    .filter((execution) => execution.engine === engine)
+    .filter((execution) =>
+      lineage
+        ? execution.rcaId === rcaId && isAllowedEngine(execution.engine)
+        : execution.engine === engine,
+    )
     .sort((a, b) => {
+      if (lineage) {
+        const activeStates = ['PENDING_APPROVAL', 'EXECUTING', 'VERIFYING'];
+        const difference =
+          Number(activeStates.includes(b.state)) -
+          Number(activeStates.includes(a.state));
+        if (difference) return difference;
+      }
       if (a.attempt !== b.attempt) return b.attempt - a.attempt;
       return (b.updatedAt || '').localeCompare(a.updatedAt || '');
     });
 
-  return { rcaId, engine, executions };
+  return {
+    rcaId,
+    engine,
+    executionScope: lineage ? 'rca' : 'engine',
+    activeExecutionId:
+      typeof active?.execution_id === 'string' ? active.execution_id : '',
+    activeExecutionEngine:
+      typeof active?.engine === 'string' ? active.engine : '',
+    executions,
+  };
 });

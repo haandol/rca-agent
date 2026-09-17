@@ -1,0 +1,39 @@
+{
+  "cloudwatch describe-alarms": ["--alarm-names"],
+  "cloudwatch get-metric-data": [
+    "--end-time",
+    "--metric-data-queries",
+    "--scan-by",
+    "--start-time"
+  ],
+  "cloudwatch get-metric-statistics": [
+    "--dimensions",
+    "--end-time",
+    "--metric-name",
+    "--namespace",
+    "--period",
+    "--start-time",
+    "--statistics",
+    "--unit"
+  ],
+  "cloudwatch list-metrics": ["--dimensions", "--metric-name", "--namespace"],
+  "ecs describe-services": ["--cluster", "--include", "--services"],
+  "ecs describe-task-definition": ["--include", "--task-definition"],
+  "ecs describe-tasks": ["--cluster", "--include", "--tasks"],
+  "ecs list-tasks": ["--cluster", "--desired-status", "--service-name"],
+  "logs filter-log-events": [
+    "--end-time",
+    "--filter-pattern",
+    "--limit",
+    "--log-group-name",
+    "--log-stream-names",
+    "--start-time"
+  ],
+  "logs get-log-events": [
+    "--end-time",
+    "--limit",
+    "--log-group-name",
+    "--log-stream-name",
+    "--start-time"
+  ]
+}

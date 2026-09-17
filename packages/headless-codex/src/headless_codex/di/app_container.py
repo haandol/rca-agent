@@ -3,7 +3,7 @@ from __future__ import annotations
 import boto3
 from botocore.config import Config
 
-from headless_codex.config.settings import DYNAMODB_TABLE_NAME, S3_VECTOR_REGION
+from headless_codex.config.settings import AWS_REGION, DYNAMODB_TABLE_NAME, S3_EVIDENCE_BUCKET, S3_VECTOR_REGION
 from headless_codex.di.container import Container
 from headless_codex.ports.interfaces.codex_runner import CodexRunnerPort
 from headless_codex.ports.interfaces.embedding import EmbeddingPort
@@ -24,6 +24,8 @@ class AppContainer(Container):
         self._playbook_store = None
         self._embedding = None
         self._codex_runner = None
+        self._analysis_part_store = None
+        self._recovery_clients = {}
 
     @property
     def dynamodb_client(self):
@@ -101,5 +103,50 @@ class AppContainer(Container):
             self._codex_runner = CodexSubprocessRunner()
         return self._codex_runner
 
+    def _recovery_client(self, service: str, region: str):
+        """Bound each native observation/storage call to one SDK attempt under the analysis budget."""
+        key = (service, region)
+        if key not in self._recovery_clients:
+            self._recovery_clients[key] = boto3.client(
+                service,
+                region_name=region,
+                config=Config(
+                    connect_timeout=5, read_timeout=60, retries={"total_max_attempts": 1, "mode": "standard"}
+                ),
+            )
+        return self._recovery_clients[key]
+
+    @property
+    def analysis_part_store(self):
+        """Publish private stage records through the shared claim-fenced, create-only storage contract."""
+        if self._analysis_part_store is None:
+            from headless_codex.services.analysis_parts import AnalysisPartStore
+
+            self._analysis_part_store = AnalysisPartStore(
+                self._recovery_client("dynamodb", AWS_REGION),
+                self._recovery_client("s3", AWS_REGION),
+                table_name=DYNAMODB_TABLE_NAME,
+                bucket=S3_EVIDENCE_BUCKET,
+                engine="headless-codex",
+            )
+        return self._analysis_part_store
+
+    def observe_recovery(self, alarm_data: dict, *, timeout_seconds: float) -> dict:
+        """Give the server observer original alarm data and bounded clients, never model baseline claims."""
+        from headless_codex.services.recovery_observation import observe_recovery_evidence
+
+        return observe_recovery_evidence(
+            alarm_data,
+            s3_client=self._recovery_client("s3", AWS_REGION),
+            logs_client_for_region=lambda region: self._recovery_client("logs", region),
+            ecs_client_for_region=lambda region: self._recovery_client("ecs", region),
+            evidence_bucket=S3_EVIDENCE_BUCKET,
+            timeout_seconds=timeout_seconds,
+        )
+
     def cleanup(self) -> None:
-        pass
+        """Release the native observation clients created for this run without altering shared legacy adapters."""
+        for client in self._recovery_clients.values():
+            client.close()
+        self._recovery_clients.clear()
+        self._analysis_part_store = None

@@ -1390,3 +1390,31 @@ test('pre-split heads without STATE remain visible without a hidden migration wr
     'UNAVAILABLE',
   );
 });
+
+test('approval winning after deletion reads blocks the delete claim atomically through EXEC_ACTIVE', async () => {
+  const f = fixture();
+  f.controls.beforeTransaction = (store) => {
+    store.set('RCA#new\0EXEC_ACTIVE', {
+      PK: 'RCA#new',
+      SK: 'EXEC_ACTIVE',
+      execution_id: 'racing-approval',
+      engine: 'headless-codex',
+    });
+  };
+  await assert.rejects(f.deleteRca('new'), { statusCode: 409 });
+  const transaction = f.calls.find(
+    (call) => call.name === 'TransactWriteCommand',
+  );
+  assert.ok(
+    transaction.input.TransactItems.some(
+      (item) =>
+        item.ConditionCheck?.Key.SK === 'EXEC_ACTIVE' &&
+        item.ConditionCheck.ConditionExpression === 'attribute_not_exists(PK)',
+    ),
+  );
+  assert.ok(
+    !f.calls.some((call) =>
+      ['BatchWriteCommand', 'DeleteObjectsCommand'].includes(call.name),
+    ),
+  );
+});

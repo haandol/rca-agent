@@ -68,6 +68,8 @@ async function report({
   reportFailure = false,
   operation,
   postError,
+  dataOverrides = {},
+  routeEngine = 'headless-codex',
 } = {}) {
   const calls = [];
   const refreshes = [];
@@ -131,12 +133,13 @@ async function report({
       unavailable_reason: null,
     },
   };
+  Object.assign(data, dataOverrides);
   const entries = new Map();
   const globals = {
     ...vue,
     useRoute: () => ({
       params: { id: 'fixture' },
-      query: { engine: 'headless-codex' },
+      query: { engine: routeEngine },
     }),
     useHead: () => {},
     useFetch: (url) => {
@@ -157,12 +160,13 @@ async function report({
     },
     $fetch: async (url, options) => {
       calls.push({ url, options });
-      if (postError) throw postError;
+      if (typeof postError === 'function') await postError();
+      else if (postError) throw postError;
       return { markdown: 'evidence' };
     },
   };
   const exposedNames =
-    'openDetail,activeDetail,detailOpen,visited,reviewed,canApprove,approveExecution,reviewedDigest,pendingApprovalId,reloadPlanForReview,showEvidence,evidenceError,evidence,approvalError';
+    'openDetail,activeDetail,detailOpen,visited,reviewed,canApprove,approveExecution,reviewedDigest,pendingApprovalId,reloadPlanForReview,showEvidence,evidenceError,evidence,approvalError,reviewRecovery,pollAnalysisParts,pendingRecoveryRequest,retransmitRecovery,resolvedEngine,analysisHandoff';
   const page = compile('pages/report/[id].vue', globals, exposedNames);
   const originalSetup = page.setup;
   let controls;
@@ -186,6 +190,7 @@ async function report({
     'PlaybookComparison',
     'RecoveryPlanSteps',
     'MetricWaitDetails',
+    'AnalysisParts',
     'CausalChain',
   ])
     app.component(name, compile(`components/${name}.vue`, globals));
@@ -483,4 +488,411 @@ test('summary shows compact recorded 5 Whys with the full questions available in
   assert.match(result.html, /소유자가 반환하지 않았다/);
   assert.match(result.html, /왜 연결이 고갈됐나/);
   assert.equal((result.html.match(/<dialog\b/g) || []).length, 1);
+});
+
+function earlyPartViews() {
+  return {
+    '/api/sessions/fixture': {
+      rcaId: 'fixture',
+      engine: 'headless-codex',
+      state: 'HYPOTHESIS_GENERATION',
+      workflow: 'recovery-first-v1',
+      confirmed: false,
+      alarmName: '진행 사고',
+    },
+    '/api/reports/fixture': null,
+    '/api/playbooks/fixture': {
+      source_mode: 'recovery',
+      recovery_revision: 'b'.repeat(64),
+      playbookDigest: 'a'.repeat(64),
+      executable: true,
+      execution_steps: [
+        {
+          step_id: 'rollback',
+          action: '정상 버전 복원',
+          commands: [
+            'aws ecs update-service --cluster exact --service exact --task-definition normal --region us-east-1',
+          ],
+          success_criteria: '정상화 관측',
+        },
+      ],
+    },
+    '/api/executions/fixture': { executions: [] },
+    '/api/analysis-parts/fixture': {
+      workflow: 'recovery-first-v1',
+      parentEligible: true,
+      parts: [
+        {
+          part: 'recovery',
+          status: 'COMPLETED',
+          available: true,
+          revision: 'b'.repeat(64),
+          approval_status: 'READY',
+          summary: '정상화 제안',
+          payload: { result: { title: '검증된 롤백' }, limitations: [] },
+        },
+        {
+          part: 'root_cause',
+          status: 'FAILED',
+          available: false,
+          error: '원인 원본 조회 실패',
+        },
+        { part: 'operations', status: 'RUNNING', available: false },
+      ],
+    },
+  };
+}
+test('three-part actual page allows early review despite incomplete report and independently failed root part', async () => {
+  const result = await report({
+    dataOverrides: earlyPartViews(),
+    operation: async (state) => {
+      assert.equal(state.canApprove.value, true);
+      await state.reviewRecovery();
+      state.reviewed.value = true;
+      await state.approveExecution();
+    },
+  });
+  assert.equal(result.calls.length, 1);
+  assert.equal(
+    result.calls[0].options.body.expectedRecoveryRevision,
+    'b'.repeat(64),
+  );
+  assert.equal(
+    result.calls[0].options.body.expectedPlaybookDigest,
+    'a'.repeat(64),
+  );
+  assert.match(result.html, /1\. 빠른 정상화/);
+  assert.match(result.html, /원인 원본 조회 실패/);
+  assert.match(result.html, /3\. 운영 개선/);
+  assert.doesNotMatch(result.html, /SECRET RAW MARKER/);
+});
+test('parts continue refreshing after RESOLVED while later analysis runs, without replacing reviewed plan', async () => {
+  const data = earlyPartViews();
+  data['/api/executions/fixture'] = {
+    executions: [
+      {
+        executionId: 'done',
+        state: 'RESOLVED',
+        stateLabel: '해결',
+        attempt: 1,
+      },
+    ],
+  };
+  const savedDocument = globalThis.document;
+  globalThis.document = { visibilityState: 'visible' };
+  try {
+    const result = await report({
+      dataOverrides: data,
+      operation: async (state, entries) => {
+        await state.reviewRecovery();
+        state.reviewed.value = true;
+        entries.get(
+          '/api/analysis-parts/fixture',
+        ).data.value.parts[0].revision = 'c'.repeat(64);
+        assert.equal(
+          state.canApprove.value,
+          false,
+          'new revision requires explicit review',
+        );
+        const original = entries.get('/api/playbooks/fixture').data.value;
+        await state.pollAnalysisParts();
+        assert.equal(
+          entries.get('/api/playbooks/fixture').data.value,
+          original,
+        );
+      },
+    });
+    assert.ok(result.refreshes.includes('/api/analysis-parts/fixture'));
+    assert.equal(
+      result.refreshes.filter((p) => p === '/api/playbooks/fixture').length,
+      1,
+      'only explicit review reloads the plan',
+    );
+    assert.match(result.html, /실행 상태: 해결/);
+    assert.match(result.html, /HYPOTHESIS_GENERATION/);
+  } finally {
+    globalThis.document = savedDocument;
+  }
+});
+test('actual UI retransmits the captured UUID and revision after later analysis revokes recovery', async () => {
+  let calls = 0;
+  const result = await report({
+    dataOverrides: earlyPartViews(),
+    postError: () => {
+      if (calls++ === 0)
+        throw { statusCode: 503, data: { statusMessage: 'queue unavailable' } };
+    },
+    operation: async (state, entries) => {
+      await state.reviewRecovery();
+      state.reviewed.value = true;
+      await state.approveExecution();
+      assert.ok(state.pendingRecoveryRequest.value);
+      entries.get(
+        '/api/analysis-parts/fixture',
+      ).data.value.parts[0].approval_status = 'REVOKED';
+      entries.get('/api/sessions/fixture').data.value.state = 'CANCELLED';
+      assert.equal(state.canApprove.value, false);
+      await state.retransmitRecovery();
+    },
+  });
+  assert.equal(result.calls.length, 2);
+  assert.deepEqual(result.calls[0].options.body, result.calls[1].options.body);
+});
+
+test('three-part source and PR previews escape HTML and preserve explicit untested status', async () => {
+  const data = earlyPartViews();
+  data['/api/analysis-parts/fixture'].parts[1] = {
+    part: 'root_cause',
+    status: 'COMPLETED',
+    available: true,
+    payload: {
+      result: {
+        root_cause: { description: 'observed', confirmed: true },
+        report_markdown: '<script>unsafe()</script>',
+        code_proposal: {
+          status: 'PROPOSED',
+          title: 'proposed correction',
+          tests_status: 'NOT_RUN',
+          files: [
+            {
+              path: 'write.py',
+              start_line: 5,
+              end_line: 5,
+              unified_diff: '<img src=x onerror=unsafe()>',
+            },
+          ],
+        },
+      },
+      limitations: [],
+    },
+  };
+  const result = await report({ dataOverrides: data });
+  assert.doesNotMatch(result.html, /<script>|<img src=x/);
+  assert.match(result.html, /NOT_RUN/);
+  assert.match(result.html, /제안이며 실제 게시/);
+  assert.match(result.html, /&lt;img/);
+});
+
+// These invoke the page's actual polling/controller code; no stored state is rewritten.
+test('completed analysis stops part polling only when all three parts have actual terminal records', async () => {
+  const data = earlyPartViews();
+  data['/api/sessions/fixture'].state = 'COMPLETED';
+  data['/api/analysis-parts/fixture'].parts[2].status = 'SKIPPED';
+  const savedDocument = globalThis.document;
+  globalThis.document = { visibilityState: 'visible' };
+  try {
+    const result = await report({
+      dataOverrides: data,
+      operation: async (state) => {
+        await state.pollAnalysisParts();
+        await state.pollAnalysisParts();
+      },
+    });
+    assert.deepEqual(result.refreshes, []);
+    const missing = earlyPartViews();
+    missing['/api/sessions/fixture'].state = 'COMPLETED';
+    missing['/api/analysis-parts/fixture'].parts = [];
+    const pending = await report({
+      dataOverrides: missing,
+      operation: async (state) => {
+        await state.pollAnalysisParts();
+      },
+    });
+    assert.ok(
+      pending.refreshes.includes('/api/analysis-parts/fixture'),
+      'an empty response cannot stand in for three terminal parts',
+    );
+  } finally {
+    globalThis.document = savedDocument;
+  }
+});
+for (const parentState of ['CANCELLED', 'FAILED', 'OUTDATED']) {
+  test(`parent ${parentState} labels fenced parts honestly and preserves completed recovery and RESOLVED execution`, async () => {
+    const data = earlyPartViews();
+    data['/api/sessions/fixture'].state = parentState;
+    const parts = data['/api/analysis-parts/fixture'].parts;
+    parts[1] = {
+      part: 'root_cause',
+      status: 'RUNNING',
+      available: false,
+      summary: '마지막 관측 유지',
+    };
+    parts[2] = { part: 'operations', status: 'WAITING', available: false };
+    data['/api/executions/fixture'] = {
+      executions: [
+        {
+          executionId: 'resolved',
+          state: 'RESOLVED',
+          stateLabel: '해결',
+          attempt: 1,
+        },
+      ],
+    };
+    const before = structuredClone(parts);
+    const savedDocument = globalThis.document;
+    globalThis.document = { visibilityState: 'visible' };
+    try {
+      const result = await report({
+        dataOverrides: data,
+        operation: async (state) => {
+          await state.pollAnalysisParts();
+          await state.pollAnalysisParts();
+        },
+      });
+      assert.equal(
+        result.refreshes.filter((url) => url === '/api/analysis-parts/fixture')
+          .length,
+        1,
+        'one final read after parent termination, not endless polling',
+      );
+      assert.deepEqual(
+        result.entries.get('/api/analysis-parts/fixture').data.value.parts,
+        before,
+      );
+      assert.match(result.html, /작업 중단/);
+      assert.match(result.html, /마지막 저장 상태는 RUNNING/);
+      assert.match(result.html, /시작 기록 없음/);
+      assert.match(result.html, /마지막 저장 상태는 WAITING/);
+      assert.match(result.html, /실행 상태: 해결/);
+      assert.match(result.html, /검증된 롤백/);
+      assert.doesNotMatch(result.html, /분석 결과를 준비하고 있습니다/);
+      const recoveryHtml = result.html
+        .split('data-part="recovery"')[1]
+        .split('data-part="root_cause"')[0];
+      assert.doesNotMatch(recoveryHtml, /작업 중단|마지막 저장 상태/);
+    } finally {
+      globalThis.document = savedDocument;
+    }
+  });
+}
+test('part polling retries failed terminal refresh and remains active before workflow registration', async () => {
+  const savedDocument = globalThis.document;
+  globalThis.document = { visibilityState: 'visible' };
+  try {
+    const data = earlyPartViews();
+    data['/api/sessions/fixture'].state = 'FAILED';
+    const result = await report({
+      dataOverrides: data,
+      operation: async (state, entries) => {
+        const entry = entries.get('/api/analysis-parts/fixture');
+        entry.error.value = new Error('read unavailable');
+        await state.pollAnalysisParts();
+        await state.pollAnalysisParts();
+        entry.error.value = null;
+        await state.pollAnalysisParts();
+        await state.pollAnalysisParts();
+      },
+    });
+    assert.equal(
+      result.refreshes.filter((url) => url === '/api/analysis-parts/fixture')
+        .length,
+      3,
+    );
+    const initial = earlyPartViews();
+    delete initial['/api/sessions/fixture'].workflow;
+    initial['/api/analysis-parts/fixture'] = { workflow: null, parts: [] };
+    const initialResult = await report({
+      dataOverrides: initial,
+      operation: async (state) => {
+        await state.pollAnalysisParts();
+      },
+    });
+    assert.ok(initialResult.refreshes.includes('/api/analysis-parts/fixture'));
+  } finally {
+    globalThis.document = savedDocument;
+  }
+});
+
+test('takeover UI shows original engine RESOLVED and blocks duplicate approval for prior-engine active reservation', async () => {
+  const data = earlyPartViews();
+  data['/api/executions/fixture'] = {
+    executionScope: 'rca',
+    activeExecutionId: '',
+    executions: [
+      {
+        executionId: 'old-strands',
+        engine: 'strands',
+        state: 'RESOLVED',
+        stateLabel: '해결',
+        attempt: 1,
+      },
+    ],
+  };
+  const result = await report({ dataOverrides: data });
+  assert.match(result.html, /실행 상태: 해결/);
+  assert.match(result.html, /실행 원본 엔진 strands/);
+  assert.match(result.html, /HYPOTHESIS_GENERATION/);
+  data['/api/executions/fixture'].activeExecutionId = 'old-strands';
+  data['/api/executions/fixture'].activeExecutionEngine = 'strands';
+  const active = await report({
+    dataOverrides: data,
+    operation: (state) => {
+      assert.equal(state.canApprove.value, false);
+      state.openDetail('executions');
+    },
+  });
+  assert.match(active.html, /활성 실행 예약: old-strands/);
+  assert.match(active.html, /실행 원본 엔진: strands/);
+});
+
+test('an already-open Strands view announces takeover without swapping its reviewed runbook', async () => {
+  const data = earlyPartViews();
+  data['/api/sessions/fixture'].engine = 'strands';
+  data['/api/sessions/fixture'].activeEngine = 'strands';
+  data['/api/analysis-parts/fixture'].engine = 'strands';
+  data['/api/analysis-parts/fixture'].activeEngine = 'strands';
+  const savedDocument = globalThis.document;
+  globalThis.document = { visibilityState: 'visible' };
+  try {
+    const result = await report({
+      routeEngine: 'strands',
+      dataOverrides: data,
+      operation: async (state, entries) => {
+        state.openDetail('runbook');
+        state.reviewed.value = true;
+        const book = entries.get('/api/playbooks/fixture').data.value,
+          digest = state.reviewedDigest.value;
+        Object.assign(entries.get('/api/sessions/fixture').data.value, {
+          engine: 'headless-codex',
+          activeEngine: 'headless-codex',
+          engineHandoff: true,
+          state: 'COMPLETED',
+        });
+        const parts = entries.get('/api/analysis-parts/fixture').data.value;
+        parts.activeEngine = 'headless-codex';
+        parts.historicalView = true;
+        parts.parentEligible = false;
+        parts.parts[1] = {
+          part: 'root_cause',
+          status: 'RUNNING',
+          available: false,
+        };
+        parts.parts[2] = {
+          part: 'operations',
+          status: 'WAITING',
+          available: false,
+        };
+        assert.equal(state.resolvedEngine.value, 'strands');
+        assert.equal(state.analysisHandoff.value, true);
+        assert.equal(state.canApprove.value, false);
+        assert.equal(entries.get('/api/playbooks/fixture').data.value, book);
+        assert.equal(state.reviewedDigest.value, digest);
+        await state.pollAnalysisParts();
+        await state.approveExecution();
+      },
+    });
+    assert.equal(result.calls.length, 0);
+    assert.equal(result.refreshes.length, 0);
+    assert.match(result.html, /분석 담당 엔진이 변경되었습니다/);
+    assert.match(result.html, /현재 분석 담당은 headless-codex/);
+    assert.match(
+      result.html,
+      /href="\/report\/fixture\?engine=headless-codex"/,
+    );
+    assert.match(result.html, /이전 엔진의 마지막 기록: RUNNING/);
+    assert.match(result.html, /이전 엔진의 마지막 기록: WAITING/);
+    assert.doesNotMatch(result.html, /분석 결과를 준비하고 있습니다/);
+  } finally {
+    globalThis.document = savedDocument;
+  }
 });

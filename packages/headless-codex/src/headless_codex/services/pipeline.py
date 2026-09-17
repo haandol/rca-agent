@@ -148,13 +148,16 @@ class PipelineOrchestrator:
 
         effective_receive_count = max(receive_count, 1)
         age_seconds = (datetime.now(UTC) - dt).total_seconds() if dt else 0
-        if effective_receive_count > 1 and age_seconds > ALARM_STALENESS_SECONDS:
+        if effective_receive_count > 1:
             try:
                 handoff = store.get_completion_handoff(rca_id)
-                if handoff and handoff.state in {"OUTDATED", "CANCELLED"}:
+                if age_seconds > ALARM_STALENESS_SECONDS and handoff and handoff.state in {"OUTDATED", "CANCELLED"}:
                     log.info("terminal_stale_redelivery", state=handoff.state)
                     return True
-                if handoff and handoff.state == "COMPLETED":
+                if handoff and (
+                    (age_seconds > ALARM_STALENESS_SECONDS and handoff.state == "COMPLETED")
+                    or handoff.finalized_failure
+                ):
                     # Obtain the terminal claim for pending publication without opening
                     # an active incident for an already finished alarm.
                     terminal_claim = store.claim_session(
@@ -292,6 +295,24 @@ class PipelineOrchestrator:
                     ownership_check_failed.set()
                     return True
 
+            part_store = getattr(c, "analysis_part_store", None)
+            part_run = None
+            if part_store is not None:
+                from headless_codex.services.analysis_part_setup import frozen_alarm_context, prepare_analysis_parts
+
+                part_run = prepare_analysis_parts(
+                    c,
+                    part_store,
+                    rca_id=rca_id,
+                    alarm_data=alarm_data,
+                    claim_token=claim_token,
+                    attempt=attempt,
+                    deadline=deadline,
+                    cancel_checker=_should_cancel,
+                )
+                alarm = frozen_alarm_context(part_run.incident["alarm"])
+                prompt = build_prompt(alarm, role="rca")
+            extra = {"analysis_parts": part_run} if part_run is not None else {}
             codex_result = c.codex_runner.run(
                 prompt,
                 report_prompt=build_prompt(alarm, role="report"),
@@ -301,6 +322,7 @@ class PipelineOrchestrator:
                 claim_token=claim_token,
                 attempt=attempt,
                 deadline=deadline,
+                **extra,
             )
             elapsed_seconds = int(time.time() - start_time)
 
@@ -331,6 +353,32 @@ class PipelineOrchestrator:
                 return False
 
             log.info("cc_analysis_completed", elapsed_seconds=elapsed_seconds)
+            if part_run is not None and part_run.outcomes["root_cause"]["record"]["status"] != "COMPLETED":
+                from headless_codex.services.three_part_analysis import render_parts_report
+
+                if set(part_run.outcomes) != {"recovery", "root_cause", "operations"}:
+                    raise ValueError("all logical analysis outcomes must be durable before completion")
+                report = render_parts_report(part_run.outcomes)
+                if _should_cancel() or time.monotonic() >= deadline:
+                    return False
+                report_key = c.report_store.save_report(rca_id, report, claim_token=claim_token, attempt=attempt)
+                root_result = part_run.outcomes["root_cause"]["payload"].get("result", {})
+                cause = root_result.get("root_cause", {})
+                notification = {
+                    "rca_id": rca_id,
+                    "alarm_name": alarm.alarm_name,
+                    "root_cause": cause.get("description", "Unknown"),
+                    "confirmed": cause.get("confirmed", False),
+                    "elapsed_seconds": elapsed_seconds,
+                    "report_s3_key": report_key,
+                    "alarm_context": asdict(alarm),
+                    "playbook": None,
+                }
+                if _should_cancel():
+                    return False
+                part_store.complete_analysis(rca_id, claim_token, notification=notification, report_s3_key=report_key)
+                log.info("three_part_analysis_root_failed", report_s3_key=report_key)
+                return self._flush_completion_handoff(rca_id, claim_token=claim_token, log=log)
 
             try:
                 artifacts = validate_completion_artifacts(artifact_dir)
@@ -345,7 +393,7 @@ class PipelineOrchestrator:
 
             root_cause_line = artifacts.root_cause
             final_playbook = compare_incident_playbook(
-                artifacts.playbook,
+                {**artifacts.playbook, "rca_id": rca_id} if part_run is not None else artifacts.playbook,
                 store=c.playbook_store,
                 runner=c.codex_runner,
                 metric_name=alarm.metric_name or "",
@@ -363,6 +411,10 @@ class PipelineOrchestrator:
                 final_playbook, store=c.playbook_store, rca_id=rca_id
             )
             final_report = render_completion_report(artifact_dir, report_playbook)
+            if part_run is not None:
+                from headless_codex.services.three_part_analysis import render_parts_report
+
+                final_report = render_parts_report(part_run.outcomes, root_report=final_report)
             elapsed_seconds = int(time.time() - start_time)
             completion_notification = {
                 "rca_id": rca_id,
@@ -388,17 +440,28 @@ class PipelineOrchestrator:
             if not isinstance(report_key, str) or not report_key.strip():
                 raise RuntimeError("Report persistence returned no S3 key")
             completion_notification["report_s3_key"] = report_key
-            store.mark_completed(
-                rca_id,
-                root_cause_line,
-                report_key,
-                playbook=final_playbook,
-                playbook_metric_name=alarm.metric_name or "",
-                completion_notification=completion_notification,
-                confirmed=artifacts.confirmed,
-                claim_token=claim_token,
-                side_effect_lease_token=side_effect_lease_token,
-            )
+            if part_run is not None:
+                part_store.complete_analysis(
+                    rca_id,
+                    claim_token,
+                    notification=completion_notification,
+                    report_s3_key=report_key,
+                    playbook=final_playbook,
+                    playbook_metric_name=alarm.metric_name or "",
+                    side_effect_lease_token=side_effect_lease_token,
+                )
+            else:
+                store.mark_completed(
+                    rca_id,
+                    root_cause_line,
+                    report_key,
+                    playbook=final_playbook,
+                    playbook_metric_name=alarm.metric_name or "",
+                    completion_notification=completion_notification,
+                    confirmed=artifacts.confirmed,
+                    claim_token=claim_token,
+                    side_effect_lease_token=side_effect_lease_token,
+                )
             side_effect_lease_token = None
 
             if not self._flush_completion_handoff(
@@ -467,8 +530,11 @@ class PipelineOrchestrator:
         if handoff is None:
             log.error("completion_handoff_unavailable")
             return False
-        if handoff.state != "COMPLETED":
+        if handoff.state != "COMPLETED" and not handoff.finalized_failure:
             return handoff.state in {"OUTDATED", "CANCELLED"}
+        if handoff.finalized_failure and handoff.playbook_index_status not in {"", "PUBLISHED"}:
+            log.error("failed_analysis_cannot_publish_playbook")
+            return False
         needs_write = handoff.playbook_index_status == "PENDING" or handoff.notification_status == "PENDING"
         if needs_write and not claim_token:
             log.error("completion_handoff_claim_unavailable")

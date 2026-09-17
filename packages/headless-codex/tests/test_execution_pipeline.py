@@ -1047,3 +1047,44 @@ def test_retrospective_cannot_publish_a_forged_draft_without_verified_sources(re
     container.execution_store.save_playbook_revision.assert_not_called()
     container.execution_store.publish_playbook_revision.assert_not_called()
     container.evidence_store.save_retrospective_diff.assert_not_called()
+
+
+def test_private_recovery_retrospective_preserves_diff_without_public_promotion():
+    """A recorded private resolved execution cannot gain public promotion through follow-up review."""
+    from dataclasses import replace
+
+    from headless_codex.services.execution_evidence import ExecutionEvidence
+    from headless_codex.services.execution_request import parse_execution_request
+
+    target = replace(_target(), source_part="recovery")
+    runner = RecordingRunner(retrospective={"update": {}, "rationale": "completed private execution reviewed"})
+    container = _container(runner, target=target)
+    orchestrator = ExecutionOrchestrator(container)
+    request = parse_execution_request(APPROVAL)
+    work = execution_workspace.ExecutionWorkspace.create("exec-1")
+    work.prepare()
+    evidence = ExecutionEvidence(
+        execution_id="exec-1", rca_id=RCA_ID, playbook_id="pb-1", final_state="RESOLVED", resolution_confirmed=True
+    )
+    key = orchestrator._finish("exec-1", request, evidence, CLAIM_TOKEN, ExecutionState.RESOLVED, "observed", Mock())
+    orchestrator._retrospect(
+        "exec-1", request, target, CLAIM_TOKEN, work, request.approved_playbook_s3_key, Mock(), evidence_key=key
+    )
+    assert _states(container)[-1] is ExecutionState.RESOLVED
+    container.evidence_store.save_retrospective_diff.assert_called_once()
+    container.playbook_store.save_to_s3_vectors.assert_not_called()
+    container.execution_store.save_playbook_revision.assert_not_called()
+    recorded = container.execution_store.record_retrospective.call_args.kwargs
+    assert recorded["status"] == "FAILED" and "private" in recorded["summary"]
+    assert recorded["diff_s3_key"]
+
+
+def test_execution_startup_backstop_rejects_a_nonrollback_early_target():
+    """Even another store adapter cannot bypass the early-only operation gate."""
+    from dataclasses import replace
+
+    runner = RecordingRunner()
+    container = _container(runner, target=replace(_target(), source_part="recovery"))
+    assert ExecutionOrchestrator(container).process_message(APPROVAL)
+    assert _states(container)[-1] is ExecutionState.FAILED
+    assert runner.execution_prompts == []

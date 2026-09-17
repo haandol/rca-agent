@@ -56,6 +56,11 @@ export class StorageStack extends cdk.Stack {
           prefix: 'baselines/',
           expiration: cdk.Duration.days(60),
         },
+        {
+          id: 'expire-analysis-parts-60d',
+          prefix: 'analysis-parts/',
+          expiration: cdk.Duration.days(60),
+        },
       ],
     });
   }

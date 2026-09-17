@@ -89,3 +89,20 @@ export function hypothesisSkPrefix(engine: string, sessionKey: string): string {
   if (sessionKey === ANALYSIS_SESSION_SK) return `${engine}#HYPO#`;
   return sessionKey === 'SESSION' ? 'HYPO#' : `${engine}#HYPO#`;
 }
+
+/** A registered workflow or any part authority blocks legacy fallback, even if its body is invalid. */
+export function hasAnalysisParts(
+  items: Record<string, any>[],
+  engine: string,
+): boolean {
+  return items.some(
+    (item) =>
+      (item.SK === ANALYSIS_SESSION_SK &&
+        item.engine === engine &&
+        item.workflow === 'recovery-first-v1') ||
+      (typeof item.SK === 'string' &&
+        (item.SK.startsWith(`${engine}#ANALYSIS_PART#`) ||
+          item.SK.startsWith(`${engine}#ANALYSIS_PART_VERSION#`) ||
+          item.SK === 'INCIDENT_SNAPSHOT')),
+  );
+}

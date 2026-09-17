@@ -44,6 +44,12 @@ export default defineEventHandler(async (event) => {
     }),
   );
 
+  // The neutral parent may now belong to another engine; do not relabel its later root result as this execution's source.
+  const sourceSession =
+    !session.Item?.engine || session.Item.engine === execution.engine
+      ? session.Item
+      : undefined;
+
   const [evidence, playbookBefore, diff] = await Promise.all([
     readJsonObject(config.s3ReportBucket, execution.evidenceS3Key),
     readJsonObject(config.s3ReportBucket, execution.playbookSnapshotS3Key),
@@ -67,11 +73,17 @@ export default defineEventHandler(async (event) => {
     executionId,
     // 1. The issue.
     issue: {
-      alarmName: (session.Item?.alarm_name as string) || '',
-      rootCause: (session.Item?.root_cause as string) || '',
-      confirmed: (session.Item?.confirmed as boolean) ?? false,
+      alarmName:
+        (executionItem.Item.source_alarm_name as string) ||
+        (sourceSession?.alarm_name as string) ||
+        '',
+      rootCause: (sourceSession?.root_cause as string) || '',
+      confirmed: (sourceSession?.confirmed as boolean) ?? false,
       engine: execution.engine,
-      reportS3Key: (session.Item?.report_s3_key as string) || '',
+      reportS3Key:
+        (executionItem.Item.report_s3_key as string) ||
+        (sourceSession?.report_s3_key as string) ||
+        '',
     },
     // 2. The playbook as it stood before the execution ran.
     playbookBefore,

@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from contextlib import contextmanager, nullcontext
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
@@ -138,7 +139,8 @@ def prune_subtree(rejected_id: str, hypotheses: list) -> list[str]:
 class RunContext:
     """What every stage of one RCA run needs to identify and record itself.
 
-    These five values are fixed for the whole run and were previously threaded
+    Identity, timing and the original alarm bytes stay fixed for the whole run.
+    The original identity values were previously threaded
     through each stage as separate positional arguments. Passing them as one
     object is what makes the ownership rules hard to get wrong: a stage that
     writes without the claim token, or records against another run's trace, is a
@@ -151,6 +153,7 @@ class RunContext:
     attempt: int
     trace: TraceStore
     start_time: float
+    alarm_data: dict | None = None
 
 
 @dataclass
@@ -166,6 +169,8 @@ class ValidationLoopState:
     fact_map: dict[str, list[CriticalFact]] = field(default_factory=dict)
     source_ref_map: dict[str, list[str]] = field(default_factory=dict)
     warning_map: dict[str, list[dict]] = field(default_factory=dict)
+    source_artifacts: list[dict] = field(default_factory=list)
+    control_artifacts: list[dict] = field(default_factory=list)
     timeline: list[str] = field(default_factory=list)
     loop_count: int = 0
     regeneration_count: int = 0
@@ -285,7 +290,14 @@ class PipelineOrchestrator:
                     existing_handoff.state,
                 )
                 return True
-            if existing_handoff and existing_handoff.state == RcaSessionState.COMPLETED:
+            if existing_handoff and (
+                existing_handoff.state == RcaSessionState.COMPLETED
+                or (
+                    existing_handoff.state == RcaSessionState.FAILED
+                    and existing_handoff.workflow == "recovery-first-v1"
+                    and existing_handoff.analysis_parts_finalized
+                )
+            ):
                 try:
                     return self._flush_completion_handoff(
                         rca_id,
@@ -364,6 +376,7 @@ class PipelineOrchestrator:
             attempt=attempt,
             trace=trace,
             start_time=start_time,
+            alarm_data=deepcopy(alarm_data),
         )
 
         def invocation_control():
@@ -448,7 +461,12 @@ class PipelineOrchestrator:
         if handoff is None:
             logger.warning("Duplicate RCA %s has no persisted session handoff", rca_id)
             return False
-        if handoff.state != RcaSessionState.COMPLETED:
+        finalized_failure = (
+            handoff.state == RcaSessionState.FAILED
+            and handoff.workflow == "recovery-first-v1"
+            and handoff.analysis_parts_finalized
+        )
+        if handoff.state != RcaSessionState.COMPLETED and not finalized_failure:
             logger.info(
                 "Terminal duplicate RCA %s requires no completion handoff: state=%s",
                 rca_id,
@@ -456,6 +474,9 @@ class PipelineOrchestrator:
             )
             return handoff.state in (RcaSessionState.OUTDATED, RcaSessionState.CANCELLED)
         effective_claim_token = claim_token or handoff.claim_token
+        if finalized_failure and handoff.playbook_index_status not in ("", "PUBLISHED"):
+            logger.error("Finalized failed RCA cannot publish a pending public plan: %s", rca_id)
+            return False
         if handoff.playbook_index_status == "PENDING":
             if not effective_claim_token:
                 return False
@@ -534,6 +555,11 @@ class PipelineOrchestrator:
 
     def _run_pipeline_in_context(self, alarm, run: RunContext) -> bool:
         """Run all stages inside the container's incident boundary without rebuilding shared clients."""
+        from rca_agent.services.analysis_workflow import run_analysis_parts
+
+        parts = getattr(self._container, "analysis_part_store", None)
+        if parts is not None:
+            return run_analysis_parts(self, alarm, run, parts)
         store = self._container.session_store
 
         self._check_shutdown()
@@ -832,6 +858,7 @@ class PipelineOrchestrator:
         run: RunContext,
         loop_span,
     ) -> None:
+        """Collect live or supplied evidence while retaining verified source and control artifacts separately."""
         c = self._container
         trace = run.trace
         self._seed_precollected_evidence(state, active_hypotheses)
@@ -885,6 +912,12 @@ class PipelineOrchestrator:
                 state.fact_map.update(ev_summary.fact_map)
                 state.source_ref_map.update(ev_summary.source_ref_map)
                 state.warning_map.update(ev_summary.warning_map)
+                state.source_artifacts.extend(
+                    source for source in ev_summary.source_artifacts if source not in state.source_artifacts
+                )
+                state.control_artifacts.extend(
+                    source for source in ev_summary.control_artifacts if source not in state.control_artifacts
+                )
                 state.evidence_failed_ids.update(ev_summary.failed_ids)
                 state.evidence_failed_ids.difference_update(
                     key for key, value in state.collection_states.items() if value.status == CollectionStatus.COMPLETE
@@ -1337,7 +1370,6 @@ class PipelineOrchestrator:
         c = self._container
         store = c.session_store
         trace = run.trace
-        elapsed = int(time.monotonic() - run.start_time)
 
         store.update_state(
             run.rca_id,
@@ -1363,16 +1395,44 @@ class PipelineOrchestrator:
             s.output_summary = f"rca_id={rca_report.rca_id}, 신뢰도={rca_report.confidence_score}"
         logger.info("RCA report generated: %s", rca_report.rca_id)
 
+        return self._persist_report_and_notify(
+            rca_report, scoping_result, run, best_hypothesis=best_hypothesis, alarm=alarm
+        )
+
+    def _persist_report_and_notify(
+        self, rca_report, scoping_result, run, *, best_hypothesis=None, alarm=None, parts_store=None
+    ) -> bool:
+        """Retain final report/comparison/public knowledge after logical parts, separately from early approval."""
+        c, store, trace = self._container, self._container.session_store, run.trace
+        elapsed = int(time.monotonic() - run.start_time)
+        confirmed = rca_report.root_cause_confirmed
         trace.check_cancelled()
         check_message_lease()
         # 플레이북은 확정된 리포트를 입력으로 만든다 — 조치 방안과 조치 항목이 절차의
         # 재료이므로 순서를 뒤집으면 플레이북이 그 재료를 잃는다. 리포트 본문의 절차
         # 섹션은 그래서 모델이 쓰지 않고 이 플레이북에서 렌더링된다.
-        playbook, playbook_span_id, report_playbook = self._run_playbook(
-            rca_report,
-            scoping_result,
-            run,
-        )
+        generate_public = True
+        if parts_store is not None:
+            from rca_agent.utils.agent_invocation import (
+                InvocationNotStartedError,
+                WorkAdmissionError,
+                require_request_budget,
+            )
+
+            generate_public = parts_store.read_part(run.rca_id, "root_cause")["record"]["status"] == "COMPLETED"
+            try:
+                require_request_budget()
+            except (WorkAdmissionError, InvocationNotStartedError):
+                generate_public = False
+        if generate_public:
+            playbook, playbook_span_id, report_playbook = self._run_playbook(
+                rca_report,
+                scoping_result,
+                run,
+                **({"frozen_incident": True, "knowledge_only": True} if parts_store is not None else {}),
+            )
+        else:
+            playbook, playbook_span_id, report_playbook = None, None, None
         trace.check_cancelled()
         check_message_lease()
 
@@ -1382,7 +1442,7 @@ class PipelineOrchestrator:
             claim_token=run.claim_token,
             attempt=run.attempt,
         )
-        if settings.S3_REPORT_BUCKET and not report_s3_key:
+        if (settings.S3_REPORT_BUCKET or parts_store is not None) and not report_s3_key:
             logger.error(
                 "Report persistence failed for RCA %s; leaving session retryable",
                 rca_report.rca_id,
@@ -1407,24 +1467,60 @@ class PipelineOrchestrator:
                 elapsed,
                 playbook=playbook,
                 alarm=alarm,
-                selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
+                selected_hypothesis_id=(
+                    best_hypothesis.hypothesis_id if best_hypothesis else rca_report.selected_hypothesis_id
+                ),
             )
 
+            if parts_store is not None:
+                notification.severity = rca_report.severity
             check_message_lease()
-            completed = store.mark_completed(
-                rca_report.rca_id,
-                root_cause=rca_report.root_cause,
-                confirmed=confirmed,
-                selected_hypothesis_id=(best_hypothesis.hypothesis_id if best_hypothesis else ""),
-                fault_type=validated_fault_type,
-                completion_notification=notification,
-                report_s3_key=report_s3_key,
-                playbook_span_id=playbook_span_id or "",
-                playbook_id=playbook.playbook_id if playbook else "",
-                playbook=playbook,
-                playbook_metric_name=playbook_metric_name,
-                claim_token=run.claim_token,
-            )
+            if parts_store is not None:
+                completed = parts_store.complete_analysis(
+                    rca_report.rca_id,
+                    run.claim_token,
+                    notification=notification.model_dump(mode="json"),
+                    report_s3_key=report_s3_key,
+                    playbook=playbook.model_dump(mode="json") if playbook else None,
+                    playbook_metric_name=playbook_metric_name,
+                    playbook_span_id=playbook_span_id or "",
+                )
+                if parts_store.read_part(run.rca_id, "root_cause")["record"]["status"] != "COMPLETED":
+                    s.output_summary = "근본 원인 단계 실패; 단계 원문과 최종 보고서 보존"
+                    if not completed:
+                        return False
+                    stop_message_renewal()
+                    check_message_lease()
+                    return self._flush_completion_handoff(
+                        rca_report.rca_id,
+                        claim_token=run.claim_token,
+                        handoff=CompletionHandoff(
+                            rca_id=rca_report.rca_id,
+                            state=RcaSessionState.FAILED,
+                            workflow="recovery-first-v1",
+                            analysis_parts_finalized=True,
+                            claim_token=run.claim_token,
+                            notification_status="PENDING",
+                            notification=notification,
+                        ),
+                    )
+            else:
+                completed = store.mark_completed(
+                    rca_report.rca_id,
+                    root_cause=rca_report.root_cause,
+                    confirmed=confirmed,
+                    selected_hypothesis_id=(
+                        best_hypothesis.hypothesis_id if best_hypothesis else rca_report.selected_hypothesis_id
+                    ),
+                    fault_type=validated_fault_type,
+                    completion_notification=notification,
+                    report_s3_key=report_s3_key,
+                    playbook_span_id=playbook_span_id or "",
+                    playbook_id=playbook.playbook_id if playbook else "",
+                    playbook=playbook,
+                    playbook_metric_name=playbook_metric_name,
+                    claim_token=run.claim_token,
+                )
             if not completed:
                 s.output_summary = "완료 상태 및 알림 저장 실패"
                 return False
@@ -1460,6 +1556,9 @@ class PipelineOrchestrator:
         rca_report,
         scoping_result,
         run: RunContext,
+        *,
+        frozen_incident: bool = False,
+        knowledge_only: bool = False,
     ) -> tuple[Playbook | None, str | None, Playbook | None]:
         """Archive full comparison before tracing; return thin state and a separate report-only copy."""
         c = self._container
@@ -1474,8 +1573,14 @@ class PipelineOrchestrator:
                 c.playbook_agent,
                 playbook_store=c.playbook_store,
                 scoping_result=scoping_result,
-                incident_observer=getattr(c, "incident_observer", None),
+                incident_observer=None if frozen_incident else getattr(c, "incident_observer", None),
             )
+            if knowledge_only:
+                from rca_agent.ports.dto.models import PlaybookVerificationStatus
+
+                playbook.execution_steps = []
+                playbook.rollback_context = None
+                playbook.verification_status = PlaybookVerificationStatus.DRAFT
             check_message_lease()
             report_playbook, playbook = archive_incident_comparison(playbook, store=c.playbook_store, rca_id=run.rca_id)
             trace.end_span(

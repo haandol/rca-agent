@@ -81,6 +81,7 @@ def _make_body(alarm_name="HighCPU"):
 
 def _make_container():
     container = MagicMock()
+    container.analysis_part_store = None
     container.session_store = MagicMock()
     container.session_store.claim_incident.side_effect = lambda alarm, **_: IncidentClaim(
         IncidentClaimDisposition.PROCEED,

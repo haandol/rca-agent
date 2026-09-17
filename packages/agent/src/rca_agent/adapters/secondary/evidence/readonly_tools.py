@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 from copy import deepcopy
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 from strands.tools.mcp.mcp_agent_tool import MCPAgentTool
@@ -34,11 +34,31 @@ class ReadOnlyTool(MCPAgentTool):
     async def stream(self, tool_use, invocation_state, **kwargs):
         """Drain the exact read request; a cancelled invocation never receives its late result."""
         require_request_budget()
+        from rca_agent.services.frozen_evidence import bound_request
+
+        try:
+            arguments = bound_request(
+                self.owner.frozen_scope,
+                self.mcp_tool.name,
+                tool_use["input"],
+                self.owner.query_ids,
+                input_schema=getattr(self.mcp_tool, "inputSchema", None),
+            )
+        except ValueError as exc:
+            result = {
+                "toolUseId": tool_use["toolUseId"],
+                "status": "error",
+                "isError": True,
+                "content": [{"text": str(exc)}],
+            }
+            self.owner.record(result, self.mcp_tool.name, tool_use["input"], expected_tool_use_id=tool_use["toolUseId"])
+            yield ToolResultEvent(result)
+            return
         request = asyncio.create_task(
             self.mcp_client.call_tool_async(
                 tool_use_id=tool_use["toolUseId"],
                 name=self.mcp_tool.name,
-                arguments=tool_use["input"],
+                arguments=arguments,
                 read_timeout_seconds=self.timeout,
             )
         )
@@ -51,13 +71,17 @@ class ReadOnlyTool(MCPAgentTool):
                 # Wait for this bounded request instead of treating notification as proof.
                 try:
                     result = await request
-                    self.owner.record(
-                        result, self.mcp_tool.name, tool_use["input"], expected_tool_use_id=tool_use["toolUseId"]
-                    )
+                    self.owner.record(result, self.mcp_tool.name, arguments, expected_tool_use_id=tool_use["toolUseId"])
                 except BaseException as exc:
                     self.owner.record_transport_failure(self.mcp_tool.name, tool_use, exc)
                 raise
-            self.owner.record(result, self.mcp_tool.name, tool_use["input"], expected_tool_use_id=tool_use["toolUseId"])
+            self.owner.record(result, self.mcp_tool.name, arguments, expected_tool_use_id=tool_use["toolUseId"])
+            from rca_agent.services.frozen_evidence import observation_scope_note
+
+            note = observation_scope_note(self.owner.frozen_scope, self.mcp_tool.name, arguments)
+            if note is not None:
+                result = deepcopy(result)
+                result.setdefault("content", []).append({"text": json.dumps(note, ensure_ascii=False)})
             yield ToolResultEvent(result)
         except Exception as exc:
             self.owner.record_transport_failure(self.mcp_tool.name, tool_use, exc)
@@ -75,6 +99,10 @@ class ReadOnlyTools(ToolProvider):
         self.termination_uncertain = False
         self.results: list[dict] = []
         self.receipts: list[dict] = []
+        from rca_agent.services.frozen_evidence import current_scope
+
+        self.frozen_scope = current_scope()
+        self.query_ids: set[str] = set()
 
     def record(self, result, tool_name=None, arguments=None, *, expected_tool_use_id=None):
         """A correlated MCP error result ends its RPC; SDK-generated transport errors may not.
@@ -101,6 +129,13 @@ class ReadOnlyTools(ToolProvider):
         )
         if unknown:
             self.termination_uncertain = True
+        elif not error and tool_name == "execute_log_insights_query":
+            from rca_agent.services.collected_observations import _objects
+
+            for document in _objects(received):
+                query_id = document.get("queryId", document.get("query_id"))
+                if isinstance(query_id, str):
+                    self.query_ids.add(query_id)
         if tool_name is not None:
             digest = hashlib.sha256(json.dumps(received, sort_keys=True, default=str).encode()).hexdigest()
             source = (
@@ -115,6 +150,7 @@ class ReadOnlyTools(ToolProvider):
                     "request_terminated": not unknown,
                     "requested_tool_use_id": expected_tool_use_id,
                     "source_ref": source,
+                    **({"received_at": datetime.now(UTC).isoformat()} if tool_name == "get_file_contents" else {}),
                 }
             )
 

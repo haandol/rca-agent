@@ -621,7 +621,8 @@ class TraceStore:
 
     def _claim_check(self, *, allow_completed: bool = False) -> dict:
         terminal_condition = (
-            "AND NOT #state IN (:failed, :outdated, :cancelled)"
+            "AND (NOT #state IN (:failed, :outdated, :cancelled) "
+            "OR (#state = :failed AND #workflow = :workflow AND #finalized = :true))"
             if allow_completed
             else "AND NOT #state IN (:completed, :failed, :outdated, :cancelled)"
         )
@@ -631,8 +632,12 @@ class TraceStore:
             ":outdated": {"S": "OUTDATED"},
             ":cancelled": {"S": "CANCELLED"},
         }
+        names = {"#state": "state"}
         if not allow_completed:
             values[":completed"] = {"S": "COMPLETED"}
+        else:
+            values.update({":workflow": {"S": "recovery-first-v1"}, ":true": {"BOOL": True}})
+            names.update({"#workflow": "workflow", "#finalized": "analysis_parts_finalized"})
         return {
             "ConditionCheck": {
                 "TableName": DYNAMODB_TABLE_NAME,
@@ -641,7 +646,7 @@ class TraceStore:
                     "SK": _session_sk(),
                 },
                 "ConditionExpression": (f"attribute_exists(SK) AND claim_token = :claim {terminal_condition}"),
-                "ExpressionAttributeNames": {"#state": "state"},
+                "ExpressionAttributeNames": names,
                 "ExpressionAttributeValues": values,
             },
         }

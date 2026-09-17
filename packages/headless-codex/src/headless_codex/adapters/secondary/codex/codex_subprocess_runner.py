@@ -19,10 +19,14 @@ from headless_codex.adapters.secondary.codex.codex_harness import (
     ANALYSIS_PROFILE,
     ANALYSIS_RCA_PROFILE,
     ANALYSIS_REPORT_PROFILE,
+    ANALYSIS_ROOT_RCA_PROFILE,
+    ANALYSIS_ROOT_REPORT_PROFILE,
     COMPARISON_PROFILE,
     MODEL_EVAL_PROFILE,
     MODEL_EVAL_RCA_PROFILE,
     MODEL_EVAL_REPORT_PROFILE,
+    MODEL_EVAL_ROOT_RCA_PROFILE,
+    MODEL_EVAL_ROOT_REPORT_PROFILE,
     codex_environment,
     codex_exec_args,
     prepare_codex_home,
@@ -90,6 +94,83 @@ class CodexSubprocessRunner(CodexRunnerPort):
         claim_token: str | None = None,
         attempt: int | None = None,
         deadline: float | None = None,
+        analysis_parts=None,
+    ) -> CodexResult:
+        """Select the admitted three-part workflow while retaining the legacy two-specialist path."""
+        if analysis_parts is not None:
+            deadline = (
+                min(deadline, time.monotonic() + CODEX_TIMEOUT_SECONDS)
+                if deadline is not None
+                else time.monotonic() + CODEX_TIMEOUT_SECONDS
+            )
+            return analysis_parts.run(
+                self,
+                prompt,
+                execution_token=execution_token,
+                profile=profile,
+                report_prompt=report_prompt,
+                cancel_checker=cancel_checker,
+                rca_id=rca_id,
+                claim_token=claim_token,
+                attempt=attempt,
+                deadline=deadline,
+            )
+        return self._run_pair(
+            prompt,
+            execution_token=execution_token,
+            profile=profile,
+            report_prompt=report_prompt,
+            cancel_checker=cancel_checker,
+            rca_id=rca_id,
+            claim_token=claim_token,
+            attempt=attempt,
+            deadline=deadline,
+        )
+
+    def _run_with_retry(self, prompt: str, **kwargs) -> CodexResult:
+        """Retry one explicit terminal/provider failure only, retaining token and original deadline.
+
+        A successful process with missing artifacts is not retried here. An ongoing
+        subprocess has not returned, so it cannot trigger another concurrent writer.
+        """
+        outputs = []
+        for attempt_number in range(2):
+            deadline = kwargs.get("deadline")
+            cancel = kwargs.get("cancel_checker")
+            cancelled = bool(cancel and cancel())
+            if (deadline is not None and time.monotonic() >= deadline) or cancelled:
+                return CodexResult(
+                    success=False,
+                    result="specialist admission interrupted",
+                    raw_output="\n".join(outputs),
+                    cancelled=cancelled,
+                )
+            result = self._run_single(prompt, **kwargs)
+            outputs.append(result.raw_output)
+            if result.success or result.cancelled:
+                return CodexResult(
+                    success=result.success,
+                    result=result.result,
+                    raw_output="\n".join(outputs),
+                    cancelled=result.cancelled,
+                )
+            if attempt_number == 0:
+                logger.info("specialist_terminal_retry", profile=kwargs.get("profile"), attempt=2)
+        return CodexResult(success=False, result=result.result, raw_output="\n".join(outputs))
+
+    def _run_pair(
+        self,
+        prompt: str,
+        *,
+        execution_token: str,
+        profile: str = ANALYSIS_PROFILE,
+        report_prompt: str | None = None,
+        cancel_checker: Callable[[], bool] | None = None,
+        rca_id: str | None = None,
+        claim_token: str | None = None,
+        attempt: int | None = None,
+        deadline: float | None = None,
+        part_mode: bool = False,
     ) -> CodexResult:
         """Run sequential specialists under one deadline and hand off replay-verified judgments."""
         if profile not in {ANALYSIS_PROFILE, MODEL_EVAL_PROFILE}:
@@ -111,7 +192,13 @@ class CodexSubprocessRunner(CodexRunnerPort):
         )
         rca_profile = ANALYSIS_RCA_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_RCA_PROFILE
         report_profile = ANALYSIS_REPORT_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_REPORT_PROFILE
-        rca_result = self._run_single(
+        if part_mode:
+            rca_profile = ANALYSIS_ROOT_RCA_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_ROOT_RCA_PROFILE
+            report_profile = (
+                ANALYSIS_ROOT_REPORT_PROFILE if profile == ANALYSIS_PROFILE else MODEL_EVAL_ROOT_REPORT_PROFILE
+            )
+        invoke = self._run_with_retry if part_mode else self._run_single
+        rca_result = invoke(
             prompt + "\n\n런타임 역할: RCA 전문 프로세스다. 다른 에이전트를 위임하지 말고 "
             "RCA 분석 산출물만 저장한 뒤 전체 RCA 요약을 반환한다.",
             execution_token=execution_token,
@@ -125,6 +212,13 @@ class CodexSubprocessRunner(CodexRunnerPort):
         if not rca_result.success or rca_result.cancelled:
             return rca_result
 
+        if part_mode:
+            from headless_codex.services.analysis_part_workspace import CONTEXT_NAME, read_object, write_once
+            from headless_codex.services.analysis_source_capture import capture_sources
+
+            context = read_object(execution_token, CONTEXT_NAME)
+            captured = capture_sources(rca_result.raw_output, context["incident"])
+            write_once(execution_token, "root-source-artifacts.json", captured)
         try:
             analysis = validate_analysis_completion(artifact_dir_for_token(execution_token))
             effective_state = json.dumps(analysis.effective_state_view(), ensure_ascii=False)
@@ -135,7 +229,7 @@ class CodexSubprocessRunner(CodexRunnerPort):
                 raw_output=failed_role_diagnostics(rca_result.raw_output),
             )
 
-        report_result = self._run_single(
+        report_result = invoke(
             (report_prompt if report_prompt is not None else prompt)
             + "\n\n런타임 역할: Report 전문 프로세스다. 다른 에이전트를 위임하지 말고 "
             "아래 RCA 전문 프로세스의 결과를 근거로 report.md와 playbook.json만 저장한다."

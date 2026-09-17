@@ -200,7 +200,7 @@ packages/dashboard/
 - DynamoDB Scan 시 `begins_with(PK, 'RCA#')` 필터로 멱등성 키(`IDEMP#`) 레코드를 제외해야 함
 - 실행 항목(`EXEC#`)을 세션 상태에 병합하지 말 것 — 실행은 분석과 별도 생명주기이고, 실행 실패가 완료된 분석을 실패로 보이게 하면 안 된다
 - 실행 상태를 뱃지로 보일 때 `UNRESOLVED`·`FAILED`를 성공과 같은 강도로 표시하지 말 것 — 미해결 장애가 완료로 읽힌다
-- 승인 발행 전 검증(분석 완료, 확정 원인, S3 리포트 존재, 완전하고 중복 ID가 없는 실행 절차)을 건너뛰지 말 것. 승인 시점 플레이북의 결정적 JSON 바이트와 SHA-256을 S3에 고정하고, 큐 발행 전 `PENDING_APPROVAL` 실행과 `EXEC_ACTIVE`를 한 트랜잭션으로 예약한다. 진행 중 실행의 권위는 실행 이력 조회가 아니라 `EXEC_ACTIVE` 조건부 쓰기다
+- 기존 완료 리포트 경로에서 승인 발행 전 검증(분석 완료, 확정 원인, S3 리포트 존재, 완전하고 중복 ID가 없는 실행 절차)을 건너뛰지 말 것. 승인 시점 플레이북의 결정적 JSON 바이트와 SHA-256을 S3에 고정하고, 큐 발행 전 `PENDING_APPROVAL` 실행과 `EXEC_ACTIVE`를 한 트랜잭션으로 예약한다. 진행 중 실행의 권위는 실행 이력 조회가 아니라 `EXEC_ACTIVE` 조건부 쓰기다
 - 승인 요청의 `approvalId`는 클라이언트가 한 승인 시도 동안 유지하는 UUID이며 `execution_id`와 동일하다. `requested_by`는 서버가 항상 `dashboard`로 기록하고 클라이언트 값을 신뢰하지 않는다
 - 모델·S3에서 온 Markdown을 `marked`로 직접 렌더하지 말 것 — raw HTML이 그대로 보존되어 인증 없는 cancel/delete API를 호출할 수 있다. `app/utils/markdown.ts`를 사용한다
 - 취소를 상태 변경만으로 구현하지 말 것. 실행 중 워커는 claim token을 계속 들고 있으므로 회전 없이는 취소 이후에도 산출물을 기록한다
@@ -217,3 +217,23 @@ packages/dashboard/
 - `original_created_at`은 고정 원본 생성 시각이고 STATE의 만료는 최초 반영 시각을 기준으로 고정한다. 게시 재시도는 TTL을 연장하지 않는다. 벡터 키는 `<playbook_id>@<revision>`이며 게시 완료는 현재 HEAD·STATE·disposition의 조건부 전이로 기록한다.
 - 사용자 반영 HEAD와 STATE는 요청 사고 `proposal_rca_id`와 원본 사고 `source_rca_id`를 보존한다. 삭제 claim은 HEAD와 STATE의 게시 대기·소유 RCA 검사를 세션 갱신과 같은 트랜잭션에서 수행한다. 본문이 사라져도 PENDING STATE의 소유권 검사를 생략하지 않는다. 반영·게시의 원본 조건은 `deleting_at` 부재를 요구한다.
 - 새 동작 테스트는 `tests/harness/dashboard-playbook-library.test.mjs`와 `dashboard-drilldown.test.mjs`에 있다. 테스트용 API 우회나 운영 요청의 임의 AWS endpoint 설정을 추가하지 않는다.
+
+
+## 정상화 우선 3파트 (`recovery-first-v1`)
+
+- 공통 wire는 `packages/headless-codex/docs/analysis-parts-contract.md`를 따른다. workflow/part 기록이 없는 경우만 기존 완료·확정 경로를 사용한다. 새 기록의 실패·철회·만료·손상은 legacy fallback 사유가 아니다.
+- `/api/analysis-parts/:id?engine=...`는 RCA/engine/파트/키 접두사/원본 SHA-256/보존기한/고정 incident 연결을 검증한다. 한 파트 조회 실패는 다른 파트 원본을 숨기지 않는다. 버킷은 `S3_EVIDENCE_BUCKET` 서버 설정이다.
+- 조기 승인은 recovery의 COMPLETED+READY, 검증된 전체 롤백 런북과 현재 부모 식별·미취소·미삭제를 요구한다. 전체 분석 COMPLETED나 원인 confirmed를 대신 설정하지 않는다. root/operations 실패만으로 유효한 recovery를 무효화하지 않는다.
+- 열람한 `expectedRecoveryRevision`과 `expectedPlaybookDigest`를 검증하고 실제 ECS 전제를 확인한 뒤 불변 승인 사본을 저장한다. 같은 READY 개정·payload 해시·런북 지문·기한과 부모 조건을 EXEC/EXEC_ACTIVE 예약과 같은 트랜잭션에서 확인한다.
+- 예약 후 같은 UUID 재전송은 기존 실행 기록과 사본을 따른다. 이후 원인/운영 분석의 변경이나 부모 취소 때문에 다른 사본을 같은 UUID로 보내지 않는다. 신규 승인은 취소된 부모에서 금지한다.
+- 화면은 공통 머리말과 정상화/근본원인·PR/운영 개선 파트를 각각 갱신한다. 파트 폴링은 실행 종료와 독립적이며 열람 중인 런북을 자동 교체하지 않는다. 회복·분석·제안의 상태를 분리하고 코드/CI 제안을 실제 게시·머지로 표시하지 않는다.
+- 기존 정형 대기, 파괴성 차단, 쓰기 증명, 900초/두 60초 구간 및 원문 sanitize 계약을 유지한다. 모델 출력의 컨텍스트·S3 위치를 승인 권위로 사용하지 않는다.
+
+- 새 3파트 workflow의 실행 이력·활성 예약·해결 상태는 RCA 전체 계보를 따른다. 엔진 인계 후에도 실행 원본 engine을 표시하고 증거·회고는 해당 실행 기록의 engine을 사용한다. 기존 legacy 조회는 엔진별 필터를 유지한다.
+
+- 조기 정상화는 `validateEarlyRecoveryPlaybook`의 별도 전수 검사를 통과해야 한다. 기존 argv 파서가 식별한 작업을 `early-recovery-read-operations.json`의 정확한 목록과 비교하고, 고정 UpdateService는 정확히 1개만 허용한다. StopTask 등 추가 쓰기와 롤백 누락은 READY/사용자 검토 여부와 무관하게 거부한다. 기존 완료·확정 경로의 범용 정책은 유지한다.
+
+- 엔진 인계 후 이전 engine URL은 현재 담당·이동 링크와 이전 파트를 읽기 전용으로 표시한다. 검토 중인 런북의 engine/개정/사본을 자동 교체하지 않고 이전 RUNNING/WAITING을 현재 작업으로 표시하지 않는다.
+- 조기 실행 예약에는 원본 알람 JSON을 복사하지 않는다. `source_incident_s3_key`·`source_incident_sha256`·`source_incident_engine`·`source_alarm_name`만 보존하고 canonical INCIDENT_SNAPSHOT의 같은 참조를 예약 트랜잭션에서 검사한다. 검증한 원본 바이트를 configured evidence bucket의 `approvals/<rca>/<approvalId>/incident.json`에 create-only로 복사하고 예약의 source_incident_s3_key는 이 승인 사본을 가리킨다. 원본 SHA-256·origin engine은 같고 original_incident_s3_key는 추적용일 뿐 fallback이 아니다. 정규화 DTO나 현재 부모 데이터로 재구성하지 않는다.
+
+- 삭제 claim 트랜잭션은 EXEC_ACTIVE 부재도 함께 검사한다. 엔진별 분석 파트/개정 메타데이터와 세 파트의 S3 prefix만 해당 범위에서 정리하며 다른 엔진의 세션/파트 참조가 남으면 canonical INCIDENT_SNAPSHOT과 그 원본은 유지한다. 실행 감사 행과 approvals/·executions/ 원본은 기존 감사 보존 정책에 맡긴다.

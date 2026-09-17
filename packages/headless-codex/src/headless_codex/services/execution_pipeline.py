@@ -127,6 +127,8 @@ class ExecutionOrchestrator:
                     request.engine,
                     report_s3_key=request.report_s3_key,
                     playbook=playbook,
+                    execution_id=execution_id,
+                    claim_token=claim_token,
                 )
             except ExecutionClaimLostError:
                 raise
@@ -146,6 +148,10 @@ class ExecutionOrchestrator:
 
             try:
                 steps = validate_steps(target.playbook)
+                if getattr(target, "source_part", "") == "recovery":
+                    from headless_codex.services.analysis_parts import validate_recovery_operations
+
+                    validate_recovery_operations(target.playbook)
             except (ValueError, TypeError, KeyError) as exc:
                 store.update_state(
                     execution_id,
@@ -491,6 +497,23 @@ class ExecutionOrchestrator:
             )
             if not diff_key:
                 raise RuntimeError("retrospective attestation did not persist")
+            if getattr(target, "source_part", "") == "recovery":
+                # Private recovery is not a canonical library base. Retain the completed
+                # review/diff but do not promote or publish an unchecked private plan.
+                store.record_retrospective(
+                    execution_id,
+                    rca_id=request.rca_id,
+                    claim_token=claim_token,
+                    status="FAILED",
+                    summary=(
+                        "Public follow-up unavailable: early private recovery has no canonical "
+                        "publication authority; review and diff preserved"
+                    ),
+                    playbook_snapshot_s3_key=snapshot_key,
+                    diff_s3_key=diff_key,
+                )
+                log.info("private_recovery_review_preserved_without_publication")
+                return
             publication_result = {
                 "status": "NO_CHANGE" if diff.is_empty else "UPDATED",
                 "summary": saved["rationale"][:500],

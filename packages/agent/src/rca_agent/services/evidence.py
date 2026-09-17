@@ -67,6 +67,8 @@ class EvidenceCollectionResult(BaseModel):
     critical_facts: list[CriticalFact] = Field(default_factory=list)
     raw_tool_outputs: str = ""
     collection_warnings: list[dict] = Field(default_factory=list)
+    source_artifacts: list[dict] = Field(default_factory=list)
+    control_artifacts: list[dict] = Field(default_factory=list)
 
 
 class CollectionStatus(StrEnum):
@@ -107,6 +109,8 @@ class EvidenceCollectionSummary(BaseModel):
     fact_map: dict[str, list[CriticalFact]] = Field(default_factory=dict)
     source_ref_map: dict[str, list[str]] = Field(default_factory=dict)
     warning_map: dict[str, list[dict]] = Field(default_factory=dict)
+    source_artifacts: list[dict] = Field(default_factory=list)
+    control_artifacts: list[dict] = Field(default_factory=list)
 
 
 EVIDENCE_FAILED_SENTINEL = "Evidence collection timed out or failed."
@@ -341,6 +345,9 @@ def collect_evidence(
     received = receipts or json.loads(_partial_tool_outputs(agent) or "[]")
     raw_tool_outputs = archive_received_outputs(received) if received else ""
     facts = derive_received_facts(receipts, scoping_result)
+    from rca_agent.services.frozen_evidence import received_control_artifacts, received_source_artifacts
+
+    sources = received_source_artifacts(receipts, scoping_result)
     source_facts_available = bool(facts or scoping_result.incident_observations.critical_facts)
     successful_source = any(
         receipt.get("request_terminated") is not False
@@ -374,6 +381,8 @@ def collect_evidence(
         critical_facts=facts,
         raw_tool_outputs=raw_tool_outputs,
         collection_warnings=warnings,
+        source_artifacts=sources if usable else [],
+        control_artifacts=received_control_artifacts(receipts) if usable else [],
     )
 
 
@@ -402,6 +411,8 @@ def run_evidence_collection(
     new_evidence_map: dict[str, str] = {}
     full_evidence_map: dict[str, str] = {}
     fact_map, source_ref_map, warning_map = {}, {}, {}
+    source_artifacts = []
+    control_artifacts = []
     lookup_facts = dict(existing_fact_map or {})
     lookup_refs = dict(existing_source_ref_map or {})
     lookup_warnings = dict(existing_warning_map or {})
@@ -488,6 +499,9 @@ def run_evidence_collection(
 
         if result.failed:
             failed_ids.add(h.hypothesis_id)
+        else:
+            source_artifacts.extend(source for source in result.source_artifacts if source not in source_artifacts)
+            control_artifacts.extend(source for source in result.control_artifacts if source not in control_artifacts)
 
         if rca_id and result.diagnostic_partial:
 
@@ -555,6 +569,8 @@ def run_evidence_collection(
         fact_map=fact_map,
         source_ref_map=source_ref_map,
         warning_map=warning_map,
+        source_artifacts=source_artifacts,
+        control_artifacts=control_artifacts,
     )
 
 

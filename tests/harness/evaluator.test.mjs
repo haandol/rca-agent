@@ -209,19 +209,23 @@ test('normalized result competing-cause evidence must be globally cited', async 
 test('input digest protects Headless Codex agent definitions', async () => {
   const { inputFiles } = await computeInputDigest();
 
-  // Analysis has no remediation role: recovery moved behind a user approval gate.
-  // The digest covers both specialist instructions and their MCP capability files.
+  // Analysis proposes recovery; only the separately approved worker executes it.
+  // Include every logical role and the retained root-analysis helper profiles.
   assert.deepEqual(
     inputFiles.filter((file) =>
       file.startsWith('packages/headless-codex/harness/analysis/agents/'),
     ),
     [
+      'packages/headless-codex/harness/analysis/agents/operations-specialist.md',
       'packages/headless-codex/harness/analysis/agents/rca-specialist-model-eval.toml',
       'packages/headless-codex/harness/analysis/agents/rca-specialist.md',
       'packages/headless-codex/harness/analysis/agents/rca-specialist.toml',
+      'packages/headless-codex/harness/analysis/agents/recovery-specialist.md',
       'packages/headless-codex/harness/analysis/agents/report-specialist-model-eval.toml',
       'packages/headless-codex/harness/analysis/agents/report-specialist.md',
       'packages/headless-codex/harness/analysis/agents/report-specialist.toml',
+      'packages/headless-codex/harness/analysis/agents/root-rca-specialist.md',
+      'packages/headless-codex/harness/analysis/agents/root-report-specialist.md',
     ],
   );
   assert.ok(

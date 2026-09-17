@@ -72,7 +72,7 @@ class AppExecutionContainer(ExecutionContainer):
                 DynamoDbExecutionStore,
             )
 
-            self._execution_store = DynamoDbExecutionStore(self.dynamodb_client)
+            self._execution_store = DynamoDbExecutionStore(self.dynamodb_client, s3_client=self.s3_client)
         return self._execution_store
 
     @property

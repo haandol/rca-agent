@@ -850,7 +850,11 @@ class DynamoDbSessionStore(SessionStorePort):
         except (TypeError, ValueError):
             return SessionClaim(ClaimDisposition.CONTENDED)
 
-        if state in _DEDUPE_STATES:
+        finalized_parts = (
+            existing.get("workflow", {}).get("S") == "recovery-first-v1"
+            and existing.get("analysis_parts_finalized", {}).get("BOOL") is True
+        )
+        if state in _DEDUPE_STATES or (state == "FAILED" and finalized_parts):
             return SessionClaim(
                 ClaimDisposition.TERMINAL_DUPLICATE,
                 previous_claim,
@@ -862,6 +866,9 @@ class DynamoDbSessionStore(SessionStorePort):
             return SessionClaim(ClaimDisposition.CONTENDED)
         if previous_message_id is not None and previous_message_id != message_id:
             return SessionClaim(ClaimDisposition.CONTENDED)
+
+        if existing.get("workflow", {}).get("S") == "recovery-first-v1":
+            item["workflow"] = existing["workflow"]
 
         now_epoch = int(time.time())
         condition = f"#st = :previous_state AND {_AVAILABLE_SIDE_EFFECT_LEASE_CONDITION}"
@@ -1092,7 +1099,8 @@ class DynamoDbSessionStore(SessionStorePort):
             ConsistentRead=True,
             ProjectionExpression=(
                 "#state, claim_token, playbook_index_status, completion_playbook, "
-                "completion_playbook_metric_name, completion_notification_status, completion_notification"
+                "completion_playbook_metric_name, completion_notification_status, completion_notification, "
+                "workflow, analysis_parts_finalized"
             ),
             ExpressionAttributeNames={"#state": "state"},
         )
@@ -1118,6 +1126,8 @@ class DynamoDbSessionStore(SessionStorePort):
             rca_id=rca_id,
             state=item.get("state", {}).get("S", RcaSessionState.FAILED.value),
             claim_token=item.get("claim_token", {}).get("S", ""),
+            workflow=item.get("workflow", {}).get("S", ""),
+            analysis_parts_finalized=item.get("analysis_parts_finalized", {}).get("BOOL") is True,
             playbook_index_status=item.get("playbook_index_status", {}).get("S", ""),
             playbook=playbook,
             playbook_metric_name=item.get("completion_playbook_metric_name", {}).get("S", ""),
@@ -1152,6 +1162,7 @@ class DynamoDbSessionStore(SessionStorePort):
             raise
 
     def mark_completion_notified(self, rca_id: str, *, claim_token: str | None = None) -> bool:
+        """Settle notification delivery for completed RCA or durably finalized failed parts, never a crash."""
         if not self._enabled or not claim_token:
             return False
         try:
@@ -1160,11 +1171,19 @@ class DynamoDbSessionStore(SessionStorePort):
                 Key=_session_key(rca_id),
                 UpdateExpression=("SET completion_notification_status = :sent, completion_notified_at = :now"),
                 ConditionExpression=(
-                    "#state = :completed AND claim_token = :claim AND completion_notification_status = :pending"
+                    "(#state = :completed OR (#state = :failed AND #workflow = :workflow AND #finalized = :true)) "
+                    "AND claim_token = :claim AND completion_notification_status = :pending"
                 ),
-                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeNames={
+                    "#state": "state",
+                    "#workflow": "workflow",
+                    "#finalized": "analysis_parts_finalized",
+                },
                 ExpressionAttributeValues={
                     ":completed": {"S": RcaSessionState.COMPLETED.value},
+                    ":failed": {"S": RcaSessionState.FAILED.value},
+                    ":workflow": {"S": "recovery-first-v1"},
+                    ":true": {"BOOL": True},
                     ":pending": {"S": "PENDING"},
                     ":claim": {"S": claim_token},
                     ":sent": {"S": "SENT"},

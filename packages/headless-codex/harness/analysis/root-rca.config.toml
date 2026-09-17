@@ -1,0 +1,103 @@
+model = "{{CODEX_MODEL}}"
+model_provider = "{{CODEX_MODEL_PROVIDER}}"
+model_reasoning_effort = "{{CODEX_REASONING_EFFORT}}"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+# Build the initial tool catalog after MCP startup, not the optional 1-second grace.
+mcp_optional_startup_grace_ms = 0
+
+[mcp_servers.aws-knowledge]
+required = false
+command = "fastmcp"
+args = ["run", "https://knowledge-mcp.global.api.aws"]
+enabled_tools = ["aws___search_documentation", "aws___read_documentation"]
+default_tools_approval_mode = "approve"
+env_vars = ["AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.aws-knowledge.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.cloudwatch]
+required = true
+command = "uvx"
+args = ["awslabs.cloudwatch-mcp-server"]
+enabled_tools = ["get_active_alarms", "get_alarm_history", "get_metric_data", "describe_log_groups", "execute_log_insights_query", "get_logs_insight_query_results", "execute_cwl_insights_batch"]
+default_tools_approval_mode = "approve"
+env_vars = ["AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "UV_CACHE_DIR", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_OFFLINE"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.cloudwatch.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.cloudtrail]
+required = true
+command = "uvx"
+args = ["awslabs.cloudtrail-mcp-server"]
+enabled_tools = ["lookup_events"]
+default_tools_approval_mode = "approve"
+env_vars = ["AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "UV_CACHE_DIR", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_OFFLINE"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.cloudtrail.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+
+[mcp_servers.github]
+required = false
+command = "github-mcp-server"
+args = ["stdio"]
+enabled_tools = ["get_file_contents", "get_commit", "list_commits", "search_code", "pull_request_read"]
+default_tools_approval_mode = "approve"
+env_vars = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.github.env]
+GITHUB_READ_ONLY = "1"
+GITHUB_TOOLSETS = "repos,pull_requests"
+
+[mcp_servers.rca-progress]
+required = true
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/mcp_server.py:mcp"]
+enabled_tools = ["save_analysis_artifact", "inspect_ecs_task_control"]
+default_tools_approval_mode = "approve"
+env_vars = ["RCA_EXECUTION_TOKEN", "RCA_SESSION_ID", "RCA_CLAIM_TOKEN", "RCA_ATTEMPT", "DYNAMODB_TABLE_NAME", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.rca-progress.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+RCA_ECS_CONTROL_DISCOVERY = "1"
+RCA_EXECUTION_TOKEN = "{{RCA_EXECUTION_TOKEN}}"
+RCA_SESSION_ID = "{{RCA_SESSION_ID}}"
+RCA_CLAIM_TOKEN = "{{RCA_CLAIM_TOKEN}}"
+RCA_ATTEMPT = "{{RCA_ATTEMPT}}"
+
+[mcp_servers.analysis-context]
+required = true
+command = "fastmcp"
+args = ["run", "{{PACKAGE_ROOT}}/src/headless_codex/analysis_parts_mcp_server.py:code_preview"]
+enabled_tools = ["read_analysis_context"]
+default_tools_approval_mode = "approve"
+env_vars = ["RCA_EXECUTION_TOKEN", "RCA_SESSION_ID", "RCA_CLAIM_TOKEN", "RCA_ATTEMPT", "DYNAMODB_TABLE_NAME", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.analysis-context.env]
+FASTMCP_LOG_LEVEL = "ERROR"
+RCA_EXECUTION_TOKEN = "{{RCA_EXECUTION_TOKEN}}"
+RCA_SESSION_ID = "{{RCA_SESSION_ID}}"
+RCA_CLAIM_TOKEN = "{{RCA_CLAIM_TOKEN}}"
+RCA_ATTEMPT = "{{RCA_ATTEMPT}}"
+
+[model_providers.amazon-bedrock-runtime]
+base_url = "{{BEDROCK_BASE_URL}}"
+
+[model_providers.amazon-bedrock-runtime.auth]
+command = "python"
+args = ["-m", "headless_codex.bedrock_token"]

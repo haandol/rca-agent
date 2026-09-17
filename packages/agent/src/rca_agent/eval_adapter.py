@@ -504,6 +504,9 @@ def main(argv: list[str] | None = None) -> None:
     with _stdout_reserved_for_the_result() as result_stream:
         # 평가는 큐를 소비하지 않으므로 queue_url 은 사용되지 않는다.
         container = EvalAppContainer("")
+        from rca_agent.services.analysis_roles import source_artifacts_from_observations
+
+        container.source_artifacts = source_artifacts_from_observations(scenario.get("observations") or [])
         orchestrator = PipelineOrchestrator(
             container,
             precollected_evidence=build_precollected_evidence(scenario.get("observations") or []),
@@ -525,7 +528,25 @@ def main(argv: list[str] | None = None) -> None:
         if notification is None:
             _fail(f"session completed without a result payload: rca_id={rca_id}")
 
-        report_markdown = _report_markdown(container, notification)
+        from rca_agent.ports.dto.models import Playbook
+
+        parts = getattr(container, "analysis_part_store", None)
+        recovery_detail = None
+        root_payload = None
+        if parts is not None:
+            root_part = parts.read_part(rca_id, "root_cause")
+            recovery_part = parts.read_part(rca_id, "recovery")
+            if root_part and root_part["payload"]:
+                root_payload = root_part["payload"]
+            if recovery_part and recovery_part["payload"]:
+                book = recovery_part["payload"].get("result", {}).get("playbook")
+                if book and book.get("rca_id") == rca_id:
+                    recovery_detail = Playbook.model_validate(book)
+        report_markdown = (
+            root_payload.get("result", {}).get("report_markdown", "")
+            if root_payload is not None
+            else _report_markdown(container, notification)
+        )
         validation_hypotheses = _validation_hypotheses(container, notification)
         corpus = "\n".join(
             (
@@ -547,7 +568,12 @@ def main(argv: list[str] | None = None) -> None:
             "evidenceIds": _evidence_ids(corpus, scenario),
             "competingCauseJudgments": _competing_cause_judgments(scenario, validation_hypotheses) or [],
             "artifacts": _stages_reached(notification),
-            "remediation": _remediation(_recorded_playbook_detail(handoff, notification, rca_id=rca_id), notification),
+            "remediation": _remediation(
+                recovery_detail
+                if parts is not None
+                else _recorded_playbook_detail(handoff, notification, rca_id=rca_id),
+                notification,
+            ),
         }
         result_stream.write(json.dumps(payload, ensure_ascii=False))
 

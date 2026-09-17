@@ -158,13 +158,21 @@ export interface OutcomeInput {
   state: string;
   readiness?: string;
   executionState?: string;
+  workflow?: string;
 }
 
 export function outcomeOf({
   state,
   readiness = '',
   executionState = '',
+  workflow = '',
 }: OutcomeInput): Outcome {
+  if (workflow === 'recovery-first-v1') {
+    if (executionState === 'RESOLVED') return 'RESOLVED';
+    if (['UNRESOLVED', 'FAILED', 'CANCELLED'].includes(executionState))
+      return 'UNRESOLVED';
+    if (readiness === 'AWAITING_APPROVAL') return 'AWAITING';
+  }
   if (!isTerminalState(state)) return 'RUNNING';
   if (state === 'OUTDATED') return 'SKIPPED';
   if (state === 'FAILED' || state === 'CANCELLED') return 'BROKEN';
@@ -232,4 +240,30 @@ export function stoppedAtLabel(engine: string, stoppedAt: string): string {
   if (at < 0) return '';
   const label = STATE_LABEL[stoppedAt] || stoppedAt;
   return `${label}에서 멈춤 · ${at + 1}/${track.length}단계`;
+}
+
+/** Count each incident once when a progressive workflow contributes an outcome before global completion. */
+export function countSessionOutcomes(
+  byState: Record<string, number>,
+  entries: (Partial<OutcomeInput> & {
+    readiness?: string;
+    executionState?: string;
+  })[],
+): Map<Outcome, number> {
+  const tally = new Map<Outcome, number>();
+  const represented = new Map<string, number>();
+  for (const entry of entries) {
+    const state = entry.state ?? 'COMPLETED';
+    represented.set(state, (represented.get(state) ?? 0) + 1);
+    const outcome = outcomeOf({ ...entry, state });
+    tally.set(outcome, (tally.get(outcome) ?? 0) + 1);
+  }
+  for (const [state, count] of Object.entries(byState)) {
+    if (state === 'COMPLETED') continue;
+    const remaining = Math.max(0, count - (represented.get(state) ?? 0));
+    if (!remaining) continue;
+    const outcome = outcomeOf({ state });
+    tally.set(outcome, (tally.get(outcome) ?? 0) + remaining);
+  }
+  return tally;
 }

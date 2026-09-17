@@ -731,6 +731,8 @@ class Demo:
             "success_evidence_event",
             "success_count_field",
             "success_semantics",
+            "input_contract",
+            "input_contract_sha256",
         }
         result = []
         for task, manifest in zip(tasks, manifests, strict=True):
@@ -746,7 +748,7 @@ class Demo:
                 (
                     start,
                     end,
-                    '{ $.event = "write_completed" || $.event = "db_schema_snapshot" }',
+                    '{ $.event = "write_completed" || $.event = "db_schema_snapshot" || $.event = "input_contract_observed" }',
                 ),
             ):
                 response = self.aws(
@@ -764,6 +766,7 @@ class Demo:
                     )
                 events.extend(response.get("events", []))
             chosen = {}
+            input_events = []
             for event in events:
                 message = json.loads(event["message"])
                 kind = message.get("event")
@@ -774,9 +777,10 @@ class Demo:
                     "db_schema_snapshot",
                     "write_contract",
                     "write_accounting",
+                    "input_contract_observed",
                 }:
                     raise RuntimeError("unexpected normal diagnostic event")
-                if kind in {"write_completed", "db_schema_snapshot"} and stamp < start:
+                if kind in {"write_completed", "db_schema_snapshot", "input_contract_observed"} and stamp < start:
                     continue
                 if (
                     event.get("logStreamName") != stream
@@ -848,13 +852,17 @@ class Demo:
                     or message.get("completion_semantics") != "committed_rows"
                 ):
                     raise RuntimeError("committed normal write not proven")
-                chosen[kind] = {
+                captured = {
                     "message": message,
                     "timestamp": stamp,
                     "event_id": event["eventId"],
                     "log_group": group,
                     "log_stream": stream,
                 }
+                if kind == "input_contract_observed":
+                    input_events.append(captured)
+                else:
+                    chosen[kind] = captured
             if set(chosen) != {
                 "source_manifest",
                 "write_completed",
@@ -871,6 +879,16 @@ class Demo:
             ):
                 raise RuntimeError("normal INSERT fingerprints disagree")
             result.extend(chosen.values())
+            # Optional: preserve only the actual input receipt for the selected
+            # committed request. Absence keeps old baselines valid, not early READY.
+            write = chosen["write_completed"]
+            result.extend(
+                event
+                for event in input_events
+                if event["message"].get("request_id")
+                and event["message"]["request_id"] == write["message"].get("request_id")
+                and event["timestamp"] <= write["timestamp"]
+            )
         if len(result) > 100:
             raise RuntimeError("normal observation count exceeds reader budget")
         return result

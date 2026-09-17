@@ -689,7 +689,10 @@ test('approval persistence precedes queue publication and carries the full worke
   assert.match(source, /executionReservationMatches/);
   assert.ok(
     source.indexOf('await reserveExecution') <
-      source.indexOf('new SendMessageCommand'),
+      source.indexOf(
+        'new SendMessageCommand',
+        source.indexOf('await reserveExecution'),
+      ),
     'the active reservation is authoritative before queue publication',
   );
   for (const field of [
@@ -742,7 +745,7 @@ test('a person deciding to approve can tell a proven procedure from a draft', as
   );
 });
 
-test('execution history is scoped to the report engine', async () => {
+test('legacy execution history keeps its report-engine filter while current requests stay explicit', async () => {
   const [historyApi, reportPage, sessionApi] = await Promise.all([
     readRepositoryFile(
       'packages/dashboard/server/api/executions/[rcaId].get.ts',
@@ -756,7 +759,7 @@ test('execution history is scoped to the report engine', async () => {
   assert.match(
     historyApi,
     /execution\.engine === engine/,
-    'history excludes attempts belonging to the other analysis engine',
+    'legacy history retains the engine-filter branch',
   );
   assert.match(
     reportPage,
@@ -769,7 +772,7 @@ test('execution history is scoped to the report engine', async () => {
   assert.match(
     sessionApi,
     /execution\.engine === engine/,
-    'the report summary cannot be labelled by the other engine execution',
+    'legacy session summaries retain the engine-filter branch',
   );
 });
 
@@ -974,7 +977,7 @@ test('the report page gates approval on a confirmed procedure', async () => {
   assert.match(source, /:disabled="approving \|\| !canApprove \|\| !reviewed"/);
   assert.match(
     source,
-    /async function approveExecution\(\) \{\s*if \(!canApprove\.value \|\| !reviewed\.value\)/,
+    /async function approveExecution\(\) \{[\s\S]*?if \(!canApprove\.value \|\| !reviewed\.value\)/,
   );
 });
 
@@ -1140,7 +1143,7 @@ test('approval binds the inspected digest and retains its UUID only for the same
     'executionError',
     'playbookError',
     'id',
-    `${code}\nreturn { canApprove, reviewed, reviewedDigest, approveExecution, reloadPlanForReview, approvalError };`,
+    `const isThreePart = ref(false); const partsError = ref(null); const recoveryCurrent = ref(false); const reviewedRecoveryRevision = ref('');\n${code}\nreturn { canApprove, reviewed, reviewedDigest, approveExecution, reloadPlanForReview, approvalError };`,
   )(
     computed,
     ref,

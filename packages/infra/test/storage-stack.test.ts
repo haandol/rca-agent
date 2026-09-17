@@ -45,6 +45,12 @@ test('evidence bucket blocks public access and retains encrypted evidence', () =
           Status: 'Enabled',
           ExpirationInDays: 60,
         }),
+        Match.objectLike({
+          Id: 'expire-analysis-parts-60d',
+          Prefix: 'analysis-parts/',
+          Status: 'Enabled',
+          ExpirationInDays: 60,
+        }),
       ]),
     },
   });

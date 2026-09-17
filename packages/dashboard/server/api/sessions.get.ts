@@ -112,14 +112,11 @@ export default defineEventHandler(async (event) => {
   const sessions = await Promise.all(
     merged.map(async ({ item, engine }) => {
       const rcaId = rcaIdFromPk(item.PK as string);
-      const partition = await ddb.send(
-        new QueryCommand({
-          TableName: config.dynamodbTableName,
-          KeyConditionExpression: 'PK = :pk',
-          ExpressionAttributeValues: { ':pk': rcaPk(rcaId) },
-        }),
+      const partitionItems = await readAnalysisPartition(
+        ddb,
+        config.dynamodbTableName,
+        rcaId,
       );
-      const partitionItems = partition.Items ?? [];
 
       // Executions have their own lifecycle, so they are attached to the row
       // rather than folded into its state: an execution failure must not make a
@@ -127,8 +124,15 @@ export default defineEventHandler(async (event) => {
       const executions = partitionItems
         .filter((entry) => isExecutionItem((entry.SK as string) || ''))
         .map(readExecution)
-        .filter((execution) => execution.engine === engine);
-      const execution = latestExecution(executions);
+        .filter((execution) =>
+          hasAnalysisParts(partitionItems, engine)
+            ? execution.rcaId === rcaId && isAllowedEngine(execution.engine)
+            : execution.engine === engine,
+        );
+      const execution = latestExecution(
+        executions,
+        hasAnalysisParts(partitionItems, engine),
+      );
 
       // A terminal state overwrites the stage it happened in, so how far a
       // stopped run got is only recoverable from its spans.
@@ -142,15 +146,33 @@ export default defineEventHandler(async (event) => {
         .filter((span) => span.engine === engine);
 
       const state = (item.state as string) || 'UNKNOWN';
-      const stepCount = countExecutionSteps(partitionItems, engine);
+      const workflow = hasAnalysisParts(partitionItems, engine)
+        ? 'recovery-first-v1'
+        : '';
+      const recovery = workflow
+        ? await recoveryReadiness(
+            partitionItems,
+            rcaId,
+            engine,
+            useS3(),
+            config.s3EvidenceBucket,
+          )
+        : null;
+      const stepCount =
+        recovery?.stepCount ?? countExecutionSteps(partitionItems, engine);
       const readiness = readinessOf({
-        state,
+        state: workflow
+          ? recovery?.ready || executions.length
+            ? 'COMPLETED'
+            : state
+          : state,
         stepCount,
         hasExecution: executions.length > 0,
       });
 
       return {
         rcaId,
+        workflow,
         state,
         readiness,
         readinessLabel: READINESS_LABEL[readiness],
@@ -171,6 +193,7 @@ export default defineEventHandler(async (event) => {
         updatedAt: (item.updated_at as string) || '',
         engine,
         executionState: execution?.state ?? '',
+        executionEngine: execution?.engine ?? '',
         executionStateLabel: execution?.stateLabel ?? '',
         executionId: execution?.executionId ?? '',
         executionAttempts: executions.length,

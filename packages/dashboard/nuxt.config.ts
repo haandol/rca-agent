@@ -21,6 +21,8 @@ export default defineNuxtConfig({
     dynamodbTableName:
       process.env.DYNAMODB_TABLE_NAME || 'RcaAgentDevRcaSession',
     s3ReportBucket: process.env.S3_REPORT_BUCKET || 'rca-agent-dev-evidence',
+    s3EvidenceBucket:
+      process.env.S3_EVIDENCE_BUCKET || 'rca-agent-dev-evidence',
     s3VectorBucketName: process.env.S3_VECTOR_BUCKET_NAME || '',
     s3VectorRegion: process.env.S3_VECTOR_REGION || 'us-east-1',
     s3VectorPlaybookIndex: process.env.S3_VECTOR_PLAYBOOK_INDEX || 'playbook',

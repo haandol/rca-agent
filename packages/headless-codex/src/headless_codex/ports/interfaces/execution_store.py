@@ -44,6 +44,7 @@ class ExecutionTarget:
     playbook: dict
     alarm_data: dict = field(default_factory=dict)
     report_s3_key: str = ""
+    source_part: str = ""
 
     @property
     def metric_name(self) -> str:
@@ -85,6 +86,8 @@ class ExecutionStorePort(ABC):
         *,
         report_s3_key: str,
         playbook: dict,
+        execution_id: str = "",
+        claim_token: str = "",
     ) -> ExecutionTarget: ...
 
     @abstractmethod

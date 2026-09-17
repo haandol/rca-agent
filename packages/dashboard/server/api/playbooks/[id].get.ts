@@ -41,14 +41,39 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Session not found',
     });
   }
-  if (session.state !== 'COMPLETED') {
+  const newWorkflow = hasAnalysisParts(items, engine);
+  let recovery: Awaited<ReturnType<typeof readReadyRecovery>> | undefined;
+  if (newWorkflow) {
+    try {
+      recovery = await readReadyRecovery(
+        items,
+        id,
+        engine,
+        useS3(),
+        config.s3EvidenceBucket,
+      );
+    } catch (error) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          error instanceof Error ? error.message : '정상화 원본 조회 실패',
+      });
+    }
+  }
+  if (!newWorkflow && session.state !== 'COMPLETED') {
     throw createError({
       statusCode: 409,
       statusMessage: '분석이 완료되지 않아 플레이북을 조회할 수 없습니다.',
     });
   }
 
-  const resolved = resolveCurrentPlaybook(items, session, engine);
+  const resolved = recovery
+    ? {
+        playbook: recovery.playbook,
+        sourceItem: recovery.record,
+        source: 'recovery',
+      }
+    : resolveCurrentPlaybook(items, session, engine);
   if (!resolved) {
     if (
       items.some(
@@ -71,6 +96,9 @@ export default defineEventHandler(async (event) => {
   const source = resolved.sourceItem;
 
   return {
+    source_mode: recovery ? 'recovery' : 'legacy',
+    recovery_revision: recovery?.revision ?? '',
+    recovery_payload_sha256: recovery?.record.payload_sha256 ?? '',
     rcaId: id,
     engine,
     spanStatus: (source.span_status as string) || 'UNKNOWN',
@@ -85,7 +113,8 @@ export default defineEventHandler(async (event) => {
     severity_criteria: readText(playbook.severity_criteria),
     verification_steps: readStringList(playbook.verification_steps),
     execution_steps: readableExecutionSteps(playbook),
-    rollback_context: playbook.rollback_context ?? null,
+    rollback_context:
+      (playbook.rollback_context as Record<string, unknown> | null) ?? null,
     executable: validation.valid,
     validationError: validation.reason,
     temporary_mitigation: readText(playbook.temporary_mitigation),

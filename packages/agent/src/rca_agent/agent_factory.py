@@ -262,3 +262,24 @@ def create_playbook_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
         model = create_planning_model()
     return Agent(model=model, system_prompt=PLAYBOOK_SYSTEM_PROMPT)
+
+
+def create_recovery_agent(*, model=None) -> Agent:
+    """Generate an early private rollback plan without execution or repository write tools."""
+    from rca_agent.prompts.analysis_parts import RECOVERY_SYSTEM_PROMPT
+
+    return Agent(model=model or create_execution_model(), system_prompt=RECOVERY_SYSTEM_PROMPT)
+
+
+def create_code_preview_agent(*, model=None) -> Agent:
+    """Generate a source-checked preview only; there is no GitHub publication capability."""
+    from rca_agent.prompts.analysis_parts import CODE_PREVIEW_SYSTEM_PROMPT
+
+    return Agent(model=model or create_planning_model(), system_prompt=CODE_PREVIEW_SYSTEM_PROMPT)
+
+
+def create_operations_agent(*, model=None) -> Agent:
+    """Produce prevention proposals independently of runbook approval and execution."""
+    from rca_agent.prompts.analysis_parts import OPERATIONS_SYSTEM_PROMPT
+
+    return Agent(model=model or create_planning_model(), system_prompt=OPERATIONS_SYSTEM_PROMPT)

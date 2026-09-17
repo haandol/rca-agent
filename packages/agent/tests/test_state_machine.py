@@ -469,6 +469,7 @@ class TestPipelineFinalizeBeforeReport:
         }
 
         container = MagicMock()
+        container.analysis_part_store = None
         container.report_store.save.return_value = "reports/rca-1.md"
         container.session_store.claim_incident.side_effect = lambda alarm, **_: IncidentClaim(
             IncidentClaimDisposition.PROCEED,

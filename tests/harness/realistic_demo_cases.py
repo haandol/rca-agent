@@ -872,6 +872,51 @@ class DemoTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "same-load invariant"):
                     self.runner.assert_scenario_environment(candidate)
 
+    def test_optional_input_contract_is_preserved_only_for_the_committed_request(self):
+        """Old baselines stay valid; optional input proof must join the selected write."""
+        original = self.runner.aws
+        matching = True
+
+        def with_input(service, operation, **payload):
+            response = original(service, operation, **payload)
+            if operation != "filter-log-events" or "input_contract_observed" not in payload["filterPattern"]:
+                return response
+            write = next(
+                event for event in response["events"]
+                if json.loads(event["message"])["event"] == "write_completed"
+            )
+            message = json.loads(write["message"])
+            message["request_id"] = "a" * 32
+            write["message"] = json.dumps(message)
+            receipt = copy.deepcopy(write)
+            receipt["eventId"] = "input"
+            receipt["message"] = json.dumps({
+                "event": "input_contract_observed", "observed_at": message["observed_at"],
+                "request_id": ("a" if matching else "b") * 32, "operation": "ingest", "count": 1,
+                "input_contract": {"format": "producer-observed-test"},
+                "input_contract_sha256": "d" * 64,
+            })
+            response["events"].append(receipt)
+            return response
+
+        self.runner.aws = with_input
+        self.plan()
+        planned = self.journal.snapshot
+        # Capture passes through metadata; the analysis server, not the demo,
+        # decides whether its descriptor/source hashes prove compatibility.
+        inputs = [
+            e for e in planned["normalObservations"]
+            if e["message"]["event"] == "input_contract_observed"
+        ]
+        self.assertEqual(len(inputs), 1)
+        self.assertEqual(inputs[0]["message"]["input_contract_sha256"], "d" * 64)
+        matching = False
+        definitions = self.journal.snapshot["taskDefinition"]["taskDefinition"]
+        observations = self.runner.normal_observations(
+            definitions, self.cloud.running, "healthcare", planned["metrics"], planned["sourceManifests"]
+        )
+        self.assertFalse(any(e["message"]["event"] == "input_contract_observed" for e in observations))
+
     def test_baseline_wire_partial_put_and_lost_response(self):
         """Only canonical downloaded content proves an immutable PUT, even with no receipt."""
         self.cloud.put_failure = True

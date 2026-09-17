@@ -60,6 +60,13 @@ class CompletionHandoff:
     playbook_metric_name: str = ""
     notification_status: str = ""
     notification: dict | None = None
+    workflow: str = ""
+    analysis_parts_finalized: bool = False
+
+    @property
+    def finalized_failure(self) -> bool:
+        """Distinguish a durable three-part outcome from a retryable analysis crash."""
+        return self.state == "FAILED" and self.workflow == "recovery-first-v1" and self.analysis_parts_finalized
 
 
 class SessionCancelledError(RuntimeError):

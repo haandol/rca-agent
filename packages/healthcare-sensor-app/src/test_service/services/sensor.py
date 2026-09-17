@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from test_service.ports.dto.sensor import SensorReadingEntity
 from test_service.ports.interfaces.sensor_reading_repository import SensorReadingRepositoryPort
 from test_service.services.db_observability import operation_context
+from test_service.services.input_contract import observe_input
 from test_service.services.symptom_metrics import SymptomMetrics
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ class SensorService:
                 )
 
         with operation_context("ingest"):
+            observe_input(readings)
             saved = await self._repository.save_batch(entities)
 
         self._record_alert_delays(abnormal_entities)

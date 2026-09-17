@@ -9,8 +9,9 @@ Codex CLI를 Amazon Bedrock Runtime Global Inference Profile에 연결한 RCA
 | 분석 | `headless_codex.main` | 알람 큐 | **읽기 전용** |
 | 실행 | `headless_codex.execution_main` | 실행 요청 큐 (사용자 승인) | 쓰기 |
 
-분석 워커는 Codex CLI로 RCA → Report 전문 에이전트를 호출해 플레이북을 포함한 단일 리포트를
-만들고 종료합니다. 복구를 수행하지 않습니다. 실행 워커는 사용자가 대시보드에서 승인한
+분석 워커는 recovery → root_cause → operations 세 파트를 순차 실행합니다.
+root_cause 안에서는 기존 RCA → Report 전문 프로세스를 유지하며 네 번째 표시 파트를 만들지 않습니다.
+각 파트 원문을 먼저 보존하고, 세 파트 뒤 기존 공개 지식 비교와 전체 보고서 게시를 수행합니다. 복구를 수행하지 않습니다. 실행 워커는 사용자가 대시보드에서 승인한
 플레이북 절차를 수행하고, 해결이 확정되면 회고로 절차를 교정합니다.
 
 ## Tech Stack
@@ -203,3 +204,40 @@ docker build -t headless-codex .  # Build container
 
 `EXECUTION_CLAIM_SECONDS` 는 `EXECUTION_TIMEOUT_SECONDS + 900` 미만으로 내려가지
 않는다. claim 이 최악 실행 시간보다 짧으면 실행 중인 요청이 재전달되어 중복 실행된다.
+
+## 정상화 우선 분석 구현
+
+공통 wire는 `docs/analysis-parts-contract.md`에 있다. `services/analysis_parts.py`는 두 엔진의
+공유 저장 계약이며 별도 소유자가 미러링한다. incident는 엔진 중립 키로 먼저 읽고, 이미 있으면
+원래 사고 입력을 재사용한다. 현재 승인 적격성은 별도로 갱신하며 원래 incident를 덮어쓰지 않는다.
+정상화 런북은 `recovery_observation`의 실제 서버 관측과 입력 호환성 증거에서 서버가 구성한다.
+모델은 ROLLBACK/UNAVAILABLE을 선택할 수 있지만 명령·verification·READY를 직접 제공하지 못한다.
+서버 검증과 모델 ROLLBACK이 모두 있을 때만 조기 승인용 사본을 제공한다. 모델이 거절하거나
+근거가 없으면 실행 명령을 제공하지 않는다. 분석 역할은 서비스를 변경하지 않는다.
+
+세 역할은 전용 산출물 도구를 사용한다. 같은 결과 재저장은 멱등이며 다른 내용으로 기존 결과를
+덮어쓰지 않는다. 각 결과의 영속화 후 다음 역할을 시작하며 실행 승인·완료를 기다리지 않는다.
+프로세스/provider의 명시적 실패에만 같은 역할을 한 번 재시도하고 같은 token과 원래 deadline을
+유지한다. 진행 중 호출과 성공 종료 뒤 산출물 누락은 이 재시도 사유가 아니다. 소진 뒤 실패를
+보존하고 가능한 다음 파트로 진행한다. 공통 저장·소유권 상실은 전체를 중단한다.
+
+production RCA는 기존 읽기 전용 증거 도구를 유지한다. 원래 cutoff·배포 소스를 기준으로 읽고
+복구 뒤 현재 관측은 별도로 취급한다. 실제 GitHub 응답의 commit 시각·blob 바이트·배포 또는
+제공 스냅샷 근거를 확인한 소스만 코드 PR 미리보기에 사용한다. 정상 baseline을 결함 소스로
+바꾸거나 빈 diff를 수정안으로 제공하지 않는다. PR은 미리보기이며 GitHub 쓰기 권한은 없다.
+
+Operations의 `read_ci_configuration`은 연결된 저장소 또는 설정된 GITHUB_REPOSITORY의 명시적
+CI/control 파일을 GET으로만 읽는다. GITHUB_PERSONAL_ACCESS_TOKEN은 환경변수 이름으로 전달하며
+값을 설정/로그에 쓰지 않는다. 현재 CI snapshot은 incident/deployed source와 별도로 보존하고,
+실제 CI 읽기 참조 없는 OBSERVED는 UNVERIFIED로 처리한다. 제안 검증은 NOT_RUN이며 CI를 실행하지 않는다.
+model-eval에서는 제공된 관측과 로컬 저장소를 사용하고 live CI/제어 도구를 노출하지 않는다.
+
+조기 승인 실행은 예약의 source_alarm_name과 source_incident_s3_key/sha256/engine 참조 및 기존 불변
+승인 사본을 읽는다. incident는 검증한 원본 바이트 그대로 승인 트랜잭션 전에
+approvals/<rca_id>/<approval_id>/incident.json에 복사한다. 워커는 설정된 증거 버킷의
+승인 경로·해시·RCA·원래 엔진을 검증하고 분석 원본 삭제 후에도 이 승인 사본을 읽는다.
+알람 원문은 S3에만 보존하여 DynamoDB에 큰 JSON을 중복 저장하지 않는다.
+전체 Trigger·AlarmDescription·알 수 없는 알람 필드는 보존하며 최신 parent/part로 바꾸지 않는다.
+실행 회고는 기존 RESOLVED 조건을 유지한다. 조기 비공개 런북의 회고 diff는 보존하지만 공개 기준
+승인 권위가 없으면 공개 교정/VERIFIED 승격을 하지 않고 후속 불가 사유를 기록한다.
+이 결과가 정상화나 원인·운영 분석을 취소하지 않는다.

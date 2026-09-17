@@ -430,7 +430,9 @@ def test_only_production_rca_catalogs_enable_control_discovery(tmp_path, profile
     config_path = prepare_codex_home(home, profile)
     for path in [config_path, *home.glob("agents/*.toml")]:
         config = tomllib.loads(path.read_text())
-        enabled = profile == "analysis-rca" or (profile == "analysis" and path.name == "rca-specialist.toml")
+        enabled = profile in {"analysis-rca", "analysis-root-rca"} or (
+            profile == "analysis" and path.name == "rca-specialist.toml"
+        )
         server = config.get("mcp_servers", {}).get("rca-progress", {})
         assert ("inspect_ecs_task_control" in server.get("enabled_tools", [])) == enabled
         assert (server.get("env", {}).get("RCA_ECS_CONTROL_DISCOVERY") == "1") == enabled

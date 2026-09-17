@@ -8,7 +8,7 @@
         {
           "path": "docs/adr/agent/0001-initial-scoping-and-report-similarity.md",
           "status": "Proposed",
-          "summary": "900초 신규 작업 예산 안에서 얕은 스코핑과 정상 기준을 검증하며 활성 응답을 시간으로 자르지 않고 부분 핵심 사실을 보존한다."
+          "summary": "기존 시작 예산과 정상 기준 검증 안에서 조기 정상화 전 장애 원본·현재 배포·입력 호환성을 검증·고정한다."
         },
         {
           "path": "docs/adr/agent/0002-hypothesis-tree-lifecycle.md",
@@ -22,13 +22,13 @@
         },
         {
           "path": "docs/adr/agent/0007-rca-report-generation.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "보고서 원문을 보존하면서 요약과 상세 모달로 열람하고, 실제 생성 참고 자료와 현재 런북을 구분해 검토한다."
+          "status": "Proposed",
+          "summary": "정상화 런북을 먼저 공개하고 원인·운영 개선을 실행과 독립적으로 순차 제공하며 각 원본·승인·실행 상태를 분리한다."
         },
         {
           "path": "docs/adr/agent/0008-playbook-generation.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "S3 Vectors로 조회한 게시 지식과 현재 증거를 비교해 생성 출처와 변경 제안을 보존하고, 사용자 반영과 사고별 런북 실행을 분리한다."
+          "status": "Proposed",
+          "summary": "사고별 검증된 조기 롤백 런북과 완료 후 공개 플레이북 지식을 분리하고 개정·승인·원문을 보존한다."
         },
         {
           "path": "docs/adr/agent/0009-notification.md",
@@ -42,8 +42,8 @@
         },
         {
           "path": "docs/adr/agent/0011-cc-headless-prompt-driven-rca.md",
-          "status": "Accepted (2026-08-31)",
-          "summary": "Headless Codex가 전문 에이전트를 오케스트레이션하되 Strands와 같은 서버 소유 분석 상태·판정·완료 계약을 따른다."
+          "status": "Proposed",
+          "summary": "선택된 엔진이 정상화·근본원인·운영 개선 책임을 순차 수행하며 실행과 독립된 단계 원본과 기존 서버 판정을 보존한다."
         },
         {
           "path": "docs/adr/agent/0012-automated-remediation.md",
@@ -53,7 +53,7 @@
         {
           "path": "docs/adr/agent/0014-hierarchical-evidence-session-isolation.md",
           "status": "Proposed",
-          "summary": "Strands SDK의 1800초 수집 시작 예산·활성 응답 보호 위에서 핵심 사실·미시작·재수집·늦은 쓰기 차단을 유지하며 Headless의 기존 강제 기한은 보존한다."
+          "summary": "기존 수집 예산·claim 격리 안에서 정상화 이전 장애 원본을 고정하고 후속 단계·복구 후 관측을 분리한다."
         },
         {
           "path": "docs/adr/agent/0015-hexagonal-architecture.md",
@@ -63,17 +63,17 @@
         {
           "path": "docs/adr/agent/0016-rca-evaluation-test-harness.md",
           "status": "Proposed",
-          "summary": "네 평가 계층을 유지하고 단일 데모를 3회 연속 전체 성공 뒤 사전 확정 10회 중 9회 성공·중대 위반 0건으로 채택하며 두 엔진 전수 승인 전 전역 기준선은 pending으로 둔다."
+          "summary": "네 평가 계층과 전수 승인·데모 채택 기준을 유지하며 조기 정상화 근거·뒤 분석 독립성·불변 승인 사본을 검증한다."
         },
         {
           "path": "docs/adr/agent/0017-playbook-execution-agent.md",
           "status": "Proposed",
-          "summary": "승인 고정과 실행 전체 3600초 강제 기한을 유지하며 배포·지표 대기 각 900초와 실행 도구 1200초를 적용한다. Strands 활성 응답 예외는 적용하지 않는다."
+          "summary": "원인 확정 전에도 서버 검증된 정상 기준·대상·입력 호환성의 고정 롤백만 사람 승인으로 실행하며 기존 기한·불변 사본을 유지한다."
         },
         {
           "path": "docs/adr/agent/0018-playbook-retrospective.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "해결된 실행의 회고가 대응 지식과 런북을 교정하며 바뀐 런북은 초안과 새 승인 대상이고 과거 스냅샷은 보존한다."
+          "status": "Proposed",
+          "summary": "해결된 실행의 증거 기반 교정·승격을 유지하고 실행 없이 진행되는 원인·코드·운영 개선 제안과 분리한다."
         }
       ]
     },
@@ -127,7 +127,7 @@
         {
           "path": "docs/adr/infra/0002-evidence-storage.md",
           "status": "Proposed",
-          "summary": "비교·반영·검색 게시와 60일·90일 보존 계약을 유지하며, 장애 이전 정상 기준을 허용된 S3 영역에 불변 보존하고 지문·실행·서비스 범위를 읽기 검증한다."
+          "summary": "정상화 전 장애 원본과 세 분석 파트의 불변 S3 원문을 보존하고 상태·승인 권위·공개 지식 게시를 분리한다."
         },
         {
           "path": "docs/adr/infra/0003-lambda-cc-headless-stack.md",
@@ -141,8 +141,8 @@
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "RCA 분석·실행·회고 추적과 함께 불변 비교·제안 결과를 조회하고, 정확한 기준 일치에 따른 원자적 반영과 멱등 처리 및 검색 게시 대기·완료를 기록한다."
+          "status": "Proposed",
+          "summary": "세 파트의 경량 상태와 원본 개정·승인 적격을 기록하고 정확한 개정의 조기 승인 예약을 실행 잠금과 조건부로 확정한다."
         },
         {
           "path": "docs/adr/infra/0006-session-recovery-on-restart.md",
@@ -152,7 +152,7 @@
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
           "status": "Proposed",
-          "summary": "단일 실제 저장 컬럼 데모의 확정·승인·고정 두 복구 구간을 유지하며 승인된 시작 예산과 활성 모델 응답 보호·각 900초 복구 대기를 적용한다."
+          "summary": "실제 컬럼 장애에서 검증된 정상화 런북을 우선 공개하고 원인·운영 분석과 승인 실행을 독립 진행하며 실제 복구로 판정한다."
         },
         {
           "path": "docs/adr/infra/0008-playbook-execution-stack.md",

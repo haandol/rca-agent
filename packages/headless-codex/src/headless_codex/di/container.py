@@ -11,6 +11,11 @@ from headless_codex.ports.interfaces.session_store import SessionStorePort
 
 class Container(ABC):
     @property
+    def analysis_part_store(self):
+        """Legacy test/adaptor containers may omit progressive publication; production supplies it explicitly."""
+        return None
+
+    @property
     @abstractmethod
     def session_store(self) -> SessionStorePort: ...
 

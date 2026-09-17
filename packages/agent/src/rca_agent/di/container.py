@@ -19,6 +19,11 @@ class Container(ABC):
         yield
 
     @property
+    def analysis_part_store(self):
+        """Require explicit workflow storage capability; legacy test containers may declare None."""
+        raise NotImplementedError("analysis part storage must be configured explicitly")
+
+    @property
     @abstractmethod
     def session_store(self) -> SessionStorePort: ...
 

@@ -22,6 +22,14 @@ MODEL_EVAL_REPORT_PROFILE = "model-eval-report"
 EXECUTION_PROFILE = "execution"
 RETROSPECTIVE_PROFILE = "retrospective"
 COMPARISON_PROFILE = "comparison"
+ANALYSIS_RECOVERY_PROFILE = "analysis-recovery"
+ANALYSIS_ROOT_RCA_PROFILE = "analysis-root-rca"
+ANALYSIS_ROOT_REPORT_PROFILE = "analysis-root-report"
+ANALYSIS_OPERATIONS_PROFILE = "analysis-operations"
+MODEL_EVAL_RECOVERY_PROFILE = "model-eval-recovery"
+MODEL_EVAL_ROOT_RCA_PROFILE = "model-eval-root-rca"
+MODEL_EVAL_ROOT_REPORT_PROFILE = "model-eval-root-report"
+MODEL_EVAL_OPERATIONS_PROFILE = "model-eval-operations"
 
 _PROFILE_CONFIG = {
     ANALYSIS_PROFILE: Path("analysis/config.toml"),
@@ -33,6 +41,14 @@ _PROFILE_CONFIG = {
     EXECUTION_PROFILE: Path("execution/config.toml"),
     RETROSPECTIVE_PROFILE: Path("retrospective/config.toml"),
     COMPARISON_PROFILE: Path("comparison/config.toml"),
+    ANALYSIS_RECOVERY_PROFILE: Path("analysis/recovery.config.toml"),
+    ANALYSIS_ROOT_RCA_PROFILE: Path("analysis/root-rca.config.toml"),
+    ANALYSIS_ROOT_REPORT_PROFILE: Path("analysis/root-report.config.toml"),
+    ANALYSIS_OPERATIONS_PROFILE: Path("analysis/operations.config.toml"),
+    MODEL_EVAL_RECOVERY_PROFILE: Path("analysis/model-eval-recovery.config.toml"),
+    MODEL_EVAL_ROOT_RCA_PROFILE: Path("analysis/model-eval-root-rca.config.toml"),
+    MODEL_EVAL_ROOT_REPORT_PROFILE: Path("analysis/model-eval-root-report.config.toml"),
+    MODEL_EVAL_OPERATIONS_PROFILE: Path("analysis/model-eval-operations.config.toml"),
 }
 _PROFILE_AGENTS = {
     ANALYSIS_PROFILE: ("rca-specialist.toml", "report-specialist.toml"),
@@ -125,6 +141,14 @@ def prepare_workspace(workspace: Path, profile: str) -> None:
         guidance = HARNESS_ROOT / "analysis" / "agents" / "rca-specialist.md"
     elif profile in {ANALYSIS_REPORT_PROFILE, MODEL_EVAL_REPORT_PROFILE}:
         guidance = HARNESS_ROOT / "analysis" / "agents" / "report-specialist.md"
+    elif profile in {ANALYSIS_RECOVERY_PROFILE, MODEL_EVAL_RECOVERY_PROFILE}:
+        guidance = HARNESS_ROOT / "analysis" / "agents" / "recovery-specialist.md"
+    elif profile in {ANALYSIS_ROOT_RCA_PROFILE, MODEL_EVAL_ROOT_RCA_PROFILE}:
+        guidance = HARNESS_ROOT / "analysis" / "agents" / "root-rca-specialist.md"
+    elif profile in {ANALYSIS_ROOT_REPORT_PROFILE, MODEL_EVAL_ROOT_REPORT_PROFILE}:
+        guidance = HARNESS_ROOT / "analysis" / "agents" / "root-report-specialist.md"
+    elif profile in {ANALYSIS_OPERATIONS_PROFILE, MODEL_EVAL_OPERATIONS_PROFILE}:
+        guidance = HARNESS_ROOT / "analysis" / "agents" / "operations-specialist.md"
     elif profile == EXECUTION_PROFILE:
         guidance = HARNESS_ROOT / "execution" / "AGENTS.md"
     elif profile == RETROSPECTIVE_PROFILE:

@@ -714,7 +714,8 @@ def test_stdout_carries_only_the_result_even_when_the_harness_logs(
     invocation = {}
 
     class _Runner:
-        def run(self, prompt, *, report_prompt, execution_token, profile):
+        def run(self, prompt, *, report_prompt, execution_token, profile, analysis_parts):
+            assert analysis_parts.model_eval is True
             invocation.update(
                 prompt=prompt,
                 report_prompt=report_prompt,

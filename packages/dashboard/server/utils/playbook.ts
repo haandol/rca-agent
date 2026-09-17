@@ -4,6 +4,7 @@ import {
   sameDeploymentValue,
 } from './deploymentContract.ts';
 import commandModels from './runbook-command-models.json' with { type: 'json' };
+import earlyReadOperations from './early-recovery-read-operations.json' with { type: 'json' };
 
 type DataRecord = Record<string, unknown>;
 const MODEL_REQUIREMENTS: Record<string, readonly string[]> =
@@ -715,4 +716,124 @@ export function countExecutionSteps(
   if (session.confirmed !== true) return 0;
   const resolved = resolveCurrentPlaybook(items, session, engine);
   return validateExecutablePlaybook(resolved?.playbook ?? null).steps.length;
+}
+
+/** Early unconfirmed recovery permits exactly one pinned rollback and an exhaustive set of read operations.
+ * The completed/confirmed legacy contract intentionally continues to use validateExecutablePlaybook.
+ */
+export function validateEarlyRecoveryPlaybook(
+  playbook: DataRecord | null,
+): PlaybookValidation {
+  const validation = validateExecutablePlaybook(playbook);
+  if (!validation.valid) return validation;
+  const reject = (reason: string): PlaybookValidation => ({
+    valid: false,
+    steps: [],
+    reason,
+  });
+  if (!playbook?.rollback_context)
+    return reject('조기 정상화에는 서버가 고정한 롤백 문맥이 필요합니다.');
+  const readFlags: Record<string, readonly string[]> = earlyReadOperations;
+  const reads = new Set(Object.keys(readFlags));
+  const context = playbook.rollback_context as Record<string, any>;
+  const scope = context.scope;
+  const matches = (values: string[] | undefined, ...choices: unknown[]) =>
+    values?.length === 1 && choices.includes(values[0]);
+  const rollbacks: string[] = [];
+  for (const step of validation.steps) {
+    for (const command of step.commands ?? []) {
+      const parsed = inspectCommand(command);
+      if (!parsed)
+        return reject('조기 정상화 명령을 정확히 해석할 수 없습니다.');
+      if (parsed.operation === 'ecs update-service') {
+        if (!step.ecs_service_precondition)
+          return reject('조기 롤백에는 고정 배포 전제가 필요합니다.');
+        rollbacks.push(step.step_id);
+      } else {
+        if (!reads.has(parsed.operation) || parsed.region !== scope.region)
+          return reject(
+            `조기 정상화에서 허용되지 않은 작업 또는 리전입니다: ${parsed.operation}`,
+          );
+        const allowed = new Set([
+          ...readFlags[parsed.operation]!,
+          '--region',
+          '--query',
+          '--output',
+        ]);
+        for (const [flag, values] of parsed.options) {
+          if (!allowed.has(flag) || !values.length)
+            return reject('조기 읽기 작업의 인자가 허용되지 않습니다.');
+        }
+        if (
+          parsed.options.has('--output') &&
+          !matches(parsed.options.get('--output'), 'json')
+        )
+          return reject('조기 읽기 결과는 JSON이어야 합니다.');
+        const [service, operation] = parsed.operation.split(' ');
+        if (
+          service === 'ecs' &&
+          operation !== 'describe-task-definition' &&
+          !matches(
+            parsed.options.get('--cluster'),
+            scope.cluster_arn,
+            String(scope.cluster_arn).split('/').at(-1),
+          )
+        )
+          return reject('조기 읽기 클러스터가 고정 대상과 다릅니다.');
+        if (
+          parsed.operation === 'ecs describe-services' &&
+          !matches(
+            parsed.options.get('--services'),
+            scope.service_arn,
+            scope.service_name,
+          )
+        )
+          return reject('조기 읽기 서비스가 고정 대상과 다릅니다.');
+        if (
+          parsed.operation === 'ecs list-tasks' &&
+          !matches(
+            parsed.options.get('--service-name'),
+            scope.service_arn,
+            scope.service_name,
+          )
+        )
+          return reject('조기 태스크 목록은 고정 서비스를 지정해야 합니다.');
+        if (
+          parsed.operation === 'ecs describe-task-definition' &&
+          !matches(
+            parsed.options.get('--task-definition'),
+            context.normal.task_definition_arn,
+            context.current.task_definition_arn,
+          )
+        )
+          return reject('조기 태스크 정의 조회가 고정 대상과 다릅니다.');
+        if (
+          service === 'logs' &&
+          !matches(parsed.options.get('--log-group-name'), scope.log_group)
+        )
+          return reject('조기 로그 조회가 고정 로그 그룹과 다릅니다.');
+        if (
+          (service === 'logs' ||
+            ['get-metric-data', 'get-metric-statistics'].includes(
+              operation!,
+            )) &&
+          (!parsed.options.get('--start-time')?.length ||
+            !parsed.options.get('--end-time')?.length)
+        )
+          return reject(
+            '조기 관측에는 고정된 조회 시작·종료 시각이 필요합니다.',
+          );
+      }
+    }
+  }
+  const waits = validation.steps.filter((step) => step.deployment_wait);
+  if (
+    rollbacks.length !== 1 ||
+    waits.length !== 1 ||
+    waits[0]!.deployment_wait?.action_step_id !== rollbacks[0]
+  )
+    return reject(
+      '조기 정상화는 고정 UpdateService 1개와 그 배포 수렴 대기만 허용합니다.',
+    );
+  return validation;
 }

@@ -3,6 +3,7 @@ import {
   BatchWriteCommand,
   GetCommand,
   TransactWriteCommand,
+  type QueryCommandInput,
 } from '@aws-sdk/lib-dynamodb';
 import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
@@ -28,22 +29,27 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event);
   const engine = typeof query.engine === 'string' ? query.engine : undefined;
 
+  if (engine && !isAllowedEngine(engine))
+    throw createError({ statusCode: 400, statusMessage: 'Invalid engine' });
+
   const config = useRuntimeConfig();
   const ddb = useDynamoDB();
   const s3 = useS3();
 
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': rcaPk(id) },
-      ProjectionExpression: 'PK, SK, engine, playbook_id',
-    }),
+  const allItems = await readDeletePartition(ddb, config.dynamodbTableName, id);
+  const canonicalIncident = allItems.find(
+    (item) => item.SK === 'INCIDENT_SNAPSHOT',
   );
-
-  const items = (result.Items ?? []).filter((item) => {
-    if (!engine) return true;
+  const items = allItems.filter((item) => {
     const sortKey = (item.SK as string) || '';
+    // Execution audit and its approval copies outlive analysis deletion.
+    if (
+      isExecutionItem(sortKey) ||
+      sortKey === ACTIVE_EXECUTION_SK ||
+      sortKey === 'INCIDENT_SNAPSHOT'
+    )
+      return false;
+    if (!engine) return true;
     if (isSessionSortKey(sortKey)) {
       return ((item.engine as string) || parseEngine(sortKey)) === engine;
     }
@@ -61,10 +67,9 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // An execution is a separate lifecycle from the analysis, but its records live
-  // in the same partition and this delete would take them too — and the running
-  // execution checks its own claim on every write. So a live execution blocks the
-  // delete for the same reason a live analysis does.
+  // Execution audit records survive analysis deletion. An active execution still
+  // blocks removal of analysis authority; the transaction repeats this check
+  // against EXEC_ACTIVE so an approval racing this read cannot be missed.
   const running = await inFlightExecutions(ddb, config, id);
   if (running.length) {
     throw createError({
@@ -77,6 +82,23 @@ export default defineEventHandler(async (event) => {
   const sessionKeys = items
     .map((item) => item.SK as string)
     .filter((sortKey) => isSessionSortKey(sortKey));
+
+  if (!sessionKeys.length)
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        '삭제를 보호할 분석 소유권 기록이 없습니다. 인계된 자료는 현재 분석과 함께 정리하세요.',
+    });
+  const survivors = allItems.filter((item) => !items.includes(item));
+  const keepIncident = survivors.some(
+    (item) =>
+      isSessionSortKey(String(item.SK ?? '')) ||
+      (typeof item.SK === 'string' &&
+        (item.SK.includes('#ANALYSIS_PART#') ||
+          item.SK.includes('#ANALYSIS_PART_VERSION#'))),
+  );
+  const removeIncident = Boolean(canonicalIncident && !keepIncident);
+  if (removeIncident) items.push(canonicalIncident!);
 
   const now = new Date().toISOString();
   const nowEpoch = Math.floor(Date.now() / 1000);
@@ -102,6 +124,7 @@ export default defineEventHandler(async (event) => {
     );
     // Bind target selection to the same source bytes the apply transaction reads.
     for (const [index, field] of [
+      'engine',
       'playbook_id',
       'playbook',
       'completion_playbook',
@@ -121,6 +144,13 @@ export default defineEventHandler(async (event) => {
       await ddb.send(
         new TransactWriteCommand({
           TransactItems: [
+            {
+              ConditionCheck: {
+                TableName: config.dynamodbTableName,
+                Key: { PK: rcaPk(id), SK: ACTIVE_EXECUTION_SK },
+                ConditionExpression: 'attribute_not_exists(PK)',
+              },
+            },
             {
               Update: {
                 TableName: config.dynamodbTableName,
@@ -198,16 +228,13 @@ export default defineEventHandler(async (event) => {
    * — otherwise deleting one engine's row would strip the evidence the other
    * engine's report still cites.
    */
-  const remaining = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': rcaPk(id) },
-      ProjectionExpression: 'SK, engine',
-    }),
+  const remainingItems = await readDeletePartition(
+    ddb,
+    config.dynamodbTableName,
+    id,
   );
   const survivingEngines = new Set(
-    (remaining.Items ?? [])
+    remainingItems
       .filter((item) => isSessionSortKey((item.SK as string) || ''))
       .map(
         (item) =>
@@ -221,10 +248,29 @@ export default defineEventHandler(async (event) => {
     : ALLOWED_ENGINES.map((name) => `reports/${name}/${id}/`);
   if (!survivingEngines.size) prefixes.push(`rca/${id}/`);
 
-  const deletedObjectCount = await deletePrefixes(
+  let deletedObjectCount = await deletePrefixes(
     s3,
     config.s3ReportBucket,
     prefixes,
+  );
+
+  const partPrefixes = (engine ? [engine] : [...ALLOWED_ENGINES]).flatMap(
+    (owner) =>
+      ['recovery', 'root_cause', 'operations'].map(
+        (part) => `analysis-parts/${owner}/${id}/${part}/`,
+      ),
+  );
+  if (
+    removeIncident &&
+    ['strands', 'headless-codex'].includes(String(canonicalIncident?.engine))
+  )
+    partPrefixes.push(
+      `analysis-parts/${canonicalIncident!.engine}/${id}/incident/`,
+    );
+  deletedObjectCount += await deletePrefixes(
+    s3,
+    config.s3EvidenceBucket,
+    partPrefixes,
   );
 
   return {
@@ -287,6 +333,7 @@ async function deletePrefixes(
   prefixes: string[],
 ): Promise<number> {
   let removed = 0;
+  if (!bucket) return removed;
 
   for (const prefix of prefixes) {
     let continuationToken: string | undefined;
@@ -332,17 +379,33 @@ async function inFlightExecutions(
   config: ReturnType<typeof useRuntimeConfig>,
   rcaId: string,
 ): Promise<ExecutionSummary[]> {
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-      ExpressionAttributeValues: {
-        ':pk': rcaPk(rcaId),
-        ':prefix': EXECUTION_SK_PREFIX,
-      },
-    }),
-  );
-  return (result.Items ?? [])
+  const items = await readDeletePartition(ddb, config.dynamodbTableName, rcaId);
+  return items
+    .filter((item) => isExecutionItem(String(item.SK ?? '')))
     .map(readExecution)
     .filter((execution) => !isTerminalExecution(execution.state));
+}
+
+/** Enumerate all metadata consistently before choosing/fencing deletion scope. */
+async function readDeletePartition(
+  ddb: ReturnType<typeof useDynamoDB>,
+  table: string,
+  id: string,
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = [];
+  let cursor: QueryCommandInput['ExclusiveStartKey'];
+  do {
+    const page = await ddb.send(
+      new QueryCommand({
+        TableName: table,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': rcaPk(id) },
+        ConsistentRead: true,
+        ExclusiveStartKey: cursor,
+      }),
+    );
+    items.push(...(page.Items ?? []));
+    cursor = page.LastEvaluatedKey;
+  } while (cursor);
+  return items;
 }

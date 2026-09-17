@@ -12,8 +12,8 @@ import { QueryCommand, type QueryCommandInput } from '@aws-sdk/lib-dynamodb';
  * only, so this reads roughly one item per session rather than every span and
  * hypothesis in the table.
  *
- * Enrichment is limited to what can change an answer. Only a COMPLETED analysis
- * can be waiting on an approval, so the partitions of the rest are never opened.
+ * Enrich completed legacy analyses and registered three-part workflows. Early
+ * recovery can await approval while its parent analysis is still running.
  *
  * It sits beside the session collection rather than inside it: a path under
  * `sessions/` would collide with a session whose id happened to be the same word,
@@ -23,7 +23,12 @@ export default defineEventHandler(async () => {
   const config = useRuntimeConfig();
   const ddb = useDynamoDB();
 
-  const sessions: { rcaId: string; engine: string; state: string }[] = [];
+  const sessions: {
+    rcaId: string;
+    engine: string;
+    state: string;
+    workflow: string;
+  }[] = [];
 
   for (const engine of ALLOWED_ENGINES) {
     let startKey: QueryCommandInput['ExclusiveStartKey'];
@@ -40,7 +45,7 @@ export default defineEventHandler(async () => {
             '#st': 'state',
           },
           ExpressionAttributeValues: { ':engine': engine },
-          ProjectionExpression: 'PK, #st, engine',
+          ProjectionExpression: 'PK, #st, engine, workflow',
           ExclusiveStartKey: startKey,
         }),
       );
@@ -49,38 +54,60 @@ export default defineEventHandler(async () => {
           rcaId: rcaIdFromPk(item.PK as string),
           engine: (item.engine as string) || engine,
           state: (item.state as string) || 'UNKNOWN',
+          workflow: (item.workflow as string) || '',
         });
       }
       startKey = result.LastEvaluatedKey;
     } while (startKey);
   }
 
-  const completed = sessions.filter((session) => session.state === 'COMPLETED');
+  const completed = sessions.filter(
+    (session) =>
+      session.state === 'COMPLETED' || session.workflow === 'recovery-first-v1',
+  );
 
   const readinessOfCompleted = await Promise.all(
     completed.map(async (session) => {
-      const partition = await ddb.send(
-        new QueryCommand({
-          TableName: config.dynamodbTableName,
-          KeyConditionExpression: 'PK = :pk',
-          ExpressionAttributeValues: { ':pk': rcaPk(session.rcaId) },
-        }),
+      const items = await readAnalysisPartition(
+        ddb,
+        config.dynamodbTableName,
+        session.rcaId,
       );
-      const items = partition.Items ?? [];
       const executions = items
         .filter((entry) => isExecutionItem((entry.SK as string) || ''))
         .map(readExecution)
-        .filter((execution) => execution.engine === session.engine);
+        .filter((execution) =>
+          hasAnalysisParts(items, session.engine)
+            ? execution.rcaId === session.rcaId &&
+              isAllowedEngine(execution.engine)
+            : execution.engine === session.engine,
+        );
 
+      const recovery = hasAnalysisParts(items, session.engine)
+        ? await recoveryReadiness(
+            items,
+            session.rcaId,
+            session.engine,
+            useS3(),
+            config.s3EvidenceBucket,
+          )
+        : null;
       return {
+        workflow: session.workflow,
         engine: session.engine,
         state: session.state,
         readiness: readinessOf({
-          state: session.state,
-          stepCount: countExecutionSteps(items, session.engine),
+          state:
+            recovery?.ready || (recovery && executions.length)
+              ? 'COMPLETED'
+              : session.state,
+          stepCount:
+            recovery?.stepCount ?? countExecutionSteps(items, session.engine),
           hasExecution: executions.length > 0,
         }),
-        executionState: latestExecution(executions)?.state ?? '',
+        executionState:
+          latestExecution(executions, hasAnalysisParts(items, session.engine))
+            ?.state ?? '',
       };
     }),
   );
@@ -102,6 +129,8 @@ export default defineEventHandler(async () => {
     // The outcome each completed session resolves to, so the client can tally the
     // one word it shows without re-deriving it from two lifecycles.
     completedOutcomes: readinessOfCompleted.map((entry) => ({
+      state: entry.state,
+      workflow: entry.workflow,
       readiness: entry.readiness,
       executionState: entry.executionState,
     })),

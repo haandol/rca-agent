@@ -1,5 +1,3 @@
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
-
 /**
  * One session, with the same fields a list row carries.
  *
@@ -27,21 +25,24 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const ddb = useDynamoDB();
 
-  const result = await ddb.send(
-    new QueryCommand({
-      TableName: config.dynamodbTableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': rcaPk(id) },
-    }),
-  );
-  const items = result.Items ?? [];
+  const items = await readAnalysisPartition(ddb, config.dynamodbTableName, id);
 
-  const sessionItem = items.find((item) => {
-    const sortKey = (item.SK as string) || '';
-    if (!isSessionSortKey(sortKey)) return false;
-    if (!engineFilter) return true;
-    return ((item.engine as string) || parseEngine(sortKey)) === engineFilter;
-  });
+  // A new-workflow URL may still name the previous owner. Return current parent identity explicitly.
+  const currentParent = items.find(
+    (item) =>
+      item.PK === rcaPk(id) &&
+      item.SK === ANALYSIS_SESSION_SK &&
+      ['strands', 'headless-codex'].includes(item.engine) &&
+      hasAnalysisParts(items, item.engine),
+  );
+  const sessionItem =
+    currentParent ??
+    items.find((item) => {
+      const sortKey = (item.SK as string) || '';
+      if (!isSessionSortKey(sortKey)) return false;
+      if (!engineFilter) return true;
+      return ((item.engine as string) || parseEngine(sortKey)) === engineFilter;
+    });
 
   if (!sessionItem) {
     throw createError({
@@ -56,8 +57,15 @@ export default defineEventHandler(async (event) => {
   const executions = items
     .filter((item) => isExecutionItem((item.SK as string) || ''))
     .map(readExecution)
-    .filter((execution) => execution.engine === engine);
-  const execution = latestExecution(executions);
+    .filter((execution) =>
+      hasAnalysisParts(items, engine)
+        ? execution.rcaId === id && isAllowedEngine(execution.engine)
+        : execution.engine === engine,
+    );
+  const execution = latestExecution(
+    executions,
+    hasAnalysisParts(items, engine),
+  );
 
   const spans = items
     .filter((item) => isSpanSortKey((item.SK as string) || ''))
@@ -68,15 +76,33 @@ export default defineEventHandler(async (event) => {
     .filter((span) => span.engine === engine);
 
   const state = (sessionItem.state as string) || 'UNKNOWN';
-  const stepCount = countExecutionSteps(items, engine);
+  const workflow = hasAnalysisParts(items, engine) ? 'recovery-first-v1' : '';
+  const recovery = workflow
+    ? await recoveryReadiness(
+        items,
+        id,
+        engine,
+        useS3(),
+        config.s3EvidenceBucket,
+      )
+    : null;
+  const stepCount = recovery?.stepCount ?? countExecutionSteps(items, engine);
   const readiness = readinessOf({
-    state,
+    state: workflow
+      ? recovery?.ready || executions.length
+        ? 'COMPLETED'
+        : state
+      : state,
     stepCount,
     hasExecution: executions.length > 0,
   });
 
   return {
     rcaId: id,
+    workflow,
+    activeEngine: workflow ? engine : '',
+    requestedEngine: engineFilter || engine,
+    engineHandoff: Boolean(workflow && engineFilter && engineFilter !== engine),
     state,
     readiness,
     readinessLabel: READINESS_LABEL[readiness],
@@ -94,6 +120,7 @@ export default defineEventHandler(async (event) => {
     updatedAt: (sessionItem.updated_at as string) || '',
     engine,
     executionState: execution?.state ?? '',
+    executionEngine: execution?.engine ?? '',
     executionStateLabel: execution?.stateLabel ?? '',
     executionId: execution?.executionId ?? '',
     executionAttempts: executions.length,

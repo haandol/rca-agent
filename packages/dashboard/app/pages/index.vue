@@ -6,6 +6,7 @@ import {
   READINESS_DESC,
   READINESS_LABEL,
   outcomeOf,
+  countSessionOutcomes,
   stoppedAtLabel,
   type Outcome,
 } from '~/utils/sessionState';
@@ -293,27 +294,12 @@ const days = computed(() => {
  * happened after it, so the summary sends each completed session's readiness and
  * execution state and the same shared vocabulary turns them into one word here.
  */
-const counts = computed(() => {
-  const tally = new Map<Outcome, number>();
-  const bump = (outcome: Outcome, by = 1) =>
-    tally.set(outcome, (tally.get(outcome) ?? 0) + by);
-
-  const byState = summary.value?.byState ?? {};
-  for (const [state, count] of Object.entries(byState)) {
-    if (state === 'COMPLETED') continue;
-    bump(outcomeOf({ state }), count);
-  }
-  for (const entry of summary.value?.completedOutcomes ?? []) {
-    bump(
-      outcomeOf({
-        state: 'COMPLETED',
-        readiness: entry.readiness,
-        executionState: entry.executionState,
-      }),
-    );
-  }
-  return tally;
-});
+const counts = computed(() =>
+  countSessionOutcomes(
+    summary.value?.byState ?? {},
+    summary.value?.completedOutcomes ?? [],
+  ),
+);
 
 /** Everything the archive holds, however much of it has been fetched. */
 const totalCount = computed(() => summary.value?.total ?? rows.value.length);
@@ -649,6 +635,14 @@ useHead({ title: '장애 기록' });
                 ]"
               >
                 {{ OUTCOME_LABEL[row.outcome] }}
+                <span
+                  v-if="row.workflow === 'recovery-first-v1'"
+                  class="text-xs"
+                >
+                  · 분석 {{ row.state }} · 실행
+                  {{ row.executionStateLabel || '미실행' }} ·
+                  {{ row.executionEngine }}</span
+                >
               </span>
               <span class="pill-meta font-mono">{{ row.engine }}</span>
               <span

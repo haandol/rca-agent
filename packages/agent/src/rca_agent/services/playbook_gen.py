@@ -235,7 +235,7 @@ def _build_embed_key(playbook: Playbook, scoping_result: ScopingResult | None) -
 
 def _build_user_prompt(report: RcaReport, scoping: ScopingResult | None = None) -> str:
     """Keep all distinct source evidence separate from the report's proposed actions."""
-    return PLAYBOOK_USER_PROMPT_TEMPLATE.format(
+    prompt = PLAYBOOK_USER_PROMPT_TEMPLATE.format(
         failure_type="Inferred from root cause",
         alarm_description=render_alarm_description(report),
         root_cause=report.root_cause,
@@ -247,6 +247,26 @@ def _build_user_prompt(report: RcaReport, scoping: ScopingResult | None = None) 
         action_items_text="\n".join(f"- {a}" for a in report.action_items) or "N/A",
         confirmed="yes" if report.root_cause_confirmed else "no — leave execution_steps empty",
     ) + _render_current_observations(scoping)
+
+    if report.analysis_parts:
+        outputs = report.analysis_parts
+        prompt += (
+            "\nFinal reusable knowledge only: execution_steps must be empty. "
+            "The immutable recovery part remains the only current approval source. "
+            "Use these completed code/operations proposals as proposals, not measured evidence or executed fixes.\n"
+        )
+        prompt += json.dumps(
+            {
+                "code_proposal": outputs.get("root_cause", {})
+                .get("payload", {})
+                .get("result", {})
+                .get("code_proposal", {}),
+                "operations": outputs.get("operations", {}).get("payload", {}).get("result", {}),
+                "source_part_refs": report.analysis_part_refs,
+            },
+            ensure_ascii=False,
+        )
+    return prompt
 
 
 def _render_existing_execution_steps(steps: list[ExecutionStep]) -> str:

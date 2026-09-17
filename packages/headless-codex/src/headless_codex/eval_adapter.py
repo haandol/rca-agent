@@ -575,6 +575,19 @@ def main(argv: list[str] | None = None) -> None:
 
     context = ExecutionContext.create(scenario_id)
     artifact_dir = context.prepare()
+    from headless_codex.services.three_part_analysis import AnalysisPartsRun, LocalPartStore
+
+    parts = AnalysisPartsRun(
+        store=LocalPartStore(),
+        rca_id=context.rca_id,
+        model_eval=True,
+        incident={
+            "alarm": scenario.get("alarm", {}),
+            "scoping": {},
+            "observations": {"supplied": scenario.get("observations", [])},
+            "source_artifacts": scenario.get("source_artifacts", []),
+        },
+    )
     try:
         with _stdout_reserved_for_the_result() as result_stream:
             result = CodexSubprocessRunner().run(
@@ -582,12 +595,16 @@ def main(argv: list[str] | None = None) -> None:
                 report_prompt=build_prompt(_alarm_for(scenario), role="report"),
                 execution_token=context.token,
                 profile=MODEL_EVAL_PROFILE,
+                analysis_parts=parts,
             )
             if not result.success:
                 _preserve_failure_diagnostics(context, artifact_dir, result)
                 safe_result, _ = _bounded_redacted(result.result, _MAX_DIAGNOSTIC_CHARS)
                 _fail(f"harness run failed: {safe_result}")
 
+            if parts.outcomes and any(item["record"]["status"] != "COMPLETED" for item in parts.outcomes.values()):
+                _preserve_failure_diagnostics(context, artifact_dir, result)
+                _fail("one or more logical analysis parts failed; see the persisted part limitations")
             try:
                 artifacts = validate_completion_artifacts(artifact_dir)
             except ArtifactValidationError as error:

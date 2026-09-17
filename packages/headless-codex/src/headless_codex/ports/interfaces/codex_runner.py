@@ -20,6 +20,7 @@ class CodexRunnerPort(ABC):
         claim_token: str | None = None,
         attempt: int | None = None,
         deadline: float | None = None,
+        analysis_parts=None,
     ) -> CodexResult:
         """Carry caller-owned identity, cancellation and a shared deadline across profile execution."""
         ...

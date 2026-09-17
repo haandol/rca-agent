@@ -17,6 +17,7 @@ from rca_agent.config.settings import (
     SNS_NOTIFICATION_TOPIC_ARN,
 )
 from rca_agent.di.container import Container
+from rca_agent.ports.interfaces.analysis_parts import AnalysisPartStorePort
 from rca_agent.ports.interfaces.embedding import EmbeddingPort
 from rca_agent.ports.interfaces.evidence_store import EvidenceStorePort
 from rca_agent.ports.interfaces.notification import NotificationPort
@@ -56,6 +57,10 @@ class AppContainer(Container):
         self._branching_agent = None
         self._report_agent = None
         self._playbook_agent = None
+        self._recovery_agent = None
+        self._code_preview_agent = None
+        self._operations_agent = None
+        self._analysis_part_store = None
         self._scoping_mcp_clients = None
         self._evidence_mcp_clients = None
         self._agent_baselines = {}
@@ -86,6 +91,9 @@ class AppContainer(Container):
                     "_branching_agent",
                     "_report_agent",
                     "_playbook_agent",
+                    "_recovery_agent",
+                    "_code_preview_agent",
+                    "_operations_agent",
                 )
                 if (agent := getattr(self, name)) is not None
             ]
@@ -339,3 +347,48 @@ class AppContainer(Container):
 
     def cleanup(self) -> None:
         pass
+
+    @property
+    def analysis_part_store(self) -> AnalysisPartStorePort:
+        """Keep private stage authority separate from the public library while using the same claim/table."""
+        from rca_agent.services.analysis_parts import AnalysisPartStore
+
+        if self._analysis_part_store is None:
+            self._analysis_part_store = AnalysisPartStore(
+                self.dynamodb_client,
+                self.s3_client,
+                table_name=DYNAMODB_TABLE_NAME,
+                bucket=S3_EVIDENCE_BUCKET,
+                engine="strands",
+            )
+        return self._analysis_part_store
+
+    @property
+    def recovery_agent(self):
+        """Cache the recovery role with the same incident-reset and stream ownership policy."""
+        from rca_agent.agent_factory import create_recovery_agent
+
+        if self._recovery_agent is None:
+            self._recovery_agent = create_recovery_agent()
+            self._remember_initial_agent(self._recovery_agent)
+        return self._recovery_agent
+
+    @property
+    def code_preview_agent(self):
+        """Cache a tool-free code-preview role; it cannot publish a branch or PR."""
+        from rca_agent.agent_factory import create_code_preview_agent
+
+        if self._code_preview_agent is None:
+            self._code_preview_agent = create_code_preview_agent()
+            self._remember_initial_agent(self._code_preview_agent)
+        return self._code_preview_agent
+
+    @property
+    def operations_agent(self):
+        """Cache prevention generation without connecting it to execution success."""
+        from rca_agent.agent_factory import create_operations_agent
+
+        if self._operations_agent is None:
+            self._operations_agent = create_operations_agent()
+            self._remember_initial_agent(self._operations_agent)
+        return self._operations_agent
