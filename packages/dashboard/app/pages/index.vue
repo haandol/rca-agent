@@ -311,6 +311,7 @@ const FILTER_ORDER: Outcome[] = [
   'RESOLVED',
   'UNRESOLVED',
   'NO_CAUSE',
+  'NO_PROCEDURE',
   'BROKEN',
   'SKIPPED',
 ];
@@ -331,6 +332,7 @@ const investigationCount = computed(
   () =>
     (counts.value.get('UNRESOLVED') ?? 0) +
     (counts.value.get('NO_CAUSE') ?? 0) +
+    (counts.value.get('NO_PROCEDURE') ?? 0) +
     (counts.value.get('BROKEN') ?? 0),
 );
 const resolvedCount = computed(() => counts.value.get('RESOLVED') ?? 0);

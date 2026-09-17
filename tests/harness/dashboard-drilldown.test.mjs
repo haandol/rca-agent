@@ -896,3 +896,40 @@ test('an already-open Strands view announces takeover without swapping its revie
     globalThis.document = savedDocument;
   }
 });
+
+test('completed confirmed root remains confirmed when early recovery is unavailable', async () => {
+  const data = earlyPartViews();
+  Object.assign(data['/api/sessions/fixture'], {
+    state: 'COMPLETED',
+    confirmed: true,
+    readiness: 'NO_PROCEDURE',
+  });
+  Object.assign(data['/api/analysis-parts/fixture'].parts[0], {
+    approval_status: 'UNAVAILABLE',
+  });
+  data['/api/analysis-parts/fixture'].parts[1] = {
+    part: 'root_cause',
+    status: 'COMPLETED',
+    available: true,
+    payload: {
+      result: {
+        root_cause: {
+          confirmed: true,
+          confidence: 0.93,
+          description: 'verified mapping defect',
+        },
+      },
+      limitations: [],
+    },
+  };
+  const result = await report({
+    dataOverrides: data,
+    operation: (state) => assert.equal(state.canApprove.value, false),
+  });
+  const header = result.html.split('</header>')[0];
+  assert.match(header, /복구 절차 없음/);
+  assert.match(header, /data-testid="root-confirmation"[^>]*>원인 확정/);
+  assert.doesNotMatch(header, /원인 미확정/);
+  assert.match(result.html, /승인 불가/);
+  assert.equal(result.calls.length, 0);
+});

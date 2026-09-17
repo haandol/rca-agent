@@ -69,7 +69,7 @@ export default defineEventHandler(async () => {
           TableName: config.dynamodbTableName,
           Key,
           ConsistentRead: true,
-          ProjectionExpression: 'PK, SK, engine, #st, workflow',
+          ProjectionExpression: 'PK, SK, engine, #st, workflow, confirmed',
           ExpressionAttributeNames: { '#st': 'state' },
         }),
       );
@@ -82,6 +82,7 @@ export default defineEventHandler(async () => {
         engine: owner,
         state: (item.state as string) || 'UNKNOWN',
         workflow: (item.workflow as string) || '',
+        confirmed: typeof item.confirmed === 'boolean' ? item.confirmed : null,
       };
     }),
   );
@@ -122,6 +123,7 @@ export default defineEventHandler(async () => {
         : null;
       return {
         workflow: session.workflow,
+        confirmed: session.confirmed,
         engine: session.engine,
         state: session.state,
         readiness: readinessOf({
@@ -159,6 +161,7 @@ export default defineEventHandler(async () => {
     completedOutcomes: readinessOfCompleted.map((entry) => ({
       state: entry.state,
       workflow: entry.workflow,
+      confirmed: entry.confirmed,
       readiness: entry.readiness,
       executionState: entry.executionState,
     })),

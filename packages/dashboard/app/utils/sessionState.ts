@@ -133,7 +133,7 @@ export const READINESS_DESC: Record<string, string> = {
   EXECUTION_UNDERWAY:
     '이 리포트로 실행이 한 번 이상 발행되었다. 실행 자체의 결과는 실행 상태로 따로 읽는다.',
   NO_PROCEDURE:
-    '분석은 끝났지만 근본원인이 확정되지 않아 실행할 절차가 없다. 추가 조사가 필요하다.',
+    '실행 가능한 복구 절차가 없다. 원인 확정 여부와 승인 불가 사유를 별도로 확인한다.',
   NOT_COMPLETED: '분석이 완료되지 않아 승인 대상이 아니다.',
 };
 
@@ -151,6 +151,7 @@ export type Outcome =
   | 'RESOLVED'
   | 'UNRESOLVED'
   | 'NO_CAUSE'
+  | 'NO_PROCEDURE'
   | 'BROKEN'
   | 'SKIPPED';
 
@@ -159,6 +160,7 @@ export interface OutcomeInput {
   readiness?: string;
   executionState?: string;
   workflow?: string;
+  confirmed?: boolean | null;
 }
 
 export function outcomeOf({
@@ -166,6 +168,7 @@ export function outcomeOf({
   readiness = '',
   executionState = '',
   workflow = '',
+  confirmed = null,
 }: OutcomeInput): Outcome {
   if (workflow === 'recovery-first-v1') {
     if (executionState === 'RESOLVED') return 'RESOLVED';
@@ -188,7 +191,9 @@ export function outcomeOf({
     return 'UNRESOLVED';
   }
   if (readiness === 'AWAITING_APPROVAL') return 'AWAITING';
-  if (readiness === 'NO_PROCEDURE') return 'NO_CAUSE';
+  // Missing executable remediation does not negate the server's confirmed cause.
+  if (readiness === 'NO_PROCEDURE')
+    return confirmed === true ? 'NO_PROCEDURE' : 'NO_CAUSE';
   return 'AWAITING';
 }
 
@@ -198,6 +203,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   RESOLVED: '해결',
   UNRESOLVED: '미해결',
   NO_CAUSE: '원인 미확정',
+  NO_PROCEDURE: '복구 절차 없음',
   BROKEN: '분석 중단',
   SKIPPED: '건너뜀',
 };
@@ -214,6 +220,7 @@ export const OUTCOME_TONE: Record<Outcome, string> = {
   RESOLVED: 'text-success',
   UNRESOLVED: 'text-error mark-broken',
   NO_CAUSE: 'text-warning',
+  NO_PROCEDURE: 'text-warning',
   BROKEN: 'text-error mark-broken',
   SKIPPED: 'text-base-content/48',
 };

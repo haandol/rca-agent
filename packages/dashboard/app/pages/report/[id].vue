@@ -166,8 +166,26 @@ async function reviewRecovery() {
   openDetail('runbook');
 }
 
+/** Root confirmation comes from the stored root result or parent, never recovery readiness. */
+const rootConfirmation = computed<boolean | null>(() => {
+  const root = analysisParts.value?.parts.find(
+    (part) => part.part === 'root_cause',
+  );
+  const payload = root?.payload as
+    { result?: { root_cause?: { confirmed?: unknown } } } | null | undefined;
+  const confirmed = root?.available
+    ? payload?.result?.root_cause?.confirmed
+    : undefined;
+  if (!analysisHandoff.value && typeof confirmed === 'boolean')
+    return confirmed;
+  return typeof session.value?.confirmed === 'boolean'
+    ? session.value.confirmed
+    : null;
+});
 const outcome = computed(() =>
-  session.value ? outcomeOf(session.value) : null,
+  session.value
+    ? outcomeOf({ ...session.value, confirmed: rootConfirmation.value })
+    : null,
 );
 
 const rootCause = computed(() => stripInlineMarkup(session.value?.rootCause));
@@ -630,6 +648,19 @@ const comparisonLabels = {
           class="status-chip"
           :class="OUTCOME_TONE[outcome]"
           >{{ OUTCOME_LABEL[outcome] }}</span
+        >
+        <span
+          v-if="isThreePart"
+          class="status-chip"
+          data-testid="root-confirmation"
+          :class="rootConfirmation === true ? 'text-info' : 'text-warning'"
+          >{{
+            rootConfirmation === true
+              ? '원인 확정'
+              : rootConfirmation === false
+                ? '원인 미확정'
+                : '원인 판정 미제공'
+          }}</span
         >
         <time v-if="session?.createdAt">{{
           formatClock(session.createdAt)

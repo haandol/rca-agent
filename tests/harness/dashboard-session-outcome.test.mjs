@@ -326,3 +326,24 @@ test('the timeline keeps only lines a clock reading anchors', () => {
   assert.deepEqual(parseTimeline('## 증거 시간 범위\n- 없음'), []);
   assert.deepEqual(parseTimeline(null), []);
 });
+
+test('confirmed cause with no executable remediation is not labelled unconfirmed or approvable', () => {
+  const incident = {
+    state: 'COMPLETED',
+    workflow: 'recovery-first-v1',
+    readiness: 'NO_PROCEDURE',
+    confirmed: true,
+  };
+  assert.equal(outcomeOf(incident), 'NO_PROCEDURE');
+  assert.equal(OUTCOME_LABEL.NO_PROCEDURE, '복구 절차 없음');
+  assert.equal(needsAttention(outcomeOf(incident)), false);
+  assert.equal(outcomeOf({ ...incident, confirmed: false }), 'NO_CAUSE');
+  assert.equal(
+    outcomeOf({ ...incident, executionState: 'RESOLVED' }),
+    'RESOLVED',
+  );
+  assert.equal(
+    outcomeOf({ ...incident, readiness: 'AWAITING_APPROVAL' }),
+    'AWAITING',
+  );
+});

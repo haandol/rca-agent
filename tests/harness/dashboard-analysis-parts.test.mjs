@@ -1588,3 +1588,27 @@ test('stale index records whose base parent was deleted do not recreate summary 
   const list = await f.route('sessions.get.ts');
   assert.deepEqual(list.sessions, []);
 });
+
+test('base-table confirmed status reaches aggregate outcomes without implying recovery readiness', async () => {
+  const f = fixture();
+  Object.assign(f.rows[0], {
+    state: 'COMPLETED',
+    confirmed: true,
+    list_engine: engine,
+    list_created_at: '2026-09-17T01:00:00Z',
+  });
+  f.recovery.approval_status = 'UNAVAILABLE';
+  enforceActualSessionProjection(f);
+  const summary = await f.route('sessions-summary.get.ts');
+  assert.equal(summary.completedOutcomes[0].confirmed, true);
+  assert.equal(summary.completedOutcomes[0].readiness, 'NO_PROCEDURE');
+  const { countSessionOutcomes } = load(
+    'packages/dashboard/app/utils/sessionState.ts',
+  );
+  const counts = countSessionOutcomes(
+    summary.byState,
+    summary.completedOutcomes,
+  );
+  assert.equal(counts.get('NO_PROCEDURE'), 1);
+  assert.equal(counts.has('NO_CAUSE'), false);
+});
