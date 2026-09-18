@@ -55,8 +55,7 @@ def _file_objects(result: dict, arguments: dict):
             for block in blocks
         )
         or (
-            len(blocks) >= 2
-            and all(isinstance(block, dict) and isinstance(block.get("text"), str) for block in blocks)
+            len(blocks) >= 2 and all(isinstance(block, dict) and isinstance(block.get("text"), str) for block in blocks)
         )
     )
     if not download:
