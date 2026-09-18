@@ -19,6 +19,22 @@ class AppContainer(Container):
         self._sensor_service: SensorService | None = None
         self._health_service: HealthService | None = None
         self._symptom_metrics: SymptomMetrics | None = None
+        self._vital_service = None
+
+    @property
+    def vital_service(self):
+        """Use the same owned database pool for durable events without a second connection lifetime."""
+        if self._vital_service is None:
+            from test_service.adapters.secondary.vital_repository.postgresql import PostgreSQLVitalRepository
+            from test_service.config.settings import VITAL_WORKER_SLOTS
+            from test_service.services.vital import VitalService
+
+            if self.settings.db_pool_size + self.settings.db_max_overflow < VITAL_WORKER_SLOTS + 1:
+                raise ValueError("Vital workers require configured pool capacity >= 3, including producer headroom")
+            self._vital_service = VitalService(
+                PostgreSQLVitalRepository(self.database.engine, self.symptom_metrics), self.symptom_metrics
+            )
+        return self._vital_service
 
     @property
     def settings(self) -> AppSettings:
@@ -72,12 +88,14 @@ class AppContainer(Container):
         from test_service.adapters.primary.health.health_controller import HealthController
         from test_service.adapters.primary.patients.patient_controller import PatientController
         from test_service.adapters.primary.sensors.sensor_controller import SensorController
+        from test_service.adapters.primary.vital_controller import VitalController
 
         router = APIRouter()
         router.include_router(HealthController(self.health_service).router)
         router.include_router(SensorController(self.sensor_service).router)
         router.include_router(PatientController(self.sensor_service).router)
         router.include_router(AlertController(self.sensor_service).router)
+        router.include_router(VitalController(lambda: self.vital_service).router)
         return router
 
     async def cleanup(self) -> None:

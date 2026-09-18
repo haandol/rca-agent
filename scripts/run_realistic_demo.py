@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import runpy
 import signal
 import subprocess
 import sys
@@ -322,8 +323,8 @@ class Aws:
         )
         return environment
 
-    def __call__(self, service, operation, /, **payload):
-        """Execute one CLI operation and reject transport or partial failures."""
+    def __call__(self, service, operation, /, _deadline=None, **payload):
+        """Reject transport/partial failures and cap a probe call by its remaining shared deadline."""
         output_file = payload.pop("OutputFile", None)
         # --cli-input-json treats blob values as base64, not filesystem paths.
         # The S3 CLI's --body option owns file loading; preserve the actual bytes.
@@ -354,6 +355,12 @@ class Aws:
                 part for key, value in payload.items() for part in (flags[key], value)
             )
             json_args = []
+        environment = self._environment(service)
+        call_timeout = (
+            90 if _deadline is None else min(90, _deadline - time.monotonic())
+        )
+        if call_timeout <= 0:
+            raise RuntimeError("AWS operation deadline exhausted before start")
         try:
             process = subprocess.run(
                 [
@@ -371,9 +378,9 @@ class Aws:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=90,
+                timeout=call_timeout,
                 check=False,
-                env=self._environment(service),
+                env=environment,
             )
         except subprocess.TimeoutExpired:
             # TimeoutExpired.__str__ includes argv, which can contain environment values.
@@ -491,6 +498,143 @@ def stable(service, arn):
         and deployments[0].get("taskDefinition") == arn
         and deployments[0].get("rolloutState") == "COMPLETED"
     )
+
+
+def read_vital_database(snapshot, env_file, operation, *, cohort=None, wait_seconds=0):
+    """Read the actual DB with the Sensor runtime; never accept a user-supplied proof JSON."""
+    options = snapshot["options"]
+    environment = env_map(
+        snapshot["taskDefinition"]["taskDefinition"], options["container"]
+    )
+    schemas = {
+        row["message"]["schema_name"]
+        for row in snapshot["normalObservations"]
+        if row["message"].get("event") == "db_schema_snapshot"
+    }
+    if len(schemas) != 1:
+        raise RuntimeError("normal database schema identity is unavailable")
+    target = {
+        "host": environment["DB_HOST"],
+        "port": int(environment["DB_PORT"]),
+        "database": environment["DB_NAME"],
+        "schema": next(iter(schemas)),
+    }
+    root = Path(__file__).resolve().parents[1]
+    python = root / "packages/healthcare-sensor-app/.venv/bin/python"
+    if not python.is_file():
+        raise RuntimeError("Sensor Python environment is required for actual DB proof")
+    request = {
+        "nonce": os.urandom(16).hex(),
+        "target": target,
+        "env_file": str(Path(env_file).resolve()),
+        "operation": operation,
+        "cohort": cohort,
+    }
+    budget = wait_seconds or 900
+    total_deadline = time.monotonic() + budget
+    query_deadline = total_deadline - min(90, budget / 2)
+    process = subprocess.Popen(
+        [str(python), str(root / "scripts/vital_backlog_db.py")],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, _ = process.communicate(
+            json.dumps(request), timeout=max(0, query_deadline - time.monotonic())
+        )
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                process.communicate(
+                    timeout=max(0, (total_deadline - time.monotonic()) / 2)
+                )
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate(timeout=max(0, total_deadline - time.monotonic()))
+            except ProcessLookupError:
+                process.wait(timeout=max(0, total_deadline - time.monotonic()))
+    if process.returncode:
+        raise RuntimeError(
+            "actual read-only database proof failed; no summary accepted"
+        )
+    try:
+        result = json.loads(stdout)
+        result_keys = (
+            {
+                "epoch",
+                "lower_exclusive",
+                "upper_inclusive",
+                "observed_at",
+            }
+            if operation == "checkpoint"
+            else {
+                "epoch",
+                "lower_exclusive",
+                "upper_inclusive",
+                "expected_events",
+                "retained_identities",
+                "pending_events",
+                "missing_measurements",
+                "payload_mismatches",
+                "matched_measurements",
+                "lost_pending_inputs",
+                "missing_identities",
+                "observed_42703_events",
+                "latest_42703_at",
+                "complete",
+                "reason",
+            }
+        )
+        if (
+            set(result)
+            != {
+                "nonce",
+                "target",
+                "transport",
+                "repository_sha256",
+                "result",
+            }
+            or result["nonce"] != request["nonce"]
+            or result["target"] != target
+            or result["transport"] != "direct_postgresql_readonly"
+            or result["repository_sha256"]
+            != hashlib.sha256(
+                (
+                    root
+                    / "packages/healthcare-sensor-app/src/test_service/adapters/secondary/vital_repository/postgresql.py"
+                ).read_bytes()
+            ).hexdigest()
+            or not isinstance(result["result"], dict)
+            or set(result["result"]) - result_keys
+            or (
+                "reason" in result["result"]
+                and result["result"]["reason"] != "epoch or admission bound mismatch"
+            )
+        ):
+            raise ValueError("invalid DB proof transport")
+    except (KeyError, ValueError, TypeError) as error:
+        raise RuntimeError("invalid actual database proof response") from error
+    return result
+
+
+def validate_vital_checkpoint(value):
+    """Require a real epoch, integer admission boundaries and an aware database observation time."""
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("epoch"), str)
+        or not re.fullmatch(r"[a-f0-9-]{36}", value["epoch"])
+        or type(value.get("lower_exclusive")) is not int
+        or type(value.get("upper_inclusive")) is not int
+        or not 0 <= value["lower_exclusive"] <= value["upper_inclusive"]
+    ):
+        raise RuntimeError("invalid admission checkpoint")
+    observed = datetime.fromisoformat(value["observed_at"])
+    if observed.tzinfo is None:
+        raise RuntimeError("database checkpoint time must be timezone aware")
 
 
 class Demo:
@@ -850,6 +994,8 @@ class Demo:
             "success_semantics",
             "input_contract",
             "input_contract_sha256",
+            "event_schema_version",
+            "reading_ref",
         }
         result = []
         for task, manifest in zip(tasks, manifests, strict=True):
@@ -931,6 +1077,18 @@ class Demo:
                 ):
                     raise RuntimeError("normal diagnostic logger service mismatch")
                 validate_declared_source_locations(message)
+                if "event_schema_version" in message and (
+                    kind != "input_contract_observed"
+                    or type(message["event_schema_version"]) is not int
+                    or message["event_schema_version"] not in (1, 2)
+                ):
+                    raise RuntimeError("invalid versioned input observation")
+                if "reading_ref" in message and (
+                    kind != "write_completed"
+                    or not isinstance(message["reading_ref"], str)
+                    or not re.fullmatch(r"[a-f0-9-]{36}", message["reading_ref"])
+                ):
+                    raise RuntimeError("invalid completed reading reference")
                 if kind == "write_accounting":
                     expected = {
                         "metric_namespace": "Healthcare/Sensor",
@@ -1347,6 +1505,26 @@ class Demo:
         snapshot = self.journal.snapshot
         if snapshot.get("contractVersion") != JOURNAL_VERSION:
             raise RuntimeError("legacy journal is read-only; use a fresh run id")
+        if any(
+            row.get("message", {}).get("input_contract", {}).get("format")
+            == "vital-event-v1-v2"
+            for row in snapshot.get("normalObservations", [])
+        ):
+            opened = self.journal.find("backlog_open")
+            if len(opened) != 1:
+                raise RuntimeError(
+                    "Vital apply requires one frozen backlog-open before fault mutation"
+                )
+            value = opened[0]["data"]
+            checkpoint = value.get("checkpoint")
+            validate_vital_checkpoint(checkpoint)
+            if (
+                value.get("boundary") != "before_fault_apply"
+                or value.get("source", {}).get("result") != checkpoint
+                or datetime.fromisoformat(checkpoint["observed_at"])
+                > datetime.now(timezone.utc)
+            ):
+                raise RuntimeError("Vital apply requires a valid frozen backlog-open")
         immutable_baseline_image(
             snapshot["taskDefinition"]["taskDefinition"],
             snapshot["tasks"],
@@ -1740,6 +1918,186 @@ class Demo:
                         {"step": "reclaim-owner", "error": str(reclaim_error)}
                     )
 
+    def backlog(self, action, env_file=None, *, reader=None, wait_seconds=0):
+        """Freeze an inclusive controlled-run cohort; one-shot proof never rewrites execution RESOLVED."""
+        if reader is None:
+
+            def reader(snapshot, env_file, operation, *, cohort=None):
+                """Default to the fixed private-network task; direct credentials are explicit local opt-in."""
+                if env_file is not None:
+                    return read_vital_database(
+                        snapshot,
+                        env_file,
+                        operation,
+                        cohort=cohort,
+                        wait_seconds=wait_seconds,
+                    )
+                module = runpy.run_path(
+                    str(Path(__file__).with_name("vital_backlog_ecs.py"))
+                )
+                return module["run_probe"](self, operation, cohort, wait_seconds)
+
+        snapshot = self.journal.snapshot
+        open_events = self.journal.find("backlog_open")
+        close_events = self.journal.find("backlog_close")
+        if action == "backlog-open":
+            if open_events:
+                return copy.deepcopy(open_events[0]["data"])
+            if self.journal.find("apply_intent"):
+                raise RuntimeError(
+                    "backlog lower bound must be captured before fault apply"
+                )
+            proof = reader(snapshot, env_file, "checkpoint")
+            validate_vital_checkpoint(proof["result"])
+            value = {
+                "checkpoint": proof["result"],
+                "source": proof,
+                "boundary": "before_fault_apply",
+            }
+            self.journal.append("backlog_open", value)
+            return value
+        if not open_events:
+            raise RuntimeError(
+                "backlog-open before the fault is required; cannot reconstruct a convenient subset"
+            )
+        opened = open_events[0]["data"]["checkpoint"]
+        if action == "backlog-close":
+            if close_events:
+                return copy.deepcopy(close_events[0]["data"])
+            if not self.journal.find("apply_intent") or not self.journal.find(
+                "update_response"
+            ):
+                raise RuntimeError("actual fault update response is required")
+            service = self.service()
+            self.assert_owner(
+                service, allow_unclaimed=bool(self.journal.find("restore_intent"))
+            )
+            original = snapshot["service"]["taskDefinition"]
+            tasks = self.tasks(serviceName=self.target["service"])
+            if (
+                not stable(service, original)
+                or not self.tasks_match(
+                    tasks,
+                    original,
+                    service["desiredCount"],
+                    snapshot["options"]["container"],
+                )
+                or self.image_digests(tasks, snapshot["options"]["container"])
+                != self.image_digests(
+                    snapshot["tasks"], snapshot["options"]["container"]
+                )
+            ):
+                raise RuntimeError(
+                    "normal deployment must converge before closing the fault-covering interval"
+                )
+            proof = reader(snapshot, env_file, "checkpoint")
+            closed = proof["result"]
+            validate_vital_checkpoint(closed)
+            if (
+                closed["epoch"] != opened["epoch"]
+                or closed["upper_inclusive"] < opened["upper_inclusive"]
+                or datetime.fromisoformat(closed["observed_at"])
+                < datetime.fromisoformat(opened["observed_at"])
+            ):
+                raise RuntimeError("database epoch or admission history changed")
+            cohort = {
+                "epoch": opened["epoch"],
+                "lower_exclusive": opened["lower_exclusive"],
+                "upper_inclusive": closed["upper_inclusive"],
+            }
+            value = {
+                "checkpoint": closed,
+                "cohort": cohort,
+                "cohort_sha256": digest(cohort),
+                "source": proof,
+                "normal_task_definition": original,
+                "boundary": "controlled_interval_covering_fault_through_observed_normal_convergence",
+            }
+            self.journal.append("backlog_close", value)
+            return value
+        if action != "backlog-check" or not close_events:
+            raise RuntimeError("backlog-close is required before a fixed-cohort check")
+        closed = close_events[0]["data"]
+        cohort = closed["cohort"]
+        result = {
+            "backlogVerified": False,
+            "status": "INCOMPLETE",
+            "cohort": cohort,
+            "cohort_sha256": closed["cohort_sha256"],
+            "scope": self.target,
+            "executionStateChanged": False,
+            "scenarioSuccess": False,
+        }
+        try:
+            proof = reader(snapshot, env_file, "cohort", cohort=cohort)
+            summary = proof["result"]
+            expected = cohort["upper_inclusive"] - cohort["lower_exclusive"]
+            count_fields = (
+                "expected_events",
+                "retained_identities",
+                "pending_events",
+                "missing_measurements",
+                "payload_mismatches",
+                "matched_measurements",
+                "lost_pending_inputs",
+                "missing_identities",
+            )
+            valid = (
+                all(
+                    type(summary.get(k)) is int and summary[k] >= 0
+                    for k in count_fields
+                )
+                and all(summary.get(k) == v for k, v in cohort.items())
+                and expected > 0
+                and summary.get("expected_events") == expected
+                and summary.get("retained_identities")
+                == summary.get("matched_measurements")
+                == expected
+                and all(
+                    summary.get(k) == 0
+                    for k in (
+                        "pending_events",
+                        "missing_measurements",
+                        "payload_mismatches",
+                        "lost_pending_inputs",
+                        "missing_identities",
+                    )
+                )
+                and summary.get("complete") is True
+            )
+            witness_time = summary.get("latest_42703_at")
+            observed = (
+                datetime.fromisoformat(witness_time)
+                if isinstance(witness_time, str)
+                else None
+            )
+            witnessed = (
+                type(summary.get("observed_42703_events")) is int
+                and 0
+                < summary["observed_42703_events"]
+                <= summary.get("retained_identities", 0)
+                and observed is not None
+                and observed.tzinfo is not None
+                and datetime.fromisoformat(opened["observed_at"])
+                <= observed
+                <= datetime.fromisoformat(closed["checkpoint"]["observed_at"])
+            )
+            result.update(
+                source=proof,
+                summary=summary,
+                fault_period_error_witness=bool(witnessed),
+            )
+            if valid and witnessed:
+                result.update(backlogVerified=True, status="VERIFIED")
+            else:
+                result["reason"] = (
+                    "fixed cohort is incomplete or lacks actual owned 42703 membership proof"
+                )
+        except RECOVERABLE_ERRORS as error:
+            result["reason"] = "actual proof read unavailable: " + type(error).__name__
+        self.journal.append("backlog_check", result)
+        return result
+
     def restore_once(self):
         """Use persisted ownership/intents for independent cleanup despite logging loss."""
         if not self.journal.find("restore_intent"):
@@ -1805,13 +2163,29 @@ class Demo:
 def parse_args(argv=None):
     """Validate immutable scenario controls before contacting AWS."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["plan", "apply", "status", "restore"])
+    parser.add_argument(
+        "action",
+        choices=[
+            "plan",
+            "apply",
+            "status",
+            "restore",
+            "backlog-open",
+            "backlog-close",
+            "backlog-check",
+        ],
+    )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--cluster", required=True)
     parser.add_argument("--service", required=True)
     parser.add_argument("--region", required=True)
     parser.add_argument("--profile")
     parser.add_argument("--journal-root", type=Path, required=True)
+    parser.add_argument(
+        "--vital-db-env-file",
+        type=Path,
+        help="Opt-in direct DB adapter for backlog commands; default is the pinned readonly ECS probe",
+    )
     parser.add_argument(
         "--scenario",
         choices=["write-column-regression"],
@@ -1837,10 +2211,12 @@ def parse_args(argv=None):
         "--wait-seconds",
         type=int,
         default=0,
-        help="Bounded polling for restore verification or apply rollout, 0 inspects once",
+        help="Apply/restore/status wait (0 inspects once); backlog total probe+cleanup window (0 uses 900s)",
     )
     arguments = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(arguments)
+    if not args.action.startswith("backlog-") and args.vital_db_env_file:
+        parser.error("--vital-db-env-file is only valid for backlog commands")
     plan_controls = {
         "--scenario",
         "--container",
@@ -1961,6 +2337,10 @@ def main(argv=None):
                     return 1
             elif args.action == "restore":
                 result = demo.restore(args.wait_seconds)
+            elif args.action.startswith("backlog-"):
+                result = demo.backlog(
+                    args.action, args.vital_db_env_file, wait_seconds=args.wait_seconds
+                )
             else:
                 result = demo.status()
             deadline = time.monotonic() + args.wait_seconds
@@ -1975,7 +2355,14 @@ def main(argv=None):
         result["journal"] = str(journal.path)
         print(json.dumps(result, indent=2, default=str))
         return (
-            2 if args.action == "restore" and not result.get("recoveryVerified") else 0
+            2
+            if (
+                args.action == "restore"
+                and not result.get("recoveryVerified")
+                or args.action == "backlog-check"
+                and not result.get("backlogVerified")
+            )
+            else 0
         )
 
 

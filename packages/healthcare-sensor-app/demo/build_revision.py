@@ -44,6 +44,8 @@ def capture_source_snapshot(destination: Path) -> dict:
             [
                 *PACKAGE.joinpath("src/test_service").rglob("*.py"),
                 PACKAGE / "demo/local_worker.py",
+                PACKAGE / "demo/local_runner.py",
+                PACKAGE / "demo/vital_worker.py",
                 PACKAGE / "demo/build_revision.py",
                 PACKAGE / FAULT_SOURCE,
             ]

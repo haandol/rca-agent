@@ -91,6 +91,7 @@ async def run_traffic_generator(
     patient_id: str | None = None,
     seed: int | None = None,
     symptom_metrics: SymptomMetrics | None = None,
+    reads_only: bool = False,
 ) -> None:
     """Offer individual requests on fixed slots, independent of completion.
 
@@ -131,7 +132,9 @@ async def run_traffic_generator(
                 task = asyncio.create_task(
                     _run_request(
                         sensor_service,
-                        _REQUEST_PLAN[slot % len(_REQUEST_PLAN)],
+                        ("patient_vitals", "alerts")[slot % 2]
+                        if reads_only
+                        else _REQUEST_PLAN[slot % len(_REQUEST_PLAN)],
                         rng=rng,
                         patient_id=patient_id,
                         query_limit=query_limit,

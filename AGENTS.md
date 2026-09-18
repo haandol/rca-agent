@@ -9,7 +9,7 @@ RCA Agent는 AWS 기반 자동 RCA(근본원인분석) 에이전트 시스템의
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/infra`](./packages/infra/AGENTS.md) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, VPC, Cloud Map | TypeScript, CDK |
 | [`packages/headless-codex`](./packages/headless-codex/AGENTS.md) | Codex on Bedrock Runtime headless — 분석 워커(RCA → Report 전문 서브 에이전트, 읽기 전용)와 실행 워커(사용자 승인 기반 플레이북 실행 + 회고) | Python, Codex CLI, ECS Fargate |
-| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/AGENTS.md) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
+| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/AGENTS.md) | Vital Sensor 데모 — 심박수 중심의 버전별 이벤트 입력·지속 저장·재시도와 단일 SQL 컬럼 오류 재현 | Python, FastAPI, SQLAlchemy, PostgreSQL, OpenTelemetry |
 | [`packages/dashboard`](./packages/dashboard/AGENTS.md) | RCA 대시보드 — 플레이북 라이브러리·변경 제안 검토, 보고서 요약과 상세 모달, 실행 승인·증거 조회 (로컬 전용) | TypeScript, Nuxt.js 4, TailwindCSS 4, DaisyUI 5, Vue Flow |
 
 ## Architecture at a Glance
@@ -72,7 +72,7 @@ pnpm nx affected -t test
 | [Deployment](./docs/deployment.md) | CDK 스택, 패키지별 배포, 테스트 가이드 |
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
-| [현실적 데모 시나리오](./docs/demo/realistic-scenarios.html) | 실제 PostgreSQL의 네 장애 재현, 사고 시점 관측 입력, 로컬·모델·배포 검증 경계 |
+| [현실적 데모 시나리오](./docs/demo/realistic-scenarios.html) | 단일 SQL 컬럼 오류·승인 롤백·미완료 이벤트 확인과 로컬·모델·배포 검증 경계 |
 | [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [RCA에서 플레이북 실행까지](./docs/rca-to-remediation-flow.md) | 분석 → 리포트 → 승인 → 실행 → 해결 판정 → 회고로 이어지는 닫힌 루프 전체 흐름 |

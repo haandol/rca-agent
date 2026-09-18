@@ -79,6 +79,15 @@ async def run(args):
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     proof = {"phase": args.phase, "source": source_manifest()}
+    real_dispose = database.dispose
+
+    async def checked_dispose():
+        """Verify the actual pool only after owned background work drains, before disposal hides pool state."""
+        proof["checked_out"] = database.checked_out_connections()
+        assert proof["checked_out"] == 0 and not database._owned_sessions
+        await real_dispose()
+
+    lifecycle.enter_context(patch.object(database, "dispose", checked_dispose))
     try:
         if args.case == "setup":
             async with database.engine.begin() as conn:
@@ -127,7 +136,7 @@ async def run(args):
                 statuses.append(response.status_code)
                 if response.status_code != 200:
                     responses.append(response.text)
-                assert database.checked_out_connections() == 0 and not database._owned_sessions
+                assert not database._owned_sessions
             read = await client.get(f"/patients/{CANARIES[0]}/vitals")
             alerts = await client.get("/alerts")
             health = await client.get("/healthz")
@@ -161,7 +170,7 @@ async def run(args):
                 "read_count": len(read.json()),
                 "alert_count": len(alerts.json()),
                 "health": health.json(),
-                "checked_out": database.checked_out_connections(),
+                "checked_out_during_background": database.checked_out_connections(),
                 "canaries_absent": True,
                 "events": capture.events,
                 "metrics": emitted[-1],

@@ -136,8 +136,8 @@
         },
         {
           "path": "docs/adr/infra/0004-rds-healthcare-deployment.md",
-          "status": "Accepted (2026-09-15)",
-          "summary": "사설 Healthcare 서비스에서 동일 소스의 불변 이미지 두 개로 실제 INSERT 컬럼 불일치 하나만 재현하고 안전한 관측·트랜잭션 정리·동일 부하 복원을 검증한다."
+          "status": "Proposed",
+          "summary": "Vital Sensor가 v1/v2 이벤트를 서비스 전체 초당 1건 생성하고 PostgreSQL에 최대 86400건의 미완료 입력을 보존하며 원자적 중복 방지와 승인 롤백 후 처리를 검증한다."
         },
         {
           "path": "docs/adr/infra/0005-execution-trace-dynamodb.md",
@@ -152,7 +152,7 @@
         {
           "path": "docs/adr/infra/0007-demo-symptom-alarm-and-deployment-fault-injection.md",
           "status": "Proposed",
-          "summary": "실제 컬럼 장애에서 검증된 정상화 런북을 우선 공개하고 원인·운영 분석과 승인 실행을 독립 진행하며 실제 복구로 판정한다."
+          "summary": "Vital v2의 실제 컬럼 오류에서 정상화 런북을 우선 공개하고 독립 후속 분석·승인 롤백·장애 중 보존 이벤트의 중복 없는 저장까지 데모 완료로 검증한다."
         },
         {
           "path": "docs/adr/infra/0008-playbook-execution-stack.md",

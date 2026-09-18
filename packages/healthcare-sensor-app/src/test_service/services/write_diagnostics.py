@@ -31,8 +31,8 @@ def write_contract() -> dict:
     }
 
 
-def log_write_error(exc: Exception) -> None:
-    """Unwrap actual driver attributes; never infer missing diagnostics from error strings."""
+def driver_diagnostics(exc: Exception) -> dict:
+    """Read only actual driver attributes so stored witnesses and logs share the same non-text evidence."""
     driver = exc
     seen = set()
     while id(driver) not in seen:
@@ -41,15 +41,22 @@ def log_write_error(exc: Exception) -> None:
         if inner is None:
             break
         driver = inner
+    return {
+        "sqlstate": getattr(driver, "sqlstate", None),
+        "error_type": type(driver).__name__,
+        "schema_name": getattr(driver, "schema_name", None),
+        "driver_table_name": getattr(driver, "table_name", None),
+        "driver_column_name": getattr(driver, "column_name", None),
+    }
+
+
+def log_write_error(exc: Exception) -> None:
+    """Log safe actual diagnostics without inferring fields from exception prose."""
     logger.error(
         "db_write_error",
         extra={
             "event": "db_write_error",
             **write_contract(),
-            "sqlstate": getattr(driver, "sqlstate", None),
-            "error_type": type(driver).__name__,
-            "schema_name": getattr(driver, "schema_name", None),
-            "driver_table_name": getattr(driver, "table_name", None),
-            "driver_column_name": getattr(driver, "column_name", None),
+            **driver_diagnostics(exc),
         },
     )

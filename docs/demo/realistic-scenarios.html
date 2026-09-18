@@ -14,7 +14,7 @@
   E --> F[원본 환경 정리]</pre></details>
 <p>runner는 정상 관측과 장애 배포, 실패 시 환경 정리를 담당한다. Strands 분석 워커가 원인을 분석하고 사용자가 대시보드에서 고정된 런북을 승인한다. 실행 워커의 롤백·배포 수렴·실제 저장 회복·서버 <code>RESOLVED</code> 판정은 별도로 확인한다. runner는 실행 승인을 보내지 않으며 <code>scenarioSuccess</code>를 참으로 만들지 않는다.</p>
 <h2>시작 전 조건</h2>
-<p>Python 3.11 이상, Unix 파일 잠금, AWS CLI가 필요하다. 같은 서비스의 모든 운영자는 동일한 지속형 공유 <code>--journal-root</code>를 사용한다. 정상 태스크 정의는 <code>repository@sha256:digest</code>를 직접 참조해야 하며 실행 중인 모든 앱 컨테이너의 지문과 일치해야 한다. 정상·결함 이미지는 부모 작업에서 같은 소스로 빌드·검증해 제공한다.</p>
+<p>프로젝트 Agent Python 환경, Unix 파일 잠금, AWS CLI v2가 필요하다. 고정된 ECS service model 검사와 실제 실행 옵션은 루트 실행기 안내를 따른다. 같은 서비스의 모든 운영자는 동일한 지속형 공유 <code>--journal-root</code>를 사용한다. 정상 태스크 정의는 <code>repository@sha256:digest</code>를 직접 참조해야 하며 실행 중인 모든 앱 컨테이너의 지문과 일치해야 한다. 정상·결함 이미지는 부모 작업에서 같은 소스로 빌드·검증해 제공한다.</p>
 <p>정상 태스크마다 검증된 <code>source_manifest</code>, 실제 <code>write_contract</code>, 신선한 <code>db_schema_snapshot</code>과 <code>write_completed</code>가 필요하다. 스키마에는 <code>timestamp</code>가 있고 <code>sampled_at</code>은 없어야 한다. 완결된 1분 지표 두 구간 모두 저장 시도가 양수이고 실패가 명시적 0이어야 한다. 누락 지표·0회 시도·다른 태스크 로그로 정상 상태를 추정하지 않는다.</p>
 <h2>한 실행의 명령</h2>
 <p>아래 값은 운영자가 실제 배포와 설정된 증거 버킷에 맞춰 지정한다. SHA-256은 파일 내용을 식별하는 지문이고 ARN은 AWS 리소스의 고유 식별자다.</p>
@@ -38,11 +38,19 @@ demo plan --scenario write-column-regression --revision v2 \
   --image "$FAULT_IMAGE" --evidence-bucket "$EVIDENCE_BUCKET" \
   --alarm RcaAgentDev-Healthcare-VitalIngestFailures
 
+# 장애 이전 pending과 admission 시작 경계를 먼저 고정 (Vital apply의 필수 조건)
+demo backlog-open --wait-seconds 900
+
 # 실제 기준 재확인 → S3 검증 → 알람 설명 연결 → 장애 배포
 demo apply --wait-seconds 600
 demo status
 
-# 부모 운영자가 일반 대시보드 API로 RCA·승인·실행 결과를 별도 확인
+# 일반 대시보드 API로 RCA 확인 → 사용자 승인 실행 → 정상 배포 수렴 확인
+# 정상 배포 수렴 뒤 같은 고정 범위의 별도 backlog proof 확인
+demo backlog-close --wait-seconds 900
+demo backlog-check --wait-seconds 900
+
+# 승인 실행이 실패했다면 restore로 먼저 정상화하고 close/check하되 에이전트 성공으로 세지 않는다
 # 성공·실패·중단 여부와 관계없이 같은 RunId로 환경 정리
 demo restore --wait-seconds 600</pre>
 <p><code>inject_deployment_fault.py</code>와 <code>run_deployed_e2e.py</code>는 같은 명령으로 위임한다. 예전 플래그, red-herring, DB 파라미터 그룹, 정비 잠금 제어는 제공하지 않는다. 준비 3회와 본실행 10회의 독립 RunId를 시작 전에 고정하고 실패·중단을 포함해 기록한다. 같은 RunId의 apply를 재실행해 결과를 덮지 않는다.</p>
@@ -56,6 +64,35 @@ demo restore --wait-seconds 600</pre>
 <p><code>baselines/&lt;run_id&gt;/normal.json</code>에 정렬된 키·공백 없는 구분자·UTF-8·NaN 금지 JSON으로 저장한다. <code>IfNoneMatch="*"</code>는 기존 객체 덮어쓰기를 막는다. PUT 응답 유실도 GET으로 받은 실제 바이트의 SHA-256이 같아야 성공으로 처리한다. ETag를 내용 지문으로 대신하지 않는다.</p>
 <pre>{"summary":"Healthcare service symptoms","run_id":"...","service":"서비스 ARN","baseline_ref":{"bucket":"설정 버킷","key":"baselines/.../normal.json","sha256":"..."}}</pre>
 <p>위 참조만 실패 알람의 <code>AlarmDescription</code>에 1024자 이내로 연결한다. 예상 원인을 넣지 않고 알람 임계치·차원·평가 기준·액션은 유지한다. 종료 시 원래 설명을 복원한다. 다른 운영자가 바꾼 설정이나 설명은 덮어쓰지 않는다.</p>
+<section id="vital-backlog-proof"><h2>Vital 이벤트와 고정 backlog 검증</h2>
+<p>이벤트 버전과 앱 빌드 버전은 다르다. 정상 앱은 이벤트 v1의 <code>timestamp</code>와 v2의 <code>sampled_at</code>을 물리 <code>timestamp</code>로 정규화한다. 정상/결함 빌드는 같은 v2 입력과 내구 inbox를 사용하고, checked-in 결함 파일은 측정 INSERT 컬럼만 <code>sampled_at</code>으로 바꾼다. 신규 생성은 서비스 전체 1Hz이며, 미완료 최대 86,400건과 재시도·중복 방지는 PostgreSQL의 공통 경계다. 이 문서의 새 동작 검증은 로컬 구현/실제 로컬 PostgreSQL 범위이며 새 라이브 데모 성공을 뜻하지 않는다.</p>
+<p>기존 <code>RESOLVED</code>와 첫 두 고정 60초 구간은 변경하지 않는다. 아래 proof는 장애 구간 전체를 포함하는 보수적인 cohort가 원래 내용으로 저장됐는지 별도로 읽는다. <code>backlogVerified=true</code>도 혼자 전체 데모 성공이나 에이전트 rollback을 증명하지 않는다. 기존 원인·승인·실행 결과와 함께 대조한다.</p>
+<h3>기본 경로: 고정 읽기 전용 ECS probe</h3>
+<p>노트북 runner는 별도 DB 자격 증명이나 새 네트워크 경로를 만들지 않는다. 정상 태스크 정의의 이미지·네트워크·기존 비밀 참조·역할을 그대로 사용해 <code>python -m test_service.backlog_probe</code> 단독 태스크를 시작한다. 이 진입점은 FastAPI·producer·schema 초기화·저장을 시작하지 않고 실제 DB를 read-only로 한 번 조회한다. 새로운 정상 이미지의 source_manifest에 probe 코드가 포함돼 있어야 하며 구형 이미지는 거부한다.</p>
+<p>실제 반환 태스크 ARN·startedBy·정상 TD·실행 이미지 digest·exit 0·run/probe ID·source 지문과 해당 태스크의 로그 스트림을 함께 검증한다. RunTask 응답 유실 시 동일 clientToken을 재사용하고, RUNNING의 startedBy 조회와 별도의 STOPPED family 조회 뒤 정확한 소유 태스크만 선택한다. 서비스를 scale하거나 다른 태스크를 중지하지 않는다.</p>
+<p><code>--wait-seconds</code>는 probe 작업과 종료 정리를 합한 수명 상한이다(미지정/0이면 기존 900초 대기값 사용). 그 안에서 정리 시간을 예약하며 페이지·로그 조회도 같은 deadline을 사용한다. DB cohort를 반복 조회하는 기능이 아니다. 취소·timeout이면 소유 태스크를 중지하고 STOPPED를 확인한다. 종료가 입증되지 않으면 UNKNOWN을 보존하고 새 태스크를 자동 시작하지 않는다. 실제 AWS RunTask/StopTask는 승인된 운영 실행에서만 발생하며 이 문서의 시험은 로컬 double이다.</p>
+<p>첫 실행 예제처럼 <strong>plan → backlog-open → apply</strong> 순서를 지킨다. Vital 스냅샷은 유효한 시작 checkpoint가 없으면 apply가 어떤 장애 변경도 수행하기 전에 거부된다. 아래 명령은 같은 run/journal의 각 proof 단계를 풀어 쓴 것이다.</p>
+<pre>uv run --project packages/agent --no-sync python scripts/run_realistic_demo.py backlog-open \
+  --run-id "$RUN_ID" --cluster "$CLUSTER" --service "$SERVICE" --region "$REGION" \
+  --journal-root "$JOURNAL_ROOT" --wait-seconds 900
+
+# 기존 apply → RCA → 사용자 승인 실행 또는 필요한 운영자 정리 후 정상 배포가 수렴해야 한다.
+uv run --project packages/agent --no-sync python scripts/run_realistic_demo.py backlog-close \
+  --run-id "$RUN_ID" --cluster "$CLUSTER" --service "$SERVICE" --region "$REGION" \
+  --journal-root "$JOURNAL_ROOT" --wait-seconds 900
+
+uv run --project packages/agent --no-sync python scripts/run_realistic_demo.py backlog-check \
+  --run-id "$RUN_ID" --cluster "$CLUSTER" --service "$SERVICE" --region "$REGION" \
+  --journal-root "$JOURNAL_ROOT" --wait-seconds 900</pre>
+<p>로컬 또는 기존 DB 접근 호스트에서만 <code>--vital-db-env-file /private/database.env</code>를 명시해 직접 DB 어댑터를 선택할 수 있다. 파일의 DATABASE_URL은 정상 스냅샷의 host/port/database와 일치해야 한다. 일반 노트북→비공개 RDS 운영 경로에서 이 옵션이나 127.0.0.1 터널을 요구하지 않는다. 직접 child도 소유 프로세스 그룹만 종료하고 같은 전체 deadline 안에서 회수한다.</p>
+<p>open은 실제 DB의 epoch·가장 오래된 pending 이전 lower bound·현재 수용 순번을 남긴다. close는 장애가 실제 적용됐고 원래 정상 정의/이미지/태스크가 수렴한 뒤 upper bound를 고정한다. 이미 처리된 이벤트와 이후 수용된 이벤트를 포함하며 뒤 조회에서 목록을 줄이지 않는다. 완료 행이 inbox에서 없어져도 retained admission identity로 검사한다.</p>
+<p>실제 42703 증거는 <code>cohort()</code>가 고정 범위의 retained identity에서 집계한 <code>observed_42703_events</code>와 <code>latest_42703_at</code>을 읽는다. 오류가 실제 동결 구간 안에 있어야 하며 unrelated legacy/global 오류를 섞지 않는다. 기존 identity의 원본 오류 metadata를 사용하고 별도 per-event 이력 테이블이나 임의 summary JSON을 요구하지 않는다.</p>
+<p>check는 고정 epoch/범위, retained/expected/matched 수량과 pending·lost input·missing measurement·payload mismatch가 모두 충족돼야 <code>VERIFIED</code>, exit 0이다. 실제 DB 또는 연관 오류 증거가 부족하면 <code>INCOMPLETE</code>, exit 2다. 경계가 없거나 잘못된 명령은 exit 1/2로 실패한다. 임의 summary JSON을 proof로 입력할 수 없으며 기존 실행 기한과 RESOLVED 판정을 유지하며 cohort 자동 재조회는 없다. ECS 태스크 종료와 로그 수집은 위 전체 기한 안에서 polling한다. <code>scenarioSuccess</code>는 계속 false다.</p>
+<h3>검증 범위</h3><pre>node --test tests/harness/vital-backlog.test.mjs tests/harness/realistic-demo-script.test.mjs
+
+# 로컬 postgres:17 이미지와 Docker 필요. 이 시험이 만든 컨테이너만 생성/정리한다.
+packages/healthcare-sensor-app/.venv/bin/python tests/harness/vital_backlog_native.py</pre>
+<p>native 시험은 실제 compiled 결함 SQL의 42703, pending→정상 commit, 고정 cohort 밖 신규 이벤트, epoch 불일치와 기존 행 보존을 확인한다. CloudWatch/API 경계 시험의 전송은 로컬 double이며 실제 AWS 호출이나 배포 완료 증거로 해석하지 않는다. 아래의 기존 역사적 입력·실패·복원 기록은 그대로 보존한다.</p></section>
 <h2>중단과 복구</h2>
 <p>서비스 변경 전에 원본 태스크 정의·서비스 설정·알람과 변경 의도를 해시 연결 저널에 생성 전용으로 저장한다. apply 중 실패하면 원래 태스크 정의 복원과 알람 설명 복원을 각각 시도한다. 기록 실패는 복구 성공으로 감추지 않으며, SIGKILL·호스트 종료 후에는 같은 저널로 restore를 실행한다. 검증 대기 중 restore의 종료 코드는 2다. 실제 배포·지표 회복이 확인될 때까지 소유권을 유지한다.</p>
 <p>이전 시나리오 저널은 읽기 전용으로 남는다. 새 runner로 수정하거나 새 결함 저널로 재사용하지 않는다. 정리가 끝나지 않은 과거 실행은 해당 버전의 복구 도구로 먼저 정리한다. <code>recoveryVerified</code>는 환경 정리 결과로, 승인된 플레이북이 문제를 해결했다는 인과 근거와 구분한다.</p>

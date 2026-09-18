@@ -87,6 +87,19 @@ class LifecycleContainer:
         self.repository = Repository(blocked=True)
         self.sensor_service = SensorService(self.repository, self.symptom_metrics)
         self.cleaned = False
+        self.vital_entered = asyncio.Event()
+        self.vital_drained = False
+        self.generate = None
+        self.vital_service = SimpleNamespace(run=self.vital_run)
+
+    async def vital_run(self, *, generate):
+        """Represent the independent durable scheduler lifetime without replacing native PG tests."""
+        self.generate = generate
+        self.vital_entered.set()
+        try:
+            await asyncio.Future()
+        finally:
+            self.vital_drained = True
 
     async def cleanup(self):
         """Dispose the adapter only after its owned workload has released in-flight readings."""
@@ -109,13 +122,25 @@ def lifecycle_module(monkeypatch):
 
 def install_container(monkeypatch, module, container):
     """Replace only the lifespan's collaborators, leaving its scheduling and cleanup intact."""
+    from test_service.adapters.secondary.vital_repository import postgresql
+
+    async def initialize(engine):
+        """The lifecycle double owns DDL outcome only; real bootstrap has separate PG integration tests."""
+        async with engine.begin() as conn:
+            await conn.run_sync(None)
+
+    monkeypatch.setattr(postgresql, "initialize_vital_schema", initialize)
     monkeypatch.setattr(module, "container", container)
     monkeypatch.setattr(module, "containers", [container])
 
 
 def assert_background_drained():
     """Check that shutdown leaves no owned observer, publisher, scheduler or request task alive."""
-    assert not [task for task in asyncio.all_tasks() if task.get_name().startswith("healthcare-") and not task.done()]
+    assert not [
+        task
+        for task in asyncio.all_tasks()
+        if task.get_name().startswith(("healthcare-", "vital-")) and not task.done()
+    ]
 
 
 async def test_lifespan_flushes_stalled_requests_and_drops_before_clean_shutdown(lifecycle_module, monkeypatch):
@@ -128,10 +153,12 @@ async def test_lifespan_flushes_stalled_requests_and_drops_before_clean_shutdown
         await database.entered.wait()
         await wait_until(lambda: total(metrics, "TrafficSkipped") >= 2)
         assert database.interval == 0.007
-        assert any(payload["VitalIngestInFlight"] > 0 for payload in metrics.emitted)
+        assert all(payload["VitalIngestInFlight"] == 0 for payload in metrics.emitted)
+        assert container.vital_entered.is_set() and container.generate is True
         assert total(metrics, "VitalIngestAttempts") == 0
         assert len(container.repository.operations) == 2
     assert container.cleaned and database.disposed and database.drained
+    assert container.vital_drained
     assert database.stop_event.is_set()
     assert metrics.emitted[-1]["VitalIngestInFlight"] == 0
     assert total(metrics, "TrafficStarted") == total(metrics, "TrafficCompleted") == 2

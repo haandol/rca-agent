@@ -11,7 +11,7 @@ AWS 환경에서 CloudWatch 알람 발생 시 자동 RCA(근본원인분석)를 
 | [`packages/agent`](./packages/agent/) | Strands Agents SDK 기반 RCA 에이전트 — 9단계 파이프라인 (단일 Sonnet 모델 + Planning/Execution 행동 분리) | Python, Strands Agents SDK, Amazon Bedrock |
 | [`packages/headless-codex`](./packages/headless-codex/) | Codex on Bedrock Runtime headless 오케스트레이터 — 읽기 전용 RCA → Report와 승인 기반 실행 → 회고 | Python, Codex CLI, ECS Fargate |
 | [`packages/infra`](./packages/infra/) | AWS CDK 인프라 — ECS Fargate, SNS/SQS, S3, S3 Vectors, DynamoDB, VPC, Cloud Map | TypeScript, CDK |
-| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | 헬스케어 센서 데이터 수집/조회 서비스 — 영구 지속형 장애 주입 + reset API, background traffic generator | Python, FastAPI, PostgreSQL |
+| [`packages/healthcare-sensor-app`](./packages/healthcare-sensor-app/) | Vital 센서 이벤트 수용·조회 — 전역 1Hz, PostgreSQL 내구 inbox·재시도, 단일 SQL 컬럼 오류 검증 | Python, FastAPI, PostgreSQL |
 | [`packages/dashboard`](./packages/dashboard/) | RCA 대시보드 — DynamoDB 세션 상태, S3 보고서/플레이북/증거 조회, 파이프라인 트레이스 그래프 (로컬 전용) | TypeScript, Nuxt.js 4, Vue Flow |
 
 ## 주요 기능
@@ -221,106 +221,43 @@ npx cdk deploy RcaAgentDevHealthcareServiceStack
 | `RcaAgentServiceStack` | Strands RCA 에이전트 (ECS Fargate) |
 | `HeadlessCodexStack` | Headless Codex RCA 에이전트 (배포 스택 물리 이름은 `CcHeadlessStack` 유지) |
 
-## 현실적 데모 시나리오
+## Vital 단일 저장 컬럼 오류 데모
 
-현재 평가 카탈로그는 같은 입력으로 정상 → 장애 → 복원을 비교하는 네 사례입니다.
-실제 PostgreSQL의 SQL 실행, 연결 반환과 잠금으로 재현하며, 모델에는 정상·사고
-구간의 관측만 제공합니다.
+활성 장애는 측정 INSERT의 `timestamp`를 존재하지 않는 `sampled_at`으로 참조하는 한 가지다.
+이벤트 v1/v2와 앱 빌드 v1/v2는 다르다. 정상 앱은 두 이벤트 형식을 물리 `timestamp`로
+정규화하고, 결함 빌드도 같은 v2 이벤트와 내구 inbox를 사용하면서 실제 PostgreSQL
+`42703` 오류를 낸다. 폐기된 연결 누수·CPU·메모리 fault/reset API는 실행하지 않는다.
 
-| 사례 | 실제 장애 | 복원 |
-|---|---|---|
-| 풀 설정 회귀 | 연결 풀 축소로 저장 요청이 연결을 얻지 못함 | 원래 풀 설정 |
-| 조회 증폭 | 일괄 조회가 행별 재조회로 바뀌어 SQL 횟수가 증가함 | 정상 r1 이미지 |
-| 정비 트랜잭션 잠금 | 소유 정비 작업의 ShareLock이 쓰기를 차단함 | 해당 작업의 롤백·종료 |
-| 예외 경로 세션 반환 누락 | DB 오류 뒤 연결이 남아 후속 저장까지 실패함 | 정상 이미지와 결함 태스크 종료 |
+서비스 전체 신규 생성은 1Hz다. 미완료 이벤트는 기존 PostgreSQL에 보존하고 최대
+86,400건에서 신규 생성을 멈춘다. rollback 후에도 원래 ID·측정 시각·내용으로 재시도하며
+중복 측정 행을 만들지 않는다. 기존 측정과 스키마를 초기화해서 전제를 맞추지 않는다.
 
-[시나리오와 검증 경계](docs/demo/realistic-scenarios.html),
-[로컬 재현·이미지 빌드](packages/healthcare-sensor-app/demo/README.md),
-[배포 제어·원상복원](scripts/run_realistic_demo.html)을 참조하세요.
-로컬 재현, 제공 관측 모델 평가, AWS 배포 E2E는 각각 검증합니다. 조회 알람의
-배포 기본값 500ms는 환경별 보정이 필요하며, 로컬 재현이 AWS 알람 발생을 보장하지 않습니다.
+운영 순서는 정상 이미지·실제 저장 근거를 `plan`으로 보존한 뒤 `backlog-open`,
+`apply`, RCA의 정상화·근본원인·운영 개선, 별도 사용자 승인 실행, 정상 배포 수렴 후
+`backlog-close`와 `backlog-check`다. Vital 스냅샷은 유효한 `backlog-open` 없이
+`apply`할 수 없다. 아래 안내의 첫 실행 예제부터 이 순서를 따른다. 명령의 실제 필수 인자는 다음 안내를 따른다.
 
-## 레거시 API 데모: DB 커넥션 누수 장애
-
-Healthcare 센서 서비스에 DB 커넥션 누수 장애를 주입하고, RCA 에이전트가 자동으로 근본 원인을 분석하는 전체 흐름입니다.
-
-### 사전 조건
-
-- 인프라 배포 완료 (`npx cdk deploy --all`)
-- Healthcare 서비스 ECS 태스크 실행 중 (background traffic generator가 CloudWatch baseline 메트릭 축적)
-- RCA 에이전트(Strands 또는 Headless Codex) ECS 태스크 실행 중
-
-### Step 1. 장애 주입
-
-Healthcare 서비스의 fault injection API로 DB 커넥션 누수를 시작합니다. 이 API는 DB 세션을 열기만 하고 닫지 않아 커넥션이 점진적으로 누적됩니다.
+- [실행 가능한 CLI·전제·기본 ECS read-only probe](scripts/run_realistic_demo.html)
+- [Vital 시나리오와 검증 경계](docs/demo/realistic-scenarios.html)
+- [센서 빌드와 로컬 PostgreSQL 증거](packages/healthcare-sensor-app/demo/README.md)
 
 ```bash
-# Healthcare 서비스의 Private DNS (Cloud Map)
-# ECS 태스크에서 직접 호출하거나, VPN/Bastion 경유
-HEALTHCARE_HOST="healthcare.rcaagentdev.local"
-
-# DB 커넥션 누수 장애 주입
-curl -X POST http://${HEALTHCARE_HOST}:8000/fault/db-leak
+uv run --project packages/agent --no-sync python scripts/run_realistic_demo.py --help
 ```
 
-실제 연결 수와 배포된 RDS `DatabaseConnections` 알람의 평가 조건을 확인합니다.
-지표가 해당 조건을 충족하면 CloudWatch 알람이 발생합니다.
+기본 backlog 명령은 pinned 정상 TD/network/secrets/role의 고정 read-only 단독 ECS
+probe를 사용한다. 노트북에 RDS 연결 경로나 DB 자격 증명을 새로 요구하지 않는다.
+`--vital-db-env-file`은 로컬/기존 DB 접근 환경을 위한 선택적 직접 어댑터다.
+구형 이미지에 probe 모듈이 없거나 원본·실제 DB proof·종료 확인이 부족하면 완료 처리하지 않는다.
 
-### Step 2. RCA 자동 실행
+`backlog-check`는 최초 pending과 이후 모든 admission을 포함한 고정 epoch/순번 범위를
+한 번 읽는다. 이미 처리된 이벤트도 포함하며 미완료면 같은 범위를 나중에 재조회한다.
+기존 서버 `RESOLVED`와 두 고정 60초 구간을 다시 판정하지 않는다. 전체 데모 완료에는
+승인된 에이전트 복구와 별도 backlog proof가 모두 필요하고, 운영자의 `restore`는
+에이전트 성공으로 세지 않는다. runner의 `scenarioSuccess`는 계속 false다.
 
-CloudWatch Alarm → SNS → SQS 경로로 알람이 전달되면, RCA 에이전트가 자동으로 분석을 시작합니다.
-
-**Strands Agent (9단계 파이프라인)**:
-1. **Scoping**: 알람 메트릭 + 유사 보고서 검색 (S3 Vectors)
-2. **Hypothesis Generation**: 가설 3~5개 생성 (배포 코드 결함, 트래픽 급증, RDS 문제 등)
-3. **Prioritization + Beam Selection**: 우선순위 결정, 상위 3개 선택
-4. **Evidence Collection**: CloudWatch 메트릭/로그, CloudTrail 배포 이력, GitHub 코드 diff 수집
-5. **Validation**: 가설별 검증 (CONFIRMED / REJECTED / NEEDS_INVESTIGATION)
-6. **Branching**: 하위 가설 분기 (예: 코드 결함 → 커넥션 풀 설정 변경 / 커넥션 미반환)
-7. **Report**: 근본 원인, 영향 범위, 조치 방안 포함 Markdown 보고서 생성
-8. **Playbook**: 재사용 가능한 대응 플레이북 생성 및 S3 Vectors 인덱싱
-9. **Notification**: SNS 알림 발행 (presigned URL + 플레이북 포함)
-
-두 엔진은 공용 큐에서 경쟁 소비하며 세션 락을 획득한 엔진이 분석합니다.
-**Headless Codex 분석 워커**는 읽기 전용 RCA → Report 역할을 실행합니다.
-플레이북 실행은 사용자 승인 후 별도 실행 워커가 담당합니다.
-
-### Step 3. 결과 확인
-
-```bash
-# 대시보드 실행 (로컬)
-cd packages/dashboard
-pnpm dev   # http://localhost:3100
-```
-
-대시보드에서 확인할 수 있는 항목:
-- **세션 목록**: RCA 진행 상태 (COMPLETED / FAILED / ANALYSING 등)
-- **트레이스 그래프**: Vue Flow DAG로 파이프라인 단계별 실행 결과 확인
-- **보고서**: 근본 원인, 증거, 조치 방안이 포함된 Markdown 보고서
-- **플레이북**: 재사용 가능한 대응 플레이북
-- **증거 상세**: 가설별 full evidence (메트릭, 로그, 코드 diff 등)
-
-### Step 4. 장애 해제
-
-```bash
-# DB 커넥션 누수 해제
-curl -X POST http://${HEALTHCARE_HOST}:8000/fault/db-leak/reset
-```
-
-### 기타 장애 시나리오
-
-Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
-
-| 엔드포인트 | 장애 유형 | 트리거되는 알람 |
-|-----------|---------|--------------|
-| `POST /fault/db-leak` | DB 커넥션 누수 | RDS DatabaseConnections 임계치 초과 |
-| `POST /fault/high-cpu` | CPU 과부하 | ECS CPUUtilization 임계치 초과 |
-| `POST /fault/high-memory` | 메모리 과부하 | ECS MemoryUtilization 임계치 초과 |
-| `POST /fault/slow-query` | 슬로우 쿼리 | 응답 지연 증가 |
-
-이 레거시 API로 시작한 실행 중 장애는 해당 `/reset`으로 해제합니다
-(예: `POST /fault/high-cpu/reset`). 새 네 시나리오는 원래 설정·이미지 또는 소유
-정비 작업을 복원하며, reset 응답만으로 복구 성공을 판정하지 않습니다.
+로컬 native 시험, 모형 AWS/CLI 시험, 실제 클라우드·모델 실행 결과를 구분한다.
+이 안내가 새 이미지 배포나 새 라이브 데모 성공을 뜻하지 않으며 기존 역사적 실패·증거는 보존한다.
 
 ## 환경 변수
 
@@ -331,7 +268,7 @@ Healthcare 서비스는 다음 장애 주입 API를 제공합니다:
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `BEDROCK_MODEL_ID` | `global.anthropic.claude-sonnet-5` | Planning/Execution 공용 모델 |
-| `BEDROCK_MAX_TOKENS` | `16384` | 모델 최대 토큰 |
+| `BEDROCK_MAX_TOKENS` | `65536` | 모델 최대 출력 토큰 |
 | `THINKING_ENABLED` | `false` | Planning 호출 시 adaptive thinking 피처플래그 |
 | `SQS_QUEUE_URL` | - | SQS 큐 URL (필수) |
 | `S3_VECTOR_BUCKET_NAME` | - | S3 Vectors 버킷 |

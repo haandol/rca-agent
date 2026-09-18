@@ -178,7 +178,7 @@ def test_snapshot_remains_frozen_after_workspace_edit(tmp_path, monkeypatch):
     workspace = tmp_path / "workspace"
     shutil.copytree(PACKAGE / "src", workspace / "src")
     (workspace / "demo").mkdir()
-    for name in ("local_worker.py", "build_revision.py"):
+    for name in ("local_worker.py", "local_runner.py", "vital_worker.py", "build_revision.py"):
         shutil.copyfile(PACKAGE / "demo" / name, workspace / "demo" / name)
     shutil.copytree(PACKAGE / "demo/revisions", workspace / "demo/revisions")
     monkeypatch.setattr(builder, "PACKAGE", workspace)

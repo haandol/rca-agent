@@ -1,0 +1,257 @@
+{
+  "provenance": {
+    "boundary": "Partial native storage-path proof only: the original producer constructed a domain event tagged version 2 without exercising sampled_at wire parsing. Actual local PostgreSQL events with synthetic AWS wrappers; normal captured after restore. NOT final emitter approval, real v2 wire-to-commit proof, or a pre-alarm AWS baseline.",
+    "files": {
+      "restored-worker.json": {
+        "path": "/tmp/rca-vital-native-20260918/b63ce6e9/restored-worker.json",
+        "sha256": "478fd029a7fc7f97de892729efca62f1766dfdc18b4745625871d89d011d5392"
+      },
+      "fault-worker.json": {
+        "path": "/tmp/rca-vital-native-20260918/b63ce6e9/fault-worker.json",
+        "sha256": "1076113e9e785abcbc64f52340c73ffd6ddd72ce123e99614612bb134365a599"
+      }
+    },
+    "pending_proof": "Recapture from final HTTP/generator shared normalizer using actual v2 wire sampled_at through commit; preserve this older partial-storage evidence separately."
+  },
+  "normal": {
+    "source": {
+      "base_fingerprint": "ee9d8a22c36c1c280c85f227c03fb9696248a3ac4d7e3e3896eab6e2f5099e97",
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/alert_controller.py": "581f975183198188ada8324af47a87095f32ae93eb0511c633a1e8336653f9db",
+        "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+        "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/patients/patient_controller.py": "7f88dce61c052872453e7ef94760fce5ca8e116eea960da49e32362422088597",
+        "adapters/primary/schemas.py": "06c8dc4cbe459bb1edce083aad932bae0cab224772f4a3bb68ffa234973c138a",
+        "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/sensors/sensor_controller.py": "eb6fefc3dac72ef5f69f94ff2a3696fb005e8bcc362bfe50bbb45215bd431403",
+        "adapters/primary/vital_controller.py": "5cf4f525d7c115260c4c3fba1074d0de23f17988beab7cee7785b701a6113a5e",
+        "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+        "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+        "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+        "adapters/secondary/vital_repository/__init__.py": "9c9a61e27f216a7685cc04fdf5f3cd04ba0cd148aa67ff091d0d6f11a659b45e",
+        "adapters/secondary/vital_repository/models.py": "74daa8a7c2996f98ff29c1e969f7a798ca1423bbaabd09e026b90fefb1399214",
+        "adapters/secondary/vital_repository/postgresql.py": "203e848c4d54da2b12c139982abe858fdbebab8e037c3b2643489ea24b57b7b2",
+        "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+        "config/settings.py": "14b1a390fe6a1489322e04aa2a841cc9e606c3c0f6f3a0d1d7346f0b62a871a2",
+        "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "di/app_container.py": "4d3045872c0a1cba3d699ee6cfb9525fa8ade1b62ebae739f4af7780f0a4b563",
+        "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+        "main.py": "a8f731d2fd2ad4e5c9e03cde7f751ecf2b5303623abec219c24762cea1a4e647",
+        "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+        "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+        "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+        "ports/dto/vital.py": "d9b08ae5410607ba12dd9215885538cebacc923c8c836961d05139c581f53d0f",
+        "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+        "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+        "ports/interfaces/vital_repository.py": "3c9cee9eb24298eaa3f1c0a7e2c3a226048c97aaae0c746d9e7dc03bac2d28d6",
+        "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+        "revision/manifest.py": "fcce9f6b782d2479598135c3a2cfb4ebd4a2b19023f19f1fd395f1f5e62d766d",
+        "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+        "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+        "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+        "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+        "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+        "services/input_contract.py": "254c50f96141bba8f102b04debfa7566fc772f0b7b0b9a1f78c340b339f2ef81",
+        "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+        "services/sensor.py": "9a5041cd1e3f0d951a7db7e6d14724ad63f11556c549b806bfb3bedd206e0b29",
+        "services/symptom_metrics.py": "47d0f7bb56101201e8dd395f0f9d0868cb4752294268aceaa5da9742c75fc3c0",
+        "services/traffic_generator.py": "2c34633c6bbcf2bffcc0476524772425c287ff9cc5a3346e9b94efe736cfe7bf",
+        "services/vital.py": "43c9a903fde255564344ea8dbb0ce0e2ca8bf634f9900877f567dea4362eb752",
+        "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+        "telemetry.py": "0bd888da007e4c2d01be553cfc9cdf7c68188eb040b02112bff8b724c902e2e7",
+        "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fingerprint": "ee9d8a22c36c1c280c85f227c03fb9696248a3ac4d7e3e3896eab6e2f5099e97",
+      "revision": "v1",
+      "verified": true
+    },
+    "input": {
+      "event": "input_contract_observed",
+      "observed_at": "2026-09-18T00:19:37.764597+00:00",
+      "operation": "ingest",
+      "request_id": "604fb5cdd77642f98b7e374d9377d8d4",
+      "count": 1,
+      "event_schema_version": 2,
+      "input_contract": {
+        "format": "vital-event-v1-v2",
+        "timestamp_mapping": "v1.timestamp-or-v2.sampled_at-to-timestamp",
+        "delivery_stage": "measurement_attempt",
+        "event_versions": [
+          1,
+          2
+        ],
+        "source_files": {
+          "adapters/primary/vital_controller.py": "5cf4f525d7c115260c4c3fba1074d0de23f17988beab7cee7785b701a6113a5e",
+          "ports/dto/vital.py": "d9b08ae5410607ba12dd9215885538cebacc923c8c836961d05139c581f53d0f",
+          "services/vital.py": "43c9a903fde255564344ea8dbb0ce0e2ca8bf634f9900877f567dea4362eb752",
+          "services/input_contract.py": "254c50f96141bba8f102b04debfa7566fc772f0b7b0b9a1f78c340b339f2ef81",
+          "adapters/secondary/vital_repository/postgresql.py": "203e848c4d54da2b12c139982abe858fdbebab8e037c3b2643489ea24b57b7b2",
+          "adapters/secondary/vital_repository/models.py": "74daa8a7c2996f98ff29c1e969f7a798ca1423bbaabd09e026b90fefb1399214",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "services/sensor.py": "9a5041cd1e3f0d951a7db7e6d14724ad63f11556c549b806bfb3bedd206e0b29",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e"
+        },
+        "runtime": {
+          "python": "3.13.5",
+          "pydantic": "2.13.4"
+        }
+      },
+      "input_contract_sha256": "36226d70f7cf5f63278a0387d71d4462e5ee15c7fd5bbab615f3ea781ff5cb2f"
+    },
+    "outcome": {
+      "event": "write_completed",
+      "observed_at": "2026-09-18T00:19:37.795092+00:00",
+      "request_id": "604fb5cdd77642f98b7e374d9377d8d4",
+      "operation": "ingest",
+      "sql_hash": "b12c32fe72df2b4a91855011d2953169e43c7f6cc226686a07afe072d8026395",
+      "sql_hash_algorithm": "sha256",
+      "schema_name": null,
+      "table_name": "sensor_readings",
+      "column_names": [
+        "id",
+        "patient_id",
+        "reading_type",
+        "value",
+        "unit",
+        "timestamp",
+        "is_abnormal",
+        "created_at"
+      ],
+      "count": 1,
+      "completion_semantics": "committed_rows",
+      "reading_ref": "19404c41-7b47-4486-9d0b-48bc47744ae3"
+    }
+  },
+  "current": {
+    "source": {
+      "base_fingerprint": "ee9d8a22c36c1c280c85f227c03fb9696248a3ac4d7e3e3896eab6e2f5099e97",
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/alert_controller.py": "581f975183198188ada8324af47a87095f32ae93eb0511c633a1e8336653f9db",
+        "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+        "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/patients/patient_controller.py": "7f88dce61c052872453e7ef94760fce5ca8e116eea960da49e32362422088597",
+        "adapters/primary/schemas.py": "06c8dc4cbe459bb1edce083aad932bae0cab224772f4a3bb68ffa234973c138a",
+        "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/sensors/sensor_controller.py": "eb6fefc3dac72ef5f69f94ff2a3696fb005e8bcc362bfe50bbb45215bd431403",
+        "adapters/primary/vital_controller.py": "5cf4f525d7c115260c4c3fba1074d0de23f17988beab7cee7785b701a6113a5e",
+        "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+        "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+        "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+        "adapters/secondary/vital_repository/__init__.py": "9c9a61e27f216a7685cc04fdf5f3cd04ba0cd148aa67ff091d0d6f11a659b45e",
+        "adapters/secondary/vital_repository/models.py": "74daa8a7c2996f98ff29c1e969f7a798ca1423bbaabd09e026b90fefb1399214",
+        "adapters/secondary/vital_repository/postgresql.py": "203e848c4d54da2b12c139982abe858fdbebab8e037c3b2643489ea24b57b7b2",
+        "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+        "config/settings.py": "14b1a390fe6a1489322e04aa2a841cc9e606c3c0f6f3a0d1d7346f0b62a871a2",
+        "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "di/app_container.py": "4d3045872c0a1cba3d699ee6cfb9525fa8ade1b62ebae739f4af7780f0a4b563",
+        "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+        "main.py": "a8f731d2fd2ad4e5c9e03cde7f751ecf2b5303623abec219c24762cea1a4e647",
+        "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+        "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+        "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+        "ports/dto/vital.py": "d9b08ae5410607ba12dd9215885538cebacc923c8c836961d05139c581f53d0f",
+        "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+        "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+        "ports/interfaces/vital_repository.py": "3c9cee9eb24298eaa3f1c0a7e2c3a226048c97aaae0c746d9e7dc03bac2d28d6",
+        "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+        "revision/manifest.py": "fcce9f6b782d2479598135c3a2cfb4ebd4a2b19023f19f1fd395f1f5e62d766d",
+        "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+        "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+        "revision/write.py": "7780ff5c28898bf605d0a5f9026439d34cc6f3feaa38f0ca3cfd6105cf6527de",
+        "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+        "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+        "services/input_contract.py": "254c50f96141bba8f102b04debfa7566fc772f0b7b0b9a1f78c340b339f2ef81",
+        "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+        "services/sensor.py": "9a5041cd1e3f0d951a7db7e6d14724ad63f11556c549b806bfb3bedd206e0b29",
+        "services/symptom_metrics.py": "47d0f7bb56101201e8dd395f0f9d0868cb4752294268aceaa5da9742c75fc3c0",
+        "services/traffic_generator.py": "2c34633c6bbcf2bffcc0476524772425c287ff9cc5a3346e9b94efe736cfe7bf",
+        "services/vital.py": "43c9a903fde255564344ea8dbb0ce0e2ca8bf634f9900877f567dea4362eb752",
+        "services/write_diagnostics.py": "23853489fadb791b9515ca31b27be0eab9ee02b336bda05fc0c8549f21abfcc5",
+        "telemetry.py": "0bd888da007e4c2d01be553cfc9cdf7c68188eb040b02112bff8b724c902e2e7",
+        "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fingerprint": "1bab14bd297e9ee1585d1c80bffa0fe7b8776cee0db5eb06311f6e969b2f3554",
+      "revision": "v2",
+      "verified": true
+    },
+    "input": {
+      "event": "input_contract_observed",
+      "observed_at": "2026-09-18T00:19:37.180058+00:00",
+      "operation": "ingest",
+      "request_id": "c40af89597074a3eb0871b603eb9a17f",
+      "count": 1,
+      "event_schema_version": 2,
+      "input_contract": {
+        "format": "vital-event-v1-v2",
+        "timestamp_mapping": "v1.timestamp-or-v2.sampled_at-to-timestamp",
+        "delivery_stage": "measurement_attempt",
+        "event_versions": [
+          1,
+          2
+        ],
+        "source_files": {
+          "adapters/primary/vital_controller.py": "5cf4f525d7c115260c4c3fba1074d0de23f17988beab7cee7785b701a6113a5e",
+          "ports/dto/vital.py": "d9b08ae5410607ba12dd9215885538cebacc923c8c836961d05139c581f53d0f",
+          "services/vital.py": "43c9a903fde255564344ea8dbb0ce0e2ca8bf634f9900877f567dea4362eb752",
+          "services/input_contract.py": "254c50f96141bba8f102b04debfa7566fc772f0b7b0b9a1f78c340b339f2ef81",
+          "adapters/secondary/vital_repository/postgresql.py": "203e848c4d54da2b12c139982abe858fdbebab8e037c3b2643489ea24b57b7b2",
+          "adapters/secondary/vital_repository/models.py": "74daa8a7c2996f98ff29c1e969f7a798ca1423bbaabd09e026b90fefb1399214",
+          "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+          "services/sensor.py": "9a5041cd1e3f0d951a7db7e6d14724ad63f11556c549b806bfb3bedd206e0b29",
+          "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e"
+        },
+        "runtime": {
+          "python": "3.13.5",
+          "pydantic": "2.13.4"
+        }
+      },
+      "input_contract_sha256": "36226d70f7cf5f63278a0387d71d4462e5ee15c7fd5bbab615f3ea781ff5cb2f"
+    },
+    "outcome": {
+      "event": "db_write_error",
+      "observed_at": "2026-09-18T00:19:37.202134+00:00",
+      "request_id": "c40af89597074a3eb0871b603eb9a17f",
+      "operation": "ingest",
+      "sql_hash": "d6561feb695ca8918f65d7352b215054102eac7d0679b29a09c36cadae0f9a62",
+      "sql_hash_algorithm": "sha256",
+      "schema_name": null,
+      "table_name": "sensor_readings",
+      "column_names": [
+        "id",
+        "patient_id",
+        "reading_type",
+        "value",
+        "unit",
+        "sampled_at",
+        "is_abnormal",
+        "created_at"
+      ],
+      "sqlstate": "42703",
+      "error_type": "UndefinedColumnError"
+    }
+  }
+}

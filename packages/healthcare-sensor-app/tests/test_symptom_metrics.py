@@ -84,6 +84,7 @@ def _minute(payload: dict) -> int:
         ),
         ("record_alert_delay", {"seconds": 0.25}, {"AbnormalAlertDelaySeconds": [0.25]}),
         ("record_patient_vitals_duration", {"milliseconds": 12.0}, {"PatientVitalsQueryDuration": [12.0]}),
+        ("record_measurement_sql_started", {}, {"VitalMeasurementSQLStarted": 1}),
     ],
 )
 def test_every_record_path_rotates_all_counters_and_samples_before_accepting_next_minute(
@@ -97,6 +98,7 @@ def test_every_record_path_rotates_all_counters_and_samples_before_accepting_nex
     metrics.record_traffic(offered=6, started=4, completed=3, skipped=2, failed=2, cancelled=1)
     metrics.record_alert_delay(1.5)
     metrics.record_patient_vitals_duration(2000)
+    metrics.record_measurement_sql_started()
 
     metric_clock.elapsed = 25  # Exactly 13:30:00 belongs to the next minute.
     getattr(metrics, method)(**arguments)
@@ -108,6 +110,7 @@ def test_every_record_path_rotates_all_counters_and_samples_before_accepting_nex
         "VitalIngestFailures": 10,
         "VitalIngestStarted": 10,
         "VitalIngestInFlight": 7,
+        "VitalMeasurementSQLStarted": 1,
         "TrafficOffered": 6,
         "TrafficStarted": 4,
         "TrafficCompleted": 3,

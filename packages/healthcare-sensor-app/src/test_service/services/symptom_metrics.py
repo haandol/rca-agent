@@ -60,6 +60,8 @@ class SymptomMetrics:
             0,
         )
         self._delays: list[float] = []
+        self._vital_totals: dict[str, int] = {}
+        self._measurement_sql_started = 0
         self._query_durations: list[float] = []
         self._timestamp_ms = int(time.time() * 1000)
         self._last_flush = time.monotonic()
@@ -80,6 +82,40 @@ class SymptomMetrics:
                 "success_semantics": "committed_rows",
             },
         )
+
+    def record_vital_snapshot(self, values: dict) -> None:
+        """Publish durable totals/gauges independently; repeated task snapshots require Maximum, not Sum."""
+        fields = {
+            "pending_count": "VitalPendingEvents",
+            "generated_total": "VitalEventsGeneratedTotal",
+            "accepted_total": "VitalEventsAcceptedTotal",
+            "skipped_capacity_total": "VitalGenerationCapacitySkippedTotal",
+            "sql_attempts_total": "VitalSQLOutcomeAttemptsTotal",
+            "sql_failures_total": "VitalSQLOutcomeFailuresTotal",
+            "retries_total": "VitalRetriesTotal",
+            "committed_total": "VitalUniqueCommittedTotal",
+        }
+        snapshot = {}
+        for field, name in fields.items():
+            value = values[field]
+            if type(value) is not int or value < 0:
+                raise ValueError("invalid durable counter")
+            snapshot[name] = value
+        with self._lock:
+            previous = self._rotate_minute_locked()
+            self._vital_totals = snapshot
+            self._dirty = True
+        if previous is not None:
+            self._emit(previous)
+
+    def record_measurement_sql_started(self) -> None:
+        """Count a driver-level measurement INSERT invocation separately from its unknown or committed outcome."""
+        with self._lock:
+            previous = self._rotate_minute_locked()
+            self._measurement_sql_started += 1
+            self._dirty = True
+        if previous is not None:
+            self._emit(previous)
 
     def record_ingest(self, *, attempted: int, failed: int) -> None:
         """Preserve the legacy completed-reading counters, excluding unfinished work."""
@@ -231,14 +267,18 @@ class SymptomMetrics:
             {"Name": METRIC_INGEST_FAILURES, "Unit": "Count"},
             {"Name": METRIC_INGEST_STARTED, "Unit": "Count"},
             {"Name": METRIC_INGEST_IN_FLIGHT, "Unit": "Count"},
+            {"Name": "VitalMeasurementSQLStarted", "Unit": "Count"},
             *({"Name": name, "Unit": "Count"} for name in self._traffic),
+            *({"Name": name, "Unit": "Count"} for name in self._vital_totals),
         ]
         values: dict[str, float | list[float]] = {
             METRIC_INGEST_ATTEMPTS: self._attempts,
             METRIC_INGEST_FAILURES: self._failures,
             METRIC_INGEST_STARTED: self._started,
             METRIC_INGEST_IN_FLIGHT: self._in_flight,
+            "VitalMeasurementSQLStarted": self._measurement_sql_started,
             **self._traffic,
+            **self._vital_totals,
         }
         if self._delays:
             metrics.append({"Name": METRIC_ALERT_DELAY_SECONDS, "Unit": "Seconds"})
@@ -250,7 +290,10 @@ class SymptomMetrics:
         self._attempts = 0
         self._failures = 0
         self._started = 0
+        self._measurement_sql_started = 0
         self._dirty = False
+        # A database gauge is an observation, not heartbeat state; unknown later samples stay absent.
+        self._vital_totals = {}
         self._traffic = dict.fromkeys(self._traffic, 0)
         self._delays.clear()
         self._query_durations.clear()

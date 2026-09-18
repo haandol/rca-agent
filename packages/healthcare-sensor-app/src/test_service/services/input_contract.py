@@ -75,3 +75,51 @@ def observe_input(readings: list[dict]) -> None:
             **contract,
         },
     )
+
+
+@lru_cache(maxsize=1)
+def vital_input_contract() -> dict:
+    """Describe the actual versioned durable entry path; do not reuse the legacy batch witness."""
+    root = Path(__file__).resolve().parents[1]
+    paths = (
+        "adapters/primary/vital_controller.py",
+        "ports/dto/vital.py",
+        "services/vital.py",
+        "services/input_contract.py",
+        "adapters/secondary/vital_repository/postgresql.py",
+        "adapters/secondary/vital_repository/models.py",
+        "ports/dto/sensor.py",
+        "services/sensor.py",
+        "adapters/secondary/sensor_repository/models.py",
+    )
+    descriptor = {
+        "format": "vital-event-v1-v2",
+        "timestamp_mapping": "v1.timestamp-or-v2.sampled_at-to-timestamp",
+        "delivery_stage": "measurement_attempt",
+        "event_versions": [1, 2],
+        "source_files": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in paths},
+        "runtime": {"python": platform.python_version(), "pydantic": version("pydantic")},
+    }
+    digest = hashlib.sha256(
+        json.dumps(descriptor, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    ).hexdigest()
+    return {"input_contract": descriptor, "input_contract_sha256": digest}
+
+
+def observe_vital_input(event) -> None:
+    """Join a real normalized versioned attempt to its commit/error without exposing input values."""
+    operation = current_operation()
+    if operation is None:
+        return
+    logger.info(
+        "input_contract_observed",
+        extra={
+            "event": "input_contract_observed",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "operation": operation.name,
+            "request_id": operation.request_id,
+            "count": 1,
+            "event_schema_version": event.schema_version,
+            **vital_input_contract(),
+        },
+    )

@@ -3,6 +3,8 @@ from functools import lru_cache
 from math import isfinite
 from os import environ
 
+VITAL_WORKER_SLOTS = 2
+
 
 @dataclass(frozen=True)
 class AppSettings:

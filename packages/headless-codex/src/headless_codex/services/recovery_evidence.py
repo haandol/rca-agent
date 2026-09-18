@@ -25,6 +25,17 @@ _INPUT_PATHS = {
     "services/traffic_generator.py",
     "services/input_contract.py",
 }
+_VITAL_INPUT_PATHS = {
+    "adapters/primary/vital_controller.py",
+    "ports/dto/vital.py",
+    "ports/dto/sensor.py",
+    "services/vital.py",
+    "services/sensor.py",
+    "services/input_contract.py",
+    "adapters/secondary/vital_repository/postgresql.py",
+    "adapters/secondary/vital_repository/models.py",
+    "adapters/secondary/sensor_repository/models.py",
+}
 
 
 def _hash(value) -> str:
@@ -100,18 +111,30 @@ def _contract(input_event, manifest_event) -> tuple[str, dict]:
     ):
         raise ValueError("installed source manifest is incomplete or inconsistent")
     descriptor = message.get("input_contract")
-    if not isinstance(descriptor, dict) or set(descriptor) != {
-        "format",
-        "timestamp_mapping",
-        "source_files",
-        "runtime",
-    }:
+    if not isinstance(descriptor, dict):
         raise ValueError("input contract descriptor missing")
+    vital = descriptor.get("format") == "vital-event-v1-v2"
+    keys = {"format", "timestamp_mapping", "source_files", "runtime"}
+    if vital:
+        keys |= {"delivery_stage", "event_versions"}
+    if set(descriptor) != keys:
+        raise ValueError("input contract descriptor missing")
+    if vital and (
+        descriptor["delivery_stage"] != "measurement_attempt"
+        or descriptor["event_versions"] != [1, 2]
+        or any(type(version) is not int for version in descriptor["event_versions"])
+        or type(message.get("event_schema_version")) is not int
+        or message["event_schema_version"] not in (1, 2)
+        or type(message.get("count")) is not int
+        or message["count"] != 1
+    ):
+        raise ValueError("actual versioned measurement attempt missing")
     if (
-        descriptor["format"] != "sensor-service-batch-v1"
-        or descriptor["timestamp_mapping"] != "timestamp-or-server-utc"
+        descriptor["format"] != ("vital-event-v1-v2" if vital else "sensor-service-batch-v1")
+        or descriptor["timestamp_mapping"]
+        != ("v1.timestamp-or-v2.sampled_at-to-timestamp" if vital else "timestamp-or-server-utc")
         or not isinstance(descriptor["source_files"], dict)
-        or set(descriptor["source_files"]) != _INPUT_PATHS
+        or set(descriptor["source_files"]) != (_VITAL_INPUT_PATHS if vital else _INPUT_PATHS)
         or any(files.get(path) != digest for path, digest in descriptor["source_files"].items())
         or not isinstance(descriptor["runtime"], dict)
         or set(descriptor["runtime"]) != {"python", "pydantic"}
@@ -202,6 +225,11 @@ def verify_input_compatibility(baseline: dict, current: dict) -> dict:
                             "task_definition_arn": target["task_definition_arn"],
                             "image_digest": target["image_digest"],
                             "input_contract_sha256": digest,
+                            **(
+                                {"event_schema_version": receipt["message"]["event_schema_version"]}
+                                if descriptor["format"] == "vital-event-v1-v2"
+                                else {}
+                            ),
                         }
                     )
             if not matched:
@@ -209,6 +237,11 @@ def verify_input_compatibility(baseline: dict, current: dict) -> dict:
             witnesses.extend(matched)
     if len(digests) != 1:
         raise ValueError("normal and current input contracts differ")
+    if descriptor["format"] == "vital-event-v1-v2":
+        normal_versions = {w["event_schema_version"] for w in witnesses if w["phase"] == "normal"}
+        current_versions = {w["event_schema_version"] for w in witnesses if w["phase"] == "current"}
+        if not current_versions <= normal_versions:
+            raise ValueError("normal image has no actual matching event-version commit")
     return {
         "status": "VERIFIED",
         "input_contract_sha256": next(iter(digests)),

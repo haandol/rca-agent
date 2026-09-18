@@ -37,7 +37,7 @@ revision ID는 `v1`, `v2`이며 런타임 플래그로 구현을 바꾸지 않�
 매개변수, 환자 값, 자격 증명을 로그·오류·트레이스에 넣지 않는다.
 
 `main.py`의 lifespan이 트래픽·관측·지표 작업을 시작하고 종료를 기다린 뒤 연결을 정리한다.
-DB 관측은 기본 true, 트래픽은 기본 5초 간격과 동시 실행 1개다. 서비스 기능과 계수 의미는
+DB 관측은 기본 true다. 새 이벤트는 서비스 전체 1Hz이며 내구 worker는 전역 2개 슬롯이다. 기존 조회 트래픽은 기본 5초 간격과 동시 실행 1개다. 서비스 기능과 계수 의미는
 [README](README.md), 데모 wire·실행 방법은 [demo/README](demo/README.md)를 참조한다.
 
 ## 검증
@@ -54,3 +54,18 @@ PostgreSQL 17, DB `rca_demo`를 사용한다. 기본 검증 포트는 15439이�
 
 일반 조회·헬스·계수·HTTP 오류 차단과 취소/프로세스 정리의 부정 테스트를 보존한다.
 함수 docstring에는 동작 이유와 계약을 적는다. `uv run`을 사용하고 가상환경을 source하지 않는다.
+
+
+## 내구 이벤트 경계
+
+신규 versioned wire의 normalizer는 ports/dto/vital.py에 있고 HTTP와 자동 생성이 함께 쓴다.
+patient_id가 생략되면 명시적인 합성 데모 P-001을 사용하며 sensor_id는 별도 저장한다.
+새 저장 구조는 additive이며 완료 inbox만 삭제하고 identity/digest는 측정 FK 수명에 연결한다.
+정확한 현재 필드는 docs/tables/vital-events.md를 따른다. unknown commit을 성공 계수로 표시하지 않는다.
+cohort 검증은 실제 inbox와 측정 payload digest를 모두 확인하며 global 실패 수만으로 C의 fault를
+증명하지 않는다. 원문 값은 로그·진단 출력에 넣지 않는다.
+
+Native 검증은 VITAL_PG_PROOF_CONFIG가 가리키는 task-owned PostgreSQL 설정으로만 실행한다.
+기존 5432/15439 DB를 새 내구 proof에 재사용하지 않는다. 정상/fault/복원 worker 코드를 함께 캡처하고
+모든 subprocess를 isolated process group으로 실행·정리한다. timeout은 증거를 보존한 실패이며
+owned process/backend가 남은 상태를 통과시키지 않는다.

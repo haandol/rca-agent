@@ -6,7 +6,6 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
 
-from test_service.adapters.secondary.sensor_repository.models import Base
 from test_service.di.app_container import AppContainer
 from test_service.di.container import Container
 from test_service.middleware import LoggingMiddleware
@@ -27,6 +26,7 @@ async def lifespan(_: FastAPI):
     attempts every container cleanup even if a background task failed.
     """
     from test_service.adapters.secondary.database_adapter import SqlAlchemyDatabaseAdapter
+    from test_service.adapters.secondary.vital_repository.postgresql import initialize_vital_schema
 
     settings = container.settings
     metrics = container.symptom_metrics
@@ -38,10 +38,13 @@ async def lifespan(_: FastAPI):
         logging.getLogger(__name__).info("ecs_runtime_identity", extra=await runtime_identity())
         db = container.database
         if isinstance(db, SqlAlchemyDatabaseAdapter):
-            async with db.engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
+            vital_service = container.vital_service
+            await initialize_vital_schema(db.engine)
             if settings.db_observability_enabled:
                 await db.schema_snapshot()
+            workers.append(
+                asyncio.create_task(vital_service.run(generate=settings.traffic_enabled), name="vital-durable-service")
+            )
 
         flush_task = asyncio.create_task(
             metrics.run_periodic_flush(metrics_stop, interval=settings.metric_flush_interval_seconds),
@@ -65,6 +68,7 @@ async def lifespan(_: FastAPI):
                         patient_id=settings.traffic_patient_id,
                         seed=settings.traffic_seed,
                         symptom_metrics=metrics,
+                        reads_only=True,
                     ),
                     name="healthcare-traffic-scheduler",
                 )
@@ -121,6 +125,10 @@ async def safe_validation_error(_: Request, exc: RequestValidationError) -> JSON
         "value",
         "unit",
         "timestamp",
+        "sampled_at",
+        "event_id",
+        "sensor_id",
+        "schema_version",
         "limit",
         "offset",
     }
@@ -163,7 +171,7 @@ def create_app() -> FastAPI:
     """Place the safe HTTP boundary around application middleware, inside server tracing."""
     setup_logging(container.settings)
 
-    app = FastAPI(title="Healthcare Sensor Service", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Vital Sensor", version="0.1.0", lifespan=lifespan)
 
     app.add_exception_handler(RequestValidationError, safe_validation_error)
     app.add_middleware(LoggingMiddleware)

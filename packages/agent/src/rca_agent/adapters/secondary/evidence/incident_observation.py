@@ -65,6 +65,7 @@ _MESSAGE_KEYS = {
     "base_fingerprint",
     "input_contract",
     "input_contract_sha256",
+    "event_schema_version",
 } | _ACCOUNTING_KEYS
 
 
