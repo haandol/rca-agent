@@ -632,7 +632,7 @@ class AwsIncidentObservation:
             next_token = logs.get("nextToken")
             coverage[kind] = "complete"
             if next_token:
-                if (kind, next_token) in seen_tokens or pages[kind] >= 3:
+                if (kind, next_token) in seen_tokens:
                     coverage[kind] = "pagination_incomplete"
                 else:
                     seen_tokens.add((kind, next_token))

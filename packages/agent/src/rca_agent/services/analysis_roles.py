@@ -17,6 +17,7 @@ from rca_agent.services.analysis_parts import validate_recovery_operations
 from rca_agent.services.deployment_baseline import validate_observed_plan
 from rca_agent.services.operations_context import operations_context
 from rca_agent.services.playbook_gen import PlaybookOutput
+from rca_agent.services.recovery_context import recovery_context
 from rca_agent.services.recovery_reference import build_recovery_reference
 from rca_agent.services.runbook_contract import validate_runbook
 from rca_agent.utils.agent_invocation import invoke_agent
@@ -324,7 +325,7 @@ def recovery_result(
             record_recovery("output_validated")
             return result
 
-    model_input = {"scoping": scoping.model_dump(mode="json"), "verification": verification}
+    model_input = recovery_context(scoping, verification)
     reference_error = None
     try:
         reference = build_recovery_reference(scoping, verification)

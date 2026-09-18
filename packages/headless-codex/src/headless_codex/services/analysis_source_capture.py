@@ -46,11 +46,48 @@ def _objects(value):
 
 def _file_objects(result: dict, arguments: dict):
     """Recognize actual GitHub MCP embedded text resources as well as Contents API JSON replies."""
-    yield from _objects(result)
+    blocks = result.get("content", [])
+    download = isinstance(blocks, list) and (
+        any(
+            isinstance(block, dict)
+            and isinstance(block.get("text"), str)
+            and block["text"].startswith("successfully downloaded")
+            for block in blocks
+        )
+        or (
+            len(blocks) >= 2
+            and all(isinstance(block, dict) and isinstance(block.get("text"), str) for block in blocks)
+        )
+    )
+    if not download:
+        yield from _objects(result)
+        return
+    # A downloaded JSON file is opaque source, not another Contents API envelope.
+    if len(blocks) != 2 or not all(isinstance(block, dict) for block in blocks):
+        return
     owner, repo = arguments.get("owner"), arguments.get("repo")
     revision = arguments.get("sha") or arguments.get("ref")
     path = arguments.get("path", "").lstrip("/")
     if not path or any(part in {"", ".", ".."} for part in path.split("/")):
+        return
+    blocks = result.get("content")
+    if (
+        isinstance(blocks, list)
+        and len(blocks) == 2
+        and all(
+            isinstance(block, dict) and block.get("type", "text") == "text" and isinstance(block.get("text"), str)
+            for block in blocks
+        )
+    ):
+        match = re.fullmatch(r"successfully downloaded (?:text|empty) file \(SHA: ([a-f0-9]{40})\)", blocks[0]["text"])
+        if match:
+            yield {
+                "type": "file",
+                "path": path,
+                "sha": match.group(1),
+                "encoding": "text",
+                "content": blocks[1]["text"],
+            }
         return
     expected_uri = f"repo://{owner}/{repo}/sha/{revision}/contents/{path}"
     summaries = [block.get("text", "") for block in result.get("content", []) if block.get("type") == "text"]

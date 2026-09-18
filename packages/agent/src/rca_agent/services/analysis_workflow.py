@@ -277,6 +277,12 @@ def run_analysis_parts(orchestrator, alarm, run, store) -> bool:
             }
         )
         current_verification["control_diagnostics"] = list(current_scope.incident_observations.diagnostics)
+        current_verification["incident_ref"] = {
+            "key": frozen["record"]["payload_s3_key"],
+            "sha256": frozen["record"]["payload_sha256"],
+            "engine": frozen["record"]["engine"],
+            "rca_id": run.rca_id,
+        }
         return recovery_result(run.rca_id, current_scope, current_verification, container.recovery_agent)
 
     def root():

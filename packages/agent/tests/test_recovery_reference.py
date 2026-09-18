@@ -116,8 +116,9 @@ def test_reference_is_input_only_and_model_still_owns_full_result(reference_scop
         """Inspect actual model input then exercise the unchanged output validator."""
         payload = json.loads(prompt)
         captured.append(payload)
-        assert payload["scoping"] == scope.model_dump(mode="json")
-        assert payload["verification"] == verification
+        assert payload["scoping"]["raw_alarm"] == scope.model_dump(mode="json")["raw_alarm"]
+        assert payload["verification"]["rollback_context"] == verification["rollback_context"]
+        assert payload["verification"]["witness_summary"]["count"] == len(verification["witnesses"])
         reference = payload["validated_recovery_reference"]
         assert reference["authority"] == "REFERENCE_ONLY"
         if outcome == "failure":

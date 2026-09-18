@@ -129,6 +129,49 @@ def observation_scope_note(scoping, tool: str, arguments: dict) -> dict | None:
     }
 
 
+def _file_objects(result: dict, arguments: dict):
+    """Decode the provider's SHA announcement plus exact text without joining ambiguous blocks."""
+    blocks = result.get("content")
+    download = isinstance(blocks, list) and (
+        any(
+            isinstance(block, dict)
+            and isinstance(block.get("text"), str)
+            and block["text"].startswith("successfully downloaded")
+            for block in blocks
+        )
+        or (
+            len(blocks) >= 2
+            and all(isinstance(block, dict) and isinstance(block.get("text"), str) for block in blocks)
+        )
+    )
+    if not download:
+        yield from _objects(result)
+        return
+    # The body can itself be JSON. Never reinterpret its contents as provider
+    # metadata, including when the announcement or body shape is invalid.
+    if (
+        not isinstance(blocks, list)
+        or len(blocks) != 2
+        or not all(isinstance(block, dict) for block in blocks)
+        or blocks[0].get("type", "text") != "text"
+    ):
+        return
+    match = re.fullmatch(
+        r"successfully downloaded (?:text|empty) file \(SHA: ([a-f0-9]{40})\)", blocks[0].get("text", "")
+    )
+    if not match:
+        return
+    if blocks[1].get("type", "text") == "text" and isinstance(blocks[1].get("text"), str):
+        yield {
+            "path": arguments.get("path"),
+            "sha": match.group(1),
+            "encoding": "utf-8",
+            "content": blocks[1]["text"],
+        }
+    elif blocks[1].get("type") == "resource" and isinstance(blocks[1].get("resource"), dict):
+        yield {**blocks[1]["resource"], "sha": match.group(1)}
+
+
 def _received_files(receipts: list[dict]) -> list[dict]:
     """Decode actual successful immutable repository reads independently of their later use."""
     artifacts = []
@@ -159,7 +202,7 @@ def _received_files(receipts: list[dict]) -> list[dict]:
             or not re.fullmatch(r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", str(args.get("ref", "")))
         ):
             continue
-        for document in _objects(result):
+        for document in _file_objects(result, args):
             if isinstance(document.get("uri"), str) and isinstance(document.get("text"), str):
                 uri = urlparse(document["uri"])
                 path = unquote(uri.path)
@@ -178,7 +221,12 @@ def _received_files(receipts: list[dict]) -> list[dict]:
                     or any(ref != args["ref"] for ref in query_refs)
                 ):
                     continue
-                document = {"path": args["path"], "content": document["text"], "encoding": "utf-8"}
+                document = {
+                    "path": args["path"],
+                    "content": document["text"],
+                    "encoding": "utf-8",
+                    "sha": document.get("sha"),
+                }
             if document.get("path") != args.get("path") or not isinstance(document.get("content"), str):
                 continue
             try:

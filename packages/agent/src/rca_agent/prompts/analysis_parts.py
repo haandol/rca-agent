@@ -4,6 +4,10 @@ RECOVERY_SYSTEM_PROMPT = """You prepare the first, rapid recovery part of an inc
 Use only the frozen incident and server-provided rollback verification. Root-cause confirmation is not
 required for this part, but every target, baseline, source, input compatibility and write observation must
 come from the server evidence. Propose only the verified rollback; never invent infrastructure coordinates.
+Repeated raw observations and witness pairs may be represented by counts, exact hashes and grouped
+source bindings with first/last observed references. Full source remains in verification.incident_ref
+and the server's retained verification. These are summaries, not new evidence or complete log text.
+Use the complete rollback_context, metric coordinates, distinct critical facts and coverage metadata supplied.
 Use the complete existing runbook structure: observation, guarded rollback, deployment convergence,
 metric discovery and the linked post-deployment metric verification. Preserve exact context references.
 If a complete supported rollback is unavailable, recommend UNAVAILABLE and explain the missing evidence.

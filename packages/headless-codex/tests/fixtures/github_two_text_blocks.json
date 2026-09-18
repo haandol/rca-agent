@@ -1,0 +1,205 @@
+{
+  "provenance": "Actual live exec532851e root_cause-02387d70797d7d4ecd4b91dad0759c856d4f94e42cb5e02f98b79e14277414e8.json repository_collection receipts; manifests from exact built images. No model output fabricated.",
+  "receipts": [
+    {
+      "arguments": {
+        "owner": "haandol",
+        "path": "packages/healthcare-sensor-app/demo/revisions/v2/revision/write.py",
+        "ref": "532851e23e0a02a4c2e4b87e932ac4332b3e7c48",
+        "repo": "rca-agent"
+      },
+      "received_at": "2026-09-18T15:21:03.919155+00:00",
+      "request_terminated": true,
+      "requested_tool_use_id": "02e6e148e3524c69b74fff6b56c74c3d",
+      "result": {
+        "content": [
+          {
+            "text": "successfully downloaded text file (SHA: b653bfcf8bbe9fc25bb2d82bd78cf16fc65dc74b)"
+          },
+          {
+            "text": "\"\"\"Build-selected INSERT identifier; values always remain typed bound parameters.\"\"\"\n\nfrom sqlalchemy import Boolean, DateTime, Float, String, bindparam, text\n\nTIMESTAMP_COLUMN = \"sampled_at\"\nCOLUMN_NAMES = (\"id\", \"patient_id\", \"reading_type\", \"value\", \"unit\", TIMESTAMP_COLUMN, \"is_abnormal\", \"created_at\")\nSQL = (\n    f\"INSERT INTO sensor_readings ({', '.join(COLUMN_NAMES)}) \"\n    \"VALUES (:id, :patient_id, :reading_type, :value, :unit, :timestamp, :is_abnormal, :created_at)\"\n)\n\n\ndef write_statement():\n    \"\"\"Keep identifier selection below the ORM while binding every patient value by type.\"\"\"\n    return text(SQL).bindparams(\n        bindparam(\"id\", type_=String(36)),\n        bindparam(\"patient_id\", type_=String(64)),\n        bindparam(\"reading_type\", type_=String(32)),\n        bindparam(\"value\", type_=Float),\n        bindparam(\"unit\", type_=String(16)),\n        bindparam(\"timestamp\", type_=DateTime(timezone=True)),\n        bindparam(\"is_abnormal\", type_=Boolean),\n        bindparam(\"created_at\", type_=DateTime(timezone=True)),\n    )\n\n\ndef write_values(reading) -> dict:\n    \"\"\"Map domain fields to stable bind keys independently of the compiled column identifier.\"\"\"\n    return {\n        name: getattr(reading, name)\n        for name in (\"id\", \"patient_id\", \"reading_type\", \"value\", \"unit\", \"timestamp\", \"is_abnormal\", \"created_at\")\n    }\n"
+          }
+        ],
+        "isError": false,
+        "status": "success",
+        "toolUseId": "02e6e148e3524c69b74fff6b56c74c3d"
+      },
+      "source_ref": "mcp-tool-result://get_file_contents/02e6e148e3524c69b74fff6b56c74c3d#sha256=258e566b63e7b0319ed93009ee979993eb8d5e7f3e9f5a41c6e89816e499e6d4",
+      "tool_name": "get_file_contents"
+    },
+    {
+      "arguments": {
+        "owner": "haandol",
+        "path": "packages/healthcare-sensor-app/src/test_service/revision/write.py",
+        "ref": "532851e23e0a02a4c2e4b87e932ac4332b3e7c48",
+        "repo": "rca-agent"
+      },
+      "received_at": "2026-09-18T15:21:04.059083+00:00",
+      "request_terminated": true,
+      "requested_tool_use_id": "17e5ab30743d44259b7c37f060f59283",
+      "result": {
+        "content": [
+          {
+            "text": "successfully downloaded text file (SHA: 8597c957426bcdaf34274eeeb175caab782420cf)"
+          },
+          {
+            "text": "\"\"\"Build-selected INSERT identifier; values always remain typed bound parameters.\"\"\"\n\nfrom sqlalchemy import Boolean, DateTime, Float, String, bindparam, text\n\nTIMESTAMP_COLUMN = \"timestamp\"\nCOLUMN_NAMES = (\"id\", \"patient_id\", \"reading_type\", \"value\", \"unit\", TIMESTAMP_COLUMN, \"is_abnormal\", \"created_at\")\nSQL = (\n    f\"INSERT INTO sensor_readings ({', '.join(COLUMN_NAMES)}) \"\n    \"VALUES (:id, :patient_id, :reading_type, :value, :unit, :timestamp, :is_abnormal, :created_at)\"\n)\n\n\ndef write_statement():\n    \"\"\"Keep identifier selection below the ORM while binding every patient value by type.\"\"\"\n    return text(SQL).bindparams(\n        bindparam(\"id\", type_=String(36)),\n        bindparam(\"patient_id\", type_=String(64)),\n        bindparam(\"reading_type\", type_=String(32)),\n        bindparam(\"value\", type_=Float),\n        bindparam(\"unit\", type_=String(16)),\n        bindparam(\"timestamp\", type_=DateTime(timezone=True)),\n        bindparam(\"is_abnormal\", type_=Boolean),\n        bindparam(\"created_at\", type_=DateTime(timezone=True)),\n    )\n\n\ndef write_values(reading) -> dict:\n    \"\"\"Map domain fields to stable bind keys independently of the compiled column identifier.\"\"\"\n    return {\n        name: getattr(reading, name)\n        for name in (\"id\", \"patient_id\", \"reading_type\", \"value\", \"unit\", \"timestamp\", \"is_abnormal\", \"created_at\")\n    }\n"
+          }
+        ],
+        "isError": false,
+        "status": "success",
+        "toolUseId": "17e5ab30743d44259b7c37f060f59283"
+      },
+      "source_ref": "mcp-tool-result://get_file_contents/17e5ab30743d44259b7c37f060f59283#sha256=83ae40e9144eab2104ee47ddc82bef5b88f6126ea9e2a7cb6f933a14778e4009",
+      "tool_name": "get_file_contents"
+    }
+  ],
+  "manifests": {
+    "current": {
+      "base_fingerprint": "b29a08844ae7aaac7a42a2b05372d5898a626745d57e9e77af7c4d0268ecafef",
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/alert_controller.py": "581f975183198188ada8324af47a87095f32ae93eb0511c633a1e8336653f9db",
+        "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+        "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/patients/patient_controller.py": "7f88dce61c052872453e7ef94760fce5ca8e116eea960da49e32362422088597",
+        "adapters/primary/schemas.py": "06c8dc4cbe459bb1edce083aad932bae0cab224772f4a3bb68ffa234973c138a",
+        "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/sensors/sensor_controller.py": "eb6fefc3dac72ef5f69f94ff2a3696fb005e8bcc362bfe50bbb45215bd431403",
+        "adapters/primary/vital_controller.py": "61b06bf7c0dd900c77bf015a807f318058c758765f884406dd2cc58191868b95",
+        "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+        "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+        "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+        "adapters/secondary/vital_repository/__init__.py": "9c9a61e27f216a7685cc04fdf5f3cd04ba0cd148aa67ff091d0d6f11a659b45e",
+        "adapters/secondary/vital_repository/models.py": "6a39f82b2687ed9ba0cf8242213259b91ae7a5afd06aba8014ebc132815e86a9",
+        "adapters/secondary/vital_repository/postgresql.py": "2ba30fb70d58dc79307cf804f6c900756bdf25d6a55d4f9143c45a8d542b0581",
+        "backlog_probe.py": "30c2697f0d2fe4e8e796a446030bfae6660519fc52635279a6675f18874615b1",
+        "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+        "config/settings.py": "14b1a390fe6a1489322e04aa2a841cc9e606c3c0f6f3a0d1d7346f0b62a871a2",
+        "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "di/app_container.py": "4d3045872c0a1cba3d699ee6cfb9525fa8ade1b62ebae739f4af7780f0a4b563",
+        "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+        "main.py": "a8f731d2fd2ad4e5c9e03cde7f751ecf2b5303623abec219c24762cea1a4e647",
+        "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+        "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+        "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+        "ports/dto/vital.py": "0c233eec1fffae19308d59ec4ca4507028b27fe2ca8add2b5ac60362154a794b",
+        "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+        "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+        "ports/interfaces/vital_repository.py": "3c9cee9eb24298eaa3f1c0a7e2c3a226048c97aaae0c746d9e7dc03bac2d28d6",
+        "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+        "revision/manifest.py": "fcce9f6b782d2479598135c3a2cfb4ebd4a2b19023f19f1fd395f1f5e62d766d",
+        "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+        "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+        "revision/write.py": "7780ff5c28898bf605d0a5f9026439d34cc6f3feaa38f0ca3cfd6105cf6527de",
+        "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+        "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+        "services/input_contract.py": "254c50f96141bba8f102b04debfa7566fc772f0b7b0b9a1f78c340b339f2ef81",
+        "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+        "services/sensor.py": "9a5041cd1e3f0d951a7db7e6d14724ad63f11556c549b806bfb3bedd206e0b29",
+        "services/symptom_metrics.py": "47d0f7bb56101201e8dd395f0f9d0868cb4752294268aceaa5da9742c75fc3c0",
+        "services/traffic_generator.py": "2c34633c6bbcf2bffcc0476524772425c287ff9cc5a3346e9b94efe736cfe7bf",
+        "services/vital.py": "43c9a903fde255564344ea8dbb0ce0e2ca8bf634f9900877f567dea4362eb752",
+        "services/write_diagnostics.py": "83cf4f1288e2c56734f2009bda9d4ebddf95c1230900b79c5b10f34f2578e99e",
+        "telemetry.py": "0bd888da007e4c2d01be553cfc9cdf7c68188eb040b02112bff8b724c902e2e7",
+        "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fingerprint": "acd68655bbc9fe1010f3b7db20cdff1b6bf2eb05de0e192e2d75c577d509c2d6",
+      "revision": "v2",
+      "source_locations": {
+        "revision/write.py": {
+          "commit": "532851e23e0a02a4c2e4b87e932ac4332b3e7c48",
+          "path": "packages/healthcare-sensor-app/demo/revisions/v2/revision/write.py",
+          "repository": "haandol/rca-agent",
+          "sha256": "7780ff5c28898bf605d0a5f9026439d34cc6f3feaa38f0ca3cfd6105cf6527de",
+          "verification": "declared"
+        }
+      },
+      "verified": true
+    },
+    "baseline": {
+      "base_fingerprint": "b29a08844ae7aaac7a42a2b05372d5898a626745d57e9e77af7c4d0268ecafef",
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/alerts/alert_controller.py": "581f975183198188ada8324af47a87095f32ae93eb0511c633a1e8336653f9db",
+        "adapters/primary/health/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/health/health_controller.py": "c212dc7de4f6845c389beb8db91f8e5343edbb12c505ac349dedfe5131b847d3",
+        "adapters/primary/patients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/patients/patient_controller.py": "7f88dce61c052872453e7ef94760fce5ca8e116eea960da49e32362422088597",
+        "adapters/primary/schemas.py": "06c8dc4cbe459bb1edce083aad932bae0cab224772f4a3bb68ffa234973c138a",
+        "adapters/primary/sensors/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/primary/sensors/sensor_controller.py": "eb6fefc3dac72ef5f69f94ff2a3696fb005e8bcc362bfe50bbb45215bd431403",
+        "adapters/primary/vital_controller.py": "61b06bf7c0dd900c77bf015a807f318058c758765f884406dd2cc58191868b95",
+        "adapters/secondary/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/alert_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/database_adapter.py": "a892c062a204f8719b915ed462db1ee8c7d18d5c3902e8b36834b74ce69e0215",
+        "adapters/secondary/sensor_repository/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "adapters/secondary/sensor_repository/models.py": "122e8a9571fd9611575dff4c1d815226b66c672a83d0150135621eecf500ab8e",
+        "adapters/secondary/sensor_repository/sqlalchemy_sensor_repository.py": "08c88db9329f79c9eefc0fc0db9e7379eaa9c2c81bbf7e4f2cd1e21c17b8cca1",
+        "adapters/secondary/vital_repository/__init__.py": "9c9a61e27f216a7685cc04fdf5f3cd04ba0cd148aa67ff091d0d6f11a659b45e",
+        "adapters/secondary/vital_repository/models.py": "6a39f82b2687ed9ba0cf8242213259b91ae7a5afd06aba8014ebc132815e86a9",
+        "adapters/secondary/vital_repository/postgresql.py": "2ba30fb70d58dc79307cf804f6c900756bdf25d6a55d4f9143c45a8d542b0581",
+        "backlog_probe.py": "30c2697f0d2fe4e8e796a446030bfae6660519fc52635279a6675f18874615b1",
+        "config/__init__.py": "44a9655c7e81b718ee5e83d94d2d1fe7393a9a561ed7d99d917508a60c955cfa",
+        "config/settings.py": "14b1a390fe6a1489322e04aa2a841cc9e606c3c0f6f3a0d1d7346f0b62a871a2",
+        "di/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "di/app_container.py": "4d3045872c0a1cba3d699ee6cfb9525fa8ade1b62ebae739f4af7780f0a4b563",
+        "di/container.py": "ca317f91cb6e0878b228302c7991d6eff5a1d9294e0196c6404451a8d4eeb6e5",
+        "main.py": "a8f731d2fd2ad4e5c9e03cde7f751ecf2b5303623abec219c24762cea1a4e647",
+        "middleware/__init__.py": "208785c979f7d925b52d11690df281e01eb4878012c94154b15870f30db5197a",
+        "middleware/logging.py": "dc0f05c5303ec0e9f7fe8fcc236a0dbeb772260acf8a88bd0421f5233ebecdf2",
+        "ports/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/dto/sensor.py": "0bff8d706bb548172fd04e53ba9edef84dcb655ffe141bddc898bc5c02c1c35a",
+        "ports/dto/vital.py": "0c233eec1fffae19308d59ec4ca4507028b27fe2ca8add2b5ac60362154a794b",
+        "ports/interfaces/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ports/interfaces/database.py": "356c72b8e79fab4c018d3678a598f3480e8cb8fa8da700a0ddcc92636be59cd3",
+        "ports/interfaces/sensor_reading_repository.py": "7bccdcb4ce63ebf8eedc3b4ae65fdf602122ed3bd2e7345cc7b3c0bd580c5a3d",
+        "ports/interfaces/vital_repository.py": "3c9cee9eb24298eaa3f1c0a7e2c3a226048c97aaae0c746d9e7dc03bac2d28d6",
+        "revision/__init__.py": "405ce0f6d05b76bbbd2c98fe36617f5fa384cd97bcf605cd7cf67359236f5920",
+        "revision/manifest.py": "fcce9f6b782d2479598135c3a2cfb4ebd4a2b19023f19f1fd395f1f5e62d766d",
+        "revision/query.py": "dcd500f30622e1e3a4b91080e98a3a06825dec9dcb5d85896ba3776081441dc9",
+        "revision/session.py": "07c55604617c052fb97b07c112906bfe19d5d747d49773d126f5694d342de7b6",
+        "revision/write.py": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+        "services/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "services/db_observability.py": "9a8422f3374e8dc5a35fff61f15afa73bf2f11252b2d3c486af51f7d4876ba3f",
+        "services/health.py": "a65fbb28ea56f8430136a00e51623fd5e8d694afc24bdf304ef5b60abd514d9e",
+        "services/input_contract.py": "254c50f96141bba8f102b04debfa7566fc772f0b7b0b9a1f78c340b339f2ef81",
+        "services/runtime_identity.py": "ecc35ed571baff236026a7767174e09f2b1a078724e1483d5183c851cb5cd4be",
+        "services/sensor.py": "9a5041cd1e3f0d951a7db7e6d14724ad63f11556c549b806bfb3bedd206e0b29",
+        "services/symptom_metrics.py": "47d0f7bb56101201e8dd395f0f9d0868cb4752294268aceaa5da9742c75fc3c0",
+        "services/traffic_generator.py": "2c34633c6bbcf2bffcc0476524772425c287ff9cc5a3346e9b94efe736cfe7bf",
+        "services/vital.py": "43c9a903fde255564344ea8dbb0ce0e2ca8bf634f9900877f567dea4362eb752",
+        "services/write_diagnostics.py": "83cf4f1288e2c56734f2009bda9d4ebddf95c1230900b79c5b10f34f2578e99e",
+        "telemetry.py": "0bd888da007e4c2d01be553cfc9cdf7c68188eb040b02112bff8b724c902e2e7",
+        "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fingerprint": "b29a08844ae7aaac7a42a2b05372d5898a626745d57e9e77af7c4d0268ecafef",
+      "revision": "v1",
+      "source_locations": {
+        "revision/write.py": {
+          "commit": "532851e23e0a02a4c2e4b87e932ac4332b3e7c48",
+          "path": "packages/healthcare-sensor-app/src/test_service/revision/write.py",
+          "repository": "haandol/rca-agent",
+          "sha256": "7ec7698e9d1f8cf97a86e2d0d56894f6ed7d6f80c033fca5e73ead456b75ea7f",
+          "verification": "declared"
+        }
+      },
+      "verified": true
+    }
+  }
+}
