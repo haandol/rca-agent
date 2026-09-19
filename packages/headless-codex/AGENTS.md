@@ -238,6 +238,20 @@ approvals/<rca_id>/<approval_id>/incident.json에 복사한다. 워커는 설정
 승인 경로·해시·RCA·원래 엔진을 검증하고 분석 원본 삭제 후에도 이 승인 사본을 읽는다.
 알람 원문은 S3에만 보존하여 DynamoDB에 큰 JSON을 중복 저장하지 않는다.
 전체 Trigger·AlarmDescription·알 수 없는 알람 필드는 보존하며 최신 parent/part로 바꾸지 않는다.
-실행 회고는 기존 RESOLVED 조건을 유지한다. 조기 비공개 런북의 회고 diff는 보존하지만 공개 기준
-승인 권위가 없으면 공개 교정/VERIFIED 승격을 하지 않고 후속 불가 사유를 기록한다.
-이 결과가 정상화나 원인·운영 분석을 취소하지 않는다.
+실행 회고는 기존 RESOLVED 조건을 유지한다. 조기 회고 검토 완료와 공용 반영은 별개다.
+검토 원문을 보존한 뒤 RETROSPECTIVE_FOLLOWUP child와 RETROSPECTIVE_PENDING 작업 참조를
+같은 트랜잭션으로 등록한다. 승인 큐는 그대로 유지하고 실행 워커 idle 경로에서 pending
+파티션을 Query한다. 과거 FAILED의 보존 검토는 별도 제한 Scan으로 발견하고 새 child로
+연결하며 원래 실패·승인·실행 기록을 바꾸지 않는다.
+
+공개 publisher의 RECOVERY_PUBLICATION binding은 recovery 개정·원문 hash와 공용 원본
+개정·hash와 연결한다. 모델은 일반 지식만 작성하고 서버가 기존 관련 런북 필드에 검증된
+사고 steps와 rollback_context를 결합한다. 이 관련 런북은 일반 재사용 명령이나 새 실행
+승인이 아니다. 전체 steps·순서·rollback_context·실행 대상 binding이 승인 사본과 같은지
+확인하고 보존 회고만 적용한다. 교정된 개정본은 원래 승인 사본을 바꾸지 않으며 절차나
+대상이 달라지면 DRAFT다. 재개 경로는 모델이나 인프라 명령을 호출하지 않는다.
+미반영 사용자 제안, 실패·삭제·만료 원본, 다른 승인이나 개정본에는 게시하지 않는다.
+S3 원문은 60일 유효성을 별도로 검사하고 최대 32MiB를 읽어 초과·중복 JSON 키를 명시적으로
+거부한다. 원본을 잘라서 성공 처리하지 않는다. 후속 lease와 공개 기준 CAS를 staging 및
+최종 공개 트랜잭션에서 확인하고, 원본·검색 게시가 일치해야 child를 PUBLISHED로 기록한다.
+이 후속 상태가 정상화나 원인·운영 분석을 취소하지 않는다.

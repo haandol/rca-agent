@@ -554,10 +554,12 @@ class PlaybookLibrary:
         metric_name: str = "",
         baseline: dict | None = None,
         publication_result: dict | None = None,
+        publication_guard: dict | None = None,
     ) -> dict:
-        """Stage analyses with their head; stage retrospectives without replacing public knowledge."""
+        """Stage immutable work without replacing public knowledge; optional followup lease joins the transaction."""
         playbook_id = playbook.get("playbook_id", "")
-        source = self.source(rca_id, playbook_id, engine)
+        completed_id = (publication_result or {}).get("followup", {}).get("completed_playbook_id") or playbook_id
+        source = self.source(rca_id, completed_id, engine)
         if source is None:
             raise ValueError("completed retained playbook source unavailable")
         session, items = source
@@ -577,7 +579,7 @@ class PlaybookLibrary:
             ):
                 raise ValueError("publication replay changed content or source")
             return current
-        actions = [self._source_condition(session)]
+        actions = [self._source_condition(session), *([publication_guard] if publication_guard else [])]
         head_condition = {"TableName": self.table, "ConditionExpression": "attribute_not_exists(PK)"}
         if baseline is None:
             if not legacy_original_live(session):
@@ -709,7 +711,10 @@ class PlaybookLibrary:
 
     def committed(self, head: dict) -> dict | None:
         """Retrospective publication requires its original revision commit, not its stage."""
-        source = self.source(head["source_rca_id"], head["SK"], head["engine"])
+        completed_id = (
+            head.get("retrospective_result", {}).get("followup", {}).get("completed_playbook_id") or head["SK"]
+        )
+        source = self.source(head["source_rca_id"], completed_id, head["engine"])
         if source is None:
             return None
         for item in source[1]:
@@ -753,9 +758,12 @@ class PlaybookLibrary:
             ),
         )
 
-    def finalize(self, head: dict) -> None:
-        """CAS a committed retrospective into the head; failures leave prior public knowledge intact."""
-        source = self.source(head["source_rca_id"], head["SK"], head["engine"])
+    def finalize(self, head: dict, *, followup_token: str = "") -> None:
+        """CAS committed content and live source/lease authority together; failures preserve prior public knowledge."""
+        completed_id = (
+            head.get("retrospective_result", {}).get("followup", {}).get("completed_playbook_id") or head["SK"]
+        )
+        source = self.source(head["source_rca_id"], completed_id, head["engine"])
         if source is None or not original_live(head):
             raise ValueError("publication source expired")
         current = self.head(head["SK"])
@@ -876,7 +884,86 @@ class PlaybookLibrary:
             )
         actions.append({"Put": state_put})
         result = head.get("retrospective_result")
-        if result:
+        if result and result.get("followup"):
+            followup = result["followup"]
+            if not followup_token:
+                raise ValueError("deferred publication lease required")
+            actions.append(
+                {
+                    "Update": {
+                        "TableName": self.table,
+                        "Key": _pack({"PK": followup["PK"], "SK": followup["SK"]}),
+                        "UpdateExpression": "SET #status = :published, published_revision = :revision, "
+                        "public_playbook_id = :book, updated_at = :now, reason = :reason "
+                        "REMOVE lease_token, lease_until",
+                        "ConditionExpression": "#status = :publishing AND lease_token = :token "
+                        "AND lease_until > :now AND #ttl > :now AND body_expires_at > :now AND review_sha256 = :review "
+                        "AND playbook_digest = :digest",
+                        "ExpressionAttributeNames": {"#status": "status", "#ttl": "ttl"},
+                        "ExpressionAttributeValues": _pack(
+                            {
+                                ":published": "PUBLISHED",
+                                ":publishing": "PUBLISHING",
+                                ":token": followup_token,
+                                ":revision": head["revision"],
+                                ":book": head["SK"],
+                                ":now": int(time.time()),
+                                ":review": followup["review_sha256"],
+                                ":digest": followup["playbook_digest"],
+                                ":reason": result["summary"],
+                            }
+                        ),
+                    }
+                }
+            )
+            actions.append(
+                {
+                    "Delete": {
+                        "TableName": self.table,
+                        "Key": _pack(followup["pending_key"]),
+                        "ConditionExpression": "followup_key = :key",
+                        "ExpressionAttributeValues": _pack({":key": {"PK": followup["PK"], "SK": followup["SK"]}}),
+                    }
+                }
+            )
+            execution_binding = followup["execution_binding"]
+            actions.append(
+                {
+                    "ConditionCheck": {
+                        "TableName": self.table,
+                        "Key": _pack({"PK": followup["PK"], "SK": f"EXEC#{followup['execution_id']}"}),
+                        "ConditionExpression": "execution_state = :resolved AND #ttl > :now AND "
+                        + " AND ".join(f"#e{i} = :e{i}" for i in range(len(execution_binding))),
+                        "ExpressionAttributeNames": {
+                            "#ttl": "ttl",
+                            **{f"#e{i}": field for i, field in enumerate(execution_binding)},
+                        },
+                        "ExpressionAttributeValues": _pack(
+                            {
+                                ":resolved": "RESOLVED",
+                                ":now": int(time.time()),
+                                **{f":e{i}": value for i, value in enumerate(execution_binding.values())},
+                            }
+                        ),
+                    }
+                }
+            )
+            fields = followup["binding"]
+            names = {f"#b{i}": field for i, field in enumerate(fields)}
+            values = {f":b{i}": value for i, value in enumerate(fields.values())}
+            actions.append(
+                {
+                    "ConditionCheck": {
+                        "TableName": self.table,
+                        "Key": _pack(followup["binding_key"]),
+                        "ConditionExpression": " AND ".join(f"#b{i} = :b{i}" for i in range(len(fields)))
+                        + " AND #binding_ttl > :binding_now",
+                        "ExpressionAttributeNames": {**names, "#binding_ttl": "ttl"},
+                        "ExpressionAttributeValues": _pack({**values, ":binding_now": int(time.time())}),
+                    }
+                }
+            )
+        elif result:
             execution_id = head["revision"].removeprefix("retrospective:")
             raw = self.client.get_item(
                 TableName=self.table,

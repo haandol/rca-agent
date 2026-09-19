@@ -54,6 +54,7 @@ const util = Object.assign(
   {},
   ...[
     'keys',
+    'retrospectivePublication',
     'playbook',
     'executionApproval',
     'analysisParts',
@@ -843,7 +844,9 @@ test('retrospective follows actual execution origin, not the takeover parent roo
   assert.equal(result.issue.rootCause, '');
   assert.equal(result.issue.confirmed, false);
   const query = f.events.find(
-    (event) => event.constructor.name === 'QueryCommand',
+    (event) =>
+      event.constructor.name === 'QueryCommand' &&
+      event.input.ExpressionAttributeValues?.[':sk'],
   );
   assert.equal(
     query.input.ExpressionAttributeValues[':sk'],

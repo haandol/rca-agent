@@ -24,7 +24,7 @@ from rca_agent.config.settings import (
 from rca_agent.prompts.branching import BRANCHING_SYSTEM_PROMPT
 from rca_agent.prompts.evidence import EVIDENCE_COLLECTION_SYSTEM_PROMPT
 from rca_agent.prompts.hypothesis import HYPOTHESIS_GENERATION_SYSTEM_PROMPT
-from rca_agent.prompts.playbook import PLAYBOOK_SYSTEM_PROMPT
+from rca_agent.prompts.playbook import PLAYBOOK_SYSTEM_PROMPT, PLAYBOOK_UPDATE_SYSTEM_PROMPT
 from rca_agent.prompts.prioritization import PRIORITIZATION_SYSTEM_PROMPT
 from rca_agent.prompts.report import REPORT_SYSTEM_PROMPT
 from rca_agent.prompts.scoping import SCOPING_SYSTEM_PROMPT
@@ -262,6 +262,11 @@ def create_playbook_agent(*, model: BedrockModel | None = None) -> Agent:
     if model is None:
         model = create_planning_model()
     return Agent(model=model, system_prompt=PLAYBOOK_SYSTEM_PROMPT)
+
+
+def create_playbook_comparison_agent(*, model: BedrockModel) -> Agent:
+    """Start an isolated candidate appraisal without clearing the draft's retained conversation."""
+    return Agent(model=model, system_prompt=PLAYBOOK_UPDATE_SYSTEM_PROMPT)
 
 
 def create_recovery_agent(*, model=None) -> Agent:

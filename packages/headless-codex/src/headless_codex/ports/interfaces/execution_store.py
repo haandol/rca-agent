@@ -136,6 +136,7 @@ class ExecutionStorePort(ABC):
         playbook: dict,
         *,
         execution_id: str,
+        publication_guard: dict | None = None,
     ) -> None: ...
 
     @abstractmethod
@@ -146,4 +147,5 @@ class ExecutionStorePort(ABC):
         playbook: dict,
         *,
         execution_id: str,
+        publication_guard: dict | None = None,
     ) -> None: ...

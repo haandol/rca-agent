@@ -1,0 +1,967 @@
+{
+  "pending": {
+    "privateBook": {
+      "playbook_id": "private-recovery",
+      "rollback_context": {
+        "baseline_ref": {
+          "bucket": "evidence",
+          "key": "normal/run.json",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "scope": {
+          "account_id": "123456789012",
+          "region": "us-east-1",
+          "cluster_arn": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+          "service_arn": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+          "service_name": "app",
+          "container_name": "app",
+          "desired_count": 1,
+          "log_group": "/ecs/app"
+        },
+        "normal": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "current": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+          "image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deployment_id": "ecs-svc/fault"
+        },
+        "service_settings": {
+          "deploymentConfiguration": {},
+          "networkConfiguration": {},
+          "capacityProviderStrategy": [],
+          "launchType": "FARGATE",
+          "platformVersion": "LATEST",
+          "schedulingStrategy": "REPLICA"
+        },
+        "write_accounting": {
+          "namespace": "Healthcare/Sensor",
+          "dimensions": {
+            "ServiceName": "logical-writer"
+          },
+          "attempts_metric": "Attempts",
+          "failures_metric": "Failures",
+          "operation_kind": "write",
+          "accounting": "completed",
+          "source_ref": "cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1",
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "execution_steps": [
+        {
+          "step_id": "discover",
+          "action": "Read metric coordinates",
+          "success_criteria": "observed coordinates and alarm",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "rollback",
+          "action": "Restore verified normal revision",
+          "success_criteria": "rollback acknowledged",
+          "commands": [
+            "aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1"
+          ],
+          "ecs_service_precondition": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "expected_task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+            "expected_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "expected_deployment_id": "ecs-svc/fault",
+            "service_settings": {
+              "deploymentConfiguration": {},
+              "networkConfiguration": {},
+              "capacityProviderStrategy": [],
+              "launchType": "FARGATE",
+              "platformVersion": "LATEST",
+              "schedulingStrategy": "REPLICA"
+            }
+          }
+        },
+        {
+          "step_id": "converge",
+          "action": "Observe deployment convergence",
+          "success_criteria": "all normal app tasks healthy and fault tasks stopped",
+          "deployment_wait": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "action_step_id": "rollback",
+            "task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+            "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "max_wait_seconds": 900
+          }
+        },
+        {
+          "step_id": "metrics",
+          "action": "Observe completed writes",
+          "success_criteria": "Failures zero with attempts and IngestFailures OK; completed writes proven",
+          "metric_wait": {
+            "deployment_step_id": "converge",
+            "metrics": {
+              "attempts": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              },
+              "failures": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              }
+            },
+            "failure_alarm_name": "IngestFailures",
+            "region": "us-east-1",
+            "completed_work_evidence": {
+              "record_index": "approved_context",
+              "json_pointer": "/playbook/rollback_context/write_accounting"
+            }
+          }
+        }
+      ],
+      "rca_id": "new"
+    },
+    "rows": [
+      {
+        "PK": "RCA#old",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "historical",
+        "playbook": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "current",
+        "playbook": "{\"playbook_id\":\"current\",\"execution_steps\":[],\"comparison\":{\"status\":\"UPDATE_PROPOSED\",\"query\":\"연결 고갈\",\"selected_playbook_id\":\"historical\",\"candidates\":[{\"playbook_id\":\"historical\",\"rca_id\":\"old\",\"engine\":\"headless-codex\",\"revision\":\"analysis:old\",\"similarity\":0.9,\"availability\":\"AVAILABLE\",\"applicable\":true,\"rationale\":\"같은 연결 증상\"}],\"proposal\":{\"proposal_id\":\"p1\",\"playbook_id\":\"historical\",\"base_revision\":\"analysis:old\",\"source_rca_id\":\"old\",\"source_engine\":\"headless-codex\",\"before\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"after\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"changes\":[{\"field\":\"temporary_mitigation\",\"before\":\"연결 수 확인\",\"after\":\"연결 수와 소유 프로세스 확인\"}],\"rationale\":\"관측된 연결 소유자 정보를 보강\",\"evidence\":[\"report evidence A\"],\"state\":\"PENDING\"}}}",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "workflow": "recovery-first-v1",
+        "playbook_index_status": "PUBLISHED"
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY",
+        "SK": "historical",
+        "playbook_json": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "revision": "analysis:old",
+        "source_rca_id": "old",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@analysis:old",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1794614400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY_STATE",
+        "SK": "historical",
+        "revision": "analysis:old",
+        "source_rca_id": "old",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@analysis:old",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_expires_at": 1794614400,
+        "failure_type": "연결 고갈",
+        "symptom_pattern": "지연",
+        "tags": [
+          "database"
+        ],
+        "verification_status": "VERIFIED"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#ANALYSIS_PART#recovery",
+        "engine": "headless-codex",
+        "status": "COMPLETED",
+        "approval_status": "READY",
+        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_s3_key": "analysis-parts/headless-codex/new/recovery/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.json",
+        "body_expires_at": 1794614400,
+        "ttl": 1797206400
+      }
+    ],
+    "disposition": null
+  },
+  "rejected": {
+    "privateBook": {
+      "playbook_id": "private-recovery",
+      "rollback_context": {
+        "baseline_ref": {
+          "bucket": "evidence",
+          "key": "normal/run.json",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "scope": {
+          "account_id": "123456789012",
+          "region": "us-east-1",
+          "cluster_arn": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+          "service_arn": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+          "service_name": "app",
+          "container_name": "app",
+          "desired_count": 1,
+          "log_group": "/ecs/app"
+        },
+        "normal": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "current": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+          "image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deployment_id": "ecs-svc/fault"
+        },
+        "service_settings": {
+          "deploymentConfiguration": {},
+          "networkConfiguration": {},
+          "capacityProviderStrategy": [],
+          "launchType": "FARGATE",
+          "platformVersion": "LATEST",
+          "schedulingStrategy": "REPLICA"
+        },
+        "write_accounting": {
+          "namespace": "Healthcare/Sensor",
+          "dimensions": {
+            "ServiceName": "logical-writer"
+          },
+          "attempts_metric": "Attempts",
+          "failures_metric": "Failures",
+          "operation_kind": "write",
+          "accounting": "completed",
+          "source_ref": "cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1",
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "execution_steps": [
+        {
+          "step_id": "discover",
+          "action": "Read metric coordinates",
+          "success_criteria": "observed coordinates and alarm",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "rollback",
+          "action": "Restore verified normal revision",
+          "success_criteria": "rollback acknowledged",
+          "commands": [
+            "aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1"
+          ],
+          "ecs_service_precondition": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "expected_task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+            "expected_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "expected_deployment_id": "ecs-svc/fault",
+            "service_settings": {
+              "deploymentConfiguration": {},
+              "networkConfiguration": {},
+              "capacityProviderStrategy": [],
+              "launchType": "FARGATE",
+              "platformVersion": "LATEST",
+              "schedulingStrategy": "REPLICA"
+            }
+          }
+        },
+        {
+          "step_id": "converge",
+          "action": "Observe deployment convergence",
+          "success_criteria": "all normal app tasks healthy and fault tasks stopped",
+          "deployment_wait": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "action_step_id": "rollback",
+            "task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+            "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "max_wait_seconds": 900
+          }
+        },
+        {
+          "step_id": "metrics",
+          "action": "Observe completed writes",
+          "success_criteria": "Failures zero with attempts and IngestFailures OK; completed writes proven",
+          "metric_wait": {
+            "deployment_step_id": "converge",
+            "metrics": {
+              "attempts": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              },
+              "failures": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              }
+            },
+            "failure_alarm_name": "IngestFailures",
+            "region": "us-east-1",
+            "completed_work_evidence": {
+              "record_index": "approved_context",
+              "json_pointer": "/playbook/rollback_context/write_accounting"
+            }
+          }
+        }
+      ],
+      "rca_id": "new"
+    },
+    "rows": [
+      {
+        "PK": "RCA#old",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "historical",
+        "playbook": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "current",
+        "playbook": "{\"playbook_id\":\"current\",\"execution_steps\":[],\"comparison\":{\"status\":\"UPDATE_PROPOSED\",\"query\":\"연결 고갈\",\"selected_playbook_id\":\"historical\",\"candidates\":[{\"playbook_id\":\"historical\",\"rca_id\":\"old\",\"engine\":\"headless-codex\",\"revision\":\"analysis:old\",\"similarity\":0.9,\"availability\":\"AVAILABLE\",\"applicable\":true,\"rationale\":\"같은 연결 증상\"}],\"proposal\":{\"proposal_id\":\"p1\",\"playbook_id\":\"historical\",\"base_revision\":\"analysis:old\",\"source_rca_id\":\"old\",\"source_engine\":\"headless-codex\",\"before\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"after\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"changes\":[{\"field\":\"temporary_mitigation\",\"before\":\"연결 수 확인\",\"after\":\"연결 수와 소유 프로세스 확인\"}],\"rationale\":\"관측된 연결 소유자 정보를 보강\",\"evidence\":[\"report evidence A\"],\"state\":\"PENDING\"}}}",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "workflow": "recovery-first-v1",
+        "playbook_index_status": "PUBLISHED"
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY",
+        "SK": "historical",
+        "playbook_json": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "revision": "analysis:old",
+        "source_rca_id": "old",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@analysis:old",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1794614400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY_STATE",
+        "SK": "historical",
+        "revision": "analysis:old",
+        "source_rca_id": "old",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@analysis:old",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_expires_at": 1794614400,
+        "failure_type": "연결 고갈",
+        "symptom_pattern": "지연",
+        "tags": [
+          "database"
+        ],
+        "verification_status": "VERIFIED"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#ANALYSIS_PART#recovery",
+        "engine": "headless-codex",
+        "status": "COMPLETED",
+        "approval_status": "READY",
+        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_s3_key": "analysis-parts/headless-codex/new/recovery/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.json",
+        "body_expires_at": 1794614400,
+        "ttl": 1797206400
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#PLAYBOOK_PROPOSAL#p1",
+        "state": "REJECTED",
+        "playbook_id": "historical",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "requested_by": "dashboard",
+        "ttl": 1797206400
+      }
+    ],
+    "disposition": {
+      "PK": "RCA#new",
+      "SK": "headless-codex#PLAYBOOK_PROPOSAL#p1",
+      "state": "REJECTED",
+      "playbook_id": "historical",
+      "updated_at": "2026-09-15T00:00:00.000Z",
+      "requested_by": "dashboard",
+      "ttl": 1797206400
+    }
+  },
+  "applied_matching": {
+    "privateBook": {
+      "playbook_id": "private-recovery",
+      "rollback_context": {
+        "baseline_ref": {
+          "bucket": "evidence",
+          "key": "normal/run.json",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "scope": {
+          "account_id": "123456789012",
+          "region": "us-east-1",
+          "cluster_arn": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+          "service_arn": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+          "service_name": "app",
+          "container_name": "app",
+          "desired_count": 1,
+          "log_group": "/ecs/app"
+        },
+        "normal": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "current": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+          "image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deployment_id": "ecs-svc/fault"
+        },
+        "service_settings": {
+          "deploymentConfiguration": {},
+          "networkConfiguration": {},
+          "capacityProviderStrategy": [],
+          "launchType": "FARGATE",
+          "platformVersion": "LATEST",
+          "schedulingStrategy": "REPLICA"
+        },
+        "write_accounting": {
+          "namespace": "Healthcare/Sensor",
+          "dimensions": {
+            "ServiceName": "logical-writer"
+          },
+          "attempts_metric": "Attempts",
+          "failures_metric": "Failures",
+          "operation_kind": "write",
+          "accounting": "completed",
+          "source_ref": "cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1",
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "execution_steps": [
+        {
+          "step_id": "discover",
+          "action": "Read metric coordinates",
+          "success_criteria": "observed coordinates and alarm",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "rollback",
+          "action": "Restore verified normal revision",
+          "success_criteria": "rollback acknowledged",
+          "commands": [
+            "aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1"
+          ],
+          "ecs_service_precondition": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "expected_task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+            "expected_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "expected_deployment_id": "ecs-svc/fault",
+            "service_settings": {
+              "deploymentConfiguration": {},
+              "networkConfiguration": {},
+              "capacityProviderStrategy": [],
+              "launchType": "FARGATE",
+              "platformVersion": "LATEST",
+              "schedulingStrategy": "REPLICA"
+            }
+          }
+        },
+        {
+          "step_id": "converge",
+          "action": "Observe deployment convergence",
+          "success_criteria": "all normal app tasks healthy and fault tasks stopped",
+          "deployment_wait": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "action_step_id": "rollback",
+            "task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+            "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "max_wait_seconds": 900
+          }
+        },
+        {
+          "step_id": "metrics",
+          "action": "Observe completed writes",
+          "success_criteria": "Failures zero with attempts and IngestFailures OK; completed writes proven",
+          "metric_wait": {
+            "deployment_step_id": "converge",
+            "metrics": {
+              "attempts": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              },
+              "failures": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              }
+            },
+            "failure_alarm_name": "IngestFailures",
+            "region": "us-east-1",
+            "completed_work_evidence": {
+              "record_index": "approved_context",
+              "json_pointer": "/playbook/rollback_context/write_accounting"
+            }
+          }
+        }
+      ],
+      "rca_id": "new"
+    },
+    "rows": [
+      {
+        "PK": "RCA#old",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "historical",
+        "playbook": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "current",
+        "playbook": "{\"playbook_id\":\"current\",\"execution_steps\":[],\"comparison\":{\"status\":\"UPDATE_PROPOSED\",\"query\":\"연결 고갈\",\"selected_playbook_id\":\"historical\",\"candidates\":[{\"playbook_id\":\"historical\",\"rca_id\":\"old\",\"engine\":\"headless-codex\",\"revision\":\"analysis:old\",\"similarity\":0.9,\"availability\":\"AVAILABLE\",\"applicable\":true,\"rationale\":\"같은 연결 증상\"}],\"proposal\":{\"proposal_id\":\"p1\",\"playbook_id\":\"historical\",\"base_revision\":\"analysis:old\",\"source_rca_id\":\"old\",\"source_engine\":\"headless-codex\",\"before\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"after\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"changes\":[{\"field\":\"temporary_mitigation\",\"before\":\"연결 수 확인\",\"after\":\"연결 수와 소유 프로세스 확인\"}],\"rationale\":\"관측된 연결 소유자 정보를 보강\",\"evidence\":[\"report evidence A\"],\"state\":\"PENDING\"}}}",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "workflow": "recovery-first-v1",
+        "playbook_index_status": "PUBLISHED"
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY",
+        "SK": "historical",
+        "playbook_json": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "revision": "proposal:p1",
+        "source_rca_id": "old",
+        "proposal_rca_id": "new",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@proposal:p1",
+        "metric_name": "DatabaseConnections",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_created_at": "2026-09-15T00:00:00.000Z",
+        "ttl": 1794614400,
+        "original_expires_at": 1794614400
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY_STATE",
+        "SK": "historical",
+        "revision": "proposal:p1",
+        "source_rca_id": "old",
+        "proposal_rca_id": "new",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@proposal:p1",
+        "metric_name": "DatabaseConnections",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_expires_at": 1794614400,
+        "original_created_at": "2026-09-15T00:00:00.000Z",
+        "failure_type": "연결 고갈",
+        "symptom_pattern": "지연",
+        "tags": [
+          "database"
+        ],
+        "verification_status": "VERIFIED",
+        "ttl": 1797206400
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#ANALYSIS_PART#recovery",
+        "engine": "headless-codex",
+        "status": "COMPLETED",
+        "approval_status": "READY",
+        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_s3_key": "analysis-parts/headless-codex/new/recovery/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.json",
+        "body_expires_at": 1794614400,
+        "ttl": 1797206400
+      },
+      {
+        "PK": "PLAYBOOK#historical",
+        "SK": "proposal:p1",
+        "playbook_json": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "revision": "proposal:p1",
+        "source_rca_id": "old",
+        "proposal_rca_id": "new",
+        "engine": "headless-codex",
+        "publication_status": "PENDING",
+        "vector_key": "historical@proposal:p1",
+        "metric_name": "DatabaseConnections",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_created_at": "2026-09-15T00:00:00.000Z",
+        "ttl": 1794614400,
+        "original_expires_at": 1794614400
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#PLAYBOOK_PROPOSAL#p1",
+        "state": "APPLIED",
+        "playbook_id": "historical",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "requested_by": "dashboard",
+        "ttl": 1797206400,
+        "result_revision": "proposal:p1",
+        "publication_status": "PUBLISHED",
+        "previous_vector_key": "historical@analysis:old"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "RECOVERY_PUBLICATION#cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": 1,
+        "rca_id": "new",
+        "engine": "headless-codex",
+        "recovery_revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "recovery_playbook_sha256": "74d9c6a95515b6860d18d821c33ce5788fc70ed9c44fa1ff9b87c6c6d9f2e8b8",
+        "public_playbook_id": "historical",
+        "public_revision": "proposal:p1",
+        "public_body_sha256": "b0b0691d125934d2351c07a265da59985a43508eae19eb736a5fd4d9a5fafc5f",
+        "source_rca_id": "old",
+        "source_engine": "headless-codex",
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "ttl": 1794614400
+      }
+    ],
+    "disposition": {
+      "PK": "RCA#new",
+      "SK": "headless-codex#PLAYBOOK_PROPOSAL#p1",
+      "state": "APPLIED",
+      "playbook_id": "historical",
+      "updated_at": "2026-09-15T00:00:00.000Z",
+      "requested_by": "dashboard",
+      "ttl": 1797206400,
+      "result_revision": "proposal:p1",
+      "publication_status": "PUBLISHED",
+      "previous_vector_key": "historical@analysis:old"
+    }
+  },
+  "applied_mismatch": {
+    "privateBook": {
+      "playbook_id": "private-recovery",
+      "rollback_context": {
+        "baseline_ref": {
+          "bucket": "evidence",
+          "key": "normal/run.json",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "scope": {
+          "account_id": "123456789012",
+          "region": "us-east-1",
+          "cluster_arn": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+          "service_arn": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+          "service_name": "app",
+          "container_name": "app",
+          "desired_count": 1,
+          "log_group": "/ecs/app"
+        },
+        "normal": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "current": {
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+          "image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deployment_id": "ecs-svc/fault"
+        },
+        "service_settings": {
+          "deploymentConfiguration": {},
+          "networkConfiguration": {},
+          "capacityProviderStrategy": [],
+          "launchType": "FARGATE",
+          "platformVersion": "LATEST",
+          "schedulingStrategy": "REPLICA"
+        },
+        "write_accounting": {
+          "namespace": "Healthcare/Sensor",
+          "dimensions": {
+            "ServiceName": "logical-writer"
+          },
+          "attempts_metric": "Attempts",
+          "failures_metric": "Failures",
+          "operation_kind": "write",
+          "accounting": "completed",
+          "source_ref": "cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1",
+          "task_definition_arn": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "execution_steps": [
+        {
+          "step_id": "discover",
+          "action": "Read metric coordinates",
+          "success_criteria": "different approved criterion",
+          "commands": [
+            "aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1",
+            "aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1"
+          ]
+        },
+        {
+          "step_id": "rollback",
+          "action": "Restore verified normal revision",
+          "success_criteria": "rollback acknowledged",
+          "commands": [
+            "aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1"
+          ],
+          "ecs_service_precondition": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "expected_task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:2",
+            "expected_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "expected_deployment_id": "ecs-svc/fault",
+            "service_settings": {
+              "deploymentConfiguration": {},
+              "networkConfiguration": {},
+              "capacityProviderStrategy": [],
+              "launchType": "FARGATE",
+              "platformVersion": "LATEST",
+              "schedulingStrategy": "REPLICA"
+            }
+          }
+        },
+        {
+          "step_id": "converge",
+          "action": "Observe deployment convergence",
+          "success_criteria": "all normal app tasks healthy and fault tasks stopped",
+          "deployment_wait": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/cluster",
+            "service": "arn:aws:ecs:us-east-1:123456789012:service/cluster/app",
+            "container_name": "app",
+            "desired_count": 1,
+            "action_step_id": "rollback",
+            "task_definition": "arn:aws:ecs:us-east-1:123456789012:task-definition/app:1",
+            "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "max_wait_seconds": 900
+          }
+        },
+        {
+          "step_id": "metrics",
+          "action": "Observe completed writes",
+          "success_criteria": "Failures zero with attempts and IngestFailures OK; completed writes proven",
+          "metric_wait": {
+            "deployment_step_id": "converge",
+            "metrics": {
+              "attempts": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Attempts",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              },
+              "failures": {
+                "namespace": "Healthcare/Sensor",
+                "metric_name": "Failures",
+                "dimensions": {
+                  "ServiceName": "logical-writer"
+                }
+              }
+            },
+            "failure_alarm_name": "IngestFailures",
+            "region": "us-east-1",
+            "completed_work_evidence": {
+              "record_index": "approved_context",
+              "json_pointer": "/playbook/rollback_context/write_accounting"
+            }
+          }
+        }
+      ],
+      "rca_id": "new"
+    },
+    "rows": [
+      {
+        "PK": "RCA#old",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "historical",
+        "playbook": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "metric_name": "DatabaseConnections",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "ANALYSIS#SESSION",
+        "engine": "headless-codex",
+        "state": "COMPLETED",
+        "playbook_id": "current",
+        "playbook": "{\"playbook_id\":\"current\",\"execution_steps\":[],\"comparison\":{\"status\":\"UPDATE_PROPOSED\",\"query\":\"연결 고갈\",\"selected_playbook_id\":\"historical\",\"candidates\":[{\"playbook_id\":\"historical\",\"rca_id\":\"old\",\"engine\":\"headless-codex\",\"revision\":\"analysis:old\",\"similarity\":0.9,\"availability\":\"AVAILABLE\",\"applicable\":true,\"rationale\":\"같은 연결 증상\"}],\"proposal\":{\"proposal_id\":\"p1\",\"playbook_id\":\"historical\",\"base_revision\":\"analysis:old\",\"source_rca_id\":\"old\",\"source_engine\":\"headless-codex\",\"before\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"after\":{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}},\"changes\":[{\"field\":\"temporary_mitigation\",\"before\":\"연결 수 확인\",\"after\":\"연결 수와 소유 프로세스 확인\"}],\"rationale\":\"관측된 연결 소유자 정보를 보강\",\"evidence\":[\"report evidence A\"],\"state\":\"PENDING\"}}}",
+        "ttl": 1797206400,
+        "created_at": "2026-09-15T00:00:00.000Z",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "workflow": "recovery-first-v1",
+        "playbook_index_status": "PUBLISHED"
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY",
+        "SK": "historical",
+        "playbook_json": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "revision": "proposal:p1",
+        "source_rca_id": "old",
+        "proposal_rca_id": "new",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@proposal:p1",
+        "metric_name": "DatabaseConnections",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_created_at": "2026-09-15T00:00:00.000Z",
+        "ttl": 1794614400,
+        "original_expires_at": 1794614400
+      },
+      {
+        "PK": "PLAYBOOK_LIBRARY_STATE",
+        "SK": "historical",
+        "revision": "proposal:p1",
+        "source_rca_id": "old",
+        "proposal_rca_id": "new",
+        "engine": "headless-codex",
+        "publication_status": "PUBLISHED",
+        "vector_key": "historical@proposal:p1",
+        "metric_name": "DatabaseConnections",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_expires_at": 1794614400,
+        "original_created_at": "2026-09-15T00:00:00.000Z",
+        "failure_type": "연결 고갈",
+        "symptom_pattern": "지연",
+        "tags": [
+          "database"
+        ],
+        "verification_status": "VERIFIED",
+        "ttl": 1797206400
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#ANALYSIS_PART#recovery",
+        "engine": "headless-codex",
+        "status": "COMPLETED",
+        "approval_status": "READY",
+        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "payload_s3_key": "analysis-parts/headless-codex/new/recovery/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.json",
+        "body_expires_at": 1794614400,
+        "ttl": 1797206400
+      },
+      {
+        "PK": "PLAYBOOK#historical",
+        "SK": "proposal:p1",
+        "playbook_json": "{\"playbook_id\":\"historical\",\"failure_type\":\"연결 고갈\",\"symptom_pattern\":\"지연\",\"temporary_mitigation\":\"연결 수와 소유 프로세스 확인\",\"tags\":[\"database\"],\"verification_status\":\"VERIFIED\",\"execution_steps\":[{\"step_id\":\"discover\",\"action\":\"Read metric coordinates\",\"success_criteria\":\"observed coordinates and alarm\",\"commands\":[\"aws cloudwatch list-metrics --namespace Healthcare/Sensor --region us-east-1\",\"aws cloudwatch describe-alarms --alarm-names IngestFailures --region us-east-1\"]},{\"step_id\":\"rollback\",\"action\":\"Restore verified normal revision\",\"success_criteria\":\"rollback acknowledged\",\"commands\":[\"aws ecs update-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/cluster --service arn:aws:ecs:us-east-1:123456789012:service/cluster/app --task-definition arn:aws:ecs:us-east-1:123456789012:task-definition/app:1 --region us-east-1\"],\"ecs_service_precondition\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"expected_task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"expected_image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expected_deployment_id\":\"ecs-svc/fault\",\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"}}},{\"step_id\":\"converge\",\"action\":\"Observe deployment convergence\",\"success_criteria\":\"all normal app tasks healthy and fault tasks stopped\",\"deployment_wait\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"container_name\":\"app\",\"desired_count\":1,\"action_step_id\":\"rollback\",\"task_definition\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"max_wait_seconds\":900}},{\"step_id\":\"metrics\",\"action\":\"Observe completed writes\",\"success_criteria\":\"Failures zero with attempts and IngestFailures OK; completed writes proven\",\"metric_wait\":{\"deployment_step_id\":\"converge\",\"metrics\":{\"attempts\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Attempts\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}},\"failures\":{\"namespace\":\"Healthcare/Sensor\",\"metric_name\":\"Failures\",\"dimensions\":{\"ServiceName\":\"logical-writer\"}}},\"failure_alarm_name\":\"IngestFailures\",\"region\":\"us-east-1\",\"completed_work_evidence\":{\"record_index\":\"approved_context\",\"json_pointer\":\"/playbook/rollback_context/write_accounting\"}}}],\"rollback_context\":{\"baseline_ref\":{\"bucket\":\"evidence\",\"key\":\"normal/run.json\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"scope\":{\"account_id\":\"123456789012\",\"region\":\"us-east-1\",\"cluster_arn\":\"arn:aws:ecs:us-east-1:123456789012:cluster/cluster\",\"service_arn\":\"arn:aws:ecs:us-east-1:123456789012:service/cluster/app\",\"service_name\":\"app\",\"container_name\":\"app\",\"desired_count\":1,\"log_group\":\"/ecs/app\"},\"normal\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"current\":{\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:2\",\"image_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deployment_id\":\"ecs-svc/fault\"},\"service_settings\":{\"deploymentConfiguration\":{},\"networkConfiguration\":{},\"capacityProviderStrategy\":[],\"launchType\":\"FARGATE\",\"platformVersion\":\"LATEST\",\"schedulingStrategy\":\"REPLICA\"},\"write_accounting\":{\"namespace\":\"Healthcare/Sensor\",\"dimensions\":{\"ServiceName\":\"logical-writer\"},\"attempts_metric\":\"Attempts\",\"failures_metric\":\"Failures\",\"operation_kind\":\"write\",\"accounting\":\"completed\",\"source_ref\":\"cloudwatch-logs:///ecs/app/ecs/app/normal-task#event-1\",\"task_definition_arn\":\"arn:aws:ecs:us-east-1:123456789012:task-definition/app:1\",\"image_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
+        "revision": "proposal:p1",
+        "source_rca_id": "old",
+        "proposal_rca_id": "new",
+        "engine": "headless-codex",
+        "publication_status": "PENDING",
+        "vector_key": "historical@proposal:p1",
+        "metric_name": "DatabaseConnections",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "original_created_at": "2026-09-15T00:00:00.000Z",
+        "ttl": 1794614400,
+        "original_expires_at": 1794614400
+      },
+      {
+        "PK": "RCA#new",
+        "SK": "headless-codex#PLAYBOOK_PROPOSAL#p1",
+        "state": "APPLIED",
+        "playbook_id": "historical",
+        "updated_at": "2026-09-15T00:00:00.000Z",
+        "requested_by": "dashboard",
+        "ttl": 1797206400,
+        "result_revision": "proposal:p1",
+        "publication_status": "PUBLISHED",
+        "previous_vector_key": "historical@analysis:old"
+      }
+    ],
+    "disposition": {
+      "PK": "RCA#new",
+      "SK": "headless-codex#PLAYBOOK_PROPOSAL#p1",
+      "state": "APPLIED",
+      "playbook_id": "historical",
+      "updated_at": "2026-09-15T00:00:00.000Z",
+      "requested_by": "dashboard",
+      "ttl": 1797206400,
+      "result_revision": "proposal:p1",
+      "publication_status": "PUBLISHED",
+      "previous_vector_key": "historical@analysis:old"
+    }
+  }
+}

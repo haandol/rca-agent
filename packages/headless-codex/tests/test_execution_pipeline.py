@@ -1075,7 +1075,7 @@ def test_private_recovery_retrospective_preserves_diff_without_public_promotion(
     container.playbook_store.save_to_s3_vectors.assert_not_called()
     container.execution_store.save_playbook_revision.assert_not_called()
     recorded = container.execution_store.record_retrospective.call_args.kwargs
-    assert recorded["status"] == "FAILED" and "private" in recorded["summary"]
+    assert recorded["status"] == "COMPLETED" and "canonical" in recorded["summary"]
     assert recorded["diff_s3_key"]
 
 

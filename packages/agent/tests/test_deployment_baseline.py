@@ -468,6 +468,7 @@ def test_completed_draft_is_preserved_without_new_search_after_admission_budget_
     store, report = MagicMock(), MagicMock()
     report.model_dump.return_value = {}
     report.rca_id = "local"
+    report.analysis_parts = {}
 
     def finish_after_budget(*args):
         time.sleep(0.03)

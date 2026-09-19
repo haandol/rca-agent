@@ -44,7 +44,10 @@ export default defineEventHandler(async (event) => {
 
   const executions = items
     .filter((item) => isExecutionItem(String(item.SK ?? '')))
-    .map(readExecution)
+    .map((item) => ({
+      ...readExecution(item),
+      ...readPublicationHistory(item, items),
+    }))
     .filter((execution) =>
       lineage
         ? execution.rcaId === rcaId && isAllowedEngine(execution.engine)

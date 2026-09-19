@@ -237,3 +237,13 @@ packages/dashboard/
 - 조기 실행 예약에는 원본 알람 JSON을 복사하지 않는다. `source_incident_s3_key`·`source_incident_sha256`·`source_incident_engine`·`source_alarm_name`만 보존하고 canonical INCIDENT_SNAPSHOT의 같은 참조를 예약 트랜잭션에서 검사한다. 검증한 원본 바이트를 configured evidence bucket의 `approvals/<rca>/<approvalId>/incident.json`에 create-only로 복사하고 예약의 source_incident_s3_key는 이 승인 사본을 가리킨다. 원본 SHA-256·origin engine은 같고 original_incident_s3_key는 추적용일 뿐 fallback이 아니다. 정규화 DTO나 현재 부모 데이터로 재구성하지 않는다.
 
 - 삭제 claim 트랜잭션은 EXEC_ACTIVE 부재도 함께 검사한다. 엔진별 분석 파트/개정 메타데이터와 세 파트의 S3 prefix만 해당 범위에서 정리하며 다른 엔진의 세션/파트 참조가 남으면 canonical INCIDENT_SNAPSHOT과 그 원본은 유지한다. 실행 감사 행과 approvals/·executions/ 원본은 기존 감사 보존 정책에 맡긴다.
+
+## 회고 검토와 공용 반영 상태
+
+- 실행 `RESOLVED`와 원래 `retrospective_status`는 공용 반영 후속 상태로 덮어쓰지 않는다.
+- `RETROSPECTIVE_FOLLOWUP#<execution_id>#<review_sha256>` child는 같은 RCA·실행·engine·approval·playbook digest, source revision/payload hash, review hash/attempt ID 및 보존 기한을 검증한 뒤 연결한다. `PUBLISHED`는 공용 ID와 게시 개정본도 있어야 표시한다.
+- 과거 `FAILED`는 원래 기록으로 남기고 이후 검토 완료·공용 반영 대기/중/완료/차단/실패를 별도 이력으로 표시한다. 손상·만료·연결 불일치는 미확인으로 표시하며 이전 게시 성공으로 현재 상태를 추정하지 않는다.
+- 반영은 worker의 자동 재개 경로가 소유한다. Dashboard GET은 쓰지 않으며 사용자 제안의 기존 canonical 커밋·게시 조건을 유지한다. 추가 실행 승인이나 수동 재개 화면을 만들지 않는다.
+- 실행이 끝나도 게시 대기·진행·재시도 가능한 실패는 화면이 보일 때 조회한다. 게시 완료·차단·만료 및 컴포넌트 종료에서는 해당 폴링을 멈춘다.
+- 기존 지식 제안 apply의 검색 게시가 완료될 때, 정확한 새 canonical과 보존된 READY recovery의 전체 절차가 같으면 `RECOVERY_PUBLICATION#revision`을 공용 PUBLISHED 전이와 같은 최종 CAS에 고정한다. 사용자 apply 이전·검색 게시 실패에는 binding을 만들지 않는다. 명령을 복사해 불일치를 숨기지 않으며 기각·불일치는 worker의 disposition 검사에서 BLOCKED로 남긴다.
+- `recoveryBinding=BOUND`는 공용 기준 연결 결과일 뿐 후속 회고 게시 완료가 아니다. 실제 `RETROSPECTIVE_FOLLOWUP` 상태를 따로 조회한다. 같은 apply 재전송은 불변 연결을 재사용하고 이후 회고가 만든 head를 되돌리지 않는다.

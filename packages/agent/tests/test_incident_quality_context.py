@@ -76,7 +76,9 @@ def test_create_and_update_keep_late_control_evidence_and_proposal_provenance():
         playbook_gen._build_update_prompt(existing, report),
     ]:
         for item in evidence:
-            assert prompt.count(item) == 1
+            # The narrative and literal-copy choices each retain one distinct
+            # occurrence; a repeated source entry cannot become another option.
+            assert prompt.count(item) == 2
         assert "Proposed Mitigation (not execution evidence)" in prompt
         assert "Mitigation Applied" not in prompt
         assert report.temporary_mitigation in prompt

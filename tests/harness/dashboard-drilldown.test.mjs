@@ -1155,3 +1155,72 @@ test('three-part first view exposes common impact and next action while detailed
   assert.match(opened.html.split('<dialog')[1], /ORIGINAL DETAIL/);
   assert.equal(opened.calls.length, 0);
 });
+
+test('public library embedded steps are related-incident evidence, not a new execution approval source', async () => {
+  const calls = [];
+  const item = {
+    playbook_id: 'public',
+    source_rca_id: 'source-incident',
+    engine: 'strands',
+    revision: 'v1',
+  };
+  const globals = {
+    ...vue,
+    useHead: () => {},
+    useFetch: async () => ({
+      data: vue.ref({ items: [], nextCursor: null }),
+      status: vue.ref('success'),
+      error: vue.ref(null),
+      refresh: async () => {},
+    }),
+    $fetch: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        item,
+        playbook: {
+          execution_steps: [
+            { step_id: 'related', commands: ['RELATED_INCIDENT_COMMAND'] },
+          ],
+        },
+      };
+    },
+  };
+  const page = compile('pages/playbooks.vue', globals, 'open');
+  const setup = page.setup;
+  page.setup = async (props, context) => {
+    let controls;
+    const render = await setup(props, {
+      ...context,
+      expose: (value) => {
+        controls = value;
+      },
+    });
+    await controls.open(item);
+    return render;
+  };
+  const app = vue.createSSRApp(page);
+  for (const name of ['DetailDialog', 'ReadState', 'PlaybookKnowledge'])
+    app.component(name, compile(`components/${name}.vue`, globals));
+  const html = await renderToString(app);
+  assert.match(html, /관련 사고 런북 원문/);
+  assert.match(html, /공통 실행 명령이 아닙니다/);
+  assert.match(html, /비공개 정상화 런북/);
+  assert.match(html, /RELATED_INCIDENT_COMMAND/);
+  assert.deepEqual(calls, [
+    { url: '/api/playbook-library/public', options: undefined },
+  ]);
+  assert.doesNotMatch(html, /실행 승인하기/);
+});
+
+test('a committed recovery binding is displayed separately from public follow-up completion', async () => {
+  const result = await report({
+    operation: (state, entries) => {
+      entries.get(
+        '/api/playbook-proposals/fixture',
+      ).data.value.recoveryBinding = { status: 'BOUND' };
+      state.openDetail('comparison');
+    },
+  });
+  assert.match(result.html, /연결됨 \(공용 반영 결과는 별도\)/);
+  assert.equal(result.calls.length, 0);
+});

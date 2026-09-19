@@ -27,6 +27,7 @@ logger = structlog.get_logger()
 
 
 def main() -> None:
+    """Process approved messages once, then advance bounded retained publication work without reinvoking execution."""
     setup_logging()
 
     if not EXECUTION_QUEUE_URL:
@@ -72,6 +73,14 @@ def main() -> None:
 
             if success:
                 sqs.delete_message(QueueUrl=EXECUTION_QUEUE_URL, ReceiptHandle=msg["ReceiptHandle"])
+
+        if not shutdown_event.is_set():
+            try:
+                # One bounded publication turn between approval batches also
+                # progresses when the approval queue stays continuously nonempty.
+                container.deferred_publication.tick()
+            except Exception:
+                logger.exception("deferred_publication_tick_failed")
 
     logger.info("shutdown_complete")
 

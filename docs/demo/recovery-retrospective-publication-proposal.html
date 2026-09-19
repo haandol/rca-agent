@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>조기 런북 회고의 공용 반영 — 수정 계약 제안</title>
+<style>
+body{font:16px/1.8 system-ui,sans-serif;color:#21343e;background:#f4f7f8;margin:0}main{max-width:880px;margin:32px auto;padding:36px;background:white}h1{font-size:28px;line-height:1.4}h2{font-size:21px;margin-top:32px}code,pre{background:#edf2f4;overflow-wrap:anywhere}pre{padding:16px;white-space:pre-wrap}.notice{border-left:4px solid #b28128;padding:16px;background:#fff8e9}.flow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.flow span{border:1px solid #b9ccd2;padding:10px}li{margin:10px 0}small{color:#536872}@media(max-width:600px){main{margin:0;padding:24px}}
+</style>
+<main>
+<small>2026-09-19 · 사용자가 승인한 제안 기록 · 구현 계약은 기존 ADR 0018과 관련 ADR이 소유</small>
+<h1>“권한 부족”의 실제 원인과 수정할 후속 절차</h1>
+<p>이번 오류는 AWS IAM의 접근 거부가 아니다. 실행 워커는 회고 원문과 변경 내역을 저장한 뒤, 실행 출처가 조기 정상화 런북이면 공용 반영을 차단하고 회고 상태를 FAILED로 기록한다. 공용 플레이북이 나중에 완성돼도 다시 연결하는 경로가 없다.</p>
+<p>관련 코드: <code>packages/headless-codex/src/headless_codex/services/execution_pipeline.py</code>의 <code>source_part == "recovery"</code> 분기. 관련 결정은 ADR 0018의 ‘실행과 독립된 원인·운영 분석과의 구분’과 ADR 0008의 ‘완료 후 게시’다.</p>
+<div class="notice">단기 복구의 RESOLVED는 유효하다. 회고 결과가 없어서 실패한 것이 아니라, 회고를 반영할 정식 공용 원문과의 연결·재개 계약이 빠져 있다. 별도로 관측된 공용 플레이북 생성의 모델 입력 초과도 해결해야 한다.</div>
+<h2>제안하는 계약</h2>
+<ol>
+<li><strong>검토와 공용 반영 상태를 구분한다.</strong> 해결된 실행의 회고 원문·변경 내역이 정상 저장됐으나 공용 기준이 아직 준비되지 않았으면 ‘회고 완료·공용 반영 대기’로 기록한다. 실행 RESOLVED와 승인 사본은 바꾸지 않는다. 실제 회고 실패는 실패로 유지한다.</li>
+<li><strong>정식 공용 기준이 확정되면 자동 재개한다.</strong> 같은 사고라는 사실만으로 연결하지 않는다. 사고·실행·승인 사본의 지문, 서버가 보존한 공용 개정본과의 불변 연결, 실행 절차 동일성을 검증한다. 완료 전·실패·삭제·만료·손상된 원문은 반영 기준이 될 수 없다.</li>
+<li><strong>기존 사용자 반영 절차를 우회하지 않는다.</strong> 기존 공용 플레이북에 대한 분석의 변경 제안이 사용자 검토 대기라면 그 반영을 기다린다. 조기 회고라는 이유로 해당 제안을 자동 승인하거나 공용 지식을 덮어쓰지 않는다.</li>
+<li><strong>보존된 회고만 한 번 반영한다.</strong> 롤백이나 모델 회고를 다시 실행하지 않는다. 기준 개정본이 여전히 같은지 확인하는 조건부 갱신으로 중복·동시 변경을 차단한다. 기준이 달라졌으면 반영하지 않고 재검토 필요를 기록한다. 원문과 검색 게시가 모두 일치해야 반영 완료로 표시한다.</li>
+<li><strong>실행하지 않은 절차를 검증됨으로 승격하지 않는다.</strong> 검증된 연결과 절차 동일성을 만족하는 경우에만 기존 회고 규칙을 적용한다. 회고가 명령·대상·순서를 바꾼 새 런북은 초안으로 남으며 실행에는 새 승인이 필요하다.</li>
+<li><strong>과거 실패를 지우지 않는다.</strong> 기존 FAILED·승인·실행 증거는 그대로 두고 새 후속 시도를 연결해 기록한다. 대시보드는 실행 성공, 회고 검토, 공용 반영 대기·완료·실패를 구분한다.</li>
+</ol>
+<h2>처리 흐름</h2>
+<div class="flow" role="img" aria-label="해결된 실행에서 회고를 보존하고 공용 기준이 준비되면 연결과 절차를 검증한 뒤 한 번 반영한다.">
+<span>실행 해결</span>→<span>회고·변경 내역 보존</span>→<span>공용 기준 확정 대기</span>→<span>연결·절차·개정본 검증</span>→<span>한 번 반영</span>
+</div>
+<details><summary>흐름의 Mermaid 원문</summary><pre>flowchart LR
+  A["실행 해결"] --> B["회고·변경 내역 보존"]
+  B --> C["공용 기준 확정 대기"]
+  C --> D["연결·절차·개정본 검증"]
+  D -->|일치| E["한 번 반영"]
+  D -->|불일치·실패·만료| F["차단·사유 보존"]
+</pre></details>
+<h2>구현 후 확인할 결과</h2>
+<p>조기 실행이 분석보다 먼저 끝난 경우와 분석이 먼저 끝난 경우를 모두 검증한다. 중복 전달·동시 개정·다른 사고의 원문·다른 승인 지문·미반영 제안은 잘못된 반영으로 이어지지 않아야 한다. 재개 과정의 인프라 실행 횟수는 0회여야 하며, 이전 실패 기록을 보존한 채 후속 반영 결과를 조회할 수 있어야 한다.</p>
+<p>사용자가 이 계약의 구현을 승인했다. 기존 소유 ADR 0018과 관련 ADR에 공용 지식 갱신의 조건·상태 전이를 반영했으며, 이 문서는 승인 당시 제안의 기록으로 보존한다. 현재 구현 기준은 <a href="../adr/agent/0018-playbook-retrospective.md">ADR 0018</a>이다. 공용 초안 생성의 입력 초과 문제는 권한 문제와 구분해 수정·검증한다.</p>
+</main>
+</html>

@@ -407,9 +407,18 @@ class PipelineOrchestrator:
             if ownership_check_failed.is_set() or _should_cancel():
                 log.info("session_terminated_during_comparison")
                 return False
+            if part_run is not None:
+                from headless_codex.services.recovery_publication import preserve_recovery_procedure
+
+                final_playbook = preserve_recovery_procedure(final_playbook, part_run.outcomes.get("recovery"), rca_id)
             report_playbook, final_playbook = archive_incident_comparison(
                 final_playbook, store=c.playbook_store, rca_id=rca_id
             )
+            if part_run is not None:
+                report_playbook = preserve_recovery_procedure(
+                    report_playbook, part_run.outcomes.get("recovery"), rca_id
+                )
+                final_playbook = preserve_recovery_procedure(final_playbook, part_run.outcomes.get("recovery"), rca_id)
             final_report = render_completion_report(artifact_dir, report_playbook)
             if part_run is not None:
                 from headless_codex.services.three_part_analysis import render_parts_report
@@ -556,6 +565,19 @@ class PipelineOrchestrator:
             if not saved:
                 log.error("playbook_index_retry_did_not_persist")
                 return False
+            if handoff.workflow == "recovery-first-v1":
+                parts = getattr(self._c, "analysis_part_store", None)
+                if parts is None:
+                    return False
+                recovery_part = parts.read_part(rca_id, "recovery")
+                if (
+                    recovery_part
+                    and recovery_part["record"].get("approval_status") == "READY"
+                    and not self._c.playbook_store.bind_recovery_publication(
+                        handoff.playbook, recovery_part, claim_token=claim_token
+                    )
+                ):
+                    return False
             if not self._c.session_store.mark_playbook_indexed(
                 rca_id,
                 claim_token=claim_token,

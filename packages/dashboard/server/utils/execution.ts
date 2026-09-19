@@ -1,3 +1,5 @@
+import { readPublicationHistory } from './retrospectivePublication.ts';
+import type { PublicationHistory } from '../../shared/types/retrospective-publication.ts';
 import { EXECUTION_SK_PREFIX, rcaIdFromPk } from './keys.ts';
 
 type DataRecord = Record<string, unknown>;
@@ -39,7 +41,7 @@ export const EXECUTION_STATE_LABELS: Record<ExecutionState, string> = {
   CANCELLED: '취소',
 };
 
-export interface ExecutionSummary {
+export interface ExecutionSummary extends PublicationHistory {
   sourcePart: string;
   sourcePartRevision: string;
   sourcePartPayloadSha256: string;
@@ -110,6 +112,7 @@ export function readExecution(item: DataRecord): ExecutionSummary {
   const summary = asRecord(item.evidence_summary) ?? {};
 
   return {
+    ...readPublicationHistory(item, []),
     sourcePart: readString(item.source_part),
     sourcePartRevision: readString(item.source_part_revision),
     sourcePartPayloadSha256: readString(item.source_part_payload_sha256),

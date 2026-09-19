@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shouldPollPublication } from '~/utils/publication';
 const props = defineProps<{ rcaId: string; executionId: string }>();
 const { rcaId, executionId } = toRefs(props);
 
@@ -15,6 +16,32 @@ const { rcaId, executionId } = toRefs(props);
 const { data, status, error, refresh } = useFetch(
   () => `/api/retrospectives/${rcaId.value}/${executionId.value}`,
 );
+
+let publicationTimer: ReturnType<typeof setInterval> | undefined;
+let publicationPolling = false;
+/** Refresh only read evidence while follow-up can progress; never issue approval or publication writes. */
+async function pollPublication() {
+  if (
+    document.visibilityState !== 'visible' ||
+    publicationPolling ||
+    !shouldPollPublication(data.value?.execution)
+  )
+    return;
+  publicationPolling = true;
+  try {
+    await refresh();
+  } finally {
+    publicationPolling = false;
+  }
+}
+onMounted(() => {
+  publicationTimer = setInterval(pollPublication, 5000);
+  document.addEventListener('visibilitychange', pollPublication);
+});
+onBeforeUnmount(() => {
+  clearInterval(publicationTimer);
+  document.removeEventListener('visibilitychange', pollPublication);
+});
 
 type Step = {
   step_id?: string;
@@ -112,9 +139,14 @@ function routineAttempts(
       <p class="page-eyebrow">Execution Retrospective</p>
       <h1 class="page-title">실행이 절차를 어떻게 고쳤는지</h1>
       <p class="text-[13px] text-base-content/70 mt-2.5 max-w-[62ch]">
-        회고는 사람의 승인 없이 플레이북을 고칩니다. 그 수정이 정당했는지는 아래
-        네 가지를 순서대로 읽어야 판단할 수 있습니다.
+        실행 결과, 보존된 회고 검토와 공용 반영은 별도 상태입니다. 승인 당시
+        절차·실행 증거·변경 내역을 함께 확인하세요.
       </p>
+      <PublicationStatus
+        v-if="data"
+        :execution="data.execution"
+        @refresh="refresh()"
+      />
 
       <div
         v-if="data"
@@ -349,8 +381,8 @@ function routineAttempts(
           v-if="!diff"
           class="text-[13px] text-base-content/68 bg-base-200 rounded-box px-4 py-3"
         >
-          갱신 diff가 없습니다. 교정할 절차 결함이 없었거나 회고가 실행되지
-          않았습니다.
+          갱신 diff가 없거나 조회할 수 없습니다. 이 부재만으로 검토 완료나 변경
+          없음을 판단하지 않습니다.
         </p>
         <template v-else>
           <div

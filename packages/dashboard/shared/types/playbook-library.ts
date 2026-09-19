@@ -87,6 +87,10 @@ export interface PlaybookComparison {
 }
 
 export interface ProposalResponse {
+  recoveryBinding?: {
+    status: 'BOUND' | 'WAITING' | 'BLOCKED';
+    reason?: string;
+  };
   rca_id: string;
   engine: string;
   comparison: PlaybookComparison | null;

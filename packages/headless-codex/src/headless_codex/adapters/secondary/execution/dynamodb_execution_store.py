@@ -648,30 +648,37 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         playbook: dict,
         *,
         execution_id: str,
+        publication_guard: dict | None = None,
     ) -> None:
-        """인덱스 게시 전에 실행별 개정본을 내구성 있게 준비한다."""
+        """인덱스 전에 개정본을 준비하며 후속 게시에서는 같은 트랜잭션의 lease 조건으로 늦은 쓰기를 막는다."""
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             return
         now = _now_iso()
-        self._ddb.put_item(
-            TableName=DYNAMODB_TABLE_NAME,
-            Item={
-                "PK": {"S": f"RCA#{rca_id}"},
-                "SK": {
-                    "S": _PLAYBOOK_REVISION_STAGE_SK.format(
-                        engine=engine,
-                        execution_id=execution_id,
-                    )
-                },
-                "engine": {"S": engine},
-                "playbook_id": {"S": str(playbook.get("playbook_id", ""))[:200]},
-                "playbook": {"S": json.dumps(playbook, ensure_ascii=False)},
-                "revised_by_execution_id": {"S": execution_id},
-                "publication_status": {"S": "PENDING"},
-                "updated_at": {"S": now},
-                "ttl": {"N": _ttl()},
+        item = {
+            "PK": {"S": f"RCA#{rca_id}"},
+            "SK": {
+                "S": _PLAYBOOK_REVISION_STAGE_SK.format(
+                    engine=engine,
+                    execution_id=execution_id,
+                )
             },
-        )
+            "engine": {"S": engine},
+            "playbook_id": {"S": str(playbook.get("playbook_id", ""))[:200]},
+            "playbook": {"S": json.dumps(playbook, ensure_ascii=False)},
+            "revised_by_execution_id": {"S": execution_id},
+            "publication_status": {"S": "PENDING"},
+            "updated_at": {"S": now},
+            "ttl": {"N": _ttl()},
+        }
+        if publication_guard:
+            self._ddb.transact_write_items(
+                TransactItems=[
+                    publication_guard,
+                    {"Put": {"TableName": DYNAMODB_TABLE_NAME, "Item": item}},
+                ]
+            )
+        else:
+            self._ddb.put_item(TableName=DYNAMODB_TABLE_NAME, Item=item)
 
     def publish_playbook_revision(
         self,
@@ -680,8 +687,9 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         playbook: dict,
         *,
         execution_id: str,
+        publication_guard: dict | None = None,
     ) -> None:
-        """준비된 개정본을 검색 인덱스와 대응하는 정식 개정본으로 확정한다."""
+        """준비본을 정식 개정본으로 확정하고 후속 게시의 lease가 있으면 같은 트랜잭션에서 검증한다."""
         if not DYNAMODB_TABLE_NAME or not self._ddb:
             return
         now = _now_iso()
@@ -696,6 +704,7 @@ class DynamoDbExecutionStore(ExecutionStorePort):
         }
         self._ddb.transact_write_items(
             TransactItems=[
+                *([publication_guard] if publication_guard else []),
                 {
                     "Put": {
                         "TableName": DYNAMODB_TABLE_NAME,

@@ -488,6 +488,19 @@ class PipelineOrchestrator:
                 metric_name=handoff.playbook_metric_name,
             ):
                 return False
+            if handoff.workflow == "recovery-first-v1":
+                parts = getattr(self._container, "analysis_part_store", None)
+                if parts is None:
+                    return False
+                recovery_part = parts.read_part(rca_id, "recovery")
+                if (
+                    recovery_part
+                    and recovery_part["record"].get("approval_status") == "READY"
+                    and not self._container.playbook_store.bind_recovery_publication(
+                        handoff.playbook, recovery_part, claim_token=effective_claim_token
+                    )
+                ):
+                    return False
             if not self._container.session_store.mark_playbook_indexed(
                 rca_id,
                 claim_token=effective_claim_token,
@@ -1576,13 +1589,20 @@ class PipelineOrchestrator:
                 incident_observer=None if frozen_incident else getattr(c, "incident_observer", None),
             )
             if knowledge_only:
-                from rca_agent.ports.dto.models import PlaybookVerificationStatus
+                from rca_agent.services.recovery_publication import preserve_recovery_procedure
 
-                playbook.execution_steps = []
-                playbook.rollback_context = None
-                playbook.verification_status = PlaybookVerificationStatus.DRAFT
+                playbook = preserve_recovery_procedure(
+                    playbook, rca_report.analysis_parts.get("recovery"), rca_report.rca_id
+                )
             check_message_lease()
             report_playbook, playbook = archive_incident_comparison(playbook, store=c.playbook_store, rca_id=run.rca_id)
+            if knowledge_only:
+                report_playbook = preserve_recovery_procedure(
+                    report_playbook, rca_report.analysis_parts.get("recovery"), rca_report.rca_id
+                )
+                playbook = preserve_recovery_procedure(
+                    playbook, rca_report.analysis_parts.get("recovery"), rca_report.rca_id
+                )
             trace.end_span(
                 playbook_span,
                 output_summary=(f"playbook_id={playbook.playbook_id}, 장애유형={playbook.failure_type}"),

@@ -44,3 +44,7 @@ class PlaybookStorePort(ABC):
     def archive_comparison(self, playbook: Playbook, rca_id: str, engine: str) -> Playbook:
         """Archive full inputs before completion and return only their immutable reference in comparison."""
         raise PlaybookArchiveUnavailable("comparison archive is not supported")
+
+    def bind_recovery_publication(self, playbook: Playbook, recovery_part: dict, *, claim_token: str) -> bool:
+        """Connect a verified retained recovery only to its exact completed canonical publication."""
+        raise NotImplementedError("recovery publication binding is not supported")

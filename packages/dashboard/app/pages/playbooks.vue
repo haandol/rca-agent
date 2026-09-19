@@ -234,11 +234,12 @@ useHead({ title: '플레이북 라이브러리 · RCA Control' });
             <PlaybookKnowledge :playbook="detail.playbook" />
             <details class="ops-panel p-4 mt-5">
               <summary class="cursor-pointer font-semibold text-sm">
-                연결된 사고의 런북 원문
+                관련 사고 런북 원문
               </summary>
               <p class="detail-label mt-3">
-                이 기록의 명령은 해당 사고에만 해당하며 다른 사고의 실행을
-                승인하지 않습니다.
+                이 명령은 관련 사고에 고정된 원문이며 재사용 가능한 공통 실행
+                명령이 아닙니다. 현재 사고의 실행 승인은 보고서의 비공개 정상화
+                런북에서만 검토합니다.
               </p>
               <pre class="mt-4 whitespace-pre-wrap break-all text-xs">{{
                 JSON.stringify(

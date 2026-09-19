@@ -330,6 +330,7 @@ pnpm eval:model
 | [PRD](./docs/prd/aws-rca-agent-prd.md) | 제품 요구사항 정의서 — 기능 명세, 데모 시나리오, KPI |
 | [아키텍처 & 데모 플로우](./docs/architecture-and-demo-flow.md) | 데이터 플로우, 상태 전이, 데모 시나리오 머메이드 다이어그램 |
 | [ADR Index](./docs/adr/.mapping.json) | 아키텍처 결정 기록 인덱스 |
+| [회고 공용 반영 데이터](./docs/tables/retrospective-publication.md) | 후속 반영·대기 작업·불변 공용 기준 연결의 키와 필드 |
 | [운영 가이드](./docs/system-guide-for-ops.md) | 주니어 DevOps 운영팀원을 위한 시스템 안내서 |
 | [RCA에서 플레이북 실행까지](./docs/rca-to-remediation-flow.md) | 알람부터 분석·승인·실행·해결 판정·회고까지 전체 흐름을 한곳에서 설명 (머메이드) |
 | [Contributing Guide](./CONTRIBUTING.md) | 커밋 메시지, 브랜치 전략, PR 규칙 |

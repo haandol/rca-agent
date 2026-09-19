@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
+
+import { deploymentBook } from '../../packages/dashboard/tests/fixtures/deployment-contract.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const require = createRequire(
@@ -388,12 +391,25 @@ function fixture() {
   };
   const service = createPlaybookLibrary({
     ...clients,
+    s3: {
+      send: async () => {
+        throw new Error(
+          'Unexpected source read outside injected verified recovery reader',
+        );
+      },
+    },
+    readRecovery: async (...args) => {
+      if (!controls.readRecovery)
+        throw new Error('recovery reader unavailable');
+      return controls.readRecovery(...args);
+    },
     now: () => controls.now,
     config: {
       dynamodbTableName: 'table',
       s3VectorBucketName: 'bucket',
       s3VectorPlaybookIndex: 'playbook',
       bedrockEmbeddingModelId: 'cohere.embed-v4:0',
+      s3EvidenceBucket: 'evidence',
     },
   });
   async function handler(file, { params = {}, query = {}, body } = {}) {
@@ -1417,4 +1433,318 @@ test('approval winning after deletion reads blocks the delete claim atomically t
       ['BatchWriteCommand', 'DeleteObjectsCommand'].includes(call.name),
     ),
   );
+});
+
+/** Export actual handler results for the worker integration, never fabricate a positive binding. */
+function matchedRecoveryFixture() {
+  const f = fixture();
+  const privateBook = {
+    ...deploymentBook(),
+    rca_id: 'new',
+    playbook_id: 'private-recovery',
+  };
+  for (const book of [f.before, f.after]) {
+    book.execution_steps = clone(privateBook.execution_steps);
+    book.rollback_context = clone(privateBook.rollback_context);
+  }
+  f.comparison.proposal.before = clone(f.before);
+  f.comparison.proposal.after = clone(f.after);
+  const origin = f.store.get('RCA#old\0ANALYSIS#SESSION');
+  origin.playbook = JSON.stringify(f.before);
+  const current = f.store.get('RCA#new\0ANALYSIS#SESSION');
+  current.playbook_id = 'historical';
+  current.workflow = 'recovery-first-v1';
+  current.playbook_index_status = 'PUBLISHED';
+  current.playbook = JSON.stringify({
+    ...clone(f.after),
+    playbook_id: 'historical',
+    comparison: f.comparison,
+  });
+  f.store.get('PLAYBOOK_LIBRARY\0historical').playbook_json = JSON.stringify(
+    f.before,
+  );
+  const revision = 'c'.repeat(64);
+  const record = {
+    PK: 'RCA#new',
+    SK: 'headless-codex#ANALYSIS_PART#recovery',
+    engine: 'headless-codex',
+    status: 'COMPLETED',
+    approval_status: 'READY',
+    revision,
+    payload_sha256: revision,
+    payload_s3_key: `analysis-parts/headless-codex/new/recovery/${revision}.json`,
+    body_expires_at: NOW / 1000 + 60 * 86400,
+    ttl,
+  };
+  f.store.set(key(record), record);
+  f.controls.readRecovery = async (items, rcaId, engine) => {
+    assert.equal(rcaId, 'new');
+    assert.equal(engine, 'headless-codex');
+    assert.deepEqual(
+      items.find((row) => row.SK === record.SK),
+      record,
+    );
+    return { playbook: clone(privateBook), record: clone(record), revision };
+  };
+  return { ...f, privateBook, recoveryRecord: record };
+}
+
+test('user apply exposes only committed exact canonical results for pending/rejected/matching/mismatching worker decisions', async () => {
+  const outputs = {};
+  for (const mode of [
+    'pending',
+    'rejected',
+    'applied_matching',
+    'applied_mismatch',
+  ]) {
+    const f = matchedRecoveryFixture();
+    if (mode === 'applied_mismatch')
+      f.privateBook.execution_steps[0].success_criteria =
+        'different approved criterion';
+    const untouchedPrivate = clone(f.privateBook);
+    if (mode === 'pending')
+      await f.service.readProposal('new', 'headless-codex');
+    else {
+      const response = await f.act(mode === 'rejected' ? 'reject' : 'apply');
+      assert.equal(
+        response.recoveryBinding.status,
+        mode === 'applied_matching' ? 'BOUND' : 'BLOCKED',
+      );
+    }
+    const head = f.store.get('PLAYBOOK_LIBRARY\0historical');
+    const disposition = f.store.get(
+      'RCA#new\0headless-codex#PLAYBOOK_PROPOSAL#p1',
+    );
+    assert.deepEqual(
+      f.privateBook,
+      untouchedPrivate,
+      'knowledge apply never changes the retained approval',
+    );
+    if (mode.startsWith('applied')) {
+      assert.equal(disposition.state, 'APPLIED');
+      assert.equal(disposition.publication_status, 'PUBLISHED');
+      assert.equal(head.revision, 'proposal:p1');
+      assert.equal(head.publication_status, 'PUBLISHED');
+      assert.deepEqual(
+        JSON.parse(head.playbook_json).execution_steps,
+        f.before.execution_steps,
+      );
+      if (mode === 'applied_mismatch')
+        assert.notDeepEqual(
+          JSON.parse(head.playbook_json).execution_steps,
+          f.privateBook.execution_steps,
+        );
+      else
+        assert.deepEqual(
+          JSON.parse(head.playbook_json).execution_steps,
+          f.privateBook.execution_steps,
+        );
+    } else {
+      assert.equal(head.revision, 'analysis:old');
+      assert.equal(
+        disposition?.state,
+        mode === 'rejected' ? 'REJECTED' : undefined,
+      );
+    }
+    assert.ok(!f.calls.some((call) => call.name === 'SendMessageCommand'));
+    if (mode === 'applied_matching')
+      assert.ok(
+        [...f.store.values()].some((row) =>
+          row.SK.startsWith('RECOVERY_PUBLICATION#'),
+        ),
+      );
+    else
+      assert.ok(
+        ![...f.store.values()].some((row) =>
+          row.SK.startsWith('RECOVERY_PUBLICATION#'),
+        ),
+      );
+    outputs[mode] = {
+      privateBook: f.privateBook,
+      rows: [...f.store.values()],
+      disposition: disposition ?? null,
+    };
+  }
+  const worker = spawnSync(
+    path.join(root, 'packages/headless-codex/.venv/bin/python'),
+    [path.join(root, 'packages/dashboard/tests/publication-worker.py')],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        PYTHONPATH: path.join(root, 'packages/headless-codex/src'),
+        AWS_EC2_METADATA_DISABLED: 'true',
+      },
+      input: JSON.stringify(outputs),
+      encoding: 'utf8',
+      timeout: 60000,
+    },
+  );
+  assert.equal(worker.status, 0, worker.stderr);
+  const result = JSON.parse(worker.stdout);
+  assert.equal(result.pending.status, 'WAITING_FOR_PUBLICATION');
+  assert.equal(result.rejected.status, 'BLOCKED');
+  assert.equal(result.applied_matching.status, 'PUBLISHED');
+  assert.equal(result.applied_matching.vector_puts, 1);
+  assert.equal(result.applied_mismatch.status, 'BLOCKED');
+  for (const name of ['pending', 'rejected', 'applied_mismatch'])
+    assert.equal(result[name].vector_puts, 0);
+  assert.ok(
+    Object.values(result).every(
+      (value) => value.historical_execution_unchanged,
+    ),
+  );
+  // Preserve actual handler output for cross-package reproduction; no binding is manually inserted.
+
+  if (process.env.DASHBOARD_APPLY_FIXTURE_DIR) {
+    mkdirSync(process.env.DASHBOARD_APPLY_FIXTURE_DIR, { recursive: true });
+    writeFileSync(
+      path.join(
+        process.env.DASHBOARD_APPLY_FIXTURE_DIR,
+        'actual-dashboard-apply.json',
+      ),
+      JSON.stringify(outputs, null, 2),
+    );
+  }
+});
+
+test('user apply commits canonical PUBLISHED and exact recovery binding atomically after vector success', async () => {
+  const f = matchedRecoveryFixture();
+  const result = await f.act();
+  assert.equal(result.recoveryBinding.status, 'BOUND');
+  const transactions = f.calls.filter((c) => c.name === 'TransactWriteCommand');
+  const final = transactions.find((c) =>
+    c.input.TransactItems.some((e) =>
+      e.Put?.Item.SK.startsWith('RECOVERY_PUBLICATION#'),
+    ),
+  );
+  assert.ok(final);
+  assert.ok(
+    final.input.TransactItems.some(
+      (e) =>
+        e.Update?.Key.PK === 'PLAYBOOK_LIBRARY' &&
+        e.Update.ExpressionAttributeValues[':published'] === 'PUBLISHED',
+    ),
+  );
+  const partGuard = final.input.TransactItems.find(
+    (e) => e.ConditionCheck?.Key.SK === f.recoveryRecord.SK,
+  );
+  assert.ok(partGuard);
+  assert.ok(
+    f.calls.findIndex((c) => c.name === 'PutVectorsCommand') <
+      f.calls.indexOf(final),
+  );
+  const binding = clone(
+    [...f.store.values()].find((row) =>
+      row.SK.startsWith('RECOVERY_PUBLICATION#'),
+    ),
+  );
+  const writes = f.calls.filter(
+    (c) => c.name === 'TransactWriteCommand',
+  ).length;
+  assert.equal((await f.act()).recoveryBinding.status, 'BOUND');
+  assert.equal(
+    f.calls.filter((c) => c.name === 'TransactWriteCommand').length,
+    writes,
+  );
+  assert.deepEqual(
+    [...f.store.values()].find((row) => row.SK === binding.SK),
+    binding,
+  );
+});
+
+test('index failure has no recovery binding; same applied request publishes and binds without new approval', async () => {
+  const f = matchedRecoveryFixture();
+  f.controls.failPublish = true;
+  const first = await f.act();
+  assert.equal(first.comparison.proposal.state, 'APPLIED');
+  assert.equal(first.comparison.proposal.publication_status, 'PENDING');
+  assert.equal(first.recoveryBinding.status, 'WAITING');
+  assert.ok(
+    ![...f.store.values()].some((row) =>
+      row.SK.startsWith('RECOVERY_PUBLICATION#'),
+    ),
+  );
+  f.controls.failPublish = false;
+  assert.equal((await f.act()).recoveryBinding.status, 'BOUND');
+  assert.ok(!f.calls.some((c) => c.name === 'SendMessageCommand'));
+});
+
+test('READY revision changing at the final transaction leaves public publication and binding uncommitted', async () => {
+  const f = matchedRecoveryFixture();
+  f.controls.afterVectorPut = () => {
+    f.controls.beforeTransaction = (store) => {
+      store.get(key(f.recoveryRecord)).approval_status = 'UNAVAILABLE';
+    };
+  };
+  const result = await f.act();
+  assert.equal(result.comparison.proposal.state, 'APPLIED');
+  assert.equal(result.comparison.proposal.publication_status, 'PENDING');
+  assert.equal(
+    f.store.get('PLAYBOOK_LIBRARY\0historical').publication_status,
+    'PENDING',
+  );
+  assert.ok(
+    ![...f.store.values()].some((row) =>
+      row.SK.startsWith('RECOVERY_PUBLICATION#'),
+    ),
+  );
+});
+
+test('replaying an already bound apply cannot overwrite a later retrospective head', async () => {
+  const f = matchedRecoveryFixture();
+  assert.equal((await f.act()).recoveryBinding.status, 'BOUND');
+  const head = f.store.get('PLAYBOOK_LIBRARY\0historical');
+  head.revision = 'retrospective:later-execution';
+  const later = clone(head);
+  const writes = f.calls.filter(
+    (c) => c.name === 'TransactWriteCommand',
+  ).length;
+  assert.equal((await f.act()).recoveryBinding.status, 'BOUND');
+  assert.deepEqual(f.store.get('PLAYBOOK_LIBRARY\0historical'), later);
+  assert.equal(
+    f.calls.filter((c) => c.name === 'TransactWriteCommand').length,
+    writes,
+  );
+});
+
+test('posted recovery context cannot select the user-apply binding or rewrite the related runbook', async () => {
+  const f = matchedRecoveryFixture();
+  const result = await f.handler(
+    'playbook-proposals/[rcaId]/[proposalId].post.ts',
+    {
+      params: { rcaId: 'new', proposalId: 'p1' },
+      query: { engine: 'headless-codex' },
+      body: {
+        action: 'apply',
+        recovery_revision: 'evil',
+        public_revision: 'latest',
+        execution_steps: [{ commands: ['evil'] }],
+      },
+    },
+  );
+  assert.equal(result.recoveryBinding.status, 'BOUND');
+  const binding = [...f.store.values()].find((row) =>
+    row.SK.startsWith('RECOVERY_PUBLICATION#'),
+  );
+  assert.equal(binding.recovery_revision, f.recoveryRecord.revision);
+  assert.equal(binding.public_revision, 'proposal:p1');
+  assert.deepEqual(
+    JSON.parse(f.store.get('PLAYBOOK_LIBRARY\0historical').playbook_json)
+      .execution_steps,
+    f.before.execution_steps,
+  );
+});
+
+test('a conflicting immutable binding is reported blocked and never overwritten', async () => {
+  const f = matchedRecoveryFixture();
+  await f.act();
+  const binding = [...f.store.values()].find((row) =>
+    row.SK.startsWith('RECOVERY_PUBLICATION#'),
+  );
+  binding.public_revision = 'foreign-revision';
+  const original = clone(binding);
+  const result = await f.act();
+  assert.equal(result.recoveryBinding.status, 'BLOCKED');
+  assert.deepEqual(f.store.get(key(binding)), original);
 });

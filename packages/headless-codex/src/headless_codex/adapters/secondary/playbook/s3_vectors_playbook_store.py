@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
+from copy import deepcopy
 from pathlib import Path
 
 from headless_codex.adapters.secondary.playbook.library import PlaybookLibrary, matched_comparison
@@ -27,6 +29,18 @@ logger = logging.getLogger(__name__)
 
 
 class S3VectorsPlaybookStore(PlaybookStorePort):
+    def bind_recovery_publication(self, playbook: dict, recovery_part: dict, *, claim_token: str) -> bool:
+        """Associate only a newly published canonical with its server-verified retained recovery."""
+        if matched_comparison(playbook):
+            return True
+        from headless_codex.services.recovery_publication import bind_recovery_publication
+
+        try:
+            return bind_recovery_publication(self._library, playbook, recovery_part, claim_token)
+        except Exception:
+            logger.exception("Recovery publication binding pending for %s", playbook.get("rca_id"))
+            return False
+
     def __init__(self, s3_vectors_client=None, embedding: EmbeddingPort | None = None, dynamodb_client=None):
         """Keep vector pointers and authoritative state clients together for fail-closed reads."""
         self._s3v, self._embedding, self._ddb = s3_vectors_client, embedding, dynamodb_client
@@ -146,6 +160,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
         baseline_playbook: dict | None = None,
         source_engine: str = "",
         publication_result: dict | None = None,
+        publication_guard: dict | None = None,
     ) -> bool:
         """Stage immutable content before vector writes; matched proposals never replace public knowledge."""
         if not publication_id and matched_comparison(playbook):
@@ -158,6 +173,9 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                 raise ValueError("retrospective requires its exact baseline")
             if publication_id:
                 baseline_playbook = self._library.retrospective_baseline(baseline_playbook, rca_id)
+            if publication_guard:
+                publication_guard = deepcopy(publication_guard)
+                publication_guard["ConditionCheck"]["ExpressionAttributeValues"][":now"] = {"N": str(int(time.time()))}
             head = self._library.stage(
                 playbook,
                 rca_id,
@@ -166,6 +184,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                 engine=source_engine or ENGINE,
                 baseline=baseline_playbook,
                 publication_result=publication_result,
+                publication_guard=publication_guard,
             )
             if head["publication_status"] == "PUBLISHED":
                 return True
@@ -190,11 +209,17 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             }
             if publication_id:
                 metadata["publication_id"] = publication_id
+            if publication_guard:
+                publication_guard["ConditionCheck"]["ExpressionAttributeValues"][":now"] = {"N": str(int(time.time()))}
+                self._library.client.transact_write_items(TransactItems=[publication_guard])
             self._s3v.put_vectors(
                 vectorBucketName=S3_VECTOR_BUCKET_NAME,
                 indexName=S3_VECTOR_PLAYBOOK_INDEX,
                 vectors=[{"key": head["vector_key"], "data": {"float32": vector}, "metadata": metadata}],
             )
+            if publication_guard:
+                publication_guard["ConditionCheck"]["ExpressionAttributeValues"][":now"] = {"N": str(int(time.time()))}
+                self._library.client.transact_write_items(TransactItems=[publication_guard])
             # A retrospective's original revision must commit before library visibility.
             if not publication_id:
                 self._finalize(head)
@@ -203,9 +228,12 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             logger.exception("Playbook publication failed: %s", playbook.get("playbook_id"))
             return False
 
-    def _finalize(self, head: dict) -> None:
+    def _finalize(self, head: dict, *, followup_token: str = "") -> None:
         """Fence publication by revision, then clean up only the previous immutable vector key."""
-        self._library.finalize(head)
+        if followup_token:
+            self._library.finalize(head, followup_token=followup_token)
+        else:
+            self._library.finalize(head)
         previous = head.get("previous_vector_key")
         if previous and previous != head["vector_key"]:
             try:
@@ -245,7 +273,9 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             logger.exception("Retrospective publication recovery unavailable")
             return False
 
-    def finalize_publication(self, playbook_id: str, rca_id: str, *, publication_id: str) -> bool:
+    def finalize_publication(
+        self, playbook_id: str, rca_id: str, *, publication_id: str, followup_token: str = ""
+    ) -> bool:
         """Expose a staged retrospective only after its original revision commit succeeds."""
         try:
             head = self._library.snapshot(playbook_id, f"retrospective:{publication_id}")
@@ -255,7 +285,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
                 or head.get("source_rca_id") != rca_id
             ):
                 return False
-            self._finalize(head)
+            self._finalize(head, followup_token=followup_token)
             return True
         except Exception:
             logger.exception("Playbook publication finalization failed: %s", playbook_id)
@@ -280,6 +310,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
         baseline_playbook: dict | None = None,
         source_engine: str = "",
         publication_result: dict | None = None,
+        publication_guard: dict | None = None,
     ) -> bool:
         """Publish analysis immediately; stage retrospective vectors until revision commit."""
         return self._publish(
@@ -290,6 +321,7 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             baseline_playbook=baseline_playbook,
             source_engine=source_engine,
             publication_result=publication_result,
+            publication_guard=publication_guard,
         )
 
     def archive_comparison(self, playbook: dict, rca_id: str, engine: str) -> dict:

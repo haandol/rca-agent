@@ -37,6 +37,10 @@ class PlaybookMatch:
 
 
 class PlaybookStorePort(ABC):
+    def bind_recovery_publication(self, playbook: dict, recovery_part: dict, *, claim_token: str) -> bool:
+        """Persist the immutable canonical/recovery association before completing its index handoff."""
+        raise NotImplementedError
+
     @abstractmethod
     def load_playbook(self, artifact_dir: Path) -> dict | None: ...
 

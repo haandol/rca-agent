@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shouldPollPublication } from '~/utils/publication';
 import type { ProposalResponse } from '../../../shared/types/playbook-library';
 import { renderMarkdownDocument } from '~/utils/markdown';
 import { analysisPartsComplete } from '~/utils/analysisParts';
@@ -476,7 +477,7 @@ let executionPolling = false;
 async function pollExecutionStatus() {
   if (
     document.visibilityState !== 'visible' ||
-    !inFlight.value ||
+    (!inFlight.value && !executions.value.some(shouldPollPublication)) ||
     executionPolling
   )
     return;
@@ -729,6 +730,12 @@ const comparisonLabels = {
             · 실행 원본 엔진 {{ latest.engine }}</span
           >
         </p>
+        <PublicationStatus
+          v-if="latest"
+          :execution="latest"
+          compact
+          @refresh="refreshExecutions()"
+        />
         <p v-if="executionHistory?.activeExecutionId" class="text-sm mt-2">
           활성 실행 예약: {{ executionHistory.activeExecutionId }} ·
           {{ executionHistory.activeExecutionEngine }}
@@ -1269,6 +1276,22 @@ const comparisonLabels = {
             }}
             · 원문 열람 및 새 반영 불가
           </p>
+          <p
+            v-if="proposals?.recoveryBinding"
+            class="text-sm mb-3 whitespace-pre-wrap"
+          >
+            회고 공용 기준 연결 ·
+            {{
+              {
+                BOUND: '연결됨 (공용 반영 결과는 별도)',
+                WAITING: '대기',
+                BLOCKED: '차단',
+              }[proposals.recoveryBinding.status]
+            }}
+            <span v-if="proposals.recoveryBinding.reason">
+              · {{ proposals.recoveryBinding.reason }}</span
+            >
+          </p>
           <PlaybookComparison
             :comparison="proposals?.comparison ?? null"
             :rca-id="id"
@@ -1322,6 +1345,10 @@ const comparisonLabels = {
                 실행 증거 · 회고
               </button>
             </div>
+            <PublicationStatus
+              :execution="execution"
+              @refresh="refreshExecutions()"
+            />
             <p
               v-if="execution.errorReason"
               class="text-sm text-error mt-3 whitespace-pre-wrap"

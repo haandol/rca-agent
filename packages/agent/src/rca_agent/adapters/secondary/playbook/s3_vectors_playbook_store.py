@@ -209,6 +209,18 @@ class S3VectorsPlaybookStore(PlaybookStorePort):
             metric_name = scoping_result.raw_alarm.trigger.metric_name
         return self._publish(playbook.model_dump(mode="json"), playbook.rca_id, metric_name=metric_name)
 
+    def bind_recovery_publication(self, playbook: Playbook, recovery_part: dict, *, claim_token: str) -> bool:
+        """Leave unmatched canonical binding replayable until its owner/source CAS succeeds."""
+        if matched_comparison(playbook.model_dump(mode="json")):
+            return True
+        from rca_agent.services.recovery_publication import bind_recovery_publication
+
+        try:
+            return bind_recovery_publication(self._library, playbook, recovery_part, claim_token)
+        except Exception:
+            logger.exception("Recovery publication binding pending for %s", playbook.rca_id)
+            return False
+
     def archive_comparison(self, playbook: Playbook, rca_id: str, engine: str) -> Playbook:
         """Keep full comparison inputs in a sixty-day original before tracing or completing the incident."""
         try:

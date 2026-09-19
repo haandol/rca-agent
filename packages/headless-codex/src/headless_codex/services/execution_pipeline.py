@@ -33,10 +33,8 @@ from headless_codex.services.execution_request import (
 from headless_codex.services.execution_state import ExecutionState, enters_retrospective
 from headless_codex.services.execution_workspace import ExecutionWorkspace
 from headless_codex.services.playbook_merge import (
-    PLAYBOOK_DRAFT,
-    VERIFICATION_STATUS_FIELD,
+    apply_retrospective_verification,
     merge_playbook_update,
-    promote_to_verified,
 )
 
 logger = structlog.get_logger()
@@ -498,21 +496,26 @@ class ExecutionOrchestrator:
             if not diff_key:
                 raise RuntimeError("retrospective attestation did not persist")
             if getattr(target, "source_part", "") == "recovery":
-                # Private recovery is not a canonical library base. Retain the completed
-                # review/diff but do not promote or publish an unchecked private plan.
+                # Review is complete; an idle publisher will verify the independent
+                # canonical binding without rerunning execution or this model.
                 store.record_retrospective(
                     execution_id,
                     rca_id=request.rca_id,
                     claim_token=claim_token,
-                    status="FAILED",
-                    summary=(
-                        "Public follow-up unavailable: early private recovery has no canonical "
-                        "publication authority; review and diff preserved"
-                    ),
+                    status="COMPLETED",
+                    summary=("Review complete; public follow-up waits for a verified canonical binding"),
                     playbook_snapshot_s3_key=snapshot_key,
                     diff_s3_key=diff_key,
                 )
-                log.info("private_recovery_review_preserved_without_publication")
+                log.info("private_recovery_review_completed_publication_deferred")
+                deferred = getattr(self._c, "deferred_publication", None)
+                if deferred is not None:
+                    try:
+                        deferred.enroll(request.rca_id, execution_id)
+                    except Exception:
+                        # The completed review remains durable. Bounded historical
+                        # discovery can recover an interrupted pending enrollment.
+                        log.exception("private_review_pending_enrollment_failed")
                 return
             publication_result = {
                 "status": "NO_CHANGE" if diff.is_empty else "UPDATED",
@@ -520,11 +523,10 @@ class ExecutionOrchestrator:
                 "playbook_snapshot_s3_key": snapshot_key,
                 "diff_s3_key": diff_key,
             }
+            published = apply_retrospective_verification(target.playbook, merged)
             if diff.is_empty:
                 phase = "publish_playbook"
-                self._publish_playbook(
-                    request, target, promote_to_verified(merged), execution_id, publication_result=publication_result
-                )
+                self._publish_playbook(request, target, published, execution_id, publication_result=publication_result)
                 phase = "record_result"
                 store.record_retrospective(
                     execution_id,
@@ -535,13 +537,11 @@ class ExecutionOrchestrator:
                     playbook_snapshot_s3_key=snapshot_key,
                     diff_s3_key=diff_key,
                 )
-                log.info("retrospective_update_changed_nothing", promoted=True)
+                log.info(
+                    "retrospective_update_changed_nothing", promoted=published["verification_status"] == "VERIFIED"
+                )
                 return
 
-            if diff.corrected_steps or diff.added_steps:
-                published = {**merged, VERIFICATION_STATUS_FIELD: PLAYBOOK_DRAFT}
-            else:
-                published = promote_to_verified(merged)
             phase = "publish_playbook"
             self._publish_playbook(request, target, published, execution_id, publication_result=publication_result)
             phase = "record_result"

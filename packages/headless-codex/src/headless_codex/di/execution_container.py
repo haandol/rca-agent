@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import boto3
 from botocore.config import Config
 
-from headless_codex.config.settings import DYNAMODB_TABLE_NAME, S3_VECTOR_REGION
+from headless_codex.config.settings import DYNAMODB_TABLE_NAME, S3_EVIDENCE_BUCKET, S3_VECTOR_REGION
 from headless_codex.ports.interfaces.evidence_store import EvidenceStorePort
 from headless_codex.ports.interfaces.execution_runner import ExecutionRunnerPort
 from headless_codex.ports.interfaces.execution_store import ExecutionStorePort
@@ -32,6 +32,7 @@ class ExecutionContainer(ABC):
 
 class AppExecutionContainer(ExecutionContainer):
     def __init__(self):
+        """Lazily share existing clients; followup publication adds neither credentials nor execution authority."""
         self._dynamodb_client = None
         self._s3_client = None
         self._s3_vectors_client = None
@@ -40,6 +41,23 @@ class AppExecutionContainer(ExecutionContainer):
         self._evidence_store = None
         self._playbook_store = None
         self._execution_runner = None
+        self._deferred_publication = None
+
+    @property
+    def deferred_publication(self):
+        """Build a publication-only owner using existing table/bucket clients for retained reviews."""
+        if self._deferred_publication is None:
+            from headless_codex.services.deferred_publication import DeferredPublication
+
+            self._deferred_publication = DeferredPublication(
+                self.dynamodb_client,
+                self.s3_client,
+                DYNAMODB_TABLE_NAME,
+                S3_EVIDENCE_BUCKET,
+                self.execution_store,
+                self.playbook_store,
+            )
+        return self._deferred_publication
 
     @property
     def dynamodb_client(self):

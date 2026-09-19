@@ -19,6 +19,26 @@ PLAYBOOK_VERIFIED = "VERIFIED"
 _KNOWN_STATUSES = frozenset({PLAYBOOK_DRAFT, PLAYBOOK_VERIFIED})
 
 
+def procedure_identity(book: dict) -> dict:
+    """Compare complete ordered steps and execution bindings, never just commands or step IDs."""
+    return {
+        key: value
+        for key, value in book.items()
+        if key in {"execution_steps", "rollback_context", "region", "account_id"}
+        or key.startswith(("target_", "execution_", "approval_"))
+    }
+
+
+def apply_retrospective_verification(approved: dict, reviewed: dict) -> dict:
+    """Only unchanged executed procedure inherits verification; target or ordering changes remain drafts."""
+    return {
+        **reviewed,
+        VERIFICATION_STATUS_FIELD: (
+            PLAYBOOK_VERIFIED if procedure_identity(approved) == procedure_identity(reviewed) else PLAYBOOK_DRAFT
+        ),
+    }
+
+
 def normalize_verification_status(raw: object) -> str:
     """기록된 검증 상태를 복원한다. 해석할 수 없는 값은 초안이다.
 
@@ -33,7 +53,19 @@ def normalize_verification_status(raw: object) -> str:
 # 모델이 갱신안에 담아도 무시하는 필드. 검증 상태는 서버가 소유하므로 LLM 출력이
 # 검증 여부의 권위가 되면 실행되지 않은 절차가 검증됨으로 표기된다. 식별자와 stage는
 # 병합이 유지해야 하는 값이라 갱신안이 바꿀 수 없다.
-_SERVER_OWNED_FIELDS = frozenset({"execution_steps", "playbook_id", "stage", "verification_status"})
+_SERVER_OWNED_FIELDS = frozenset(
+    {
+        "execution_steps",
+        "playbook_id",
+        "stage",
+        "verification_status",
+        "rca_id",
+        "source_rca_id",
+        "source_engine",
+        "library_revision",
+        "comparison",
+    }
+)
 
 
 @dataclass

@@ -1,3 +1,5 @@
+import { readReadyRecovery } from './analysisParts.ts';
+import { serializePlaybookSnapshot, sha256Hex } from './executionApproval.ts';
 import {
   GetCommand,
   QueryCommand,
@@ -47,11 +49,14 @@ export interface LibraryDependencies {
   ddb: Client;
   vectors: Client;
   embedding: Client;
+  s3?: Client;
+  readRecovery?: typeof readReadyRecovery;
   config: {
     dynamodbTableName: string;
     s3VectorBucketName: string;
     s3VectorPlaybookIndex: string;
     bedrockEmbeddingModelId: string;
+    s3EvidenceBucket?: string;
   };
   now?: () => number;
 }
@@ -418,6 +423,7 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
       guards.push(revision);
     return {
       session,
+      items,
       book: resolved.playbook,
       originalBook: original?.playbook,
       sourceItem: resolved.sourceItem,
@@ -1171,62 +1177,82 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
       }),
     );
     const stateCondition = condition(state);
+    const publicationTransaction: Transaction = [
+      ...checks([origin]),
+      {
+        Update: {
+          TableName: table,
+          Key: { PK: 'PLAYBOOK_LIBRARY', SK: id },
+          UpdateExpression: 'SET publication_status = :published',
+          ConditionExpression:
+            '#revision = :revision AND playbook_json = :body',
+          ExpressionAttributeNames: { '#revision': 'revision' },
+          ExpressionAttributeValues: {
+            ':published': 'PUBLISHED',
+            ':revision': revision,
+            ':body': head.playbook_json,
+          },
+        },
+      },
+      {
+        ConditionCheck: {
+          TableName: table,
+          Key: { PK: `PLAYBOOK#${id}`, SK: revision },
+          ...condition(snapshot),
+        },
+      },
+      {
+        Update: {
+          TableName: table,
+          Key: { PK: LIBRARY_STATE, SK: id },
+          UpdateExpression: 'SET publication_status = :published',
+          ...stateCondition,
+          ExpressionAttributeValues: {
+            ...stateCondition.ExpressionAttributeValues,
+            ':published': 'PUBLISHED',
+          },
+        },
+      },
+      {
+        Update: {
+          TableName: table,
+          Key: { PK: disposition.PK, SK: disposition.SK },
+          UpdateExpression:
+            'SET publication_status = :published REMOVE publication_error',
+          ConditionExpression:
+            '#state = :applied AND result_revision = :revision',
+          ExpressionAttributeNames: { '#state': 'state' },
+          ExpressionAttributeValues: {
+            ':published': 'PUBLISHED',
+            ':applied': 'APPLIED',
+            ':revision': revision,
+          },
+        },
+      },
+    ];
+    const prepared = await bindAppliedRecovery(
+      String(disposition.PK).slice(4),
+      String(disposition.SK).split('#')[0]!,
+      disposition,
+      { head, snapshot, state },
+    );
+    if (prepared.status === 'PREPARED') {
+      const touched = new Set(
+        publicationTransaction.map((entry) => {
+          const op = entry.Put ?? entry.Update ?? entry.ConditionCheck!;
+          const key = 'Item' in op ? op.Item! : op.Key!;
+          return `${key.PK}\0${key.SK}`;
+        }),
+      );
+      for (const entry of prepared.transaction) {
+        const op = entry.Put ?? entry.Update ?? entry.ConditionCheck!;
+        const key = 'Item' in op ? op.Item! : op.Key!;
+        if (!touched.has(`${key.PK}\0${key.SK}`))
+          publicationTransaction.push(entry);
+      }
+    }
     await ddb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          ...checks([origin]),
-          {
-            Update: {
-              TableName: table,
-              Key: { PK: 'PLAYBOOK_LIBRARY', SK: id },
-              UpdateExpression: 'SET publication_status = :published',
-              ConditionExpression:
-                '#revision = :revision AND playbook_json = :body',
-              ExpressionAttributeNames: { '#revision': 'revision' },
-              ExpressionAttributeValues: {
-                ':published': 'PUBLISHED',
-                ':revision': revision,
-                ':body': head.playbook_json,
-              },
-            },
-          },
-          {
-            ConditionCheck: {
-              TableName: table,
-              Key: { PK: `PLAYBOOK#${id}`, SK: revision },
-              ...condition(snapshot),
-            },
-          },
-          {
-            Update: {
-              TableName: table,
-              Key: { PK: LIBRARY_STATE, SK: id },
-              UpdateExpression: 'SET publication_status = :published',
-              ...stateCondition,
-              ExpressionAttributeValues: {
-                ...stateCondition.ExpressionAttributeValues,
-                ':published': 'PUBLISHED',
-              },
-            },
-          },
-          {
-            Update: {
-              TableName: table,
-              Key: { PK: disposition.PK, SK: disposition.SK },
-              UpdateExpression:
-                'SET publication_status = :published REMOVE publication_error',
-              ConditionExpression:
-                '#state = :applied AND result_revision = :revision',
-              ExpressionAttributeNames: { '#state': 'state' },
-              ExpressionAttributeValues: {
-                ':published': 'PUBLISHED',
-                ':applied': 'APPLIED',
-                ':revision': revision,
-              },
-            },
-          },
-        ],
-      }),
+      new TransactWriteCommand({ TransactItems: publicationTransaction }),
     );
     if (
       disposition.previous_vector_key &&
@@ -1243,6 +1269,192 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
         /* Old immutable vectors are rejected by revision validation. */
       }
     }
+  }
+  /**
+   * Link only the exact newly applied, published canonical to retained READY recovery.
+   * The idle worker consumes this immutable binding; no execution queue is used here.
+   * A mismatch never copies procedure fields to make the existing knowledge look compatible.
+   */
+  async function bindAppliedRecovery(
+    rcaId: string,
+    engine: string,
+    disposition: Row,
+    preparing?: { head: Row; snapshot: Row; state: Row },
+  ) {
+    const owner = await source(rcaId, engine, true);
+    const part = owner.items.find(
+      (row) => row.SK === `${engine}#ANALYSIS_PART#recovery`,
+    );
+    if (!part) return { status: 'NOT_APPLICABLE' as const };
+    if (disposition.state === 'REJECTED')
+      return {
+        status: 'BLOCKED' as const,
+        reason:
+          '기존 지식 변경 제안이 기각되어 회고 공용 기준을 연결하지 않습니다.',
+      };
+    const decided = await get(disposition.PK, disposition.SK);
+    if (
+      !decided ||
+      decided.state !== 'APPLIED' ||
+      decided.publication_status !== (preparing ? 'PENDING' : 'PUBLISHED')
+    )
+      return {
+        status: 'WAITING' as const,
+        reason: '사용자 반영과 정확한 개정본의 검색 게시를 기다립니다.',
+      };
+    if (!deps.s3)
+      throw new Error('회고 연결의 원본 읽기가 구성되지 않았습니다.');
+    const recovery = await (deps.readRecovery ?? readReadyRecovery)(
+      owner.items,
+      rcaId,
+      engine,
+      deps.s3,
+      config.s3EvidenceBucket ?? '',
+    );
+    const head =
+      preparing?.head ?? (await get('PLAYBOOK_LIBRARY', decided.playbook_id));
+    const snapshot =
+      preparing?.snapshot ??
+      (await get(`PLAYBOOK#${decided.playbook_id}`, decided.result_revision));
+    const state =
+      preparing?.state ?? (await get(LIBRARY_STATE, decided.playbook_id));
+    if (
+      !snapshot ||
+      snapshot.revision !== decided.result_revision ||
+      bodyDeadline(snapshot) <= now()
+    )
+      return {
+        status: 'BLOCKED' as const,
+        reason: '반영한 불변 공용 원문이 없거나 만료됐습니다.',
+      };
+    const publicBook = object(snapshot.playbook_json);
+    if (!publicBook || publicBook.playbook_id !== decided.playbook_id)
+      return {
+        status: 'BLOCKED' as const,
+        reason: '공용 원문을 확인할 수 없습니다.',
+      };
+    const procedure = (book: Row) =>
+      Object.fromEntries(
+        Object.entries(book).filter(
+          ([key]) =>
+            [
+              'execution_steps',
+              'rollback_context',
+              'region',
+              'account_id',
+            ].includes(key) || /^(target_|execution_|approval_)/.test(key),
+        ),
+      );
+    if (!isDeepStrictEqual(procedure(publicBook), procedure(recovery.playbook)))
+      return {
+        status: 'BLOCKED' as const,
+        reason:
+          '사용자 반영은 완료됐지만 관련 사고 런북이 보존된 승인 절차와 달라 회고 연결을 차단합니다.',
+      };
+    const bindingKey = {
+      PK: rcaPk(rcaId),
+      SK: `RECOVERY_PUBLICATION#${recovery.revision}`,
+    };
+    const identity = {
+      schema_version: 1,
+      rca_id: rcaId,
+      engine,
+      recovery_revision: recovery.revision,
+      recovery_playbook_sha256: sha256Hex(
+        serializePlaybookSnapshot(recovery.playbook),
+      ),
+      public_playbook_id: decided.playbook_id,
+      public_revision: decided.result_revision,
+      public_body_sha256: sha256Hex(serializePlaybookSnapshot(publicBook)),
+      source_rca_id: snapshot.source_rca_id,
+      source_engine: snapshot.engine,
+    };
+    const existing = await get(bindingKey.PK, bindingKey.SK);
+    if (existing) {
+      if (
+        !retained(existing) ||
+        Object.entries(identity).some(([key, value]) => existing[key] !== value)
+      )
+        return {
+          status: 'BLOCKED' as const,
+          reason:
+            '보존된 불변 회고 연결이 다른 원문을 가리키거나 만료됐습니다.',
+        };
+      return { status: 'BOUND' as const };
+    }
+    if (
+      !head ||
+      !snapshot ||
+      !state ||
+      head.publication_status !== (preparing ? 'PENDING' : 'PUBLISHED') ||
+      state.publication_status !== (preparing ? 'PENDING' : 'PUBLISHED') ||
+      head.revision !== decided.result_revision ||
+      state.revision !== decided.result_revision ||
+      snapshot.revision !== decided.result_revision ||
+      head.playbook_json !== snapshot.playbook_json ||
+      head.source_rca_id !== snapshot.source_rca_id ||
+      head.engine !== snapshot.engine ||
+      head.proposal_rca_id !== rcaId ||
+      bodyDeadline(snapshot) <= now() ||
+      bodyDeadline(head) <= now() ||
+      !retained(state, true)
+    )
+      return {
+        status: 'BLOCKED' as const,
+        reason:
+          '반영한 정확한 공용 개정본이 변경되었거나 게시·보존 조건을 충족하지 않습니다.',
+      };
+    const expires = Math.min(
+      bodyDeadline(snapshot),
+      Number(recovery.record.body_expires_at) || bodyDeadline(recovery.record),
+      Number(recovery.record.ttl),
+      Number(owner.session.ttl),
+    );
+    if (expires <= now())
+      return {
+        status: 'BLOCKED' as const,
+        reason: '회고 연결 원본의 보존 기한이 지났습니다.',
+      };
+    const guardRows = preparing
+      ? [recovery.record]
+      : [head, state, snapshot, decided, recovery.record];
+    const guards = checks([owner]);
+    for (const row of guardRows)
+      guards.push({
+        ConditionCheck: {
+          TableName: table,
+          Key: { PK: row.PK, SK: row.SK },
+          ...condition(row),
+        },
+      });
+    const transaction: Transaction = [
+      ...guards,
+      {
+        Put: {
+          TableName: table,
+          Item: {
+            ...bindingKey,
+            ...identity,
+            created_at: new Date(now() * 1000).toISOString(),
+            ttl: expires,
+          },
+          ConditionExpression: 'attribute_not_exists(PK)',
+        },
+      },
+    ];
+    if (preparing) return { status: 'PREPARED' as const, transaction };
+    try {
+      await ddb.send(new TransactWriteCommand({ TransactItems: transaction }));
+    } catch (error) {
+      const replay = await get(bindingKey.PK, bindingKey.SK);
+      if (
+        !replay ||
+        !retained(replay) ||
+        Object.entries(identity).some(([key, value]) => replay[key] !== value)
+      )
+        throw error;
+    }
+    return { status: 'BOUND' as const };
   }
   /**
    * Apply or reject the proposal owned by the requested completed incident and engine.
@@ -1484,7 +1696,22 @@ export function createPlaybookLibrary(deps: LibraryDependencies) {
             : '지식은 반영되었으나 검색 게시가 완료되지 않았습니다. 같은 반영을 다시 요청하면 게시만 재시도합니다.';
       }
     }
+    let recoveryBinding;
+    try {
+      recoveryBinding = await bindAppliedRecovery(rcaId, engine, disposition);
+    } catch {
+      recoveryBinding = {
+        status: 'WAITING' as const,
+        reason:
+          '지식 반영 결과는 보존됐지만 회고 연결 확인을 완료하지 못했습니다. 같은 요청으로 다시 확인할 수 있습니다.',
+      };
+    }
     const response = await readProposal(rcaId, engine);
+    if (
+      recoveryBinding.status !== 'NOT_APPLICABLE' &&
+      recoveryBinding.status !== 'PREPARED'
+    )
+      response.recoveryBinding = recoveryBinding;
     if (
       publicationError &&
       response.comparison?.proposal?.publication_status === 'PENDING'
@@ -1504,6 +1731,7 @@ export function usePlaybookLibrary() {
     ddb: useDynamoDB(),
     vectors: useS3Vectors(),
     embedding: useEmbeddingRuntime(),
+    s3: useS3(),
     config: useRuntimeConfig(),
   });
 }

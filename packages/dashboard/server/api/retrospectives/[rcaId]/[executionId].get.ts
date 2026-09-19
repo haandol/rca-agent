@@ -1,4 +1,8 @@
-import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  GetCommand,
+  QueryCommand,
+  type QueryCommandInput,
+} from '@aws-sdk/lib-dynamodb';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 
 /**
@@ -35,7 +39,37 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Execution not found',
     });
   }
-  const execution = readExecution(executionItem.Item);
+  const followups: Record<string, unknown>[] = [];
+  let cursor: QueryCommandInput['ExclusiveStartKey'];
+  let publicationReadUnavailable = false;
+  try {
+    do {
+      const page = await ddb.send(
+        new QueryCommand({
+          TableName: config.dynamodbTableName,
+          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+          ExpressionAttributeValues: {
+            ':pk': rcaPk(rcaId),
+            ':prefix': `RETROSPECTIVE_FOLLOWUP#${executionId}#`,
+          },
+          ConsistentRead: true,
+          ExclusiveStartKey: cursor,
+        }),
+      );
+      followups.push(...(page.Items ?? []));
+      cursor = page.LastEvaluatedKey;
+    } while (cursor);
+  } catch {
+    // A follow-up read failure must not hide the original execution/review evidence.
+    publicationReadUnavailable = true;
+  }
+  const execution = {
+    ...readExecution(executionItem.Item),
+    ...readPublicationHistory(executionItem.Item, followups),
+    ...(publicationReadUnavailable
+      ? { publicationReadState: 'UNAVAILABLE' as const }
+      : {}),
+  };
 
   const session = await ddb.send(
     new GetCommand({

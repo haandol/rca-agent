@@ -1004,6 +1004,10 @@ test('report execution polling is visible, nonoverlapping, terminal-aware and le
   }).outputText;
   let mounted, unmounted, tick, visible, cleared, removed;
   const inFlight = { value: true };
+  const executions = { value: [] };
+  const { shouldPollPublication } = await importRepositoryModule(
+    'packages/dashboard/app/utils/publication.ts',
+  );
   let historyReads = 0;
   let sessionReads = 0;
   let release;
@@ -1033,6 +1037,8 @@ test('report execution polling is visible, nonoverlapping, terminal-aware and le
     'document',
     'window',
     'inFlight',
+    'executions',
+    'shouldPollPublication',
     'refreshExecutions',
     'refreshSession',
     'onMounted',
@@ -1042,6 +1048,8 @@ test('report execution polling is visible, nonoverlapping, terminal-aware and le
     document,
     window,
     inFlight,
+    executions,
+    shouldPollPublication,
     async () => {
       historyReads++;
       await pending;
@@ -1074,6 +1082,31 @@ test('report execution polling is visible, nonoverlapping, terminal-aware and le
   await visible();
   assert.equal(historyReads, 2);
   assert.equal(sessionReads, 2);
+  inFlight.value = false;
+  executions.value = [
+    {
+      state: 'RESOLVED',
+      publicationAttempts: [
+        {
+          status: 'WAITING_FOR_PUBLICATION',
+          expiresAt: Date.now() / 1000 + 600,
+        },
+      ],
+    },
+  ];
+  await tick();
+  assert.equal(
+    historyReads,
+    3,
+    'resolved execution still reads pending publication',
+  );
+  executions.value[0].publicationAttempts[0].status = 'PUBLISHED';
+  await tick();
+  assert.equal(
+    historyReads,
+    3,
+    'published follow-up stops polling without changing the execution',
+  );
   unmounted();
   assert.equal(cleared, 17);
   assert.equal(removed, visible);

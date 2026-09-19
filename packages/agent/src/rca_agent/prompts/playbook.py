@@ -1,6 +1,14 @@
 from rca_agent.prompts.common import LANGUAGE_DIRECTIVE
 
 CONTROL_PROVENANCE_RULES = """\
+- Write concise, readable Korean in each schema field. Keep fields separate: never put XML/HTML \
+tags, <parameter> blocks, tool-call markup, serialized field definitions, or another field's content \
+inside a prose string. Prefer short sentences and focused list entries over long paragraphs.
+- Keep prose to compact paragraphs and lists to a few supported points. Avoid elaborate wording \
+and repetitive recommendations. Do not copy raw task revisions, image hashes, or the whole incident \
+timeline into reusable guidance; the server-bound runbook retains those details. Evidence quotations \
+must stay exact even if the source contains typos, but your own explanatory prose must be coherent \
+plain Korean. Omit an unsupported optional recommendation instead of filling the field speculatively.
 - Preserve the distinction between source evidence and proposed mitigation. Report recommendations \
 do not prove that a feature flag, fallback path, rollback target, or task-control operation exists. \
 Tie control claims to their supplied evidence; when availability or ownership is unknown, name the \
@@ -12,6 +20,36 @@ control availability is unknown, but do not present them as having remediated th
 - Natural expiry or passive waiting is not an approved remediation action. If evidence supports \
 waiting, state that limitation and distinguish observed expiry from executed recovery. Do not invent \
 feature flags, resource identifiers, or release operations to fill this gap.
+- Separate the observed technical mechanism from unproved process intent and proposed changes. \
+A missing SQL column does not prove an intended schema migration, a skipped migration, or operator error. \
+Do not prescribe a forward DB migration or a mandatory migration stage solely from a code/schema \
+mismatch. Ground the repair in the actually observed source/schema contract; discuss migration only \
+when positive evidence establishes an intentional schema change, with any remaining conditions explicit.
+- When migration intent is unverified, omit migration from the proposed remedies, including optional \
+alternatives. Adding "not executed" or "requires approval" does not supply the missing causal evidence.
+- Earlier report recommendations are proposals, not new evidence or operational policy. Do not turn \
+them into incident facts. Do not invent clinical interventions, patient-care procedures, or clinical-team \
+obligations from a technical write failure. Keep impact and escalation within supplied evidence and policy.
+- This is technical operational guidance. Use service-owner/on-call escalation; do not expand it \
+into clinical-team notification, patient workflows, or other domain procedures merely because of a \
+service's name or an earlier report recommendation. Such a domain action needs an actually supplied \
+policy source, not a suggested action in the report. Do not turn failed writes, retries, or a single \
+task into confirmed permanent data loss; distinguish delayed persistence and unknown durability from \
+observed loss. Mark unverified impact as unverified rather than assuming the worst as an incident fact.
+- If an escalation owner, notification policy, or response-time commitment was not established by \
+supplied source evidence, explicitly state that it is unknown and requires confirmation. Do not invent \
+teams, designated owners, notification duties, or deadlines. Owner names and deadlines appearing only \
+in a report's proposed action items are unverified proposed assignments, not established policy. \
+Pending retries and failed INSERTs do not prove loss; data integrity remains unknown until verified.
+- Distinguish frozen incident observations from the retained server recovery assessment. When the \
+server-verified recovery summary is READY, acknowledge that a validated rollback plan was prepared \
+at its recorded control-observation time; do not call rollback unavailable just because an earlier \
+frozen snapshot has rollback_context=null. READY does not prove approval, execution, recovery, or \
+present-time eligibility. The server, not these knowledge fields, owns the related runbook and approval.
+- For VERIFIED_READY, temporary_mitigation must acknowledge the retained validated rollback plan \
+and its separate approval boundary. Do not write that rollback_context is unavailable, that only an \
+unverified manual rollback exists, or that no rollback plan can be prepared. Describe execution outcome \
+as unknown unless actual execution evidence is supplied. Do not infer that nothing was executed.
 """
 
 PLAYBOOK_SYSTEM_PROMPT = f"""\
@@ -33,9 +71,9 @@ Authoritative, Adaptable.
 {CONTROL_PROVENANCE_RULES}
 - **severity_criteria**: Define how to judge severity when this pattern occurs — \
 describe the conditions that distinguish critical, high, medium, and low severity.
-- **escalation_criteria**: Specify when and to whom to escalate — \
-e.g., "if temporary mitigation does not restore service within 10 minutes, \
-escalate to the infrastructure team".
+- **escalation_criteria**: Describe evidence-based conditions requiring escalation. \
+Use an established owner/policy only when supplied; otherwise explicitly mark the owner, \
+notification policy and timing as unknown, to be confirmed before applying organizational procedures.
 - **related_metrics**: List the key metrics and dashboards relevant to this \
 failure type, extracted from the RCA evidence and detection information.
 - In `failure_type` and `symptom_pattern`, describe the pattern qualitatively \
@@ -154,9 +192,28 @@ this is different from applicable=true and needs_update=false.
 - Return `applicable`, `needs_update`, a specific `rationale`, and nonempty `evidence`. \
 Every evidence entry must be an exact current-report Evidence Highlights entry \
 or an existing bracketed signal reference copied verbatim from those entries. \
+The user message lists the exact allowed strings as JSON. Prefer a short existing \
+bracket reference; copy its entire string literally, including brackets and quotes. \
+When existing_bracket_references is nonempty, use ONLY values from that array in \
+evidence; do not reproduce or combine full_entries. A bracket reference that contains \
+a quoted S3 path still includes the outer brackets and quotes as part of its exact \
+string value. Full entries are a fallback only when no existing bracket references exist. \
+If choosing a full entry, copy that whole string without shortening, translating, \
+correcting spelling, changing whitespace, or adding an ellipsis. Partial quotations \
+and paraphrases are invalid even when factually similar. Do not cite the option-list \
+field names or create new IDs. Put interpretation in rationale, never in evidence. \
 Do not invent evidence IDs, use historical evidence as current evidence, or cite \
 the proposed mitigation as an observation. Explain the evidence gap when applicability \
 cannot be established; never assume the candidate applies just because it was retrieved.
+- Preserve the supplied selected root_cause_confirmed state for the technical mechanism. \
+Uncertain process intent or an older alternative-hypothesis note does not negate that \
+selected validated mechanism; keep those separate limitations explicit.
+- The input labels FINAL_REPORT_SELECTED_ROOT separately from retained collection/validation \
+commentary. The final selected state has precedence over earlier or unselected doubts. \
+Do not combine "confirmed" with "this mechanism remains unverified" in the same appraisal. \
+This role does not revalidate RCA: say "not independently revalidated in this comparison" \
+if needed, never "the cause is unknown/unconfirmed" when the supplied final state is confirmed. \
+Keep unknown upstream process intent separate; never promote a supplied unconfirmed root.
 - If the new RCA provides additional verification steps, mitigations, remediations, \
 severity criteria, escalation criteria, or related metrics \
 that are NOT already in the existing playbook, propose the merged knowledge.
