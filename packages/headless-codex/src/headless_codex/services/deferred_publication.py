@@ -62,7 +62,7 @@ class DeferredPublication:
         raw = self.ddb.get_item(TableName=self.table, Key=_pack(key), ConsistentRead=True).get("Item")
         return _unpack(raw) if raw else None
 
-    def _read(self, key, digest=None):
+    def _read_bytes(self, key, digest=None):
         """Read bounded exact bytes; oversized, expired or ambiguous documents fail closed."""
         try:
             response = self.s3.get_object(Bucket=self.bucket, Key=key)
@@ -78,15 +78,22 @@ class DeferredPublication:
         modified = response.get("LastModified")
         if len(raw) > _MAX_SOURCE_BYTES:
             raise ValueError("retained source exceeds bounded reader capacity")
+        if response.get("ContentLength") is not None and response["ContentLength"] != len(raw):
+            raise ValueError("retained source length differs from its stored metadata")
         if not isinstance(modified, datetime) or modified.timestamp() + 60 * 86400 <= self.clock():
             raise ValueError("retained source exceeded sixty-day lifetime")
         actual = hashlib.sha256(raw).hexdigest()
         if digest and actual != digest:
             raise ValueError("retained source digest changed")
+        return raw, int(modified.timestamp()) + 60 * 86400
+
+    def _read(self, key, digest=None):
+        """Decode verified retained JSON without weakening byte integrity or expiry checks."""
+        raw, expiry = self._read_bytes(key, digest)
         value = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=_invalid_constant)
         if not isinstance(value, dict):
             raise ValueError("retained source is not an object")
-        return value, actual, int(modified.timestamp()) + 60 * 86400
+        return value, hashlib.sha256(raw).hexdigest(), expiry
 
     def _sources(self, execution):
         """Verify approval identity and sixty-day source lifetime separately from state retention."""
@@ -403,8 +410,36 @@ class DeferredPublication:
                 if binding and "awaits immutable" not in proposal_wait:
                     raise ValueError("public binding exists before user application completed")
             if binding is None:
-                self._finish(row, token, "WAITING_FOR_PUBLICATION", wait_reason)
-                return
+                from headless_codex.services.legacy_recovery_association import inspect_association
+
+                candidate = inspect_association(self, row, parent, draft or {}, approved)
+                if candidate:
+                    binding, _, guards = candidate
+                    binding = {**binding_key, **binding}
+                    try:
+                        self.ddb.transact_write_items(
+                            TransactItems=[
+                                self._lease_guard(row, token),
+                                *guards,
+                                {
+                                    "Put": {
+                                        "TableName": self.table,
+                                        "Item": _pack(binding),
+                                        "ConditionExpression": "attribute_not_exists(PK)",
+                                    }
+                                },
+                            ]
+                        )
+                    except ClientError as exc:
+                        if exc.response["Error"]["Code"] != "TransactionCanceledException":
+                            raise
+                        existing = self._get(binding_key)
+                        if not existing or any(existing.get(k) != v for k, v in binding.items() if k != "created_at"):
+                            raise ValueError("legacy association raced a changed authority") from exc
+                        binding = existing
+                else:
+                    self._finish(row, token, "WAITING_FOR_PUBLICATION", wait_reason)
+                    return
             if (
                 binding.get("schema_version") != 1
                 or binding.get("rca_id") != row["rca_id"]
@@ -420,11 +455,25 @@ class DeferredPublication:
             if not baseline or not original_live(baseline):
                 raise ValueError("canonical snapshot missing or expired")
             public = json.loads(baseline["playbook_json"])
+            related_public = public
+            if binding.get("association_mode") == "LEGACY_SAME_GENERATION":
+                from headless_codex.services.legacy_recovery_association import inspect_association
+
+                candidate = inspect_association(self, row, parent, draft or {}, approved)
+                if not candidate:
+                    raise ValueError("retained legacy association no longer verifiable")
+                expected, related_public, _ = candidate
+                if any(binding.get(k) != v for k, v in expected.items() if k not in {"created_at", "ttl"}):
+                    raise ValueError("legacy association source changed")
+                if int(binding["ttl"]) > int(expected["ttl"]):
+                    raise ValueError("legacy association source lifetime shortened")
+            elif binding.get("association_mode"):
+                raise ValueError("unknown recovery association mode")
             if (
                 content_hash(public) != binding["public_body_sha256"]
                 or baseline.get("source_rca_id") != binding["source_rca_id"]
                 or baseline.get("engine") != binding["source_engine"]
-                or procedure_identity(public) != procedure_identity(approved)
+                or procedure_identity(related_public) != procedure_identity(approved)
             ):
                 raise ValueError("canonical body, provenance or complete procedure differs")
             followup = {
@@ -452,7 +501,7 @@ class DeferredPublication:
                 "binding_key": binding_key,
                 "binding": {k: v for k, v in binding.items() if k not in {"PK", "SK"}},
             }
-            merged, diff = merge_playbook_update(public, review["update"])
+            merged, diff = merge_playbook_update(related_public, review["update"])
             published = apply_retrospective_verification(approved, merged)
             publication_result = {
                 "status": "NO_CHANGE" if diff.is_empty else "UPDATED",
@@ -503,6 +552,30 @@ class DeferredPublication:
                 publication_guard=self._lease_guard(row, token),
             ):
                 raise RuntimeError("deferred vector publication incomplete")
+            if binding.get("association_mode") == "LEGACY_SAME_GENERATION":
+                # Index IO may outlive source changes. Re-read all retained
+                # sources and typed edges before committing any public revision.
+                fresh_execution = self._get({"PK": row["PK"], "SK": f"EXEC#{row['execution_id']}"})
+                fresh_approved, _, fresh_evidence, fresh_review, fresh_expiry = self._sources(fresh_execution or {})
+                if (
+                    fresh_approved != approved
+                    or fresh_evidence != row["evidence_sha256"]
+                    or fresh_review != row["review_sha256"]
+                    or fresh_expiry != row["body_expires_at"]
+                ):
+                    raise ValueError("legacy retained sources changed during publication")
+                fresh_parent = self._get(binding["legacy_association"]["parent_key"])
+                raw_draft = (fresh_parent or {}).get("completion_playbook", (fresh_parent or {}).get("playbook"))
+                fresh_draft = (
+                    json.loads(raw_draft, object_pairs_hook=_unique_object) if isinstance(raw_draft, str) else {}
+                )
+                fresh = inspect_association(self, row, fresh_parent or {}, fresh_draft, fresh_approved)
+                if (
+                    not fresh
+                    or any(binding.get(k) != v for k, v in fresh[0].items() if k not in {"created_at", "ttl"})
+                    or int(binding["ttl"]) > int(fresh[0]["ttl"])
+                ):
+                    raise ValueError("legacy association changed during publication")
             committed = self._get({"PK": row["PK"], "SK": f"{publication_engine}#PLAYBOOK_REVISION"})
             if (
                 committed

@@ -9,6 +9,10 @@
 관련 런북 필드에 연결한다. 이 연결은 새 실행 승인이나 다른 사고에 대한 명령 보증이 아니다.
 현재 wire는 별도 `bound_runbook_*` 필드를 사용하지 않는다.
 
+과거의 빈 관련 런북 표현은 `association_mode=LEGACY_SAME_GENERATION`으로만 호환한다.
+이는 새 실행 권한이 아니라 기존 완료 세대의 typed 연결을 검증한 결과다. 아래의
+`legacy_association`은 기존 공개 원문을 덮지 않고 새 retrospective 개정의 출처로 남는다.
+
 ## 기존 테이블의 접근 경로
 
 별도 DynamoDB 테이블이나 승인 큐를 만들지 않는다. 아래 세 항목은 기존 RCA 세션
@@ -88,6 +92,20 @@ child/대기 참조의 생성을 한 트랜잭션으로 수행한다. 대기 참
 | `source_rca_id`, `source_engine` | 해당 공용 기준 snapshot의 출처. 승인 출처 엔진과 혼동하지 않음 |
 | `created_at` | UTC ISO 8601 문자열. FOLLOWUP의 정수 epoch 형식과 다름 |
 | `ttl` | 정수 Unix epoch 초. 신규 분석 publisher는 세션 TTL·공용 snapshot TTL·recovery `body_expires_at`(없으면 recovery TTL)의 최솟값. 사용자 반영 publisher는 아래 시간 검증 참조 |
+| `association_mode` | 과거 분리 표현을 검증했을 때만 `LEGACY_SAME_GENERATION`. 일반 embedded 연결에는 없음 |
+| `legacy_association` | 완료 부모 key/시각, generation `claim_sha256`, report key/바이트 SHA256, 알림 정규 JSON SHA256, 승인된 private ID와 recovery 원문 key/SHA/digest, attempt와 부모 attempt 필드 존재 여부, 세 terminal part의 typed 참조. claim 토큰 자체의 별도 필드는 저장하지 않음 |
+
+레거시 경로는 부모 `COMPLETED/analysis_parts_finalized`, 같은 generation의 `READY`
+recovery, part 완료≤부모 완료, 원문 SHA·예약 revision·승인 digest와 전체 런북 동일성을
+요구한다. report key는 정확한 `attempt-{attempt 또는 필드 부재 시 1}-{claim_token}` 경로이며,
+알림은 기존 서버 요약 형식으로 대조한다. report의 유일한 서버 summary/private ID,
+최종 공개 구역/public ID, terminal manifest 세 줄을 검증하고 세 part 모두 같은
+generation/attempt의 보존된 terminal 레코드와 일치해야 한다. root/operations의
+`FAILED`·`SKIPPED`도 실제 terminal 결과로 허용하며 hash/시간 검증을 생략하지 않는다.
+레거시 TTL은 부모·공개 snapshot·모든 part body 만료·실제 report/recovery S3 원본
+만료·child 원본 만료의 최솟값이다. source 조건은 association 생성과 최종 공개 CAS에
+함께 포함하며 vector 처리 뒤 원문을 재검증한다. 기존 canonical snapshot과 승인/실행
+원문은 유지되고 새 retrospective 개정만 생성된다.
 
 publisher는 보존 recovery의 완료/READY·원본 지문·유효한 런북을 확인한다. 공용 기준의
 snapshot/head가 실제 게시된 내용과 같고 현재 분석 claim 및 recovery 개정이 유지될 때

@@ -783,6 +783,116 @@ class PlaybookLibrary:
             "ttl": original_expiry,
         }
         actions = [self._source_condition(source[0])]
+        binding = head.get("retrospective_result", {}).get("followup", {}).get("binding", {})
+        if binding.get("association_mode") == "LEGACY_SAME_GENERATION":
+            generation = binding["legacy_association"]
+            parent = source[0]
+            raw_notification = parent.get("completion_notification")
+            notification = json.loads(raw_notification) if isinstance(raw_notification, str) else {}
+            raw_public = parent.get("completion_playbook", parent.get("playbook", "{}"))
+            notification_hash = hashlib.sha256(
+                json.dumps(notification, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+            ).hexdigest()
+            if (
+                {"PK": parent["PK"], "SK": parent["SK"]} != generation["parent_key"]
+                or hashlib.sha256(str(parent.get("claim_token", "")).encode()).hexdigest() != generation["claim_sha256"]
+                or parent.get("completed_at") != generation["parent_completed_at"]
+                or parent.get("analysis_parts_finalized") is not True
+                or ("attempt" in parent) != generation["parent_attempt_present"]
+                or parent.get("attempt", 1) != generation["attempt"]
+                or parent.get("report_s3_key") != generation["report_key"]
+                or notification_hash != generation["notification_sha256"]
+                or hashlib.sha256(encoded(json.loads(raw_public)).encode()).hexdigest() != binding["public_body_sha256"]
+            ):
+                raise ValueError("legacy completed generation changed before publication")
+            parent_guard = actions[0]["ConditionCheck"]
+            for number, (field, value) in enumerate(
+                {
+                    "claim_token": parent["claim_token"],
+                    "analysis_parts_finalized": True,
+                    "completion_notification": raw_notification,
+                    "report_s3_key": generation["report_key"],
+                }.items()
+            ):
+                parent_guard["ConditionExpression"] += f" AND #lg{number} = :lg{number}"
+                parent_guard["ExpressionAttributeNames"][f"#lg{number}"] = field
+                parent_guard["ExpressionAttributeValues"].update(_pack({f":lg{number}": value}))
+            parent_guard["ExpressionAttributeNames"]["#legacy_attempt"] = "attempt"
+            if generation["parent_attempt_present"]:
+                parent_guard["ConditionExpression"] += " AND #legacy_attempt = :legacy_attempt"
+                parent_guard["ExpressionAttributeValues"].update(_pack({":legacy_attempt": generation["attempt"]}))
+            else:
+                parent_guard["ConditionExpression"] += " AND attribute_not_exists(#legacy_attempt)"
+            expected = {
+                **generation["terminal_parts"]["recovery"],
+                "claim_token": parent["claim_token"],
+                "status": "COMPLETED",
+                "approval_status": "READY",
+                "revision": generation["part_sha256"],
+                "payload_sha256": generation["part_sha256"],
+                "payload_s3_key": generation["part_s3_key"],
+                "runbook_digest": generation["runbook_digest"],
+                "completed_at": generation["part_completed_at"],
+            }
+            actions.append(
+                {
+                    "ConditionCheck": {
+                        "TableName": self.table,
+                        "Key": _pack(generation["part_key"]),
+                        "ConditionExpression": " AND ".join(f"#lp{i} = :lp{i}" for i in range(len(expected)))
+                        + " AND #ttl > :now AND body_expires_at > :now AND attribute_not_exists(deleting_at)",
+                        "ExpressionAttributeNames": {
+                            **{f"#lp{i}": field for i, field in enumerate(expected)},
+                            "#ttl": "ttl",
+                        },
+                        "ExpressionAttributeValues": _pack(
+                            {
+                                **{f":lp{i}": value for i, value in enumerate(expected.values())},
+                                ":now": int(time.time()),
+                            }
+                        ),
+                    }
+                }
+            )
+            for name in ("root_cause", "operations"):
+                terminal = generation["terminal_parts"][name]
+                fields = {**terminal, "claim_token": parent["claim_token"]}
+                actions.append(
+                    {
+                        "ConditionCheck": {
+                            "TableName": self.table,
+                            "Key": _pack({"PK": terminal["PK"], "SK": terminal["SK"]}),
+                            "ConditionExpression": " AND ".join(f"#t{i} = :t{i}" for i in range(len(fields)))
+                            + " AND #ttl > :now AND body_expires_at > :now AND attribute_not_exists(deleting_at)",
+                            "ExpressionAttributeNames": {
+                                **{f"#t{i}": field for i, field in enumerate(fields)},
+                                "#ttl": "ttl",
+                            },
+                            "ExpressionAttributeValues": _pack(
+                                {
+                                    **{f":t{i}": value for i, value in enumerate(fields.values())},
+                                    ":now": int(time.time()),
+                                }
+                            ),
+                        }
+                    }
+                )
+            actions.append(
+                {
+                    "ConditionCheck": {
+                        "TableName": self.table,
+                        "Key": _pack({"PK": f"PLAYBOOK#{head['SK']}", "SK": binding["public_revision"]}),
+                        "ConditionExpression": "playbook_json = :body AND #ttl > :now",
+                        "ExpressionAttributeNames": {"#ttl": "ttl"},
+                        "ExpressionAttributeValues": _pack(
+                            {
+                                ":body": head["baseline_playbook_json"],
+                                ":now": int(time.time()),
+                            }
+                        ),
+                    }
+                }
+            )
         if head["revision"].startswith("retrospective:"):
             committed = self.committed(head)
             if committed is None:

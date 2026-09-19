@@ -255,3 +255,12 @@ S3 원문은 60일 유효성을 별도로 검사하고 최대 32MiB를 읽어 �
 거부한다. 원본을 잘라서 성공 처리하지 않는다. 후속 lease와 공개 기준 CAS를 staging 및
 최종 공개 트랜잭션에서 확인하고, 원본·검색 게시가 일치해야 child를 PUBLISHED로 기록한다.
 이 후속 상태가 정상화나 원인·운영 분석을 취소하지 않는다.
+
+과거 완료 공개 문서에 관련 런북 필드가 비어 있는 경우에만 `LEGACY_SAME_GENERATION`
+호환 연결을 검사한다. 완료 부모·알림의 정확한 report key·서버 report summary/terminal
+manifest·세 terminal part 레코드와 원문 READY recovery가 같은 claim generation/attempt와
+승인 digest를 가리켜야 한다. 산문 속 식별자나 같은 RCA만으로 연결하지 않는다.
+association에는 generation claim의 SHA256과 report/part 원문 참조·지문을 보존하며 실제
+토큰은 CAS 때 다시 읽어 대조한다. 이전 report/부모/part/EXEC/승인/canonical snapshot을
+수정하지 않고 새 retrospective 개정에만 검증된 관련 런북을 결합한다. 기존 사용자 제안
+반영 규칙을 우회하지 않으며 재개 중 source 변화·만료·모호한 manifest는 차단한다.
